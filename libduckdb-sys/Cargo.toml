@@ -1,0 +1,26 @@
+[package]
+name = "libduckdb-sys"
+version = "0.1.0"
+authors = ["wangfenjin <wangfenj@gmail.com>"]
+edition = "2018"
+build = "build.rs"
+license = "MIT"
+repository = "https://github.com/wangfenjin/duckdb-rs"
+keywords = ["duckdb", "ffi"]
+categories = ["external-ffi-bindings"]
+description = "Native bindings to the libduckdb library, C API"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["vcpkg", "pkg-config"]
+bundled = ["cc"]
+buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
+
+[dependencies]
+
+[build-dependencies]
+bindgen = { version = "0.58", optional = true, default-features = false, features = ["runtime"] }
+pkg-config = { version = "0.3.19", optional = true }
+cc = { version = "1.0", features = ["parallel"], optional = true }
+vcpkg = { version = "0.2", optional = true }
