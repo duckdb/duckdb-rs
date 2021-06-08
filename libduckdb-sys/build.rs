@@ -122,11 +122,8 @@ mod build_linked {
         let header = find_duckdb();
 
         if !cfg!(feature = "buildtime_bindgen") {
-            std::fs::copy(
-                format!("{}/bindgen_bundled_version.rs", lib_name()),
-                out_path,
-            )
-            .expect("Could not copy bindings to output directory");
+            std::fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name()), out_path)
+                .expect("Could not copy bindings to output directory");
         } else {
             #[cfg(feature = "buildtime_bindgen")]
             {
@@ -184,10 +181,7 @@ mod build_linked {
         }
 
         // See if pkg-config can do everything for us.
-        match pkg_config::Config::new()
-            .print_system_libs(false)
-            .probe(link_lib)
-        {
+        match pkg_config::Config::new().print_system_libs(false).probe(link_lib) {
             Ok(mut lib) => {
                 if let Some(mut header) = lib.include_paths.pop() {
                     header.push("duckdb.h");
