@@ -1,9 +1,9 @@
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::iter::IntoIterator;
-use std::os::raw::{c_char, c_uint, c_void};
+use std::os::raw::{c_char, c_void};
 use std::slice::from_raw_parts;
-use std::{convert, fmt, mem, ptr, str};
+use std::{convert, fmt, str};
 
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
@@ -19,7 +19,7 @@ impl Statement<'_> {
     /// Execute the prepared statement.
     ///
     /// On success, returns the number of rows that were changed or inserted or
-    /// deleted (via `sqlite3_changes`).
+    /// deleted.
     ///
     /// ## Example
     ///
@@ -63,7 +63,7 @@ impl Statement<'_> {
         self.execute_with_bound_parameters()
     }
 
-    /// Execute an INSERT and return the ROWID.
+    /// Execute an INSERT.
     ///
     /// # Note
     ///
@@ -75,13 +75,12 @@ impl Statement<'_> {
     ///
     /// # Failure
     ///
-    /// TODO(wangfenjin): why can't insert multiple row?
     /// Will return `Err` if no row is inserted or many rows are inserted.
     #[inline]
-    pub fn insert<P: Params>(&mut self, params: P) -> Result<i64> {
+    pub fn insert<P: Params>(&mut self, params: P) -> Result<()> {
         let changes = self.execute(params)?;
         match changes {
-            1 => Ok(1),
+            1 => Ok(()),
             _ => Err(Error::StatementChangedRows(changes)),
         }
     }
@@ -255,27 +254,13 @@ impl Statement<'_> {
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
-        let mut rows = self.query(params)?;
-
-        rows.get_expected_row().and_then(|r| f(&r))
+        self.query(params)?.get_expected_row().and_then(|r| f(&r))
     }
 
     /// Return the row count
-    pub fn row_count(&self) -> usize {
-        self.stmt.result.row_count as usize
-    }
-
-    /// Consumes the statement.
-    ///
-    /// Functionally equivalent to the `Drop` implementation, but allows
-    /// callers to see any errors that occur.
-    ///
-    /// # Failure
-    ///
-    /// Will return `Err` if the underlying DuckDB call fails.
     #[inline]
-    pub fn finalize(mut self) -> Result<()> {
-        self.finalize_()
+    pub fn row_count(&self) -> usize {
+        self.stmt.result_unwrap().row_count as usize
     }
 
     #[inline]
@@ -412,35 +397,7 @@ impl Statement<'_> {
 
     #[inline]
     fn execute_with_bound_parameters(&mut self) -> Result<usize> {
-        self.check_update()?;
-        let r = self.stmt.execute();
-        r
-    }
-
-    #[inline]
-    fn finalize_(&mut self) -> Result<()> {
-        let mut stmt = unsafe { RawStatement::new(ptr::null_mut()) };
-        mem::swap(&mut stmt, &mut self.stmt);
-        self.conn.decode_result(stmt.finalize() as c_uint)
-    }
-
-    #[inline]
-    #[allow(clippy::unnecessary_wraps)]
-    fn check_update(&self) -> Result<()> {
-        Ok(())
-    }
-
-    /// Get the value for one of the status counters for this statement.
-    #[inline]
-    pub fn get_status(&self, status: StatementStatus) -> i32 {
-        self.stmt.get_status(status, false)
-    }
-
-    /// Reset the value of one of the status counters for this statement,
-    #[inline]
-    /// returning the value it had before resetting.
-    pub fn reset_status(&self, status: StatementStatus) -> i32 {
-        self.stmt.get_status(status, true)
+        self.stmt.execute()
     }
 }
 
@@ -459,14 +416,6 @@ impl fmt::Debug for Statement<'_> {
     }
 }
 
-impl Drop for Statement<'_> {
-    #[allow(unused_must_use)]
-    #[inline]
-    fn drop(&mut self) {
-        self.finalize_();
-    }
-}
-
 impl Statement<'_> {
     #[inline]
     pub(super) fn new(conn: &Connection, stmt: RawStatement) -> Statement<'_> {
@@ -474,8 +423,7 @@ impl Statement<'_> {
     }
 
     pub(super) fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
-        // TODO: need row
-        let mut result = self.stmt.result;
+        let mut result = self.stmt.result_unwrap();
         match unsafe { self.stmt.column_type(col) } {
             // TODO: check this
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_INVALID => ValueRef::Null,
@@ -517,33 +465,6 @@ impl Statement<'_> {
             }),
         }
     }
-}
-
-/// Prepared statement status counters.
-///
-/// See `https://www.sqlite.org/c3ref/c_stmtstatus_counter.html`
-/// for explanations of each.
-///
-/// Note that depending on your version of SQLite, all of these
-/// may not be available.
-#[repr(i32)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum StatementStatus {
-    /// Equivalent to SQLITE_STMTSTATUS_FULLSCAN_STEP
-    FullscanStep = 1,
-    /// Equivalent to SQLITE_STMTSTATUS_SORT
-    Sort = 2,
-    /// Equivalent to SQLITE_STMTSTATUS_AUTOINDEX
-    AutoIndex = 3,
-    /// Equivalent to SQLITE_STMTSTATUS_VM_STEP
-    VmStep = 4,
-    /// Equivalent to SQLITE_STMTSTATUS_REPREPARE
-    RePrepare = 5,
-    /// Equivalent to SQLITE_STMTSTATUS_RUN
-    Run = 6,
-    /// Equivalent to SQLITE_STMTSTATUS_MEMUSED
-    MemUsed = 99,
 }
 
 #[cfg(test)]
@@ -702,8 +623,8 @@ mod test {
         db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")?;
         let mut stmt = db.prepare("INSERT INTO foo (x) VALUES (?)")?;
         // TODO(wangfenjin): currently always 1
-        assert_eq!(stmt.insert([1i32])?, 1);
-        assert_eq!(stmt.insert([2i32])?, 1);
+        stmt.insert([1i32])?;
+        stmt.insert([2i32])?;
         match stmt.insert([1i32]).unwrap_err() {
             Error::StatementChangedRows(0) => (),
             // TODO(wangfenjin): Constraint Error: duplicate key value violates primary key or unique constraint
@@ -729,8 +650,8 @@ mod test {
         ",
         )?;
 
-        assert_eq!(db.prepare("INSERT INTO foo VALUES (10)")?.insert([])?, 1);
-        assert_eq!(db.prepare("INSERT INTO bar VALUES (10)")?.insert([])?, 1);
+        db.prepare("INSERT INTO foo VALUES (10)")?.insert([])?;
+        db.prepare("INSERT INTO bar VALUES (10)")?.insert([])?;
         Ok(())
     }
 

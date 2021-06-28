@@ -56,7 +56,7 @@ use std::convert;
 use std::default::Default;
 use std::ffi::CString;
 use std::fmt;
-use std::os::raw::{c_int, c_uint};
+use std::os::raw::c_uint;
 use std::path::{Path, PathBuf};
 use std::result;
 use std::str;
@@ -70,7 +70,7 @@ pub use crate::error::Error;
 pub use crate::ffi::ErrorCode;
 pub use crate::params::{params_from_iter, Params, ParamsFromIter};
 pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
-pub use crate::statement::{Statement, StatementStatus};
+pub use crate::statement::Statement;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
 
@@ -441,7 +441,7 @@ impl Connection {
 
     #[inline]
     fn decode_result(&self, code: c_uint) -> Result<()> {
-        self.db.borrow_mut().decode_result(code as c_int)
+        self.db.borrow_mut().decode_result(code)
     }
 
     /// Test for auto-commit mode.

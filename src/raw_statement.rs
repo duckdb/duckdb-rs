@@ -1,9 +1,9 @@
 use super::ffi;
-use super::{Result, StatementStatus};
+use super::Result;
 use crate::error::error_from_duckdb_code;
 use std::ffi::CStr;
 use std::mem;
-use std::os::raw::{c_int, c_uint};
+use std::os::raw::c_uint;
 use std::slice;
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
@@ -11,7 +11,7 @@ use std::slice;
 #[derive(Debug)]
 pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
-    pub result: ffi::duckdb_result,
+    pub result: Option<ffi::duckdb_result>,
 }
 
 impl RawStatement {
@@ -19,7 +19,7 @@ impl RawStatement {
     pub unsafe fn new(stmt: ffi::duckdb_prepared_statement) -> RawStatement {
         RawStatement {
             ptr: stmt,
-            result: mem::zeroed(),
+            result: None,
         }
     }
 
@@ -34,20 +34,19 @@ impl RawStatement {
     }
 
     #[inline]
-    pub unsafe fn result(&self) -> ffi::duckdb_result {
-        self.result
+    pub fn result_unwrap(&self) -> ffi::duckdb_result {
+        self.result.unwrap()
     }
 
     #[inline]
     pub fn column_count(&self) -> usize {
         // TODO: change return type?
-        let count = unsafe { self.result().column_count as usize };
-        count
+        self.result_unwrap().column_count as usize
     }
 
     #[inline]
     pub unsafe fn column_type(&self, idx: usize) -> c_uint {
-        let columns = slice::from_raw_parts(self.result().columns, self.result().column_count as usize);
+        let columns = slice::from_raw_parts(self.result_unwrap().columns, self.result_unwrap().column_count as usize);
         columns[idx].type_
     }
 
@@ -55,7 +54,8 @@ impl RawStatement {
     #[allow(dead_code)]
     pub fn column_decltype(&self, idx: usize) -> Option<&CStr> {
         unsafe {
-            let columns = slice::from_raw_parts(self.result().columns, self.result().column_count as usize);
+            let columns =
+                slice::from_raw_parts(self.result_unwrap().columns, self.result_unwrap().column_count as usize);
             Some(CStr::from_ptr(columns[idx].name))
         }
     }
@@ -66,7 +66,8 @@ impl RawStatement {
             return None;
         }
         unsafe {
-            let columns = slice::from_raw_parts(self.result().columns, self.result().column_count as usize);
+            let columns =
+                slice::from_raw_parts(self.result_unwrap().columns, self.result_unwrap().column_count as usize);
             Some(CStr::from_ptr(columns[idx].name))
         }
     }
@@ -93,27 +94,33 @@ impl RawStatement {
         }
     }
 
+    /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
         // TODO: change return type
         self.reset_result();
         unsafe {
-            let rc = ffi::duckdb_execute_prepared(self.ptr, &mut self.result);
+            let mut out = mem::zeroed();
+            let rc = ffi::duckdb_execute_prepared(self.ptr, &mut out);
             if rc != ffi::DuckDBSuccess {
-                let message = Some(CStr::from_ptr(self.result.error_message).to_string_lossy().to_string());
-                return Err(error_from_duckdb_code(rc as c_int, message));
+                let message = Some(CStr::from_ptr(out.error_message).to_string_lossy().to_string());
+                return Err(error_from_duckdb_code(rc, message));
             }
+
+            self.result = Some(out);
             // self.print_result(self.result);
-            Ok(self.result.row_changed as usize)
+            Ok(self.result_unwrap().row_changed as usize)
         }
     }
 
     #[inline]
-    pub fn reset_result(&mut self) -> c_int {
-        unsafe {
-            ffi::duckdb_destroy_result(&mut self.result);
-            self.result = mem::zeroed();
+    pub fn reset_result(&mut self) {
+        if self.result.is_none() {
+            return;
         }
-        0
+        unsafe {
+            ffi::duckdb_destroy_result(&mut self.result_unwrap());
+            self.result = None;
+        }
     }
 
     #[inline]
@@ -128,29 +135,13 @@ impl RawStatement {
 
     #[inline]
     pub fn sql(&self) -> Option<&CStr> {
-        panic!("sql: not supported")
-    }
-
-    #[inline]
-    pub fn finalize(mut self) -> c_int {
-        self.finalize_()
-    }
-
-    #[inline]
-    fn finalize_(&mut self) -> c_int {
-        self.reset_result();
-        unsafe { ffi::duckdb_destroy_prepare(&mut self.ptr) };
-        0
-    }
-
-    #[inline]
-    pub fn get_status(&self, _: StatementStatus, _: bool) -> i32 {
-        panic!("get_status: not supported")
+        panic!("not supported")
     }
 }
 
 impl Drop for RawStatement {
     fn drop(&mut self) {
-        self.finalize_();
+        self.reset_result();
+        unsafe { ffi::duckdb_destroy_prepare(&mut self.ptr) };
     }
 }

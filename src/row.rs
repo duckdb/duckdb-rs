@@ -103,14 +103,6 @@ impl<'stmt> Rows<'stmt> {
     }
 }
 
-impl Drop for Rows<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        // FIXME
-        self.reset();
-    }
-}
-
 /// `F` is used to transform the _streaming_ iterator into a _fallible_
 /// iterator.
 #[must_use = "iterators are lazy and do nothing unless consumed"]

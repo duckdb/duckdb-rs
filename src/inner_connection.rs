@@ -1,5 +1,5 @@
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_uint};
+use std::os::raw::{c_char, c_uint};
 use std::ptr;
 // use std::mem;
 use std::str;
@@ -39,7 +39,6 @@ impl InnerConnection {
             db: db,
             con: con,
             // result: mem::zeroed(),
-            //interrupt_lock: Arc::new(Mutex::new(&mut con)),
             owned: owned,
         }
     }
@@ -47,11 +46,7 @@ impl InnerConnection {
     pub fn open_with_flags(c_path: &CStr, _: OpenFlags, _: Option<&CStr>) -> Result<InnerConnection> {
         unsafe {
             let mut db: ffi::duckdb_database = ptr::null_mut();
-            let r = if c_path.to_str().unwrap() == ":memory:" {
-                ffi::duckdb_open(ptr::null_mut(), &mut db)
-            } else {
-                ffi::duckdb_open(c_path.as_ptr(), &mut db)
-            };
+            let r = ffi::duckdb_open(c_path.as_ptr(), &mut db);
             if r != ffi::DuckDBSuccess {
                 ffi::duckdb_close(&mut db);
                 let e = Error::SqliteFailure(
@@ -65,8 +60,8 @@ impl InnerConnection {
     }
 
     #[inline]
-    pub fn decode_result(&mut self, code: c_int) -> Result<()> {
-        unsafe { InnerConnection::decode_result_raw(&mut self.db, code as c_uint) }
+    pub fn decode_result(&mut self, code: c_uint) -> Result<()> {
+        unsafe { InnerConnection::decode_result_raw(&mut self.db, code) }
     }
 
     #[inline]
@@ -74,7 +69,7 @@ impl InnerConnection {
         if code == ffi::DuckDBSuccess {
             Ok(())
         } else {
-            Err(error_from_handle(db, code as c_int))
+            Err(error_from_handle(db, code))
         }
     }
 
@@ -86,17 +81,10 @@ impl InnerConnection {
         if self.con.is_null() {
             return Ok(());
         }
-        //        let mut shared_handle = self.interrupt_lock.lock().unwrap();
-        //        assert!(
-        //            !shared_handle.is_null(),
-        //            "Bug: Somehow interrupt_lock was cleared before the DB was closed"
-        //        );
         unsafe {
             ffi::duckdb_disconnect(&mut self.con);
-            // Need to use _raw because _guard has a reference out, and
-            // decode_result takes &mut self.
-            //           *shared_handle = ptr::null_mut();
             self.con = ptr::null_mut();
+
             if self.owned {
                 ffi::duckdb_close(&mut self.db);
                 self.db = ptr::null_mut();
@@ -115,14 +103,14 @@ impl InnerConnection {
                 ptr::null_mut(),
             )
         };
-        self.decode_result(r as c_int)
+        self.decode_result(r)
     }
 
     pub fn prepare<'a>(&mut self, conn: &'a Connection, sql: &str) -> Result<Statement<'a>> {
         let mut c_stmt: ffi::duckdb_prepared_statement = ptr::null_mut();
         let c_str = CString::new(sql).unwrap();
         let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
-        self.decode_result(r as c_int)?;
+        self.decode_result(r)?;
         Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
     }
 

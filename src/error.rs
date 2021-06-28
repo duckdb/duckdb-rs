@@ -3,7 +3,7 @@ use crate::types::FromSqlError;
 use crate::types::Type;
 use std::error;
 use std::fmt;
-use std::os::raw::c_int;
+use std::os::raw::c_uint;
 use std::path::PathBuf;
 use std::str;
 
@@ -218,11 +218,11 @@ impl error::Error for Error {
 // These are public but not re-exported by lib.rs, so only visible within crate.
 
 #[cold]
-pub fn error_from_duckdb_code(code: c_int, message: Option<String>) -> Error {
+pub fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Error {
     Error::SqliteFailure(ffi::Error::new(code as u32), message)
 }
 
 #[cold]
-pub unsafe fn error_from_handle(_: *mut ffi::duckdb_connection, code: c_int) -> Error {
+pub unsafe fn error_from_handle(_: *mut ffi::duckdb_connection, code: c_uint) -> Error {
     error_from_duckdb_code(code, None)
 }
