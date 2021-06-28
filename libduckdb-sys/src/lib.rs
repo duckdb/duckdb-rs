@@ -16,8 +16,6 @@ pub const DuckDBSuccess: c_uint = duckdb_state_DuckDBSuccess;
 pub use self::error::*;
 mod error;
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;

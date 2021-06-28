@@ -169,10 +169,7 @@ impl FromSql for uuid::Uuid {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         value
             .as_blob()
-            .and_then(|bytes| {
-                uuid::Builder::from_slice(bytes)
-                    .map_err(|_| FromSqlError::InvalidUuidSize(bytes.len()))
-            })
+            .and_then(|bytes| uuid::Builder::from_slice(bytes).map_err(|_| FromSqlError::InvalidUuidSize(bytes.len())))
             .map(|mut builder| builder.build())
     }
 }
@@ -209,21 +206,14 @@ mod test {
             T: Into<i64> + FromSql + ::std::fmt::Debug,
         {
             for n in out_of_range {
-                let err = db
-                    .query_row("SELECT ?", &[n], |r| r.get::<_, T>(0))
-                    .unwrap_err();
+                let err = db.query_row("SELECT ?", &[n], |r| r.get::<_, T>(0)).unwrap_err();
                 match err {
                     Error::IntegralValueOutOfRange(_, value) => assert_eq!(*n, value),
                     _ => panic!("unexpected error: {}", err),
                 }
             }
             for n in in_range {
-                assert_eq!(
-                    *n,
-                    db.query_row("SELECT ?", &[n], |r| r.get::<_, T>(0))
-                        .unwrap()
-                        .into()
-                );
+                assert_eq!(*n, db.query_row("SELECT ?", &[n], |r| r.get::<_, T>(0)).unwrap().into());
             }
         }
 

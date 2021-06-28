@@ -1,15 +1,12 @@
-use std::iter::IntoIterator;
-use std::os::raw::{c_void, c_uint, c_char};
-use std::slice::from_raw_parts;
-use std::{convert, fmt, mem, ptr, str};
 use std::ffi::CStr;
 use std::ffi::CString;
+use std::iter::IntoIterator;
+use std::os::raw::{c_char, c_uint, c_void};
+use std::slice::from_raw_parts;
+use std::{convert, fmt, mem, ptr, str};
 
 use super::ffi;
-use super::{len_as_c_int};
-use super::{
-    AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef,
-};
+use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
 use crate::types::{ToSql, ToSqlOutput};
 
 /// A prepared statement.
@@ -246,9 +243,9 @@ impl Statement<'_> {
     ///
     /// Returns `Err(QueryReturnedNoRows)` if no results are returned. If the
     /// query truly is optional, you can call
-    /// [`.optional()`](crate::OptionalExtension::optional) on the result of
+    /// [`.optional()`](crate::OptionalExt::optional) on the result of
     /// this to get a `Result<Option<T>>` (requires that the trait
-    /// `duckdb::OptionalExtension` is imported).
+    /// `duckdb::OptionalExt` is imported).
     ///
     /// # Failure
     ///
@@ -347,11 +344,7 @@ impl Statement<'_> {
     /// }
     /// ```
     #[inline]
-    pub fn raw_bind_parameter<T: ToSql>(
-        &mut self,
-        one_based_col_index: usize,
-        param: T,
-    ) -> Result<()> {
+    pub fn raw_bind_parameter<T: ToSql>(&mut self, one_based_col_index: usize, param: T) -> Result<()> {
         // This is the same as `bind_parameter` but slightly more ergonomic and
         // correctly takes `&mut self`.
         self.bind_parameter(&param, one_based_col_index)
@@ -412,13 +405,7 @@ impl Statement<'_> {
                 ffi::duckdb_bind_varchar(ptr, col as u64, c_str.as_ptr())
             },
             ValueRef::Blob(b) => unsafe {
-                let length = len_as_c_int(b.len())?;
-                ffi::duckdb_bind_blob(
-                    ptr,
-                    col as u64,
-                    b.as_ptr() as *const c_void,
-                    length as u64,
-                )
+                ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
         })
     }
@@ -489,7 +476,7 @@ impl Statement<'_> {
     pub(super) fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
         // TODO: need row
         let mut result = self.stmt.result;
-        match unsafe {self.stmt.column_type(col)} {
+        match unsafe { self.stmt.column_type(col) } {
             // TODO: check this
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_INVALID => ValueRef::Null,
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_INTEGER => {
@@ -498,21 +485,15 @@ impl Statement<'_> {
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_FLOAT => {
                 ValueRef::Real(unsafe { ffi::duckdb_value_double(&mut result, col as u64, row as u64) })
             }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => {
-                unsafe {
-                    let text = ffi::duckdb_value_varchar(&mut result, col as u64, row as u64);
-                    assert!(
-                        !text.is_null(),
-                        "unexpected SQLITE_TEXT column type with NULL data"
-                    );
-                    let text_str = CStr::from_ptr(text as *const c_char);
-                    if text_str.to_str().unwrap() == "NULL" {
-                        return ValueRef::Null;
-                    }
-                    ValueRef::Text(text_str.to_bytes())
+            ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => unsafe {
+                let text = ffi::duckdb_value_varchar(&mut result, col as u64, row as u64);
+                assert!(!text.is_null(), "unexpected SQLITE_TEXT column type with NULL data");
+                let text_str = CStr::from_ptr(text as *const c_char);
+                if text_str.to_str().unwrap() == "NULL" {
+                    return ValueRef::Null;
                 }
-
-            }
+                ValueRef::Text(text_str.to_bytes())
+            },
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_BIGINT => {
                 ValueRef::Integer(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
             }
@@ -520,9 +501,7 @@ impl Statement<'_> {
                 ValueRef::Integer(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
             }
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_BLOB => {
-                let blob = unsafe {
-                    ffi::duckdb_value_blob(&mut result, col as u64, row as u64)
-                };
+                let blob = unsafe { ffi::duckdb_value_blob(&mut result, col as u64, row as u64) };
 
                 let len = blob.size;
                 if len > 0 {
@@ -533,11 +512,9 @@ impl Statement<'_> {
                     ValueRef::Null
                 }
             }
-            _ => unreachable!(
-                "sqlite3_column_type returned invalid value: {}, {}",
-                col,
-                unsafe {self.stmt.column_type(col)}
-            ),
+            _ => unreachable!("sqlite3_column_type returned invalid value: {}, {}", col, unsafe {
+                self.stmt.column_type(col)
+            }),
         }
     }
 }
@@ -585,13 +562,11 @@ mod test {
         // TODO(wangfenjin): No column type for SUM(x)?
         assert_eq!(
             5i32,
-            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", &[&0i32], |r| r
-                .get(0))?
+            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", &[&0i32], |r| r.get(0))?
         );
         assert_eq!(
             3i32,
-            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", &[&2i32], |r| r
-                .get(0))?
+            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", &[&2i32], |r| r.get(0))?
         );
         Ok(())
     }
@@ -685,8 +660,7 @@ mod test {
         let mut stmt = db.prepare("INSERT INTO test (x) VALUES (?)")?;
         stmt.execute(&[&"one"])?;
 
-        let result: Option<String> =
-            db.query_row("SELECT y FROM test WHERE x = 'one'", [], |row| row.get(0))?;
+        let result: Option<String> = db.query_row("SELECT y FROM test WHERE x = 'one'", [], |row| row.get(0))?;
         assert!(result.is_none());
         Ok(())
     }
@@ -831,31 +805,20 @@ mod test {
         )?;
         // existing collection:
         let data = vec![1, 2, 3];
-        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| {
+        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| row.get::<_, u8>(0))?;
+        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(data.as_slice()), |row| {
             row.get::<_, u8>(0)
         })?;
-        db.query_row(
-            "SELECT ?1, ?2, ?3",
-            params_from_iter(data.as_slice()),
-            |row| row.get::<_, u8>(0),
-        )?;
-        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(data), |row| {
-            row.get::<_, u8>(0)
-        })?;
+        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(data), |row| row.get::<_, u8>(0))?;
 
         use std::collections::BTreeSet;
-        let data: BTreeSet<String> = ["one", "two", "three"]
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect();
+        let data: BTreeSet<String> = ["one", "two", "three"].iter().map(|s| (*s).to_string()).collect();
         db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| {
             row.get::<_, String>(0)
         })?;
 
         let data = [0; 3];
-        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| {
-            row.get::<_, u8>(0)
-        })?;
+        db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| row.get::<_, u8>(0))?;
         db.query_row("SELECT ?1, ?2, ?3", params_from_iter(data.iter()), |row| {
             row.get::<_, u8>(0)
         })?;
@@ -906,8 +869,7 @@ mod test {
     fn test_nul_byte() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let expected = "a\x00b";
-        let actual: String =
-            db.query_row("SELECT CAST(? AS VARCHAR)", [expected], |row| row.get(0))?;
+        let actual: String = db.query_row("SELECT CAST(? AS VARCHAR)", [expected], |row| row.get(0))?;
         assert_eq!(expected, actual);
         Ok(())
     }

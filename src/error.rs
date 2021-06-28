@@ -1,6 +1,6 @@
+use crate::ffi;
 use crate::types::FromSqlError;
 use crate::types::Type;
-use crate::{ffi};
 use std::error;
 use std::fmt;
 use std::os::raw::c_int;
@@ -88,9 +88,7 @@ impl PartialEq for Error {
         match (self, other) {
             (Error::SqliteFailure(e1, s1), Error::SqliteFailure(e2, s2)) => e1 == e2 && s1 == s2,
             (Error::SqliteSingleThreadedMode, Error::SqliteSingleThreadedMode) => true,
-            (Error::IntegralValueOutOfRange(i1, n1), Error::IntegralValueOutOfRange(i2, n2)) => {
-                i1 == i2 && n1 == n2
-            }
+            (Error::IntegralValueOutOfRange(i1, n1), Error::IntegralValueOutOfRange(i2, n2)) => i1 == i2 && n1 == n2,
             (Error::Utf8Error(e1), Error::Utf8Error(e2)) => e1 == e2,
             (Error::NulError(e1), Error::NulError(e2)) => e1 == e2,
             (Error::InvalidParameterName(n1), Error::InvalidParameterName(n2)) => n1 == n2,
@@ -103,9 +101,7 @@ impl PartialEq for Error {
                 i1 == i2 && t1 == t2 && n1 == n2
             }
             (Error::StatementChangedRows(n1), Error::StatementChangedRows(n2)) => n1 == n2,
-            (Error::InvalidParameterCount(i1, n1), Error::InvalidParameterCount(i2, n2)) => {
-                i1 == i2 && n1 == n2
-            }
+            (Error::InvalidParameterCount(i1, n1), Error::InvalidParameterCount(i2, n2)) => i1 == i2 && n1 == n2,
             (..) => false,
         }
     }
@@ -140,9 +136,7 @@ impl From<FromSqlError> for Error {
             FromSqlError::InvalidUuidSize(_) => {
                 Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Blob, Box::new(err))
             }
-            FromSqlError::Other(source) => {
-                Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, source)
-            }
+            FromSqlError::Other(source) => Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, source),
             _ => Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, Box::new(err)),
         }
     }
@@ -153,17 +147,12 @@ impl fmt::Display for Error {
         match *self {
             Error::SqliteFailure(ref err, None) => err.fmt(f),
             Error::SqliteFailure(_, Some(ref s)) => write!(f, "{}", s),
-            Error::SqliteSingleThreadedMode => write!(
-                f,
-                "SQLite was compiled or configured for single-threaded use only"
-            ),
+            Error::SqliteSingleThreadedMode => {
+                write!(f, "SQLite was compiled or configured for single-threaded use only")
+            }
             Error::FromSqlConversionFailure(i, ref t, ref err) => {
                 if i != UNKNOWN_COLUMN {
-                    write!(
-                        f,
-                        "Conversion error from type {} at index: {}, {}",
-                        t, i, err
-                    )
+                    write!(f, "Conversion error from type {} at index: {}, {}", t, i, err)
                 } else {
                     err.fmt(f)
                 }
@@ -185,11 +174,9 @@ impl fmt::Display for Error {
             Error::QueryReturnedNoRows => write!(f, "Query returned no rows"),
             Error::InvalidColumnIndex(i) => write!(f, "Invalid column index: {}", i),
             Error::InvalidColumnName(ref name) => write!(f, "Invalid column name: {}", name),
-            Error::InvalidColumnType(i, ref name, ref t) => write!(
-                f,
-                "Invalid column type {} at index: {}, name: {}",
-                t, i, name
-            ),
+            Error::InvalidColumnType(i, ref name, ref t) => {
+                write!(f, "Invalid column type {} at index: {}, name: {}", t, i, name)
+            }
             Error::InvalidParameterCount(i1, n1) => write!(
                 f,
                 "Wrong number of parameters passed to query. Got {}, needed {}",
@@ -223,8 +210,7 @@ impl error::Error for Error {
             | Error::StatementChangedRows(_)
             | Error::InvalidQuery
             | Error::MultipleStatement => None,
-            Error::FromSqlConversionFailure(_, _, ref err)
-            | Error::ToSqlConversionFailure(ref err) => Some(&**err),
+            Error::FromSqlConversionFailure(_, _, ref err) | Error::ToSqlConversionFailure(ref err) => Some(&**err),
         }
     }
 }
@@ -240,4 +226,3 @@ pub fn error_from_duckdb_code(code: c_int, message: Option<String>) -> Error {
 pub unsafe fn error_from_handle(_: *mut ffi::duckdb_connection, code: c_int) -> Error {
     error_from_duckdb_code(code, None)
 }
-

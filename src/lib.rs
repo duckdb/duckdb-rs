@@ -54,15 +54,14 @@ pub use libduckdb_sys as ffi;
 use std::cell::RefCell;
 use std::convert;
 use std::default::Default;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::fmt;
-use std::os::raw::{c_char, c_int, c_uint};
-
+use std::os::raw::{c_int, c_uint};
 use std::path::{Path, PathBuf};
 use std::result;
 use std::str;
 
-use crate::inner_connection::{InnerConnection};
+use crate::inner_connection::InnerConnection;
 use crate::raw_statement::RawStatement;
 use crate::types::ValueRef;
 
@@ -77,10 +76,7 @@ pub use crate::types::ToSql;
 
 #[macro_use]
 mod error;
-
 mod column;
-pub mod config;
-
 mod inner_connection;
 mod params;
 mod pragma;
@@ -88,10 +84,11 @@ mod raw_statement;
 mod row;
 mod statement;
 mod transaction;
+
+pub mod config;
 pub mod types;
 
 pub(crate) mod util;
-pub(crate) use util::SmallCString;
 
 /// A macro making it more convenient to pass heterogeneous or long lists of
 /// parameters as a `&[&dyn ToSql]`.
@@ -128,16 +125,16 @@ macro_rules! params {
 pub type Result<T, E = Error> = result::Result<T, E>;
 
 /// See the [method documentation](#tymethod.optional).
-pub trait OptionalExtension<T> {
+pub trait OptionalExt<T> {
     /// Converts a `Result<T>` into a `Result<Option<T>>`.
     ///
-    /// By default, Rusqlite treats 0 rows being returned from a query that is
+    /// By default, duckdb-rs treats 0 rows being returned from a query that is
     /// expected to return 1 row as an error. This method will
     /// handle that error, and give you back an `Option<T>` instead.
     fn optional(self) -> Result<Option<T>>;
 }
 
-impl<T> OptionalExtension<T> for Result<T> {
+impl<T> OptionalExt<T> for Result<T> {
     fn optional(self) -> Result<Option<T>> {
         match self {
             Ok(value) => Ok(Some(value)),
@@ -145,42 +142,6 @@ impl<T> OptionalExtension<T> for Result<T> {
             Err(e) => Err(e),
         }
     }
-}
-
-#[allow(dead_code)]
-unsafe fn errmsg_to_string(errmsg: *const c_char) -> String {
-    let c_slice = CStr::from_ptr(errmsg).to_bytes();
-    String::from_utf8_lossy(c_slice).into_owned()
-}
-
-#[allow(dead_code)]
-fn str_to_cstring(s: &str) -> Result<SmallCString> {
-    Ok(SmallCString::new(s)?)
-}
-
-// Helper to cast to c_int safely, returning the correct error type if the cast
-// failed.
-fn len_as_c_int(len: usize) -> Result<c_int> {
-    if len >= (c_int::max_value() as usize) {
-        Err(Error::SqliteFailure(
-            ffi::Error::new(ffi::DuckDBError),
-            None,
-        ))
-    } else {
-        Ok(len as c_int)
-    }
-}
-
-#[cfg(unix)]
-fn path_to_cstring(p: &Path) -> Result<CString> {
-    use std::os::unix::ffi::OsStrExt;
-    Ok(CString::new(p.as_os_str().as_bytes())?)
-}
-
-#[cfg(not(unix))]
-fn path_to_cstring(p: &Path) -> Result<CString> {
-    let s = p.to_str().ok_or_else(|| Error::InvalidPath(p.to_owned()))?;
-    Ok(CString::new(s)?)
 }
 
 /// Name for a database within a DuckDB connection.
@@ -210,9 +171,13 @@ pub struct Connection {
 
 unsafe impl Send for Connection {}
 
-impl Drop for Connection {
-    #[inline]
-    fn drop(&mut self) {
+impl Clone for Connection {
+    /// Open a new db connection
+    fn clone(&self) -> Self {
+        Connection {
+            db: RefCell::new(self.db.borrow().clone()),
+            path: self.path.clone(),
+        }
     }
 }
 
@@ -262,6 +227,18 @@ impl Connection {
     /// string or if the underlying DuckDB open call fails.
     #[inline]
     pub fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Connection> {
+        #[cfg(unix)]
+        fn path_to_cstring(p: &Path) -> Result<CString> {
+            use std::os::unix::ffi::OsStrExt;
+            Ok(CString::new(p.as_os_str().as_bytes())?)
+        }
+
+        #[cfg(not(unix))]
+        fn path_to_cstring(p: &Path) -> Result<CString> {
+            let s = p.to_str().ok_or_else(|| Error::InvalidPath(p.to_owned()))?;
+            Ok(CString::new(s)?)
+        }
+
         let c_path = path_to_cstring(path.as_ref())?;
         InnerConnection::open_with_flags(&c_path, flags, None).map(|db| Connection {
             db: RefCell::new(db),
@@ -340,8 +317,7 @@ impl Connection {
     /// or if the underlying DuckDB call fails.
     #[inline]
     pub fn execute<P: Params>(&self, sql: &str, params: P) -> Result<usize> {
-        self.prepare(sql)
-            .and_then(|mut stmt| stmt.execute(params))
+        self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
     }
 
     /// Returns the path to the database file, if one exists and is known.
@@ -383,8 +359,7 @@ impl Connection {
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
-        let mut stmt = self.prepare(sql)?;
-        stmt.query_row(params, f)
+        self.prepare(sql)?.query_row(params, f)
     }
 
     /// Convenience method to execute a query that is expected to return a
@@ -419,10 +394,11 @@ impl Connection {
         F: FnOnce(&Row<'_>) -> Result<T, E>,
         E: convert::From<Error>,
     {
-        let mut stmt = self.prepare(sql)?;
-        let mut rows = stmt.query(params)?;
-
-        rows.get_expected_row().map_err(E::from).and_then(|r| f(&r))
+        self.prepare(sql)?
+            .query(params)?
+            .get_expected_row()
+            .map_err(E::from)
+            .and_then(|r| f(&r))
     }
 
     /// Prepare a SQL statement for execution.
@@ -463,43 +439,6 @@ impl Connection {
         r.map_err(move |err| (self, err))
     }
 
-    /// Get access to the underlying DuckDB database connection handle.
-    ///
-    /// # Warning
-    ///
-    /// You should not need to use this function. If you do need to, please
-    /// [open an issue on the duckdb repository](https://github.com/duckdb/duckdb/issues) and describe
-    /// your use case.
-    ///
-    /// # Safety
-    ///
-    /// This function is unsafe because it gives you raw access
-    /// to the DuckDB connection, and what you do with it could impact the
-    /// safety of this `Connection`.
-    #[inline]
-    pub unsafe fn handle(&self) -> ffi::duckdb_database {
-        self.db.borrow().db()
-    }
-
-    /// Create a `Connection` from a raw handle.
-    ///
-    /// The underlying DuckDB database connection handle will not be closed when
-    /// the returned connection is dropped/closed.
-    ///
-    /// # Safety
-    ///
-    /// This function is unsafe because improper use may impact the Connection.
-    #[inline]
-    pub unsafe fn from_handle(db: ffi::duckdb_database) -> Result<Connection> {
-        // FIXME
-        // let db_path = db_filename(db);
-        let db = InnerConnection::new(db, false);
-        Ok(Connection {
-            db: RefCell::new(db),
-            path: None,
-        })
-    }
-
     #[inline]
     fn decode_result(&self, code: c_uint) -> Result<()> {
         self.db.borrow_mut().decode_result(code as c_int)
@@ -515,9 +454,7 @@ impl Connection {
 
 impl fmt::Debug for Connection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Connection")
-            .field("path", &self.path)
-            .finish()
+        f.debug_struct("Connection").field("path", &self.path).finish()
     }
 }
 
@@ -609,12 +546,8 @@ mod test {
             let _ = tx2.commit();
         }
 
-        let _ = db1
-            .transaction()
-            .expect("commit should have closed transaction");
-        let _ = db2
-            .transaction()
-            .expect("commit should have closed transaction");
+        let _ = db1.transaction().expect("commit should have closed transaction");
+        let _ = db2.transaction().expect("commit should have closed transaction");
         Ok(())
     }
 
@@ -736,7 +669,10 @@ mod test {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER)")?;
 
-        assert_eq!(3, db.execute("INSERT INTO foo(x) VALUES (?), (?), (?)", [1i32, 2i32, 3i32])?);
+        assert_eq!(
+            3,
+            db.execute("INSERT INTO foo(x) VALUES (?), (?), (?)", [1i32, 2i32, 3i32])?
+        );
         assert_eq!(1, db.execute("INSERT INTO foo(x) VALUES (?)", [4i32])?);
 
         assert_eq!(
@@ -905,10 +841,7 @@ mod test {
     #[test]
     fn test_is_autocommit() {
         let db = checked_memory_handle();
-        assert!(
-            db.is_autocommit(),
-            "autocommit expected to be active by default"
-        );
+        assert!(db.is_autocommit(), "autocommit expected to be active by default");
     }
 
     #[test]
@@ -975,14 +908,13 @@ mod test {
     }
 
     #[test]
-    fn test_from_handle() -> Result<()> {
-        let db = checked_memory_handle();
-        let handle = unsafe { db.handle() };
+    fn test_clone() -> Result<()> {
+        let owned_con = checked_memory_handle();
         {
-            let db = unsafe { Connection::from_handle(handle) }?;
-            db.execute_batch("PRAGMA VERSION")?;
+            let cloned_con = owned_con.clone();
+            cloned_con.execute_batch("PRAGMA VERSION")?;
         }
-        db.close().unwrap();
+        owned_con.close().unwrap();
         Ok(())
     }
 
@@ -1039,8 +971,7 @@ mod test {
             db.execute_batch(sql)?;
 
             let mut query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
-            let results: Result<Vec<String>> =
-                query.query_and_then([], |row| row.get(1))?.collect();
+            let results: Result<Vec<String>> = query.query_and_then([], |row| row.get(1))?.collect();
 
             assert_eq!(results?.concat(), "hello, world!");
             Ok(())
@@ -1066,8 +997,7 @@ mod test {
                 err => panic!("Unexpected error {}", err),
             }
 
-            let bad_idx: Result<Vec<String>> =
-                query.query_and_then([], |row| row.get(3))?.collect();
+            let bad_idx: Result<Vec<String>> = query.query_and_then([], |row| row.get(3))?.collect();
 
             match bad_idx.unwrap_err() {
                 Error::InvalidColumnIndex(_) => (),
@@ -1128,9 +1058,8 @@ mod test {
                 err => panic!("Unexpected error {}", err),
             }
 
-            let non_sqlite_err: CustomResult<Vec<String>> = query
-                .query_and_then([], |_| Err(CustomError::SomeError))?
-                .collect();
+            let non_sqlite_err: CustomResult<Vec<String>> =
+                query.query_and_then([], |_| Err(CustomError::SomeError))?.collect();
 
             match non_sqlite_err.unwrap_err() {
                 CustomError::SomeError => (),
@@ -1227,5 +1156,4 @@ mod test {
         db.execute("ALTER TABLE x RENAME TO y;", [])?;
         Ok(())
     }
-
 }

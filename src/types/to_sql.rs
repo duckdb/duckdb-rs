@@ -323,10 +323,7 @@ mod test {
 
         let id = Uuid::new_v4();
 
-        db.execute(
-            "INSERT INTO foo (id, label) VALUES (?, ?)",
-            params![id, "target"],
-        )?;
+        db.execute("INSERT INTO foo (id, label) VALUES (?, ?)", params![id, "target"])?;
 
         let mut stmt = db.prepare("SELECT id, label FROM foo WHERE id = ?")?;
 

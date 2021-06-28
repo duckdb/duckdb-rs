@@ -56,7 +56,6 @@ pub enum ErrorCode {
     Unknown,
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Error {
     pub code: ErrorCode,

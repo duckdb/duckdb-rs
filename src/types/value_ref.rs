@@ -69,9 +69,7 @@ impl<'a> ValueRef<'a> {
     #[inline]
     pub fn as_str(&self) -> FromSqlResult<&'a str> {
         match *self {
-            ValueRef::Text(t) => {
-                std::str::from_utf8(t).map_err(|e| FromSqlError::Other(Box::new(e)))
-            }
+            ValueRef::Text(t) => std::str::from_utf8(t).map_err(|e| FromSqlError::Other(Box::new(e))),
             _ => Err(FromSqlError::InvalidType),
         }
     }

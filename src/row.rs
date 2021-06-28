@@ -224,7 +224,7 @@ impl<'stmt> FallibleStreamingIterator for Rows<'stmt> {
                     self.row = None;
                     Ok(())
                 }
-            },
+            }
             None => {
                 self.row = None;
                 Ok(())
@@ -281,21 +281,15 @@ impl<'stmt> Row<'stmt> {
         let idx = idx.idx(self.stmt)?;
         let value = self.stmt.value_ref(self.current_row, idx);
         FromSql::column_result(value).map_err(|err| match err {
-            FromSqlError::InvalidType => Error::InvalidColumnType(
-                idx,
-                self.stmt.column_name_unwrap(idx).into(),
-                value.data_type(),
-            ),
-            FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
-            FromSqlError::Other(err) => {
-                Error::FromSqlConversionFailure(idx as usize, value.data_type(), err)
+            FromSqlError::InvalidType => {
+                Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
             }
+            FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
+            FromSqlError::Other(err) => Error::FromSqlConversionFailure(idx as usize, value.data_type(), err),
             #[cfg(feature = "uuid")]
-            FromSqlError::InvalidUuidSize(_) => Error::InvalidColumnType(
-                idx,
-                self.stmt.column_name_unwrap(idx).into(),
-                value.data_type(),
-            ),
+            FromSqlError::InvalidUuidSize(_) => {
+                Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
+            }
         })
     }
 
@@ -462,13 +456,9 @@ mod tests {
         let conn = Connection::open_in_memory()?;
         conn.execute("CREATE TABLE test (a INTEGER, b INTEGER)", [])?;
         conn.execute("INSERT INTO test VALUES (42, 47)", [])?;
-        let val = conn.query_row("SELECT a, b FROM test", [], |row| {
-            <(u32, u32)>::try_from(row)
-        })?;
+        let val = conn.query_row("SELECT a, b FROM test", [], |row| <(u32, u32)>::try_from(row))?;
         assert_eq!(val, (42, 47));
-        let fail = conn.query_row("SELECT a, b FROM test", [], |row| {
-            <(u32, u32, u32)>::try_from(row)
-        });
+        let fail = conn.query_row("SELECT a, b FROM test", [], |row| <(u32, u32, u32)>::try_from(row));
         assert!(fail.is_err());
         Ok(())
     }

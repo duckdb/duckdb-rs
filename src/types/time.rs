@@ -21,14 +21,10 @@ impl FromSql for OffsetDateTime {
             match s.len() {
                 30 => PrimitiveDateTime::parse(s, SQLITE_DATETIME_FMT)
                     .map(|d| d.assume_utc())
-                    .or_else(|err| {
-                        OffsetDateTime::parse(s, SQLITE_DATETIME_FMT_LEGACY).map_err(|_| err)
-                    }),
+                    .or_else(|err| OffsetDateTime::parse(s, SQLITE_DATETIME_FMT_LEGACY).map_err(|_| err)),
                 _ => PrimitiveDateTime::parse(s, CURRENT_TIMESTAMP_FMT)
                     .map(|d| d.assume_utc())
-                    .or_else(|err| {
-                        OffsetDateTime::parse(s, SQLITE_DATETIME_FMT_LEGACY).map_err(|_| err)
-                    }),
+                    .or_else(|err| OffsetDateTime::parse(s, SQLITE_DATETIME_FMT_LEGACY).map_err(|_| err)),
             }
             .map_err(|err| FromSqlError::Other(Box::new(err)))
         })
@@ -53,8 +49,7 @@ mod test {
 
         let mut ts_vec = vec![];
 
-        let make_datetime =
-            |secs, nanos| OffsetDateTime::from_unix_timestamp(secs) + Duration::from_nanos(nanos);
+        let make_datetime = |secs, nanos| OffsetDateTime::from_unix_timestamp(secs) + Duration::from_nanos(nanos);
 
         ts_vec.push(make_datetime(10_000, 0)); //January 1, 1970 2:46:40 AM
         ts_vec.push(make_datetime(10_000, 1000)); //January 1, 1970 2:46:40 AM (and one microsecond)
@@ -78,8 +73,7 @@ mod test {
     #[test]
     fn test_sqlite_functions() -> Result<()> {
         let db = checked_memory_handle()?;
-        let result: Result<OffsetDateTime> =
-            db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
+        let result: Result<OffsetDateTime> = db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
         if result.is_err() {
             panic!("test_sqlite_functions: {}", result.unwrap_err());
         }
@@ -90,7 +84,11 @@ mod test {
     #[test]
     fn test_param() -> Result<()> {
         let db = checked_memory_handle()?;
-        let result: Result<bool> = db.query_row("SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')", [OffsetDateTime::now_utc(),OffsetDateTime::now_utc()], |r| r.get(0));
+        let result: Result<bool> = db.query_row(
+            "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",
+            [OffsetDateTime::now_utc(), OffsetDateTime::now_utc()],
+            |r| r.get(0),
+        );
         assert!(result.is_ok());
         Ok(())
     }

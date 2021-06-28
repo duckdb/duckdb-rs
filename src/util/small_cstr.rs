@@ -139,20 +139,11 @@ mod test {
         // things work.
         assert_eq!(SmallCString::default().0, SmallCString::new("").unwrap().0);
         assert_eq!(SmallCString::new("foo").unwrap().len(), 3);
-        assert_eq!(
-            SmallCString::new("foo").unwrap().as_bytes_with_nul(),
-            b"foo\0"
-        );
-        assert_eq!(
-            SmallCString::new("foo").unwrap().as_bytes_without_nul(),
-            b"foo",
-        );
+        assert_eq!(SmallCString::new("foo").unwrap().as_bytes_with_nul(), b"foo\0");
+        assert_eq!(SmallCString::new("foo").unwrap().as_bytes_without_nul(), b"foo",);
 
         assert_eq!(SmallCString::new("😀").unwrap().len(), 4);
-        assert_eq!(
-            SmallCString::new("😀").unwrap().0.as_slice(),
-            b"\xf0\x9f\x98\x80\0",
-        );
+        assert_eq!(SmallCString::new("😀").unwrap().0.as_slice(), b"\xf0\x9f\x98\x80\0",);
         assert_eq!(
             SmallCString::new("😀").unwrap().as_bytes_without_nul(),
             b"\xf0\x9f\x98\x80",

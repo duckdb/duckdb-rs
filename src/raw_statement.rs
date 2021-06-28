@@ -1,9 +1,9 @@
 use super::ffi;
-use crate::error::{error_from_duckdb_code};
-use super::{StatementStatus, Result};
+use super::{Result, StatementStatus};
+use crate::error::error_from_duckdb_code;
 use std::ffi::CStr;
-use std::os::raw::{c_int, c_uint};
 use std::mem;
+use std::os::raw::{c_int, c_uint};
 use std::slice;
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
@@ -41,7 +41,7 @@ impl RawStatement {
     #[inline]
     pub fn column_count(&self) -> usize {
         // TODO: change return type?
-        let count = unsafe {self.result().column_count as usize};
+        let count = unsafe { self.result().column_count as usize };
         count
     }
 
@@ -76,7 +76,10 @@ impl RawStatement {
         let columns = slice::from_raw_parts(result.columns, result.column_count as usize);
         println!("row-count: {}, column-count: {}", result.row_count, result.column_count);
         for i in 0..result.column_count {
-            print!("column-name:{} ", CStr::from_ptr(columns[i as usize].name).to_string_lossy());
+            print!(
+                "column-name:{} ",
+                CStr::from_ptr(columns[i as usize].name).to_string_lossy()
+            );
         }
         println!();
         // print the data of the result

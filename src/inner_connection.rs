@@ -17,6 +17,12 @@ pub struct InnerConnection {
     owned: bool,
 }
 
+impl Clone for InnerConnection {
+    fn clone(&self) -> Self {
+        unsafe { InnerConnection::new(self.db, false) }
+    }
+}
+
 impl InnerConnection {
     #[allow(clippy::mutex_atomic)]
     #[inline]
@@ -25,10 +31,7 @@ impl InnerConnection {
         let r = ffi::duckdb_connect(db, &mut con);
         if r != ffi::DuckDBSuccess {
             ffi::duckdb_disconnect(&mut con);
-            let e = Error::SqliteFailure(
-                ffi::Error::new(r),
-                Some("connect error".to_owned()),
-            );
+            let e = Error::SqliteFailure(ffi::Error::new(r), Some("connect error".to_owned()));
             // TODO: fix this
             panic!("error {:?}", e);
         }
@@ -41,11 +44,7 @@ impl InnerConnection {
         }
     }
 
-    pub fn open_with_flags(
-        c_path: &CStr,
-        _: OpenFlags,
-        _: Option<&CStr>,
-    ) -> Result<InnerConnection> {
+    pub fn open_with_flags(c_path: &CStr, _: OpenFlags, _: Option<&CStr>) -> Result<InnerConnection> {
         unsafe {
             let mut db: ffi::duckdb_database = ptr::null_mut();
             let r = if c_path.to_str().unwrap() == ":memory:" {
@@ -61,31 +60,8 @@ impl InnerConnection {
                 );
                 return Err(e);
             }
-            let mut con: ffi::duckdb_connection = ptr::null_mut();
-            let r = ffi::duckdb_connect(db, &mut con);
-            if r != ffi::DuckDBSuccess {
-                ffi::duckdb_disconnect(&mut con);
-                ffi::duckdb_close(&mut db);
-                let e = Error::SqliteFailure(
-                    ffi::Error::new(r),
-                    Some("connect error".to_owned()),
-                );
-                // TODO: fix this
-                panic!("error {:?}", e);
-            }
-            Ok(InnerConnection {
-                db: db,
-                con: con,
-                // result: mem::zeroed(),
-                owned: true,
-            })
-            // Ok(InnerConnection::new(&mut db, true))
+            Ok(InnerConnection::new(db, true))
         }
-    }
-
-    #[inline]
-    pub fn db(&self) -> ffi::duckdb_database {
-        self.db
     }
 
     #[inline]
@@ -110,16 +86,16 @@ impl InnerConnection {
         if self.con.is_null() {
             return Ok(());
         }
-//        let mut shared_handle = self.interrupt_lock.lock().unwrap();
-//        assert!(
-//            !shared_handle.is_null(),
-//            "Bug: Somehow interrupt_lock was cleared before the DB was closed"
-//        );
+        //        let mut shared_handle = self.interrupt_lock.lock().unwrap();
+        //        assert!(
+        //            !shared_handle.is_null(),
+        //            "Bug: Somehow interrupt_lock was cleared before the DB was closed"
+        //        );
         unsafe {
             ffi::duckdb_disconnect(&mut self.con);
             // Need to use _raw because _guard has a reference out, and
             // decode_result takes &mut self.
- //           *shared_handle = ptr::null_mut();
+            //           *shared_handle = ptr::null_mut();
             self.con = ptr::null_mut();
             if self.owned {
                 ffi::duckdb_close(&mut self.db);
@@ -145,17 +121,9 @@ impl InnerConnection {
     pub fn prepare<'a>(&mut self, conn: &'a Connection, sql: &str) -> Result<Statement<'a>> {
         let mut c_stmt: ffi::duckdb_prepared_statement = ptr::null_mut();
         let c_str = CString::new(sql).unwrap();
-        let r = unsafe {
-            ffi::duckdb_prepare(
-                self.con,
-                c_str.as_ptr() as *const c_char,
-                &mut c_stmt,
-            )
-        };
+        let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
         self.decode_result(r as c_int)?;
-        Ok(Statement::new(conn, unsafe {
-            RawStatement::new(c_stmt)
-        }))
+        Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
     }
 
     #[inline]

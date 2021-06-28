@@ -87,20 +87,14 @@ mod test {
             db.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, opposite),
             Ok(opposite)
         );
-        assert_eq!(
-            db.db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY),
-            Ok(opposite)
-        );
+        assert_eq!(db.db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY), Ok(opposite));
 
         let opposite = !db.db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER)?;
         assert_eq!(
             db.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, opposite),
             Ok(opposite)
         );
-        assert_eq!(
-            db.db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER),
-            Ok(opposite)
-        );
+        assert_eq!(db.db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER), Ok(opposite));
         Ok(())
     }
 }

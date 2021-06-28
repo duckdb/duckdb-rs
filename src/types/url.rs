@@ -68,10 +68,7 @@ mod test {
         let err = get_url(db, 3).unwrap_err();
         match err {
             Error::FromSqlConversionFailure(_, _, e) => {
-                assert_eq!(
-                    *e.downcast::<ParseError>().unwrap(),
-                    ParseError::RelativeUrlWithoutBase,
-                );
+                assert_eq!(*e.downcast::<ParseError>().unwrap(), ParseError::RelativeUrlWithoutBase,);
             }
             e => {
                 panic!("Expected conversion failure, got {}", e);

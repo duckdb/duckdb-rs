@@ -94,9 +94,7 @@ impl Statement<'_> {
         self.stmt
             .column_name(col)
             .ok_or(Error::InvalidColumnIndex(col))
-            .map(|slice| {
-                str::from_utf8(slice.to_bytes()).expect("Invalid UTF-8 sequence in column name")
-            })
+            .map(|slice| str::from_utf8(slice.to_bytes()).expect("Invalid UTF-8 sequence in column name"))
     }
 
     /// Returns the column index in the result set for a given column name.
@@ -138,9 +136,8 @@ impl Statement<'_> {
         for i in 0..n {
             let name = self.column_name_unwrap(i);
             let slice = self.stmt.column_decltype(i);
-            let decl_type = slice.map(|s| {
-                str::from_utf8(s.to_bytes()).expect("Invalid UTF-8 sequence in column declaration")
-            });
+            let decl_type =
+                slice.map(|s| str::from_utf8(s.to_bytes()).expect("Invalid UTF-8 sequence in column declaration"));
             cols.push(Column { name, decl_type });
         }
         cols

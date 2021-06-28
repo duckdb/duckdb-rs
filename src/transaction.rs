@@ -247,20 +247,15 @@ impl Drop for Transaction<'_> {
 
 impl Savepoint<'_> {
     #[inline]
-    fn with_depth_and_name<T: Into<String>>(
-        conn: &Connection,
-        depth: u32,
-        name: T,
-    ) -> Result<Savepoint<'_>> {
+    fn with_depth_and_name<T: Into<String>>(conn: &Connection, depth: u32, name: T) -> Result<Savepoint<'_>> {
         let name = name.into();
-        conn.execute_batch(&format!("SAVEPOINT {}", name))
-            .map(|_| Savepoint {
-                conn,
-                name,
-                depth,
-                drop_behavior: DropBehavior::Rollback,
-                committed: false,
-            })
+        conn.execute_batch(&format!("SAVEPOINT {}", name)).map(|_| Savepoint {
+            conn,
+            name,
+            depth,
+            drop_behavior: DropBehavior::Rollback,
+            committed: false,
+        })
     }
 
     #[inline]
@@ -328,8 +323,7 @@ impl Savepoint<'_> {
     /// rolled back, and can be rolled back again or committed.
     #[inline]
     pub fn rollback(&mut self) -> Result<()> {
-        self.conn
-            .execute_batch(&format!("ROLLBACK TO {}", self.name))
+        self.conn.execute_batch(&format!("ROLLBACK TO {}", self.name))
     }
 
     /// Consumes the savepoint, committing or rolling back according to the
@@ -414,10 +408,7 @@ impl Connection {
     /// Will return `Err` if the underlying DuckDB call fails.
     #[inline]
     #[allow(dead_code)]
-    fn transaction_with_behavior(
-        &mut self,
-        behavior: TransactionBehavior,
-    ) -> Result<Transaction<'_>> {
+    fn transaction_with_behavior(&mut self, behavior: TransactionBehavior) -> Result<Transaction<'_>> {
         Transaction::new_unchecked(self, behavior)
     }
 

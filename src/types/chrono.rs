@@ -18,12 +18,10 @@ impl ToSql for NaiveDate {
 impl FromSql for NaiveDate {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value
-            .as_str()
-            .and_then(|s| match NaiveDate::parse_from_str(s, "%F") {
-                Ok(dt) => Ok(dt),
-                Err(err) => Err(FromSqlError::Other(Box::new(err))),
-            })
+        value.as_str().and_then(|s| match NaiveDate::parse_from_str(s, "%F") {
+            Ok(dt) => Ok(dt),
+            Err(err) => Err(FromSqlError::Other(Box::new(err))),
+        })
     }
 }
 
@@ -204,15 +202,13 @@ mod test {
         let v1: DateTime<Utc> = db.query_row("SELECT t FROM foo", [], |r| r.get(0))?;
         assert_eq!(utc, v1);
 
-        let v2: DateTime<Utc> =
-            db.query_row("SELECT '2016-02-23 23:56:04.789'", [], |r| r.get(0))?;
+        let v2: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04.789'", [], |r| r.get(0))?;
         assert_eq!(utc, v2);
 
         let v3: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04'", [], |r| r.get(0))?;
         assert_eq!(utc - Duration::milliseconds(789), v3);
 
-        let v4: DateTime<Utc> =
-            db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
+        let v4: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
         assert_eq!(utc, v4);
         Ok(())
     }
@@ -243,11 +239,9 @@ mod test {
         assert!(result.is_ok());
         let result: Result<NaiveDate> = db.query_row("SELECT CURRENT_DATE", [], |r| r.get(0));
         assert!(result.is_ok());
-        let result: Result<NaiveDateTime> =
-            db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
+        let result: Result<NaiveDateTime> = db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
         assert!(result.is_ok());
-        let result: Result<DateTime<Utc>> =
-            db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
+        let result: Result<DateTime<Utc>> = db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
         assert!(result.is_ok());
         Ok(())
     }
@@ -255,7 +249,11 @@ mod test {
     #[test]
     fn test_naive_date_time_param() -> Result<()> {
         let db = checked_memory_handle()?;
-        let result: Result<bool> = db.query_row("SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')", [Utc::now().naive_utc(),Utc::now().naive_utc()], |r| r.get(0));
+        let result: Result<bool> = db.query_row(
+            "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",
+            [Utc::now().naive_utc(), Utc::now().naive_utc()],
+            |r| r.get(0),
+        );
         assert!(result.is_ok());
         Ok(())
     }
@@ -264,7 +262,11 @@ mod test {
     fn test_date_time_param() -> Result<()> {
         let db = checked_memory_handle()?;
         // TODO(wangfenjin): why need 2 params?
-        let result: Result<bool> = db.query_row("SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')", [Utc::now(),Utc::now()], |r| r.get(0));
+        let result: Result<bool> = db.query_row(
+            "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",
+            [Utc::now(), Utc::now()],
+            |r| r.get(0),
+        );
         assert!(result.is_ok());
         Ok(())
     }

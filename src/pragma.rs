@@ -16,11 +16,7 @@ impl Sql {
         Sql { buf: String::new() }
     }
 
-    pub fn push_pragma(
-        &mut self,
-        schema_name: Option<DatabaseName<'_>>,
-        pragma_name: &str,
-    ) -> Result<()> {
+    pub fn push_pragma(&mut self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str) -> Result<()> {
         self.push_keyword("PRAGMA")?;
         self.push_space();
         if let Some(schema_name) = schema_name {
@@ -151,12 +147,7 @@ impl Connection {
     ///
     /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
     /// `SELECT user_version FROM pragma_user_version;`
-    pub fn pragma_query_value<T, F>(
-        &self,
-        schema_name: Option<DatabaseName<'_>>,
-        pragma_name: &str,
-        f: F,
-    ) -> Result<T>
+    pub fn pragma_query_value<T, F>(&self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, f: F) -> Result<T>
     where
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
@@ -169,12 +160,7 @@ impl Connection {
     ///
     /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
     /// `SELECT * FROM pragma_collation_list;`
-    pub fn pragma_query<F>(
-        &self,
-        schema_name: Option<DatabaseName<'_>>,
-        pragma_name: &str,
-        mut f: F,
-    ) -> Result<()>
+    pub fn pragma_query<F>(&self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, mut f: F) -> Result<()>
     where
         F: FnMut(&Row<'_>) -> Result<()>,
     {
@@ -347,9 +333,7 @@ mod test {
     fn test_pragma_update_and_check() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let journal_mode: String =
-            db.pragma_update_and_check(None, "explain_output", &"OPTIMIZED_ONLY", |row| {
-                row.get(0)
-            })?;
+            db.pragma_update_and_check(None, "explain_output", &"OPTIMIZED_ONLY", |row| row.get(0))?;
         assert_eq!("OPTIMIZED_ONLY", &journal_mode);
         Ok(())
     }

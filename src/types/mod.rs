@@ -205,10 +205,7 @@ mod test {
 
         db.execute("INSERT INTO foo(i) VALUES (?)", [Value::Integer(10)])?;
 
-        assert_eq!(
-            10i64,
-            db.query_row::<i64, _, _>("SELECT i FROM foo", [], |r| r.get(0))?
-        );
+        assert_eq!(10i64, db.query_row::<i64, _, _>("SELECT i FROM foo", [], |r| r.get(0))?);
         Ok(())
     }
 
@@ -253,10 +250,7 @@ mod test {
 
         let db = checked_memory_handle()?;
 
-        db.execute(
-            "INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)",
-            [],
-        )?;
+        db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
 
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
@@ -275,82 +269,42 @@ mod test {
         // check some invalid types
 
         // 0 is actually a blob (Vec<u8>)
-        assert!(is_invalid_column_type(
-            row.get::<_, c_int>(0).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, c_int>(0).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_int>(0).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, c_int>(0).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, i64>(0).err().unwrap()));
-        assert!(is_invalid_column_type(
-            row.get::<_, c_double>(0).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, String>(0).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_double>(0).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, String>(0).err().unwrap()));
         #[cfg(feature = "time")]
         assert!(is_invalid_column_type(
             row.get::<_, time::OffsetDateTime>(0).err().unwrap()
         ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Option<c_int>>(0).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(0).err().unwrap()));
 
         // 1 is actually a text (String)
-        assert!(is_invalid_column_type(
-            row.get::<_, c_int>(1).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_int>(1).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, i64>(1).err().unwrap()));
-        assert!(is_invalid_column_type(
-            row.get::<_, c_double>(1).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Vec<u8>>(1).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Option<c_int>>(1).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_double>(1).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(1).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(1).err().unwrap()));
 
         // 2 is actually an integer
-        assert!(is_invalid_column_type(
-            row.get::<_, String>(2).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Vec<u8>>(2).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Option<String>>(2).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, String>(2).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(2).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Option<String>>(2).err().unwrap()));
 
         // 3 is actually a float (c_double)
-        assert!(is_invalid_column_type(
-            row.get::<_, c_int>(3).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_int>(3).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, i64>(3).err().unwrap()));
-        assert!(is_invalid_column_type(
-            row.get::<_, String>(3).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Vec<u8>>(3).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Option<c_int>>(3).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, String>(3).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(3).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(3).err().unwrap()));
 
         // 4 is actually NULL
-        assert!(is_invalid_column_type(
-            row.get::<_, c_int>(4).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_int>(4).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, i64>(4).err().unwrap()));
-        assert!(is_invalid_column_type(
-            row.get::<_, c_double>(4).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, String>(4).err().unwrap()
-        ));
-        assert!(is_invalid_column_type(
-            row.get::<_, Vec<u8>>(4).err().unwrap()
-        ));
+        assert!(is_invalid_column_type(row.get::<_, c_double>(4).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, String>(4).err().unwrap()));
+        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(4).err().unwrap()));
         #[cfg(feature = "time")]
         assert!(is_invalid_column_type(
             row.get::<_, time::OffsetDateTime>(4).err().unwrap()
@@ -363,10 +317,7 @@ mod test {
         use super::Value;
         let db = checked_memory_handle()?;
 
-        db.execute(
-            "INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)",
-            [],
-        )?;
+        db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
 
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
@@ -374,10 +325,7 @@ mod test {
         let row = rows.next()?.unwrap();
         // NOTE: this is different from SQLite
         // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
-        assert_eq!(
-            Value::Blob(vec![120, 48, 49, 48, 50]),
-            row.get::<_, Value>(0)?
-        );
+        assert_eq!(Value::Blob(vec![120, 48, 49, 48, 50]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Text(String::from("text")), row.get::<_, Value>(1)?);
         assert_eq!(Value::Integer(1), row.get::<_, Value>(2)?);
         match row.get::<_, Value>(3)? {
