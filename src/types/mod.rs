@@ -348,9 +348,9 @@ mod test {
         // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Blob(vec![120, 48, 49, 48, 50]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Text(String::from("text")), row.get::<_, Value>(1)?);
-        assert_eq!(Value::BigInt(1), row.get::<_, Value>(2)?);
+        assert_eq!(Value::Int(1), row.get::<_, Value>(2)?);
         match row.get::<_, Value>(3)? {
-            Value::Double(val) => assert!((1.5 - val).abs() < EPSILON),
+            Value::Float(val) => assert!((1.5 - val).abs() < EPSILON as f32),
             x => panic!("Invalid Value {:?}", x),
         }
         assert_eq!(Value::Null, row.get::<_, Value>(4)?);

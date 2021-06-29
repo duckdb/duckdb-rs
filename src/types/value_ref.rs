@@ -61,6 +61,9 @@ impl<'a> ValueRef<'a> {
     #[inline]
     pub fn as_i64(&self) -> FromSqlResult<i64> {
         match *self {
+            ValueRef::TinyInt(i) => Ok(i as i64),
+            ValueRef::SmallInt(i) => Ok(i as i64),
+            ValueRef::Int(i) => Ok(i as i64),
             ValueRef::BigInt(i) => Ok(i),
             ValueRef::Text(a) => {
                 let s = std::str::from_utf8(a).expect("invalid UTF-8");
@@ -80,6 +83,7 @@ impl<'a> ValueRef<'a> {
     #[inline]
     pub fn as_f64(&self) -> FromSqlResult<f64> {
         match *self {
+            ValueRef::Float(f) => Ok(f as f64),
             ValueRef::Double(f) => Ok(f),
             _ => Err(FromSqlError::InvalidType),
         }
