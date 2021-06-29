@@ -7,6 +7,7 @@ use std::{convert, fmt, str};
 
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
+use crate::error::result_from_duckdb_code;
 use crate::types::{ToSql, ToSqlOutput};
 
 /// A prepared statement.
@@ -381,7 +382,7 @@ impl Statement<'_> {
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
         };
         // TODO: bind more
-        self.conn.decode_result(match value {
+        let rc = match value {
             ValueRef::Null => unsafe { ffi::duckdb_bind_null(ptr, col as u64) },
             ValueRef::Integer(i) => unsafe { ffi::duckdb_bind_int64(ptr, col as u64, i) },
             ValueRef::Real(r) => unsafe { ffi::duckdb_bind_double(ptr, col as u64, r) },
@@ -392,7 +393,12 @@ impl Statement<'_> {
             ValueRef::Blob(b) => unsafe {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
-        })
+        };
+        if rc != ffi::DuckDBSuccess {
+            result_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
+        } else {
+            Ok(())
+        }
     }
 
     #[inline]
@@ -543,7 +549,7 @@ mod test {
             if id == 1 {
                 Ok(id)
             } else {
-                Err(Error::SqliteSingleThreadedMode)
+                Err(Error::ExecuteReturnedResults)
             }
         })?;
 
@@ -555,7 +561,7 @@ mod test {
         #[allow(clippy::match_wild_err_arm)]
         match rows.next().unwrap() {
             Ok(_) => panic!("invalid Ok"),
-            Err(Error::SqliteSingleThreadedMode) => (),
+            Err(Error::ExecuteReturnedResults) => (),
             Err(_) => panic!("invalid Err"),
         }
         Ok(())

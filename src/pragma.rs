@@ -31,7 +31,7 @@ impl Sql {
             self.buf.push_str(keyword);
             Ok(())
         } else {
-            Err(Error::SqliteFailure(
+            Err(Error::DuckDBFailure(
                 ffi::Error::new(ffi::DuckDBError),
                 Some(format!("Invalid keyword \"{}\"", keyword)),
             ))
@@ -72,7 +72,7 @@ impl Sql {
                 self.push_string_literal(s);
             }
             _ => {
-                return Err(Error::SqliteFailure(
+                return Err(Error::DuckDBFailure(
                     ffi::Error::new(ffi::DuckDBError),
                     Some(format!("Unsupported value \"{:?}\"", value)),
                 ));

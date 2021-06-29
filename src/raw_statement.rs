@@ -1,6 +1,6 @@
 use super::ffi;
 use super::Result;
-use crate::error::error_from_duckdb_code;
+use crate::error::result_from_duckdb_result;
 use std::ffi::CStr;
 use std::mem;
 use std::os::raw::c_uint;
@@ -102,8 +102,7 @@ impl RawStatement {
             let mut out = mem::zeroed();
             let rc = ffi::duckdb_execute_prepared(self.ptr, &mut out);
             if rc != ffi::DuckDBSuccess {
-                let message = Some(CStr::from_ptr(out.error_message).to_string_lossy().to_string());
-                return Err(error_from_duckdb_code(rc, message));
+                return Err(result_from_duckdb_result(rc, out).unwrap_err());
             }
 
             self.result = Some(out);

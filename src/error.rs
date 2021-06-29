@@ -1,7 +1,9 @@
+use super::Result;
 use crate::ffi;
 use crate::types::FromSqlError;
 use crate::types::Type;
 use std::error;
+use std::ffi::CStr;
 use std::fmt;
 use std::os::raw::c_uint;
 use std::path::PathBuf;
@@ -13,11 +15,7 @@ use std::str;
 #[non_exhaustive]
 pub enum Error {
     /// An error from an underlying DuckDB call.
-    SqliteFailure(ffi::Error, Option<String>),
-
-    /// Error reported when attempting to open a connection when DuckDB was
-    /// configured to allow single-threaded use only.
-    SqliteSingleThreadedMode,
+    DuckDBFailure(ffi::Error, Option<String>),
 
     /// Error when the value of a particular column is requested, but it cannot
     /// be converted to the requested Rust type.
@@ -86,8 +84,7 @@ pub enum Error {
 impl PartialEq for Error {
     fn eq(&self, other: &Error) -> bool {
         match (self, other) {
-            (Error::SqliteFailure(e1, s1), Error::SqliteFailure(e2, s2)) => e1 == e2 && s1 == s2,
-            (Error::SqliteSingleThreadedMode, Error::SqliteSingleThreadedMode) => true,
+            (Error::DuckDBFailure(e1, s1), Error::DuckDBFailure(e2, s2)) => e1 == e2 && s1 == s2,
             (Error::IntegralValueOutOfRange(i1, n1), Error::IntegralValueOutOfRange(i2, n2)) => i1 == i2 && n1 == n2,
             (Error::Utf8Error(e1), Error::Utf8Error(e2)) => e1 == e2,
             (Error::NulError(e1), Error::NulError(e2)) => e1 == e2,
@@ -145,11 +142,8 @@ impl From<FromSqlError> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Error::SqliteFailure(ref err, None) => err.fmt(f),
-            Error::SqliteFailure(_, Some(ref s)) => write!(f, "{}", s),
-            Error::SqliteSingleThreadedMode => {
-                write!(f, "SQLite was compiled or configured for single-threaded use only")
-            }
+            Error::DuckDBFailure(ref err, None) => err.fmt(f),
+            Error::DuckDBFailure(_, Some(ref s)) => write!(f, "{}", s),
             Error::FromSqlConversionFailure(i, ref t, ref err) => {
                 if i != UNKNOWN_COLUMN {
                     write!(f, "Conversion error from type {} at index: {}, {}", t, i, err)
@@ -193,12 +187,11 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
-            Error::SqliteFailure(ref err, _) => Some(err),
+            Error::DuckDBFailure(ref err, _) => Some(err),
             Error::Utf8Error(ref err) => Some(err),
             Error::NulError(ref err) => Some(err),
 
             Error::IntegralValueOutOfRange(..)
-            | Error::SqliteSingleThreadedMode
             | Error::InvalidParameterName(_)
             | Error::ExecuteReturnedResults
             | Error::QueryReturnedNoRows
@@ -218,11 +211,29 @@ impl error::Error for Error {
 // These are public but not re-exported by lib.rs, so only visible within crate.
 
 #[cold]
+#[inline]
 pub fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Error {
-    Error::SqliteFailure(ffi::Error::new(code as u32), message)
+    Error::DuckDBFailure(ffi::Error::new(code as u32), message)
 }
 
 #[cold]
-pub unsafe fn error_from_handle(_: *mut ffi::duckdb_connection, code: c_uint) -> Error {
-    error_from_duckdb_code(code, None)
+#[inline]
+pub fn result_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+    if code == ffi::DuckDBSuccess {
+        return Ok(());
+    }
+    Err(error_from_duckdb_code(code, message))
+}
+
+#[cold]
+#[inline]
+pub fn result_from_duckdb_result(code: c_uint, mut out: ffi::duckdb_result) -> Result<()> {
+    if code == ffi::DuckDBSuccess {
+        return Ok(());
+    }
+    let message = unsafe { Some(CStr::from_ptr(out.error_message).to_string_lossy().to_string()) };
+    unsafe {
+        ffi::duckdb_destroy_result(&mut out);
+    };
+    Err(error_from_duckdb_code(code, message))
 }

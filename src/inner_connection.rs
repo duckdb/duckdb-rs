@@ -1,12 +1,12 @@
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_uint};
+use std::mem;
+use std::os::raw::c_char;
 use std::ptr;
-// use std::mem;
 use std::str;
 
 use super::ffi;
 use super::{Connection, OpenFlags, Result};
-use crate::error::{error_from_handle, Error};
+use crate::error::{result_from_duckdb_code, result_from_duckdb_result, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 
@@ -31,7 +31,7 @@ impl InnerConnection {
         let r = ffi::duckdb_connect(db, &mut con);
         if r != ffi::DuckDBSuccess {
             ffi::duckdb_disconnect(&mut con);
-            let e = Error::SqliteFailure(ffi::Error::new(r), Some("connect error".to_owned()));
+            let e = Error::DuckDBFailure(ffi::Error::new(r), Some("connect error".to_owned()));
             // TODO: fix this
             panic!("error {:?}", e);
         }
@@ -49,27 +49,13 @@ impl InnerConnection {
             let r = ffi::duckdb_open(c_path.as_ptr(), &mut db);
             if r != ffi::DuckDBSuccess {
                 ffi::duckdb_close(&mut db);
-                let e = Error::SqliteFailure(
+                let e = Error::DuckDBFailure(
                     ffi::Error::new(r),
                     Some(format!("{}: {}", "duckdb_open error", c_path.to_string_lossy())),
                 );
                 return Err(e);
             }
             Ok(InnerConnection::new(db, true))
-        }
-    }
-
-    #[inline]
-    pub fn decode_result(&mut self, code: c_uint) -> Result<()> {
-        unsafe { InnerConnection::decode_result_raw(&mut self.db, code) }
-    }
-
-    #[inline]
-    unsafe fn decode_result_raw(db: *mut ffi::duckdb_connection, code: c_uint) -> Result<()> {
-        if code == ffi::DuckDBSuccess {
-            Ok(())
-        } else {
-            Err(error_from_handle(db, code))
         }
     }
 
@@ -95,22 +81,26 @@ impl InnerConnection {
 
     pub fn execute(&mut self, sql: &str) -> Result<()> {
         let c_str = CString::new(sql).unwrap();
-        let r = unsafe {
-            ffi::duckdb_query(
-                self.con,
-                c_str.as_ptr() as *const c_char,
-                // &mut self.result,
-                ptr::null_mut(),
-            )
-        };
-        self.decode_result(r)
+        unsafe {
+            let mut out = mem::zeroed();
+            let r = ffi::duckdb_query(self.con, c_str.as_ptr() as *const c_char, &mut out);
+            let rc = if r != ffi::DuckDBSuccess {
+                result_from_duckdb_result(r, out)
+            } else {
+                ffi::duckdb_destroy_result(&mut out);
+                Ok(())
+            };
+            rc
+        }
     }
 
     pub fn prepare<'a>(&mut self, conn: &'a Connection, sql: &str) -> Result<Statement<'a>> {
         let mut c_stmt: ffi::duckdb_prepared_statement = ptr::null_mut();
         let c_str = CString::new(sql).unwrap();
         let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
-        self.decode_result(r)?;
+        if r != ffi::DuckDBSuccess {
+            result_from_duckdb_code(r, Some(format!("prepare sql {} failed", sql)))?;
+        }
         Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
     }
 

@@ -56,7 +56,6 @@ use std::convert;
 use std::default::Default;
 use std::ffi::CString;
 use std::fmt;
-use std::os::raw::c_uint;
 use std::path::{Path, PathBuf};
 use std::result;
 use std::str;
@@ -439,11 +438,6 @@ impl Connection {
         r.map_err(move |err| (self, err))
     }
 
-    #[inline]
-    fn decode_result(&self, code: c_uint) -> Result<()> {
-        self.db.borrow_mut().decode_result(code)
-    }
-
     /// Test for auto-commit mode.
     /// Autocommit mode is on by default.
     #[inline]
@@ -593,7 +587,7 @@ mod test {
         let result = Connection::open_with_flags(filename, OpenFlags::DUCKDB_OPEN_READ_ONLY);
         assert!(!result.is_ok());
         let err = result.err().unwrap();
-        if let Error::SqliteFailure(e, Some(msg)) = err {
+        if let Error::DuckDBFailure(e, Some(msg)) = err {
             assert_eq!(ErrorCode::CannotOpen, e.code);
             assert!(
                 msg.contains(filename),
@@ -602,7 +596,7 @@ mod test {
                 filename
             );
         } else {
-            panic!("SqliteFailure expected");
+            panic!("DuckDBFailure expected");
         }
     }
 
@@ -864,7 +858,7 @@ mod test {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            Error::SqliteFailure(err, _) => {
+            Error::DuckDBFailure(err, _) => {
                 // TODO(wangfenjin): Update errorcode
                 assert_eq!(err.code, ErrorCode::Unknown);
             }
