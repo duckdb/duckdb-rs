@@ -384,8 +384,8 @@ impl Statement<'_> {
         // TODO: bind more
         let rc = match value {
             ValueRef::Null => unsafe { ffi::duckdb_bind_null(ptr, col as u64) },
-            ValueRef::Integer(i) => unsafe { ffi::duckdb_bind_int64(ptr, col as u64, i) },
-            ValueRef::Real(r) => unsafe { ffi::duckdb_bind_double(ptr, col as u64, r) },
+            ValueRef::BigInt(i) => unsafe { ffi::duckdb_bind_int64(ptr, col as u64, i) },
+            ValueRef::Double(r) => unsafe { ffi::duckdb_bind_double(ptr, col as u64, r) },
             ValueRef::Text(s) => unsafe {
                 let c_str = CString::new(s).expect("can't convert into c_str");
                 ffi::duckdb_bind_varchar(ptr, col as u64, c_str.as_ptr())
@@ -393,6 +393,7 @@ impl Statement<'_> {
             ValueRef::Blob(b) => unsafe {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
+            _ => unreachable!("not supported"),
         };
         if rc != ffi::DuckDBSuccess {
             result_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
@@ -433,11 +434,18 @@ impl Statement<'_> {
         match unsafe { self.stmt.column_type(col) } {
             // TODO: check this
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_INVALID => ValueRef::Null,
+            ffi::DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => {
+                // FIXME
+                ValueRef::Boolean(unsafe { ffi::duckdb_value_boolean(&mut result, col as u64, row as u64) })
+            }
+            ffi::DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT => {
+                ValueRef::BigInt(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
+            }
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_INTEGER => {
-                ValueRef::Integer(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
+                ValueRef::BigInt(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
             }
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_FLOAT => {
-                ValueRef::Real(unsafe { ffi::duckdb_value_double(&mut result, col as u64, row as u64) })
+                ValueRef::Double(unsafe { ffi::duckdb_value_double(&mut result, col as u64, row as u64) })
             }
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => unsafe {
                 let text = ffi::duckdb_value_varchar(&mut result, col as u64, row as u64);
@@ -449,10 +457,7 @@ impl Statement<'_> {
                 ValueRef::Text(text_str.to_bytes())
             },
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_BIGINT => {
-                ValueRef::Integer(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT => {
-                ValueRef::Integer(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
+                ValueRef::BigInt(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
             }
             ffi::DUCKDB_TYPE_DUCKDB_TYPE_BLOB => {
                 let blob = unsafe { ffi::duckdb_value_blob(&mut result, col as u64, row as u64) };

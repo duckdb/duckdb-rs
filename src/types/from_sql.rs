@@ -103,8 +103,8 @@ impl FromSql for f32 {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Integer(i) => Ok(i as f32),
-            ValueRef::Real(f) => Ok(f as f32),
+            ValueRef::Int(i) => Ok(i as f32),
+            ValueRef::Float(f) => Ok(f as f32),
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -114,8 +114,8 @@ impl FromSql for f64 {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Integer(i) => Ok(i as f64),
-            ValueRef::Real(f) => Ok(f),
+            ValueRef::BigInt(i) => Ok(i as f64),
+            ValueRef::Double(f) => Ok(f),
             _ => Err(FromSqlError::InvalidType),
         }
     }

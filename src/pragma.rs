@@ -61,10 +61,10 @@ impl Sql {
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
         };
         match value {
-            ValueRef::Integer(i) => {
+            ValueRef::BigInt(i) => {
                 self.push_int(i);
             }
-            ValueRef::Real(r) => {
+            ValueRef::Double(r) => {
                 self.push_real(r);
             }
             ValueRef::Text(s) => {

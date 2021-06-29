@@ -103,16 +103,30 @@ mod value_ref;
 pub struct Null;
 
 /// DuckDB data types.
-/// See [Fundamental Datatypes](https://sqlite.org/c3ref/c_blob.html).
+/// See [Fundamental Datatypes](https://duckdb.org/docs/sql/data_types/overview).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     /// NULL
     Null,
-    /// 64-bit signed integer
-    Integer,
-    /// 64-bit IEEE floating point number
-    Real,
-    /// String
+    /// BOOLEAN
+    Boolean,
+    /// TINYINT
+    TinyInt,
+    /// SMALLINT
+    SmallInt,
+    /// INT
+    Int,
+    /// BIGINT
+    BigInt,
+    /// HUGEINT
+    HugeInt,
+    /// FLOAT
+    Float,
+    /// DOUBLE
+    Double,
+    /// TIMESTAMP
+    Timestamp,
+    /// Text
     Text,
     /// BLOB
     Blob,
@@ -124,8 +138,15 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Type::Null => f.pad("Null"),
-            Type::Integer => f.pad("Integer"),
-            Type::Real => f.pad("Real"),
+            Type::Boolean => f.pad("Boolean"),
+            Type::TinyInt => f.pad("TinyInt"),
+            Type::SmallInt => f.pad("SmallInt"),
+            Type::Int => f.pad("Int"),
+            Type::BigInt => f.pad("BigInt"),
+            Type::HugeInt => f.pad("HugeInt"),
+            Type::Float => f.pad("Float"),
+            Type::Double => f.pad("Double"),
+            Type::Timestamp => f.pad("Timestamp"),
             Type::Text => f.pad("Text"),
             Type::Blob => f.pad("Blob"),
             Type::Any => f.pad("Any"),
@@ -203,7 +224,7 @@ mod test {
     fn test_value() -> Result<()> {
         let db = checked_memory_handle()?;
 
-        db.execute("INSERT INTO foo(i) VALUES (?)", [Value::Integer(10)])?;
+        db.execute("INSERT INTO foo(i) VALUES (?)", [Value::BigInt(10)])?;
 
         assert_eq!(10i64, db.query_row::<i64, _, _>("SELECT i FROM foo", [], |r| r.get(0))?);
         Ok(())
@@ -327,9 +348,9 @@ mod test {
         // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Blob(vec![120, 48, 49, 48, 50]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Text(String::from("text")), row.get::<_, Value>(1)?);
-        assert_eq!(Value::Integer(1), row.get::<_, Value>(2)?);
+        assert_eq!(Value::BigInt(1), row.get::<_, Value>(2)?);
         match row.get::<_, Value>(3)? {
-            Value::Real(val) => assert!((1.5 - val).abs() < EPSILON),
+            Value::Double(val) => assert!((1.5 - val).abs() < EPSILON),
             x => panic!("Invalid Value {:?}", x),
         }
         assert_eq!(Value::Null, row.get::<_, Value>(4)?);

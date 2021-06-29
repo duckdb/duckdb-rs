@@ -186,7 +186,7 @@ mod test {
             Error::InvalidColumnType(idx, name, ty) => {
                 assert_eq!(idx, 0);
                 assert_eq!(name, "renamed");
-                assert_eq!(ty, Type::Integer);
+                assert_eq!(ty, Type::BigInt);
             }
             e => {
                 panic!("Unexpected error type: {:?}", e);

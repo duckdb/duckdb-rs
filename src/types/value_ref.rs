@@ -1,7 +1,7 @@
 use super::{Type, Value};
 use crate::types::{FromSqlError, FromSqlResult};
 
-/// A non-owning [dynamic type value](http://sqlite.org/datatype3.html). Typically the
+/// A non-owning [static type value](https://duckdb.org/docs/sql/data_types/overview). Typically the
 /// memory backing this value is owned by SQLite.
 ///
 /// See [`Value`](Value) for an owning dynamic type value.
@@ -9,10 +9,24 @@ use crate::types::{FromSqlError, FromSqlResult};
 pub enum ValueRef<'a> {
     /// The value is a `NULL` value.
     Null,
+    /// The value is a boolean.
+    Boolean(bool),
+    /// The value is a signed tiny integer.
+    TinyInt(i8),
+    /// The value is a signed small integer.
+    SmallInt(i16),
     /// The value is a signed integer.
-    Integer(i64),
-    /// The value is a floating point number.
-    Real(f64),
+    Int(i32),
+    /// The value is a signed big integer.
+    BigInt(i64),
+    /// The value is a signed huge integer.
+    HugeInt(i128),
+    /// The value is a f32.
+    Float(f32),
+    /// The value is a f64.
+    Double(f64),
+    /// The value is a timestap.
+    Timestamp(&'a [u8]),
     /// The value is a text string.
     Text(&'a [u8]),
     /// The value is a blob of data
@@ -25,8 +39,15 @@ impl ValueRef<'_> {
     pub fn data_type(&self) -> Type {
         match *self {
             ValueRef::Null => Type::Null,
-            ValueRef::Integer(_) => Type::Integer,
-            ValueRef::Real(_) => Type::Real,
+            ValueRef::Boolean(_) => Type::Boolean,
+            ValueRef::TinyInt(_) => Type::TinyInt,
+            ValueRef::SmallInt(_) => Type::SmallInt,
+            ValueRef::Int(_) => Type::Int,
+            ValueRef::BigInt(_) => Type::BigInt,
+            ValueRef::HugeInt(_) => Type::HugeInt,
+            ValueRef::Float(_) => Type::Float,
+            ValueRef::Double(_) => Type::Double,
+            ValueRef::Timestamp(_) => Type::Timestamp,
             ValueRef::Text(_) => Type::Text,
             ValueRef::Blob(_) => Type::Blob,
         }
@@ -40,7 +61,7 @@ impl<'a> ValueRef<'a> {
     #[inline]
     pub fn as_i64(&self) -> FromSqlResult<i64> {
         match *self {
-            ValueRef::Integer(i) => Ok(i),
+            ValueRef::BigInt(i) => Ok(i),
             ValueRef::Text(a) => {
                 let s = std::str::from_utf8(a).expect("invalid UTF-8");
                 match s.parse::<i64>() {
@@ -59,7 +80,7 @@ impl<'a> ValueRef<'a> {
     #[inline]
     pub fn as_f64(&self) -> FromSqlResult<f64> {
         match *self {
-            ValueRef::Real(f) => Ok(f),
+            ValueRef::Double(f) => Ok(f),
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -90,8 +111,18 @@ impl From<ValueRef<'_>> for Value {
     fn from(borrowed: ValueRef<'_>) -> Value {
         match borrowed {
             ValueRef::Null => Value::Null,
-            ValueRef::Integer(i) => Value::Integer(i),
-            ValueRef::Real(r) => Value::Real(r),
+            ValueRef::Boolean(i) => Value::Boolean(i),
+            ValueRef::TinyInt(i) => Value::TinyInt(i),
+            ValueRef::SmallInt(i) => Value::SmallInt(i),
+            ValueRef::Int(i) => Value::Int(i),
+            ValueRef::BigInt(i) => Value::BigInt(i),
+            ValueRef::HugeInt(i) => Value::HugeInt(i),
+            ValueRef::Float(i) => Value::Float(i),
+            ValueRef::Double(i) => Value::Double(i),
+            ValueRef::Timestamp(t) => {
+                let s = std::str::from_utf8(t).expect("invalid UTF-8");
+                Value::Timestamp(s.to_string())
+            }
             ValueRef::Text(s) => {
                 let s = std::str::from_utf8(s).expect("invalid UTF-8");
                 Value::Text(s.to_string())
@@ -120,8 +151,15 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
     fn from(value: &'a Value) -> ValueRef<'a> {
         match *value {
             Value::Null => ValueRef::Null,
-            Value::Integer(i) => ValueRef::Integer(i),
-            Value::Real(r) => ValueRef::Real(r),
+            Value::Boolean(i) => ValueRef::Boolean(i),
+            Value::TinyInt(i) => ValueRef::TinyInt(i),
+            Value::SmallInt(i) => ValueRef::SmallInt(i),
+            Value::Int(i) => ValueRef::Int(i),
+            Value::BigInt(i) => ValueRef::BigInt(i),
+            Value::HugeInt(i) => ValueRef::HugeInt(i),
+            Value::Float(i) => ValueRef::Float(i),
+            Value::Double(i) => ValueRef::Double(i),
+            Value::Timestamp(ref t) => ValueRef::Timestamp(t.as_bytes()),
             Value::Text(ref s) => ValueRef::Text(s.as_bytes()),
             Value::Blob(ref b) => ValueRef::Blob(b),
         }

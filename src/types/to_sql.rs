@@ -147,7 +147,7 @@ macro_rules! to_sql_self_fallible(
         impl ToSql for $t {
             #[inline]
             fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Owned(Value::Integer(
+                Ok(ToSqlOutput::Owned(Value::BigInt(
                     i64::try_from(*self).map_err(
                         // TODO: Include the values in the error message.
                         |err| Error::ToSqlConversionFailure(err.into())

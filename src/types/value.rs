@@ -9,10 +9,24 @@ use super::{Null, Type};
 pub enum Value {
     /// The value is a `NULL` value.
     Null,
+    /// The value is a boolean.
+    Boolean(bool),
+    /// The value is a signed tiny integer.
+    TinyInt(i8),
+    /// The value is a signed small integer.
+    SmallInt(i16),
     /// The value is a signed integer.
-    Integer(i64),
-    /// The value is a floating point number.
-    Real(f64),
+    Int(i32),
+    /// The value is a signed big integer.
+    BigInt(i64),
+    /// The value is a signed huge integer.
+    HugeInt(i128),
+    /// The value is a f32.
+    Float(f32),
+    /// The value is a f64.
+    Double(f64),
+    /// The value is a timestap.
+    Timestamp(String),
     /// The value is a text string.
     Text(String),
     /// The value is a blob of data
@@ -29,14 +43,14 @@ impl From<Null> for Value {
 impl From<bool> for Value {
     #[inline]
     fn from(i: bool) -> Value {
-        Value::Integer(i as i64)
+        Value::Boolean(i)
     }
 }
 
 impl From<isize> for Value {
     #[inline]
     fn from(i: isize) -> Value {
-        Value::Integer(i as i64)
+        Value::BigInt(i as i64)
     }
 }
 
@@ -53,7 +67,7 @@ macro_rules! from_i64(
         impl From<$t> for Value {
             #[inline]
             fn from(i: $t) -> Value {
-                Value::Integer(i64::from(i))
+                Value::BigInt(i64::from(i))
             }
         }
     )
@@ -69,21 +83,21 @@ from_i64!(u32);
 impl From<i64> for Value {
     #[inline]
     fn from(i: i64) -> Value {
-        Value::Integer(i)
+        Value::BigInt(i)
     }
 }
 
 impl From<f32> for Value {
     #[inline]
     fn from(f: f32) -> Value {
-        Value::Real(f.into())
+        Value::Float(f.into())
     }
 }
 
 impl From<f64> for Value {
     #[inline]
     fn from(f: f64) -> Value {
-        Value::Real(f)
+        Value::Double(f)
     }
 }
 
@@ -120,8 +134,15 @@ impl Value {
     pub fn data_type(&self) -> Type {
         match *self {
             Value::Null => Type::Null,
-            Value::Integer(_) => Type::Integer,
-            Value::Real(_) => Type::Real,
+            Value::Boolean(_) => Type::Boolean,
+            Value::TinyInt(_) => Type::TinyInt,
+            Value::SmallInt(_) => Type::SmallInt,
+            Value::Int(_) => Type::Int,
+            Value::BigInt(_) => Type::BigInt,
+            Value::HugeInt(_) => Type::HugeInt,
+            Value::Float(_) => Type::Float,
+            Value::Double(_) => Type::Double,
+            Value::Timestamp(_) => Type::Timestamp,
             Value::Text(_) => Type::Text,
             Value::Blob(_) => Type::Blob,
         }
