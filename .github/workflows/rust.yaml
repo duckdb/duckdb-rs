@@ -18,12 +18,12 @@ jobs:
         override: true
         components: rustfmt, clippy
     - name: Cache .cargo
-      id: cache-primes
+      id: cache-cargo
       uses: actions/cache@v2
       with:
         path: ~/.cargo
         key: ${{ runner.os }}-${{ hashFiles('Cargo**') }}
-    - name: Install rust script
+    - name: cargo test
       uses: actions-rs/cargo@v1
       with:
         command: test
