@@ -2,8 +2,8 @@
 
 [![Build Status](https://github.com/wangfenjin/duckdb-rs/workflows/CI/badge.svg)](https://github.com/wangfenjin/duckdb-rs/actions)
 [![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
-[comment]: <> ([![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb))
-[comment]: <> ([![Docs](https://docs.rs/rusqlite/badge.svg)](https://docs.rs/rusqlite))
+<!-- [![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb)
+[![Docs](https://docs.rs/rusqlite/badge.svg)](https://docs.rs/rusqlite)) -->
 [![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 
 duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
