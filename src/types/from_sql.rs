@@ -4,7 +4,6 @@ use super::{Value, ValueRef};
 use std::error::Error;
 use std::fmt;
 
-
 /// Enum listing possible errors from [`FromSql`] trait.
 #[derive(Debug)]
 #[non_exhaustive]

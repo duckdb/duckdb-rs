@@ -1,7 +1,6 @@
 use super::{Null, Value, ValueRef};
-use crate::{Error, Result};
+use crate::Result;
 use std::borrow::Cow;
-use std::convert::TryFrom;
 
 /// `ToSqlOutput` represents the possible output types for implementers of the
 /// [`ToSql`] trait.
@@ -52,6 +51,8 @@ from_value!(isize);
 from_value!(u8);
 from_value!(u16);
 from_value!(u32);
+from_value!(u64);
+from_value!(usize);
 from_value!(f32);
 from_value!(f64);
 from_value!(Vec<u8>);
@@ -140,29 +141,11 @@ to_sql_self!(u16);
 to_sql_self!(u32);
 to_sql_self!(f32);
 to_sql_self!(f64);
+to_sql_self!(u64);
+to_sql_self!(usize);
 
 #[cfg(feature = "uuid")]
 to_sql_self!(uuid::Uuid);
-
-macro_rules! to_sql_self_fallible(
-    ($t:ty) => (
-        impl ToSql for $t {
-            #[inline]
-            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Owned(Value::HugeInt(
-                    i128::try_from(*self).map_err(
-                        // TODO: Include the values in the error message.
-                        |err| Error::ToSqlConversionFailure(err.into())
-                    )?
-                )))
-            }
-        }
-    )
-);
-
-// Special implementations for usize and u64 because these conversions can fail.
-to_sql_self_fallible!(u64);
-to_sql_self_fallible!(usize);
 
 impl<T: ?Sized> ToSql for &'_ T
 where
