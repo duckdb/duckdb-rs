@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2018"
 description = "Ergonomic wrapper for DuckDB"
@@ -57,4 +57,14 @@ unicase = "2.6.0"
 
 [dependencies.libduckdb-sys]
 path = "libduckdb-sys"
-version = "0.1.0"
+version = "0.1.1"
+
+[package.metadata.docs.rs]
+features = []
+all-features = false
+no-default-features = true
+default-target = "x86_64-unknown-linux-gnu"
+
+[package.metadata.playground]
+features = []
+all-features = false
