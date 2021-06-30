@@ -126,7 +126,7 @@ instead.
 - [x] Adjust the code examples and documentation
 - [x] Delete unused code / functions
 - [x] Add CI
-- [ ] Publish to crate
+- [x] Publish to crate
 
 ## License
 

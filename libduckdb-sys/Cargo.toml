@@ -6,8 +6,10 @@ edition = "2018"
 build = "build.rs"
 license = "MIT"
 repository = "https://github.com/wangfenjin/duckdb-rs"
-keywords = ["duckdb", "ffi"]
-categories = ["external-ffi-bindings"]
+homepage = "https://github.com/wangfenjin/duckdb-rs"
+keywords = ["duckdb", "ffi", "database"]
+readme = "README.md"
+categories = ["external-ffi-bindings", "database"]
 description = "Native bindings to the libduckdb library, C API"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

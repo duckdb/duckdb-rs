@@ -5,6 +5,7 @@ authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2018"
 description = "Ergonomic wrapper for DuckDB"
 repository = "https://github.com/wangfenjin/duckdb-rs"
+homepage = "https://github.com/wangfenjin/duckdb-rs"
 documentation = "http://docs.rs/duckdb/"
 readme = "README.md"
 keywords = ["duckdb", "database", "ffi"]
