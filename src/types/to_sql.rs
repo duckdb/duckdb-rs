@@ -47,6 +47,7 @@ from_value!(i8);
 from_value!(i16);
 from_value!(i32);
 from_value!(i64);
+from_value!(i128);
 from_value!(isize);
 from_value!(u8);
 from_value!(u16);
@@ -132,6 +133,7 @@ to_sql_self!(i8);
 to_sql_self!(i16);
 to_sql_self!(i32);
 to_sql_self!(i64);
+to_sql_self!(i128);
 to_sql_self!(isize);
 to_sql_self!(u8);
 to_sql_self!(u16);
@@ -147,8 +149,8 @@ macro_rules! to_sql_self_fallible(
         impl ToSql for $t {
             #[inline]
             fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Owned(Value::BigInt(
-                    i64::try_from(*self).map_err(
+                Ok(ToSqlOutput::Owned(Value::HugeInt(
+                    i128::try_from(*self).map_err(
                         // TODO: Include the values in the error message.
                         |err| Error::ToSqlConversionFailure(err.into())
                     )?

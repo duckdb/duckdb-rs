@@ -62,28 +62,29 @@ impl From<uuid::Uuid> for Value {
     }
 }
 
-macro_rules! from_i64(
+macro_rules! from_i128(
     ($t:ty) => (
         impl From<$t> for Value {
             #[inline]
             fn from(i: $t) -> Value {
-                Value::BigInt(i64::from(i))
+                Value::HugeInt(i128::from(i))
             }
         }
     )
 );
 
-from_i64!(i8);
-from_i64!(i16);
-from_i64!(i32);
-from_i64!(u8);
-from_i64!(u16);
-from_i64!(u32);
+from_i128!(i8);
+from_i128!(i16);
+from_i128!(i32);
+from_i128!(i64);
+from_i128!(u8);
+from_i128!(u16);
+from_i128!(u32);
 
-impl From<i64> for Value {
+impl From<i128> for Value {
     #[inline]
-    fn from(i: i64) -> Value {
-        Value::BigInt(i)
+    fn from(i: i128) -> Value {
+        Value::HugeInt(i)
     }
 }
 

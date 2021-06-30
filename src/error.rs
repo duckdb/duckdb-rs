@@ -25,7 +25,7 @@ pub enum Error {
     /// requested type (e.g., trying to get the value 1000 into a `u8`).
     /// The associated `usize` is the column index,
     /// and the associated `i64` is the value returned by SQLite.
-    IntegralValueOutOfRange(usize, i64),
+    IntegralValueOutOfRange(usize, i128),
 
     /// Error converting a string to UTF-8.
     Utf8Error(str::Utf8Error),

@@ -389,6 +389,10 @@ impl Statement<'_> {
             ValueRef::SmallInt(i) => unsafe { ffi::duckdb_bind_int16(ptr, col as u64, i) },
             ValueRef::Int(i) => unsafe { ffi::duckdb_bind_int32(ptr, col as u64, i) },
             ValueRef::BigInt(i) => unsafe { ffi::duckdb_bind_int64(ptr, col as u64, i) },
+
+            // FIXME
+            ValueRef::HugeInt(i) => unsafe { ffi::duckdb_bind_int64(ptr, col as u64, i as i64) },
+
             ValueRef::Float(r) => unsafe { ffi::duckdb_bind_float(ptr, col as u64, r) },
             ValueRef::Double(r) => unsafe { ffi::duckdb_bind_double(ptr, col as u64, r) },
             ValueRef::Text(s) => unsafe {

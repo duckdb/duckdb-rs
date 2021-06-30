@@ -107,7 +107,7 @@ impl RawStatement {
 
             self.result = Some(out);
             // self.print_result(self.result);
-            Ok(self.result_unwrap().row_changed as usize)
+            Ok(self.result_unwrap().rows_changed as usize)
         }
     }
 

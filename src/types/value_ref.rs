@@ -59,15 +59,16 @@ impl<'a> ValueRef<'a> {
     /// returns [`Err(Error::InvalidColumnType)`](crate::Error::
     /// InvalidColumnType).
     #[inline]
-    pub fn as_i64(&self) -> FromSqlResult<i64> {
+    pub fn as_i128(&self) -> FromSqlResult<i128> {
         match *self {
-            ValueRef::TinyInt(i) => Ok(i as i64),
-            ValueRef::SmallInt(i) => Ok(i as i64),
-            ValueRef::Int(i) => Ok(i as i64),
-            ValueRef::BigInt(i) => Ok(i),
+            ValueRef::TinyInt(i) => Ok(i as i128),
+            ValueRef::SmallInt(i) => Ok(i as i128),
+            ValueRef::Int(i) => Ok(i as i128),
+            ValueRef::BigInt(i) => Ok(i as i128),
+            ValueRef::HugeInt(i) => Ok(i),
             ValueRef::Text(a) => {
                 let s = std::str::from_utf8(a).expect("invalid UTF-8");
-                match s.parse::<i64>() {
+                match s.parse::<i128>() {
                     Ok(i) => Ok(i),
                     // TODO(wangfenjin): update error type as parse error
                     _ => Err(FromSqlError::InvalidType),

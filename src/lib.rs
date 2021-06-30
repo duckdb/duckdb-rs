@@ -882,7 +882,7 @@ mod test {
         let mut rows = query.query([])?;
 
         while let Some(row) = rows.next()? {
-            let i = row.get_ref(0)?.as_i64()?;
+            let i = row.get_ref(0)?.as_i128()?;
             let expect = vals[i as usize];
             let x = row.get_ref("x")?.as_str()?;
             assert_eq!(x, expect);

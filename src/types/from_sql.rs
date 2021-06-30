@@ -11,9 +11,9 @@ pub enum FromSqlError {
     /// cannot be converted to the requested Rust type.
     InvalidType,
 
-    /// Error when the i64 value returned by DuckDB cannot be stored into the
+    /// Error when the i128 value returned by DuckDB cannot be stored into the
     /// requested type.
-    OutOfRange(i64),
+    OutOfRange(i128),
 
     /// `feature = "uuid"` Error returned when reading a `uuid` from a blob with
     /// a size other than 16. Only available when the `uuid` feature is enabled.
@@ -74,7 +74,7 @@ macro_rules! from_sql_integral(
         impl FromSql for $t {
             #[inline]
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-                let i = i64::column_result(value)?;
+                let i = i128::column_result(value)?;
                 i.try_into().map_err(|_| FromSqlError::OutOfRange(i))
             }
         }
@@ -84,7 +84,8 @@ macro_rules! from_sql_integral(
 from_sql_integral!(i8);
 from_sql_integral!(i16);
 from_sql_integral!(i32);
-// from_sql_integral!(i64); // Not needed because the native type is i64.
+from_sql_integral!(i64);
+// from_sql_integral!(i128); // Not needed because the native type is i128.
 from_sql_integral!(isize);
 from_sql_integral!(u8);
 from_sql_integral!(u16);
@@ -92,10 +93,10 @@ from_sql_integral!(u32);
 from_sql_integral!(u64);
 from_sql_integral!(usize);
 
-impl FromSql for i64 {
+impl FromSql for i128 {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value.as_i64()
+        value.as_i128()
     }
 }
 
@@ -201,9 +202,9 @@ mod test {
     fn test_integral_ranges() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
-        fn check_ranges<T>(db: &Connection, out_of_range: &[i64], in_range: &[i64])
+        fn check_ranges<T>(db: &Connection, out_of_range: &[i128], in_range: &[i128])
         where
-            T: Into<i64> + FromSql + ::std::fmt::Debug,
+            T: Into<i128> + FromSql + ::std::fmt::Debug,
         {
             for n in out_of_range {
                 let err = db.query_row("SELECT ?", &[n], |r| r.get::<_, T>(0)).unwrap_err();

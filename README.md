@@ -3,8 +3,10 @@
 
 # TODO
 
-- [ ] Refactor the ErrorCode part, it's borrowed from rusqlite, we should have our own
+- [x] Refactor the ErrorCode part, it's borrowed from rusqlite, we should have our own
+- [ ] Support more type
+- [ ] Update duckdb.h
 - [ ] Adjust the code examples and documentation
-- [ ] Delete unused code / functions
+- [x] Delete unused code / functions
 - [ ] Add CI
 - [ ] Publish to crate

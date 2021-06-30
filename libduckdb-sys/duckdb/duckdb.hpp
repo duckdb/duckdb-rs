@@ -1,5 +1,5 @@
 /*
-Copyright 2018 DuckDB Contributors (see https://github.com/cwida/duckdb/graphs/contributors)
+Copyright 2018 DuckDB Contributors (see https://github.com/duckdb/duckdb/graphs/contributors)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -10,8 +10,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #pragma once
 #define DUCKDB_AMALGAMATION 1
-#define DUCKDB_SOURCE_ID "8295e245d"
-#define DUCKDB_VERSION "0.2.6"
+#define DUCKDB_SOURCE_ID "d4d56bab1"
+#define DUCKDB_VERSION "0.2.8-dev332"
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
@@ -207,7 +207,7 @@ unique_ptr<T> make_unique(Args &&... args) {
 using std::make_unique;
 #endif
 template <typename S, typename T, typename... Args>
-unique_ptr<S> make_unique_base(Args &&...args) {
+unique_ptr<S> make_unique_base(Args &&... args) {
 	return unique_ptr<S>(new T(std::forward<Args>(args)...));
 }
 
@@ -215,6 +215,20 @@ template <typename T, typename S>
 unique_ptr<S> unique_ptr_cast(unique_ptr<T> src) {
 	return unique_ptr<S>(static_cast<S *>(src.release()));
 }
+
+struct SharedConstructor {
+	template <class T, typename... ARGS>
+	static shared_ptr<T> Create(ARGS &&...args) {
+		return make_shared<T>(std::forward<ARGS>(args)...);
+	}
+};
+
+struct UniqueConstructor {
+	template <class T, typename... ARGS>
+	static unique_ptr<T> Create(ARGS &&...args) {
+		return make_unique<T>(std::forward<ARGS>(args)...);
+	}
+};
 
 template <typename T>
 T MaxValue(T a, T b) {
@@ -236,6 +250,19 @@ const T Load(const_data_ptr_t ptr) {
 template <typename T>
 void Store(const T val, data_ptr_t ptr) {
 	memcpy(ptr, (void *)&val, sizeof(val));
+}
+
+//! This assigns a shared pointer, but ONLY assigns if "target" is not equal to "source"
+//! If this is often the case, this manner of assignment is significantly faster (~20X faster)
+//! Since it avoids the need of an atomic incref/decref at the cost of a single pointer comparison
+//! Benchmark: https://gist.github.com/Mytherin/4db3faa8e233c4a9b874b21f62bb4b96
+//! If the shared pointers are not the same, the penalty is very low (on the order of 1%~ slower)
+//! This method should always be preferred if there is a (reasonable) chance that the pointers are the same
+template<class T>
+void AssignSharedPointer(shared_ptr<T> &target, const shared_ptr<T> &source) {
+	if (target.get() != source.get()) {
+		target = source;
+	}
 }
 
 } // namespace duckdb
@@ -460,7 +487,7 @@ struct _object_and_block : public RefCounter {
 	T object;
 
 	template <class... Args>
-	explicit _object_and_block(Args &&...args) : object(std::forward<Args>(args)...) {
+	explicit _object_and_block(Args &&... args) : object(std::forward<Args>(args)...) {
 	}
 };
 
@@ -491,7 +518,7 @@ inline bool operator!=(std::nullptr_t, const single_thread_ptr<T> &sp) noexcept 
 }
 
 template <class T, class... Args>
-single_thread_ptr<T> single_thread_make_shared(Args &&...args) {
+single_thread_ptr<T> single_thread_make_shared(Args &&... args) {
 	auto tmp_object = new _object_and_block<T>(std::forward<Args>(args)...);
 	return single_thread_ptr<T>(tmp_object, &(tmp_object->object));
 }
@@ -870,37 +897,46 @@ enum class LogicalTypeId : uint8_t {
 	TABLE = 103
 };
 
+struct ExtraTypeInfo;
+
 struct LogicalType {
 	DUCKDB_API LogicalType();
 	DUCKDB_API LogicalType(LogicalTypeId id); // NOLINT: Allow implicit conversion from `LogicalTypeId`
-	DUCKDB_API LogicalType(LogicalTypeId id, string collation);
-	DUCKDB_API LogicalType(LogicalTypeId id, uint8_t width, uint8_t scale);
-	LogicalType(LogicalTypeId id, child_list_t<LogicalType> child_types);
-	LogicalType(LogicalTypeId id, uint8_t width, uint8_t scale, string collation,
-	            child_list_t<LogicalType> child_types);
+	DUCKDB_API LogicalType(LogicalTypeId id, shared_ptr<ExtraTypeInfo> type_info);
+	DUCKDB_API LogicalType(const LogicalType &other) :
+		id_(other.id_), physical_type_(other.physical_type_), type_info_(other.type_info_) {}
+
+	DUCKDB_API LogicalType(LogicalType &&other) :
+		id_(other.id_), physical_type_(other.physical_type_), type_info_(move(other.type_info_)) {}
+
+	DUCKDB_API ~LogicalType();
 
 	LogicalTypeId id() const {
 		return id_;
 	}
-	uint8_t width() const {
-		return width_;
-	}
-	uint8_t scale() const {
-		return scale_;
-	}
-	const string &collation() const {
-		return collation_;
-	}
-	const child_list_t<LogicalType> &child_types() const {
-		return child_types_;
-	}
 	PhysicalType InternalType() const {
 		return physical_type_;
 	}
-
-	bool operator==(const LogicalType &rhs) const {
-		return id_ == rhs.id_ && width_ == rhs.width_ && scale_ == rhs.scale_ && child_types_ == rhs.child_types_;
+	const ExtraTypeInfo *AuxInfo() const {
+		return type_info_.get();
 	}
+
+	// copy assignment
+	LogicalType& operator=(const LogicalType &other) {
+		id_ = other.id_;
+		physical_type_ = other.physical_type_;
+		type_info_ = other.type_info_;
+		return *this;
+	}
+	// move assignment
+	LogicalType& operator=(LogicalType&& other) {
+		id_ = other.id_;
+		physical_type_ = other.physical_type_;
+		type_info_ = move(other.type_info_);
+		return *this;
+	}
+
+	bool operator==(const LogicalType &rhs) const;
 	bool operator!=(const LogicalType &rhs) const {
 		return !(*this == rhs);
 	}
@@ -925,11 +961,8 @@ struct LogicalType {
 
 private:
 	LogicalTypeId id_;
-	uint8_t width_;
-	uint8_t scale_;
-	string collation_;
-	child_list_t<LogicalType> child_types_;
 	PhysicalType physical_type_;
+	shared_ptr<ExtraTypeInfo> type_info_;
 
 private:
 	PhysicalType GetInternalType();
@@ -947,7 +980,6 @@ public:
 	DUCKDB_API static const LogicalType UBIGINT;
 	DUCKDB_API static const LogicalType FLOAT;
 	DUCKDB_API static const LogicalType DOUBLE;
-	DUCKDB_API static const LogicalType DECIMAL;
 	DUCKDB_API static const LogicalType DATE;
 	DUCKDB_API static const LogicalType TIMESTAMP;
 	DUCKDB_API static const LogicalType TIMESTAMP_S;
@@ -955,9 +987,6 @@ public:
 	DUCKDB_API static const LogicalType TIMESTAMP_NS;
 	DUCKDB_API static const LogicalType TIME;
 	DUCKDB_API static const LogicalType VARCHAR;
-	DUCKDB_API static const LogicalType STRUCT;
-	DUCKDB_API static const LogicalType MAP;
-	DUCKDB_API static const LogicalType LIST;
 	DUCKDB_API static const LogicalType ANY;
 	DUCKDB_API static const LogicalType BLOB;
 	DUCKDB_API static const LogicalType INTERVAL;
@@ -967,6 +996,13 @@ public:
 	DUCKDB_API static const LogicalType TABLE;
 	DUCKDB_API static const LogicalType INVALID;
 
+	// explicitly allowing these functions to be capitalized to be in-line with the remaining functions
+	DUCKDB_API static LogicalType DECIMAL(int width, int scale);                 // NOLINT
+	DUCKDB_API static LogicalType VARCHAR_COLLATION(string collation);           // NOLINT
+	DUCKDB_API static LogicalType LIST(LogicalType child);                       // NOLINT
+	DUCKDB_API static LogicalType STRUCT(child_list_t<LogicalType> children);    // NOLINT
+	DUCKDB_API static LogicalType MAP(child_list_t<LogicalType> children);       // NOLINT
+
 	//! A list of all NUMERIC types (integral and floating point types)
 	DUCKDB_API static const vector<LogicalType> NUMERIC;
 	//! A list of all INTEGRAL types
@@ -975,9 +1011,30 @@ public:
 	DUCKDB_API static const vector<LogicalType> ALL_TYPES;
 };
 
+struct DecimalType {
+	DUCKDB_API static uint8_t GetWidth(const LogicalType &type);
+	DUCKDB_API static uint8_t GetScale(const LogicalType &type);
+};
+
+struct StringType {
+	DUCKDB_API static string GetCollation(const LogicalType &type);
+};
+
+struct ListType {
+	DUCKDB_API static const LogicalType &GetChildType(const LogicalType &type);
+};
+
+struct StructType {
+	DUCKDB_API static const child_list_t<LogicalType> &GetChildTypes(const LogicalType &type);
+	DUCKDB_API static const LogicalType &GetChildType(const LogicalType &type, idx_t index);
+	DUCKDB_API static const string &GetChildName(const LogicalType &type, idx_t index);
+	DUCKDB_API static idx_t GetChildCount(const LogicalType &type);
+};
+
+
 string LogicalTypeIdToString(LogicalTypeId type);
 
-LogicalType TransformStringToLogicalType(const string &str);
+LogicalTypeId TransformStringToLogicalType(const string &str);
 
 //! Returns the PhysicalType for the given type
 template <class T>
@@ -1503,6 +1560,7 @@ string Deserializer::Read();
 
 
 namespace duckdb {
+class Allocator;
 struct FileHandle;
 
 enum class FileBufferType : uint8_t { BLOCK = 1, MANAGED_BUFFER = 2 };
@@ -1514,9 +1572,10 @@ public:
 	//! FileSystemConstants::FILE_BUFFER_BLOCK_SIZE. The content in this buffer can be written to FileHandles that have
 	//! been opened with DIRECT_IO on all operating systems, however, the entire buffer must be written to the file.
 	//! Note that the returned size is 8 bytes less than the allocation size to account for the checksum.
-	FileBuffer(FileBufferType type, uint64_t bufsiz);
+	FileBuffer(Allocator &allocator, FileBufferType type, uint64_t bufsiz);
 	virtual ~FileBuffer();
 
+	Allocator &allocator;
 	//! The type of the buffer
 	FileBufferType type;
 	//! The buffer that users can write to
@@ -1546,6 +1605,7 @@ private:
 
 	//! The buffer that was actually malloc'd, i.e. the pointer that must be freed when the FileBuffer is destroyed
 	data_ptr_t malloced_buffer;
+	uint64_t malloced_size;
 };
 
 } // namespace duckdb
@@ -1568,6 +1628,24 @@ using std::unordered_map;
 }
 
 
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/enums/file_compression_type.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+namespace duckdb {
+
+enum class FileCompressionType : uint8_t { AUTO_DETECT = 0, UNCOMPRESSED = 1, GZIP = 2 };
+
+} // namespace duckdb
+
 
 #include <functional>
 
@@ -1588,10 +1666,20 @@ public:
 	virtual ~FileHandle() {
 	}
 
+	int64_t Read(void *buffer, idx_t nr_bytes);
+	int64_t Write(void *buffer, idx_t nr_bytes);
 	void Read(void *buffer, idx_t nr_bytes, idx_t location);
 	void Write(void *buffer, idx_t nr_bytes, idx_t location);
+	void Seek(idx_t location);
+	void Reset();
+	idx_t SeekPosition();
 	void Sync();
 	void Truncate(int64_t new_size);
+	string ReadLine();
+
+	bool CanSeek();
+	bool OnDiskFile();
+	idx_t GetFileSize();
 
 protected:
 	virtual void Close() = 0;
@@ -1628,10 +1716,10 @@ public:
 	static FileSystem &GetFileSystem(ClientContext &context);
 	static FileSystem &GetFileSystem(DatabaseInstance &db);
 
-	virtual unique_ptr<FileHandle> OpenFile(const char *path, uint8_t flags, FileLockType lock = FileLockType::NO_LOCK);
-	unique_ptr<FileHandle> OpenFile(string &path, uint8_t flags, FileLockType lock = FileLockType::NO_LOCK) {
-		return OpenFile(path.c_str(), flags, lock);
-	}
+	virtual unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags,
+	                                        FileLockType lock = FileLockType::NO_LOCK,
+	                                        FileCompressionType compression = FileCompressionType::UNCOMPRESSED);
+
 	//! Read exactly nr_bytes from the specified location in the file. Fails if nr_bytes could not be read. This is
 	//! equivalent to calling SetFilePointer(location) followed by calling Read().
 	virtual void Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location);
@@ -1692,22 +1780,38 @@ public:
 	virtual idx_t GetAvailableMemory();
 
 	//! registers a sub-file system to handle certain file name prefixes, e.g. http:// etc.
-	virtual void RegisterProtocolHandler(string protocol, unique_ptr<FileSystem> protocol_fs) {
-		throw NotImplementedException("Can't register a protocol handler on a non-virtual file system");
+	virtual void RegisterSubSystem(unique_ptr<FileSystem> sub_fs) {
+		throw NotImplementedException("Can't register a sub system on a non-virtual file system");
 	}
+
+	virtual bool CanHandleFile(const string &fpath) {
+		//! Whether or not a sub-system can handle a specific file path
+		return false;
+	}
+
+	//! Set the file pointer of a file handle to a specified location. Reads and writes will happen from this location
+	virtual void Seek(FileHandle &handle, idx_t location);
+	//! Reset a file to the beginning (equivalent to Seek(handle, 0) for simple files)
+	virtual void Reset(FileHandle &handle);
+	virtual idx_t SeekPosition(FileHandle &handle);
+
+	//! Whether or not we can seek into the file
+	virtual bool CanSeek();
+	//! Whether or not the FS handles plain files on disk. This is relevant for certain optimizations, as random reads
+	//! in a file on-disk are much cheaper than e.g. random reads in a file over the network
+	virtual bool OnDiskFile(FileHandle &handle);
 
 private:
 	//! Set the file pointer of a file handle to a specified location. Reads and writes will happen from this location
 	void SetFilePointer(FileHandle &handle, idx_t location);
+	virtual idx_t GetFilePointer(FileHandle &handle);
 };
 
 // bunch of wrappers to allow registering protocol handlers
 class VirtualFileSystem : public FileSystem {
 public:
-	unique_ptr<FileHandle> OpenFile(const char *path, uint8_t flags,
-	                                FileLockType lock = FileLockType::NO_LOCK) override {
-		return FindFileSystem(path)->OpenFile(path, flags, lock);
-	}
+	unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = FileLockType::NO_LOCK,
+	                                FileCompressionType compression = FileCompressionType::UNCOMPRESSED) override;
 
 	virtual void Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override {
 		handle.file_system.Read(handle, buffer, nr_bytes, location);
@@ -1789,22 +1893,22 @@ public:
 		return default_fs.GetAvailableMemory();
 	}
 
-	void RegisterProtocolHandler(string protocol, unique_ptr<FileSystem> protocol_fs) override {
-		protocol_handler_fss[protocol] = move(protocol_fs);
+	void RegisterSubSystem(unique_ptr<FileSystem> fs) override {
+		sub_systems.push_back(move(fs));
 	}
 
 private:
 	FileSystem *FindFileSystem(const string &path) {
-		for (auto &handler : protocol_handler_fss) {
-			if (path.rfind(handler.first, 0) == 0) {
-				return handler.second.get();
+		for (auto &sub_system : sub_systems) {
+			if (sub_system->CanHandleFile(path)) {
+				return sub_system.get();
 			}
 		}
 		return &default_fs;
 	}
 
 private:
-	unordered_map<string, unique_ptr<FileSystem>> protocol_handler_fss;
+	vector<unique_ptr<FileSystem>> sub_systems;
 	FileSystem default_fs;
 };
 
@@ -1819,7 +1923,7 @@ class BufferedFileWriter : public Serializer {
 public:
 	//! Serializes to a buffer allocated by the serializer, will expand when
 	//! writing past the initial threshold
-	BufferedFileWriter(FileSystem &fs, string path,
+	BufferedFileWriter(FileSystem &fs, const string &path,
 	                   uint8_t open_flags = FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE);
 
 	FileSystem &fs;
@@ -2020,9 +2124,45 @@ public:
 	string ToString(idx_t count = 0) const;
 	void Print(idx_t count = 0) const;
 
+	sel_t &operator[](idx_t index) {
+		return sel_vector[index];
+	}
+
 private:
 	sel_t *sel_vector;
 	buffer_ptr<SelectionData> selection_data;
+};
+
+class OptionalSelection {
+public:
+	explicit inline OptionalSelection(SelectionVector *sel_p) : sel(sel_p) {
+
+		if (sel) {
+			vec.Initialize(sel->data());
+			sel = &vec;
+		}
+	}
+
+	inline operator SelectionVector *() {
+		return sel;
+	}
+
+	inline void Append(idx_t &count, const idx_t idx) {
+		if (sel) {
+			sel->set_index(count, idx);
+		}
+		++count;
+	}
+
+	inline void Advance(idx_t completed) {
+		if (sel) {
+			sel->Initialize(sel->data() + completed);
+		}
+	}
+
+private:
+	SelectionVector *sel;
+	SelectionVector vec;
 };
 
 } // namespace duckdb
@@ -2072,7 +2212,7 @@ public:
 	//! Create a VARCHAR value
 	Value(string val); // NOLINT: Allow implicit conversion from `string`
 
-	LogicalType type() const {
+	const LogicalType &type() const {
 		return type_;
 	}
 
@@ -2141,10 +2281,15 @@ public:
 	//! Create a struct value with given list of entries
 	static Value STRUCT(child_list_t<Value> values);
 	//! Create a list value with the given entries
-	static Value LIST(std::vector<Value> values);
+	static Value LIST(vector<Value> values);
+	//! Creat a map value from a (key, value) pair
+	static Value MAP(Value key, Value value);
 
 	//! Create a blob Value from a data pointer and a length: no bytes are interpreted
 	static Value BLOB(const_data_ptr_t data, idx_t len);
+	static Value BLOB_RAW(const string &data) {
+		return Value::BLOB((const_data_ptr_t)data.c_str(), data.size());
+	}
 	//! Creates a blob by casting a specified string to a blob (i.e. interpreting \x characters)
 	static Value BLOB(const string &data);
 
@@ -2170,6 +2315,8 @@ public:
 
 	//! Convert this value to a string
 	DUCKDB_API string ToString() const;
+
+	DUCKDB_API uintptr_t GetPointer() const;
 
 	//! Cast this value to another type
 	DUCKDB_API Value CastAs(const LogicalType &target_type, bool strict = false) const;
@@ -2209,6 +2356,10 @@ public:
 
 	static bool FloatIsValid(float value);
 	static bool DoubleIsValid(double value);
+	static bool StringIsValid(const char *str, idx_t length);
+	static bool StringIsValid(const string &str) {
+		return StringIsValid(str.c_str(), str.size());
+	}
 
 	template <class T>
 	static bool IsValid(T value) {
@@ -2258,8 +2409,8 @@ public:
 	//! The value of the object, if it is of a variable size type
 	string str_value;
 
-	child_list_t<Value> struct_value;
-	std::vector<Value> list_value;
+	vector<Value> struct_value;
+	vector<Value> list_value;
 
 private:
 	template <class T>
@@ -2333,6 +2484,10 @@ DUCKDB_API uint8_t Value::GetValue() const;
 template <>
 DUCKDB_API uint16_t Value::GetValue() const;
 template <>
+DUCKDB_API uint32_t Value::GetValue() const;
+template <>
+DUCKDB_API uint64_t Value::GetValue() const;
+template <>
 DUCKDB_API hugeint_t Value::GetValue() const;
 template <>
 DUCKDB_API string Value::GetValue() const;
@@ -2340,8 +2495,6 @@ template <>
 DUCKDB_API float Value::GetValue() const;
 template <>
 DUCKDB_API double Value::GetValue() const;
-template <>
-DUCKDB_API uintptr_t Value::GetValue() const;
 template <>
 DUCKDB_API date_t Value::GetValue() const;
 template <>
@@ -2652,31 +2805,12 @@ public:
 			data = unique_ptr<data_t[]>(new data_t[data_size]);
 		}
 	}
-	explicit VectorBuffer(VectorBufferType vectorBufferType, const LogicalType &type, VectorType vector_type)
-	    : vector_type(vector_type), type(type), buffer_type(vectorBufferType) {
+	explicit VectorBuffer(unique_ptr<data_t[]> data_p)
+	    : buffer_type(VectorBufferType::STANDARD_BUFFER), data(move(data_p)) {
 	}
 	virtual ~VectorBuffer() {
 	}
 	VectorBuffer() {
-	}
-
-	VectorBuffer(VectorType vectorType, const LogicalType &type, idx_t data_size)
-	    : vector_type(vectorType), type(type), buffer_type(VectorBufferType::STANDARD_BUFFER) {
-		if (data_size > 0) {
-			data = unique_ptr<data_t[]>(new data_t[data_size]);
-		}
-	}
-	VectorBuffer(VectorType vectorType, const LogicalType &type) : vector_type(vectorType), type(type) {
-	}
-
-	VectorBuffer(VectorType vectorType, idx_t data_size)
-	    : vector_type(vectorType), buffer_type(VectorBufferType::STANDARD_BUFFER) {
-		if (data_size > 0) {
-			data = unique_ptr<data_t[]>(new data_t[data_size]);
-		}
-	}
-
-	VectorBuffer(VectorType vectorType) : vector_type(vectorType) {
 	}
 
 public:
@@ -2687,42 +2821,19 @@ public:
 		data = move(new_data);
 	}
 
-	static buffer_ptr<VectorBuffer> CreateStandardVector(PhysicalType type);
+	static buffer_ptr<VectorBuffer> CreateStandardVector(PhysicalType type, idx_t capacity = STANDARD_VECTOR_SIZE);
 	static buffer_ptr<VectorBuffer> CreateConstantVector(PhysicalType type);
-	static buffer_ptr<VectorBuffer> CreateConstantVector(VectorType vectorType, const LogicalType &logicalType);
-	static buffer_ptr<VectorBuffer> CreateStandardVector(VectorType vectorType, const LogicalType &logicalType);
-	static buffer_ptr<VectorBuffer> CreateStandardVector(VectorType vectorType, PhysicalType type);
+	static buffer_ptr<VectorBuffer> CreateConstantVector(const LogicalType &logical_type);
+	static buffer_ptr<VectorBuffer> CreateStandardVector(const LogicalType &logical_type,
+	                                                     idx_t capacity = STANDARD_VECTOR_SIZE);
 
-	// Getters
-	inline VectorType GetVectorType() const {
-		return vector_type;
-	}
-	inline const LogicalType &GetType() const {
-		return type;
-	}
 	inline VectorBufferType GetBufferType() const {
 		return buffer_type;
 	}
 
-	// Setters
-	inline void SetVectorType(VectorType vector_type) {
-		this->vector_type = vector_type;
-	}
-	inline void SetType(const LogicalType &type) {
-		this->type = type;
-	}
-	inline void SetBufferType(VectorBufferType buffer_type) {
-		this->buffer_type = buffer_type;
-	}
-
 protected:
-	unique_ptr<data_t[]> data;
-	//! The vector type specifies how the data of the vector is physically stored (i.e. if it is a single repeated
-	//! constant, if it is compressed)
-	VectorType vector_type;
-	//! The type of the elements stored in the vector (e.g. integer, float)
-	LogicalType type;
 	VectorBufferType buffer_type;
+	unique_ptr<data_t[]> data;
 };
 
 //! The DictionaryBuffer holds a selection vector
@@ -2730,9 +2841,6 @@ class DictionaryBuffer : public VectorBuffer {
 public:
 	explicit DictionaryBuffer(const SelectionVector &sel)
 	    : VectorBuffer(VectorBufferType::DICTIONARY_BUFFER), sel_vector(sel) {
-	}
-	DictionaryBuffer(const SelectionVector &sel, const LogicalType &type, VectorType vector_type)
-	    : VectorBuffer(VectorBufferType::DICTIONARY_BUFFER, type, vector_type), sel_vector(sel) {
 	}
 	explicit DictionaryBuffer(buffer_ptr<SelectionData> data)
 	    : VectorBuffer(VectorBufferType::DICTIONARY_BUFFER), sel_vector(move(data)) {
@@ -2742,9 +2850,6 @@ public:
 	}
 
 public:
-	DictionaryBuffer(buffer_ptr<SelectionData> data, LogicalType type, VectorType vector_type)
-	    : VectorBuffer(VectorBufferType::DICTIONARY_BUFFER, type, vector_type), sel_vector(move(data)) {
-	}
 	const SelectionVector &GetSelVector() const {
 		return sel_vector;
 	}
@@ -2791,34 +2896,33 @@ private:
 class VectorStructBuffer : public VectorBuffer {
 public:
 	VectorStructBuffer();
+	VectorStructBuffer(const LogicalType &struct_type, idx_t capacity = STANDARD_VECTOR_SIZE);
 	~VectorStructBuffer() override;
 
 public:
-	const child_list_t<unique_ptr<Vector>> &GetChildren() const {
+	const vector<unique_ptr<Vector>> &GetChildren() const {
 		return children;
 	}
-	child_list_t<unique_ptr<Vector>> &GetChildren() {
+	vector<unique_ptr<Vector>> &GetChildren() {
 		return children;
-	}
-	void AddChild(string name, unique_ptr<Vector> vector) {
-		children.push_back(std::make_pair(name, move(vector)));
 	}
 
 private:
 	//! child vectors used for nested data
-	child_list_t<unique_ptr<Vector>> children;
+	vector<unique_ptr<Vector>> children;
 };
 
 class VectorListBuffer : public VectorBuffer {
 public:
-	VectorListBuffer();
+	VectorListBuffer(unique_ptr<Vector> vector, idx_t initial_capacity = STANDARD_VECTOR_SIZE);
+	VectorListBuffer(const LogicalType &list_type, idx_t initial_capacity = STANDARD_VECTOR_SIZE);
 	~VectorListBuffer() override;
 
 public:
 	Vector &GetChild() {
 		return *child;
 	}
-	void SetChild(unique_ptr<Vector> new_child);
+	void Reserve(idx_t to_reserve);
 
 	void Append(const Vector &to_append, idx_t to_append_size, idx_t source_offset = 0);
 	void Append(const Vector &to_append, const SelectionVector &sel, idx_t to_append_size, idx_t source_offset = 0);
@@ -2829,8 +2933,6 @@ public:
 	idx_t size = 0;
 
 private:
-	void Reserve(const Vector &to_append, idx_t to_reserve);
-
 	//! child vectors used for nested data
 	unique_ptr<Vector> child;
 };
@@ -2879,17 +2981,29 @@ using std::to_string;
 namespace duckdb {
 struct ValidityMask;
 
-using validity_t = uint64_t;
-
-struct ValidityData {
-	static constexpr const int BITS_PER_VALUE = sizeof(validity_t) * 8;
-	static constexpr const validity_t MAX_ENTRY = ~validity_t(0);
+template <typename V>
+struct TemplatedValidityData {
+	static constexpr const int BITS_PER_VALUE = sizeof(V) * 8;
+	static constexpr const V MAX_ENTRY = ~V(0);
 
 public:
-	DUCKDB_API explicit ValidityData(idx_t count);
-	DUCKDB_API ValidityData(const ValidityMask &original, idx_t count);
+	explicit TemplatedValidityData(idx_t count) {
+		auto entry_count = EntryCount(count);
+		owned_data = unique_ptr<V[]>(new V[entry_count]);
+		for (idx_t entry_idx = 0; entry_idx < entry_count; entry_idx++) {
+			owned_data[entry_idx] = MAX_ENTRY;
+		}
+	}
+	TemplatedValidityData(const V *validity_mask, idx_t count) {
+		D_ASSERT(validity_mask);
+		auto entry_count = EntryCount(count);
+		owned_data = unique_ptr<V[]>(new V[entry_count]);
+		for (idx_t entry_idx = 0; entry_idx < entry_count; entry_idx++) {
+			owned_data[entry_idx] = validity_mask[entry_idx];
+		}
+	}
 
-	unique_ptr<validity_t[]> owned_data;
+	unique_ptr<V[]> owned_data;
 
 public:
 	static inline idx_t EntryCount(idx_t count) {
@@ -2897,47 +3011,67 @@ public:
 	}
 };
 
+using validity_t = uint64_t;
+
+struct ValidityData : TemplatedValidityData<validity_t> {
+public:
+	DUCKDB_API explicit ValidityData(idx_t count);
+	DUCKDB_API ValidityData(const ValidityMask &original, idx_t count);
+};
+
 //! Type used for validity masks
-struct ValidityMask {
-	friend struct ValidityData;
+template <typename V>
+struct TemplatedValidityMask {
+	using ValidityBuffer = TemplatedValidityData<V>;
 
 public:
-	static constexpr const int BITS_PER_VALUE = ValidityData::BITS_PER_VALUE;
+	static constexpr const int BITS_PER_VALUE = ValidityBuffer::BITS_PER_VALUE;
 	static constexpr const int STANDARD_ENTRY_COUNT = (STANDARD_VECTOR_SIZE + (BITS_PER_VALUE - 1)) / BITS_PER_VALUE;
 	static constexpr const int STANDARD_MASK_SIZE = STANDARD_ENTRY_COUNT * sizeof(validity_t);
 
 public:
-	ValidityMask() : validity_mask(nullptr) {
+	TemplatedValidityMask() : validity_mask(nullptr) {
 	}
-	explicit ValidityMask(idx_t max_count) {
+	explicit TemplatedValidityMask(idx_t max_count) {
 		Initialize(max_count);
 	}
-	explicit ValidityMask(validity_t *ptr) : validity_mask(ptr) {
+	explicit TemplatedValidityMask(V *ptr) : validity_mask(ptr) {
 	}
-	explicit ValidityMask(data_ptr_t ptr) : ValidityMask((validity_t *)ptr) {
-	}
-	ValidityMask(const ValidityMask &original, idx_t count) {
+	TemplatedValidityMask(const TemplatedValidityMask &original, idx_t count) {
 		Copy(original, count);
 	}
 
 	static inline idx_t ValidityMaskSize(idx_t count = STANDARD_VECTOR_SIZE) {
-		return ValidityData::EntryCount(count) * sizeof(validity_t);
+		return ValidityBuffer::EntryCount(count) * sizeof(V);
 	}
-	bool AllValid() const {
+	inline bool AllValid() const {
 		return !validity_mask;
 	}
 	bool CheckAllValid(idx_t count) const {
 		if (AllValid()) {
 			return true;
 		}
-		idx_t entry_count = ValidityData::EntryCount(count);
+		idx_t entry_count = ValidityBuffer::EntryCount(count);
 		idx_t valid_count = 0;
 		for (idx_t i = 0; i < entry_count; i++) {
-			valid_count += validity_mask[i] == ValidityData::MAX_ENTRY;
+			valid_count += validity_mask[i] == ValidityBuffer::MAX_ENTRY;
 		}
 		return valid_count == entry_count;
 	}
-	validity_t *GetData() const {
+
+	bool CheckAllValid(idx_t to, idx_t from) const {
+		if (AllValid()) {
+			return true;
+		}
+		for (idx_t i = from; i < to; i++) {
+			if (!RowIsValid(i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	inline V *GetData() const {
 		return validity_mask;
 	}
 	void Reset() {
@@ -2945,27 +3079,25 @@ public:
 		validity_data.reset();
 	}
 
-	void Resize(idx_t old_size, idx_t new_size);
-
 	static inline idx_t EntryCount(idx_t count) {
-		return ValidityData::EntryCount(count);
+		return ValidityBuffer::EntryCount(count);
 	}
-	validity_t GetValidityEntry(idx_t entry_idx) const {
+	inline V GetValidityEntry(idx_t entry_idx) const {
 		if (!validity_mask) {
-			return ValidityData::MAX_ENTRY;
+			return ValidityBuffer::MAX_ENTRY;
 		}
 		return validity_mask[entry_idx];
 	}
-	static inline bool AllValid(validity_t entry) {
-		return entry == ValidityData::MAX_ENTRY;
+	static inline bool AllValid(V entry) {
+		return entry == ValidityBuffer::MAX_ENTRY;
 	}
-	static inline bool NoneValid(validity_t entry) {
+	static inline bool NoneValid(V entry) {
 		return entry == 0;
 	}
-	static inline bool RowIsValid(validity_t entry, idx_t idx_in_entry) {
-		return entry & (validity_t(1) << validity_t(idx_in_entry));
+	static inline bool RowIsValid(V entry, idx_t idx_in_entry) {
+		return entry & (V(1) << V(idx_in_entry));
 	}
-	inline void GetEntryIndex(idx_t row_idx, idx_t &entry_idx, idx_t &idx_in_entry) const {
+	static inline void GetEntryIndex(idx_t row_idx, idx_t &entry_idx, idx_t &idx_in_entry) {
 		entry_idx = row_idx / BITS_PER_VALUE;
 		idx_in_entry = row_idx % BITS_PER_VALUE;
 	}
@@ -2993,7 +3125,7 @@ public:
 		D_ASSERT(validity_mask);
 		idx_t entry_idx, idx_in_entry;
 		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
-		validity_mask[entry_idx] |= (validity_t(1) << validity_t(idx_in_entry));
+		validity_mask[entry_idx] |= (V(1) << V(idx_in_entry));
 	}
 
 	//! Marks the entry at the specified row index as valid (i.e. not-null)
@@ -3006,12 +3138,17 @@ public:
 		SetValidUnsafe(row_idx);
 	}
 
-	//! Marks the entry at the specified row index as invalid (i.e. null)
-	inline void SetInvalidUnsafe(idx_t row_idx) {
+	//! Marks the bit at the specified entry as invalid (i.e. null)
+	inline void SetInvalidUnsafe(idx_t entry_idx, idx_t idx_in_entry) {
 		D_ASSERT(validity_mask);
+		validity_mask[entry_idx] &= ~(V(1) << V(idx_in_entry));
+	}
+
+	//! Marks the bit at the specified row index as invalid (i.e. null)
+	inline void SetInvalidUnsafe(idx_t row_idx) {
 		idx_t entry_idx, idx_in_entry;
 		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
-		validity_mask[entry_idx] &= ~(validity_t(1) << validity_t(idx_in_entry));
+		SetInvalidUnsafe(entry_idx, idx_in_entry);
 	}
 
 	//! Marks the entry at the specified row index as invalid (i.e. null)
@@ -3041,54 +3178,72 @@ public:
 
 	//! Marks "count" entries in the validity mask as invalid (null)
 	inline void SetAllInvalid(idx_t count) {
-		D_ASSERT(count <= STANDARD_VECTOR_SIZE);
 		EnsureWritable();
-		for (idx_t i = 0; i < ValidityData::EntryCount(count); i++) {
+		for (idx_t i = 0; i < ValidityBuffer::EntryCount(count); i++) {
 			validity_mask[i] = 0;
 		}
 	}
 
 	//! Marks "count" entries in the validity mask as valid (not null)
 	inline void SetAllValid(idx_t count) {
-		D_ASSERT(count <= STANDARD_VECTOR_SIZE);
 		EnsureWritable();
-		for (idx_t i = 0; i < ValidityData::EntryCount(count); i++) {
-			validity_mask[i] = ValidityData::MAX_ENTRY;
+		for (idx_t i = 0; i < ValidityBuffer::EntryCount(count); i++) {
+			validity_mask[i] = ValidityBuffer::MAX_ENTRY;
 		}
 	}
 
-	void Slice(const ValidityMask &other, idx_t offset);
-	void Combine(const ValidityMask &other, idx_t count);
-	string ToString(idx_t count) const;
-
-	bool IsMaskSet() const;
+	inline bool IsMaskSet() const {
+		if (validity_mask) {
+			return true;
+		}
+		return false;
+	}
 
 public:
 	void Initialize(validity_t *validity) {
 		validity_data.reset();
 		validity_mask = validity;
 	}
-	void Initialize(const ValidityMask &other) {
+	void Initialize(const TemplatedValidityMask &other) {
 		validity_mask = other.validity_mask;
 		validity_data = other.validity_data;
 	}
 	void Initialize(idx_t count = STANDARD_VECTOR_SIZE) {
-		validity_data = make_buffer<ValidityData>(count);
+		validity_data = make_buffer<ValidityBuffer>(count);
 		validity_mask = validity_data->owned_data.get();
 	}
-	void Copy(const ValidityMask &other, idx_t count) {
+	void Copy(const TemplatedValidityMask &other, idx_t count) {
 		if (other.AllValid()) {
 			validity_data = nullptr;
 			validity_mask = nullptr;
 		} else {
-			validity_data = make_buffer<ValidityData>(other, count);
+			validity_data = make_buffer<ValidityBuffer>(other.validity_mask, count);
 			validity_mask = validity_data->owned_data.get();
 		}
 	}
 
-private:
-	validity_t *validity_mask;
-	buffer_ptr<ValidityData> validity_data;
+protected:
+	V *validity_mask;
+	buffer_ptr<ValidityBuffer> validity_data;
+};
+
+struct ValidityMask : public TemplatedValidityMask<validity_t> {
+public:
+	ValidityMask() : TemplatedValidityMask(nullptr) {
+	}
+	explicit ValidityMask(idx_t max_count) : TemplatedValidityMask(max_count) {
+	}
+	explicit ValidityMask(validity_t *ptr) : TemplatedValidityMask(ptr) {
+	}
+	ValidityMask(const ValidityMask &original, idx_t count) : TemplatedValidityMask(original, count) {
+	}
+
+public:
+	void Resize(idx_t old_size, idx_t new_size);
+
+	void Slice(const ValidityMask &other, idx_t offset);
+	void Combine(const ValidityMask &other, idx_t count);
+	string ToString(idx_t count) const;
 };
 
 } // namespace duckdb
@@ -3100,8 +3255,10 @@ struct VectorData {
 	const SelectionVector *sel;
 	data_ptr_t data;
 	ValidityMask validity;
+	SelectionVector owned_sel;
 };
 
+class VectorCache;
 class VectorStructBuffer;
 class VectorListBuffer;
 class ChunkCollection;
@@ -3119,22 +3276,30 @@ class Vector {
 	friend struct SequenceVector;
 
 	friend class DataChunk;
+	friend class VectorCacheBuffer;
 
 public:
-	Vector();
+	//! Create a vector that references the other vector
+	explicit Vector(Vector &other);
+	//! Create a vector that slices another vector
+	explicit Vector(Vector &other, const SelectionVector &sel, idx_t count);
+	//! Create a vector that slices another vector starting from a specific offset
+	explicit Vector(Vector &other, idx_t offset);
 	//! Create a vector of size one holding the passed on value
 	explicit Vector(const Value &value);
 	//! Create an empty standard vector with a type, equivalent to calling Vector(type, true, false)
-	explicit Vector(const LogicalType &type);
+	explicit Vector(LogicalType type, idx_t capacity = STANDARD_VECTOR_SIZE);
+	//! Create an empty standard vector with a type, equivalent to calling Vector(type, true, false)
+	explicit Vector(const VectorCache &cache);
 	//! Create a non-owning vector that references the specified data
-	Vector(const LogicalType &type, data_ptr_t dataptr);
+	Vector(LogicalType type, data_ptr_t dataptr);
 	//! Create an owning vector that holds at most STANDARD_VECTOR_SIZE entries.
 	/*!
 	    Create a new vector
 	    If create_data is true, the vector will be an owning empty vector.
 	    If zero_data is true, the allocated data will be zero-initialized.
 	*/
-	Vector(const LogicalType &type, bool create_data, bool zero_data);
+	Vector(LogicalType type, bool create_data, bool zero_data, idx_t capacity = STANDARD_VECTOR_SIZE);
 	// implicit copying of Vectors is not allowed
 	Vector(const Vector &) = delete;
 	// but moving of vectors is allowed
@@ -3144,7 +3309,17 @@ public:
 	//! Create a vector that references the specified value.
 	void Reference(const Value &value);
 	//! Causes this vector to reference the data held by the other vector.
+	//! The type of the "other" vector should match the type of this vector
 	void Reference(Vector &other);
+	//! Reinterpret the data of the other vector as the type of this vector
+	//! Note that this takes the data of the other vector as-is and places it in this vector
+	//! Without changing the type of this vector
+	void Reinterpret(Vector &other);
+
+	//! Resets a vector from a vector cache.
+	//! This turns the vector back into an empty FlatVector with STANDARD_VECTOR_SIZE entries.
+	//! The VectorCache is used so this can be done without requiring any allocations.
+	void ResetFromCache(const VectorCache &cache);
 
 	//! Creates a reference to a slice of the other vector
 	void Slice(Vector &other, idx_t offset);
@@ -3157,7 +3332,7 @@ public:
 
 	//! Creates the data of this vector with the specified type. Any data that
 	//! is currently in the vector is destroyed.
-	void Initialize(const LogicalType &new_type = LogicalType(LogicalTypeId::INVALID), bool zero_data = false);
+	void Initialize(bool zero_data = false, idx_t capacity = STANDARD_VECTOR_SIZE);
 
 	//! Converts this Vector to a printable string representation
 	string ToString(idx_t count) const;
@@ -3201,13 +3376,10 @@ public:
 
 	// Getters
 	inline VectorType GetVectorType() const {
-		return buffer->GetVectorType();
+		return vector_type;
 	}
 	inline const LogicalType &GetType() const {
-		return buffer->GetType();
-	}
-	inline VectorBufferType GetBufferType() const {
-		return buffer->GetBufferType();
+		return type;
 	}
 	inline data_ptr_t GetData() {
 		return data;
@@ -3222,17 +3394,14 @@ public:
 	}
 
 	// Setters
-	inline void SetVectorType(VectorType vector_type) {
-		buffer->SetVectorType(vector_type);
-	}
-	inline void SetType(const LogicalType &type) {
-		buffer->SetType(type);
-	}
-	inline void SetBufferType(VectorBufferType buffer_type) {
-		buffer->SetBufferType(buffer_type);
-	}
+	DUCKDB_API void SetVectorType(VectorType vector_type);
 
 protected:
+	//! The vector type specifies how the data of the vector is physically stored (i.e. if it is a single repeated
+	//! constant, if it is compressed)
+	VectorType vector_type;
+	//! The type of the elements stored in the vector (e.g. integer, float)
+	LogicalType type;
 	//! A pointer to the data.
 	data_ptr_t data;
 	//! The validity mask of the vector
@@ -3247,7 +3416,7 @@ protected:
 //! The DictionaryBuffer holds a selection vector
 class VectorChildBuffer : public VectorBuffer {
 public:
-	VectorChildBuffer() : VectorBuffer(VectorBufferType::VECTOR_CHILD_BUFFER), data() {
+	VectorChildBuffer(Vector vector) : VectorBuffer(VectorBufferType::VECTOR_CHILD_BUFFER), data(move(vector)) {
 	}
 
 public:
@@ -3277,14 +3446,14 @@ struct ConstantVector {
 		D_ASSERT(vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
 		return !vector.validity.RowIsValid(0);
 	}
-	static inline void SetNull(Vector &vector, bool is_null) {
-		D_ASSERT(vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
-		vector.validity.Set(0, !is_null);
-	}
+	DUCKDB_API static void SetNull(Vector &vector, bool is_null);
 	static inline ValidityMask &Validity(Vector &vector) {
 		D_ASSERT(vector.GetVectorType() == VectorType::CONSTANT_VECTOR);
 		return vector.validity;
 	}
+	DUCKDB_API static const SelectionVector *ZeroSelectionVector(idx_t count, SelectionVector &owned_sel);
+	//! Turns "vector" into a constant vector by referencing a value within the source vector
+	DUCKDB_API static void Reference(Vector &vector, Vector &source, idx_t position, idx_t count);
 
 	static const sel_t ZERO_VECTOR[STANDARD_VECTOR_SIZE];
 	static const SelectionVector ZERO_SELECTION_VECTOR;
@@ -3350,54 +3519,61 @@ struct FlatVector {
 		D_ASSERT(vector.GetVectorType() == VectorType::FLAT_VECTOR);
 		return !vector.validity.RowIsValid(idx);
 	}
+	DUCKDB_API static const SelectionVector *IncrementalSelectionVector(idx_t count, SelectionVector &owned_sel);
 
 	static const sel_t INCREMENTAL_VECTOR[STANDARD_VECTOR_SIZE];
 	static const SelectionVector INCREMENTAL_SELECTION_VECTOR;
 };
 
 struct ListVector {
-	static const Vector &GetEntry(const Vector &vector);
-	static Vector &GetEntry(Vector &vector);
-	static idx_t GetListSize(const Vector &vector);
-	static void SetListSize(Vector &vec, idx_t size);
-	static bool HasEntry(const Vector &vector);
-	static void SetEntry(Vector &vector, unique_ptr<Vector> entry);
-	static void Append(Vector &target, const Vector &source, idx_t source_size, idx_t source_offset = 0);
-	static void Append(Vector &target, const Vector &source, const SelectionVector &sel, idx_t source_size,
-	                   idx_t source_offset = 0);
-	static void PushBack(Vector &target, Value &insert);
-	static void Initialize(Vector &vec);
+	//! Gets a reference to the underlying child-vector of a list
+	DUCKDB_API static const Vector &GetEntry(const Vector &vector);
+	//! Gets a reference to the underlying child-vector of a list
+	DUCKDB_API static Vector &GetEntry(Vector &vector);
+	//! Gets the total size of the underlying child-vector of a list
+	DUCKDB_API static idx_t GetListSize(const Vector &vector);
+	//! Sets the total size of the underlying child-vector of a list
+	DUCKDB_API static void SetListSize(Vector &vec, idx_t size);
+	DUCKDB_API static void Reserve(Vector &vec, idx_t required_capacity);
+	DUCKDB_API static void Append(Vector &target, const Vector &source, idx_t source_size, idx_t source_offset = 0);
+	DUCKDB_API static void Append(Vector &target, const Vector &source, const SelectionVector &sel, idx_t source_size,
+	                              idx_t source_offset = 0);
+	DUCKDB_API static void PushBack(Vector &target, Value &insert);
+	DUCKDB_API static vector<idx_t> Search(Vector &list, Value &key, idx_t row);
+	DUCKDB_API static Value GetValuesFromOffsets(Vector &list, vector<idx_t> &offsets);
 	//! Share the entry of the other list vector
-	static void ReferenceEntry(Vector &vector, Vector &other);
+	DUCKDB_API static void ReferenceEntry(Vector &vector, Vector &other);
 };
 
 struct StringVector {
 	//! Add a string to the string heap of the vector (auxiliary data)
-	static string_t AddString(Vector &vector, const char *data, idx_t len);
-	//! Add a string to the string heap of the vector (auxiliary data)
-	static string_t AddString(Vector &vector, const char *data);
-	//! Add a string to the string heap of the vector (auxiliary data)
-	static string_t AddString(Vector &vector, string_t data);
-	//! Add a string to the string heap of the vector (auxiliary data)
-	static string_t AddString(Vector &vector, const string &data);
+	DUCKDB_API static string_t AddString(Vector &vector, const char *data, idx_t len);
 	//! Add a string or a blob to the string heap of the vector (auxiliary data)
 	//! This function is the same as ::AddString, except the added data does not need to be valid UTF8
-	static string_t AddStringOrBlob(Vector &vector, string_t data);
+	DUCKDB_API static string_t AddStringOrBlob(Vector &vector, const char *data, idx_t len);
+	//! Add a string to the string heap of the vector (auxiliary data)
+	DUCKDB_API static string_t AddString(Vector &vector, const char *data);
+	//! Add a string to the string heap of the vector (auxiliary data)
+	DUCKDB_API static string_t AddString(Vector &vector, string_t data);
+	//! Add a string to the string heap of the vector (auxiliary data)
+	DUCKDB_API static string_t AddString(Vector &vector, const string &data);
+	//! Add a string or a blob to the string heap of the vector (auxiliary data)
+	//! This function is the same as ::AddString, except the added data does not need to be valid UTF8
+	DUCKDB_API static string_t AddStringOrBlob(Vector &vector, string_t data);
 	//! Allocates an empty string of the specified size, and returns a writable pointer that can be used to store the
 	//! result of an operation
-	static string_t EmptyString(Vector &vector, idx_t len);
+	DUCKDB_API static string_t EmptyString(Vector &vector, idx_t len);
 	//! Adds a reference to a handle that stores strings of this vector
-	static void AddHandle(Vector &vector, unique_ptr<BufferHandle> handle);
+	DUCKDB_API static void AddHandle(Vector &vector, unique_ptr<BufferHandle> handle);
 	//! Adds a reference to an unspecified vector buffer that stores strings of this vector
-	static void AddBuffer(Vector &vector, buffer_ptr<VectorBuffer> buffer);
+	DUCKDB_API static void AddBuffer(Vector &vector, buffer_ptr<VectorBuffer> buffer);
 	//! Add a reference from this vector to the string heap of the provided vector
-	static void AddHeapReference(Vector &vector, Vector &other);
+	DUCKDB_API static void AddHeapReference(Vector &vector, Vector &other);
 };
 
 struct StructVector {
-	static bool HasEntries(const Vector &vector);
-	static const child_list_t<unique_ptr<Vector>> &GetEntries(const Vector &vector);
-	static void AddEntry(Vector &vector, const string &name, unique_ptr<Vector> entry);
+	DUCKDB_API static const vector<unique_ptr<Vector>> &GetEntries(const Vector &vector);
+	DUCKDB_API static vector<unique_ptr<Vector>> &GetEntries(Vector &vector);
 };
 
 struct SequenceVector {
@@ -3438,6 +3614,7 @@ struct SequenceVector {
 struct ArrowArray;
 
 namespace duckdb {
+class VectorCache;
 
 //!  A Data Chunk represents a set of vectors.
 /*!
@@ -3461,6 +3638,7 @@ class DataChunk {
 public:
 	//! Creates an empty DataChunk
 	DataChunk();
+	~DataChunk();
 
 	//! The vectors owned by the DataChunk.
 	vector<Vector> data;
@@ -3472,9 +3650,9 @@ public:
 	DUCKDB_API idx_t ColumnCount() const {
 		return data.size();
 	}
-	void SetCardinality(idx_t count) {
+	void SetCardinality(idx_t count_p) {
 		D_ASSERT(count <= STANDARD_VECTOR_SIZE);
-		this->count = count;
+		this->count = count_p;
 	}
 	void SetCardinality(const DataChunk &other) {
 		this->count = other.size();
@@ -3485,6 +3663,8 @@ public:
 
 	//! Set the DataChunk to reference another data chunk
 	DUCKDB_API void Reference(DataChunk &chunk);
+	//! Set the DataChunk to own the data of data chunk, destroying the other chunk in the process
+	DUCKDB_API void Move(DataChunk &chunk);
 
 	//! Initializes the DataChunk with the specified types to an empty DataChunk
 	//! This will create one vector of the specified type for each LogicalType in the
@@ -3543,7 +3723,10 @@ public:
 	DUCKDB_API void ToArrowArray(ArrowArray *out_array);
 
 private:
+	//! The amount of tuples stored in the data chunk
 	idx_t count;
+	//! Vector caches, used to store data when ::Initialize is called
+	vector<VectorCache> vector_caches;
 };
 } // namespace duckdb
 
@@ -3603,10 +3786,19 @@ struct VectorOperations {
 	static void LessThan(Vector &A, Vector &B, Vector &result, idx_t count);
 	// result = A <= B
 	static void LessThanEquals(Vector &A, Vector &B, Vector &result, idx_t count);
+
 	// result = A != B with nulls being equal
 	static void DistinctFrom(Vector &left, Vector &right, Vector &result, idx_t count);
-	// result = A == B with nulls being equal
+	// result := A == B with nulls being equal
 	static void NotDistinctFrom(Vector &left, Vector &right, Vector &result, idx_t count);
+	// result := A > B with nulls being maximal
+	static void DistinctGreaterThan(Vector &left, Vector &right, Vector &result, idx_t count);
+	// result := A >= B with nulls being maximal
+	static void DistinctGreaterThanEquals(Vector &left, Vector &right, Vector &result, idx_t count);
+	// result := A < B with nulls being maximal
+	static void DistinctLessThan(Vector &left, Vector &right, Vector &result, idx_t count);
+	// result := A <= B with nulls being maximal
+	static void DistinctLessThanEquals(Vector &left, Vector &right, Vector &result, idx_t count);
 
 	//===--------------------------------------------------------------------===//
 	// Select Comparisons
@@ -3623,22 +3815,25 @@ struct VectorOperations {
 	                      SelectionVector *true_sel, SelectionVector *false_sel);
 	static idx_t LessThanEquals(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
 	                            SelectionVector *true_sel, SelectionVector *false_sel);
-	// result = A != B with nulls being equal
-	static idx_t SelectDistinctFrom(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
-	                                SelectionVector *true_sel, SelectionVector *false_sel);
-	// result = A == B with nulls being equal
-	static idx_t SelectNotDistinctFrom(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
-	                                   SelectionVector *true_sel, SelectionVector *false_sel);
 
-	//===--------------------------------------------------------------------===//
-	// Scatter methods
-	//===--------------------------------------------------------------------===//
-	// make sure dest.count is set for gather methods!
-	struct Gather {
-		//! dest.data[i] = ptr[i]. NullValue<T> is checked for and converted to the nullmask in dest. The source
-		//! addresses are incremented by the size of the type.
-		static void Set(Vector &source, Vector &dest, idx_t count);
-	};
+	// true := A != B with nulls being equal
+	static idx_t DistinctFrom(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                          SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A == B with nulls being equal
+	static idx_t NotDistinctFrom(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                             SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A > B with nulls being maximal
+	static idx_t DistinctGreaterThan(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                                 SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A >= B with nulls being maximal
+	static idx_t DistinctGreaterThanEquals(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                                       SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A < B with nulls being maximal
+	static idx_t DistinctLessThan(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                              SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A <= B with nulls being maximal
+	static idx_t DistinctLessThanEquals(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                                    SelectionVector *true_sel, SelectionVector *false_sel);
 
 	//===--------------------------------------------------------------------===//
 	// Hash functions
@@ -4530,35 +4725,191 @@ using std::chrono::system_clock;
 using std::chrono::time_point;
 } // namespace duckdb
 
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/random_engine.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/limits.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
 
 namespace duckdb {
 
-//! The cycle counter can be used to measure elapsed cycles
-class CycleCounter {
-public:
-	//! Starts the timer
-	void Start() {
-		finished = false;
-		start = Tick();
-	}
-	//! Finishes timing
-	void End() {
-		end = Tick();
-		finished = true;
+template <class T>
+struct NumericLimits {
+	static T Minimum();
+	static T Maximum();
+};
+
+template <>
+struct NumericLimits<int8_t> {
+	static int8_t Minimum();
+	static int8_t Maximum();
+};
+template <>
+struct NumericLimits<int16_t> {
+	static int16_t Minimum();
+	static int16_t Maximum();
+};
+template <>
+struct NumericLimits<int32_t> {
+	static int32_t Minimum();
+	static int32_t Maximum();
+};
+template <>
+struct NumericLimits<int64_t> {
+	static int64_t Minimum();
+	static int64_t Maximum();
+};
+template <>
+struct NumericLimits<hugeint_t> {
+	static hugeint_t Minimum();
+	static hugeint_t Maximum();
+};
+template <>
+struct NumericLimits<uint8_t> {
+	static uint8_t Minimum();
+	static uint8_t Maximum();
+};
+template <>
+struct NumericLimits<uint16_t> {
+	static uint16_t Minimum();
+	static uint16_t Maximum();
+};
+template <>
+struct NumericLimits<uint32_t> {
+	static uint32_t Minimum();
+	static uint32_t Maximum();
+};
+template <>
+struct NumericLimits<uint64_t> {
+	static uint64_t Minimum();
+	static uint64_t Maximum();
+};
+template <>
+struct NumericLimits<float> {
+	static float Minimum();
+	static float Maximum();
+};
+template <>
+struct NumericLimits<double> {
+	static double Minimum();
+	static double Maximum();
+};
+
+//! Returns the minimal type that guarantees an integer value from not
+//! overflowing
+PhysicalType MinimalType(int64_t value);
+
+} // namespace duckdb
+
+#include <random>
+
+namespace duckdb {
+
+struct RandomEngine {
+	std::mt19937 random_engine;
+	explicit RandomEngine(int64_t seed) {
+		if (seed < 0) {
+			std::random_device rd;
+			random_engine.seed(rd());
+		} else {
+			random_engine.seed(seed);
+		}
 	}
 
-	uint64_t Elapsed() const {
-		return end - start;
+	//! Generate a random number between min and max
+	double NextRandom(double min, double max) {
+		std::uniform_real_distribution<double> dist(min, max);
+		return dist(random_engine);
+	}
+	//! Generate a random number between 0 and 1
+	double NextRandom() {
+		return NextRandom(0, 1);
+	}
+	uint32_t NextRandomInteger() {
+		std::uniform_int_distribution<uint32_t> dist(0, NumericLimits<uint32_t>::Maximum());
+		return dist(random_engine);
+	}
+};
+
+} // namespace duckdb
+
+
+namespace duckdb {
+
+//! The cycle counter can be used to measure elapsed cycles for a function, expression and ...
+//! Optimized by sampling mechanism. Once per 100 times.
+//! //Todo Can be optimized further by calling RDTSC once per sample
+class CycleCounter {
+	friend struct ExpressionInfo;
+	friend struct ExpressionRootInfo;
+	static constexpr int SAMPLING_RATE = 50;
+	static constexpr int SAMPLING_VARIANCE = 100;
+
+public:
+	CycleCounter() : random(-1) {
+	}
+	// Next_sample determines if a sample needs to be taken, if so start the profiler
+	void BeginSample() {
+		if (current_count >= next_sample) {
+			tmp = Tick();
+		}
+	}
+
+	// End the sample
+	void EndSample(int chunk_size) {
+		if (current_count >= next_sample) {
+			time += Tick() - tmp;
+		}
+		if (current_count >= next_sample) {
+			next_sample = SAMPLING_RATE + random.NextRandomInteger() % SAMPLING_VARIANCE;
+			++sample_count;
+			sample_tuples_count += chunk_size;
+			current_count = 0;
+		} else {
+			++current_count;
+		}
+		tuples_count += chunk_size;
 	}
 
 private:
 	uint64_t Tick() const;
-	uint64_t start;
-	uint64_t end;
-	bool finished = false;
+	// current number on RDT register
+	uint64_t tmp;
+	// Elapsed cycles
+	uint64_t time = 0;
+	//! Count the number of time the executor called since last sampling
+	uint64_t current_count = 0;
+	//! Show the next sample
+	uint64_t next_sample = 0;
+	//! Count the number of samples
+	uint64_t sample_count = 0;
+	//! Count the number of tuples sampled
+	uint64_t sample_tuples_count = 0;
+	//! Count the number of ALL tuples
+	uint64_t tuples_count = 0;
+	//! the random number generator used for sampling
+	RandomEngine random;
 };
 
 } // namespace duckdb
+
 
 
 namespace duckdb {
@@ -4567,17 +4918,16 @@ class ExpressionExecutor;
 struct ExpressionExecutorState;
 
 struct ExpressionState {
-	ExpressionState(Expression &expr, ExpressionExecutorState &root);
+	ExpressionState(const Expression &expr, ExpressionExecutorState &root);
 	virtual ~ExpressionState() {
 	}
 
-	Expression &expr;
+	const Expression &expr;
 	ExpressionExecutorState &root;
 	vector<unique_ptr<ExpressionState>> child_states;
 	vector<LogicalType> types;
 	DataChunk intermediate_chunk;
 	string name;
-	double time;
 	CycleCounter profiler;
 
 public:
@@ -4586,11 +4936,15 @@ public:
 };
 
 struct ExpressionExecutorState {
+	explicit ExpressionExecutorState(const string &name);
 	unique_ptr<ExpressionState> root_state;
 	ExpressionExecutor *executor;
+	CycleCounter profiler;
+	string name;
 };
 
 } // namespace duckdb
+
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
@@ -4704,13 +5058,13 @@ enum class ExpressionType : uint8_t {
 	COMPARE_NOT_IN = 36,
 	// IS DISTINCT FROM operator
 	COMPARE_DISTINCT_FROM = 37,
-	// compare final boundary
 
 	COMPARE_BETWEEN = 38,
 	COMPARE_NOT_BETWEEN = 39,
-	COMPARE_BOUNDARY_END = COMPARE_NOT_BETWEEN,
 	// IS NOT DISTINCT FROM operator
 	COMPARE_NOT_DISTINCT_FROM = 40,
+	// compare final boundary
+	COMPARE_BOUNDARY_END = COMPARE_NOT_DISTINCT_FROM,
 
 	// -----------------------------
 	// Conjunction Operators
@@ -4823,6 +5177,7 @@ enum class ExpressionClass : uint8_t {
 	COLLATE = 16,
 	LAMBDA = 17,
 	POSITIONAL_REFERENCE = 18,
+	BETWEEN = 19,
 	//===--------------------------------------------------------------------===//
 	// Bound Expressions
 	//===--------------------------------------------------------------------===//
@@ -5232,7 +5587,6 @@ private:
 	void RegisterReadFunctions();
 	void RegisterTableFunctions();
 	void RegisterArrowFunctions();
-	void RegisterInformationSchemaFunctions();
 
 	// aggregates
 	void RegisterAlgebraicAggregates();
@@ -5292,87 +5646,6 @@ private:
 
 
 
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
-// duckdb/common/limits.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-
-
-namespace duckdb {
-
-template <class T>
-struct NumericLimits {
-	static T Minimum();
-	static T Maximum();
-};
-
-template <>
-struct NumericLimits<int8_t> {
-	static int8_t Minimum();
-	static int8_t Maximum();
-};
-template <>
-struct NumericLimits<int16_t> {
-	static int16_t Minimum();
-	static int16_t Maximum();
-};
-template <>
-struct NumericLimits<int32_t> {
-	static int32_t Minimum();
-	static int32_t Maximum();
-};
-template <>
-struct NumericLimits<int64_t> {
-	static int64_t Minimum();
-	static int64_t Maximum();
-};
-template <>
-struct NumericLimits<hugeint_t> {
-	static hugeint_t Minimum();
-	static hugeint_t Maximum();
-};
-template <>
-struct NumericLimits<uint8_t> {
-	static uint8_t Minimum();
-	static uint8_t Maximum();
-};
-template <>
-struct NumericLimits<uint16_t> {
-	static uint16_t Minimum();
-	static uint16_t Maximum();
-};
-template <>
-struct NumericLimits<uint32_t> {
-	static uint32_t Minimum();
-	static uint32_t Maximum();
-};
-template <>
-struct NumericLimits<uint64_t> {
-	static uint64_t Minimum();
-	static uint64_t Maximum();
-};
-template <>
-struct NumericLimits<float> {
-	static float Minimum();
-	static float Maximum();
-};
-template <>
-struct NumericLimits<double> {
-	static double Minimum();
-	static double Maximum();
-};
-
-//! Returns the minimal type that guarantees an integer value from not
-//! overflowing
-PhysicalType MinimalType(int64_t value);
-
-} // namespace duckdb
 
 
 namespace duckdb {
@@ -5610,20 +5883,6 @@ struct GreaterThanEquals {
 	}
 };
 
-struct DistinctFrom {
-	template <class T>
-	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
-		return ((left != right) && !left_null && !right_null) || (left_null != right_null);
-	}
-};
-
-struct NotDistinctFrom {
-	template <class T>
-	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
-		return ((left == right) && !left_null && !right_null) || (left_null && right_null);
-	}
-};
-
 struct LessThan {
 	template <class T>
 	static inline bool Operation(T left, T right) {
@@ -5636,6 +5895,54 @@ struct LessThanEquals {
 		return left <= right;
 	}
 };
+
+// Distinct semantics are from Postgres record sorting. NULL = NULL and not-NULL < NULL
+// Deferring to the non-distinct operations removes the need for further specialisation.
+// TODO: To reverse the semantics, swap left_null and right_null for comparisons
+struct DistinctFrom {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return (left_null != right_null) || (!left_null && !right_null && (left != right));
+	}
+};
+
+struct NotDistinctFrom {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return (left_null && right_null) || (!left_null && !right_null && (left == right));
+	}
+};
+
+struct DistinctGreaterThan {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return GreaterThan::Operation(left_null, right_null) ||
+		       (!left_null && !right_null && GreaterThan::Operation(left, right));
+	}
+};
+
+struct DistinctGreaterThanEquals {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return left_null || (!left_null && !right_null && GreaterThanEquals::Operation(left, right));
+	}
+};
+
+struct DistinctLessThan {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return LessThan::Operation(left_null, right_null) ||
+		       (!left_null && !right_null && LessThan::Operation(left, right));
+	}
+};
+
+struct DistinctLessThanEquals {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return right_null || (!left_null && !right_null && LessThanEquals::Operation(left, right));
+	}
+};
+
 //===--------------------------------------------------------------------===//
 // Specialized Boolean Comparison Operators
 //===--------------------------------------------------------------------===//
@@ -5685,13 +5992,13 @@ inline bool NotEquals::Operation(string_t left, string_t right) {
 
 template <>
 inline bool NotDistinctFrom::Operation(string_t left, string_t right, bool left_null, bool right_null) {
-	return (StringComparisonOperators::EqualsOrNot<false>(left, right) && !left_null && !right_null) ||
-	       (left_null && right_null);
+	return (left_null && right_null) ||
+	       (!left_null && !right_null && StringComparisonOperators::EqualsOrNot<false>(left, right));
 }
 template <>
 inline bool DistinctFrom::Operation(string_t left, string_t right, bool left_null, bool right_null) {
-	return (StringComparisonOperators::EqualsOrNot<true>(left, right) && !left_null && !right_null) ||
-	       (left_null != right_null);
+	return (left_null != right_null) ||
+	       (!left_null && !right_null && StringComparisonOperators::EqualsOrNot<true>(left, right));
 }
 
 // compare up to shared length. if still the same, compare lengths
@@ -5752,12 +6059,16 @@ inline bool LessThanEquals::Operation(interval_t left, interval_t right) {
 
 template <>
 inline bool NotDistinctFrom::Operation(interval_t left, interval_t right, bool left_null, bool right_null) {
-	return (Interval::Equals(left, right) && !left_null && !right_null) || (left_null && right_null);
+	return (left_null && right_null) || (!left_null && !right_null && Interval::Equals(left, right));
 }
 template <>
 inline bool DistinctFrom::Operation(interval_t left, interval_t right, bool left_null, bool right_null) {
-	return (!Equals::Operation(left, right) && !left_null && !right_null) || (left_null != right_null);
+	return (left_null != right_null) || (!left_null && !right_null && !Equals::Operation(left, right));
 }
+inline bool operator<(const interval_t &lhs, const interval_t &rhs) {
+	return LessThan::Operation(lhs, rhs);
+}
+
 //===--------------------------------------------------------------------===//
 // Specialized Hugeint Comparison Operators
 //===--------------------------------------------------------------------===//
@@ -5786,6 +6097,7 @@ inline bool LessThanEquals::Operation(hugeint_t left, hugeint_t right) {
 	return Hugeint::LessThanEquals(left, right);
 }
 } // namespace duckdb
+
 
 
 
@@ -5884,6 +6196,29 @@ public:
 	}
 	bool operator!=(const ScalarFunction &rhs) const {
 		return !(*this == rhs);
+	}
+
+	bool Equal(const ScalarFunction &rhs) const {
+		// number of types
+		if (this->arguments.size() != rhs.arguments.size()) {
+			return false;
+		}
+		// argument types
+		for (idx_t i = 0; i < this->arguments.size(); ++i) {
+			if (this->arguments[i] != rhs.arguments[i]) {
+				return false;
+			}
+		}
+		// return type
+		if (this->return_type != rhs.return_type) {
+			return false;
+		}
+		// varargs
+		if (this->varargs != rhs.varargs) {
+			return false;
+		}
+
+		return true; // they are equal
 	}
 
 private:
@@ -6033,8 +6368,10 @@ public:
 
 
 
+
 namespace duckdb {
 struct FunctionData;
+typedef std::pair<idx_t, idx_t> FrameBounds;
 
 class AggregateExecutor {
 private:
@@ -6322,7 +6659,7 @@ public:
 	template <class STATE_TYPE, class OP>
 	static void Combine(Vector &source, Vector &target, idx_t count) {
 		D_ASSERT(source.GetType().id() == LogicalTypeId::POINTER && target.GetType().id() == LogicalTypeId::POINTER);
-		auto sdata = FlatVector::GetData<STATE_TYPE *>(source);
+		auto sdata = FlatVector::GetData<const STATE_TYPE *>(source);
 		auto tdata = FlatVector::GetData<STATE_TYPE *>(target);
 
 		for (idx_t i = 0; i < count; i++) {
@@ -6350,6 +6687,18 @@ public:
 				                                               FlatVector::Validity(result), i);
 			}
 		}
+	}
+
+	template <class STATE, class INPUT_TYPE, class RESULT_TYPE, class OP>
+	static void UnaryWindow(Vector &input, FunctionData *bind_data, data_ptr_t state, const FrameBounds &frame,
+	                        const FrameBounds &prev, Vector &result) {
+
+		auto idata = FlatVector::GetData<const INPUT_TYPE>(input) - MinValue(frame.first, prev.first);
+		const auto &ivalid = FlatVector::Validity(input);
+		auto rdata = ConstantVector::GetData<RESULT_TYPE>(result);
+		auto &rvalid = ConstantVector::Validity(result);
+		OP::template Window<STATE, INPUT_TYPE, RESULT_TYPE>(idata, ivalid, bind_data, (STATE *)state, frame, prev,
+		                                                    rdata, rvalid);
 	}
 
 	template <class STATE_TYPE, class OP>
@@ -6498,25 +6847,30 @@ typedef void (*aggregate_destructor_t)(Vector &state, idx_t count);
 typedef void (*aggregate_simple_update_t)(Vector inputs[], FunctionData *bind_data, idx_t input_count, data_ptr_t state,
                                           idx_t count);
 
+//! The type used for updating complex windowed aggregate functions (optional)
+typedef std::pair<idx_t, idx_t> FrameBounds;
+typedef void (*aggregate_window_t)(Vector inputs[], FunctionData *bind_data, idx_t input_count, data_ptr_t state,
+                                   const FrameBounds &frame, const FrameBounds &prev, Vector &result);
+
 class AggregateFunction : public BaseScalarFunction {
 public:
 	AggregateFunction(string name, vector<LogicalType> arguments, LogicalType return_type, aggregate_size_t state_size,
 	                  aggregate_initialize_t initialize, aggregate_update_t update, aggregate_combine_t combine,
 	                  aggregate_finalize_t finalize, aggregate_simple_update_t simple_update = nullptr,
 	                  bind_aggregate_function_t bind = nullptr, aggregate_destructor_t destructor = nullptr,
-	                  aggregate_statistics_t statistics = nullptr)
+	                  aggregate_statistics_t statistics = nullptr, aggregate_window_t window = nullptr)
 	    : BaseScalarFunction(name, arguments, return_type, false), state_size(state_size), initialize(initialize),
-	      update(update), combine(combine), finalize(finalize), simple_update(simple_update), bind(bind),
-	      destructor(destructor), statistics(statistics) {
+	      update(update), combine(combine), finalize(finalize), simple_update(simple_update), window(window),
+	      bind(bind), destructor(destructor), statistics(statistics) {
 	}
 
 	AggregateFunction(vector<LogicalType> arguments, LogicalType return_type, aggregate_size_t state_size,
 	                  aggregate_initialize_t initialize, aggregate_update_t update, aggregate_combine_t combine,
 	                  aggregate_finalize_t finalize, aggregate_simple_update_t simple_update = nullptr,
 	                  bind_aggregate_function_t bind = nullptr, aggregate_destructor_t destructor = nullptr,
-	                  aggregate_statistics_t statistics = nullptr)
+	                  aggregate_statistics_t statistics = nullptr, aggregate_window_t window = nullptr)
 	    : AggregateFunction(string(), arguments, return_type, state_size, initialize, update, combine, finalize,
-	                        simple_update, bind, destructor, statistics) {
+	                        simple_update, bind, destructor, statistics, window) {
 	}
 
 	//! The hashed aggregate state sizing function
@@ -6531,6 +6885,8 @@ public:
 	aggregate_finalize_t finalize;
 	//! The simple aggregate update function (may be null)
 	aggregate_simple_update_t simple_update;
+	//! The windowed aggregate frame update function (may be null)
+	aggregate_window_t window;
 
 	//! The bind function (may be null)
 	bind_aggregate_function_t bind;
@@ -6542,7 +6898,7 @@ public:
 
 	bool operator==(const AggregateFunction &rhs) const {
 		return state_size == rhs.state_size && initialize == rhs.initialize && update == rhs.update &&
-		       combine == rhs.combine && finalize == rhs.finalize;
+		       combine == rhs.combine && finalize == rhs.finalize && window == rhs.window;
 	}
 	bool operator!=(const AggregateFunction &rhs) const {
 		return !(*this == rhs);
@@ -6626,6 +6982,14 @@ public:
 	                        idx_t count) {
 		D_ASSERT(input_count == 1);
 		AggregateExecutor::UnaryUpdate<STATE, INPUT_TYPE, OP>(inputs[0], bind_data, state, count);
+	}
+
+	template <class STATE, class INPUT_TYPE, class RESULT_TYPE, class OP>
+	static void UnaryWindow(Vector inputs[], FunctionData *bind_data, idx_t input_count, data_ptr_t state,
+	                        const FrameBounds &frame, const FrameBounds &prev, Vector &result) {
+		D_ASSERT(input_count == 1);
+		AggregateExecutor::UnaryWindow<STATE, INPUT_TYPE, RESULT_TYPE, OP>(inputs[0], bind_data, state, frame, prev,
+		                                                                   result);
 	}
 
 	template <class STATE, class A_TYPE, class B_TYPE, class OP>
@@ -7232,6 +7596,7 @@ enum class StatementType : uint8_t {
 };
 
 string StatementTypeToString(StatementType type);
+bool StatementTypeReturnChanges(StatementType type);
 
 } // namespace duckdb
 
@@ -7290,6 +7655,19 @@ public:
 
 	DUCKDB_API idx_t ColumnCount() {
 		return types.size();
+	}
+
+	DUCKDB_API bool TryFetch(unique_ptr<DataChunk> &result, string &error) {
+		try {
+			result = Fetch();
+			return true;
+		} catch (std::exception &ex) {
+			error = ex.what();
+			return false;
+		} catch (...) {
+			error = "Unknown error in Fetch";
+			return false;
+		}
 	}
 
 	DUCKDB_API void ToArrowSchema(ArrowSchema *out_array);
@@ -7849,6 +8227,7 @@ namespace duckdb {
 class ClientContext;
 class DatabaseInstance;
 class DuckDB;
+class LogicalOperator;
 
 typedef void (*warning_callback)(std::string);
 
@@ -7912,6 +8291,8 @@ public:
 
 	//! Extract a set of SQL statements from a specific query
 	DUCKDB_API vector<unique_ptr<SQLStatement>> ExtractStatements(const string &query);
+	//! Extract the logical plan that corresponds to a query
+	DUCKDB_API unique_ptr<LogicalOperator> ExtractPlan(const string &query);
 
 	//! Appends a DataChunk to the specified table
 	DUCKDB_API void Append(TableDescription &description, DataChunk &chunk);
@@ -8083,11 +8464,11 @@ struct PrivateAllocatorData {
 };
 
 typedef data_ptr_t (*allocate_function_ptr_t)(PrivateAllocatorData *private_data, idx_t size);
-typedef void (*free_function_ptr_t)(PrivateAllocatorData *private_data, data_ptr_t pointer);
+typedef void (*free_function_ptr_t)(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size);
 
 class AllocatedData {
 public:
-	AllocatedData(Allocator &allocator, data_ptr_t pointer);
+	AllocatedData(Allocator &allocator, data_ptr_t pointer, idx_t allocated_size);
 	~AllocatedData();
 
 	data_ptr_t get() {
@@ -8101,6 +8482,7 @@ public:
 private:
 	Allocator &allocator;
 	data_ptr_t pointer;
+	idx_t allocated_size;
 };
 
 class Allocator {
@@ -8110,20 +8492,24 @@ public:
 	          unique_ptr<PrivateAllocatorData> private_data);
 
 	data_ptr_t AllocateData(idx_t size);
-	void FreeData(data_ptr_t pointer);
+	void FreeData(data_ptr_t pointer, idx_t size);
 
 	unique_ptr<AllocatedData> Allocate(idx_t size) {
-		return make_unique<AllocatedData>(*this, AllocateData(size));
+		return make_unique<AllocatedData>(*this, AllocateData(size), size);
 	}
 
 	static data_ptr_t DefaultAllocate(PrivateAllocatorData *private_data, idx_t size) {
 		return new data_t[size];
 	}
-	static void DefaultFree(PrivateAllocatorData *private_data, data_ptr_t pointer) {
+	static void DefaultFree(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size) {
 		delete[] pointer;
 	}
 	static Allocator &Get(ClientContext &context);
 	static Allocator &Get(DatabaseInstance &db);
+
+	PrivateAllocatorData *GetPrivateData() {
+		return private_data.get();
+	}
 
 private:
 	allocate_function_ptr_t allocate_function;
@@ -8178,6 +8564,24 @@ class TableFunctionRef;
 enum class AccessMode : uint8_t { UNDEFINED = 0, AUTOMATIC = 1, READ_ONLY = 2, READ_WRITE = 3 };
 enum class CheckpointAbort : uint8_t { NO_ABORT = 0, DEBUG_ABORT_BEFORE_TRUNCATE = 1, DEBUG_ABORT_BEFORE_HEADER = 2 };
 
+enum class ConfigurationOptionType : uint32_t {
+	INVALID = 0,
+	ACCESS_MODE,
+	DEFAULT_ORDER_TYPE,
+	DEFAULT_NULL_ORDER,
+	ENABLE_EXTERNAL_ACCESS,
+	ENABLE_OBJECT_CACHE,
+	MAXIMUM_MEMORY,
+	THREADS
+};
+
+struct ConfigurationOption {
+	ConfigurationOptionType type;
+	const char *name;
+	const char *description;
+	LogicalTypeId parameter_type;
+};
+
 // this is optional and only used in tests at the moment
 struct DBConfig {
 	friend class DatabaseInstance;
@@ -8212,7 +8616,7 @@ public:
 	//! Null ordering used when none is specified (default: NULLS FIRST)
 	OrderByNullType default_null_order = OrderByNullType::NULLS_FIRST;
 	//! enable COPY and related commands
-	bool enable_copy = true;
+	bool enable_external_access = true;
 	//! Whether or not object cache is used
 	bool object_cache_enable = false;
 	//! Database configuration variables as controlled by SET
@@ -8229,6 +8633,14 @@ public:
 public:
 	DUCKDB_API static DBConfig &GetConfig(ClientContext &context);
 	DUCKDB_API static DBConfig &GetConfig(DatabaseInstance &db);
+	DUCKDB_API static vector<ConfigurationOption> GetOptions();
+
+	//! Fetch an option by name. Returns a pointer to the option, or nullptr if none exists.
+	DUCKDB_API static ConfigurationOption *GetOptionByName(const string &name);
+
+	DUCKDB_API void SetOption(const ConfigurationOption &option, const Value &value);
+
+	DUCKDB_API static idx_t ParseMemoryLimit(const string &arg);
 };
 
 } // namespace duckdb
@@ -8484,6 +8896,7 @@ typedef struct {
 typedef struct {
 	idx_t column_count;
 	idx_t row_count;
+	idx_t rows_changed;
 	duckdb_column *columns;
 	char *error_message;
 } duckdb_result;
@@ -8552,11 +8965,18 @@ DUCKDB_API uint64_t duckdb_value_uint64(duckdb_result *result, idx_t col, idx_t 
 DUCKDB_API float duckdb_value_float(duckdb_result *result, idx_t col, idx_t row);
 //! Converts the specified value to a double. Returns 0.0 on failure or NULL.
 DUCKDB_API double duckdb_value_double(duckdb_result *result, idx_t col, idx_t row);
-//! Converts the specified value to a string. Returns nullptr on failure or NULL. The result must be freed with free.
+//! Converts the specified value to a string. Returns nullptr on failure or NULL. The result must be freed with
+//! duckdb_free.
 DUCKDB_API char *duckdb_value_varchar(duckdb_result *result, idx_t col, idx_t row);
 //! Fetches a blob from a result set column. Returns a blob with blob.data set to nullptr on failure or NULL. The
-//! resulting "blob.data" must be freed with free.
+//! resulting "blob.data" must be freed with duckdb_free.
 DUCKDB_API duckdb_blob duckdb_value_blob(duckdb_result *result, idx_t col, idx_t row);
+
+//! Allocate [size] amounts of memory using the duckdb internal malloc function. Any memory allocated in this manner
+//! should be freed using duckdb_free
+DUCKDB_API void *duckdb_malloc(size_t size);
+//! Free a value returned from duckdb_malloc, duckdb_value_varchar or duckdb_value_blob
+DUCKDB_API void duckdb_free(void *ptr);
 
 // Prepared Statements
 
@@ -8776,7 +9196,7 @@ struct ArrowSchema {
 
 struct ArrowArray {
 	// Array data description
-	int64_t length = 0;
+	int64_t length;
 	int64_t null_count;
 	int64_t offset;
 	int64_t n_buffers;
@@ -8793,7 +9213,6 @@ struct ArrowArray {
 
 // EXPERIMENTAL
 struct ArrowArrayStream {
-	uint64_t number_of_batches = 0;
 	// Callback to get the stream type
 	// (will be the same for all arrays in the stream).
 	// Return value: 0 if successful, an `errno`-compatible error code otherwise.
@@ -8801,7 +9220,7 @@ struct ArrowArrayStream {
 	// Callback to get the next array
 	// (if no error and the array is released, the stream has ended)
 	// Return value: 0 if successful, an `errno`-compatible error code otherwise.
-	int (*get_next)(struct ArrowArrayStream *, struct ArrowArray *out, int chunk_idx);
+	int (*get_next)(struct ArrowArrayStream *, struct ArrowArray *out);
 
 	// Callback to get optional detailed error information.
 	// This must only be called if the last stream operation failed
@@ -8822,6 +9241,62 @@ struct ArrowArrayStream {
 #endif
 
 #endif
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/types/blob.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+
+namespace duckdb {
+
+//! The Blob class is a static class that holds helper functions for the Blob type.
+class Blob {
+public:
+	// map of integer -> hex value
+	static constexpr const char *HEX_TABLE = "0123456789ABCDEF";
+	// reverse map of byte -> integer value, or -1 for invalid hex values
+	static const int HEX_MAP[256];
+	//! map of index -> base64 character
+	static constexpr const char *BASE64_MAP = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	//! padding character used in base64 encoding
+	static constexpr const char BASE64_PADDING = '=';
+
+public:
+	//! Returns the string size of a blob -> string conversion
+	static idx_t GetStringSize(string_t blob);
+	//! Converts a blob to a string, writing the output to the designated output string.
+	//! The string needs to have space for at least GetStringSize(blob) bytes.
+	static void ToString(string_t blob, char *output);
+	//! Convert a blob object to a string
+	static string ToString(string_t blob);
+
+	//! Returns the blob size of a string -> blob conversion
+	static idx_t GetBlobSize(string_t str);
+	//! Convert a string to a blob. This function should ONLY be called after calling GetBlobSize, since it does NOT
+	//! perform data validation.
+	static void ToBlob(string_t str, data_ptr_t output);
+	//! Convert a string object to a blob
+	static string ToBlob(string_t str);
+
+	// base 64 conversion functions
+	//! Returns the string size of a blob -> base64 conversion
+	static idx_t ToBase64Size(string_t blob);
+	//! Converts a blob to a base64 string, output should have space for at least ToBase64Size(blob) bytes
+	static void ToBase64(string_t blob, char *output);
+
+	//! Returns the string size of a base64 string -> blob conversion
+	static idx_t FromBase64Size(string_t str);
+	//! Converts a base64 string to a blob, output should have space for at least FromBase64Size(blob) bytes
+	static void FromBase64(string_t str, data_ptr_t output, idx_t output_size);
+};
+} // namespace duckdb
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
@@ -9235,10 +9710,7 @@ class ClientContext;
 //! Abstract base class of an entry in the catalog
 class CatalogEntry {
 public:
-	CatalogEntry(CatalogType type, Catalog *catalog, string name)
-	    : type(type), catalog(catalog), set(nullptr), name(name), deleted(false), temporary(false), internal(false),
-	      parent(nullptr) {
-	}
+	CatalogEntry(CatalogType type, Catalog *catalog, string name);
 	virtual ~CatalogEntry();
 
 	virtual unique_ptr<CatalogEntry> AlterEntry(ClientContext &context, AlterInfo *info) {
@@ -9257,6 +9729,8 @@ public:
 		throw CatalogException("Unsupported catalog type for ToSQL()");
 	}
 
+	//! The oid of the entry
+	idx_t oid;
 	//! The type of this catalog entry
 	CatalogType type;
 	//! Reference to the catalog this entry belongs to
@@ -9303,21 +9777,25 @@ public:
 
 
 
+
 namespace duckdb {
 class ClientContext;
 
 class DefaultGenerator {
 public:
-	explicit DefaultGenerator(Catalog &catalog) : catalog(catalog) {
+	explicit DefaultGenerator(Catalog &catalog) : catalog(catalog), created_all_entries(false) {
 	}
 	virtual ~DefaultGenerator() {
 	}
 
 	Catalog &catalog;
+	atomic<bool> created_all_entries;
 
 public:
 	//! Creates a default entry with the specified name, or returns nullptr if no such entry can be generated
 	virtual unique_ptr<CatalogEntry> CreateDefaultEntry(ClientContext &context, const string &entry_name) = 0;
+	//! Get a list of all default entries in the generator
+	virtual vector<string> GetDefaultEntries() = 0;
 };
 
 } // namespace duckdb
@@ -9377,39 +9855,16 @@ public:
 	//! entry
 	void Undo(CatalogEntry *entry);
 
+	//! Scan the catalog set, invoking the callback method for every committed entry
+	void Scan(const std::function<void(CatalogEntry *)> &callback);
 	//! Scan the catalog set, invoking the callback method for every entry
-	template <class T>
-	void Scan(ClientContext &context, T &&callback) {
-		// lock the catalog set
-		lock_guard<mutex> lock(catalog_lock);
-		for (auto &kv : entries) {
-			auto entry = kv.second.get();
-			entry = GetEntryForTransaction(context, entry);
-			if (!entry->deleted) {
-				callback(entry);
-			}
-		}
-	}
+	void Scan(ClientContext &context, const std::function<void(CatalogEntry *)> &callback);
 
 	template <class T>
 	vector<T *> GetEntries(ClientContext &context) {
 		vector<T *> result;
 		Scan(context, [&](CatalogEntry *entry) { result.push_back((T *)entry); });
 		return result;
-	}
-
-	//! Scan the catalog set, invoking the callback method for every committed entry
-	template <class T>
-	void Scan(T &&callback) {
-		// lock the catalog set
-		lock_guard<mutex> lock(catalog_lock);
-		for (auto &kv : entries) {
-			auto entry = kv.second.get();
-			entry = GetCommittedEntry(entry);
-			if (!entry->deleted) {
-				callback(entry);
-			}
-		}
 	}
 
 	static bool HasConflict(ClientContext &context, transaction_t timestamp);
@@ -9431,6 +9886,7 @@ private:
 	//! Drops an entry from the catalog set; must hold the catalog_lock to safely call this
 	void DropEntryInternal(ClientContext &context, idx_t entry_index, CatalogEntry &entry, bool cascade,
 	                       set_lock_map_t &lock_set);
+	CatalogEntry *CreateEntryInternal(ClientContext &context, unique_ptr<CatalogEntry> entry);
 	MappingValue *GetMapping(ClientContext &context, const string &name, bool allow_lowercase_alias,
 	                         bool get_latest = false);
 	void PutMapping(ClientContext &context, const string &name, idx_t entry_index);
@@ -9797,10 +10253,14 @@ public:
 	static Catalog &GetCatalog(ClientContext &context);
 	static Catalog &GetCatalog(DatabaseInstance &db);
 
+	DependencyManager &GetDependencyManager() {
+		return *dependency_manager;
+	}
+
 	//! Returns the current version of the catalog (incremented whenever anything changes, not stored between restarts)
 	idx_t GetCatalogVersion();
-	//! Trigger a modification in the catalog, increasing the catalog version
-	void ModifyCatalog();
+	//! Trigger a modification in the catalog, increasing the catalog version and returning the previous version
+	idx_t ModifyCatalog();
 
 	//! Creates a schema in the catalog.
 	CatalogEntry *CreateSchema(ClientContext &context, CreateSchemaInfo *info);
@@ -10059,8 +10519,6 @@ public:
 	DataChunk child_chunk;
 	//! State of the child of this operator
 	unique_ptr<PhysicalOperatorState> child_state;
-	//! The initial chunk
-	DataChunk initial_chunk;
 };
 
 //! PhysicalOperator is the base class of the physical operators present in the
@@ -10114,9 +10572,9 @@ public:
 	}
 	//! Retrieves a chunk from this operator and stores it in the chunk
 	//! variable.
-	virtual void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) = 0;
+	virtual void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) const = 0;
 
-	void GetChunk(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state);
+	void GetChunk(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) const;
 
 	//! Create a new empty instance of the operator state
 	virtual unique_ptr<PhysicalOperatorState> GetOperatorState() {
@@ -10165,7 +10623,7 @@ public:
 	//! The sink method is called constantly with new input, as long as new input is available. Note that this method
 	//! CAN be called in parallel, proper locking is needed when accessing data inside the GlobalOperatorState.
 	virtual void Sink(ExecutionContext &context, GlobalOperatorState &gstate, LocalSinkState &lstate,
-	                  DataChunk &input) = 0;
+	                  DataChunk &input) const = 0;
 	// The combine is called when a single thread has completed execution of its part of the pipeline, it is the final
 	// time that a specific LocalSinkState is accessible. This method can be called in parallel while other Sink() or
 	// Combine() calls are active on the same GlobalOperatorState.
@@ -10214,7 +10672,7 @@ namespace duckdb {
 class BaseStatistics;
 class LogicalGet;
 struct ParallelState;
-struct TableFilterSet;
+class TableFilterSet;
 
 struct FunctionOperatorData {
 	virtual ~FunctionOperatorData() {
@@ -10233,7 +10691,7 @@ typedef unique_ptr<FunctionData> (*table_function_bind_t)(ClientContext &context
                                                           vector<string> &input_table_names,
                                                           vector<LogicalType> &return_types, vector<string> &names);
 typedef unique_ptr<FunctionOperatorData> (*table_function_init_t)(ClientContext &context, const FunctionData *bind_data,
-                                                                  vector<column_t> &column_ids,
+                                                                  const vector<column_t> &column_ids,
                                                                   TableFilterCollection *filters);
 typedef unique_ptr<BaseStatistics> (*table_statistics_t)(ClientContext &context, const FunctionData *bind_data,
                                                          column_t column_index);
@@ -10252,7 +10710,7 @@ typedef unique_ptr<ParallelState> (*table_function_init_parallel_state_t)(Client
 typedef unique_ptr<FunctionOperatorData> (*table_function_init_parallel_t)(ClientContext &context,
                                                                            const FunctionData *bind_data,
                                                                            ParallelState *state,
-                                                                           vector<column_t> &column_ids,
+                                                                           const vector<column_t> &column_ids,
                                                                            TableFilterCollection *filters);
 typedef bool (*table_function_parallel_state_next_t)(ClientContext &context, const FunctionData *bind_data,
                                                      FunctionOperatorData *state, ParallelState *parallel_state);
@@ -10477,7 +10935,7 @@ class Executor;
 class TaskContext;
 
 //! The Pipeline class represents an execution pipeline
-class Pipeline {
+class Pipeline : public std::enable_shared_from_this<Pipeline> {
 	friend class Executor;
 
 public:
@@ -10490,7 +10948,7 @@ public:
 	//! Execute a task within the pipeline on a single thread
 	void Execute(TaskContext &task);
 
-	void AddDependency(Pipeline *pipeline);
+	void AddDependency(shared_ptr<Pipeline> &pipeline);
 	void CompleteDependency();
 	bool HasDependencies() {
 		return !dependencies.empty();
@@ -10512,9 +10970,6 @@ public:
 	}
 	PhysicalOperator *GetRecursiveCTE() {
 		return recursive_cte;
-	}
-	unordered_set<Pipeline *> &GetDependencies() {
-		return dependencies;
 	}
 	void ClearParents();
 
@@ -10542,9 +10997,9 @@ private:
 	//! The sink (i.e. destination) for data; this is e.g. a hash table to-be-built
 	PhysicalSink *sink;
 	//! The parent pipelines (i.e. pipelines that are dependent on this pipeline to finish)
-	unordered_set<Pipeline *> parents;
+	unordered_map<Pipeline *, weak_ptr<Pipeline>> parents;
 	//! The dependencies of this pipeline
-	unordered_set<Pipeline *> dependencies;
+	unordered_map<Pipeline *, weak_ptr<Pipeline>> dependencies;
 	//! The amount of completed dependencies (the pipeline can only be started after the dependencies have finished
 	//! executing)
 	atomic<idx_t> finished_dependencies;
@@ -10604,6 +11059,7 @@ public:
 
 	//! Push a new error
 	void PushError(const string &exception);
+	bool GetError(string &exception);
 
 	//! Flush a thread context into the client context
 	void Flush(ThreadContext &context);
@@ -10617,7 +11073,7 @@ private:
 
 	mutex executor_lock;
 	//! The pipelines of the current query
-	vector<unique_ptr<Pipeline>> pipelines;
+	vector<shared_ptr<Pipeline>> pipelines;
 	//! The producer of this query
 	unique_ptr<ProducerToken> producer;
 	//! Exceptions that occurred during the execution of the current query
@@ -10641,8 +11097,8 @@ public:
 	explicit ProgressBar(Executor *executor, idx_t show_progress_after, idx_t time_update_bar = 100)
 	    : executor(executor), show_progress_after(show_progress_after), time_update_bar(time_update_bar),
 	      current_percentage(-1), stop(false) {
-
-	                              };
+	}
+	~ProgressBar();
 
 	//! Starts the thread
 	void Start();
@@ -10650,6 +11106,10 @@ public:
 	void Stop();
 	//! Gets current percentage
 	int GetCurrentPercentage();
+
+	void Initialize(idx_t show_progress_after) {
+		this->show_progress_after = show_progress_after;
+	}
 
 private:
 	const string PROGRESS_BAR_STRING = "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||";
@@ -10682,405 +11142,6 @@ private:
 
 
 
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
-// duckdb/main/query_profiler.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-
-
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
-// duckdb/common/profiler.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-
-
-
-namespace duckdb {
-
-//! The profiler can be used to measure elapsed time
-template <typename T>
-class Profiler {
-public:
-	//! Starts the timer
-	void Start() {
-		finished = false;
-		start = Tick();
-	}
-	//! Finishes timing
-	void End() {
-		end = Tick();
-		finished = true;
-	}
-
-	//! Returns the elapsed time in seconds. If End() has been called, returns
-	//! the total elapsed time. Otherwise returns how far along the timer is
-	//! right now.
-	double Elapsed() const {
-		auto _end = finished ? end : Tick();
-		return std::chrono::duration_cast<std::chrono::duration<double>>(_end - start).count();
-	}
-
-private:
-	time_point<T> Tick() const {
-		return T::now();
-	}
-	time_point<T> start;
-	time_point<T> end;
-	bool finished = false;
-};
-
-} // namespace duckdb
-
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
-// duckdb/common/string_util.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-
-
-
-
-namespace duckdb {
-/**
- * String Utility Functions
- * Note that these are not the most efficient implementations (i.e., they copy
- * memory) and therefore they should only be used for debug messages and other
- * such things.
- */
-class StringUtil {
-public:
-	static bool CharacterIsSpace(char c) {
-		return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
-	}
-	static bool CharacterIsNewline(char c) {
-		return c == '\n' || c == '\r';
-	}
-	static bool CharacterIsDigit(char c) {
-		return c >= '0' && c <= '9';
-	}
-
-	//! Returns true if the needle string exists in the haystack
-	static bool Contains(const string &haystack, const string &needle);
-
-	//! Returns true if the target string starts with the given prefix
-	static bool StartsWith(string str, string prefix);
-
-	//! Returns true if the target string <b>ends</b> with the given suffix.
-	static bool EndsWith(const string &str, const string &suffix);
-
-	//! Repeat a string multiple times
-	static string Repeat(const string &str, const idx_t n);
-
-	//! Split the input string based on newline char
-	static vector<string> Split(const string &str, char delimiter);
-
-	//! Join multiple strings into one string. Components are concatenated by the given separator
-	static string Join(const vector<string> &input, const string &separator);
-
-	//! Join multiple items of container with given size, transformed to string
-	//! using function, into one string using the given separator
-	template <typename C, typename S, typename Func>
-	static string Join(const C &input, S count, const string &separator, Func f) {
-		// The result
-		std::string result;
-
-		// If the input isn't empty, append the first element. We do this so we
-		// don't need to introduce an if into the loop.
-		if (count > 0) {
-			result += f(input[0]);
-		}
-
-		// Append the remaining input components, after the first
-		for (size_t i = 1; i < count; i++) {
-			result += separator + f(input[i]);
-		}
-
-		return result;
-	}
-
-	//! Append the prefix to the beginning of each line in str
-	static string Prefix(const string &str, const string &prefix);
-
-	//! Return a string that formats the give number of bytes
-	static string FormatSize(idx_t bytes);
-
-	//! Convert a string to uppercase
-	static string Upper(const string &str);
-
-	//! Convert a string to lowercase
-	static string Lower(const string &str);
-
-	//! Format a string using printf semantics
-	template <typename... Args>
-	static string Format(const string fmt_str, Args... params) {
-		return Exception::ConstructMessage(fmt_str, params...);
-	}
-
-	//! Split the input string into a vector of strings based on the split string
-	static vector<string> Split(const string &input, const string &split);
-
-	//! Remove the whitespace char in the left end of the string
-	static void LTrim(string &str);
-	//! Remove the whitespace char in the right end of the string
-	static void RTrim(string &str);
-	//! Remove the whitespace char in the left and right end of the string
-	static void Trim(string &str);
-
-	static string Replace(string source, const string &from, const string &to);
-
-	//! Get the levenshtein distance from two strings
-	static idx_t LevenshteinDistance(const string &s1, const string &s2);
-
-	//! Get the top-n strings (sorted by the given score distance) from a set of scores.
-	//! At least one entry is returned (if there is one).
-	//! Strings are only returned if they have a score less than the threshold.
-	static vector<string> TopNStrings(vector<std::pair<string, idx_t>> scores, idx_t n = 5, idx_t threshold = 5);
-	//! Computes the levenshtein distance of each string in strings, and compares it to target, then returns TopNStrings
-	//! with the given params.
-	static vector<string> TopNLevenshtein(const vector<string> &strings, const string &target, idx_t n = 5,
-	                                      idx_t threshold = 5);
-	static string CandidatesMessage(const vector<string> &candidates, const string &candidate = "Candidate bindings");
-};
-} // namespace duckdb
-
-
-
-
-
-
-#include <stack>
-#include <unordered_map>
-
-
-
-namespace duckdb {
-class ExpressionExecutor;
-class PhysicalOperator;
-class SQLStatement;
-
-struct ExpressionInformation {
-	ExpressionInformation(string &name, double time) : name(name), time(time) {
-	}
-	void ExtractExpressionsRecursive(unique_ptr<ExpressionState> &state);
-	vector<unique_ptr<ExpressionInformation>> children;
-	bool hasfunction = false;
-	string name;
-	string function_name;
-	double time = 0;
-};
-
-struct ExpressionExecutorInformation {
-	explicit ExpressionExecutorInformation(ExpressionExecutor &executor);
-
-	//! Count the number of time the executor called
-	uint64_t total_count = 0;
-	//! Count the number of time the executor called since last sampling
-	uint64_t current_count = 0;
-	//! Count the number of samples
-	uint64_t sample_count = 0;
-	//! Count the number of tuples in all samples
-	uint64_t sample_tuples_count = 0;
-	//! Count the number of tuples processed by this executor
-	uint64_t tuples_count = 0;
-
-	vector<unique_ptr<ExpressionInformation>> roots;
-};
-
-struct OperatorTimingInformation {
-	double time = 0;
-	idx_t elements = 0;
-	bool has_executor = false;
-	explicit OperatorTimingInformation(double time_ = 0, idx_t elements_ = 0) : time(time_), elements(elements_) {
-	}
-
-	//! A mapping of physical operators to recorded timings
-	unique_ptr<ExpressionExecutorInformation> executors_info;
-};
-
-//! The OperatorProfiler measures timings of individual operators
-class OperatorProfiler {
-	friend class QueryProfiler;
-
-public:
-	DUCKDB_API explicit OperatorProfiler(bool enabled);
-
-	DUCKDB_API void StartOperator(PhysicalOperator *phys_op);
-	DUCKDB_API void EndOperator(DataChunk *chunk);
-	DUCKDB_API void Flush(PhysicalOperator *phys_op, ExpressionExecutor *expression_executor);
-
-	~OperatorProfiler() {
-	}
-
-private:
-	void AddTiming(PhysicalOperator *op, double time, idx_t elements);
-
-	//! Whether or not the profiler is enabled
-	bool enabled;
-	//! The timer used to time the execution time of the individual Physical Operators
-	Profiler<system_clock> op;
-	//! The stack of Physical Operators that are currently active
-	std::stack<PhysicalOperator *> execution_stack;
-	//! A mapping of physical operators to recorded timings
-	unordered_map<PhysicalOperator *, OperatorTimingInformation> timings;
-};
-
-//! The QueryProfiler can be used to measure timings of queries
-class QueryProfiler {
-public:
-	struct TreeNode {
-		string name;
-		string extra_info;
-		OperatorTimingInformation info;
-		vector<unique_ptr<TreeNode>> children;
-		idx_t depth = 0;
-	};
-
-private:
-	unique_ptr<TreeNode> CreateTree(PhysicalOperator *root, idx_t depth = 0);
-
-	void Render(const TreeNode &node, std::ostream &str) const;
-
-public:
-	DUCKDB_API QueryProfiler()
-	    : automatic_print_format(ProfilerPrintFormat::NONE), enabled(false), detailed_enabled(false), running(false),
-	      query_requires_profiling(false) {
-	}
-
-	DUCKDB_API void Enable() {
-		enabled = true;
-		detailed_enabled = false;
-	}
-
-	DUCKDB_API void DetailedEnable() {
-		detailed_enabled = true;
-	}
-
-	DUCKDB_API void Disable() {
-		enabled = false;
-	}
-
-	DUCKDB_API bool IsEnabled() {
-		return enabled;
-	}
-
-	bool IsDetailedEnabled() const {
-		return detailed_enabled;
-	}
-
-	DUCKDB_API void StartQuery(string query);
-	DUCKDB_API void EndQuery();
-
-	//! Adds the timings gathered by an OperatorProfiler to this query profiler
-	DUCKDB_API void Flush(OperatorProfiler &profiler);
-
-	DUCKDB_API void StartPhase(string phase);
-	DUCKDB_API void EndPhase();
-
-	DUCKDB_API void Initialize(PhysicalOperator *root);
-
-	DUCKDB_API string ToString(bool print_optimizer_output = false) const;
-	DUCKDB_API void ToStream(std::ostream &str, bool print_optimizer_output = false) const;
-	DUCKDB_API void Print();
-
-	DUCKDB_API string ToJSON() const;
-	DUCKDB_API void WriteToFile(const char *path, string &info) const;
-
-	//! The format to automatically print query profiling information in (default: disabled)
-	ProfilerPrintFormat automatic_print_format;
-	//! The file to save query profiling information to, instead of printing it to the console (empty = print to
-	//! console)
-	string save_location;
-
-	idx_t OperatorSize() {
-		return tree_map.size();
-	}
-
-private:
-	//! Whether or not query profiling is enabled
-	bool enabled;
-	//! Whether or not detailed query profiling is enabled
-	bool detailed_enabled;
-	//! Whether or not the query profiler is running
-	bool running;
-
-	bool query_requires_profiling;
-
-	//! The root of the query tree
-	unique_ptr<TreeNode> root;
-	//! The query string
-	string query;
-
-	//! The timer used to time the execution time of the entire query
-	Profiler<system_clock> main_query;
-	//! A map of a Physical Operator pointer to a tree node
-	unordered_map<PhysicalOperator *, TreeNode *> tree_map;
-
-public:
-	const unordered_map<PhysicalOperator *, TreeNode *> &GetTreeMap() const {
-		return tree_map;
-	}
-
-private:
-	//! The timer used to time the individual phases of the planning process
-	Profiler<system_clock> phase_profiler;
-	//! A mapping of the phase names to the timings
-	using PhaseTimingStorage = unordered_map<string, double>;
-	PhaseTimingStorage phase_timings;
-	using PhaseTimingItem = PhaseTimingStorage::value_type;
-	//! The stack of currently active phases
-	vector<string> phase_stack;
-
-private:
-	vector<PhaseTimingItem> GetOrderedPhaseTimings() const;
-
-	//! Check whether or not an operator type requires query profiling. If none of the ops in a query require profiling
-	//! no profiling information is output.
-	bool OperatorRequiresProfiling(PhysicalOperatorType op_type);
-};
-
-//! The QueryProfilerHistory can be used to access the profiler of previous queries
-class QueryProfilerHistory {
-private:
-	//! Previous Query profilers
-	deque<pair<transaction_t, QueryProfiler>> prev_profilers;
-	//! Previous Query profilers size
-	uint64_t prev_profilers_size = 20;
-
-public:
-	deque<pair<transaction_t, QueryProfiler>> &GetPrevProfilers() {
-		return prev_profilers;
-	}
-
-	void SetPrevProfilersSize(uint64_t prevProfilersSize) {
-		prev_profilers_size = prevProfilersSize;
-	}
-	uint64_t GetPrevProfilersSize() const {
-		return prev_profilers_size;
-	}
-
-public:
-	void SetProfilerHistorySize(uint64_t size) {
-		this->prev_profilers_size = size;
-	}
-};
-} // namespace duckdb
 
 
 //===----------------------------------------------------------------------===//
@@ -11143,7 +11204,6 @@ private:
 
 } // namespace duckdb
 
-
 #include <random>
 
 
@@ -11151,11 +11211,15 @@ namespace duckdb {
 class Appender;
 class Catalog;
 class DatabaseInstance;
+class LogicalOperator;
 class PreparedStatementData;
 class Relation;
 class BufferedFileWriter;
-
+class QueryProfiler;
+class QueryProfilerHistory;
 class ClientContextLock;
+struct CreateScalarFunctionInfo;
+class ScalarFunctionCatalogEntry;
 
 //! The ClientContext holds information relevant to the current client session
 //! during execution
@@ -11166,9 +11230,9 @@ public:
 	DUCKDB_API explicit ClientContext(shared_ptr<DatabaseInstance> db);
 	DUCKDB_API ~ClientContext();
 	//! Query profiler
-	QueryProfiler profiler;
+	unique_ptr<QueryProfiler> profiler;
 	//! QueryProfiler History
-	QueryProfilerHistory query_profiler_history;
+	unique_ptr<QueryProfilerHistory> query_profiler_history;
 	//! The database that this client is connected to
 	shared_ptr<DatabaseInstance> db;
 	//! Data for the currently running transaction
@@ -11182,7 +11246,7 @@ public:
 	Executor executor;
 
 	//! The Progress Bar
-	shared_ptr<ProgressBar> progress_bar;
+	unique_ptr<ProgressBar> progress_bar;
 	//! If the progress bar is enabled or not.
 	bool enable_progress_bar = false;
 	//! If the print of the progress bar is enabled
@@ -11210,6 +11274,9 @@ public:
 	ExplainOutputType explain_output_type = ExplainOutputType::PHYSICAL_ONLY;
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;
+
+	//! The schema search path, in order by which entries are searched if no schema entry is provided
+	vector<string> catalog_search_path = {TEMP_SCHEMA, DEFAULT_SCHEMA, "pg_catalog"};
 
 public:
 	DUCKDB_API Transaction &ActiveTransaction() {
@@ -11265,6 +11332,8 @@ public:
 
 	//! Parse statements from a query
 	DUCKDB_API vector<unique_ptr<SQLStatement>> ParseStatements(const string &query);
+	//! Extract the logical plan of a query
+	DUCKDB_API unique_ptr<LogicalOperator> ExtractPlan(const string &query);
 	void HandlePragmaStatements(vector<unique_ptr<SQLStatement>> &statements);
 
 	//! Runs a function with a valid transaction context, potentially starting a transaction if the context is in auto
@@ -11313,6 +11382,8 @@ private:
 	void LogQueryInternal(ClientContextLock &lock, const string &query);
 
 	unique_ptr<ClientContextLock> LockContext();
+
+	bool UpdateFunctionInfoFromEntry(ScalarFunctionCatalogEntry *existing_function, CreateScalarFunctionInfo *new_info);
 
 private:
 	//! The currently opened StreamQueryResult (if any)
