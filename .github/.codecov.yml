@@ -1,5 +1,5 @@
 ignore:
-  - "libsduckdb-sys/duckdb"
+  - "libduckdb-sys/duckdb"
 coverage:
   status:
     project:

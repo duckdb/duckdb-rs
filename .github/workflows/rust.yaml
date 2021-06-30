@@ -73,7 +73,8 @@ jobs:
       - uses: hecrj/setup-rust-action@v1
         with:
           components: clippy
-      - run: cargo clippy --all-targets --workspace --features bundled -- -D warnings
+      - run: cargo clippy --all-targets --workspace --features bundled
+      # - run: cargo clippy --all-targets --workspace --features bundled -- -D warnings
 
   # Ensure patch is formatted.
   fmt:
