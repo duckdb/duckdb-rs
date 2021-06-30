@@ -1,7 +1,9 @@
+extern crate cast;
+
 use super::{Value, ValueRef};
-use std::convert::TryInto;
 use std::error::Error;
 use std::fmt;
+
 
 /// Enum listing possible errors from [`FromSql`] trait.
 #[derive(Debug)]
@@ -74,58 +76,76 @@ macro_rules! from_sql_integral(
         impl FromSql for $t {
             #[inline]
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-                let i = i128::column_result(value)?;
-                i.try_into().map_err(|_| FromSqlError::OutOfRange(i))
+                match value {
+                    ValueRef::TinyInt(i) => Ok(<$t as cast::From<i8>>::cast(i).unwrap()),
+                    ValueRef::SmallInt(i) => Ok(<$t as cast::From<i16>>::cast(i).unwrap()),
+                    ValueRef::Int(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
+                    ValueRef::BigInt(i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
+                    ValueRef::HugeInt(i) => Ok(<$t as cast::From<i128>>::cast(i).unwrap()),
+                    ValueRef::Float(i) => Ok(<$t as cast::From<f32>>::cast(i).unwrap()),
+                    ValueRef::Double(i) => Ok(<$t as cast::From<f64>>::cast(i).unwrap()),
+                    _ => Err(FromSqlError::InvalidType),
+                }
             }
         }
     )
 );
 
+/// A trait for to implement unwrap method for primitive types
+/// cast::From trait returns Result or the primitive, and for
+/// Result we need to unwrap() for the column_result function
+/// We implement unwrap() for all the primitive types so
+/// We can always call unwrap() for the cast() function.
+trait Unwrap {
+    fn unwrap(self) -> Self;
+}
+
+macro_rules! unwrap_integral(
+    ($t:ident) => (
+        impl Unwrap for $t {
+            #[inline]
+            fn unwrap(self) -> Self {
+                self
+            }
+        }
+    )
+);
+
+unwrap_integral!(i8);
+unwrap_integral!(i16);
+unwrap_integral!(i32);
+unwrap_integral!(i64);
+unwrap_integral!(i128);
+unwrap_integral!(isize);
+unwrap_integral!(u8);
+unwrap_integral!(u16);
+unwrap_integral!(u32);
+unwrap_integral!(u64);
+unwrap_integral!(usize);
+unwrap_integral!(f32);
+unwrap_integral!(f64);
+
 from_sql_integral!(i8);
 from_sql_integral!(i16);
 from_sql_integral!(i32);
 from_sql_integral!(i64);
-// from_sql_integral!(i128); // Not needed because the native type is i128.
+from_sql_integral!(i128);
 from_sql_integral!(isize);
 from_sql_integral!(u8);
 from_sql_integral!(u16);
 from_sql_integral!(u32);
 from_sql_integral!(u64);
 from_sql_integral!(usize);
-
-impl FromSql for i128 {
-    #[inline]
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value.as_i128()
-    }
-}
-
-impl FromSql for f32 {
-    #[inline]
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value {
-            ValueRef::Int(i) => Ok(i as f32),
-            ValueRef::Float(f) => Ok(f as f32),
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-}
-
-impl FromSql for f64 {
-    #[inline]
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value {
-            ValueRef::BigInt(i) => Ok(i as f64),
-            ValueRef::Double(f) => Ok(f),
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-}
+from_sql_integral!(f32);
+from_sql_integral!(f64);
 
 impl FromSql for bool {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        i64::column_result(value).map(|i| i != 0)
+        match value {
+            ValueRef::Boolean(b) => Ok(b),
+            _ => i8::column_result(value).map(|i| i != 0),
+        }
     }
 }
 
