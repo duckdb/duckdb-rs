@@ -3,6 +3,7 @@
 #![allow(non_snake_case)]
 #![allow(improper_ctypes)]
 
+#[allow(clippy::all)]
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
 }

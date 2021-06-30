@@ -8,5 +8,5 @@
 - [ ] Update duckdb.h
 - [ ] Adjust the code examples and documentation
 - [x] Delete unused code / functions
-- [ ] Add CI
+- [x] Add CI
 - [ ] Publish to crate

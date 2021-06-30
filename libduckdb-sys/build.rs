@@ -94,7 +94,7 @@ impl From<HeaderLocation> for String {
             HeaderLocation::FromEnvironment => {
                 let prefix = env_prefix();
                 let mut header = env::var(format!("{}_INCLUDE_DIR", prefix))
-                    .unwrap_or(env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
+                    .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
                 header.push_str("/duckdb.h");
                 header
             }

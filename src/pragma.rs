@@ -292,7 +292,7 @@ mod test {
     fn pragma_query_value() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let version: String = db.pragma_query_value(None, "version", |row| row.get(0))?;
-        assert!(0 < version.len());
+        assert!(!version.is_empty());
         Ok(())
     }
 
@@ -305,7 +305,7 @@ mod test {
             version = row.get(0)?;
             Ok(())
         })?;
-        assert!(0 < version.len());
+        assert!(!version.is_empty());
         Ok(())
     }
 

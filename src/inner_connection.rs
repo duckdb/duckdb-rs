@@ -36,10 +36,10 @@ impl InnerConnection {
             panic!("error {:?}", e);
         }
         InnerConnection {
-            db: db,
-            con: con,
+            db,
+            con,
             // result: mem::zeroed(),
-            owned: owned,
+            owned,
         }
     }
 
@@ -84,13 +84,12 @@ impl InnerConnection {
         unsafe {
             let mut out = mem::zeroed();
             let r = ffi::duckdb_query(self.con, c_str.as_ptr() as *const c_char, &mut out);
-            let rc = if r != ffi::DuckDBSuccess {
+            if r != ffi::DuckDBSuccess {
                 result_from_duckdb_result(r, out)
             } else {
                 ffi::duckdb_destroy_result(&mut out);
                 Ok(())
-            };
-            rc
+            }
         }
     }
 

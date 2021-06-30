@@ -64,12 +64,8 @@ pub struct Error {
 
 impl Error {
     pub fn new(result_code: c_uint) -> Error {
-        let code = match result_code & 0xff {
-            _ => ErrorCode::Unknown,
-        };
-
         Error {
-            code,
+            code: ErrorCode::Unknown,
             extended_code: result_code,
         }
     }
@@ -92,8 +88,6 @@ impl error::Error for Error {
     }
 }
 
-pub fn code_to_str(code: c_uint) -> &'static str {
-    match code {
-        _ => "Unknown error code",
-    }
+pub fn code_to_str(_: c_uint) -> &'static str {
+    "Unknown error code"
 }

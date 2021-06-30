@@ -657,8 +657,7 @@ mod test {
         match stmt.insert([1i32]).unwrap_err() {
             Error::StatementChangedRows(0) => (),
             // TODO(wangfenjin): Constraint Error: duplicate key value violates primary key or unique constraint
-            // err => panic!("Unexpected error {}", err),
-            _ => {}
+            err => println!("insert should't return this error: {}", err),
         }
         let mut multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")?;
         match multi.insert([]).unwrap_err() {

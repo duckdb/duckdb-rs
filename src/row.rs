@@ -206,7 +206,7 @@ impl<'stmt> FallibleStreamingIterator for Rows<'stmt> {
             Some(ref stmt) => {
                 if self.current_row < stmt.row_count() {
                     self.row = Some(Row {
-                        stmt: stmt,
+                        stmt,
                         current_row: self.current_row,
                     });
                     self.current_row += 1;

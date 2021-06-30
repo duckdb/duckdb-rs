@@ -91,7 +91,7 @@ impl From<i128> for Value {
 impl From<f32> for Value {
     #[inline]
     fn from(f: f32) -> Value {
-        Value::Float(f.into())
+        Value::Float(f)
     }
 }
 
