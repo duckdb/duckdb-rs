@@ -1,33 +1,116 @@
-name: Rust build
+name: CI
 
-on: push
-
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 env:
-  CARGO_TERM_COLOR: always
-
+  RUST_BACKTRACE: 1
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
+    name: Test ${{ matrix.target }}
+
+    strategy:
+      fail-fast: true
+
+      matrix:
+        include:
+          #- { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          #- { target: x86_64-apple-darwin, os: macos-latest }
+          #- {
+              #target: x86_64-pc-windows-gnu,
+              #os: windows-latest,
+              #host: -x86_64-pc-windows-gnu,
+            #}
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Install latest nightly
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly
-        override: true
-        components: rustfmt, clippy
-    - name: Cache .cargo
-      id: cache-cargo
-      uses: actions/cache@v2
-      with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-${{ hashFiles('Cargo**') }}
-    - name: cargo test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-    - uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-features
+      - uses: actions/checkout@v2
+      # This has a matcher for test panics, so we use it even though elsewhere
+      # we use actions-rs/toolchain.
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable${{ matrix.host }}
+          targets: ${{ matrix.target }}
+
+      # - run: cargo build --features bundled --workspace --all-targets --verbose
+      - run: cargo test --features bundled --workspace --all-targets --verbose
+      # - run: cargo test --features bundled --workspace --doc --verbose
+
+  sanitizer:
+    name: Address Sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      # Need nightly rust.
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: nightly
+          components: rust-src
+      - name: Tests with asan
+        env:
+          RUSTFLAGS: -Zsanitizer=address
+          RUSTDOCFLAGS: -Zsanitizer=address
+          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=0"
+          # Work around https://github.com/rust-lang/rust/issues/59125 by
+          # disabling backtraces. In an ideal world we'd probably suppress the
+          # leak sanitization, but we don't care about backtraces here, so long
+          # as the other tests have them.
+          RUST_BACKTRACE: "0"
+        run: cargo -Z build-std test --features 'bundled' --target x86_64-unknown-linux-gnu
+
+  # Ensure clippy doesn't complain.
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          components: clippy
+      - run: cargo clippy --all-targets --workspace --features bundled -- -D warnings
+
+  # Ensure patch is formatted.
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  # Detect cases where documentation links don't resolve and such.
+  # doc:
+    # name: Docs
+    # runs-on: ubuntu-latest
+    # steps:
+      # - uses: actions/checkout@v2
+      # - uses: hecrj/setup-rust-action@v1
+        # with:
+          # rust-version: nightly
+      # # Need to use `cargo rustdoc` to actually get it to respect -D
+      # # warnings... Note: this also requires nightly.
+      # - run: cargo rustdoc --features 'bundled' -- -D warnings
+
+  codecov:
+    name: Generate code coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          # Intentionally omit time feature until we're on time 0.3, at which
+          # point it should be added to `bundled-full`.
+          args: '--features "bundled"'
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v1

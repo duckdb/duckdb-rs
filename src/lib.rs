@@ -868,40 +868,6 @@ mod test {
     }
 
     #[test]
-    fn test_get_raw() -> Result<()> {
-        let db = checked_memory_handle();
-        db.execute_batch("CREATE TABLE foo(i integer, x text);")?;
-        let vals = ["foobar", "1234", "qwerty"];
-        let mut insert_stmt = db.prepare("INSERT INTO foo(i, x) VALUES(?, ?)")?;
-        for (i, v) in vals.iter().enumerate() {
-            let i_to_insert = i as i64;
-            assert_eq!(insert_stmt.execute(params![i_to_insert, v])?, 1);
-        }
-
-        let mut query = db.prepare("SELECT i, x FROM foo")?;
-        let mut rows = query.query([])?;
-
-        while let Some(row) = rows.next()? {
-            let i = row.get_ref(0)?.as_i128()?;
-            let expect = vals[i as usize];
-            let x = row.get_ref("x")?.as_str()?;
-            assert_eq!(x, expect);
-        }
-
-        // TODO(wangfenjin): why?
-        // let mut query = db.prepare("SELECT x FROM foo")?;
-        // let rows = query.query_and_then([], |row| {
-        //     let x = row.get_ref("x")?.as_str()?; // check From<FromSqlError> for Error
-        //     Ok(x[..].to_owned())
-        // })?;
-
-        // for (i, row) in rows.enumerate() {
-        //     assert_eq!(row?, vals[i]);
-        // }
-        Ok(())
-    }
-
-    #[test]
     fn test_clone() -> Result<()> {
         let owned_con = checked_memory_handle();
         {

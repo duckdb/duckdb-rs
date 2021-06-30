@@ -55,41 +55,6 @@ impl ValueRef<'_> {
 }
 
 impl<'a> ValueRef<'a> {
-    /// If `self` is case `Integer`, returns the integral value. Otherwise,
-    /// returns [`Err(Error::InvalidColumnType)`](crate::Error::
-    /// InvalidColumnType).
-    #[inline]
-    pub fn as_i128(&self) -> FromSqlResult<i128> {
-        match *self {
-            ValueRef::TinyInt(i) => Ok(i as i128),
-            ValueRef::SmallInt(i) => Ok(i as i128),
-            ValueRef::Int(i) => Ok(i as i128),
-            ValueRef::BigInt(i) => Ok(i as i128),
-            ValueRef::HugeInt(i) => Ok(i),
-            ValueRef::Text(a) => {
-                let s = std::str::from_utf8(a).expect("invalid UTF-8");
-                match s.parse::<i128>() {
-                    Ok(i) => Ok(i),
-                    // TODO(wangfenjin): update error type as parse error
-                    _ => Err(FromSqlError::InvalidType),
-                }
-            }
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-
-    /// If `self` is case `Real`, returns the floating point value. Otherwise,
-    /// returns [`Err(Error::InvalidColumnType)`](crate::Error::
-    /// InvalidColumnType).
-    #[inline]
-    pub fn as_f64(&self) -> FromSqlResult<f64> {
-        match *self {
-            ValueRef::Float(f) => Ok(f as f64),
-            ValueRef::Double(f) => Ok(f),
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-
     /// If `self` is case `Text`, returns the string value. Otherwise, returns
     /// [`Err(Error::InvalidColumnType)`](crate::Error::InvalidColumnType).
     #[inline]
