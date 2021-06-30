@@ -2,9 +2,9 @@
 
 [![Build Status](https://github.com/wangfenjin/duckdb-rs/workflows/CI/badge.svg)](https://github.com/wangfenjin/duckdb-rs/actions)
 [![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
+[![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/main/graph/badge.svg?token=0xV88q8KU0)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 <!-- [![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb)
 [![Docs](https://docs.rs/rusqlite/badge.svg)](https://docs.rs/rusqlite)) -->
-[![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 
 duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
 an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Acctually the initial code and even this README is
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
 }
 ```
 
-## Notes on building rusqlite and libduckdb-sys
+## Notes on building duckdb and libduckdb-sys
 
 `libduckdb-sys` is a separate crate from `duckdb-rs` that provides the Rust
 declarations for DuckDB's C API. By default, `libduckdb-sys` attempts to find a DuckDB library that already exists on your system using pkg-config, or a
@@ -66,9 +66,9 @@ declarations for DuckDB's C API. By default, `libduckdb-sys` attempts to find a 
 
 You can adjust this behavior in a number of ways:
 
-* If you use the `bundled` feature, `libsqlite3-sys` will use the
+* If you use the `bundled` feature, `libduckdb-sys` will use the
   [cc](https://crates.io/crates/cc) crate to compile DuckDB from source and
-  link against that. This source is embedded in the `libsqlite3-sys` crate and
+  link against that. This source is embedded in the `libduckdb-sys` crate and
   as we are still in development, we will update it regularly. After we are more stable,
   we will use the stable released version from [duckdb](https://github.com/duckdb/duckdb/releases).
   This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
@@ -123,7 +123,7 @@ instead.
 - [x] Refactor the ErrorCode part, it's borrowed from rusqlite, we should have our own
 - [ ] Support more type
 - [x] Update duckdb.h
-- [ ] Adjust the code examples and documentation
+- [x] Adjust the code examples and documentation
 - [x] Delete unused code / functions
 - [x] Add CI
 - [ ] Publish to crate
