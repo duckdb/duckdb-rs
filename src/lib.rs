@@ -84,7 +84,6 @@ mod row;
 mod statement;
 mod transaction;
 
-pub mod config;
 pub mod types;
 
 pub(crate) mod util;
