@@ -108,9 +108,7 @@ produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 ## Contributing
 
-If running bindgen is problematic for you, `--features bundled` enables
-bundled and all features which don't require binding generation, and can be used
-instead.
+See to [Contributing.md](CONTRIBUTING.md)
 
 ### Checklist
 
