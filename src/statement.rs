@@ -5,7 +5,7 @@ use std::{convert, fmt, str};
 
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
-use crate::error::result_from_duckdb_code;
+use crate::error::error_from_duckdb_code;
 use crate::types::{ToSql, ToSqlOutput};
 
 use arrow::array::StructArray;
@@ -412,7 +412,7 @@ impl Statement<'_> {
             _ => unreachable!("not supported"),
         };
         if rc != ffi::DuckDBSuccess {
-            result_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
+            error_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
         } else {
             Ok(())
         }
@@ -603,18 +603,14 @@ mod test {
     }
 
     #[test]
-    fn test_insert() -> Result<()> {
+    fn test_insert_duplicate() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")?;
         let mut stmt = db.prepare("INSERT INTO foo (x) VALUES (?)")?;
         // TODO(wangfenjin): currently always 1
         stmt.insert([1i32])?;
         stmt.insert([2i32])?;
-        match stmt.insert([1i32]).unwrap_err() {
-            Error::StatementChangedRows(0) => (),
-            // TODO(wangfenjin): Constraint Error: duplicate key value violates primary key or unique constraint
-            err => println!("insert should't return this error: {}", err),
-        }
+        assert!(stmt.insert([1i32]).is_err());
         let mut multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")?;
         match multi.insert([]).unwrap_err() {
             Error::StatementChangedRows(2) => (),
@@ -735,6 +731,7 @@ mod test {
         let conn = Connection::open_in_memory()?;
         let stmt = conn.prepare("");
         assert!(stmt.is_err());
+
         Ok(())
     }
 

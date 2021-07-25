@@ -58,15 +58,27 @@ impl RawStatement {
     pub fn step(&self) -> Option<StructArray> {
         self.result?;
         unsafe {
-            let (mut arrays, mut _schema) = ArrowArray::into_raw(ArrowArray::empty());
+            let (mut arrays, mut schema) = ArrowArray::into_raw(ArrowArray::empty());
+            let schema = &mut schema;
             let arrays = &mut arrays;
+            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut *mut c_void) != ffi::DuckDBSuccess {
+                // clean raw data
+                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
+                return None;
+            }
+            // TODO: Can we reuse schema?
+            // destroy schema as we don't need it...
+            // Arc::from_raw(schema);
+            // TODO: use this after https://github.com/apache/arrow-rs/pull/612
+            // let mut arrays = Arc::into_raw(Arc::new(FFI_ArrowArray::empty()));
             if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut *mut c_void)
                 != ffi::DuckDBSuccess
             {
+                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
                 return None;
             }
             let arrow_array =
-                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, self.c_schema.unwrap()).expect("ok");
+                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, *schema as *const FFI_ArrowSchema).expect("ok");
             let array_data = ArrayData::try_from(arrow_array).expect("ok");
             let struct_array = StructArray::from(array_data);
             Some(struct_array)
@@ -133,10 +145,13 @@ impl RawStatement {
             result_from_duckdb_arrow(rc, out)?;
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
-            let (mut _arrays, mut c_schema) = ArrowArray::into_raw(ArrowArray::empty());
+            let mut c_schema = Arc::into_raw(Arc::new(FFI_ArrowSchema::empty()));
             let schema = &mut c_schema;
             let rc = ffi::duckdb_query_arrow_schema(out, schema as *mut _ as *mut *mut c_void);
-            result_from_duckdb_arrow(rc, out)?;
+            if rc != ffi::DuckDBSuccess {
+                Arc::from_raw(c_schema);
+                result_from_duckdb_arrow(rc, out)?;
+            }
             self.schema = Some(Arc::new(Schema::try_from(&*c_schema).unwrap()));
             self.c_schema = Some(c_schema);
 
@@ -147,8 +162,12 @@ impl RawStatement {
 
     #[inline]
     pub fn reset_result(&mut self) {
-        self.c_schema = None;
         self.schema = None;
+        if self.c_schema.is_some() {
+            unsafe {
+                Arc::from_raw(self.c_schema.unwrap());
+            }
+        }
         if self.result.is_some() {
             unsafe {
                 ffi::duckdb_destroy_arrow(&mut self.result_unwrap());

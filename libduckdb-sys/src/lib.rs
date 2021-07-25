@@ -43,7 +43,9 @@ mod tests {
         for row_idx in 0..result.row_count {
             for col_idx in 0..result.column_count {
                 let val = duckdb_value_varchar(&mut result, col_idx, row_idx);
-                print!("{} ", CStr::from_ptr(val).to_string_lossy());
+                let s = CStr::from_ptr(val).to_string_lossy().into_owned();
+                print!("{} ", s);
+                duckdb_free(val as *mut c_void);
             }
             println!();
         }
@@ -186,9 +188,9 @@ mod tests {
             assert_eq!(result.column_count, 2);
             print_result(result);
             duckdb_destroy_result(&mut result);
+            duckdb_destroy_prepare(&mut stmt);
 
             // clean up
-            duckdb_destroy_result(&mut result);
             duckdb_disconnect(&mut con);
             duckdb_close(&mut db);
         }

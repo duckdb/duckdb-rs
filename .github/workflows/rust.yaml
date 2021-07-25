@@ -37,7 +37,6 @@ jobs:
           components: 'rustfmt, clippy'
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --workspace --features bundled
-      - run: cargo test --features bundled --workspace --all-targets --verbose
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
