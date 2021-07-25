@@ -78,3 +78,9 @@ Use the bundled header file:
 cd ~/github/duckdb-rs
 cargo test --features bundled -- --nocapture
 ```
+
+Detect memory leaks:
+```shell
+cd ~/github/duckdb-rs
+ASAN_OPTIONS=detect_leaks=1 ASAN_SYMBOLIZER_PATH=/usr/local/opt/llvm/bin/llvm-symbolizer cargo test --features bundled -- --nocapture
+```

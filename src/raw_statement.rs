@@ -18,9 +18,9 @@ use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
 #[derive(Debug)]
 pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
-    pub result: Option<ffi::duckdb_arrow>,
-    pub c_schema: Option<*const FFI_ArrowSchema>,
-    pub schema: Option<SchemaRef>,
+    result: Option<ffi::duckdb_arrow>,
+    c_schema: Option<*const FFI_ArrowSchema>,
+    schema: Option<SchemaRef>,
 }
 
 impl RawStatement {
@@ -170,6 +170,7 @@ impl RawStatement {
             unsafe {
                 Arc::from_raw(self.c_schema.unwrap());
             }
+            self.c_schema = None;
         }
         if self.result.is_some() {
             unsafe {
