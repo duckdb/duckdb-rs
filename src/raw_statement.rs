@@ -150,7 +150,9 @@ impl RawStatement {
         self.c_schema = None;
         self.schema = None;
         if self.result.is_some() {
-            unsafe {ffi::duckdb_destroy_arrow(&mut self.result_unwrap());}
+            unsafe {
+                ffi::duckdb_destroy_arrow(&mut self.result_unwrap());
+            }
             self.result = None;
         }
     }
