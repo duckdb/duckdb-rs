@@ -61,7 +61,9 @@ impl RawStatement {
             let (mut arrays, mut schema) = ArrowArray::into_raw(ArrowArray::empty());
             let schema = &mut schema;
             let arrays = &mut arrays;
-            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut *mut c_void) != ffi::DuckDBSuccess {
+            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut *mut c_void)
+                != ffi::DuckDBSuccess
+            {
                 // clean raw data
                 let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
                 return None;
@@ -78,7 +80,8 @@ impl RawStatement {
                 return None;
             }
             let arrow_array =
-                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, *schema as *const FFI_ArrowSchema).expect("ok");
+                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, *schema as *const FFI_ArrowSchema)
+                    .expect("ok");
             let array_data = ArrayData::try_from(arrow_array).expect("ok");
             let struct_array = StructArray::from(array_data);
             Some(struct_array)
