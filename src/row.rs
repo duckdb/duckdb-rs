@@ -25,6 +25,7 @@ impl<'stmt> Rows<'stmt> {
     fn reset(&mut self) {
         self.current_row = 0;
         self.current_batch_row = 0;
+        self.arr = Arc::new(None);
     }
 
     /// Attempt to get the next row from the query. Returns `Ok(Some(Row))` if

@@ -56,9 +56,7 @@ impl RawStatement {
 
     #[inline]
     pub fn step(&self) -> Option<StructArray> {
-        if self.result.is_none() {
-            return None;
-        }
+        self.result?;
         unsafe {
             let (mut arrays, mut _schema) = ArrowArray::into_raw(ArrowArray::empty());
             let arrays = &mut arrays;
@@ -151,11 +149,9 @@ impl RawStatement {
     pub fn reset_result(&mut self) {
         self.c_schema = None;
         self.schema = None;
-        if !self.result.is_none() {
-            unsafe {
-                ffi::duckdb_destroy_arrow(&mut self.result_unwrap());
-                self.result = None;
-            }
+        if self.result.is_some() {
+            unsafe {ffi::duckdb_destroy_arrow(&mut self.result_unwrap());}
+            self.result = None;
         }
     }
 
