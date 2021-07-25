@@ -6,7 +6,7 @@ use std::str;
 
 use super::ffi;
 use super::{Connection, OpenFlags, Result};
-use crate::error::{result_from_duckdb_code, result_from_duckdb_result, Error};
+use crate::error::{result_from_duckdb_arrow, result_from_duckdb_prepare, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 
@@ -83,13 +83,10 @@ impl InnerConnection {
         let c_str = CString::new(sql).unwrap();
         unsafe {
             let mut out = mem::zeroed();
-            let r = ffi::duckdb_query(self.con, c_str.as_ptr() as *const c_char, &mut out);
-            if r != ffi::DuckDBSuccess {
-                result_from_duckdb_result(r, out)
-            } else {
-                ffi::duckdb_destroy_result(&mut out);
-                Ok(())
-            }
+            let r = ffi::duckdb_query_arrow(self.con, c_str.as_ptr() as *const c_char, &mut out);
+            result_from_duckdb_arrow(r, out)?;
+            ffi::duckdb_destroy_arrow(&mut out);
+            Ok(())
         }
     }
 
@@ -97,9 +94,7 @@ impl InnerConnection {
         let mut c_stmt: ffi::duckdb_prepared_statement = ptr::null_mut();
         let c_str = CString::new(sql).unwrap();
         let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
-        if r != ffi::DuckDBSuccess {
-            result_from_duckdb_code(r, Some(format!("prepare sql {} failed", sql)))?;
-        }
+        result_from_duckdb_prepare(r, c_stmt)?;
         Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
     }
 

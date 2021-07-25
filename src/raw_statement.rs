@@ -1,17 +1,26 @@
+use std::convert::TryFrom;
+use std::ffi::CStr;
+use std::os::raw::c_void;
+use std::ptr;
+use std::slice;
+use std::sync::Arc;
+
 use super::ffi;
 use super::Result;
-use crate::error::result_from_duckdb_result;
-use std::ffi::CStr;
-use std::mem;
-use std::os::raw::c_uint;
-use std::slice;
+use crate::error::result_from_duckdb_arrow;
+
+use arrow::array::{ArrayData, StructArray};
+use arrow::datatypes::{DataType, Schema, SchemaRef};
+use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
 // TODO: destroy statement and result
 #[derive(Debug)]
 pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
-    pub result: Option<ffi::duckdb_result>,
+    result: Option<ffi::duckdb_arrow>,
+    c_schema: Option<*const FFI_ArrowSchema>,
+    schema: Option<SchemaRef>,
 }
 
 impl RawStatement {
@@ -20,6 +29,8 @@ impl RawStatement {
         RawStatement {
             ptr: stmt,
             result: None,
+            c_schema: None,
+            schema: None,
         }
     }
 
@@ -34,42 +45,76 @@ impl RawStatement {
     }
 
     #[inline]
-    pub fn result_unwrap(&self) -> ffi::duckdb_result {
+    pub fn result_unwrap(&self) -> ffi::duckdb_arrow {
         self.result.unwrap()
     }
 
     #[inline]
-    pub fn column_count(&self) -> usize {
-        // TODO: change return type?
-        self.result_unwrap().column_count as usize
+    pub fn row_count(&self) -> usize {
+        unsafe { ffi::duckdb_arrow_row_count(self.result_unwrap()) as usize }
     }
 
     #[inline]
-    pub unsafe fn column_type(&self, idx: usize) -> c_uint {
-        let columns = slice::from_raw_parts(self.result_unwrap().columns, self.result_unwrap().column_count as usize);
-        columns[idx].type_
+    pub fn step(&self) -> Option<StructArray> {
+        self.result?;
+        unsafe {
+            let (mut arrays, mut schema) = ArrowArray::into_raw(ArrowArray::empty());
+            let schema = &mut schema;
+            let arrays = &mut arrays;
+            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut *mut c_void)
+                != ffi::DuckDBSuccess
+            {
+                // clean raw data
+                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
+                return None;
+            }
+            // TODO: Can we reuse schema?
+            // destroy schema as we don't need it...
+            // Arc::from_raw(schema);
+            // TODO: use this after https://github.com/apache/arrow-rs/pull/612
+            // let mut arrays = Arc::into_raw(Arc::new(FFI_ArrowArray::empty()));
+            if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut *mut c_void)
+                != ffi::DuckDBSuccess
+            {
+                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
+                return None;
+            }
+            let arrow_array =
+                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, *schema as *const FFI_ArrowSchema)
+                    .expect("ok");
+            let array_data = ArrayData::try_from(arrow_array).expect("ok");
+            let struct_array = StructArray::from(array_data);
+            Some(struct_array)
+        }
+    }
+
+    #[inline]
+    pub fn column_count(&self) -> usize {
+        unsafe { ffi::duckdb_arrow_column_count(self.result_unwrap()) as usize }
+    }
+
+    #[inline]
+    pub fn column_type(&self, idx: usize) -> DataType {
+        self.schema().field(idx).data_type().to_owned()
+    }
+
+    #[inline]
+    pub fn schema(&self) -> &SchemaRef {
+        self.schema.as_ref().unwrap()
     }
 
     #[inline]
     #[allow(dead_code)]
-    pub fn column_decltype(&self, idx: usize) -> Option<&CStr> {
-        unsafe {
-            let columns =
-                slice::from_raw_parts(self.result_unwrap().columns, self.result_unwrap().column_count as usize);
-            Some(CStr::from_ptr(columns[idx].name))
-        }
+    pub fn column_decltype(&self, _idx: usize) -> Option<&CStr> {
+        panic!("not implemented")
     }
 
     #[inline]
-    pub fn column_name(&self, idx: usize) -> Option<&CStr> {
+    pub fn column_name(&self, idx: usize) -> Option<&String> {
         if idx >= self.column_count() {
             return None;
         }
-        unsafe {
-            let columns =
-                slice::from_raw_parts(self.result_unwrap().columns, self.result_unwrap().column_count as usize);
-            Some(CStr::from_ptr(columns[idx].name))
-        }
+        Some(self.schema.as_ref().unwrap().field(idx).name())
     }
 
     #[allow(dead_code)]
@@ -96,28 +141,41 @@ impl RawStatement {
 
     /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
-        // TODO: change return type
         self.reset_result();
         unsafe {
-            let mut out = mem::zeroed();
-            let rc = ffi::duckdb_execute_prepared(self.ptr, &mut out);
+            let mut out: ffi::duckdb_arrow = ptr::null_mut();
+            let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
+            result_from_duckdb_arrow(rc, out)?;
+
+            let rows_changed = ffi::duckdb_arrow_rows_changed(out);
+            let mut c_schema = Arc::into_raw(Arc::new(FFI_ArrowSchema::empty()));
+            let schema = &mut c_schema;
+            let rc = ffi::duckdb_query_arrow_schema(out, schema as *mut _ as *mut *mut c_void);
             if rc != ffi::DuckDBSuccess {
-                return Err(result_from_duckdb_result(rc, out).unwrap_err());
+                Arc::from_raw(c_schema);
+                result_from_duckdb_arrow(rc, out)?;
             }
+            self.schema = Some(Arc::new(Schema::try_from(&*c_schema).unwrap()));
+            self.c_schema = Some(c_schema);
 
             self.result = Some(out);
-            // self.print_result(self.result);
-            Ok(self.result_unwrap().rows_changed as usize)
+            Ok(rows_changed as usize)
         }
     }
 
     #[inline]
     pub fn reset_result(&mut self) {
-        if self.result.is_none() {
-            return;
+        self.schema = None;
+        if self.c_schema.is_some() {
+            unsafe {
+                Arc::from_raw(self.c_schema.unwrap());
+            }
+            self.c_schema = None;
         }
-        unsafe {
-            ffi::duckdb_destroy_result(&mut self.result_unwrap());
+        if self.result.is_some() {
+            unsafe {
+                ffi::duckdb_destroy_arrow(&mut self.result_unwrap());
+            }
             self.result = None;
         }
     }

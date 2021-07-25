@@ -12,10 +12,8 @@ env:
 jobs:
   test:
     name: Test ${{ matrix.target }}
-
     strategy:
       fail-fast: true
-
       matrix:
         include:
           #- { target: x86_64-pc-windows-msvc, os: windows-latest }
@@ -28,7 +26,6 @@ jobs:
             #}
 
     runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v2
       # This has a matcher for test panics, so we use it even though elsewhere
@@ -37,13 +34,21 @@ jobs:
         with:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
-
-      # - run: cargo build --features bundled --workspace --all-targets --verbose
-      - run: cargo test --features bundled --workspace --all-targets --verbose
-      # - run: cargo test --features bundled --workspace --doc --verbose
+          components: 'rustfmt, clippy'
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --workspace --features bundled
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          # Intentionally omit time feature until we're on time 0.3, at which
+          # point it should be added to `bundled-full`.
+          args: '--features "bundled"'
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v1
 
   sanitizer:
     name: Address Sanitizer
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -56,62 +61,10 @@ jobs:
         env:
           RUSTFLAGS: -Zsanitizer=address
           RUSTDOCFLAGS: -Zsanitizer=address
-          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=0"
+          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
           # Work around https://github.com/rust-lang/rust/issues/59125 by
           # disabling backtraces. In an ideal world we'd probably suppress the
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
         run: cargo -Z build-std test --features 'bundled' --target x86_64-unknown-linux-gnu
-
-  # Ensure clippy doesn't complain.
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: hecrj/setup-rust-action@v1
-        with:
-          components: clippy
-      - run: cargo clippy --all-targets --workspace --features bundled
-      # - run: cargo clippy --all-targets --workspace --features bundled -- -D warnings
-
-  # Ensure patch is formatted.
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: hecrj/setup-rust-action@v1
-        with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
-
-  # Detect cases where documentation links don't resolve and such.
-  # doc:
-    # name: Docs
-    # runs-on: ubuntu-latest
-    # steps:
-      # - uses: actions/checkout@v2
-      # - uses: hecrj/setup-rust-action@v1
-        # with:
-          # rust-version: nightly
-      # # Need to use `cargo rustdoc` to actually get it to respect -D
-      # # warnings... Note: this also requires nightly.
-      # - run: cargo rustdoc --features 'bundled' -- -D warnings
-
-  codecov:
-    name: Generate code coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: hecrj/setup-rust-action@v1
-      - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          # Intentionally omit time feature until we're on time 0.3, at which
-          # point it should be added to `bundled-full`.
-          args: '--features "bundled"'
-
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1

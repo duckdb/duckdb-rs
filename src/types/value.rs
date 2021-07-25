@@ -1,4 +1,5 @@
 use super::{Null, Type};
+use rust_decimal::prelude::*;
 
 /// Owning [dynamic type value](http://sqlite.org/datatype3.html). Value's type is typically
 /// dictated by DuckDB (not by the caller).
@@ -21,10 +22,20 @@ pub enum Value {
     BigInt(i64),
     /// The value is a signed huge integer.
     HugeInt(i128),
+    /// The value is a unsigned tiny integer.
+    UTinyInt(u8),
+    /// The value is a unsigned small integer.
+    USmallInt(u16),
+    /// The value is a unsigned integer.
+    UInt(u32),
+    /// The value is a unsigned big integer.
+    UBigInt(u64),
     /// The value is a f32.
     Float(f32),
     /// The value is a f64.
     Double(f64),
+    /// The value is a Decimal.
+    Decimal(Decimal),
     /// The value is a timestap.
     Timestamp(String),
     /// The value is a text string.
@@ -176,8 +187,13 @@ impl Value {
             Value::Int(_) => Type::Int,
             Value::BigInt(_) => Type::BigInt,
             Value::HugeInt(_) => Type::HugeInt,
+            Value::UTinyInt(_) => Type::UTinyInt,
+            Value::USmallInt(_) => Type::USmallInt,
+            Value::UInt(_) => Type::UInt,
+            Value::UBigInt(_) => Type::UBigInt,
             Value::Float(_) => Type::Float,
             Value::Double(_) => Type::Double,
+            Value::Decimal(_) => Type::Decimal,
             Value::Timestamp(_) => Type::Timestamp,
             Value::Text(_) => Type::Text,
             Value::Blob(_) => Type::Blob,

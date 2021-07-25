@@ -1,14 +1,15 @@
-use std::ffi::CStr;
+use std::ffi::c_void;
 use std::ffi::CString;
 use std::iter::IntoIterator;
-use std::os::raw::{c_char, c_void};
-use std::slice::from_raw_parts;
 use std::{convert, fmt, str};
 
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
-use crate::error::result_from_duckdb_code;
+use crate::error::error_from_duckdb_code;
 use crate::types::{ToSql, ToSqlOutput};
+
+use arrow::array::StructArray;
+use arrow::datatypes::DataType;
 
 /// A prepared statement.
 pub struct Statement<'conn> {
@@ -261,7 +262,13 @@ impl Statement<'_> {
     /// Return the row count
     #[inline]
     pub fn row_count(&self) -> usize {
-        self.stmt.result_unwrap().row_count as usize
+        self.stmt.row_count()
+    }
+
+    /// Get next batch records
+    #[inline]
+    pub fn step(&self) -> Option<StructArray> {
+        self.stmt.step()
     }
 
     #[inline]
@@ -405,7 +412,7 @@ impl Statement<'_> {
             _ => unreachable!("not supported"),
         };
         if rc != ffi::DuckDBSuccess {
-            result_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
+            error_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
         } else {
             Ok(())
         }
@@ -438,61 +445,10 @@ impl Statement<'_> {
         Statement { conn, stmt }
     }
 
-    pub(super) fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
-        let mut result = self.stmt.result_unwrap();
-        match unsafe { self.stmt.column_type(col) } {
-            // TODO: check this
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_INVALID => ValueRef::Null,
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => {
-                // FIXME
-                ValueRef::Boolean(unsafe { ffi::duckdb_value_boolean(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_TINYINT => {
-                ValueRef::TinyInt(unsafe { ffi::duckdb_value_int8(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT => {
-                ValueRef::SmallInt(unsafe { ffi::duckdb_value_int16(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_INTEGER => {
-                ValueRef::Int(unsafe { ffi::duckdb_value_int32(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_BIGINT => {
-                ValueRef::BigInt(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT => {
-                ValueRef::BigInt(unsafe { ffi::duckdb_value_int64(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_FLOAT => {
-                ValueRef::Float(unsafe { ffi::duckdb_value_float(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE => {
-                ValueRef::Double(unsafe { ffi::duckdb_value_double(&mut result, col as u64, row as u64) })
-            }
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => unsafe {
-                let text = ffi::duckdb_value_varchar(&mut result, col as u64, row as u64);
-                assert!(!text.is_null(), "unexpected SQLITE_TEXT column type with NULL data");
-                let text_str = CStr::from_ptr(text as *const c_char);
-                if text_str.to_str().unwrap() == "NULL" {
-                    return ValueRef::Null;
-                }
-                ValueRef::Text(text_str.to_bytes())
-            },
-            ffi::DUCKDB_TYPE_DUCKDB_TYPE_BLOB => {
-                let blob = unsafe { ffi::duckdb_value_blob(&mut result, col as u64, row as u64) };
-
-                let len = blob.size;
-                if len > 0 {
-                    ValueRef::Blob(unsafe { from_raw_parts(blob.data as *const u8, len as usize) })
-                } else {
-                    // The return value from sqlite3_column_blob() for a zero-length BLOB
-                    // is a NULL pointer.
-                    ValueRef::Null
-                }
-            }
-            _ => unreachable!("sqlite3_column_type returned invalid value: {}, {}", col, unsafe {
-                self.stmt.column_type(col)
-            }),
-        }
+    /// column_type
+    #[inline]
+    pub fn column_type(&self, idx: usize) -> DataType {
+        self.stmt.column_type(idx)
     }
 }
 
@@ -647,18 +603,14 @@ mod test {
     }
 
     #[test]
-    fn test_insert() -> Result<()> {
+    fn test_insert_duplicate() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")?;
         let mut stmt = db.prepare("INSERT INTO foo (x) VALUES (?)")?;
         // TODO(wangfenjin): currently always 1
         stmt.insert([1i32])?;
         stmt.insert([2i32])?;
-        match stmt.insert([1i32]).unwrap_err() {
-            Error::StatementChangedRows(0) => (),
-            // TODO(wangfenjin): Constraint Error: duplicate key value violates primary key or unique constraint
-            err => println!("insert should't return this error: {}", err),
-        }
+        assert!(stmt.insert([1i32]).is_err());
         let mut multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")?;
         match multi.insert([]).unwrap_err() {
             Error::StatementChangedRows(2) => (),
@@ -779,6 +731,7 @@ mod test {
         let conn = Connection::open_in_memory()?;
         let stmt = conn.prepare("");
         assert!(stmt.is_err());
+
         Ok(())
     }
 

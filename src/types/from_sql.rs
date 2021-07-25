@@ -83,6 +83,8 @@ macro_rules! from_sql_integral(
                     ValueRef::HugeInt(i) => Ok(<$t as cast::From<i128>>::cast(i).unwrap()),
                     ValueRef::Float(i) => Ok(<$t as cast::From<f32>>::cast(i).unwrap()),
                     ValueRef::Double(i) => Ok(<$t as cast::From<f64>>::cast(i).unwrap()),
+                    // TODO: more efficient way?
+                    ValueRef::Decimal(i) => Ok(i.to_string().parse::<$t>().unwrap()),
                     _ => Err(FromSqlError::InvalidType),
                 }
             }

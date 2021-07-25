@@ -23,7 +23,7 @@ members = ["libduckdb-sys"]
 [features]
 bundled = ["libduckdb-sys/bundled"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
-default = ["bundled"]
+default = []
 
 [dependencies]
 time = { version = "0.2.23", optional = true }
@@ -41,6 +41,9 @@ memchr = "2.3"
 uuid = { version = "0.8", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.2", features = ["std", "x128"] }
+arrow = { version = "5.0", default-features = false }
+# arrow = { path = "../arrow-rs/arrow", default-features = false }
+rust_decimal = "1.14"
 
 [dev-dependencies]
 doc-comment = "0.3"

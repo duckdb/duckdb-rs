@@ -1,22 +1,31 @@
-use fallible_iterator::FallibleIterator;
-use fallible_streaming_iterator::FallibleStreamingIterator;
 use std::convert;
+use std::sync::Arc;
 
 use super::{Error, Result, Statement};
 use crate::types::{FromSql, FromSqlError, ValueRef};
+
+use arrow::array::{self, Array, StructArray};
+use arrow::datatypes::*;
+use fallible_iterator::FallibleIterator;
+use fallible_streaming_iterator::FallibleStreamingIterator;
+use rust_decimal::prelude::*;
 
 /// An handle for the resulting rows of a query.
 #[must_use = "Rows is lazy and will do nothing unless consumed"]
 pub struct Rows<'stmt> {
     pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
+    arr: Arc<Option<StructArray>>,
     row: Option<Row<'stmt>>,
     current_row: usize,
+    current_batch_row: usize,
 }
 
 impl<'stmt> Rows<'stmt> {
     #[inline]
     fn reset(&mut self) {
         self.current_row = 0;
+        self.current_batch_row = 0;
+        self.arr = Arc::new(None);
     }
 
     /// Attempt to get the next row from the query. Returns `Ok(Some(Row))` if
@@ -36,6 +45,14 @@ impl<'stmt> Rows<'stmt> {
     pub fn next(&mut self) -> Result<Option<&Row<'stmt>>> {
         self.advance()?;
         Ok((*self).get())
+    }
+
+    #[inline]
+    fn batch_row_count(&self) -> usize {
+        if self.arr.is_none() {
+            return 0;
+        }
+        self.arr.as_ref().as_ref().unwrap().len()
     }
 
     /// Map over this `Rows`, converting it to a [`Map`], which
@@ -89,8 +106,10 @@ impl<'stmt> Rows<'stmt> {
     pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Rows<'stmt> {
         Rows {
             stmt: Some(stmt),
+            arr: Arc::new(None),
             row: None,
             current_row: 0,
+            current_batch_row: 0,
         }
     }
 
@@ -203,13 +222,23 @@ impl<'stmt> FallibleStreamingIterator for Rows<'stmt> {
     #[inline]
     fn advance(&mut self) -> Result<()> {
         match self.stmt {
-            Some(ref stmt) => {
+            Some(stmt) => {
                 if self.current_row < stmt.row_count() {
+                    if self.current_batch_row >= self.batch_row_count() {
+                        self.arr = Arc::new(stmt.step());
+                        if self.arr.is_none() {
+                            self.row = None;
+                            return Ok(());
+                        }
+                        self.current_batch_row = 0;
+                    }
                     self.row = Some(Row {
                         stmt,
-                        current_row: self.current_row,
+                        arr: self.arr.clone(),
+                        current_row: self.current_batch_row,
                     });
                     self.current_row += 1;
+                    self.current_batch_row += 1;
                     Ok(())
                 } else {
                     self.reset();
@@ -233,6 +262,7 @@ impl<'stmt> FallibleStreamingIterator for Rows<'stmt> {
 /// A single result row of a query.
 pub struct Row<'stmt> {
     pub(crate) stmt: &'stmt Statement<'stmt>,
+    arr: Arc<Option<StructArray>>,
     current_row: usize,
 }
 
@@ -271,7 +301,7 @@ impl<'stmt> Row<'stmt> {
     /// 16 bytes, `Error::InvalidColumnType` will also be returned.
     pub fn get<I: RowIndex, T: FromSql>(&self, idx: I) -> Result<T> {
         let idx = idx.idx(self.stmt)?;
-        let value = self.stmt.value_ref(self.current_row, idx);
+        let value = self.value_ref(self.current_row, idx);
         FromSql::column_result(value).map_err(|err| match err {
             FromSqlError::InvalidType => {
                 Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
@@ -305,8 +335,204 @@ impl<'stmt> Row<'stmt> {
         // Narrowing from `ValueRef<'stmt>` (which `self.stmt.value_ref(idx)`
         // returns) to `ValueRef<'a>` is needed because it's only valid until
         // the next call to sqlite3_step.
-        let val_ref = self.stmt.value_ref(self.current_row, idx);
+        let val_ref = self.value_ref(self.current_row, idx);
         Ok(val_ref)
+    }
+
+    fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
+        let column = self.arr.as_ref().as_ref().unwrap().column(col);
+        if column.is_null(row) {
+            return ValueRef::Null;
+        }
+        match column.data_type() {
+            DataType::Utf8 => {
+                let array = column.as_any().downcast_ref::<array::StringArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::from(array.value(row))
+            }
+            DataType::LargeUtf8 => {
+                let array = column.as_any().downcast_ref::<array::LargeStringArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::from(array.value(row))
+            }
+            DataType::Binary => {
+                let array = column.as_any().downcast_ref::<array::BinaryArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Blob(array.value(row))
+            }
+            DataType::LargeBinary => {
+                let array = column.as_any().downcast_ref::<array::LargeBinaryArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Blob(array.value(row))
+            }
+            DataType::Boolean => {
+                let array = column.as_any().downcast_ref::<array::BooleanArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Boolean(array.value(row))
+            }
+            DataType::Int8 => {
+                let array = column.as_any().downcast_ref::<array::Int8Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::TinyInt(array.value(row))
+            }
+            DataType::Int16 => {
+                let array = column.as_any().downcast_ref::<array::Int16Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::SmallInt(array.value(row))
+            }
+            DataType::Int32 => {
+                let array = column.as_any().downcast_ref::<array::Int32Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Int(array.value(row))
+            }
+            DataType::Int64 => {
+                let array = column.as_any().downcast_ref::<array::Int64Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::BigInt(array.value(row))
+            }
+            DataType::UInt8 => {
+                let array = column.as_any().downcast_ref::<array::UInt8Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::UTinyInt(array.value(row))
+            }
+            DataType::UInt16 => {
+                let array = column.as_any().downcast_ref::<array::UInt16Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::USmallInt(array.value(row))
+            }
+            DataType::UInt32 => {
+                let array = column.as_any().downcast_ref::<array::UInt32Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::UInt(array.value(row))
+            }
+            DataType::UInt64 => {
+                let array = column.as_any().downcast_ref::<array::UInt64Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::UBigInt(array.value(row))
+            }
+            DataType::Float16 => {
+                let array = column.as_any().downcast_ref::<array::Float32Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Float(array.value(row))
+            }
+            DataType::Float32 => {
+                let array = column.as_any().downcast_ref::<array::Float32Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Float(array.value(row))
+            }
+            DataType::Float64 => {
+                let array = column.as_any().downcast_ref::<array::Float64Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Double(array.value(row))
+            }
+            DataType::Decimal(..) => {
+                let array = column.as_any().downcast_ref::<array::DecimalArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
+            }
+            // TODO: support more data types
+            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
+            //     make_string_datetime!(array::TimestampSecondArray, column, row)
+            // }
+            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Millisecond => {
+            //     make_string_datetime!(array::TimestampMillisecondArray, column, row)
+            // }
+            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Microsecond => {
+            //     make_string_datetime!(array::TimestampMicrosecondArray, column, row)
+            // }
+            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Nanosecond => {
+            //     make_string_datetime!(array::TimestampNanosecondArray, column, row)
+            // }
+            // DataType::Date32 => make_string_date!(array::Date32Array, column, row),
+            // DataType::Date64 => make_string_date!(array::Date64Array, column, row),
+            // DataType::Time32(unit) if *unit == TimeUnit::Second => {
+            //     make_string_time!(array::Time32SecondArray, column, row)
+            // }
+            // DataType::Time32(unit) if *unit == TimeUnit::Millisecond => {
+            //     make_string_time!(array::Time32MillisecondArray, column, row)
+            // }
+            // DataType::Time64(unit) if *unit == TimeUnit::Microsecond => {
+            //     make_string_time!(array::Time64MicrosecondArray, column, row)
+            // }
+            // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
+            //     make_string_time!(array::Time64NanosecondArray, column, row)
+            // }
+            // DataType::Interval(unit) => match unit {
+            //     IntervalUnit::DayTime => {
+            //         make_string_interval_day_time!(column, row)
+            //     }
+            //     IntervalUnit::YearMonth => {
+            //         make_string_interval_year_month!(column, row)
+            //     }
+            // },
+            // DataType::List(_) => make_string_from_list!(column, row),
+            // DataType::Dictionary(index_type, _value_type) => match **index_type {
+            //     DataType::Int8 => dict_array_value_to_string::<Int8Type>(column, row),
+            //     DataType::Int16 => dict_array_value_to_string::<Int16Type>(column, row),
+            //     DataType::Int32 => dict_array_value_to_string::<Int32Type>(column, row),
+            //     DataType::Int64 => dict_array_value_to_string::<Int64Type>(column, row),
+            //     DataType::UInt8 => dict_array_value_to_string::<UInt8Type>(column, row),
+            //     DataType::UInt16 => dict_array_value_to_string::<UInt16Type>(column, row),
+            //     DataType::UInt32 => dict_array_value_to_string::<UInt32Type>(column, row),
+            //     DataType::UInt64 => dict_array_value_to_string::<UInt64Type>(column, row),
+            //     _ => Err(ArrowError::InvalidArgumentError(format!(
+            //         "Pretty printing not supported for {:?} due to index type",
+            //         column.data_type()
+            //     ))),
+            // },
+            _ => unreachable!("invalid value: {}, {}", col, self.stmt.column_type(col)),
+        }
     }
 
     /// Get the value of a particular column of the result row as a `ValueRef`,
@@ -326,20 +552,6 @@ impl<'stmt> Row<'stmt> {
     /// * If `idx` is not a valid column name for this row.
     pub fn get_ref_unwrap<I: RowIndex>(&self, idx: I) -> ValueRef<'_> {
         self.get_ref(idx).unwrap()
-    }
-
-    /// Renamed to [`get_ref`](Row::get_ref).
-    #[deprecated = "Use [`get_ref`](Row::get_ref) instead."]
-    #[inline]
-    pub fn get_raw_checked<I: RowIndex>(&self, idx: I) -> Result<ValueRef<'_>> {
-        self.get_ref(idx)
-    }
-
-    /// Renamed to [`get_ref_unwrap`](Row::get_ref_unwrap).
-    #[deprecated = "Use [`get_ref_unwrap`](Row::get_ref_unwrap) instead."]
-    #[inline]
-    pub fn get_raw<I: RowIndex>(&self, idx: I) -> ValueRef<'_> {
-        self.get_ref_unwrap(idx)
     }
 }
 

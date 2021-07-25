@@ -16,7 +16,7 @@ description = "Native bindings to the libduckdb library, C API"
 
 [features]
 default = ["vcpkg", "pkg-config"]
-bundled = ["cc"]
+bundled = ["cc", "buildtime_bindgen"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 
 [dependencies]
@@ -26,3 +26,6 @@ bindgen = { version = "0.58", optional = true, default-features = false, feature
 pkg-config = { version = "0.3.19", optional = true }
 cc = { version = "1.0", features = ["parallel"], optional = true }
 vcpkg = { version = "0.2", optional = true }
+
+[dev-dependencies]
+arrow = { version = "5.0", default-features = false }

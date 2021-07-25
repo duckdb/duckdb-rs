@@ -5,7 +5,7 @@ use crate::types::Type;
 use std::error;
 use std::ffi::CStr;
 use std::fmt;
-use std::os::raw::c_uint;
+use std::os::raw::{c_uint, c_void};
 use std::path::PathBuf;
 use std::str;
 
@@ -212,28 +212,46 @@ impl error::Error for Error {
 
 #[cold]
 #[inline]
-pub fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Error {
-    Error::DuckDBFailure(ffi::Error::new(code as u32), message)
+pub fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+    Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
 }
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+pub fn result_from_duckdb_prepare(code: c_uint, mut prepare: ffi::duckdb_prepared_statement) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
-    Err(error_from_duckdb_code(code, message))
-}
-
-#[cold]
-#[inline]
-pub fn result_from_duckdb_result(code: c_uint, mut out: ffi::duckdb_result) -> Result<()> {
-    if code == ffi::DuckDBSuccess {
-        return Ok(());
-    }
-    let message = unsafe { Some(CStr::from_ptr(out.error_message).to_string_lossy().to_string()) };
     unsafe {
-        ffi::duckdb_destroy_result(&mut out);
-    };
-    Err(error_from_duckdb_code(code, message))
+        let message = if prepare.is_null() {
+            Some("prepare is null".to_string())
+        } else {
+            let c_err = ffi::duckdb_prepare_error(prepare);
+            let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
+            ffi::duckdb_free(c_err as *mut c_void);
+            ffi::duckdb_destroy_prepare(&mut prepare);
+            message
+        };
+        error_from_duckdb_code(code, message)
+    }
+}
+
+#[cold]
+#[inline]
+pub fn result_from_duckdb_arrow(code: c_uint, mut out: ffi::duckdb_arrow) -> Result<()> {
+    if code == ffi::DuckDBSuccess {
+        return Ok(());
+    }
+    unsafe {
+        let message = if out.is_null() {
+            Some("out is null".to_string())
+        } else {
+            let c_err = ffi::duckdb_query_arrow_error(out);
+            let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
+            ffi::duckdb_free(c_err as *mut c_void);
+            ffi::duckdb_destroy_arrow(&mut out);
+            message
+        };
+        error_from_duckdb_code(code, message)
+    }
 }

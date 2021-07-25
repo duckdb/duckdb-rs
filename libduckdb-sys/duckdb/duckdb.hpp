@@ -10,8 +10,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #pragma once
 #define DUCKDB_AMALGAMATION 1
-#define DUCKDB_SOURCE_ID "d4d56bab1"
-#define DUCKDB_VERSION "0.2.8-dev332"
+#define DUCKDB_SOURCE_ID "d60e90e35"
+#define DUCKDB_VERSION "0.2.8-dev805"
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
@@ -238,6 +238,11 @@ T MaxValue(T a, T b) {
 template <typename T>
 T MinValue(T a, T b) {
 	return a < b ? a : b;
+}
+
+template <typename T>
+T AbsValue(T a) {
+	return a < 0 ? -a : a;
 }
 
 template <typename T>
@@ -843,8 +848,6 @@ enum class PhysicalType : uint8_t {
 
 	// DuckDB Extensions
 	VARCHAR = 200, // our own string representation, different from STRING and LARGE_STRING above
-	POINTER = 202,
-	HASH = 203,
 	INT128 = 204, // 128-bit integers
 
 	/// Boolean as 1 bit, LSB bit-packed ordering
@@ -949,7 +952,6 @@ struct LogicalType {
 	DUCKDB_API string ToString() const;
 	DUCKDB_API bool IsIntegral() const;
 	DUCKDB_API bool IsNumeric() const;
-	DUCKDB_API bool IsMoreGenericThan(LogicalType &other) const;
 	DUCKDB_API hash_t Hash() const;
 
 	DUCKDB_API static LogicalType MaxLogicalType(const LogicalType &left, const LogicalType &right);
@@ -1059,10 +1061,6 @@ PhysicalType GetTypeId() {
 		return PhysicalType::UINT64;
 	} else if (std::is_same<T, hugeint_t>()) {
 		return PhysicalType::INT128;
-	} else if (std::is_same<T, uint64_t>()) {
-		return PhysicalType::HASH;
-	} else if (std::is_same<T, uintptr_t>()) {
-		return PhysicalType::POINTER;
 	} else if (std::is_same<T, float>()) {
 		return PhysicalType::FLOAT;
 	} else if (std::is_same<T, double>()) {
@@ -1593,6 +1591,8 @@ public:
 
 	void Clear();
 
+	void Resize(uint64_t bufsiz);
+
 	uint64_t AllocSize() {
 		return internal_size;
 	}
@@ -1606,6 +1606,12 @@ private:
 	//! The buffer that was actually malloc'd, i.e. the pointer that must be freed when the FileBuffer is destroyed
 	data_ptr_t malloced_buffer;
 	uint64_t malloced_size;
+
+private:
+	//! Sets malloced_size given the requested buffer size
+	void SetMallocedSize(uint64_t &bufsiz);
+	//! Constructs the Filebuffer object
+	void Construct(uint64_t bufsiz);
 };
 
 } // namespace duckdb
@@ -1658,6 +1664,25 @@ class ClientContext;
 class DatabaseInstance;
 class FileSystem;
 
+enum class FileType {
+	//! Regular file
+	FILE_TYPE_REGULAR,
+	//! Directory
+	FILE_TYPE_DIR,
+	//! FIFO named pipe
+	FILE_TYPE_FIFO,
+	//! Socket
+	FILE_TYPE_SOCKET,
+	//! Symbolic link
+	FILE_TYPE_LINK,
+	//! Block device
+	FILE_TYPE_BLOCKDEV,
+	//! Character device
+	FILE_TYPE_CHARDEV,
+	//! Unknown or invalid file handle
+	FILE_TYPE_INVALID,
+};
+
 struct FileHandle {
 public:
 	FileHandle(FileSystem &file_system, string path) : file_system(file_system), path(path) {
@@ -1680,6 +1705,7 @@ public:
 	bool CanSeek();
 	bool OnDiskFile();
 	idx_t GetFileSize();
+	FileType GetType();
 
 protected:
 	virtual void Close() = 0;
@@ -1736,6 +1762,8 @@ public:
 	virtual int64_t GetFileSize(FileHandle &handle);
 	//! Returns the file last modified time of a file handle, returns timespec with zero on all attributes on error
 	virtual time_t GetLastModifiedTime(FileHandle &handle);
+	//! Returns the file last modified time of a file handle, returns timespec with zero on all attributes on error
+	virtual FileType GetFileType(FileHandle &handle);
 	//! Truncate a file to a maximum size of new_size, new_size should be smaller than or equal to the current size of
 	//! the file
 	virtual void Truncate(FileHandle &handle, int64_t new_size);
@@ -1834,6 +1862,9 @@ public:
 	}
 	time_t GetLastModifiedTime(FileHandle &handle) override {
 		return handle.file_system.GetLastModifiedTime(handle);
+	}
+	FileType GetFileType(FileHandle &handle) override {
+		return handle.file_system.GetFileType(handle);
 	}
 
 	void Truncate(FileHandle &handle, int64_t new_size) override {
@@ -2010,6 +2041,31 @@ using std::bitset;
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
+// duckdb/common/enums/vector_type.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+namespace duckdb {
+
+enum class VectorType : uint8_t {
+	FLAT_VECTOR,       // Flat vectors represent a standard uncompressed vector
+	CONSTANT_VECTOR,   // Constant vector represents a single constant
+	DICTIONARY_VECTOR, // Dictionary vector represents a selection vector on top of another vector
+	SEQUENCE_VECTOR    // Sequence vector represents a sequence with a start point and an increment
+};
+
+string VectorTypeToString(VectorType type);
+
+} // namespace duckdb
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
 // duckdb/common/types/selection_vector.hpp
 //
 //
@@ -2099,9 +2155,6 @@ public:
 		sel_vector = other.sel_vector;
 	}
 
-	bool empty() const {
-		return !sel_vector;
-	}
 	void set_index(idx_t idx, idx_t loc) {
 		sel_vector[idx] = loc;
 	}
@@ -2111,7 +2164,7 @@ public:
 		sel_vector[j] = tmp;
 	}
 	idx_t get_index(idx_t idx) const {
-		return sel_vector[idx];
+		return sel_vector ? sel_vector[idx] : idx;
 	}
 	sel_t *data() {
 		return sel_vector;
@@ -2163,6 +2216,304 @@ public:
 private:
 	SelectionVector *sel;
 	SelectionVector vec;
+};
+
+} // namespace duckdb
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/types/validity_mask.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/to_string.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+namespace duckdb {
+using std::to_string;
+}
+
+
+namespace duckdb {
+struct ValidityMask;
+
+template <typename V>
+struct TemplatedValidityData {
+	static constexpr const int BITS_PER_VALUE = sizeof(V) * 8;
+	static constexpr const V MAX_ENTRY = ~V(0);
+
+public:
+	explicit TemplatedValidityData(idx_t count) {
+		auto entry_count = EntryCount(count);
+		owned_data = unique_ptr<V[]>(new V[entry_count]);
+		for (idx_t entry_idx = 0; entry_idx < entry_count; entry_idx++) {
+			owned_data[entry_idx] = MAX_ENTRY;
+		}
+	}
+	TemplatedValidityData(const V *validity_mask, idx_t count) {
+		D_ASSERT(validity_mask);
+		auto entry_count = EntryCount(count);
+		owned_data = unique_ptr<V[]>(new V[entry_count]);
+		for (idx_t entry_idx = 0; entry_idx < entry_count; entry_idx++) {
+			owned_data[entry_idx] = validity_mask[entry_idx];
+		}
+	}
+
+	unique_ptr<V[]> owned_data;
+
+public:
+	static inline idx_t EntryCount(idx_t count) {
+		return (count + (BITS_PER_VALUE - 1)) / BITS_PER_VALUE;
+	}
+};
+
+using validity_t = uint64_t;
+
+struct ValidityData : TemplatedValidityData<validity_t> {
+public:
+	DUCKDB_API explicit ValidityData(idx_t count);
+	DUCKDB_API ValidityData(const ValidityMask &original, idx_t count);
+};
+
+//! Type used for validity masks
+template <typename V>
+struct TemplatedValidityMask {
+	using ValidityBuffer = TemplatedValidityData<V>;
+
+public:
+	static constexpr const int BITS_PER_VALUE = ValidityBuffer::BITS_PER_VALUE;
+	static constexpr const int STANDARD_ENTRY_COUNT = (STANDARD_VECTOR_SIZE + (BITS_PER_VALUE - 1)) / BITS_PER_VALUE;
+	static constexpr const int STANDARD_MASK_SIZE = STANDARD_ENTRY_COUNT * sizeof(validity_t);
+
+public:
+	TemplatedValidityMask() : validity_mask(nullptr) {
+	}
+	explicit TemplatedValidityMask(idx_t max_count) {
+		Initialize(max_count);
+	}
+	explicit TemplatedValidityMask(V *ptr) : validity_mask(ptr) {
+	}
+	TemplatedValidityMask(const TemplatedValidityMask &original, idx_t count) {
+		Copy(original, count);
+	}
+
+	static inline idx_t ValidityMaskSize(idx_t count = STANDARD_VECTOR_SIZE) {
+		return ValidityBuffer::EntryCount(count) * sizeof(V);
+	}
+	inline bool AllValid() const {
+		return !validity_mask;
+	}
+	bool CheckAllValid(idx_t count) const {
+		if (AllValid()) {
+			return true;
+		}
+		idx_t entry_count = ValidityBuffer::EntryCount(count);
+		idx_t valid_count = 0;
+		for (idx_t i = 0; i < entry_count; i++) {
+			valid_count += validity_mask[i] == ValidityBuffer::MAX_ENTRY;
+		}
+		return valid_count == entry_count;
+	}
+
+	bool CheckAllValid(idx_t to, idx_t from) const {
+		if (AllValid()) {
+			return true;
+		}
+		for (idx_t i = from; i < to; i++) {
+			if (!RowIsValid(i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	inline V *GetData() const {
+		return validity_mask;
+	}
+	void Reset() {
+		validity_mask = nullptr;
+		validity_data.reset();
+	}
+
+	static inline idx_t EntryCount(idx_t count) {
+		return ValidityBuffer::EntryCount(count);
+	}
+	inline V GetValidityEntry(idx_t entry_idx) const {
+		if (!validity_mask) {
+			return ValidityBuffer::MAX_ENTRY;
+		}
+		return validity_mask[entry_idx];
+	}
+	static inline bool AllValid(V entry) {
+		return entry == ValidityBuffer::MAX_ENTRY;
+	}
+	static inline bool NoneValid(V entry) {
+		return entry == 0;
+	}
+	static inline bool RowIsValid(V entry, idx_t idx_in_entry) {
+		return entry & (V(1) << V(idx_in_entry));
+	}
+	static inline void GetEntryIndex(idx_t row_idx, idx_t &entry_idx, idx_t &idx_in_entry) {
+		entry_idx = row_idx / BITS_PER_VALUE;
+		idx_in_entry = row_idx % BITS_PER_VALUE;
+	}
+
+	//! RowIsValidUnsafe should only be used if AllValid() is false: it achieves the same as RowIsValid but skips a
+	//! not-null check
+	inline bool RowIsValidUnsafe(idx_t row_idx) const {
+		D_ASSERT(validity_mask);
+		idx_t entry_idx, idx_in_entry;
+		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
+		auto entry = GetValidityEntry(entry_idx);
+		return RowIsValid(entry, idx_in_entry);
+	}
+
+	//! Returns true if a row is valid (i.e. not null), false otherwise
+	inline bool RowIsValid(idx_t row_idx) const {
+		if (!validity_mask) {
+			return true;
+		}
+		return RowIsValidUnsafe(row_idx);
+	}
+
+	//! Same as SetValid, but skips a null check on validity_mask
+	inline void SetValidUnsafe(idx_t row_idx) {
+		D_ASSERT(validity_mask);
+		idx_t entry_idx, idx_in_entry;
+		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
+		validity_mask[entry_idx] |= (V(1) << V(idx_in_entry));
+	}
+
+	//! Marks the entry at the specified row index as valid (i.e. not-null)
+	inline void SetValid(idx_t row_idx) {
+		if (!validity_mask) {
+			// if AllValid() we don't need to do anything
+			// the row is already valid
+			return;
+		}
+		SetValidUnsafe(row_idx);
+	}
+
+	//! Marks the bit at the specified entry as invalid (i.e. null)
+	inline void SetInvalidUnsafe(idx_t entry_idx, idx_t idx_in_entry) {
+		D_ASSERT(validity_mask);
+		validity_mask[entry_idx] &= ~(V(1) << V(idx_in_entry));
+	}
+
+	//! Marks the bit at the specified row index as invalid (i.e. null)
+	inline void SetInvalidUnsafe(idx_t row_idx) {
+		idx_t entry_idx, idx_in_entry;
+		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
+		SetInvalidUnsafe(entry_idx, idx_in_entry);
+	}
+
+	//! Marks the entry at the specified row index as invalid (i.e. null)
+	inline void SetInvalid(idx_t row_idx) {
+		if (!validity_mask) {
+			D_ASSERT(row_idx <= STANDARD_VECTOR_SIZE);
+			Initialize(STANDARD_VECTOR_SIZE);
+		}
+		SetInvalidUnsafe(row_idx);
+	}
+
+	//! Mark the entrry at the specified index as either valid or invalid (non-null or null)
+	inline void Set(idx_t row_idx, bool valid) {
+		if (valid) {
+			SetValid(row_idx);
+		} else {
+			SetInvalid(row_idx);
+		}
+	}
+
+	//! Ensure the validity mask is writable, allocating space if it is not initialized
+	inline void EnsureWritable() {
+		if (!validity_mask) {
+			Initialize();
+		}
+	}
+
+	//! Marks "count" entries in the validity mask as invalid (null)
+	inline void SetAllInvalid(idx_t count) {
+		EnsureWritable();
+		for (idx_t i = 0; i < ValidityBuffer::EntryCount(count); i++) {
+			validity_mask[i] = 0;
+		}
+	}
+
+	//! Marks "count" entries in the validity mask as valid (not null)
+	inline void SetAllValid(idx_t count) {
+		EnsureWritable();
+		for (idx_t i = 0; i < ValidityBuffer::EntryCount(count); i++) {
+			validity_mask[i] = ValidityBuffer::MAX_ENTRY;
+		}
+	}
+
+	inline bool IsMaskSet() const {
+		if (validity_mask) {
+			return true;
+		}
+		return false;
+	}
+
+public:
+	void Initialize(validity_t *validity) {
+		validity_data.reset();
+		validity_mask = validity;
+	}
+	void Initialize(const TemplatedValidityMask &other) {
+		validity_mask = other.validity_mask;
+		validity_data = other.validity_data;
+	}
+	void Initialize(idx_t count = STANDARD_VECTOR_SIZE) {
+		validity_data = make_buffer<ValidityBuffer>(count);
+		validity_mask = validity_data->owned_data.get();
+	}
+	void Copy(const TemplatedValidityMask &other, idx_t count) {
+		if (other.AllValid()) {
+			validity_data = nullptr;
+			validity_mask = nullptr;
+		} else {
+			validity_data = make_buffer<ValidityBuffer>(other.validity_mask, count);
+			validity_mask = validity_data->owned_data.get();
+		}
+	}
+
+protected:
+	V *validity_mask;
+	buffer_ptr<ValidityBuffer> validity_data;
+};
+
+struct ValidityMask : public TemplatedValidityMask<validity_t> {
+public:
+	ValidityMask() : TemplatedValidityMask(nullptr) {
+	}
+	explicit ValidityMask(idx_t max_count) : TemplatedValidityMask(max_count) {
+	}
+	explicit ValidityMask(validity_t *ptr) : TemplatedValidityMask(ptr) {
+	}
+	ValidityMask(const ValidityMask &original, idx_t count) : TemplatedValidityMask(original, count) {
+	}
+
+public:
+	void Resize(idx_t old_size, idx_t new_size);
+
+	void Slice(const ValidityMask &other, idx_t offset);
+	void Combine(const ValidityMask &other, idx_t count);
+	string ToString(idx_t count) const;
 };
 
 } // namespace duckdb
@@ -2545,31 +2896,6 @@ DUCKDB_API bool Value::IsValid(double value);
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
-// duckdb/common/enums/vector_type.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-
-
-namespace duckdb {
-
-enum class VectorType : uint8_t {
-	FLAT_VECTOR,       // Flat vectors represent a standard uncompressed vector
-	CONSTANT_VECTOR,   // Constant vector represents a single constant
-	DICTIONARY_VECTOR, // Dictionary vector represents a selection vector on top of another vector
-	SEQUENCE_VECTOR    // Sequence vector represents a sequence with a start point and an increment
-};
-
-string VectorTypeToString(VectorType type);
-
-} // namespace duckdb
-
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
 // duckdb/common/types/vector_buffer.hpp
 //
 //
@@ -2623,8 +2949,6 @@ public:
 	string_t AddBlob(const char *data, idx_t len);
 	//! Allocates space for an empty string of size "len" on the heap
 	string_t EmptyString(idx_t len);
-	//! Add all strings from a different string heap to this string heap
-	void MergeHeap(StringHeap &heap);
 
 private:
 	struct StringChunk {
@@ -2950,304 +3274,6 @@ private:
 } // namespace duckdb
 
 
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
-// duckdb/common/types/validity_mask.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-
-
-
-//===----------------------------------------------------------------------===//
-//                         DuckDB
-//
-// duckdb/common/to_string.hpp
-//
-//
-//===----------------------------------------------------------------------===//
-
-
-
-namespace duckdb {
-using std::to_string;
-}
-
-
-namespace duckdb {
-struct ValidityMask;
-
-template <typename V>
-struct TemplatedValidityData {
-	static constexpr const int BITS_PER_VALUE = sizeof(V) * 8;
-	static constexpr const V MAX_ENTRY = ~V(0);
-
-public:
-	explicit TemplatedValidityData(idx_t count) {
-		auto entry_count = EntryCount(count);
-		owned_data = unique_ptr<V[]>(new V[entry_count]);
-		for (idx_t entry_idx = 0; entry_idx < entry_count; entry_idx++) {
-			owned_data[entry_idx] = MAX_ENTRY;
-		}
-	}
-	TemplatedValidityData(const V *validity_mask, idx_t count) {
-		D_ASSERT(validity_mask);
-		auto entry_count = EntryCount(count);
-		owned_data = unique_ptr<V[]>(new V[entry_count]);
-		for (idx_t entry_idx = 0; entry_idx < entry_count; entry_idx++) {
-			owned_data[entry_idx] = validity_mask[entry_idx];
-		}
-	}
-
-	unique_ptr<V[]> owned_data;
-
-public:
-	static inline idx_t EntryCount(idx_t count) {
-		return (count + (BITS_PER_VALUE - 1)) / BITS_PER_VALUE;
-	}
-};
-
-using validity_t = uint64_t;
-
-struct ValidityData : TemplatedValidityData<validity_t> {
-public:
-	DUCKDB_API explicit ValidityData(idx_t count);
-	DUCKDB_API ValidityData(const ValidityMask &original, idx_t count);
-};
-
-//! Type used for validity masks
-template <typename V>
-struct TemplatedValidityMask {
-	using ValidityBuffer = TemplatedValidityData<V>;
-
-public:
-	static constexpr const int BITS_PER_VALUE = ValidityBuffer::BITS_PER_VALUE;
-	static constexpr const int STANDARD_ENTRY_COUNT = (STANDARD_VECTOR_SIZE + (BITS_PER_VALUE - 1)) / BITS_PER_VALUE;
-	static constexpr const int STANDARD_MASK_SIZE = STANDARD_ENTRY_COUNT * sizeof(validity_t);
-
-public:
-	TemplatedValidityMask() : validity_mask(nullptr) {
-	}
-	explicit TemplatedValidityMask(idx_t max_count) {
-		Initialize(max_count);
-	}
-	explicit TemplatedValidityMask(V *ptr) : validity_mask(ptr) {
-	}
-	TemplatedValidityMask(const TemplatedValidityMask &original, idx_t count) {
-		Copy(original, count);
-	}
-
-	static inline idx_t ValidityMaskSize(idx_t count = STANDARD_VECTOR_SIZE) {
-		return ValidityBuffer::EntryCount(count) * sizeof(V);
-	}
-	inline bool AllValid() const {
-		return !validity_mask;
-	}
-	bool CheckAllValid(idx_t count) const {
-		if (AllValid()) {
-			return true;
-		}
-		idx_t entry_count = ValidityBuffer::EntryCount(count);
-		idx_t valid_count = 0;
-		for (idx_t i = 0; i < entry_count; i++) {
-			valid_count += validity_mask[i] == ValidityBuffer::MAX_ENTRY;
-		}
-		return valid_count == entry_count;
-	}
-
-	bool CheckAllValid(idx_t to, idx_t from) const {
-		if (AllValid()) {
-			return true;
-		}
-		for (idx_t i = from; i < to; i++) {
-			if (!RowIsValid(i)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	inline V *GetData() const {
-		return validity_mask;
-	}
-	void Reset() {
-		validity_mask = nullptr;
-		validity_data.reset();
-	}
-
-	static inline idx_t EntryCount(idx_t count) {
-		return ValidityBuffer::EntryCount(count);
-	}
-	inline V GetValidityEntry(idx_t entry_idx) const {
-		if (!validity_mask) {
-			return ValidityBuffer::MAX_ENTRY;
-		}
-		return validity_mask[entry_idx];
-	}
-	static inline bool AllValid(V entry) {
-		return entry == ValidityBuffer::MAX_ENTRY;
-	}
-	static inline bool NoneValid(V entry) {
-		return entry == 0;
-	}
-	static inline bool RowIsValid(V entry, idx_t idx_in_entry) {
-		return entry & (V(1) << V(idx_in_entry));
-	}
-	static inline void GetEntryIndex(idx_t row_idx, idx_t &entry_idx, idx_t &idx_in_entry) {
-		entry_idx = row_idx / BITS_PER_VALUE;
-		idx_in_entry = row_idx % BITS_PER_VALUE;
-	}
-
-	//! RowIsValidUnsafe should only be used if AllValid() is false: it achieves the same as RowIsValid but skips a
-	//! not-null check
-	inline bool RowIsValidUnsafe(idx_t row_idx) const {
-		D_ASSERT(validity_mask);
-		idx_t entry_idx, idx_in_entry;
-		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
-		auto entry = GetValidityEntry(entry_idx);
-		return RowIsValid(entry, idx_in_entry);
-	}
-
-	//! Returns true if a row is valid (i.e. not null), false otherwise
-	inline bool RowIsValid(idx_t row_idx) const {
-		if (!validity_mask) {
-			return true;
-		}
-		return RowIsValidUnsafe(row_idx);
-	}
-
-	//! Same as SetValid, but skips a null check on validity_mask
-	inline void SetValidUnsafe(idx_t row_idx) {
-		D_ASSERT(validity_mask);
-		idx_t entry_idx, idx_in_entry;
-		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
-		validity_mask[entry_idx] |= (V(1) << V(idx_in_entry));
-	}
-
-	//! Marks the entry at the specified row index as valid (i.e. not-null)
-	inline void SetValid(idx_t row_idx) {
-		if (!validity_mask) {
-			// if AllValid() we don't need to do anything
-			// the row is already valid
-			return;
-		}
-		SetValidUnsafe(row_idx);
-	}
-
-	//! Marks the bit at the specified entry as invalid (i.e. null)
-	inline void SetInvalidUnsafe(idx_t entry_idx, idx_t idx_in_entry) {
-		D_ASSERT(validity_mask);
-		validity_mask[entry_idx] &= ~(V(1) << V(idx_in_entry));
-	}
-
-	//! Marks the bit at the specified row index as invalid (i.e. null)
-	inline void SetInvalidUnsafe(idx_t row_idx) {
-		idx_t entry_idx, idx_in_entry;
-		GetEntryIndex(row_idx, entry_idx, idx_in_entry);
-		SetInvalidUnsafe(entry_idx, idx_in_entry);
-	}
-
-	//! Marks the entry at the specified row index as invalid (i.e. null)
-	inline void SetInvalid(idx_t row_idx) {
-		if (!validity_mask) {
-			D_ASSERT(row_idx <= STANDARD_VECTOR_SIZE);
-			Initialize(STANDARD_VECTOR_SIZE);
-		}
-		SetInvalidUnsafe(row_idx);
-	}
-
-	//! Mark the entrry at the specified index as either valid or invalid (non-null or null)
-	inline void Set(idx_t row_idx, bool valid) {
-		if (valid) {
-			SetValid(row_idx);
-		} else {
-			SetInvalid(row_idx);
-		}
-	}
-
-	//! Ensure the validity mask is writable, allocating space if it is not initialized
-	inline void EnsureWritable() {
-		if (!validity_mask) {
-			Initialize();
-		}
-	}
-
-	//! Marks "count" entries in the validity mask as invalid (null)
-	inline void SetAllInvalid(idx_t count) {
-		EnsureWritable();
-		for (idx_t i = 0; i < ValidityBuffer::EntryCount(count); i++) {
-			validity_mask[i] = 0;
-		}
-	}
-
-	//! Marks "count" entries in the validity mask as valid (not null)
-	inline void SetAllValid(idx_t count) {
-		EnsureWritable();
-		for (idx_t i = 0; i < ValidityBuffer::EntryCount(count); i++) {
-			validity_mask[i] = ValidityBuffer::MAX_ENTRY;
-		}
-	}
-
-	inline bool IsMaskSet() const {
-		if (validity_mask) {
-			return true;
-		}
-		return false;
-	}
-
-public:
-	void Initialize(validity_t *validity) {
-		validity_data.reset();
-		validity_mask = validity;
-	}
-	void Initialize(const TemplatedValidityMask &other) {
-		validity_mask = other.validity_mask;
-		validity_data = other.validity_data;
-	}
-	void Initialize(idx_t count = STANDARD_VECTOR_SIZE) {
-		validity_data = make_buffer<ValidityBuffer>(count);
-		validity_mask = validity_data->owned_data.get();
-	}
-	void Copy(const TemplatedValidityMask &other, idx_t count) {
-		if (other.AllValid()) {
-			validity_data = nullptr;
-			validity_mask = nullptr;
-		} else {
-			validity_data = make_buffer<ValidityBuffer>(other.validity_mask, count);
-			validity_mask = validity_data->owned_data.get();
-		}
-	}
-
-protected:
-	V *validity_mask;
-	buffer_ptr<ValidityBuffer> validity_data;
-};
-
-struct ValidityMask : public TemplatedValidityMask<validity_t> {
-public:
-	ValidityMask() : TemplatedValidityMask(nullptr) {
-	}
-	explicit ValidityMask(idx_t max_count) : TemplatedValidityMask(max_count) {
-	}
-	explicit ValidityMask(validity_t *ptr) : TemplatedValidityMask(ptr) {
-	}
-	ValidityMask(const ValidityMask &original, idx_t count) : TemplatedValidityMask(original, count) {
-	}
-
-public:
-	void Resize(idx_t old_size, idx_t new_size);
-
-	void Slice(const ValidityMask &other, idx_t offset);
-	void Combine(const ValidityMask &other, idx_t count);
-	string ToString(idx_t count) const;
-};
-
-} // namespace duckdb
-
 
 namespace duckdb {
 
@@ -3511,21 +3537,24 @@ struct FlatVector {
 		D_ASSERT(vector.GetVectorType() == VectorType::FLAT_VECTOR);
 		vector.validity.Initialize(new_validity);
 	}
-	static inline void SetNull(Vector &vector, idx_t idx, bool is_null) {
-		D_ASSERT(vector.GetVectorType() == VectorType::FLAT_VECTOR);
-		vector.validity.Set(idx, !is_null);
-	}
+	static void SetNull(Vector &vector, idx_t idx, bool is_null);
 	static inline bool IsNull(const Vector &vector, idx_t idx) {
 		D_ASSERT(vector.GetVectorType() == VectorType::FLAT_VECTOR);
 		return !vector.validity.RowIsValid(idx);
 	}
-	DUCKDB_API static const SelectionVector *IncrementalSelectionVector(idx_t count, SelectionVector &owned_sel);
 
 	static const sel_t INCREMENTAL_VECTOR[STANDARD_VECTOR_SIZE];
 	static const SelectionVector INCREMENTAL_SELECTION_VECTOR;
 };
 
 struct ListVector {
+	static inline list_entry_t *GetData(Vector &v) {
+		if (v.GetVectorType() == VectorType::DICTIONARY_VECTOR) {
+			auto &child = DictionaryVector::Child(v);
+			return GetData(child);
+		}
+		return FlatVector::GetData<list_entry_t>(v);
+	}
 	//! Gets a reference to the underlying child-vector of a list
 	DUCKDB_API static const Vector &GetEntry(const Vector &vector);
 	//! Gets a reference to the underlying child-vector of a list
@@ -3834,6 +3863,29 @@ struct VectorOperations {
 	// true := A <= B with nulls being maximal
 	static idx_t DistinctLessThanEquals(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
 	                                    SelectionVector *true_sel, SelectionVector *false_sel);
+
+	//===--------------------------------------------------------------------===//
+	// Nested Comparisons
+	//===--------------------------------------------------------------------===//
+	// true := A != B with nulls being equal, inputs selected
+	static idx_t NestedNotEquals(Vector &left, Vector &right, idx_t vcount, const SelectionVector &sel, idx_t count,
+	                             SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A == B with nulls being equal, inputs selected
+	static idx_t NestedEquals(Vector &left, Vector &right, idx_t vcount, const SelectionVector &sel, idx_t count,
+	                          SelectionVector *true_sel, SelectionVector *false_sel);
+
+	// true := A > B with nulls being maximal, inputs selected
+	static idx_t NestedGreaterThan(Vector &left, Vector &right, idx_t vcount, const SelectionVector &sel, idx_t count,
+	                               SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A >= B with nulls being maximal, inputs selected
+	static idx_t NestedGreaterThanEquals(Vector &left, Vector &right, idx_t vcount, const SelectionVector &sel,
+	                                     idx_t count, SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A < B with nulls being maximal, inputs selected
+	static idx_t NestedLessThan(Vector &left, Vector &right, idx_t vcount, const SelectionVector &sel, idx_t count,
+	                            SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A <= B with nulls being maximal, inputs selected
+	static idx_t NestedLessThanEquals(Vector &left, Vector &right, idx_t vcount, const SelectionVector &sel,
+	                                  idx_t count, SelectionVector *true_sel, SelectionVector *false_sel);
 
 	//===--------------------------------------------------------------------===//
 	// Hash functions
@@ -4812,10 +4864,6 @@ struct NumericLimits<double> {
 	static double Maximum();
 };
 
-//! Returns the minimal type that guarantees an integer value from not
-//! overflowing
-PhysicalType MinimalType(int64_t value);
-
 } // namespace duckdb
 
 #include <random>
@@ -4824,7 +4872,7 @@ namespace duckdb {
 
 struct RandomEngine {
 	std::mt19937 random_engine;
-	explicit RandomEngine(int64_t seed) {
+	RandomEngine(int64_t seed = -1) {
 		if (seed < 0) {
 			std::random_device rd;
 			random_engine.seed(rd());
@@ -5106,6 +5154,7 @@ enum class ExpressionType : uint8_t {
 	WINDOW_LAST_VALUE = 131,
 	WINDOW_LEAD = 132,
 	WINDOW_LAG = 133,
+	WINDOW_NTH_VALUE = 134,
 
 	// -----------------------------
 	// Functions
@@ -5400,7 +5449,7 @@ struct FunctionData {
 	}
 
 	virtual unique_ptr<FunctionData> Copy() {
-		return make_unique<FunctionData>();
+		throw InternalException("Unimplemented copy for FunctionData");
 	};
 	virtual bool Equals(FunctionData &other) {
 		return true;
@@ -5417,9 +5466,6 @@ struct FunctionData {
 };
 
 struct TableFunctionData : public FunctionData {
-	unique_ptr<FunctionData> Copy() override {
-		throw NotImplementedException("Copy not required for table-producing function");
-	}
 	// used to pass on projections to table functions that support them. NB, can contain COLUMN_IDENTIFIER_ROW_ID
 	vector<idx_t> column_ids;
 };
@@ -5839,6 +5885,9 @@ public:
 	//! Get Interval in milliseconds
 	static int64_t GetMilli(interval_t val);
 
+	//! Get Interval in Nanoseconds
+	static int64_t GetNanoseconds(interval_t val);
+
 	//! Returns the difference between two timestamps
 	static interval_t GetDifference(timestamp_t timestamp_1, timestamp_t timestamp_2);
 
@@ -6102,6 +6151,8 @@ inline bool LessThanEquals::Operation(hugeint_t left, hugeint_t right) {
 
 
 namespace duckdb {
+struct SelectionVector;
+
 class Serializer;
 class Deserializer;
 class Vector;
@@ -6119,6 +6170,11 @@ public:
 
 public:
 	bool CanHaveNull();
+	bool CanHaveNoNull();
+
+	virtual bool IsConstant() {
+		return false;
+	}
 
 	static unique_ptr<BaseStatistics> CreateEmpty(LogicalType type);
 
@@ -6127,7 +6183,8 @@ public:
 	virtual void Serialize(Serializer &serializer);
 	static unique_ptr<BaseStatistics> Deserialize(Deserializer &source, LogicalType type);
 	//! Verify that a vector does not violate the statistics
-	virtual void Verify(Vector &vector, idx_t count);
+	virtual void Verify(Vector &vector, const SelectionVector &sel, idx_t count);
+	void Verify(Vector &vector, idx_t count);
 
 	virtual string ToString();
 };
@@ -6223,12 +6280,15 @@ public:
 
 private:
 	bool CompareScalarFunctionT(const scalar_function_t other) const {
-		typedef void(funcTypeT)(DataChunk &, ExpressionState &, Vector &);
+		typedef void(scalar_function_ptr_t)(DataChunk &, ExpressionState &, Vector &);
 
-		funcTypeT **func_ptr = (funcTypeT **)function.template target<funcTypeT *>();
-		funcTypeT **other_ptr = (funcTypeT **)other.template target<funcTypeT *>();
+		auto func_ptr = (scalar_function_ptr_t **)function.template target<scalar_function_ptr_t *>();
+		auto other_ptr = (scalar_function_ptr_t **)other.template target<scalar_function_ptr_t *>();
 
 		// Case the functions were created from lambdas the target will return a nullptr
+		if (!func_ptr && !other_ptr) {
+			return true;
+		}
 		if (func_ptr == nullptr || other_ptr == nullptr) {
 			// scalar_function_t (std::functions) from lambdas cannot be compared
 			return false;
@@ -6293,7 +6353,7 @@ public:
 			function = &ScalarFunction::UnaryFunction<double, double, OP>;
 			break;
 		default:
-			throw NotImplementedException("Unimplemented type for GetScalarUnaryFunction");
+			throw InternalException("Unimplemented type for GetScalarUnaryFunction");
 		}
 		return function;
 	}
@@ -6336,7 +6396,7 @@ public:
 			function = &ScalarFunction::UnaryFunction<double, TR, OP>;
 			break;
 		default:
-			throw NotImplementedException("Unimplemented type for GetScalarUnaryFunctionFixedReturn");
+			throw InternalException("Unimplemented type for GetScalarUnaryFunctionFixedReturn");
 		}
 		return function;
 	}
@@ -6668,7 +6728,7 @@ public:
 	}
 
 	template <class STATE_TYPE, class RESULT_TYPE, class OP>
-	static void Finalize(Vector &states, FunctionData *bind_data, Vector &result, idx_t count) {
+	static void Finalize(Vector &states, FunctionData *bind_data, Vector &result, idx_t count, idx_t offset) {
 		if (states.GetVectorType() == VectorType::CONSTANT_VECTOR) {
 			result.SetVectorType(VectorType::CONSTANT_VECTOR);
 
@@ -6684,21 +6744,19 @@ public:
 			auto rdata = FlatVector::GetData<RESULT_TYPE>(result);
 			for (idx_t i = 0; i < count; i++) {
 				OP::template Finalize<RESULT_TYPE, STATE_TYPE>(result, bind_data, sdata[i], rdata,
-				                                               FlatVector::Validity(result), i);
+				                                               FlatVector::Validity(result), i + offset);
 			}
 		}
 	}
 
 	template <class STATE, class INPUT_TYPE, class RESULT_TYPE, class OP>
 	static void UnaryWindow(Vector &input, FunctionData *bind_data, data_ptr_t state, const FrameBounds &frame,
-	                        const FrameBounds &prev, Vector &result) {
+	                        const FrameBounds &prev, Vector &result, idx_t rid) {
 
 		auto idata = FlatVector::GetData<const INPUT_TYPE>(input) - MinValue(frame.first, prev.first);
 		const auto &ivalid = FlatVector::Validity(input);
-		auto rdata = ConstantVector::GetData<RESULT_TYPE>(result);
-		auto &rvalid = ConstantVector::Validity(result);
 		OP::template Window<STATE, INPUT_TYPE, RESULT_TYPE>(idata, ivalid, bind_data, (STATE *)state, frame, prev,
-		                                                    rdata, rvalid);
+		                                                    result, rid);
 	}
 
 	template <class STATE_TYPE, class OP>
@@ -6831,7 +6889,7 @@ typedef void (*aggregate_update_t)(Vector inputs[], FunctionData *bind_data, idx
 //! The type used for combining hashed aggregate states (optional)
 typedef void (*aggregate_combine_t)(Vector &state, Vector &combined, idx_t count);
 //! The type used for finalizing hashed aggregate function payloads
-typedef void (*aggregate_finalize_t)(Vector &state, FunctionData *bind_data, Vector &result, idx_t count);
+typedef void (*aggregate_finalize_t)(Vector &state, FunctionData *bind_data, Vector &result, idx_t count, idx_t offset);
 //! The type used for propagating statistics in aggregate functions (optional)
 typedef unique_ptr<BaseStatistics> (*aggregate_statistics_t)(ClientContext &context, BoundAggregateExpression &expr,
                                                              FunctionData *bind_data,
@@ -6850,7 +6908,7 @@ typedef void (*aggregate_simple_update_t)(Vector inputs[], FunctionData *bind_da
 //! The type used for updating complex windowed aggregate functions (optional)
 typedef std::pair<idx_t, idx_t> FrameBounds;
 typedef void (*aggregate_window_t)(Vector inputs[], FunctionData *bind_data, idx_t input_count, data_ptr_t state,
-                                   const FrameBounds &frame, const FrameBounds &prev, Vector &result);
+                                   const FrameBounds &frame, const FrameBounds &prev, Vector &result, idx_t offset);
 
 class AggregateFunction : public BaseScalarFunction {
 public:
@@ -6986,10 +7044,10 @@ public:
 
 	template <class STATE, class INPUT_TYPE, class RESULT_TYPE, class OP>
 	static void UnaryWindow(Vector inputs[], FunctionData *bind_data, idx_t input_count, data_ptr_t state,
-	                        const FrameBounds &frame, const FrameBounds &prev, Vector &result) {
+	                        const FrameBounds &frame, const FrameBounds &prev, Vector &result, idx_t rid) {
 		D_ASSERT(input_count == 1);
 		AggregateExecutor::UnaryWindow<STATE, INPUT_TYPE, RESULT_TYPE, OP>(inputs[0], bind_data, state, frame, prev,
-		                                                                   result);
+		                                                                   result, rid);
 	}
 
 	template <class STATE, class A_TYPE, class B_TYPE, class OP>
@@ -7012,8 +7070,8 @@ public:
 	}
 
 	template <class STATE, class RESULT_TYPE, class OP>
-	static void StateFinalize(Vector &states, FunctionData *bind_data, Vector &result, idx_t count) {
-		AggregateExecutor::Finalize<STATE, RESULT_TYPE, OP>(states, bind_data, result, count);
+	static void StateFinalize(Vector &states, FunctionData *bind_data, Vector &result, idx_t count, idx_t offset) {
+		AggregateExecutor::Finalize<STATE, RESULT_TYPE, OP>(states, bind_data, result, count, offset);
 	}
 
 	template <class STATE, class OP>
@@ -7457,6 +7515,9 @@ public:
 	//! Merge is like Append but messes up the order and destroys the other collection
 	DUCKDB_API void Merge(ChunkCollection &other);
 
+	//! Fuse adds new columns to the right of the collection
+	DUCKDB_API void Fuse(ChunkCollection &other);
+
 	DUCKDB_API void Verify();
 
 	//! Gets the value of the column at the specified index
@@ -7464,7 +7525,8 @@ public:
 	//! Sets the value of the column at the specified index
 	DUCKDB_API void SetValue(idx_t column, idx_t index, const Value &value);
 
-	DUCKDB_API vector<Value> GetRow(idx_t index);
+	//! Copy a single cell to a target vector
+	DUCKDB_API void CopyCell(idx_t column, idx_t index, Vector &target, idx_t target_offset);
 
 	DUCKDB_API string ToString() const {
 		return chunks.size() == 0 ? "ChunkCollection [ 0 ]"
@@ -7514,8 +7576,6 @@ public:
 	DUCKDB_API void Sort(vector<OrderType> &desc, vector<OrderByNullType> &null_order, idx_t result[]);
 	//! Reorders the rows in the collection according to the given indices.
 	DUCKDB_API void Reorder(idx_t order[]);
-
-	DUCKDB_API void MaterializeSortedChunk(DataChunk &target, idx_t order[], idx_t start_offset);
 
 	//! Returns true if the ChunkCollections are equivalent
 	DUCKDB_API bool Equals(ChunkCollection &other);
@@ -7660,7 +7720,7 @@ public:
 	DUCKDB_API bool TryFetch(unique_ptr<DataChunk> &result, string &error) {
 		try {
 			result = Fetch();
-			return true;
+			return success;
 		} catch (std::exception &ex) {
 			error = ex.what();
 			return false;
@@ -7899,9 +7959,6 @@ enum class JoinType : uint8_t {
 //! Convert join type to string
 string JoinTypeToString(JoinType type);
 
-//! True if join is left, full or right outer join
-bool IsOuterJoin(JoinType type);
-
 //! True if join is left or full outer join
 bool IsLeftOuterJoin(JoinType type);
 
@@ -7985,7 +8042,7 @@ public:
 
 public:
 	DUCKDB_API virtual const vector<ColumnDefinition> &Columns() = 0;
-	DUCKDB_API virtual unique_ptr<QueryNode> GetQueryNode() = 0;
+	DUCKDB_API virtual unique_ptr<QueryNode> GetQueryNode();
 	DUCKDB_API virtual BoundStatement Bind(Binder &binder);
 	DUCKDB_API virtual string GetAlias();
 
@@ -8065,7 +8122,7 @@ public:
 	//! Delete from a table, can only be used on a TableRelation
 	DUCKDB_API virtual void Delete(const string &condition = string());
 	//! Create a relation from calling a table in/out function on the input relation
-	DUCKDB_API shared_ptr<Relation> TableFunction(const std::string &fname, vector<Value> &values);
+	DUCKDB_API shared_ptr<Relation> TableFunction(const std::string &fname, vector<Value> values);
 
 public:
 	//! Whether or not the relation inherits column bindings from its child or not, only relevant for binding
@@ -8465,6 +8522,7 @@ struct PrivateAllocatorData {
 
 typedef data_ptr_t (*allocate_function_ptr_t)(PrivateAllocatorData *private_data, idx_t size);
 typedef void (*free_function_ptr_t)(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size);
+typedef data_ptr_t (*reallocate_function_ptr_t)(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size);
 
 class AllocatedData {
 public:
@@ -8489,20 +8547,24 @@ class Allocator {
 public:
 	Allocator();
 	Allocator(allocate_function_ptr_t allocate_function_p, free_function_ptr_t free_function_p,
-	          unique_ptr<PrivateAllocatorData> private_data);
+	          reallocate_function_ptr_t reallocate_function_p, unique_ptr<PrivateAllocatorData> private_data);
 
 	data_ptr_t AllocateData(idx_t size);
 	void FreeData(data_ptr_t pointer, idx_t size);
+	data_ptr_t ReallocateData(data_ptr_t pointer, idx_t size);
 
 	unique_ptr<AllocatedData> Allocate(idx_t size) {
 		return make_unique<AllocatedData>(*this, AllocateData(size), size);
 	}
 
 	static data_ptr_t DefaultAllocate(PrivateAllocatorData *private_data, idx_t size) {
-		return new data_t[size];
+		return (data_ptr_t)malloc(size);
 	}
 	static void DefaultFree(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size) {
-		delete[] pointer;
+		free(pointer);
+	}
+	static data_ptr_t DefaultReallocate(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size) {
+		return (data_ptr_t)realloc(pointer, size);
 	}
 	static Allocator &Get(ClientContext &context);
 	static Allocator &Get(DatabaseInstance &db);
@@ -8514,6 +8576,7 @@ public:
 private:
 	allocate_function_ptr_t allocate_function;
 	free_function_ptr_t free_function;
+	reallocate_function_ptr_t reallocate_function;
 
 	unique_ptr<PrivateAllocatorData> private_data;
 };
@@ -8553,6 +8616,58 @@ struct ReplacementScan {
 	replacement_scan_t function;
 	void *data;
 };
+
+} // namespace duckdb
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/set.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+#include <set>
+
+namespace duckdb {
+using std::set;
+}
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/enums/optimizer_type.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+namespace duckdb {
+
+enum class OptimizerType : uint32_t {
+	INVALID = 0,
+	EXPRESSION_REWRITER,
+	FILTER_PULLUP,
+	FILTER_PUSHDOWN,
+	REGEX_RANGE,
+	IN_CLAUSE,
+	JOIN_ORDER,
+	DELIMINATOR,
+	UNUSED_COLUMNS,
+	STATISTICS_PROPAGATION,
+	COMMON_SUBEXPRESSIONS,
+	COMMON_AGGREGATE,
+	COLUMN_LIFETIME,
+	TOP_N,
+	REORDER_FILTER
+};
+
+string OptimizerTypeToString(OptimizerType type);
 
 } // namespace duckdb
 
@@ -8629,12 +8744,20 @@ public:
 	CheckpointAbort checkpoint_abort = CheckpointAbort::NO_ABORT;
 	//! Replacement table scans are automatically attempted when a table name cannot be found in the schema
 	vector<ReplacementScan> replacement_scans;
+	//! Initialize the database with the standard set of DuckDB functions
+	//! You should probably not touch this unless you know what you are doing
+	bool initialize_default_database = true;
+	//! The set of disabled optimizers (default empty)
+	set<OptimizerType> disabled_optimizers;
 
 public:
 	DUCKDB_API static DBConfig &GetConfig(ClientContext &context);
 	DUCKDB_API static DBConfig &GetConfig(DatabaseInstance &db);
 	DUCKDB_API static vector<ConfigurationOption> GetOptions();
+	DUCKDB_API static idx_t GetOptionCount();
 
+	//! Fetch an option by index. Returns a pointer to the option, or nullptr if out of range
+	DUCKDB_API static ConfigurationOption *GetOptionByIndex(idx_t index);
 	//! Fetch an option by name. Returns a pointer to the option, or nullptr if none exists.
 	DUCKDB_API static ConfigurationOption *GetOptionByName(const string &name);
 
@@ -8826,6 +8949,14 @@ typedef enum DUCKDB_TYPE {
 	DUCKDB_TYPE_INTEGER,
 	// int64_t
 	DUCKDB_TYPE_BIGINT,
+	// uint8_t
+	DUCKDB_TYPE_UTINYINT,
+	// uint16_t
+	DUCKDB_TYPE_USMALLINT,
+	// uint32_t
+	DUCKDB_TYPE_UINTEGER,
+	// uint64_t
+	DUCKDB_TYPE_UBIGINT,
 	// float
 	DUCKDB_TYPE_FLOAT,
 	// double
@@ -8862,7 +8993,7 @@ typedef struct {
 	int8_t hour;
 	int8_t min;
 	int8_t sec;
-	int16_t micros;
+	int32_t micros;
 } duckdb_time;
 
 typedef struct {
@@ -8901,27 +9032,60 @@ typedef struct {
 	char *error_message;
 } duckdb_result;
 
-// typedef struct {
-// 	void *data;
-// 	bool *nullmask;
-// } duckdb_column_data;
-
-// typedef struct {
-// 	int column_count;
-// 	int count;
-// 	duckdb_column_data *columns;
-// } duckdb_chunk;
-
 typedef void *duckdb_database;
 typedef void *duckdb_connection;
 typedef void *duckdb_prepared_statement;
 typedef void *duckdb_appender;
+typedef void *duckdb_arrow;
+typedef void *duckdb_config;
+// we don't need to spell out the schema/array in here
+// because it's a common interface, users can consume
+// the data in their own logic.
+typedef void *duckdb_arrow_schema;
+typedef void *duckdb_arrow_array;
 
 typedef enum { DuckDBSuccess = 0, DuckDBError = 1 } duckdb_state;
+
+//! query duckdb result as arrow data structure
+DUCKDB_API duckdb_state duckdb_query_arrow(duckdb_connection connection, const char *query, duckdb_arrow *out_result);
+//! get arrow schema
+DUCKDB_API duckdb_state duckdb_query_arrow_schema(duckdb_arrow result, duckdb_arrow_schema *out_schema);
+//! get arrow data array
+//! This function can be called multiple time to get next chunks, which will free the previous out_array.
+//! So consume the out_array before call this function again
+DUCKDB_API duckdb_state duckdb_query_arrow_array(duckdb_arrow result, duckdb_arrow_array *out_array);
+//! get arrow row count
+DUCKDB_API idx_t duckdb_arrow_row_count(duckdb_arrow result);
+//! get arrow column count
+DUCKDB_API idx_t duckdb_arrow_column_count(duckdb_arrow result);
+//! get arrow rows changed
+DUCKDB_API idx_t duckdb_arrow_rows_changed(duckdb_arrow result);
+//! get arrow error message
+DUCKDB_API const char *duckdb_query_arrow_error(duckdb_arrow result);
+//! Destroys the arrow result
+DUCKDB_API void duckdb_destroy_arrow(duckdb_arrow *result);
+
+//! Creates a DuckDB configuration object. The created object must be destroyed with duckdb_destroy_config.
+DUCKDB_API duckdb_state duckdb_create_config(duckdb_config *out_config);
+//! Returns the amount of config options available.
+//! Should not be called in a loop as it internally loops over all the options.
+DUCKDB_API size_t duckdb_config_count();
+//! Returns the config name and description for the config at the specified index
+//! The result MUST NOT be freed
+//! Returns failure if the index is out of range (i.e. >= duckdb_config_count)
+DUCKDB_API duckdb_state duckdb_get_config_flag(size_t index, const char **out_name, const char **out_description);
+//! Sets the specified config option for the configuration
+DUCKDB_API duckdb_state duckdb_set_config(duckdb_config config, const char *name, const char *option);
+//! Destroys a config object created with duckdb_create_config
+DUCKDB_API void duckdb_destroy_config(duckdb_config *config);
 
 //! Opens a database file at the given path (nullptr for in-memory). Returns DuckDBSuccess on success, or DuckDBError on
 //! failure. [OUT: database]
 DUCKDB_API duckdb_state duckdb_open(const char *path, duckdb_database *out_database);
+//! Opens a database file at the given path using the specified configuration
+//! If error is set the error will be reported
+DUCKDB_API duckdb_state duckdb_open_ext(const char *path, duckdb_database *out_database, duckdb_config config,
+                                        char **error);
 //! Closes the database.
 DUCKDB_API void duckdb_close(duckdb_database *database);
 
@@ -8984,6 +9148,7 @@ DUCKDB_API void duckdb_free(void *ptr);
 DUCKDB_API duckdb_state duckdb_prepare(duckdb_connection connection, const char *query,
                                        duckdb_prepared_statement *out_prepared_statement);
 
+DUCKDB_API const char *duckdb_prepare_error(duckdb_prepared_statement prepared_statement);
 DUCKDB_API duckdb_state duckdb_nparams(duckdb_prepared_statement prepared_statement, idx_t *nparams_out);
 
 //! binds parameters to prepared statement
@@ -9009,6 +9174,10 @@ DUCKDB_API duckdb_state duckdb_bind_null(duckdb_prepared_statement prepared_stat
 //! Executes the prepared statements with currently bound parameters
 DUCKDB_API duckdb_state duckdb_execute_prepared(duckdb_prepared_statement prepared_statement,
                                                 duckdb_result *out_result);
+
+//! Executes the prepared statements with currently bound parameters and return arrow result
+DUCKDB_API duckdb_state duckdb_execute_prepared_arrow(duckdb_prepared_statement prepared_statement,
+                                                      duckdb_arrow *out_result);
 
 //! Destroys the specified prepared statement descriptor
 DUCKDB_API void duckdb_destroy_prepare(duckdb_prepared_statement *prepared_statement);
@@ -9111,6 +9280,9 @@ public:
 	//! Returns true if the specified (year, month, day) combination is a valid
 	//! date
 	static bool IsValid(int32_t year, int32_t month, int32_t day);
+
+	//! The max number of days in a month of a given year
+	static int32_t MonthDays(int32_t year, int32_t month);
 
 	//! Extract the epoch from the date (seconds since 1970-01-01)
 	static int64_t Epoch(date_t date);
@@ -9419,11 +9591,8 @@ public:
 	//! Convert a time object to a string in the format "hh:mm:ss"
 	static string ToString(dtime_t time);
 
-	static string Format(int32_t hour, int32_t minute, int32_t second, int32_t microseconds = 0);
-
 	static dtime_t FromTime(int32_t hour, int32_t minute, int32_t second, int32_t microseconds = 0);
 
-	static bool IsValidTime(int32_t hour, int32_t minute, int32_t second, int32_t microseconds = 0);
 	//! Extract the time from a given timestamp object
 	static void Convert(dtime_t time, int32_t &out_hour, int32_t &out_min, int32_t &out_sec, int32_t &out_micros);
 };
@@ -9713,22 +9882,6 @@ public:
 	CatalogEntry(CatalogType type, Catalog *catalog, string name);
 	virtual ~CatalogEntry();
 
-	virtual unique_ptr<CatalogEntry> AlterEntry(ClientContext &context, AlterInfo *info) {
-		throw CatalogException("Unsupported alter type for catalog entry!");
-	}
-
-	virtual unique_ptr<CatalogEntry> Copy(ClientContext &context) {
-		throw CatalogException("Unsupported copy type for catalog entry!");
-	}
-	//! Sets the CatalogEntry as the new root entry (i.e. the newest entry) - this is called on a rollback to an
-	//! AlterEntry
-	virtual void SetAsRoot() {
-	}
-	//! Convert the catalog entry to a SQL string that can be used to re-construct the catalog entry
-	virtual string ToSQL() {
-		throw CatalogException("Unsupported catalog type for ToSQL()");
-	}
-
 	//! The oid of the entry
 	idx_t oid;
 	//! The type of this catalog entry
@@ -9751,6 +9904,18 @@ public:
 	unique_ptr<CatalogEntry> child;
 	//! Parent entry (the node that owns this node)
 	CatalogEntry *parent;
+
+public:
+	virtual unique_ptr<CatalogEntry> AlterEntry(ClientContext &context, AlterInfo *info);
+
+	virtual unique_ptr<CatalogEntry> Copy(ClientContext &context);
+
+	//! Sets the CatalogEntry as the new root entry (i.e. the newest entry)
+	// this is called on a rollback to an AlterEntry
+	virtual void SetAsRoot();
+
+	//! Convert the catalog entry to a SQL string that can be used to re-construct the catalog entry
+	virtual string ToSQL();
 };
 } // namespace duckdb
 
@@ -9870,12 +10035,8 @@ public:
 	static bool HasConflict(ClientContext &context, transaction_t timestamp);
 	static bool UseTimestamp(ClientContext &context, transaction_t timestamp);
 
-	idx_t GetEntryIndex(CatalogEntry *entry);
 	CatalogEntry *GetEntryFromIndex(idx_t index);
 	void UpdateTimestamp(CatalogEntry *entry, transaction_t timestamp);
-
-	//! Returns the root entry with the specified name regardless of transaction (or nullptr if there are none)
-	CatalogEntry *GetRootEntry(const string &name);
 
 private:
 	//! Given a root entry, gets the entry valid for this transaction
@@ -10332,9 +10493,6 @@ template <>
 TableCatalogEntry *Catalog::GetEntry(ClientContext &context, string schema_name, const string &name, bool if_exists,
                                      QueryErrorContext error_context);
 template <>
-ViewCatalogEntry *Catalog::GetEntry(ClientContext &context, string schema_name, const string &name, bool if_exists,
-                                    QueryErrorContext error_context);
-template <>
 SequenceCatalogEntry *Catalog::GetEntry(ClientContext &context, string schema_name, const string &name, bool if_exists,
                                         QueryErrorContext error_context);
 template <>
@@ -10375,17 +10533,14 @@ namespace duckdb {
 //===--------------------------------------------------------------------===//
 enum class PhysicalOperatorType : uint8_t {
 	INVALID,
-	LEAF,
 	ORDER_BY,
 	LIMIT,
 	TOP_N,
-	AGGREGATE,
 	WINDOW,
 	UNNEST,
 	SIMPLE_AGGREGATE,
 	HASH_GROUP_BY,
 	PERFECT_HASH_GROUP_BY,
-	SORT_GROUP_BY,
 	FILTER,
 	PROJECTION,
 	COPY_TO_FILE,
@@ -10399,8 +10554,6 @@ enum class PhysicalOperatorType : uint8_t {
 	CHUNK_SCAN,
 	RECURSIVE_CTE_SCAN,
 	DELIM_SCAN,
-	EXTERNAL_FILE_SCAN,
-	QUERY_DERIVED_SCAN,
 	EXPRESSION_SCAN,
 	// -----------------------------
 	// Joins
@@ -10422,10 +10575,8 @@ enum class PhysicalOperatorType : uint8_t {
 	// Updates
 	// -----------------------------
 	INSERT,
-	INSERT_SELECT,
 	DELETE_OPERATOR,
 	UPDATE,
-	EXPORT_EXTERNAL_FILE,
 
 	// -----------------------------
 	// Schema
@@ -10565,10 +10716,6 @@ public:
 	virtual void InitializeChunk(DataChunk &chunk) {
 		auto &types = GetTypes();
 		chunk.Initialize(types);
-	}
-	virtual void InitializeChunkEmpty(DataChunk &chunk) {
-		auto &types = GetTypes();
-		chunk.InitializeEmpty(types);
 	}
 	//! Retrieves a chunk from this operator and stores it in the chunk
 	//! variable.
@@ -11265,6 +11412,8 @@ public:
 	bool force_parallelism = false;
 	//! Force index join independent of table cardinality, used for testing
 	bool force_index_join = false;
+	//! Force out-of-core computation for operators that support it, used for testing
+	bool force_external = false;
 	//! Maximum bits allowed for using a perfect hash table (i.e. the perfect HT can hold up to 2^perfect_ht_threshold
 	//! elements)
 	idx_t perfect_ht_threshold = 12;

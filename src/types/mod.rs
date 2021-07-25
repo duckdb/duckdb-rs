@@ -120,10 +120,20 @@ pub enum Type {
     BigInt,
     /// HUGEINT
     HugeInt,
+    /// UTINYINT
+    UTinyInt,
+    /// USMALLINT
+    USmallInt,
+    /// UINT
+    UInt,
+    /// UBIGINT
+    UBigInt,
     /// FLOAT
     Float,
     /// DOUBLE
     Double,
+    /// DECIMAL
+    Decimal,
     /// TIMESTAMP
     Timestamp,
     /// Text
@@ -144,8 +154,13 @@ impl fmt::Display for Type {
             Type::Int => f.pad("Int"),
             Type::BigInt => f.pad("BigInt"),
             Type::HugeInt => f.pad("HugeInt"),
+            Type::UTinyInt => f.pad("UTinyInt"),
+            Type::USmallInt => f.pad("USmallInt"),
+            Type::UInt => f.pad("UInt"),
+            Type::UBigInt => f.pad("UBigInt"),
             Type::Float => f.pad("Float"),
             Type::Double => f.pad("Double"),
+            Type::Decimal => f.pad("Decimal"),
             Type::Timestamp => f.pad("Timestamp"),
             Type::Text => f.pad("Text"),
             Type::Blob => f.pad("Blob"),
@@ -186,10 +201,8 @@ mod test {
         let empty = vec![];
         db.execute("INSERT INTO foo(b) VALUES (?)", &[&empty])?;
 
-        let v: Option<Vec<u8>> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
-        // TODO: How to differentiate empty and none?
-        // assert_eq!(v, empty);
-        assert!(v.is_none());
+        let v: Vec<u8> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!(v, empty);
         Ok(())
     }
 
