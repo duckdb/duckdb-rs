@@ -227,13 +227,19 @@ pub fn result_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_result(code: c_uint, mut out: ffi::duckdb_result) -> Result<()> {
+pub fn result_from_duckdb_arrow(code: c_uint, mut out: ffi::duckdb_arrow) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
-    let message = unsafe { Some(CStr::from_ptr(out.error_message).to_string_lossy().to_string()) };
+    let message = unsafe {
+        Some(
+            CStr::from_ptr(ffi::duckdb_query_arrow_error(out))
+                .to_string_lossy()
+                .to_string(),
+        )
+    };
     unsafe {
-        ffi::duckdb_destroy_result(&mut out);
+        ffi::duckdb_destroy_arrow(&mut out);
     };
     Err(error_from_duckdb_code(code, message))
 }

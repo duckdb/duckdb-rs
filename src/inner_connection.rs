@@ -6,7 +6,7 @@ use std::str;
 
 use super::ffi;
 use super::{Connection, OpenFlags, Result};
-use crate::error::{result_from_duckdb_code, result_from_duckdb_result, Error};
+use crate::error::{result_from_duckdb_arrow, result_from_duckdb_code, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 
@@ -83,11 +83,11 @@ impl InnerConnection {
         let c_str = CString::new(sql).unwrap();
         unsafe {
             let mut out = mem::zeroed();
-            let r = ffi::duckdb_query(self.con, c_str.as_ptr() as *const c_char, &mut out);
+            let r = ffi::duckdb_query_arrow(self.con, c_str.as_ptr() as *const c_char, &mut out);
             if r != ffi::DuckDBSuccess {
-                result_from_duckdb_result(r, out)
+                result_from_duckdb_arrow(r, out)
             } else {
-                ffi::duckdb_destroy_result(&mut out);
+                ffi::duckdb_destroy_arrow(&mut out);
                 Ok(())
             }
         }

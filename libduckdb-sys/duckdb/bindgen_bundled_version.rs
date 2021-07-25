@@ -10344,18 +10344,22 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_TINYINT: DUCKDB_TYPE = 2;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT: DUCKDB_TYPE = 3;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_INTEGER: DUCKDB_TYPE = 4;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_BIGINT: DUCKDB_TYPE = 5;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_FLOAT: DUCKDB_TYPE = 6;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE: DUCKDB_TYPE = 7;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP: DUCKDB_TYPE = 8;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S: DUCKDB_TYPE = 9;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS: DUCKDB_TYPE = 10;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS: DUCKDB_TYPE = 11;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_DATE: DUCKDB_TYPE = 12;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME: DUCKDB_TYPE = 13;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL: DUCKDB_TYPE = 14;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT: DUCKDB_TYPE = 15;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR: DUCKDB_TYPE = 16;
-pub const DUCKDB_TYPE_DUCKDB_TYPE_BLOB: DUCKDB_TYPE = 17;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT: DUCKDB_TYPE = 6;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT: DUCKDB_TYPE = 7;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER: DUCKDB_TYPE = 8;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT: DUCKDB_TYPE = 9;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_FLOAT: DUCKDB_TYPE = 10;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE: DUCKDB_TYPE = 11;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP: DUCKDB_TYPE = 12;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S: DUCKDB_TYPE = 13;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS: DUCKDB_TYPE = 14;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS: DUCKDB_TYPE = 15;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_DATE: DUCKDB_TYPE = 16;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME: DUCKDB_TYPE = 17;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL: DUCKDB_TYPE = 18;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT: DUCKDB_TYPE = 19;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR: DUCKDB_TYPE = 20;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_BLOB: DUCKDB_TYPE = 21;
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 pub use self::DUCKDB_TYPE as duckdb_type;
 #[repr(C)]
@@ -10399,18 +10403,18 @@ pub struct duckdb_time {
     pub hour: i8,
     pub min: i8,
     pub sec: i8,
-    pub micros: i16,
+    pub micros: i32,
 }
 #[test]
 fn bindgen_test_layout_duckdb_time() {
     assert_eq!(
         ::std::mem::size_of::<duckdb_time>(),
-        6usize,
+        8usize,
         concat!("Size of: ", stringify!(duckdb_time))
     );
     assert_eq!(
         ::std::mem::align_of::<duckdb_time>(),
-        2usize,
+        4usize,
         concat!("Alignment of ", stringify!(duckdb_time))
     );
     assert_eq!(
@@ -10698,13 +10702,96 @@ pub type duckdb_database = *mut ::std::os::raw::c_void;
 pub type duckdb_connection = *mut ::std::os::raw::c_void;
 pub type duckdb_prepared_statement = *mut ::std::os::raw::c_void;
 pub type duckdb_appender = *mut ::std::os::raw::c_void;
+pub type duckdb_arrow = *mut ::std::os::raw::c_void;
+pub type duckdb_config = *mut ::std::os::raw::c_void;
+pub type duckdb_arrow_schema = *mut ::std::os::raw::c_void;
+pub type duckdb_arrow_array = *mut ::std::os::raw::c_void;
 pub const duckdb_state_DuckDBSuccess: duckdb_state = 0;
 pub const duckdb_state_DuckDBError: duckdb_state = 1;
 pub type duckdb_state = ::std::os::raw::c_uint;
 extern "C" {
+    #[doc = "! query duckdb result as arrow data structure"]
+    pub fn duckdb_query_arrow(
+        connection: duckdb_connection,
+        query: *const ::std::os::raw::c_char,
+        out_result: *mut duckdb_arrow,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! get arrow schema"]
+    pub fn duckdb_query_arrow_schema(result: duckdb_arrow, out_schema: *mut duckdb_arrow_schema) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! get arrow data array"]
+    #[doc = "! This function can be called multiple time to get next chunks, which will free the previous out_array."]
+    #[doc = "! So consume the out_array before call this function again"]
+    pub fn duckdb_query_arrow_array(result: duckdb_arrow, out_array: *mut duckdb_arrow_array) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! get arrow row count"]
+    pub fn duckdb_arrow_row_count(result: duckdb_arrow) -> idx_t;
+}
+extern "C" {
+    #[doc = "! get arrow column count"]
+    pub fn duckdb_arrow_column_count(result: duckdb_arrow) -> idx_t;
+}
+extern "C" {
+    #[doc = "! get arrow rows changed"]
+    pub fn duckdb_arrow_rows_changed(result: duckdb_arrow) -> idx_t;
+}
+extern "C" {
+    #[doc = "! get arrow error message"]
+    pub fn duckdb_query_arrow_error(result: duckdb_arrow) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "! Destroys the arrow result"]
+    pub fn duckdb_destroy_arrow(result: *mut duckdb_arrow);
+}
+extern "C" {
+    #[doc = "! Creates a DuckDB configuration object. The created object must be destroyed with duckdb_destroy_config."]
+    pub fn duckdb_create_config(out_config: *mut duckdb_config) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! Returns the amount of config options available."]
+    #[doc = "! Should not be called in a loop as it internally loops over all the options."]
+    pub fn duckdb_config_count() -> size_t;
+}
+extern "C" {
+    #[doc = "! Returns the config name and description for the config at the specified index"]
+    #[doc = "! The result MUST NOT be freed"]
+    #[doc = "! Returns failure if the index is out of range (i.e. >= duckdb_config_count)"]
+    pub fn duckdb_get_config_flag(
+        index: size_t,
+        out_name: *mut *const ::std::os::raw::c_char,
+        out_description: *mut *const ::std::os::raw::c_char,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! Sets the specified config option for the configuration"]
+    pub fn duckdb_set_config(
+        config: duckdb_config,
+        name: *const ::std::os::raw::c_char,
+        option: *const ::std::os::raw::c_char,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! Destroys a config object created with duckdb_create_config"]
+    pub fn duckdb_destroy_config(config: *mut duckdb_config);
+}
+extern "C" {
     #[doc = "! Opens a database file at the given path (nullptr for in-memory). Returns DuckDBSuccess on success, or DuckDBError on"]
     #[doc = "! failure. [OUT: database]"]
     pub fn duckdb_open(path: *const ::std::os::raw::c_char, out_database: *mut duckdb_database) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! Opens a database file at the given path using the specified configuration"]
+    #[doc = "! If error is set the error will be reported"]
+    pub fn duckdb_open_ext(
+        path: *const ::std::os::raw::c_char,
+        out_database: *mut duckdb_database,
+        config: duckdb_config,
+        error: *mut *mut ::std::os::raw::c_char,
+    ) -> duckdb_state;
 }
 extern "C" {
     #[doc = "! Closes the database."]
@@ -10807,6 +10894,9 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
+    pub fn duckdb_prepare_error(prepared_statement: duckdb_prepared_statement) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
     pub fn duckdb_nparams(prepared_statement: duckdb_prepared_statement, nparams_out: *mut idx_t) -> duckdb_state;
 }
 extern "C" {
@@ -10898,6 +10988,13 @@ extern "C" {
     pub fn duckdb_execute_prepared(
         prepared_statement: duckdb_prepared_statement,
         out_result: *mut duckdb_result,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "! Executes the prepared statements with currently bound parameters and return arrow result"]
+    pub fn duckdb_execute_prepared_arrow(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_arrow,
     ) -> duckdb_state;
 }
 extern "C" {

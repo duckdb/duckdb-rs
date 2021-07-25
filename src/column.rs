@@ -29,14 +29,8 @@ impl Statement<'_> {
     /// If associated DB schema can be altered concurrently, you should make
     /// sure that current statement has already been stepped once before
     /// calling this method.
-    pub fn column_names(&self) -> Vec<&str> {
-        let n = self.column_count();
-        let mut cols = Vec::with_capacity(n as usize);
-        for i in 0..n {
-            let s = self.column_name_unwrap(i);
-            cols.push(s);
-        }
-        cols
+    pub fn column_names(&self) -> Vec<&String> {
+        self.stmt.schema().fields().iter().map(|f| f.name()).collect()
     }
 
     /// Return the number of columns in the result set returned by the prepared
@@ -70,7 +64,7 @@ impl Statement<'_> {
     /// }
     /// ```
     #[inline]
-    pub(super) fn column_name_unwrap(&self, col: usize) -> &str {
+    pub(super) fn column_name_unwrap(&self, col: usize) -> &String {
         // Just panic if the bounds are wrong for now, we never call this
         // without checking first.
         self.column_name(col).expect("Column out of bounds")
@@ -90,11 +84,8 @@ impl Statement<'_> {
     ///
     /// Panics when column name is not valid UTF-8.
     #[inline]
-    pub fn column_name(&self, col: usize) -> Result<&str> {
-        self.stmt
-            .column_name(col)
-            .ok_or(Error::InvalidColumnIndex(col))
-            .map(|slice| str::from_utf8(slice.to_bytes()).expect("Invalid UTF-8 sequence in column name"))
+    pub fn column_name(&self, col: usize) -> Result<&String> {
+        self.stmt.column_name(col).ok_or(Error::InvalidColumnIndex(col))
     }
 
     /// Returns the column index in the result set for a given column name.
@@ -112,12 +103,11 @@ impl Statement<'_> {
     /// the specified `name`.
     #[inline]
     pub fn column_index(&self, name: &str) -> Result<usize> {
-        let bytes = name.as_bytes();
         let n = self.column_count();
         for i in 0..n {
             // Note: `column_name` is only fallible if `i` is out of bounds,
             // which we've already checked.
-            if bytes.eq_ignore_ascii_case(self.stmt.column_name(i).unwrap().to_bytes()) {
+            if name.eq_ignore_ascii_case(&self.stmt.column_name(i).unwrap()) {
                 return Ok(i);
             }
         }
