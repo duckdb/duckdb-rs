@@ -10,6 +10,7 @@ use crate::types::{ToSql, ToSqlOutput};
 
 use arrow::array::StructArray;
 use arrow::datatypes::DataType;
+use arrow::record_batch::RecordBatch;
 
 /// A prepared statement.
 pub struct Statement<'conn> {
@@ -85,6 +86,36 @@ impl Statement<'_> {
             1 => Ok(()),
             _ => Err(Error::StatementChangedRows(changes)),
         }
+    }
+
+    /// Execute the prepared statement, returning a handle to the resulting
+    /// vector of arrow RecordBatch
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use arrow::record_batch::RecordBatch;
+    /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
+    ///     conn.query_arrow(
+    ///         "SELECT * FROM test",
+    ///         []
+    ///     )
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if binding parameters fails.
+    #[inline]
+    pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Vec<RecordBatch>> {
+        self.execute(params)?;
+        let mut result = vec![];
+        while let Some(sa) = self.step() {
+            let rb = RecordBatch::from(&sa);
+            result.push(rb);
+        }
+        Ok(result)
     }
 
     /// Execute the prepared statement, returning a handle to the resulting

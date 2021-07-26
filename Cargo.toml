@@ -41,7 +41,7 @@ memchr = "2.3"
 uuid = { version = "0.8", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.2", features = ["std", "x128"] }
-arrow = { version = "5.0", default-features = false }
+arrow = { version = "5.0", default-features = false, features = ["prettyprint"] }
 # arrow = { path = "../arrow-rs/arrow", default-features = false }
 rust_decimal = "1.14"
 

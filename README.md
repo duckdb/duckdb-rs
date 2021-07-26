@@ -12,6 +12,7 @@ forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
 
 ```rust
 use duckdb::{params, Connection, Result};
+use arrow::util::pretty::print_batches;
 
 #[derive(Debug)]
 struct Person {
@@ -42,6 +43,7 @@ fn main() -> Result<()> {
         params![me.name, me.data],
     )?;
 
+    // query table by rows
     let mut stmt = conn.prepare("SELECT id, name, data FROM person")?;
     let person_iter = stmt.query_map([], |row| {
         Ok(Person {
@@ -54,6 +56,10 @@ fn main() -> Result<()> {
     for person in person_iter {
         println!("Found person {:?}", person.unwrap());
     }
+
+    // query table by arrow
+    let rbs = stmt.query_arrow([])?;
+    print_batches(&rbs);
     Ok(())
 }
 ```

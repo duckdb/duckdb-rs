@@ -3,6 +3,7 @@
 //!
 //! ```rust
 //! use duckdb::{params, Connection, Result};
+//! use arrow::util::pretty::print_batches;
 //!
 //! #[derive(Debug)]
 //! struct Person {
@@ -44,6 +45,10 @@
 //!     for person in person_iter {
 //!         println!("Found person {:?}", person.unwrap());
 //!     }
+//!    
+//!     // query table by arrow
+//!     let rbs = stmt.query_arrow([])?;
+//!     print_batches(&rbs);
 //!     Ok(())
 //! }
 //! ```
@@ -72,6 +77,8 @@ pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
 pub use crate::statement::Statement;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
+
+use arrow::record_batch::RecordBatch;
 
 #[macro_use]
 mod error;
@@ -399,6 +406,34 @@ impl Connection {
             .and_then(|r| f(&r))
     }
 
+    /// Convenience method to execute a query that is expected to return a
+    /// vector of arrow RecordBatch
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use arrow::record_batch::RecordBatch;
+    /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
+    ///     conn.query_arrow(
+    ///         "SELECT * FROM test",
+    ///         []
+    ///     )
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `sql` cannot be converted to a C-compatible string
+    /// or if the underlying DuckDB call fails.
+    #[inline]
+    pub fn query_arrow<P>(&self, sql: &str, params: P) -> Result<Vec<RecordBatch>>
+    where
+        P: Params,
+    {
+        self.prepare(sql)?.query_arrow(params)
+    }
+
     /// Prepare a SQL statement for execution.
     ///
     /// ## Example
@@ -478,6 +513,7 @@ doc_comment::doctest!("../README.md");
 #[cfg(test)]
 mod test {
     use super::*;
+    use arrow::array::Int32Array;
     use fallible_iterator::FallibleIterator;
     use std::error::Error as StdError;
     use std::fmt;
@@ -1113,6 +1149,61 @@ mod test {
         db.execute_batch("CREATE TABLE x(t INTEGER);")?;
         // `execute_batch` should be used but `execute` should also work
         db.execute("ALTER TABLE x RENAME TO y;", [])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_arrow_record_batch_small() -> Result<()> {
+        let db = checked_memory_handle();
+        let sql = "BEGIN TRANSACTION;
+                   CREATE TABLE test(t INTEGER);
+                   INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);
+                   END TRANSACTION;";
+        db.execute_batch(sql)?;
+        let rbs = db.query_arrow("select t from test order by t", [])?;
+        assert_eq!(rbs.len(), 1);
+        assert_eq!(rbs.iter().map(|rb| rb.num_rows()).sum::<usize>(), 5);
+        assert_eq!(
+            rbs.iter()
+                .map(|rb| rb
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .iter()
+                    .map(|i| i.unwrap())
+                    .sum::<i32>())
+                .sum::<i32>(),
+            15
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_arrow_record_batch_large() -> Result<()> {
+        let db = checked_memory_handle();
+        db.execute_batch("BEGIN TRANSACTION")?;
+        db.execute_batch("CREATE TABLE test(t INTEGER);")?;
+        for _ in 0..300 {
+            db.execute_batch("INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);")?;
+        }
+        db.execute_batch("END TRANSACTION")?;
+        let rbs = db.query_arrow("select t from test order by t", [])?;
+        assert_eq!(rbs.len(), 2);
+        assert_eq!(rbs.iter().map(|rb| rb.num_rows()).sum::<usize>(), 1500);
+        assert_eq!(
+            rbs.iter()
+                .map(|rb| rb
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .iter()
+                    .map(|i| i.unwrap())
+                    .sum::<i32>())
+                .sum::<i32>(),
+            4500
+        );
         Ok(())
     }
 }
