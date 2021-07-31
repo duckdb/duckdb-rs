@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2018"
 description = "Ergonomic wrapper for DuckDB"
@@ -26,7 +26,7 @@ buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 default = []
 
 [dependencies]
-time = { version = "0.2.23", optional = true }
+time = { version = "0.3", optional = true }
 bitflags = "1.2"
 hashlink = "0.7"
 chrono = { version = "0.4", optional = true }
