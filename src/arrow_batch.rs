@@ -18,13 +18,6 @@ impl<'stmt> Iterator for Arrow<'stmt> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.stmt.is_none() {
-            return None;
-        }
-        let arr = self.stmt.unwrap().step();
-        if arr.is_none() {
-            return None;
-        }
-        Some(RecordBatch::from(&arr.unwrap()))
+        Some(RecordBatch::from(&self.stmt?.step()?))
     }
 }
