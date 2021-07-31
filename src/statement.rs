@@ -5,12 +5,12 @@ use std::{convert, fmt, str};
 
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
+use crate::arrow_batch::Arrow;
 use crate::error::error_from_duckdb_code;
 use crate::types::{ToSql, ToSqlOutput};
 
 use arrow::array::StructArray;
 use arrow::datatypes::DataType;
-use arrow::record_batch::RecordBatch;
 
 /// A prepared statement.
 pub struct Statement<'conn> {
@@ -97,10 +97,7 @@ impl Statement<'_> {
     /// # use duckdb::{Result, Connection};
     /// # use arrow::record_batch::RecordBatch;
     /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
-    ///     conn.query_arrow(
-    ///         "SELECT * FROM test",
-    ///         []
-    ///     )
+    ///     Ok(conn.prepare("SELECT * FROM test")?.query_arrow([])?.collect())
     /// }
     /// ```
     ///
@@ -108,14 +105,9 @@ impl Statement<'_> {
     ///
     /// Will return `Err` if binding parameters fails.
     #[inline]
-    pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Vec<RecordBatch>> {
+    pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
-        let mut result = vec![];
-        while let Some(sa) = self.step() {
-            let rb = RecordBatch::from(&sa);
-            result.push(rb);
-        }
-        Ok(result)
+        Ok(Arrow::new(self))
     }
 
     /// Execute the prepared statement, returning a handle to the resulting

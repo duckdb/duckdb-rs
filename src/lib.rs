@@ -3,6 +3,7 @@
 //!
 //! ```rust
 //! use duckdb::{params, Connection, Result};
+//! use arrow::record_batch::RecordBatch;
 //! use arrow::util::pretty::print_batches;
 //!
 //! #[derive(Debug)]
@@ -47,7 +48,7 @@
 //!     }
 //!    
 //!     // query table by arrow
-//!     let rbs = stmt.query_arrow([])?;
+//!     let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
 //!     print_batches(&rbs);
 //!     Ok(())
 //! }
@@ -69,6 +70,7 @@ use crate::inner_connection::InnerConnection;
 use crate::raw_statement::RawStatement;
 use crate::types::ValueRef;
 
+pub use crate::arrow_batch::Arrow;
 pub use crate::column::Column;
 pub use crate::error::Error;
 pub use crate::ffi::ErrorCode;
@@ -78,10 +80,9 @@ pub use crate::statement::Statement;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
 
-use arrow::record_batch::RecordBatch;
-
 #[macro_use]
 mod error;
+mod arrow_batch;
 mod column;
 mod inner_connection;
 mod params;
@@ -406,34 +407,6 @@ impl Connection {
             .and_then(|r| f(&r))
     }
 
-    /// Convenience method to execute a query that is expected to return a
-    /// vector of arrow RecordBatch
-    ///
-    /// ## Example
-    ///
-    /// ```rust,no_run
-    /// # use duckdb::{Result, Connection};
-    /// # use arrow::record_batch::RecordBatch;
-    /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
-    ///     conn.query_arrow(
-    ///         "SELECT * FROM test",
-    ///         []
-    ///     )
-    /// }
-    /// ```
-    ///
-    /// # Failure
-    ///
-    /// Will return `Err` if `sql` cannot be converted to a C-compatible string
-    /// or if the underlying DuckDB call fails.
-    #[inline]
-    pub fn query_arrow<P>(&self, sql: &str, params: P) -> Result<Vec<RecordBatch>>
-    where
-        P: Params,
-    {
-        self.prepare(sql)?.query_arrow(params)
-    }
-
     /// Prepare a SQL statement for execution.
     ///
     /// ## Example
@@ -513,10 +486,12 @@ doc_comment::doctest!("../README.md");
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::Int32Array;
-    use fallible_iterator::FallibleIterator;
     use std::error::Error as StdError;
     use std::fmt;
+
+    use arrow::array::Int32Array;
+    use arrow::record_batch::RecordBatch;
+    use fallible_iterator::FallibleIterator;
 
     // this function is never called, but is still type checked; in
     // particular, calls with specific instantiations will require
@@ -1160,22 +1135,19 @@ mod test {
                    INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);
                    END TRANSACTION;";
         db.execute_batch(sql)?;
-        let rbs = db.query_arrow("select t from test order by t", [])?;
-        assert_eq!(rbs.len(), 1);
-        assert_eq!(rbs.iter().map(|rb| rb.num_rows()).sum::<usize>(), 5);
-        assert_eq!(
-            rbs.iter()
-                .map(|rb| rb
-                    .column(0)
-                    .as_any()
-                    .downcast_ref::<Int32Array>()
-                    .unwrap()
-                    .iter()
-                    .map(|i| i.unwrap())
-                    .sum::<i32>())
-                .sum::<i32>(),
-            15
-        );
+        let mut stmt = db.prepare("select t from test order by t desc")?;
+        let mut arr = stmt.query_arrow([])?;
+
+        let rb = arr.next().unwrap();
+        let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(column.len(), 5);
+        assert_eq!(column.value(0), 5);
+        assert_eq!(column.value(1), 4);
+        assert_eq!(column.value(2), 3);
+        assert_eq!(column.value(3), 2);
+        assert_eq!(column.value(4), 1);
+
+        assert!(arr.next().is_none());
         Ok(())
     }
 
@@ -1188,7 +1160,7 @@ mod test {
             db.execute_batch("INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);")?;
         }
         db.execute_batch("END TRANSACTION")?;
-        let rbs = db.query_arrow("select t from test order by t", [])?;
+        let rbs: Vec<RecordBatch> = db.prepare("select t from test order by t")?.query_arrow([])?.collect();
         assert_eq!(rbs.len(), 2);
         assert_eq!(rbs.iter().map(|rb| rb.num_rows()).sum::<usize>(), 1500);
         assert_eq!(
