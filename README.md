@@ -12,6 +12,7 @@ forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
 
 ```rust
 use duckdb::{params, Connection, Result};
+use arrow::record_batch::RecordBatch;
 use arrow::util::pretty::print_batches;
 
 #[derive(Debug)]
@@ -58,7 +59,7 @@ fn main() -> Result<()> {
     }
 
     // query table by arrow
-    let rbs = stmt.query_arrow([])?;
+    let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
     print_batches(&rbs);
     Ok(())
 }
