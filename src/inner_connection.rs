@@ -5,8 +5,8 @@ use std::ptr;
 use std::str;
 
 use super::ffi;
-use super::{Connection, OpenFlags, Result};
-use crate::error::{result_from_duckdb_arrow, result_from_duckdb_prepare, Error};
+use super::{Appender, Connection, OpenFlags, Result};
+use crate::error::{result_from_duckdb_arrow, result_from_duckdb_code, result_from_duckdb_prepare, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 
@@ -96,6 +96,22 @@ impl InnerConnection {
         let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
         result_from_duckdb_prepare(r, c_stmt)?;
         Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
+    }
+
+    pub fn appender<'a>(&mut self, conn: &'a Connection, table: &str, schema: &str) -> Result<Appender<'a>> {
+        let mut c_app: ffi::duckdb_appender = ptr::null_mut();
+        let c_table = CString::new(table).unwrap();
+        let c_schema = CString::new(schema).unwrap();
+        let r = unsafe {
+            ffi::duckdb_appender_create(
+                self.con,
+                c_schema.as_ptr() as *const c_char,
+                c_table.as_ptr() as *const c_char,
+                &mut c_app,
+            )
+        };
+        result_from_duckdb_code(r, Some("create appender error".to_string()))?;
+        Ok(Appender::new(conn, c_app))
     }
 
     #[inline]

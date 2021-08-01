@@ -70,6 +70,8 @@ use crate::inner_connection::InnerConnection;
 use crate::raw_statement::RawStatement;
 use crate::types::ValueRef;
 
+pub use crate::appender::Appender;
+pub use crate::appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter};
 pub use crate::arrow_batch::Arrow;
 pub use crate::column::Column;
 pub use crate::error::Error;
@@ -82,6 +84,8 @@ pub use crate::types::ToSql;
 
 #[macro_use]
 mod error;
+mod appender;
+mod appender_params;
 mod arrow_batch;
 mod column;
 mod inner_connection;
@@ -161,6 +165,16 @@ pub enum DatabaseName<'a> {
 
     /// A database that has been attached via "ATTACH DATABASE ...".
     Attached(&'a str),
+}
+
+impl<'a> fmt::Display for DatabaseName<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &DatabaseName::Main => write!(f, "main"),
+            &DatabaseName::Temp => write!(f, "temp"),
+            &DatabaseName::Attached(s) => write!(f, "{}", s),
+        }
+    }
 }
 
 /// Shorthand for [`DatabaseName::Main`].
@@ -428,6 +442,47 @@ impl Connection {
     #[inline]
     pub fn prepare(&self, sql: &str) -> Result<Statement<'_>> {
         self.db.borrow_mut().prepare(self, sql)
+    }
+
+    /// Create an Appender for fast import data
+    /// default to use `DatabaseName::Main`
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result, params};
+    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    ///     let mut app = conn.appender("foo")?;
+    ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `table` not exists
+    pub fn appender(&self, table: &str) -> Result<Appender<'_>> {
+        self.appender_to_db(table, &DatabaseName::Main.to_string())
+    }
+
+    /// Create an Appender for fast import data
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result, params, DatabaseName};
+    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    ///     let mut app = conn.appender_to_db("foo", &DatabaseName::Main.to_string())?;
+    ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `table` not exists
+    pub fn appender_to_db(&self, table: &str, schema: &str) -> Result<Appender<'_>> {
+        self.db.borrow_mut().appender(self, table, schema)
     }
 
     /// Close the DuckDB connection.
@@ -1176,6 +1231,14 @@ mod test {
                 .sum::<i32>(),
             4500
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_database_name_to_string() -> Result<()> {
+        assert_eq!(DatabaseName::Main.to_string(), "main");
+        assert_eq!(DatabaseName::Temp.to_string(), "temp");
+        assert_eq!(DatabaseName::Attached("abc").to_string(), "abc");
         Ok(())
     }
 }
