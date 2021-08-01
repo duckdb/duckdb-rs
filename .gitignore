@@ -23,3 +23,5 @@ Cargo.lock
 
 # ccls
 .ccls-cache/
+
+*.db

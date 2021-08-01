@@ -6,7 +6,7 @@ use std::{convert, fmt, str};
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
 use crate::arrow_batch::Arrow;
-use crate::error::error_from_duckdb_code;
+use crate::error::result_from_duckdb_code;
 use crate::types::{ToSql, ToSqlOutput};
 
 use arrow::array::StructArray;
@@ -434,11 +434,7 @@ impl Statement<'_> {
             },
             _ => unreachable!("not supported"),
         };
-        if rc != ffi::DuckDBSuccess {
-            error_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
-        } else {
-            Ok(())
-        }
+        result_from_duckdb_code(rc, Some(format!("bind col {} error", col)))
     }
 
     #[inline]

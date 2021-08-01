@@ -212,7 +212,16 @@ impl error::Error for Error {
 
 #[cold]
 #[inline]
-pub fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+    Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
+}
+
+#[cold]
+#[inline]
+pub fn result_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+    if code == ffi::DuckDBSuccess {
+        return Ok(());
+    }
     Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
 }
 
