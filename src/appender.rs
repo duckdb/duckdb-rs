@@ -61,9 +61,9 @@ impl Appender<'_> {
     /// Will return `Err` if append column count not the same with the table schema
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
-        let rc = unsafe { ffi::duckdb_appender_begin_row(self.app) };
-        result_from_duckdb_code(rc, None)?;
+        let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
         params.__bind_in(self)?;
+        // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
         result_from_duckdb_code(rc, None)
     }
@@ -88,8 +88,10 @@ impl Appender<'_> {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
         };
+        // NOTE: we ignore the return value here
+        //       because if anything failed, end_row will fail
         // TODO: append more
-        let rc = match value {
+        let _ = match value {
             ValueRef::Null => unsafe { ffi::duckdb_append_null(ptr) },
             ValueRef::Boolean(i) => unsafe { ffi::duckdb_append_bool(ptr, i) },
             ValueRef::TinyInt(i) => unsafe { ffi::duckdb_append_int8(ptr, i) },
@@ -108,7 +110,6 @@ impl Appender<'_> {
             ValueRef::Blob(b) => unsafe { ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64) },
             _ => unreachable!("not supported"),
         };
-        result_from_duckdb_code(rc, Some("append error".to_owned()))?;
         Ok(())
     }
 

@@ -210,13 +210,11 @@ impl error::Error for Error {
 
 // These are public but not re-exported by lib.rs, so only visible within crate.
 
-#[cold]
 #[inline]
 fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
     Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
 }
 
-#[cold]
 #[inline]
 pub fn result_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
     if code == ffi::DuckDBSuccess {
