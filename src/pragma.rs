@@ -169,8 +169,7 @@ impl Connection {
         let mut stmt = self.prepare(&query)?;
         let mut rows = stmt.query([])?;
         while let Some(result_row) = rows.next()? {
-            let row = result_row;
-            f(&row)?;
+            f(result_row)?;
         }
         Ok(())
     }
@@ -206,7 +205,7 @@ impl Connection {
         let mut rows = stmt.query([])?;
         while let Some(result_row) = rows.next()? {
             let row = result_row;
-            f(&row)?;
+            f(row)?;
         }
         Ok(())
     }

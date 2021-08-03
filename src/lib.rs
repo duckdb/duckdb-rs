@@ -169,10 +169,10 @@ pub enum DatabaseName<'a> {
 
 impl<'a> fmt::Display for DatabaseName<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &DatabaseName::Main => write!(f, "main"),
-            &DatabaseName::Temp => write!(f, "temp"),
-            &DatabaseName::Attached(s) => write!(f, "{}", s),
+        match *self {
+            DatabaseName::Main => write!(f, "main"),
+            DatabaseName::Temp => write!(f, "temp"),
+            DatabaseName::Attached(s) => write!(f, "{}", s),
         }
     }
 }
@@ -418,7 +418,7 @@ impl Connection {
             .query(params)?
             .get_expected_row()
             .map_err(E::from)
-            .and_then(|r| f(&r))
+            .and_then(|r| f(r))
     }
 
     /// Prepare a SQL statement for execution.

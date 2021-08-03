@@ -1,6 +1,6 @@
 use std::ffi::c_void;
-use std::ffi::CString;
 use std::iter::IntoIterator;
+use std::os::raw::c_char;
 use std::{convert, fmt, str};
 
 use super::ffi;
@@ -279,7 +279,7 @@ impl Statement<'_> {
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
-        self.query(params)?.get_expected_row().and_then(|r| f(&r))
+        self.query(params)?.get_expected_row().and_then(|r| f(r))
     }
 
     /// Return the row count
@@ -426,8 +426,7 @@ impl Statement<'_> {
             ValueRef::Float(r) => unsafe { ffi::duckdb_bind_float(ptr, col as u64, r) },
             ValueRef::Double(r) => unsafe { ffi::duckdb_bind_double(ptr, col as u64, r) },
             ValueRef::Text(s) => unsafe {
-                let c_str = CString::new(s).expect("can't convert into c_str");
-                ffi::duckdb_bind_varchar(ptr, col as u64, c_str.as_ptr())
+                ffi::duckdb_bind_varchar_length(ptr, col as u64, s.as_ptr() as *const c_char, s.len() as u64)
             },
             ValueRef::Blob(b) => unsafe {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)

@@ -107,7 +107,7 @@ impl Statement<'_> {
         for i in 0..n {
             // Note: `column_name` is only fallible if `i` is out of bounds,
             // which we've already checked.
-            if name.eq_ignore_ascii_case(&self.stmt.column_name(i).unwrap()) {
+            if name.eq_ignore_ascii_case(self.stmt.column_name(i).unwrap()) {
                 return Ok(i);
             }
         }

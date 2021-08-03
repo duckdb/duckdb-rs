@@ -36,7 +36,7 @@ jobs:
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --workspace --features bundled
+      - run: cargo clippy --all-targets --workspace --features bundled -- -D warnings -A clippy::redundant-closure
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
