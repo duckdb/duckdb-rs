@@ -2,28 +2,34 @@ extern crate duckdb;
 use std::convert::TryFrom;
 
 use duckdb::{params, Connection, Result};
+use duckdb::DropBehavior;
 
 fn main() -> Result<()> {
-    let db = Connection::open_in_memory()?;
+    //let mut db = Connection::open("10m.db")?;
+    let mut db = Connection::open_in_memory()?;
 
     let create_table_sql = "
         create table IF NOT EXISTS test
         (
-            id INTEGER not null primary key,
+            id INTEGER not null, -- primary key,
             area CHAR(6),
             age TINYINT not null,
             active TINYINT not null
         );";
     db.execute_batch(create_table_sql)?;
 
+
+    let row_count = 10_000_000;
     {
-        let mut app = db.appender("test")?;
+        let mut tx = db.transaction()?;
+        tx.set_drop_behavior(DropBehavior::Commit);
+        let mut app = tx.appender("test")?;
         // use generator
         // for u in firstn(1_000_000) {
         //     app.append_row(params![u.id, u.area, u.age, u.active])?;
         // }
 
-        for i in 0..1_000_000 {
+        for i in 0..row_count {
             app.append_row(params![
                 i,
                 get_random_area_code(),
@@ -34,7 +40,7 @@ fn main() -> Result<()> {
     }
 
     let val = db.query_row("SELECT count(1) FROM test", [], |row| <(u32,)>::try_from(row))?;
-    assert_eq!(val, (1_000_000,));
+    assert_eq!(val, (row_count,));
     Ok(())
 }
 

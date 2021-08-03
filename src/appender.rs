@@ -1,8 +1,9 @@
 use super::ffi;
 use super::{AppenderParams, Connection, Result, ValueRef};
-use std::ffi::{c_void, CString};
+use std::ffi::c_void;
 use std::fmt;
 use std::iter::IntoIterator;
+use std::os::raw::c_char;
 
 use crate::error::result_from_duckdb_code;
 use crate::types::{ToSql, ToSqlOutput};
@@ -102,8 +103,7 @@ impl Appender<'_> {
             ValueRef::Float(r) => unsafe { ffi::duckdb_append_float(ptr, r) },
             ValueRef::Double(r) => unsafe { ffi::duckdb_append_double(ptr, r) },
             ValueRef::Text(s) => unsafe {
-                let c_str = CString::new(s).expect("can't convert into c_str");
-                ffi::duckdb_append_varchar(ptr, c_str.as_ptr())
+                ffi::duckdb_append_varchar_length(ptr, s.as_ptr() as *const c_char, s.len() as u64)
             },
             ValueRef::Blob(b) => unsafe { ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64) },
             _ => unreachable!("not supported"),
