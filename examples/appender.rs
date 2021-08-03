@@ -1,8 +1,8 @@
 extern crate duckdb;
 use std::convert::TryFrom;
 
-use duckdb::{params, Connection, Result};
 use duckdb::DropBehavior;
+use duckdb::{params, Connection, Result};
 
 fn main() -> Result<()> {
     //let mut db = Connection::open("10m.db")?;
@@ -17,7 +17,6 @@ fn main() -> Result<()> {
             active TINYINT not null
         );";
     db.execute_batch(create_table_sql)?;
-
 
     let row_count = 10_000_000;
     {
