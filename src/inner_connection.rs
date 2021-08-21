@@ -6,7 +6,7 @@ use std::str;
 
 use super::ffi;
 use super::{Appender, Connection, OpenFlags, Result};
-use crate::error::{result_from_duckdb_arrow, result_from_duckdb_code, result_from_duckdb_prepare, Error};
+use crate::error::{result_from_duckdb_arrow, result_from_duckdb_prepare, result_from_duckdb_appender, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 
@@ -110,7 +110,7 @@ impl InnerConnection {
                 &mut c_app,
             )
         };
-        result_from_duckdb_code(r, Some("create appender error".to_string()))?;
+        result_from_duckdb_appender(r, c_app)?;
         Ok(Appender::new(conn, c_app))
     }
 

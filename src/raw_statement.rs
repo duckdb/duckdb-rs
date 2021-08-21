@@ -189,10 +189,7 @@ impl RawStatement {
     #[inline]
     pub fn bind_parameter_count(&self) -> usize {
         unsafe {
-            let mut nparams: u64 = 0;
-            // TODO: why if failed?
-            ffi::duckdb_nparams(self.ptr, &mut nparams);
-            nparams as usize
+            ffi::duckdb_nparams(self.ptr) as usize
         }
     }
 
@@ -205,6 +202,8 @@ impl RawStatement {
 impl Drop for RawStatement {
     fn drop(&mut self) {
         self.reset_result();
-        unsafe { ffi::duckdb_destroy_prepare(&mut self.ptr) };
+        if !self.ptr.is_null() {
+            unsafe { ffi::duckdb_destroy_prepare(&mut self.ptr) };
+        }
     }
 }

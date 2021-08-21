@@ -215,12 +215,24 @@ fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
     Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
 }
 
+#[cold]
 #[inline]
-pub fn result_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
+pub fn result_from_duckdb_appender(code: c_uint, mut appender: ffi::duckdb_appender) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
-    Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
+    unsafe {
+        let message = if appender.is_null() {
+            Some("appender is null".to_string())
+        } else {
+            let c_err = ffi::duckdb_appender_error(appender);
+            let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
+            ffi::duckdb_free(c_err as *mut c_void);
+            ffi::duckdb_appender_destroy(&mut appender);
+            message
+        };
+        error_from_duckdb_code(code, message)
+    }
 }
 
 #[cold]
@@ -235,7 +247,8 @@ pub fn result_from_duckdb_prepare(code: c_uint, mut prepare: ffi::duckdb_prepare
         } else {
             let c_err = ffi::duckdb_prepare_error(prepare);
             let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-            ffi::duckdb_free(c_err as *mut c_void);
+            // TODO: wait for https://github.com/duckdb/duckdb/issues/2170
+            // ffi::duckdb_free(c_err as *mut c_void);
             ffi::duckdb_destroy_prepare(&mut prepare);
             message
         };
