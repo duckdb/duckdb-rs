@@ -12,7 +12,7 @@ pub enum FromSqlError {
     /// cannot be converted to the requested Rust type.
     InvalidType,
 
-    /// Error when the i128 value returned by DuckDB cannot be stored into the
+    /// Error when the value returned by DuckDB cannot be stored into the
     /// requested type.
     OutOfRange(i128),
 
@@ -83,8 +83,25 @@ macro_rules! from_sql_integral(
                     ValueRef::HugeInt(i) => Ok(<$t as cast::From<i128>>::cast(i).unwrap()),
                     ValueRef::Float(i) => Ok(<$t as cast::From<f32>>::cast(i).unwrap()),
                     ValueRef::Double(i) => Ok(<$t as cast::From<f64>>::cast(i).unwrap()),
+
                     // TODO: more efficient way?
                     ValueRef::Decimal(i) => Ok(i.to_string().parse::<$t>().unwrap()),
+
+                    ValueRef::Timestamp(_, i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
+                    ValueRef::Date32(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
+                    ValueRef::Text(_) => {
+                        let v = value.as_str()?.parse::<$t>();
+                        match v {
+                            Ok(i) => Ok(i),
+                            Err(_) => {
+                                let v = value.as_str()?.parse::<i128>();
+                                match v {
+                                    Ok(i) => Err(FromSqlError::OutOfRange(i)),
+                                    _ => Err(FromSqlError::InvalidType),
+                                }
+                            },
+                        }
+                    }
                     _ => Err(FromSqlError::InvalidType),
                 }
             }
@@ -153,7 +170,25 @@ impl FromSql for bool {
 impl FromSql for String {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value.as_str().map(ToString::to_string)
+        match value {
+            ValueRef::Date32(d) => {
+                if cfg!(feature = "chrono") {
+                    Ok(chrono::NaiveDate::column_result(value)?.format("%F").to_string())
+                } else {
+                    Ok(d.to_string())
+                }
+            }
+            ValueRef::Timestamp(_, t) => {
+                if cfg!(feature = "chrono") {
+                    Ok(chrono::NaiveDateTime::column_result(value)?
+                        .format("%F %T%.f")
+                        .to_string())
+                } else {
+                    Ok(t.to_string())
+                }
+            }
+            _ => value.as_str().map(ToString::to_string),
+        }
     }
 }
 
@@ -217,9 +252,41 @@ impl FromSql for Value {
 mod test {
     use super::FromSql;
     use crate::{Connection, Error, Result};
+    use std::convert::TryFrom;
 
     #[test]
-    #[ignore = "duckdb doesn't support this"]
+    fn test_timestamp_raw() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE timestamp (sec TIMESTAMP_S, milli TIMESTAMP_MS, micro TIMESTAMP_US, nano TIMESTAMP_NS );
+                   INSERT INTO timestamp VALUES (NULL,NULL,NULL,NULL );
+                   INSERT INTO timestamp VALUES ('2008-01-01 00:00:01','2008-01-01 00:00:01.594','2008-01-01 00:00:01.88926','2008-01-01 00:00:01.889268321' );
+                   INSERT INTO timestamp VALUES (NULL,NULL,NULL,1199145601889268321 );
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row(
+            "SELECT sec, milli, micro, nano FROM timestamp WHERE sec is not null",
+            [],
+            |row| <(i64, i64, i64, i64)>::try_from(row),
+        )?;
+        assert_eq!(v, (1199145601, 1199145601594, 1199145601889260, 1199145601889268000));
+        Ok(())
+    }
+
+    #[test]
+    fn test_date32_raw() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE date32 (d date);
+                   INSERT INTO date32 VALUES ('2008-01-01');
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row("SELECT * FROM date32", [], |row| <(i32,)>::try_from(row))?;
+        assert_eq!(v, (13879,));
+        Ok(())
+    }
+
+    #[test]
     fn test_integral_ranges() -> Result<()> {
         let db = Connection::open_in_memory()?;
 

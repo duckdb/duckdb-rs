@@ -3,6 +3,20 @@ use crate::types::{FromSqlError, FromSqlResult};
 
 use rust_decimal::prelude::*;
 
+/// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
+/// Copy from arrow::datatypes::TimeUnit
+#[derive(Copy, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum TimeUnit {
+    /// Time in seconds.
+    Second,
+    /// Time in milliseconds.
+    Millisecond,
+    /// Time in microseconds.
+    Microsecond,
+    /// Time in nanoseconds.
+    Nanosecond,
+}
+
 /// A non-owning [static type value](https://duckdb.org/docs/sql/data_types/overview). Typically the
 /// memory backing this value is owned by SQLite.
 ///
@@ -38,11 +52,13 @@ pub enum ValueRef<'a> {
     /// The value is a decimal
     Decimal(Decimal),
     /// The value is a timestap.
-    Timestamp(&'a [u8]),
+    Timestamp(TimeUnit, i64),
     /// The value is a text string.
     Text(&'a [u8]),
     /// The value is a blob of data
     Blob(&'a [u8]),
+    /// The value is a date32
+    Date32(i32),
 }
 
 impl ValueRef<'_> {
@@ -64,9 +80,10 @@ impl ValueRef<'_> {
             ValueRef::Float(_) => Type::Float,
             ValueRef::Double(_) => Type::Double,
             ValueRef::Decimal(_) => Type::Decimal,
-            ValueRef::Timestamp(_) => Type::Timestamp,
+            ValueRef::Timestamp(_, _) => Type::Timestamp,
             ValueRef::Text(_) => Type::Text,
             ValueRef::Blob(_) => Type::Blob,
+            ValueRef::Date32(_) => Type::Date32,
         }
     }
 }
@@ -111,15 +128,13 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Float(i) => Value::Float(i),
             ValueRef::Double(i) => Value::Double(i),
             ValueRef::Decimal(i) => Value::Decimal(i),
-            ValueRef::Timestamp(t) => {
-                let s = std::str::from_utf8(t).expect("invalid UTF-8");
-                Value::Timestamp(s.to_string())
-            }
+            ValueRef::Timestamp(tu, t) => Value::Timestamp(tu, t),
             ValueRef::Text(s) => {
                 let s = std::str::from_utf8(s).expect("invalid UTF-8");
                 Value::Text(s.to_string())
             }
             ValueRef::Blob(b) => Value::Blob(b.to_vec()),
+            ValueRef::Date32(d) => Value::Date32(d),
         }
     }
 }
@@ -156,9 +171,10 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Float(i) => ValueRef::Float(i),
             Value::Double(i) => ValueRef::Double(i),
             Value::Decimal(i) => ValueRef::Decimal(i),
-            Value::Timestamp(ref t) => ValueRef::Timestamp(t.as_bytes()),
+            Value::Timestamp(tu, t) => ValueRef::Timestamp(tu, t),
             Value::Text(ref s) => ValueRef::Text(s.as_bytes()),
             Value::Blob(ref b) => ValueRef::Blob(b),
+            Value::Date32(d) => ValueRef::Date32(d),
         }
     }
 }

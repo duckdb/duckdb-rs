@@ -70,7 +70,7 @@ impl ToSql for DateTimeSql {
 pub use self::from_sql::{FromSql, FromSqlError, FromSqlResult};
 pub use self::to_sql::{ToSql, ToSqlOutput};
 pub use self::value::Value;
-pub use self::value_ref::ValueRef;
+pub use self::value_ref::{TimeUnit, ValueRef};
 
 use std::fmt;
 
@@ -140,6 +140,8 @@ pub enum Type {
     Text,
     /// BLOB
     Blob,
+    /// DATE32
+    Date32,
     /// Any
     Any,
 }
@@ -164,6 +166,7 @@ impl fmt::Display for Type {
             Type::Timestamp => f.pad("Timestamp"),
             Type::Text => f.pad("Text"),
             Type::Blob => f.pad("Blob"),
+            Type::Date32 => f.pad("Date32"),
             Type::Any => f.pad("Any"),
         }
     }

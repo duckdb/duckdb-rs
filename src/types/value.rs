@@ -1,4 +1,4 @@
-use super::{Null, Type};
+use super::{Null, TimeUnit, Type};
 use rust_decimal::prelude::*;
 
 /// Owning [dynamic type value](http://sqlite.org/datatype3.html). Value's type is typically
@@ -37,11 +37,13 @@ pub enum Value {
     /// The value is a Decimal.
     Decimal(Decimal),
     /// The value is a timestap.
-    Timestamp(String),
+    Timestamp(TimeUnit, i64),
     /// The value is a text string.
     Text(String),
     /// The value is a blob of data
     Blob(Vec<u8>),
+    /// The value is a date32
+    Date32(i32),
 }
 
 impl From<Null> for Value {
@@ -194,9 +196,10 @@ impl Value {
             Value::Float(_) => Type::Float,
             Value::Double(_) => Type::Double,
             Value::Decimal(_) => Type::Decimal,
-            Value::Timestamp(_) => Type::Timestamp,
+            Value::Timestamp(_, _) => Type::Timestamp,
             Value::Text(_) => Type::Text,
             Value::Blob(_) => Type::Blob,
+            Value::Date32(_) => Type::Date32,
         }
     }
 }
