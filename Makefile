@@ -7,5 +7,5 @@ DUCKDB_LIB_DIR = /Users/wangfenjin/duckdb
 DUCKDB_INCLUDE_DIR = /Users/wangfenjin/duckdb
 
 all:
-	cargo test --features buildtime_bindgen -- --nocapture
-	cargo clippy --all-targets --workspace --features buildtime_bindgen -- -D warnings -A clippy::redundant-closure
+	cargo test --features buildtime_bindgen --features modern-full -- --nocapture
+	cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure

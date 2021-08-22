@@ -10,10 +10,13 @@ command -v rustfmt >/dev/null 2>&1 || { echo >&2 "Rustfmt is required but it's n
 cat > .git/hooks/pre-commit <<'EOF'
 #!/bin/bash -e
 declare -a rust_files=()
-files=$(git diff-index --name-only HEAD)
+files=$(git diff-index --name-only --cached HEAD)
 echo 'Formatting source files'
 for file in $files; do
     if [ ! -f "${file}" ]; then
+        continue
+    fi
+    if [ "${file}" -eq 'libduckdb-sys/duckdb/bindgen_bundled_version.rs' ]; then
         continue
     fi
     if [[ "${file}" == *.rs ]]; then

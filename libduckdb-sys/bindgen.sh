@@ -24,7 +24,7 @@ env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "bundled buildtime_bindgen"
 find "$SCRIPT_DIR/../target" -type f -name bindgen.rs -exec cp {} "$DUCKDB_LIB_DIR/bindgen_bundled_version.rs" \;
 
 # Sanity checks
-cd "$SCRIPT_DIR/.." || { echo "fatal error" >&2; exit 1; }
-cargo update
-cargo test --features "bundled buildtime_bindgen"
-printf '    \e[35;1mFinished\e[0m bundled DUCKDB tests\n'
+# cd "$SCRIPT_DIR/.." || { echo "fatal error" >&2; exit 1; }
+# cargo update
+# cargo test --features "bundled buildtime_bindgen"
+# printf '    \e[35;1mFinished\e[0m bundled DUCKDB tests\n'

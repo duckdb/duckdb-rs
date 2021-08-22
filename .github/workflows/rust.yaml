@@ -36,13 +36,13 @@ jobs:
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --workspace --features bundled -- -D warnings -A clippy::redundant-closure
+      - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
-          args: '--features "bundled" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+          args: '--features "bundled" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
 
@@ -67,4 +67,4 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features 'bundled' --target x86_64-unknown-linux-gnu
+        run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu

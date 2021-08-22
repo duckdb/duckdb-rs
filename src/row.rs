@@ -2,7 +2,7 @@ use std::convert;
 use std::sync::Arc;
 
 use super::{Error, Result, Statement};
-use crate::types::{FromSql, FromSqlError, ValueRef};
+use crate::types::{self, FromSql, FromSqlError, ValueRef};
 
 use arrow::array::{self, Array, StructArray};
 use arrow::datatypes::*;
@@ -344,6 +344,8 @@ impl<'stmt> Row<'stmt> {
         if column.is_null(row) {
             return ValueRef::Null;
         }
+        // duckdb.cpp SetArrowFormat
+        // https://github.com/duckdb/duckdb/blob/71f1c7a7e4b8737cff5e78d1f090c54f5e78e17b/src/main/query_result.cpp#L148
         match column.data_type() {
             DataType::Utf8 => {
                 let array = column.as_any().downcast_ref::<array::StringArray>().unwrap();
@@ -481,21 +483,59 @@ impl<'stmt> Row<'stmt> {
                 }
                 ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
             }
-            // TODO: support more data types
-            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
-            //     make_string_datetime!(array::TimestampSecondArray, column, row)
-            // }
-            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Millisecond => {
-            //     make_string_datetime!(array::TimestampMillisecondArray, column, row)
-            // }
-            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Microsecond => {
-            //     make_string_datetime!(array::TimestampMicrosecondArray, column, row)
-            // }
-            // DataType::Timestamp(unit, _) if *unit == TimeUnit::Nanosecond => {
-            //     make_string_datetime!(array::TimestampNanosecondArray, column, row)
-            // }
-            // DataType::Date32 => make_string_date!(array::Date32Array, column, row),
+            DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
+                let array = column.as_any().downcast_ref::<array::TimestampSecondArray>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Timestamp(types::TimeUnit::Second, array.value(row))
+            }
+            DataType::Timestamp(unit, _) if *unit == TimeUnit::Millisecond => {
+                let array = column
+                    .as_any()
+                    .downcast_ref::<array::TimestampMillisecondArray>()
+                    .unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Timestamp(types::TimeUnit::Millisecond, array.value(row))
+            }
+            DataType::Timestamp(unit, _) if *unit == TimeUnit::Microsecond => {
+                let array = column
+                    .as_any()
+                    .downcast_ref::<array::TimestampMicrosecondArray>()
+                    .unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Timestamp(types::TimeUnit::Microsecond, array.value(row))
+            }
+            DataType::Timestamp(unit, _) if *unit == TimeUnit::Nanosecond => {
+                let array = column
+                    .as_any()
+                    .downcast_ref::<array::TimestampNanosecondArray>()
+                    .unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Timestamp(types::TimeUnit::Nanosecond, array.value(row))
+            }
+            DataType::Date32 => {
+                let array = column.as_any().downcast_ref::<array::Date32Array>().unwrap();
+
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Date32(array.value(row))
+            }
+            // NOTE: DataType::Date64 not supported by duckdb
             // DataType::Date64 => make_string_date!(array::Date64Array, column, row),
+
+            // TODO: support more data types
             // DataType::Time32(unit) if *unit == TimeUnit::Second => {
             //     make_string_time!(array::Time32SecondArray, column, row)
             // }

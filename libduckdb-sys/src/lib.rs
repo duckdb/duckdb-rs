@@ -33,7 +33,7 @@ mod tests {
     use arrow::datatypes::DataType;
     use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
 
-    unsafe fn print_result(mut result: duckdb_result) {
+    unsafe fn print_int_result(mut result: duckdb_result) {
         let columns = slice::from_raw_parts(result.columns, result.column_count as usize);
         for i in 0..result.column_count {
             print!("{} ", CStr::from_ptr(columns[i as usize].name).to_string_lossy());
@@ -42,10 +42,8 @@ mod tests {
         // print the data of the result
         for row_idx in 0..result.row_count {
             for col_idx in 0..result.column_count {
-                let val = duckdb_value_varchar(&mut result, col_idx, row_idx);
-                let s = CStr::from_ptr(val).to_string_lossy().into_owned();
-                print!("{} ", s);
-                duckdb_free(val as *mut c_void);
+                let val = duckdb_value_int32(&mut result, col_idx, row_idx);
+                print!("{} ", val);
             }
             println!();
         }
@@ -157,7 +155,7 @@ mod tests {
             }
             assert_eq!(result.row_count, 3);
             assert_eq!(result.column_count, 2);
-            print_result(result);
+            print_int_result(result);
             duckdb_destroy_result(&mut result);
 
             // test prepare
@@ -174,7 +172,7 @@ mod tests {
             }
             assert_eq!(result.row_count, 2);
             assert_eq!(result.column_count, 2);
-            print_result(result);
+            print_int_result(result);
             duckdb_destroy_result(&mut result);
 
             // test bind params again
@@ -186,7 +184,7 @@ mod tests {
             }
             assert_eq!(result.row_count, 1);
             assert_eq!(result.column_count, 2);
-            print_result(result);
+            print_int_result(result);
             duckdb_destroy_result(&mut result);
             duckdb_destroy_prepare(&mut stmt);
 
