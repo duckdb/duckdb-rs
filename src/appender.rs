@@ -5,7 +5,7 @@ use std::fmt;
 use std::iter::IntoIterator;
 use std::os::raw::c_char;
 
-use crate::error::result_from_duckdb_code;
+use crate::error::result_from_duckdb_appender;
 use crate::types::{ToSql, ToSqlOutput};
 
 /// Appender for fast import data
@@ -65,7 +65,7 @@ impl Appender<'_> {
         params.__bind_in(self)?;
         // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
-        result_from_duckdb_code(rc, None)
+        result_from_duckdb_appender(rc, self.app)
     }
 
     #[inline]
@@ -129,10 +129,12 @@ impl Appender<'_> {
 
 impl Drop for Appender<'_> {
     fn drop(&mut self) {
-        self.flush();
-        unsafe {
-            ffi::duckdb_appender_close(self.app);
-            ffi::duckdb_appender_destroy(&mut self.app);
+        if !self.app.is_null() {
+            self.flush();
+            unsafe {
+                ffi::duckdb_appender_close(self.app);
+                ffi::duckdb_appender_destroy(&mut self.app);
+            }
         }
     }
 }
