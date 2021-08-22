@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# https://gist.github.com/folex/9496c457bcbbef36255a533389da740e
+
 # check that rustfmt installed, or else this hook doesn't make much sense
 command -v rustfmt >/dev/null 2>&1 || { echo >&2 "Rustfmt is required but it's not installed. Aborting."; exit 1; }
 
