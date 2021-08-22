@@ -6,7 +6,7 @@ use std::str;
 
 use super::ffi;
 use super::{Appender, Connection, OpenFlags, Result};
-use crate::error::{result_from_duckdb_arrow, result_from_duckdb_prepare, result_from_duckdb_appender, Error};
+use crate::error::{result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_prepare, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 

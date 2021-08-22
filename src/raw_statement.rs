@@ -188,9 +188,7 @@ impl RawStatement {
 
     #[inline]
     pub fn bind_parameter_count(&self) -> usize {
-        unsafe {
-            ffi::duckdb_nparams(self.ptr) as usize
-        }
+        unsafe { ffi::duckdb_nparams(self.ptr) as usize }
     }
 
     #[inline]
