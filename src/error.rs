@@ -5,7 +5,7 @@ use crate::types::Type;
 use std::error;
 use std::ffi::CStr;
 use std::fmt;
-use std::os::raw::{c_uint, c_void};
+use std::os::raw::c_uint;
 use std::path::PathBuf;
 use std::str;
 
@@ -227,7 +227,6 @@ pub fn result_from_duckdb_appender(code: c_uint, mut appender: ffi::duckdb_appen
         } else {
             let c_err = ffi::duckdb_appender_error(appender);
             let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-            ffi::duckdb_free(c_err as *mut c_void);
             ffi::duckdb_appender_destroy(&mut appender);
             message
         };
@@ -247,8 +246,6 @@ pub fn result_from_duckdb_prepare(code: c_uint, mut prepare: ffi::duckdb_prepare
         } else {
             let c_err = ffi::duckdb_prepare_error(prepare);
             let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-            // TODO: wait for https://github.com/duckdb/duckdb/issues/2170
-            // ffi::duckdb_free(c_err as *mut c_void);
             ffi::duckdb_destroy_prepare(&mut prepare);
             message
         };
@@ -268,7 +265,6 @@ pub fn result_from_duckdb_arrow(code: c_uint, mut out: ffi::duckdb_arrow) -> Res
         } else {
             let c_err = ffi::duckdb_query_arrow_error(out);
             let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-            ffi::duckdb_free(c_err as *mut c_void);
             ffi::duckdb_destroy_arrow(&mut out);
             message
         };
