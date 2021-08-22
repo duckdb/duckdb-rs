@@ -171,22 +171,12 @@ impl FromSql for String {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Date32(d) => {
-                if cfg!(feature = "chrono") {
-                    Ok(chrono::NaiveDate::column_result(value)?.format("%F").to_string())
-                } else {
-                    Ok(d.to_string())
-                }
-            }
-            ValueRef::Timestamp(_, t) => {
-                if cfg!(feature = "chrono") {
-                    Ok(chrono::NaiveDateTime::column_result(value)?
-                        .format("%F %T%.f")
-                        .to_string())
-                } else {
-                    Ok(t.to_string())
-                }
-            }
+            #[cfg(feature = "chrono")]
+            ValueRef::Date32(_) => Ok(chrono::NaiveDate::column_result(value)?.format("%F").to_string()),
+            #[cfg(feature = "chrono")]
+            ValueRef::Timestamp(..) => Ok(chrono::NaiveDateTime::column_result(value)?
+                .format("%F %T%.f")
+                .to_string()),
             _ => value.as_str().map(ToString::to_string),
         }
     }

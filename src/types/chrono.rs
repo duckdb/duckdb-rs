@@ -57,9 +57,9 @@ impl FromSql for NaiveDateTime {
             ValueRef::Timestamp(tu, t) => {
                 let (secs, nsecs) = match tu {
                     TimeUnit::Second => (t, 0),
-                    TimeUnit::Millisecond => (t / 1000, (t % 1000) * 1000_000),
-                    TimeUnit::Microsecond => (t / 1000_000, (t % 1000_000) * 1000),
-                    TimeUnit::Nanosecond => (t / 1000_000_000, t % 1000_000_000),
+                    TimeUnit::Millisecond => (t / 1000, (t % 1000) * 1_000_000),
+                    TimeUnit::Microsecond => (t / 1_000_000, (t % 1_000_000) * 1000),
+                    TimeUnit::Nanosecond => (t / 1_000_000_000, t % 1_000_000_000),
                 };
                 Ok(NaiveDateTime::from_timestamp(secs, nsecs as u32))
             }
