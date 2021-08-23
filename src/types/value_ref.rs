@@ -59,6 +59,8 @@ pub enum ValueRef<'a> {
     Blob(&'a [u8]),
     /// The value is a date32
     Date32(i32),
+    /// The value is a time64
+    Time64(TimeUnit, i64),
 }
 
 impl ValueRef<'_> {
@@ -80,10 +82,11 @@ impl ValueRef<'_> {
             ValueRef::Float(_) => Type::Float,
             ValueRef::Double(_) => Type::Double,
             ValueRef::Decimal(_) => Type::Decimal,
-            ValueRef::Timestamp(_, _) => Type::Timestamp,
+            ValueRef::Timestamp(..) => Type::Timestamp,
             ValueRef::Text(_) => Type::Text,
             ValueRef::Blob(_) => Type::Blob,
             ValueRef::Date32(_) => Type::Date32,
+            ValueRef::Time64(..) => Type::Time64,
         }
     }
 }
@@ -135,6 +138,7 @@ impl From<ValueRef<'_>> for Value {
             }
             ValueRef::Blob(b) => Value::Blob(b.to_vec()),
             ValueRef::Date32(d) => Value::Date32(d),
+            ValueRef::Time64(t, d) => Value::Time64(t, d),
         }
     }
 }
@@ -175,6 +179,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Text(ref s) => ValueRef::Text(s.as_bytes()),
             Value::Blob(ref b) => ValueRef::Blob(b),
             Value::Date32(d) => ValueRef::Date32(d),
+            Value::Time64(t, d) => ValueRef::Time64(t, d),
         }
     }
 }

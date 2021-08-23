@@ -64,6 +64,10 @@ impl FromSql for NaiveDateTime {
                 Ok(NaiveDateTime::from_timestamp(secs, nsecs as u32))
             }
             ValueRef::Date32(d) => Ok(NaiveDateTime::from_timestamp(24 * 3600 * (d as i64), 0)),
+            ValueRef::Time64(TimeUnit::Microsecond, d) => Ok(NaiveDateTime::from_timestamp(
+                d / 1_000_000,
+                ((d % 1_000_000) * 1_000) as u32,
+            )),
             ValueRef::Text(s) => {
                 let mut s = std::str::from_utf8(s).unwrap();
                 let format = match s.len() {
@@ -128,8 +132,21 @@ mod test {
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo (d DATE, t Text, i INTEGER, f FLOAT, b TIMESTAMP)")?;
+        db.execute_batch("CREATE TABLE foo (d DATE, t Text, i INTEGER, f FLOAT, b TIMESTAMP, tt time)")?;
         Ok(db)
+    }
+
+    #[test]
+    fn test_naive_time() -> Result<()> {
+        let db = checked_memory_handle()?;
+        let time = NaiveTime::from_hms_micro(23, 56, 4, 12_345);
+        db.execute("INSERT INTO foo (tt) VALUES (?)", [time])?;
+
+        let s: String = db.query_row("SELECT tt FROM foo", [], |r| r.get(0))?;
+        assert_eq!("23:56:04.012345", s);
+        let t: NaiveTime = db.query_row("SELECT tt FROM foo", [], |r| r.get(0))?;
+        assert_eq!(time, t);
+        Ok(())
     }
 
     #[test]
@@ -222,9 +239,8 @@ mod test {
         assert!(result.is_ok());
         let result: Result<DateTime<Utc>> = db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
         assert!(result.is_ok());
-        // TODO(wangfenjin): time64
-        // let result: Result<NaiveTime> = db.query_row("SELECT CURRENT_TIME", [], |r| r.get(0));
-        // assert!(result.is_ok());
+        let result: Result<NaiveTime> = db.query_row("SELECT CURRENT_TIME", [], |r| r.get(0));
+        assert!(result.is_ok());
         Ok(())
     }
 

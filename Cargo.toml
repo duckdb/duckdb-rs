@@ -21,7 +21,7 @@ name = "duckdb"
 members = ["libduckdb-sys"]
 
 [features]
-default = ["modern-full"]
+default = []
 bundled = ["libduckdb-sys/bundled"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = [
