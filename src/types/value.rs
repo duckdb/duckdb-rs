@@ -44,6 +44,8 @@ pub enum Value {
     Blob(Vec<u8>),
     /// The value is a date32
     Date32(i32),
+    /// The value is a time64
+    Time64(TimeUnit, i64),
 }
 
 impl From<Null> for Value {
@@ -200,6 +202,7 @@ impl Value {
             Value::Text(_) => Type::Text,
             Value::Blob(_) => Type::Blob,
             Value::Date32(_) => Type::Date32,
+            Value::Time64(..) => Type::Time64,
         }
     }
 }

@@ -142,6 +142,8 @@ pub enum Type {
     Blob,
     /// DATE32
     Date32,
+    /// TIME64
+    Time64,
     /// Any
     Any,
 }
@@ -167,6 +169,7 @@ impl fmt::Display for Type {
             Type::Text => f.pad("Text"),
             Type::Blob => f.pad("Blob"),
             Type::Date32 => f.pad("Date32"),
+            Type::Time64 => f.pad("Time64"),
             Type::Any => f.pad("Any"),
         }
     }

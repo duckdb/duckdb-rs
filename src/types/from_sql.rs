@@ -1,6 +1,6 @@
 extern crate cast;
 
-use super::{Value, ValueRef};
+use super::{TimeUnit, Value, ValueRef};
 use std::error::Error;
 use std::fmt;
 
@@ -89,6 +89,7 @@ macro_rules! from_sql_integral(
 
                     ValueRef::Timestamp(_, i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
                     ValueRef::Date32(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
+                    ValueRef::Time64(TimeUnit::Microsecond, i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
                     ValueRef::Text(_) => {
                         let v = value.as_str()?.parse::<$t>();
                         match v {
@@ -173,6 +174,8 @@ impl FromSql for String {
         match value {
             #[cfg(feature = "chrono")]
             ValueRef::Date32(_) => Ok(chrono::NaiveDate::column_result(value)?.format("%F").to_string()),
+            #[cfg(feature = "chrono")]
+            ValueRef::Time64(..) => Ok(chrono::NaiveTime::column_result(value)?.format("%T%.f").to_string()),
             #[cfg(feature = "chrono")]
             ValueRef::Timestamp(..) => Ok(chrono::NaiveDateTime::column_result(value)?
                 .format("%F %T%.f")
@@ -260,6 +263,19 @@ mod test {
             |row| <(i64, i64, i64, i64)>::try_from(row),
         )?;
         assert_eq!(v, (1199145601, 1199145601594, 1199145601889260, 1199145601889268000));
+        Ok(())
+    }
+
+    #[test]
+    fn test_time64_raw() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE time64 (t time);
+                   INSERT INTO time64 VALUES ('20:08:10.998');
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row("SELECT * FROM time64", [], |row| <(i64,)>::try_from(row))?;
+        assert_eq!(v, (72490998000,));
         Ok(())
     }
 

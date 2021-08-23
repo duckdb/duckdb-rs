@@ -532,22 +532,15 @@ impl<'stmt> Row<'stmt> {
                 }
                 ValueRef::Date32(array.value(row))
             }
-            // NOTE: DataType::Date64 not supported by duckdb
-            // DataType::Date64 => make_string_date!(array::Date64Array, column, row),
+            DataType::Time64(TimeUnit::Microsecond) => {
+                let array = column.as_any().downcast_ref::<array::Time64MicrosecondArray>().unwrap();
 
+                if array.is_null(row) {
+                    return ValueRef::Null;
+                }
+                ValueRef::Time64(types::TimeUnit::Microsecond, array.value(row))
+            }
             // TODO: support more data types
-            // DataType::Time32(unit) if *unit == TimeUnit::Second => {
-            //     make_string_time!(array::Time32SecondArray, column, row)
-            // }
-            // DataType::Time32(unit) if *unit == TimeUnit::Millisecond => {
-            //     make_string_time!(array::Time32MillisecondArray, column, row)
-            // }
-            // DataType::Time64(unit) if *unit == TimeUnit::Microsecond => {
-            //     make_string_time!(array::Time64MicrosecondArray, column, row)
-            // }
-            // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
-            //     make_string_time!(array::Time64NanosecondArray, column, row)
-            // }
             // DataType::Interval(unit) => match unit {
             //     IntervalUnit::DayTime => {
             //         make_string_interval_day_time!(column, row)
@@ -571,6 +564,18 @@ impl<'stmt> Row<'stmt> {
             //         column.data_type()
             //     ))),
             // },
+
+            // NOTE: DataTypes not supported by duckdb
+            // DataType::Date64 => make_string_date!(array::Date64Array, column, row),
+            // DataType::Time32(unit) if *unit == TimeUnit::Second => {
+            //     make_string_time!(array::Time32SecondArray, column, row)
+            // }
+            // DataType::Time32(unit) if *unit == TimeUnit::Millisecond => {
+            //     make_string_time!(array::Time32MillisecondArray, column, row)
+            // }
+            // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
+            //     make_string_time!(array::Time64NanosecondArray, column, row)
+            // }
             _ => unreachable!("invalid value: {}, {}", col, self.stmt.column_type(col)),
         }
     }
