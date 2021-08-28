@@ -79,8 +79,6 @@ mod chrono;
 mod from_sql;
 #[cfg(feature = "serde_json")]
 mod serde_json;
-#[cfg(feature = "time")]
-mod time;
 mod to_sql;
 #[cfg(feature = "url")]
 mod url;
