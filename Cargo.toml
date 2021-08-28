@@ -26,10 +26,12 @@ bundled = ["libduckdb-sys/bundled"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = [
     "chrono",
+    "serde_json",
+    "url",
 ]
 
 [dependencies]
-time = { version = "0.3", optional = true }
+# time = { version = "0.3.2", features = ["formatting", "parsing"], optional = true }
 bitflags = "1.2"
 hashlink = "0.7"
 chrono = { version = "0.4", optional = true }
@@ -45,7 +47,6 @@ uuid = { version = "0.8", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.2", features = ["std", "x128"] }
 arrow = { version = "5.0", default-features = false, features = ["prettyprint"] }
-# arrow = { path = "../arrow-rs/arrow", default-features = false }
 rust_decimal = "1.14"
 
 [dev-dependencies]
