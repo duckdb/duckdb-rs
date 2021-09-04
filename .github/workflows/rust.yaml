@@ -26,6 +26,17 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
+      - name: "Set DRY_RUN"
+        id: dry_run
+        run: |
+          if ("${{ github.ref }}".StartsWith("refs/tags/")) {
+            echo "DRY_RUN:false";
+            echo "::set-output name=DRY_RUN:false";
+          } else {
+            echo "DRY_RUN:true";
+            echo "::set-output name=DRY_RUN:true";
+          }
+
       - uses: actions/checkout@v2
       # This has a matcher for test panics, so we use it even though elsewhere
       # we use actions-rs/toolchain.
@@ -34,6 +45,12 @@ jobs:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
+      - uses: katyo/publish-crates@v1
+        with:
+            path: './'
+            args: --no-verify
+            # registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+            dry-run: ${{ env.DRY_RUN }}
       - run: cargo fmt --all -- --check
       # - name: Download DuckDB
       #   run: |
@@ -59,16 +76,6 @@ jobs:
         #   LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
-      - uses: katyo/publish-crates@v1
-        with:
-            path: './libduckdb-sys'
-            args: --no-verify
-            dry-run: true
-      - uses: katyo/publish-crates@v1
-        with:
-            path: './'
-            args: --no-verify
-            dry-run: true
 
   sanitizer:
     name: Address Sanitizer
