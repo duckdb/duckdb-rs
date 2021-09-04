@@ -65,7 +65,7 @@ rand = "0.8.3"
 
 [dependencies.libduckdb-sys]
 path = "libduckdb-sys"
-version = "0.2.1"
+version = "0.2"
 
 [package.metadata.docs.rs]
 features = []
