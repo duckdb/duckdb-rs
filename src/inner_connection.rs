@@ -1,11 +1,11 @@
-use std::ffi::{CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
 use std::ptr;
 use std::str;
 
 use super::ffi;
-use super::{Appender, Connection, OpenFlags, Result};
+use super::{Appender, Config, Connection, Result};
 use crate::error::{result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_prepare, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
@@ -13,7 +13,6 @@ use crate::statement::Statement;
 pub struct InnerConnection {
     pub db: ffi::duckdb_database,
     pub con: ffi::duckdb_connection,
-    // pub result: ffi::duckdb_result,
     owned: bool,
 }
 
@@ -35,25 +34,18 @@ impl InnerConnection {
             // TODO: fix this
             panic!("error {:?}", e);
         }
-        InnerConnection {
-            db,
-            con,
-            // result: mem::zeroed(),
-            owned,
-        }
+        InnerConnection { db, con, owned }
     }
 
-    pub fn open_with_flags(c_path: &CStr, _: OpenFlags, _: Option<&CStr>) -> Result<InnerConnection> {
+    pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<InnerConnection> {
         unsafe {
             let mut db: ffi::duckdb_database = ptr::null_mut();
-            let r = ffi::duckdb_open(c_path.as_ptr(), &mut db);
+            let mut c_err = std::ptr::null_mut();
+            let r = ffi::duckdb_open_ext(c_path.as_ptr(), &mut db, config.duckdb_config(), &mut c_err);
             if r != ffi::DuckDBSuccess {
-                ffi::duckdb_close(&mut db);
-                let e = Error::DuckDBFailure(
-                    ffi::Error::new(r),
-                    Some(format!("{}: {}", "duckdb_open error", c_path.to_string_lossy())),
-                );
-                return Err(e);
+                let msg = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
+                ffi::duckdb_free(c_err as *mut c_void);
+                return Err(Error::DuckDBFailure(ffi::Error::new(r as u32), msg));
             }
             Ok(InnerConnection::new(db, true))
         }

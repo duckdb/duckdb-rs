@@ -74,6 +74,7 @@ pub use crate::appender::Appender;
 pub use crate::appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter};
 pub use crate::arrow_batch::Arrow;
 pub use crate::column::Column;
+pub use crate::config::{AccessMode, Config, DefaultNullOrder, DefaultOrder};
 pub use crate::error::Error;
 pub use crate::ffi::ErrorCode;
 pub use crate::params::{params_from_iter, Params, ParamsFromIter};
@@ -88,6 +89,7 @@ mod appender;
 mod appender_params;
 mod arrow_batch;
 mod column;
+mod config;
 mod inner_connection;
 mod params;
 mod pragma;
@@ -206,7 +208,7 @@ impl Connection {
     ///
     /// `Connection::open(path)` is equivalent to
     /// `Connection::open_with_flags(path,
-    /// OpenFlags::SQLITE_OPEN_READ_WRITE)`.
+    /// Config::default())`.
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
@@ -224,8 +226,7 @@ impl Connection {
     /// string or if the underlying DuckDB open call fails.
     #[inline]
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
-        let flags = OpenFlags::default();
-        Connection::open_with_flags(path, flags)
+        Connection::open_with_flags(path, Config::default())
     }
 
     /// Open a new connection to an in-memory DuckDB database.
@@ -235,8 +236,7 @@ impl Connection {
     /// Will return `Err` if the underlying DuckDB open call fails.
     #[inline]
     pub fn open_in_memory() -> Result<Connection> {
-        let flags = OpenFlags::default();
-        Connection::open_in_memory_with_flags(flags)
+        Connection::open_in_memory_with_flags(Config::default())
     }
 
     /// Open a new connection to a DuckDB database.
@@ -246,7 +246,7 @@ impl Connection {
     /// Will return `Err` if `path` cannot be converted to a C-compatible
     /// string or if the underlying DuckDB open call fails.
     #[inline]
-    pub fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Connection> {
+    pub fn open_with_flags<P: AsRef<Path>>(path: P, config: Config) -> Result<Connection> {
         #[cfg(unix)]
         fn path_to_cstring(p: &Path) -> Result<CString> {
             use std::os::unix::ffi::OsStrExt;
@@ -260,7 +260,7 @@ impl Connection {
         }
 
         let c_path = path_to_cstring(path.as_ref())?;
-        InnerConnection::open_with_flags(&c_path, flags, None).map(|db| Connection {
+        InnerConnection::open_with_flags(&c_path, config).map(|db| Connection {
             db: RefCell::new(db),
             path: Some(path.as_ref().to_path_buf()),
         })
@@ -272,8 +272,8 @@ impl Connection {
     ///
     /// Will return `Err` if the underlying DuckDB open call fails.
     #[inline]
-    pub fn open_in_memory_with_flags(flags: OpenFlags) -> Result<Connection> {
-        Connection::open_with_flags(":memory:", flags)
+    pub fn open_in_memory_with_flags(config: Config) -> Result<Connection> {
+        Connection::open_with_flags(":memory:", config)
     }
 
     /// Convenience method to run multiple SQL statements (that cannot take any
@@ -514,27 +514,6 @@ impl fmt::Debug for Connection {
     }
 }
 
-bitflags::bitflags! {
-    /// Flags for opening DuckDB database connections.
-    /// NOTE: Currently we don't support READ_ONLY mode
-    #[repr(C)]
-    pub struct OpenFlags: ::std::os::raw::c_int {
-        /// The database is opened in read-only mode.
-        /// If the database does not already exist, an error is returned.
-        const DUCKDB_OPEN_READ_ONLY     = 0x0000_0000;
-        /// The database is opened for reading and writing if possible,
-        /// or reading only if the file is write protected by the operating system.
-        /// In either case the database must already exist, otherwise an error is returned.
-        const DUCKDB_OPEN_READ_WRITE    = 0x0000_0001;
-    }
-}
-
-impl Default for OpenFlags {
-    fn default() -> OpenFlags {
-        OpenFlags::DUCKDB_OPEN_READ_WRITE
-    }
-}
-
 #[cfg(doctest)]
 doc_comment::doctest!("../README.md");
 
@@ -587,8 +566,10 @@ mod test {
             END;",
         )?;
 
-        let mut db1 = Connection::open_with_flags(&path, OpenFlags::DUCKDB_OPEN_READ_WRITE)?;
-        let mut db2 = Connection::open_with_flags(&path, OpenFlags::DUCKDB_OPEN_READ_ONLY)?;
+        let mut db1 =
+            Connection::open_with_flags(&path, Config::default().access_mode(config::AccessMode::ReadWrite)?)?;
+        let mut db2 =
+            Connection::open_with_flags(&path, Config::default().access_mode(config::AccessMode::ReadWrite)?)?;
 
         {
             let tx1 = db1.transaction()?;
@@ -646,14 +627,15 @@ mod test {
     }
 
     #[test]
-    #[ignore = "duckdb don't implement this"]
-    fn test_open_failure() {
+    fn test_open_failure() -> Result<()> {
         let filename = "no_such_file.db";
-        let result = Connection::open_with_flags(filename, OpenFlags::DUCKDB_OPEN_READ_ONLY);
+        let result =
+            Connection::open_with_flags(filename, Config::default().access_mode(config::AccessMode::ReadOnly)?);
         assert!(!result.is_ok());
         let err = result.err().unwrap();
-        if let Error::DuckDBFailure(e, Some(msg)) = err {
-            assert_eq!(ErrorCode::CannotOpen, e.code);
+        if let Error::DuckDBFailure(_e, Some(msg)) = err {
+            // TODO: update error code
+            // assert_eq!(ErrorCode::CannotOpen, e.code);
             assert!(
                 msg.contains(filename),
                 "error message '{}' does not contain '{}'",
@@ -663,6 +645,7 @@ mod test {
         } else {
             panic!("DuckDBFailure expected");
         }
+        Ok(())
     }
 
     #[cfg(unix)]
