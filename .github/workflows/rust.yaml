@@ -2,13 +2,10 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - tags: [ '*' ]
+    branches: [ main ]
+    tags: [ '*' ]
   pull_request:
-    branches:
-      - main
-      - tags: [ '*' ]
+    branches: [ main ]
 env:
   RUST_BACKTRACE: 1
 jobs:
