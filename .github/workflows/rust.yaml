@@ -61,6 +61,29 @@ jobs:
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
 
+  sanitizer:
+    name: Address Sanitizer
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      # Need nightly rust.
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: nightly
+          components: rust-src
+      - name: Tests with asan
+        env:
+          RUSTFLAGS: -Zsanitizer=address
+          RUSTDOCFLAGS: -Zsanitizer=address
+          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
+          # Work around https://github.com/rust-lang/rust/issues/59125 by
+          # disabling backtraces. In an ideal world we'd probably suppress the
+          # leak sanitization, but we don't care about backtraces here, so long
+          # as the other tests have them.
+          RUST_BACKTRACE: "0"
+        run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu
+
       # cargo publish
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
@@ -86,26 +109,12 @@ jobs:
         uses: mikepenz/release-changelog-builder-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  sanitizer:
-    name: Address Sanitizer
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      # Need nightly rust.
-      - uses: hecrj/setup-rust-action@v1
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/create-release@v1
         with:
-          rust-version: nightly
-          components: rust-src
-      - name: Tests with asan
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          body: ${{steps.build_changelog.outputs.changelog}}
         env:
-          RUSTFLAGS: -Zsanitizer=address
-          RUSTDOCFLAGS: -Zsanitizer=address
-          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
-          # Work around https://github.com/rust-lang/rust/issues/59125 by
-          # disabling backtraces. In an ideal world we'd probably suppress the
-          # leak sanitization, but we don't care about backtraces here, so long
-          # as the other tests have them.
-          RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
