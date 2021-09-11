@@ -38,7 +38,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - name: Download DuckDB
         run: |
-          wget https://github.com/duckdb/duckdb/releases/download/v0.2.8/libduckdb-linux-amd64.zip -O libduckdb.zip
+          wget https://github.com/duckdb/duckdb/releases/download/v0.2.9/libduckdb-linux-amd64.zip -O libduckdb.zip
           unzip libduckdb.zip -d libduckdb
       # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
       - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
