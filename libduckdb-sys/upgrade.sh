@@ -10,7 +10,7 @@ export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 export DU_INCLUDE_DIR="$DUCKDB_LIB_DIR"
 
 # Download and extract amalgamation
-DUCKDB_VERSION=v0.2.6
+DUCKDB_VERSION=v0.2.9
 wget -T 20 "https://github.com/duckdb/duckdb/releases/download/$DUCKDB_VERSION/libduckdb-src.zip"
 unzip -o libduckdb-src.zip -d duckdb
 rm -f libduckdb-src.zip

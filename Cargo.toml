@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "0.2.4"
+version = "0.2.9"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2018"
 description = "Ergonomic wrapper for DuckDB"
@@ -44,7 +44,7 @@ fallible-streaming-iterator = "0.1"
 memchr = "2.3"
 uuid = { version = "0.8", optional = true }
 smallvec = "1.6.1"
-cast = { version = "0.2", features = ["std", "x128"] }
+cast = { version = "0.3", features = ["std"] }
 arrow = { version = "5.0", default-features = false, features = ["prettyprint"] }
 rust_decimal = "1.14"
 strum = { version = "0.21", features = ["derive"] }
@@ -65,7 +65,7 @@ rand = "0.8.3"
 
 [dependencies.libduckdb-sys]
 path = "libduckdb-sys"
-version = "0.2.4"
+version = "0.2.9"
 
 [package.metadata.docs.rs]
 features = []
