@@ -36,28 +36,28 @@ jobs:
           components: 'rustfmt, clippy'
 
       - run: cargo fmt --all -- --check
-      # - name: Download DuckDB
-      #   run: |
-      #     wget https://github.com/duckdb/duckdb/releases/download/v0.2.8/libduckdb-linux-amd64.zip -O libduckdb.zip
-      #     unzip libduckdb.zip -d libduckdb
-      # - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
-      - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
+      - name: Download DuckDB
+        run: |
+          wget https://github.com/duckdb/duckdb/releases/download/v0.2.8/libduckdb-linux-amd64.zip -O libduckdb.zip
+          unzip libduckdb.zip -d libduckdb
+      # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
+      - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
         name: run cargo clippy
-        # env:
-        #   DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-        #   DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-        #   LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
-          # args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
-          args: '--features "bundled" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
-        # env:
-        #   DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-        #   DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-        #   LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+          args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+          # args: '--features "bundled" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
 
