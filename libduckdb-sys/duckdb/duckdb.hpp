@@ -10,8 +10,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #pragma once
 #define DUCKDB_AMALGAMATION 1
-#define DUCKDB_SOURCE_ID "71f1c7a7e"
-#define DUCKDB_VERSION "0.2.9-dev462"
+#define DUCKDB_SOURCE_ID "1776611ab"
+#define DUCKDB_VERSION "0.2.9"
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
@@ -3757,6 +3757,8 @@ public:
 	//! the two DataChunks have to match exactly. Throws an exception if there
 	//! is not enough space in the chunk.
 	DUCKDB_API void Append(const DataChunk &other);
+	//! Append a selection of the other DataChunk to this one
+	DUCKDB_API void Append(const DataChunk &other, const SelectionVector &sel, idx_t count);
 	//! Destroy all data and columns owned by this DataChunk
 	DUCKDB_API void Destroy();
 
@@ -3764,6 +3766,9 @@ public:
 	DUCKDB_API void Copy(DataChunk &other, idx_t offset = 0) const;
 	DUCKDB_API void Copy(DataChunk &other, const SelectionVector &sel, const idx_t source_count,
 	                     const idx_t offset = 0) const;
+
+	//! Splits the DataChunk in two
+	DUCKDB_API void Split(DataChunk &other, idx_t split_idx);
 
 	//! Turn all the vectors from the chunk into flat vectors
 	DUCKDB_API void Normalify();
@@ -3914,6 +3919,13 @@ struct VectorOperations {
 	// true := A <= B with nulls being maximal
 	static idx_t DistinctLessThanEquals(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
 	                                    SelectionVector *true_sel, SelectionVector *false_sel);
+
+	// true := A > B with nulls being minimal
+	static idx_t DistinctGreaterThanNullsFirst(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                                           SelectionVector *true_sel, SelectionVector *false_sel);
+	// true := A < B with nulls being minimal
+	static idx_t DistinctLessThanNullsFirst(Vector &left, Vector &right, const SelectionVector *sel, idx_t count,
+	                                        SelectionVector *true_sel, SelectionVector *false_sel);
 
 	//===--------------------------------------------------------------------===//
 	// Nested Comparisons
@@ -6141,6 +6153,14 @@ struct DistinctGreaterThan {
 	}
 };
 
+struct DistinctGreaterThanNullsFirst {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return GreaterThan::Operation(right_null, left_null) ||
+		       (!left_null && !right_null && GreaterThan::Operation(left, right));
+	}
+};
+
 struct DistinctGreaterThanEquals {
 	template <class T>
 	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
@@ -6152,6 +6172,14 @@ struct DistinctLessThan {
 	template <class T>
 	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
 		return LessThan::Operation(left_null, right_null) ||
+		       (!left_null && !right_null && LessThan::Operation(left, right));
+	}
+};
+
+struct DistinctLessThanNullsFirst {
+	template <class T>
+	static inline bool Operation(T left, T right, bool left_null, bool right_null) {
+		return LessThan::Operation(right_null, left_null) ||
 		       (!left_null && !right_null && LessThan::Operation(left, right));
 	}
 };
@@ -6988,6 +7016,7 @@ public:
 //
 //
 //===----------------------------------------------------------------------===//
+
 
 
 
@@ -7955,13 +7984,27 @@ public:
 };
 
 struct BoundOrderByNode {
+public:
 	BoundOrderByNode(OrderType type, OrderByNullType null_order, unique_ptr<Expression> expression)
 	    : type(type), null_order(null_order), expression(move(expression)) {
+	}
+	BoundOrderByNode(OrderType type, OrderByNullType null_order, unique_ptr<Expression> expression,
+	                 unique_ptr<BaseStatistics> stats)
+	    : type(type), null_order(null_order), expression(move(expression)), stats(move(stats)) {
+	}
+
+	BoundOrderByNode Copy() const {
+		if (stats) {
+			return BoundOrderByNode(type, null_order, expression->Copy(), stats->Copy());
+		} else {
+			return BoundOrderByNode(type, null_order, expression->Copy());
+		}
 	}
 
 	OrderType type;
 	OrderByNullType null_order;
 	unique_ptr<Expression> expression;
+	unique_ptr<BaseStatistics> stats;
 };
 
 class BoundLimitModifier : public BoundResultModifier {
@@ -8714,9 +8757,6 @@ public:
 		D_ASSERT(result < chunks.size());
 		return result;
 	}
-
-	DUCKDB_API void Heap(vector<OrderType> &desc, vector<OrderByNullType> &null_order, idx_t heap[], idx_t heap_size);
-	DUCKDB_API idx_t MaterializeHeapChunk(DataChunk &target, idx_t order[], idx_t start_offset, idx_t heap_size);
 
 private:
 	//! The total amount of elements in the collection
@@ -9648,6 +9688,9 @@ public:
 	}
 	const_data_ptr_t get() const {
 		return pointer;
+	}
+	idx_t GetSize() const {
+		return allocated_size;
 	}
 	void Reset();
 
@@ -11785,6 +11828,162 @@ public:
 } // namespace duckdb
 
 
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/case_insensitive_map.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/string_util.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+
+
+
+
+
+
+namespace duckdb {
+/**
+ * String Utility Functions
+ * Note that these are not the most efficient implementations (i.e., they copy
+ * memory) and therefore they should only be used for debug messages and other
+ * such things.
+ */
+class StringUtil {
+public:
+	static bool CharacterIsSpace(char c) {
+		return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
+	}
+	static bool CharacterIsNewline(char c) {
+		return c == '\n' || c == '\r';
+	}
+	static bool CharacterIsDigit(char c) {
+		return c >= '0' && c <= '9';
+	}
+	static char CharacterToLower(char c) {
+		if (c >= 'A' && c <= 'Z') {
+			return c - ('A' - 'a');
+		}
+		return c;
+	}
+
+	//! Returns true if the needle string exists in the haystack
+	static bool Contains(const string &haystack, const string &needle);
+
+	//! Returns true if the target string starts with the given prefix
+	static bool StartsWith(string str, string prefix);
+
+	//! Returns true if the target string <b>ends</b> with the given suffix.
+	static bool EndsWith(const string &str, const string &suffix);
+
+	//! Repeat a string multiple times
+	static string Repeat(const string &str, const idx_t n);
+
+	//! Split the input string based on newline char
+	static vector<string> Split(const string &str, char delimiter);
+
+	//! Join multiple strings into one string. Components are concatenated by the given separator
+	static string Join(const vector<string> &input, const string &separator);
+
+	//! Join multiple items of container with given size, transformed to string
+	//! using function, into one string using the given separator
+	template <typename C, typename S, typename Func>
+	static string Join(const C &input, S count, const string &separator, Func f) {
+		// The result
+		std::string result;
+
+		// If the input isn't empty, append the first element. We do this so we
+		// don't need to introduce an if into the loop.
+		if (count > 0) {
+			result += f(input[0]);
+		}
+
+		// Append the remaining input components, after the first
+		for (size_t i = 1; i < count; i++) {
+			result += separator + f(input[i]);
+		}
+
+		return result;
+	}
+
+	//! Return a string that formats the give number of bytes
+	static string BytesToHumanReadableString(idx_t bytes);
+
+	//! Convert a string to uppercase
+	static string Upper(const string &str);
+
+	//! Convert a string to lowercase
+	static string Lower(const string &str);
+
+	//! Format a string using printf semantics
+	template <typename... Args>
+	static string Format(const string fmt_str, Args... params) {
+		return Exception::ConstructMessage(fmt_str, params...);
+	}
+
+	//! Split the input string into a vector of strings based on the split string
+	static vector<string> Split(const string &input, const string &split);
+
+	//! Remove the whitespace char in the left end of the string
+	static void LTrim(string &str);
+	//! Remove the whitespace char in the right end of the string
+	static void RTrim(string &str);
+	//! Remove the whitespace char in the left and right end of the string
+	static void Trim(string &str);
+
+	static string Replace(string source, const string &from, const string &to);
+
+	//! Get the levenshtein distance from two strings
+	static idx_t LevenshteinDistance(const string &s1, const string &s2);
+
+	//! Get the top-n strings (sorted by the given score distance) from a set of scores.
+	//! At least one entry is returned (if there is one).
+	//! Strings are only returned if they have a score less than the threshold.
+	static vector<string> TopNStrings(vector<std::pair<string, idx_t>> scores, idx_t n = 5, idx_t threshold = 5);
+	//! Computes the levenshtein distance of each string in strings, and compares it to target, then returns TopNStrings
+	//! with the given params.
+	static vector<string> TopNLevenshtein(const vector<string> &strings, const string &target, idx_t n = 5,
+	                                      idx_t threshold = 5);
+	static string CandidatesMessage(const vector<string> &candidates, const string &candidate = "Candidate bindings");
+};
+} // namespace duckdb
+
+
+namespace duckdb {
+
+struct CaseInsensitiveStringHashFunction {
+	uint64_t operator()(const string &str) const {
+		std::hash<string> hasher;
+		return hasher(StringUtil::Lower(str));
+	}
+};
+
+struct CaseInsensitiveStringEquality {
+	bool operator()(const string &a, const string &b) const {
+		return StringUtil::Lower(a) == StringUtil::Lower(b);
+	}
+};
+
+template <typename T>
+using case_insensitive_map_t =
+    unordered_map<string, T, CaseInsensitiveStringHashFunction, CaseInsensitiveStringEquality>;
+
+using case_insensitive_set_t = unordered_set<string, CaseInsensitiveStringHashFunction, CaseInsensitiveStringEquality>;
+
+} // namespace duckdb
 
 
 
@@ -11867,8 +12066,7 @@ private:
 	void DropEntryInternal(ClientContext &context, idx_t entry_index, CatalogEntry &entry, bool cascade,
 	                       set_lock_map_t &lock_set);
 	CatalogEntry *CreateEntryInternal(ClientContext &context, unique_ptr<CatalogEntry> entry);
-	MappingValue *GetMapping(ClientContext &context, const string &name, bool allow_lowercase_alias,
-	                         bool get_latest = false);
+	MappingValue *GetMapping(ClientContext &context, const string &name, bool get_latest = false);
 	void PutMapping(ClientContext &context, const string &name, idx_t entry_index);
 	void DeleteMapping(ClientContext &context, const string &name);
 
@@ -11877,7 +12075,7 @@ private:
 	//! The catalog lock is used to make changes to the data
 	mutex catalog_lock;
 	//! Mapping of string to catalog entry
-	unordered_map<string, unique_ptr<MappingValue>> mapping;
+	case_insensitive_map_t<unique_ptr<MappingValue>> mapping;
 	//! The set of catalog entries
 	unordered_map<idx_t, unique_ptr<CatalogEntry>> entries;
 	//! The current catalog entry index
@@ -13014,6 +13212,8 @@ public:
 	unique_ptr<SchemaCatalogEntry> temporary_objects;
 	unordered_map<string, shared_ptr<PreparedStatementData>> prepared_statements;
 
+	unordered_map<string, Value> set_variables;
+
 	// Whether or not aggressive query verification is enabled
 	bool query_verification_enabled = false;
 	//! Enable the running of optimizers
@@ -13102,6 +13302,9 @@ public:
 	//! Same as RunFunctionInTransaction, but does not obtain a lock on the client context or check for validation
 	DUCKDB_API void RunFunctionInTransactionInternal(ClientContextLock &lock, const std::function<void(void)> &fun,
 	                                                 bool requires_valid_transaction = true);
+
+	//! Equivalent to CURRENT_SETTING(key) SQL function.
+	DUCKDB_API bool TryGetCurrentSetting(const std::string &key, Value &result);
 
 private:
 	//! Parse statements from a query
