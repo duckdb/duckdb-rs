@@ -40,5 +40,12 @@ jobs:
         with:
           path: './'
           args: --no-verify --allow-dirty --all-features
+          dry-run: true
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          ignore-published: true
+
+      - uses: katyo/publish-crates@octokit-less
+        name: cargo publish
+        with:
+          path: './'
+          args: --no-verify --allow-dirty --all-features
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
