@@ -35,7 +35,7 @@ jobs:
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
 
-      - uses: katyo/publish-crates@fix-151
+      - uses: katyo/publish-crates@octokit-less
         name: cargo publish
         with:
           path: './'
