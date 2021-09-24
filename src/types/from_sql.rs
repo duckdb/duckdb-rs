@@ -81,6 +81,12 @@ macro_rules! from_sql_integral(
                     ValueRef::Int(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
                     ValueRef::BigInt(i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
                     ValueRef::HugeInt(i) => Ok(<$t as cast::From<i128>>::cast(i).unwrap()),
+
+                    ValueRef::UTinyInt(i) => Ok(<$t as cast::From<u8>>::cast(i).unwrap()),
+                    ValueRef::USmallInt(i) => Ok(<$t as cast::From<u16>>::cast(i).unwrap()),
+                    ValueRef::UInt(i) => Ok(<$t as cast::From<u32>>::cast(i).unwrap()),
+                    ValueRef::UBigInt(i) => Ok(<$t as cast::From<u64>>::cast(i).unwrap()),
+
                     ValueRef::Float(i) => Ok(<$t as cast::From<f32>>::cast(i).unwrap()),
                     ValueRef::Double(i) => Ok(<$t as cast::From<f64>>::cast(i).unwrap()),
 
