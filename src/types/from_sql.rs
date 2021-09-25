@@ -299,6 +299,21 @@ mod test {
     }
 
     #[test]
+    fn test_unsigned_integer() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE unsigned_int (u1 utinyint, u2 usmallint, u4 uinteger, u8 ubigint);
+                   INSERT INTO unsigned_int VALUES (255, 65535, 4294967295, 18446744073709551615);
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row("SELECT * FROM unsigned_int", [], |row| {
+            <(u8, u16, u32, u64)>::try_from(row)
+        })?;
+        assert_eq!(v, (255, 65535, 4294967295, 18446744073709551615));
+        Ok(())
+    }
+
+    #[test]
     fn test_integral_ranges() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
