@@ -313,6 +313,20 @@ mod test {
         Ok(())
     }
 
+    // This test asserts that i128s above/below the i64 max/min can written and retrieved properly.
+    #[test]
+    fn test_hugeint_max_min() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE huge_int (u1 hugeint, u2 hugeint);", [])?;
+        // Min/Max value defined in here: https://duckdb.org/docs/sql/data_types/numeric
+        let i128max: i128 = i128::MAX;
+        let i128min: i128 = i128::MIN + 1;
+        db.execute("INSERT INTO huge_int VALUES (?, ?);", [&i128max, &i128min])?;
+        let v = db.query_row("SELECT * FROM huge_int", [], |row| <(i128, i128)>::try_from(row))?;
+        assert_eq!(v, (i128max, i128min));
+        Ok(())
+    }
+
     #[test]
     fn test_integral_ranges() -> Result<()> {
         let db = Connection::open_in_memory()?;
