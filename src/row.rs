@@ -481,6 +481,10 @@ impl<'stmt> Row<'stmt> {
                 if array.is_null(row) {
                     return ValueRef::Null;
                 }
+                // hugeint: d:38,0
+                if array.scale() == 0 {
+                    return ValueRef::HugeInt(array.value(row));
+                }
                 ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
