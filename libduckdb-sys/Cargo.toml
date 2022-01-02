@@ -1,6 +1,6 @@
 [package]
 name = "libduckdb-sys"
-version = "0.2.9"
+version = "0.3.1"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -23,9 +23,9 @@ buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 
 [build-dependencies]
 bindgen = { version = "0.59", optional = true, default-features = false, features = ["runtime"] }
-pkg-config = { version = "0.3.19", optional = true }
+pkg-config = { version = "0.3.24", optional = true }
 cc = { version = "1.0", features = ["parallel"], optional = true }
 vcpkg = { version = "0.2", optional = true }
 
 [dev-dependencies]
-arrow = { version = "5.0", default-features = false }
+arrow = { version = "6.5.0", default-features = false }

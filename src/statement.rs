@@ -279,7 +279,7 @@ impl Statement<'_> {
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
-        self.query(params)?.get_expected_row().and_then(|r| f(r))
+        self.query(params)?.get_expected_row().and_then(f)
     }
 
     /// Return the row count
