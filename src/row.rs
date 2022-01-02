@@ -165,10 +165,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Result<T>> {
         let map = &mut self.map;
-        self.rows
-            .next()
-            .transpose()
-            .map(|row_result| row_result.and_then(map))
+        self.rows.next().transpose().map(|row_result| row_result.and_then(map))
     }
 }
 
