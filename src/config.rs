@@ -6,10 +6,10 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 
-use strum::{EnumString, ToString};
+use strum::{Display, EnumString};
 
 /// duckdb access mode, default is Automatic
-#[derive(Debug, Eq, PartialEq, EnumString, ToString)]
+#[derive(Debug, Eq, PartialEq, EnumString, Display)]
 pub enum AccessMode {
     /// Access mode of the database AUTOMATIC
     #[strum(to_string = "AUTOMATIC")]
@@ -23,7 +23,7 @@ pub enum AccessMode {
 }
 
 /// duckdb default order, default is Asc
-#[derive(Debug, Eq, PartialEq, EnumString, ToString)]
+#[derive(Debug, Eq, PartialEq, EnumString, Display)]
 pub enum DefaultOrder {
     /// The order type, ASC
     #[strum(to_string = "ASC")]
@@ -34,7 +34,7 @@ pub enum DefaultOrder {
 }
 
 /// duckdb default null order, default is nulls first
-#[derive(Debug, Eq, PartialEq, EnumString, ToString)]
+#[derive(Debug, Eq, PartialEq, EnumString, Display)]
 pub enum DefaultNullOrder {
     /// Null ordering, NullsFirst
     #[strum(to_string = "NULLS_FIRST")]
@@ -46,6 +46,7 @@ pub enum DefaultNullOrder {
 
 /// duckdb configuration
 /// Refer to https://github.com/duckdb/duckdb/blob/master/src/main/config.cpp
+#[derive(Default)]
 pub struct Config {
     config: Option<ffi::duckdb_config>,
 }
@@ -120,12 +121,6 @@ impl Config {
             ));
         }
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Config {
-        Config { config: None }
     }
 }
 

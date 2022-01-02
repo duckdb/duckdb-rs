@@ -418,7 +418,7 @@ impl Connection {
             .query(params)?
             .get_expected_row()
             .map_err(E::from)
-            .and_then(|r| f(r))
+            .and_then(f)
     }
 
     /// Prepare a SQL statement for execution.
