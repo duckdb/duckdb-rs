@@ -10,11 +10,11 @@
 //! ```rust,no_run
 //! extern crate r2d2;
 //! extern crate duckdb;
-//! 
+//!
 //!
 //! use std::thread;
 //! use duckdb::{DuckdbConnectionManager, params};
-//! 
+//!
 //!
 //! fn main() {
 //!     let manager = DuckdbConnectionManager::file("file.db").unwrap();
@@ -40,8 +40,11 @@
 //!         .unwrap()
 //! }
 //! ```
-use std::{path::Path,  sync::{Mutex, Arc}};
-use crate::{Result, Connection, Error, Config};
+use crate::{Config, Connection, Error, Result};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 /// An `r2d2::ManageConnection` for `duckdb::Connection`s.
 pub struct DuckdbConnectionManager {
@@ -49,7 +52,6 @@ pub struct DuckdbConnectionManager {
 }
 
 impl DuckdbConnectionManager {
-
     /// Creates a new `DuckdbConnectionManager` from file.
     pub fn file<P: AsRef<Path>>(path: P) -> Result<Self> {
         Ok(Self {
@@ -96,26 +98,24 @@ impl r2d2::ManageConnection for DuckdbConnectionManager {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     extern crate r2d2;
     use super::*;
-    use crate::Result;
     use crate::types::Value;
+    use crate::Result;
     use std::{sync::mpsc, thread};
 
     use tempdir::TempDir;
 
-   
     #[test]
-    fn test_basic() -> Result<()>{
+    fn test_basic() -> Result<()> {
         let manager = DuckdbConnectionManager::file("file.db")?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
-    
+
         let (s1, r1) = mpsc::channel();
         let (s2, r2) = mpsc::channel();
-    
+
         let pool1 = pool.clone();
         let t1 = thread::spawn(move || {
             let conn = pool1.get().unwrap();
@@ -123,7 +123,7 @@ mod test {
             r2.recv().unwrap();
             drop(conn);
         });
-    
+
         let pool2 = pool.clone();
         let t2 = thread::spawn(move || {
             let conn = pool2.get().unwrap();
@@ -131,22 +131,22 @@ mod test {
             r1.recv().unwrap();
             drop(conn);
         });
-    
+
         t1.join().unwrap();
         t2.join().unwrap();
-    
+
         pool.get().unwrap();
         Ok(())
     }
-    
+
     #[test]
-    fn test_file() -> Result<()>{
+    fn test_file() -> Result<()> {
         let manager = DuckdbConnectionManager::file("file.db")?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
-    
+
         let (s1, r1) = mpsc::channel();
         let (s2, r2) = mpsc::channel();
-    
+
         let pool1 = pool.clone();
         let t1 = thread::spawn(move || {
             let conn = pool1.get().unwrap();
@@ -155,7 +155,7 @@ mod test {
             r2.recv().unwrap();
             drop(conn1);
         });
-    
+
         let pool2 = pool.clone();
         let t2 = thread::spawn(move || {
             let conn = pool2.get().unwrap();
@@ -163,27 +163,27 @@ mod test {
             r1.recv().unwrap();
             drop(conn);
         });
-    
+
         t1.join().unwrap();
         t2.join().unwrap();
-    
+
         pool.get().unwrap();
         Ok(())
     }
-    
+
     #[test]
-    fn test_is_valid() -> Result<()>{
+    fn test_is_valid() -> Result<()> {
         let manager = DuckdbConnectionManager::file("file.db")?;
         let pool = r2d2::Pool::builder()
             .max_size(1)
             .test_on_check_out(true)
             .build(manager)
             .unwrap();
-    
+
         pool.get().unwrap();
         Ok(())
     }
-    
+
     #[test]
     fn test_error_handling() -> Result<()> {
         //! We specify a directory as a database. This is bound to fail.
@@ -192,17 +192,17 @@ mod test {
         assert!(DuckdbConnectionManager::file(dirpath).is_err());
         Ok(())
     }
-    
+
     #[test]
     fn test_with_flags() -> Result<()> {
         let config = Config::default()
-        .access_mode(crate::AccessMode::ReadWrite)?
-        .default_null_order(crate::DefaultNullOrder::NullsLast)?
-        .default_order(crate::DefaultOrder::Desc)?
-        .enable_external_access(true)?
-        .enable_object_cache(false)?
-        .max_memory("2GB")?
-        .threads(4)?;
+            .access_mode(crate::AccessMode::ReadWrite)?
+            .default_null_order(crate::DefaultNullOrder::NullsLast)?
+            .default_order(crate::DefaultOrder::Desc)?
+            .enable_external_access(true)?
+            .enable_object_cache(false)?
+            .max_memory("2GB")?
+            .threads(4)?;
         let manager = DuckdbConnectionManager::file_with_flags("file.db", config)?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
         let conn = pool.get().unwrap();
