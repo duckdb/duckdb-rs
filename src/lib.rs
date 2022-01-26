@@ -82,6 +82,7 @@ pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
 pub use crate::statement::Statement;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
+pub use crate::r2d2::DuckdbConnectionManager;
 
 #[macro_use]
 mod error;
@@ -97,6 +98,7 @@ mod raw_statement;
 mod row;
 mod statement;
 mod transaction;
+mod r2d2;
 
 pub mod types;
 
