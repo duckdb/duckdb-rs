@@ -150,10 +150,9 @@ mod test {
         let pool1 = pool.clone();
         let t1 = thread::spawn(move || {
             let conn = pool1.get().unwrap();
-            let conn1: &Connection = &*conn;
             s1.send(()).unwrap();
             r2.recv().unwrap();
-            drop(conn1);
+            drop(conn);
         });
 
         let pool2 = pool.clone();
