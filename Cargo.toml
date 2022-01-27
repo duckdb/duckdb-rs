@@ -28,6 +28,7 @@ modern-full = [
     "chrono",
     "serde_json",
     "url",
+    "r2d2",
 ]
 
 [dependencies]
@@ -48,6 +49,7 @@ cast = { version = "0.3", features = ["std"] }
 arrow = { version = "6.5.0", default-features = false, features = ["prettyprint"] }
 rust_decimal = "1.14"
 strum = { version = "0.23", features = ["derive"] }
+r2d2 = { version = "0.8.9", optional = true }
 
 [dev-dependencies]
 doc-comment = "0.3"
@@ -57,6 +59,7 @@ regex = "1.3"
 uuid = { version = "0.8", features = ["v4"] }
 unicase = "2.6.0"
 rand = "0.8.3"
+tempdir = "0.3.7"
 # criterion = "0.3"
 
 # [[bench]]
