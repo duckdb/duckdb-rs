@@ -78,6 +78,7 @@ pub use crate::config::{AccessMode, Config, DefaultNullOrder, DefaultOrder};
 pub use crate::error::Error;
 pub use crate::ffi::ErrorCode;
 pub use crate::params::{params_from_iter, Params, ParamsFromIter};
+#[cfg(feature = "r2d2")]
 pub use crate::r2d2::DuckdbConnectionManager;
 pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
 pub use crate::statement::Statement;
@@ -94,6 +95,7 @@ mod config;
 mod inner_connection;
 mod params;
 mod pragma;
+#[cfg(feature = "r2d2")]
 mod r2d2;
 mod raw_statement;
 mod row;
