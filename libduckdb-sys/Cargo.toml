@@ -1,8 +1,8 @@
 [package]
 name = "libduckdb-sys"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
-edition = "2018"
+edition = "2021"
 build = "build.rs"
 license = "MIT"
 repository = "https://github.com/wangfenjin/duckdb-rs"

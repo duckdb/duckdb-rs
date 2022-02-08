@@ -27,21 +27,22 @@ mod tests {
     use std::mem;
     use std::os::raw::{c_char, c_void};
     use std::ptr;
-    use std::slice;
 
     use arrow::array::{Array, ArrayData, Int32Array, StructArray};
     use arrow::datatypes::DataType;
     use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
 
     unsafe fn print_int_result(mut result: duckdb_result) {
-        let columns = slice::from_raw_parts(result.columns, result.column_count as usize);
-        for i in 0..result.column_count {
-            print!("{} ", CStr::from_ptr(columns[i as usize].name).to_string_lossy());
+        for i in 0..duckdb_column_count(&mut result) {
+            print!(
+                "{} ",
+                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+            );
         }
         println!();
         // print the data of the result
-        for row_idx in 0..result.row_count {
-            for col_idx in 0..result.column_count {
+        for row_idx in 0..duckdb_row_count(&mut result) {
+            for col_idx in 0..duckdb_column_count(&mut result) {
                 let val = duckdb_value_int32(&mut result, col_idx, row_idx);
                 print!("{} ", val);
             }
@@ -150,11 +151,11 @@ mod tests {
             if duckdb_query(con, sql.as_ptr() as *const c_char, &mut result) != duckdb_state_DuckDBSuccess {
                 panic!(
                     "SELECT error: {}",
-                    CStr::from_ptr(result.error_message).to_string_lossy()
+                    CStr::from_ptr(duckdb_result_error(&mut result)).to_string_lossy()
                 )
             }
-            assert_eq!(result.row_count, 3);
-            assert_eq!(result.column_count, 2);
+            assert_eq!(duckdb_row_count(&mut result), 3);
+            assert_eq!(duckdb_column_count(&mut result), 2);
             print_int_result(result);
             duckdb_destroy_result(&mut result);
 
@@ -170,8 +171,8 @@ mod tests {
             if duckdb_execute_prepared(stmt, &mut result) != duckdb_state_DuckDBSuccess {
                 panic!("Execute prepared error");
             }
-            assert_eq!(result.row_count, 2);
-            assert_eq!(result.column_count, 2);
+            assert_eq!(duckdb_row_count(&mut result), 2);
+            assert_eq!(duckdb_column_count(&mut result), 2);
             print_int_result(result);
             duckdb_destroy_result(&mut result);
 
@@ -182,8 +183,8 @@ mod tests {
             if duckdb_execute_prepared(stmt, &mut result) != duckdb_state_DuckDBSuccess {
                 panic!("Execute prepared error");
             }
-            assert_eq!(result.row_count, 1);
-            assert_eq!(result.column_count, 2);
+            assert_eq!(duckdb_row_count(&mut result), 1);
+            assert_eq!(duckdb_column_count(&mut result), 2);
             print_int_result(result);
             duckdb_destroy_result(&mut result);
             duckdb_destroy_prepare(&mut stmt);

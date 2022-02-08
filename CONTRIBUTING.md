@@ -84,3 +84,15 @@ Detect memory leaks:
 cd ~/github/duckdb-rs
 ASAN_OPTIONS=detect_leaks=1 ASAN_SYMBOLIZER_PATH=/usr/local/opt/llvm/bin/llvm-symbolizer cargo test --features bundled -- --nocapture
 ```
+
+### Update to new version
+
+Everytime duckdb release to a new version, we also need to release a new version.
+
+We can use the scripts to do the upgrades:
+```shell
+./upgrade.sh
+```
+Which use sed to update the version number and then call `./libduckdb-sys/upgrade.sh` to generated new bindings.
+
+We may need to fix any error as duckdb's c-api may have breaking changes occasionally.

@@ -2,7 +2,6 @@ use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
-use std::slice;
 use std::sync::Arc;
 
 use super::ffi;
@@ -125,19 +124,26 @@ impl RawStatement {
 
     #[allow(dead_code)]
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        let columns = slice::from_raw_parts(result.columns, result.column_count as usize);
-        println!("row-count: {}, column-count: {}", result.row_count, result.column_count);
-        for i in 0..result.column_count {
+        use ffi::duckdb_column_count;
+        use ffi::duckdb_column_name;
+        use ffi::duckdb_row_count;
+
+        println!(
+            "row-count: {}, column-count: {}",
+            duckdb_row_count(&mut result),
+            duckdb_column_count(&mut result)
+        );
+        for i in 0..duckdb_column_count(&mut result) {
             print!(
                 "column-name:{} ",
-                CStr::from_ptr(columns[i as usize].name).to_string_lossy()
+                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
             );
         }
         println!();
         // print the data of the result
-        for row_idx in 0..result.row_count {
+        for row_idx in 0..duckdb_row_count(&mut result) {
             print!("row-value:");
-            for col_idx in 0..result.column_count {
+            for col_idx in 0..duckdb_column_count(&mut result) {
                 let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
                 print!("{} ", CStr::from_ptr(val).to_string_lossy());
             }
