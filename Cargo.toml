@@ -1,8 +1,8 @@
 [package]
 name = "duckdb"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
-edition = "2018"
+edition = "2021"
 description = "Ergonomic wrapper for DuckDB"
 repository = "https://github.com/wangfenjin/duckdb-rs"
 homepage = "https://github.com/wangfenjin/duckdb-rs"
@@ -68,7 +68,7 @@ tempdir = "0.3.7"
 
 [dependencies.libduckdb-sys]
 path = "libduckdb-sys"
-version = "0.3.1"
+version = "0.3.2"
 
 [package.metadata.docs.rs]
 features = []
