@@ -108,6 +108,7 @@ impl<'a> ValueRef<'a> {
     pub fn as_blob(&self) -> FromSqlResult<&'a [u8]> {
         match *self {
             ValueRef::Blob(b) => Ok(b),
+            ValueRef::Text(t) => Ok(t),
             _ => Err(FromSqlError::InvalidType),
         }
     }
