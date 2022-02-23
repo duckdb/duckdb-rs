@@ -359,4 +359,25 @@ mod test {
         check_ranges::<u32>(&db, &[-2, -1, 4_294_967_296], &[0, 1, 4_294_967_295]);
         Ok(())
     }
+
+    #[test]
+    fn test_uuid() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE uuid (u uuid);
+                   INSERT INTO uuid VALUES ('10203040-5060-7080-0102-030405060708'),(NULL),('47183823-2574-4bfd-b411-99ed177d3e43');
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row("SELECT u FROM uuid order by u desc nulls last limit 1", [], |row| {
+            <(String,)>::try_from(row)
+        })?;
+        assert_eq!(v, ("47183823-2574-4bfd-b411-99ed177d3e43".to_string(),));
+        let v = db.query_row(
+            "SELECT u FROM uuid where u>?",
+            ["10203040-5060-7080-0102-030405060708"],
+            |row| <(String,)>::try_from(row),
+        )?;
+        assert_eq!(v, ("47183823-2574-4bfd-b411-99ed177d3e43".to_string(),));
+        Ok(())
+    }
 }
