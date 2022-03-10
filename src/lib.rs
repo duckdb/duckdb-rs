@@ -528,6 +528,7 @@ mod test {
     use std::fmt;
 
     use arrow::array::Int32Array;
+    use arrow::datatypes::DataType;
     use arrow::record_batch::RecordBatch;
     use fallible_iterator::FallibleIterator;
 
@@ -635,7 +636,7 @@ mod test {
         let filename = "no_such_file.db";
         let result =
             Connection::open_with_flags(filename, Config::default().access_mode(config::AccessMode::ReadOnly)?);
-        assert!(!result.is_ok());
+        assert!(result.is_err());
         let err = result.err().unwrap();
         if let Error::DuckDBFailure(_e, Some(msg)) = err {
             // TODO: update error code
@@ -1179,6 +1180,11 @@ mod test {
         db.execute_batch(sql)?;
         let mut stmt = db.prepare("select t from test order by t desc")?;
         let mut arr = stmt.query_arrow([])?;
+
+        let schema = arr.get_schema();
+        assert_eq!(schema.fields().len(), 1);
+        assert_eq!(schema.field(0).name(), "t");
+        assert_eq!(schema.field(0).data_type(), &DataType::Int32);
 
         let rb = arr.next().unwrap();
         let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();

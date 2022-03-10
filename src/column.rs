@@ -29,8 +29,13 @@ impl Statement<'_> {
     /// If associated DB schema can be altered concurrently, you should make
     /// sure that current statement has already been stepped once before
     /// calling this method.
-    pub fn column_names(&self) -> Vec<&String> {
-        self.stmt.schema().fields().iter().map(|f| f.name()).collect()
+    pub fn column_names(&self) -> Vec<String> {
+        self.stmt
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.name().to_owned())
+            .collect()
     }
 
     /// Return the number of columns in the result set returned by the prepared
