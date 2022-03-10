@@ -18,7 +18,6 @@ use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
 pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
     result: Option<ffi::duckdb_arrow>,
-    c_schema: Option<*const FFI_ArrowSchema>,
     schema: Option<SchemaRef>,
 }
 
@@ -28,7 +27,6 @@ impl RawStatement {
         RawStatement {
             ptr: stmt,
             result: None,
-            c_schema: None,
             schema: None,
         }
     }
@@ -60,11 +58,6 @@ impl RawStatement {
             let (mut arrays, mut schema) = ArrowArray::into_raw(ArrowArray::empty());
             let schema = &mut schema;
             let arrays = &mut arrays;
-            // TODO: Can we reuse schema?
-            // destroy schema as we don't need it...
-            // Arc::from_raw(schema);
-            // TODO: use this after https://github.com/apache/arrow-rs/pull/612
-            // let mut arrays = Arc::into_raw(Arc::new(FFI_ArrowArray::empty()));
             if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut *mut c_void)
                 != ffi::DuckDBSuccess
             {
@@ -104,8 +97,8 @@ impl RawStatement {
     }
 
     #[inline]
-    pub fn schema(&self) -> &SchemaRef {
-        self.schema.as_ref().unwrap()
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone().unwrap()
     }
 
     #[inline]
@@ -161,14 +154,13 @@ impl RawStatement {
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
             let mut c_schema = Arc::into_raw(Arc::new(FFI_ArrowSchema::empty()));
-            let schema = &mut c_schema;
-            let rc = ffi::duckdb_query_arrow_schema(out, schema as *mut _ as *mut *mut c_void);
+            let rc = ffi::duckdb_query_arrow_schema(out, &mut c_schema as *mut _ as *mut *mut c_void);
             if rc != ffi::DuckDBSuccess {
                 Arc::from_raw(c_schema);
                 result_from_duckdb_arrow(rc, out)?;
             }
             self.schema = Some(Arc::new(Schema::try_from(&*c_schema).unwrap()));
-            self.c_schema = Some(c_schema);
+            Arc::from_raw(c_schema);
 
             self.result = Some(out);
             Ok(rows_changed as usize)
@@ -178,12 +170,6 @@ impl RawStatement {
     #[inline]
     pub fn reset_result(&mut self) {
         self.schema = None;
-        if self.c_schema.is_some() {
-            unsafe {
-                Arc::from_raw(self.c_schema.unwrap());
-            }
-            self.c_schema = None;
-        }
         if self.result.is_some() {
             unsafe {
                 ffi::duckdb_destroy_arrow(&mut self.result_unwrap());
