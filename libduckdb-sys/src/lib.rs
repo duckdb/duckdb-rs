@@ -85,7 +85,9 @@ mod tests {
             }
             assert_eq!(duckdb_arrow_row_count(result), 3);
             assert_eq!(duckdb_arrow_column_count(result), 2);
-            let (mut arrays, mut schema) = ArrowArray::into_raw(ArrowArray::empty());
+
+            let mut arrays = &FFI_ArrowArray::empty();
+            let mut schema = &FFI_ArrowSchema::empty();
             let schema = &mut schema;
             if duckdb_query_arrow_schema(result, schema as *mut _ as *mut *mut c_void) != duckdb_state_DuckDBSuccess {
                 panic!("SELECT error")

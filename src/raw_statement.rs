@@ -55,25 +55,22 @@ impl RawStatement {
     pub fn step(&self) -> Option<StructArray> {
         self.result?;
         unsafe {
-            let (mut arrays, mut schema) = ArrowArray::into_raw(ArrowArray::empty());
-            let schema = &mut schema;
+            let mut arrays = &FFI_ArrowArray::empty();
             let arrays = &mut arrays;
             if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut *mut c_void)
                 != ffi::DuckDBSuccess
             {
-                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
                 return None;
             }
             if (**arrays).is_empty() {
-                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
                 return None;
             }
 
+            let mut schema = &FFI_ArrowSchema::empty();
+            let schema = &mut schema;
             if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut *mut c_void)
                 != ffi::DuckDBSuccess
             {
-                // clean raw data
-                let _ = ArrowArray::try_from_raw(*arrays as *mut FFI_ArrowArray, *schema as *mut FFI_ArrowSchema);
                 return None;
             }
 
