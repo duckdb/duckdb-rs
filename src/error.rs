@@ -79,6 +79,9 @@ pub enum Error {
     /// parameters in the query. The first `usize` is how many parameters were
     /// given, the 2nd is how many were expected.
     InvalidParameterCount(usize, usize),
+
+    /// Apppend Error
+    AppendError,
 }
 
 impl PartialEq for Error {
@@ -180,6 +183,7 @@ impl fmt::Display for Error {
             Error::ToSqlConversionFailure(ref err) => err.fmt(f),
             Error::InvalidQuery => write!(f, "Query is not read-only"),
             Error::MultipleStatement => write!(f, "Multiple statements provided"),
+            Error::AppendError => write!(f, "Append error"),
         }
     }
 }
@@ -202,6 +206,7 @@ impl error::Error for Error {
             | Error::InvalidParameterCount(..)
             | Error::StatementChangedRows(_)
             | Error::InvalidQuery
+            | Error::AppendError
             | Error::MultipleStatement => None,
             Error::FromSqlConversionFailure(_, _, ref err) | Error::ToSqlConversionFailure(ref err) => Some(&**err),
         }
