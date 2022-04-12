@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [ main ]
-    tags: [ '*' ]
   pull_request:
     branches: [ main ]
 env:
@@ -84,37 +83,10 @@ jobs:
           RUST_BACKTRACE: "0"
         run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu
 
-      # cargo publish
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
-        if: startsWith(github.ref, 'refs/tags/') != true
         with:
           path: './'
           args: --allow-dirty --all-features
           dry-run: true
           ignore-published: true
-      - uses: wangfenjin/publish-crates@main
-        name: cargo publish
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          path: './'
-          args: --no-verify --allow-dirty --all-features
-          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          ignore-published: true
-
-      # create release
-      - name: "Build Changelog"
-        id: build_changelog
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: mikepenz/release-changelog-builder-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          body: ${{steps.build_changelog.outputs.changelog}}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
