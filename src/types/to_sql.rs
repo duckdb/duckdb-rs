@@ -297,27 +297,64 @@ mod test {
         assert!(r.is_ok());
     }
 
+    // Use gen_random_uuid() to generate uuid
+    #[test]
+    fn test_uuid_gen() -> crate::Result<()> {
+        use crate::Connection;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo (id uuid NOT NULL);")?;
+
+        db.execute("INSERT INTO foo (id) VALUES (gen_random_uuid())", [])?;
+
+        let mut stmt = db.prepare("SELECT id FROM foo")?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+        let found_id: String = row.get_unwrap(0);
+        assert_eq!(found_id.len(), 36);
+        Ok(())
+    }
+
     #[cfg(feature = "uuid")]
     #[test]
-    fn test_uuid() -> crate::Result<()> {
+    fn test_uuid_blob_type() -> crate::Result<()> {
         use crate::{params, Connection};
         use uuid::Uuid;
 
         let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo (id BLOB CONSTRAINT uuidchk CHECK (octet_length(id) <= 16), label TEXT);")?;
+        db.execute_batch("CREATE TABLE foo (id BLOB CONSTRAINT uuidchk CHECK (octet_length(id) = 16), label TEXT);")?;
 
         let id = Uuid::new_v4();
+        let id_vec = id.as_bytes().to_vec();
+        db.execute("INSERT INTO foo (id, label) VALUES (?, ?)", params![id_vec, "target"])?;
 
+        let mut stmt = db.prepare("SELECT id, label FROM foo WHERE id = ?")?;
+        let mut rows = stmt.query(params![id_vec])?;
+        let row = rows.next()?.unwrap();
+        let found_id: Uuid = row.get_unwrap(0);
+        let found_label: String = row.get_unwrap(1);
+        assert_eq!(found_id, id);
+        assert_eq!(found_label, "target");
+        Ok(())
+    }
+
+    #[cfg(feature = "uuid")]
+    #[test]
+    fn test_uuid_type() -> crate::Result<()> {
+        use crate::{params, Connection};
+        use uuid::Uuid;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo (id uuid, label TEXT);")?;
+
+        let id = Uuid::new_v4();
         db.execute("INSERT INTO foo (id, label) VALUES (?, ?)", params![id, "target"])?;
 
         let mut stmt = db.prepare("SELECT id, label FROM foo WHERE id = ?")?;
-
         let mut rows = stmt.query(params![id])?;
         let row = rows.next()?.unwrap();
-
         let found_id: Uuid = row.get_unwrap(0);
         let found_label: String = row.get_unwrap(1);
-
         assert_eq!(found_id, id);
         assert_eq!(found_label, "target");
         Ok(())
