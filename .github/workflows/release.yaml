@@ -1,0 +1,44 @@
+name: CD
+
+on:
+  push:
+    tags: [ '*' ]
+env:
+  RUST_BACKTRACE: 1
+jobs:
+  Release:
+    name: Cargo Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      # This has a matcher for test panics, so we use it even though elsewhere
+      # we use actions-rs/toolchain.
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable${{ matrix.host }}
+          targets: ${{ matrix.target }}
+          components: 'rustfmt, clippy'
+
+      # cargo publish
+      - uses: wangfenjin/publish-crates@main
+        name: cargo publish
+        with:
+          path: './'
+          args: --no-verify --allow-dirty --all-features
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          ignore-published: true
+
+      # create release
+      - name: "Build Changelog"
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          body: ${{steps.build_changelog.outputs.changelog}}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
