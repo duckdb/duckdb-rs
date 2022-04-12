@@ -29,6 +29,7 @@ modern-full = [
     "serde_json",
     "url",
     "r2d2",
+    "uuid",
 ]
 
 [dependencies]

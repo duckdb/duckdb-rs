@@ -81,7 +81,7 @@ impl From<isize> for Value {
 impl From<uuid::Uuid> for Value {
     #[inline]
     fn from(id: uuid::Uuid) -> Value {
-        Value::Blob(id.as_bytes().to_vec())
+        Value::Text(id.to_string())
     }
 }
 

@@ -223,10 +223,18 @@ impl FromSql for Vec<u8> {
 impl FromSql for uuid::Uuid {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        value
-            .as_blob()
-            .and_then(|bytes| uuid::Builder::from_slice(bytes).map_err(|_| FromSqlError::InvalidUuidSize(bytes.len())))
-            .map(|mut builder| builder.build())
+        match value {
+            ValueRef::Text(..) => value
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).map_err(|_| FromSqlError::InvalidUuidSize(s.len()))),
+            ValueRef::Blob(..) => value
+                .as_blob()
+                .and_then(|bytes| {
+                    uuid::Builder::from_slice(bytes).map_err(|_| FromSqlError::InvalidUuidSize(bytes.len()))
+                })
+                .map(|mut builder| builder.build()),
+            _ => Err(FromSqlError::InvalidType),
+        }
     }
 }
 
@@ -357,6 +365,44 @@ mod test {
         check_ranges::<u8>(&db, &[-2, -1, 256], &[0, 1, 255]);
         check_ranges::<u16>(&db, &[-2, -1, 65536], &[0, 1, 65535]);
         check_ranges::<u32>(&db, &[-2, -1, 4_294_967_296], &[0, 1, 4_294_967_295]);
+        Ok(())
+    }
+
+    // Don't need uuid crate if we only care about the string value of uuid
+    #[test]
+    fn test_uuid_string() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE uuid (u uuid);
+                   INSERT INTO uuid VALUES ('10203040-5060-7080-0102-030405060708'),(NULL),('47183823-2574-4bfd-b411-99ed177d3e43');
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row("SELECT u FROM uuid order by u desc nulls last limit 1", [], |row| {
+            <(String,)>::try_from(row)
+        })?;
+        assert_eq!(v, ("47183823-2574-4bfd-b411-99ed177d3e43".to_string(),));
+        let v = db.query_row(
+            "SELECT u FROM uuid where u>?",
+            ["10203040-5060-7080-0102-030405060708"],
+            |row| <(String,)>::try_from(row),
+        )?;
+        assert_eq!(v, ("47183823-2574-4bfd-b411-99ed177d3e43".to_string(),));
+        Ok(())
+    }
+
+    #[cfg(feature = "uuid")]
+    #[test]
+    fn test_uuid_from_string() -> crate::Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE uuid (u uuid);
+                   INSERT INTO uuid VALUES ('10203040-5060-7080-0102-030405060708'),(NULL),('47183823-2574-4bfd-b411-99ed177d3e43');
+                   END;";
+        db.execute_batch(sql)?;
+        let v = db.query_row("SELECT u FROM uuid order by u desc nulls last limit 1", [], |row| {
+            <(uuid::Uuid,)>::try_from(row)
+        })?;
+        assert_eq!(v.0.to_string(), "47183823-2574-4bfd-b411-99ed177d3e43");
         Ok(())
     }
 }
