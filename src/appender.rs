@@ -183,4 +183,25 @@ mod test {
         assert_eq!(val, (25, 30));
         Ok(())
     }
+
+    // Waiting https://github.com/duckdb/duckdb/pull/3405
+    #[cfg(feature = "uuid")]
+    #[test]
+    #[ignore = "not supported for now"]
+    fn test_append_uuid() -> Result<()> {
+        use uuid::Uuid;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x UUID)")?;
+
+        let id = Uuid::new_v4();
+        {
+            let mut app = db.appender("foo")?;
+            app.append_row([id])?;
+        }
+
+        let val = db.query_row("SELECT x FROM foo", [], |row| <(Uuid,)>::try_from(row))?;
+        assert_eq!(val, (id,));
+        Ok(())
+    }
 }
