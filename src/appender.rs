@@ -7,6 +7,7 @@ use std::os::raw::c_char;
 
 use crate::error::result_from_duckdb_appender;
 use crate::types::{ToSql, ToSqlOutput};
+use crate::Error;
 
 /// Appender for fast import data
 pub struct Appender<'conn> {
@@ -91,7 +92,7 @@ impl Appender<'_> {
         // NOTE: we ignore the return value here
         //       because if anything failed, end_row will fail
         // TODO: append more
-        let _ = match value {
+        let rc = match value {
             ValueRef::Null => unsafe { ffi::duckdb_append_null(ptr) },
             ValueRef::Boolean(i) => unsafe { ffi::duckdb_append_bool(ptr, i) },
             ValueRef::TinyInt(i) => unsafe { ffi::duckdb_append_int8(ptr, i) },
@@ -110,6 +111,9 @@ impl Appender<'_> {
             ValueRef::Blob(b) => unsafe { ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64) },
             _ => unreachable!("not supported"),
         };
+        if rc != 0 {
+            return Err(Error::AppendError);
+        }
         Ok(())
     }
 
