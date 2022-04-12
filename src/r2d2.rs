@@ -110,7 +110,7 @@ mod test {
 
     #[test]
     fn test_basic() -> Result<()> {
-        let manager = DuckdbConnectionManager::file("file.db")?;
+        let manager = DuckdbConnectionManager::file(":memory:")?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
 
         let (s1, r1) = mpsc::channel();
@@ -141,7 +141,7 @@ mod test {
 
     #[test]
     fn test_file() -> Result<()> {
-        let manager = DuckdbConnectionManager::file("file.db")?;
+        let manager = DuckdbConnectionManager::file(":memory:")?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
 
         let (s1, r1) = mpsc::channel();
@@ -172,7 +172,7 @@ mod test {
 
     #[test]
     fn test_is_valid() -> Result<()> {
-        let manager = DuckdbConnectionManager::file("file.db")?;
+        let manager = DuckdbConnectionManager::file(":memory:")?;
         let pool = r2d2::Pool::builder()
             .max_size(1)
             .test_on_check_out(true)
@@ -202,7 +202,7 @@ mod test {
             .enable_object_cache(false)?
             .max_memory("2GB")?
             .threads(4)?;
-        let manager = DuckdbConnectionManager::file_with_flags("file.db", config)?;
+        let manager = DuckdbConnectionManager::file_with_flags(":memory:", config)?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
         let conn = pool.get().unwrap();
         conn.execute_batch("CREATE TABLE foo(x Text)")?;

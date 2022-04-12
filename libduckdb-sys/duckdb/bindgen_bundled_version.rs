@@ -106,6 +106,7 @@ pub const __DARWIN_NO_LONG_LONG: u32 = 0;
 pub const _DARWIN_FEATURE_64_BIT_INODE: u32 = 1;
 pub const _DARWIN_FEATURE_ONLY_UNIX_CONFORMANCE: u32 = 1;
 pub const _DARWIN_FEATURE_UNIX_CONFORMANCE: u32 = 3;
+pub const __has_ptrcheck: u32 = 0;
 pub const __PTHREAD_SIZE__: u32 = 8176;
 pub const __PTHREAD_ATTR_SIZE__: u32 = 56;
 pub const __PTHREAD_MUTEXATTR_SIZE__: u32 = 8;
@@ -202,6 +203,8 @@ pub const __MAC_11_5: u32 = 110500;
 pub const __MAC_11_6: u32 = 110600;
 pub const __MAC_12_0: u32 = 120000;
 pub const __MAC_12_1: u32 = 120100;
+pub const __MAC_12_2: u32 = 120200;
+pub const __MAC_12_3: u32 = 120300;
 pub const __IPHONE_2_0: u32 = 20000;
 pub const __IPHONE_2_1: u32 = 20100;
 pub const __IPHONE_2_2: u32 = 20200;
@@ -260,6 +263,8 @@ pub const __IPHONE_14_8: u32 = 140800;
 pub const __IPHONE_15_0: u32 = 150000;
 pub const __IPHONE_15_1: u32 = 150100;
 pub const __IPHONE_15_2: u32 = 150200;
+pub const __IPHONE_15_3: u32 = 150300;
+pub const __IPHONE_15_4: u32 = 150400;
 pub const __TVOS_9_0: u32 = 90000;
 pub const __TVOS_9_1: u32 = 90100;
 pub const __TVOS_9_2: u32 = 90200;
@@ -291,6 +296,8 @@ pub const __TVOS_14_7: u32 = 140700;
 pub const __TVOS_15_0: u32 = 150000;
 pub const __TVOS_15_1: u32 = 150100;
 pub const __TVOS_15_2: u32 = 150200;
+pub const __TVOS_15_3: u32 = 150300;
+pub const __TVOS_15_4: u32 = 150400;
 pub const __WATCHOS_1_0: u32 = 10000;
 pub const __WATCHOS_2_0: u32 = 20000;
 pub const __WATCHOS_2_1: u32 = 20100;
@@ -320,6 +327,8 @@ pub const __WATCHOS_7_6: u32 = 70600;
 pub const __WATCHOS_8_0: u32 = 80000;
 pub const __WATCHOS_8_1: u32 = 80100;
 pub const __WATCHOS_8_3: u32 = 80300;
+pub const __WATCHOS_8_4: u32 = 80400;
+pub const __WATCHOS_8_5: u32 = 80500;
 pub const MAC_OS_X_VERSION_10_0: u32 = 1000;
 pub const MAC_OS_X_VERSION_10_1: u32 = 1010;
 pub const MAC_OS_X_VERSION_10_2: u32 = 1020;
@@ -357,7 +366,7 @@ pub const MAC_OS_VERSION_12_0: u32 = 120000;
 pub const __DRIVERKIT_19_0: u32 = 190000;
 pub const __DRIVERKIT_20_0: u32 = 200000;
 pub const __DRIVERKIT_21_0: u32 = 210000;
-pub const __MAC_OS_X_VERSION_MAX_ALLOWED: u32 = 120100;
+pub const __MAC_OS_X_VERSION_MAX_ALLOWED: u32 = 120300;
 pub const __ENABLE_LEGACY_MAC_AVAILABILITY: u32 = 1;
 pub const __DARWIN_WCHAR_MIN: i32 = -2147483648;
 pub const _FORTIFY_SOURCE: u32 = 2;
@@ -10390,6 +10399,16 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL: DUCKDB_TYPE = 15;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT: DUCKDB_TYPE = 16;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR: DUCKDB_TYPE = 17;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_BLOB: DUCKDB_TYPE = 18;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL: DUCKDB_TYPE = 19;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S: DUCKDB_TYPE = 20;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS: DUCKDB_TYPE = 21;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS: DUCKDB_TYPE = 22;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_ENUM: DUCKDB_TYPE = 23;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_LIST: DUCKDB_TYPE = 24;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_STRUCT: DUCKDB_TYPE = 25;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_MAP: DUCKDB_TYPE = 26;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_UUID: DUCKDB_TYPE = 27;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_JSON: DUCKDB_TYPE = 28;
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 pub use self::DUCKDB_TYPE as duckdb_type;
 #[doc = "! Days are stored as days since 1970-01-01"]
@@ -10701,6 +10720,41 @@ fn bindgen_test_layout_duckdb_hugeint() {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct duckdb_decimal {
+    pub width: u8,
+    pub scale: u8,
+    pub value: duckdb_hugeint,
+}
+#[test]
+fn bindgen_test_layout_duckdb_decimal() {
+    assert_eq!(
+        ::std::mem::size_of::<duckdb_decimal>(),
+        24usize,
+        concat!("Size of: ", stringify!(duckdb_decimal))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<duckdb_decimal>(),
+        8usize,
+        concat!("Alignment of ", stringify!(duckdb_decimal))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<duckdb_decimal>())).width as *const _ as usize },
+        0usize,
+        concat!("Offset of field: ", stringify!(duckdb_decimal), "::", stringify!(width))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<duckdb_decimal>())).scale as *const _ as usize },
+        1usize,
+        concat!("Offset of field: ", stringify!(duckdb_decimal), "::", stringify!(scale))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<duckdb_decimal>())).value as *const _ as usize },
+        8usize,
+        concat!("Offset of field: ", stringify!(duckdb_decimal), "::", stringify!(value))
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct duckdb_blob {
     pub data: *mut ::std::os::raw::c_void,
     pub size: idx_t,
@@ -10891,6 +10945,10 @@ pub type duckdb_arrow = *mut ::std::os::raw::c_void;
 pub type duckdb_config = *mut ::std::os::raw::c_void;
 pub type duckdb_arrow_schema = *mut ::std::os::raw::c_void;
 pub type duckdb_arrow_array = *mut ::std::os::raw::c_void;
+pub type duckdb_logical_type = *mut ::std::os::raw::c_void;
+pub type duckdb_data_chunk = *mut ::std::os::raw::c_void;
+pub type duckdb_vector = *mut ::std::os::raw::c_void;
+pub type duckdb_value = *mut ::std::os::raw::c_void;
 pub const duckdb_state_DuckDBSuccess: duckdb_state = 0;
 pub const duckdb_state_DuckDBError: duckdb_state = 1;
 pub type duckdb_state = ::std::os::raw::c_uint;
@@ -11047,6 +11105,18 @@ extern "C" {
     pub fn duckdb_column_type(result: *mut duckdb_result, col: idx_t) -> duckdb_type;
 }
 extern "C" {
+    #[doc = "Returns the logical column type of the specified column."]
+    #[doc = ""]
+    #[doc = "The return type of this call should be destroyed with `duckdb_destroy_logical_type`."]
+    #[doc = ""]
+    #[doc = "Returns `NULL` if the column is out of range."]
+    #[doc = ""]
+    #[doc = " result: The result object to fetch the column type from."]
+    #[doc = " col: The column index."]
+    #[doc = " returns: The logical column type of the specified column."]
+    pub fn duckdb_column_logical_type(result: *mut duckdb_result, col: idx_t) -> duckdb_logical_type;
+}
+extern "C" {
     #[doc = "Returns the number of columns present in a the result object."]
     #[doc = ""]
     #[doc = " result: The result object."]
@@ -11069,9 +11139,9 @@ extern "C" {
     pub fn duckdb_rows_changed(result: *mut duckdb_result) -> idx_t;
 }
 extern "C" {
-    #[doc = "Returns the data of a specific column of a result in columnar format. This is the fastest way of accessing data in a"]
-    #[doc = "query result, as no conversion or type checking must be performed (outside of the original switch). If performance"]
-    #[doc = "is a concern, it is recommended to use this API over the `duckdb_value` functions."]
+    #[doc = "DEPRECATED**: Prefer using `duckdb_result_get_chunk` instead."]
+    #[doc = ""]
+    #[doc = "Returns the data of a specific column of a result in columnar format."]
     #[doc = ""]
     #[doc = "The function returns a dense array which contains the result data. The exact type stored in the array depends on the"]
     #[doc = "corresponding duckdb_type (as provided by `duckdb_column_type`). For the exact type by which the data should be"]
@@ -11089,6 +11159,8 @@ extern "C" {
     pub fn duckdb_column_data(result: *mut duckdb_result, col: idx_t) -> *mut ::std::os::raw::c_void;
 }
 extern "C" {
+    #[doc = "DEPRECATED**: Prefer using `duckdb_result_get_chunk` instead."]
+    #[doc = ""]
     #[doc = "Returns the nullmask of a specific column of a result in columnar format. The nullmask indicates for every row"]
     #[doc = "whether or not the corresponding row is `NULL`. If a row is `NULL`, the values present in the array provided"]
     #[doc = "by `duckdb_column_data` are undefined."]
@@ -11115,7 +11187,30 @@ extern "C" {
     #[doc = ""]
     #[doc = " result: The result object to fetch the nullmask from."]
     #[doc = " returns: The error of the result."]
-    pub fn duckdb_result_error(result: *mut duckdb_result) -> *mut ::std::os::raw::c_char;
+    pub fn duckdb_result_error(result: *mut duckdb_result) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "Fetches a data chunk from the duckdb_result. This function should be called repeatedly until the result is exhausted."]
+    #[doc = ""]
+    #[doc = "This function supersedes all `duckdb_value` functions, as well as the `duckdb_column_data` and `duckdb_nullmask_data`"]
+    #[doc = "functions. It results in significantly better performance, and should be preferred in newer code-bases."]
+    #[doc = ""]
+    #[doc = "If this function is used, none of the other result functions can be used and vice versa (i.e. this function cannot be"]
+    #[doc = "mixed with the legacy result functions)."]
+    #[doc = ""]
+    #[doc = "Use `duckdb_result_chunk_count` to figure out how many chunks there are in the result."]
+    #[doc = ""]
+    #[doc = " result: The result object to fetch the data chunk from."]
+    #[doc = " chunk_index: The chunk index to fetch from."]
+    #[doc = " returns: The resulting data chunk. Returns `NULL` if the chunk index is out of bounds."]
+    pub fn duckdb_result_get_chunk(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk;
+}
+extern "C" {
+    #[doc = "Returns the number of data chunks present in the result."]
+    #[doc = ""]
+    #[doc = " result: The result object"]
+    #[doc = " returns: The resulting data chunk. Returns `NULL` if the chunk index is out of bounds."]
+    pub fn duckdb_result_chunk_count(result: duckdb_result) -> idx_t;
 }
 extern "C" {
     #[doc = " returns: The boolean value at the specified location, or false if the value cannot be converted."]
@@ -11140,6 +11235,10 @@ extern "C" {
 extern "C" {
     #[doc = " returns: The duckdb_hugeint value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_hugeint(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_hugeint;
+}
+extern "C" {
+    #[doc = " returns: The duckdb_decimal value at the specified location, or 0 if the value cannot be converted."]
+    pub fn duckdb_value_decimal(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_decimal;
 }
 extern "C" {
     #[doc = " returns: The uint8_t value at the specified location, or 0 if the value cannot be converted."]
@@ -11221,6 +11320,13 @@ extern "C" {
     pub fn duckdb_free(ptr: *mut ::std::os::raw::c_void);
 }
 extern "C" {
+    #[doc = "The internal vector size used by DuckDB."]
+    #[doc = "This is the amount of tuples that will fit into a data chunk created by `duckdb_create_data_chunk`."]
+    #[doc = ""]
+    #[doc = " returns: The vector size."]
+    pub fn duckdb_vector_size() -> idx_t;
+}
+extern "C" {
     #[doc = "Decompose a `duckdb_date` object into year, month and date (stored as `duckdb_date_struct`)."]
     #[doc = ""]
     #[doc = " date: The date object, as obtained from a `DUCKDB_TYPE_DATE` column."]
@@ -11279,6 +11385,13 @@ extern "C" {
     pub fn duckdb_double_to_hugeint(val: f64) -> duckdb_hugeint;
 }
 extern "C" {
+    #[doc = "Converts a duckdb_decimal object (as obtained from a `DUCKDB_TYPE_DECIMAL` column) into a double."]
+    #[doc = ""]
+    #[doc = " val: The decimal value."]
+    #[doc = " returns: The converted `double` element."]
+    pub fn duckdb_decimal_to_double(val: duckdb_decimal) -> f64;
+}
+extern "C" {
     #[doc = "Create a prepared statement object from a query."]
     #[doc = ""]
     #[doc = "Note that after calling `duckdb_prepare`, the prepared statement should always be destroyed using"]
@@ -11297,7 +11410,7 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Closes the prepared statement and de-allocates all memory allocated for that connection."]
+    #[doc = "Closes the prepared statement and de-allocates all memory allocated for the statement."]
     #[doc = ""]
     #[doc = " prepared_statement: The prepared statement to destroy."]
     pub fn duckdb_destroy_prepare(prepared_statement: *mut duckdb_prepared_statement);
@@ -11494,6 +11607,625 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
+    #[doc = "Destroys the value and de-allocates all memory allocated for that type."]
+    #[doc = ""]
+    #[doc = " value: The value to destroy."]
+    pub fn duckdb_destroy_value(value: *mut duckdb_value);
+}
+extern "C" {
+    #[doc = "Creates a value from a null-terminated string"]
+    #[doc = ""]
+    #[doc = " value: The null-terminated string"]
+    #[doc = " returns: The value. This must be destroyed with `duckdb_destroy_value`."]
+    pub fn duckdb_create_varchar(text: *const ::std::os::raw::c_char) -> duckdb_value;
+}
+extern "C" {
+    #[doc = "Creates a value from a string"]
+    #[doc = ""]
+    #[doc = " value: The text"]
+    #[doc = " length: The length of the text"]
+    #[doc = " returns: The value. This must be destroyed with `duckdb_destroy_value`."]
+    pub fn duckdb_create_varchar_length(text: *const ::std::os::raw::c_char, length: idx_t) -> duckdb_value;
+}
+extern "C" {
+    #[doc = "Creates a value from an int64"]
+    #[doc = ""]
+    #[doc = " value: The bigint value"]
+    #[doc = " returns: The value. This must be destroyed with `duckdb_destroy_value`."]
+    pub fn duckdb_create_int64(val: i64) -> duckdb_value;
+}
+extern "C" {
+    #[doc = "Obtains a string representation of the given value."]
+    #[doc = "The result must be destroyed with `duckdb_free`."]
+    #[doc = ""]
+    #[doc = " value: The value"]
+    #[doc = " returns: The string value. This must be destroyed with `duckdb_free`."]
+    pub fn duckdb_get_varchar(value: duckdb_value) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "Obtains an int64 of the given value."]
+    #[doc = ""]
+    #[doc = " value: The value"]
+    #[doc = " returns: The int64 value, or 0 if no conversion is possible"]
+    pub fn duckdb_get_int64(value: duckdb_value) -> i64;
+}
+extern "C" {
+    #[doc = "Creates a `duckdb_logical_type` from a standard primitive type."]
+    #[doc = "The resulting type should be destroyed with `duckdb_destroy_logical_type`."]
+    #[doc = ""]
+    #[doc = "This should not be used with `DUCKDB_TYPE_DECIMAL`."]
+    #[doc = ""]
+    #[doc = " type: The primitive type to create."]
+    #[doc = " returns: The logical type."]
+    pub fn duckdb_create_logical_type(type_: duckdb_type) -> duckdb_logical_type;
+}
+extern "C" {
+    #[doc = "Creates a `duckdb_logical_type` of type decimal with the specified width and scale"]
+    #[doc = "The resulting type should be destroyed with `duckdb_destroy_logical_type`."]
+    #[doc = ""]
+    #[doc = " width: The width of the decimal type"]
+    #[doc = " scale: The scale of the decimal type"]
+    #[doc = " returns: The logical type."]
+    pub fn duckdb_create_decimal_type(width: u8, scale: u8) -> duckdb_logical_type;
+}
+extern "C" {
+    #[doc = "Retrieves the type class of a `duckdb_logical_type`."]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The type id"]
+    pub fn duckdb_get_type_id(type_: duckdb_logical_type) -> duckdb_type;
+}
+extern "C" {
+    #[doc = "Retrieves the width of a decimal type."]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The width of the decimal type"]
+    pub fn duckdb_decimal_width(type_: duckdb_logical_type) -> u8;
+}
+extern "C" {
+    #[doc = "Retrieves the scale of a decimal type."]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The scale of the decimal type"]
+    pub fn duckdb_decimal_scale(type_: duckdb_logical_type) -> u8;
+}
+extern "C" {
+    #[doc = "Retrieves the internal storage type of a decimal type."]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The internal type of the decimal type"]
+    pub fn duckdb_decimal_internal_type(type_: duckdb_logical_type) -> duckdb_type;
+}
+extern "C" {
+    #[doc = "Retrieves the internal storage type of an enum type."]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The internal type of the enum type"]
+    pub fn duckdb_enum_internal_type(type_: duckdb_logical_type) -> duckdb_type;
+}
+extern "C" {
+    #[doc = "Retrieves the dictionary size of the enum type"]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The dictionary size of the enum type"]
+    pub fn duckdb_enum_dictionary_size(type_: duckdb_logical_type) -> u32;
+}
+extern "C" {
+    #[doc = "Retrieves the dictionary value at the specified position from the enum."]
+    #[doc = ""]
+    #[doc = "The result must be freed with `duckdb_free`"]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " index: The index in the dictionary"]
+    #[doc = " returns: The string value of the enum type. Must be freed with `duckdb_free`."]
+    pub fn duckdb_enum_dictionary_value(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "Retrieves the child type of the given list type."]
+    #[doc = ""]
+    #[doc = "The result must be freed with `duckdb_destroy_logical_type`"]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The child type of the list type. Must be destroyed with `duckdb_destroy_logical_type`."]
+    pub fn duckdb_list_type_child_type(type_: duckdb_logical_type) -> duckdb_logical_type;
+}
+extern "C" {
+    #[doc = "Returns the number of children of a struct type."]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " returns: The number of children of a struct type."]
+    pub fn duckdb_struct_type_child_count(type_: duckdb_logical_type) -> idx_t;
+}
+extern "C" {
+    #[doc = "Retrieves the name of the struct child."]
+    #[doc = ""]
+    #[doc = "The result must be freed with `duckdb_free`"]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " index: The child index"]
+    #[doc = " returns: The name of the struct type. Must be freed with `duckdb_free`."]
+    pub fn duckdb_struct_type_child_name(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "Retrieves the child type of the given struct type at the specified index."]
+    #[doc = ""]
+    #[doc = "The result must be freed with `duckdb_destroy_logical_type`"]
+    #[doc = ""]
+    #[doc = " type: The logical type object"]
+    #[doc = " index: The child index"]
+    #[doc = " returns: The child type of the struct type. Must be destroyed with `duckdb_destroy_logical_type`."]
+    pub fn duckdb_struct_type_child_type(type_: duckdb_logical_type, index: idx_t) -> duckdb_logical_type;
+}
+extern "C" {
+    #[doc = "Destroys the logical type and de-allocates all memory allocated for that type."]
+    #[doc = ""]
+    #[doc = " type: The logical type to destroy."]
+    pub fn duckdb_destroy_logical_type(type_: *mut duckdb_logical_type);
+}
+extern "C" {
+    #[doc = "Creates an empty DataChunk with the specified set of types."]
+    #[doc = ""]
+    #[doc = " types: An array of types of the data chunk."]
+    #[doc = " column_count: The number of columns."]
+    #[doc = " returns: The data chunk."]
+    pub fn duckdb_create_data_chunk(types: *mut duckdb_logical_type, column_count: idx_t) -> duckdb_data_chunk;
+}
+extern "C" {
+    #[doc = "Destroys the data chunk and de-allocates all memory allocated for that chunk."]
+    #[doc = ""]
+    #[doc = " chunk: The data chunk to destroy."]
+    pub fn duckdb_destroy_data_chunk(chunk: *mut duckdb_data_chunk);
+}
+extern "C" {
+    #[doc = "Resets a data chunk, clearing the validity masks and setting the cardinality of the data chunk to 0."]
+    #[doc = ""]
+    #[doc = " chunk: The data chunk to reset."]
+    pub fn duckdb_data_chunk_reset(chunk: duckdb_data_chunk);
+}
+extern "C" {
+    #[doc = "Retrieves the number of columns in a data chunk."]
+    #[doc = ""]
+    #[doc = " chunk: The data chunk to get the data from"]
+    #[doc = " returns: The number of columns in the data chunk"]
+    pub fn duckdb_data_chunk_get_column_count(chunk: duckdb_data_chunk) -> idx_t;
+}
+extern "C" {
+    #[doc = "Retrieves the vector at the specified column index in the data chunk."]
+    #[doc = ""]
+    #[doc = "The pointer to the vector is valid for as long as the chunk is alive."]
+    #[doc = "It does NOT need to be destroyed."]
+    #[doc = ""]
+    #[doc = " chunk: The data chunk to get the data from"]
+    #[doc = " returns: The vector"]
+    pub fn duckdb_data_chunk_get_vector(chunk: duckdb_data_chunk, col_idx: idx_t) -> duckdb_vector;
+}
+extern "C" {
+    #[doc = "Retrieves the current number of tuples in a data chunk."]
+    #[doc = ""]
+    #[doc = " chunk: The data chunk to get the data from"]
+    #[doc = " returns: The number of tuples in the data chunk"]
+    pub fn duckdb_data_chunk_get_size(chunk: duckdb_data_chunk) -> idx_t;
+}
+extern "C" {
+    #[doc = "Sets the current number of tuples in a data chunk."]
+    #[doc = ""]
+    #[doc = " chunk: The data chunk to set the size in"]
+    #[doc = " size: The number of tuples in the data chunk"]
+    pub fn duckdb_data_chunk_set_size(chunk: duckdb_data_chunk, size: idx_t);
+}
+extern "C" {
+    #[doc = "Retrieves the column type of the specified vector."]
+    #[doc = ""]
+    #[doc = "The result must be destroyed with `duckdb_destroy_logical_type`."]
+    #[doc = ""]
+    #[doc = " vector: The vector get the data from"]
+    #[doc = " returns: The type of the vector"]
+    pub fn duckdb_vector_get_column_type(vector: duckdb_vector) -> duckdb_logical_type;
+}
+extern "C" {
+    #[doc = "Retrieves the data pointer of the vector."]
+    #[doc = ""]
+    #[doc = "The data pointer can be used to read or write values from the vector."]
+    #[doc = "How to read or write values depends on the type of the vector."]
+    #[doc = ""]
+    #[doc = " vector: The vector to get the data from"]
+    #[doc = " returns: The data pointer"]
+    pub fn duckdb_vector_get_data(vector: duckdb_vector) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Retrieves the validity mask pointer of the specified vector."]
+    #[doc = ""]
+    #[doc = "If all values are valid, this function MIGHT return NULL!"]
+    #[doc = ""]
+    #[doc = "The validity mask is a bitset that signifies null-ness within the data chunk."]
+    #[doc = "It is a series of uint64_t values, where each uint64_t value contains validity for 64 tuples."]
+    #[doc = "The bit is set to 1 if the value is valid (i.e. not NULL) or 0 if the value is invalid (i.e. NULL)."]
+    #[doc = ""]
+    #[doc = "Validity of a specific value can be obtained like this:"]
+    #[doc = ""]
+    #[doc = "idx_t entry_idx = row_idx / 64;"]
+    #[doc = "idx_t idx_in_entry = row_idx % 64;"]
+    #[doc = "bool is_valid = validity_mask[entry_idx] & (1 << idx_in_entry);"]
+    #[doc = ""]
+    #[doc = "Alternatively, the (slower) duckdb_validity_row_is_valid function can be used."]
+    #[doc = ""]
+    #[doc = " vector: The vector to get the data from"]
+    #[doc = " returns: The pointer to the validity mask, or NULL if no validity mask is present"]
+    pub fn duckdb_vector_get_validity(vector: duckdb_vector) -> *mut u64;
+}
+extern "C" {
+    #[doc = "Ensures the validity mask is writable by allocating it."]
+    #[doc = ""]
+    #[doc = "After this function is called, `duckdb_vector_get_validity` will ALWAYS return non-NULL."]
+    #[doc = "This allows null values to be written to the vector, regardless of whether a validity mask was present before."]
+    #[doc = ""]
+    #[doc = " vector: The vector to alter"]
+    pub fn duckdb_vector_ensure_validity_writable(vector: duckdb_vector);
+}
+extern "C" {
+    #[doc = "Assigns a string element in the vector at the specified location."]
+    #[doc = ""]
+    #[doc = " vector: The vector to alter"]
+    #[doc = " index: The row position in the vector to assign the string to"]
+    #[doc = " str: The null-terminated string"]
+    pub fn duckdb_vector_assign_string_element(
+        vector: duckdb_vector,
+        index: idx_t,
+        str_: *const ::std::os::raw::c_char,
+    );
+}
+extern "C" {
+    #[doc = "Assigns a string element in the vector at the specified location."]
+    #[doc = ""]
+    #[doc = " vector: The vector to alter"]
+    #[doc = " index: The row position in the vector to assign the string to"]
+    #[doc = " str: The string"]
+    #[doc = " str_len: The length of the string (in bytes)"]
+    pub fn duckdb_vector_assign_string_element_len(
+        vector: duckdb_vector,
+        index: idx_t,
+        str_: *const ::std::os::raw::c_char,
+        str_len: idx_t,
+    );
+}
+extern "C" {
+    #[doc = "Retrieves the child vector of a list vector."]
+    #[doc = ""]
+    #[doc = "The resulting vector is valid as long as the parent vector is valid."]
+    #[doc = ""]
+    #[doc = " vector: The vector"]
+    #[doc = " returns: The child vector"]
+    pub fn duckdb_list_vector_get_child(vector: duckdb_vector) -> duckdb_vector;
+}
+extern "C" {
+    #[doc = "Returns the size of the child vector of the list"]
+    #[doc = ""]
+    #[doc = " vector: The vector"]
+    #[doc = " returns: The size of the child list"]
+    pub fn duckdb_list_vector_get_size(vector: duckdb_vector) -> idx_t;
+}
+extern "C" {
+    #[doc = "Retrieves the child vector of a struct vector."]
+    #[doc = ""]
+    #[doc = "The resulting vector is valid as long as the parent vector is valid."]
+    #[doc = ""]
+    #[doc = " vector: The vector"]
+    #[doc = " index: The child index"]
+    #[doc = " returns: The child vector"]
+    pub fn duckdb_struct_vector_get_child(vector: duckdb_vector, index: idx_t) -> duckdb_vector;
+}
+extern "C" {
+    #[doc = "Returns whether or not a row is valid (i.e. not NULL) in the given validity mask."]
+    #[doc = ""]
+    #[doc = " validity: The validity mask, as obtained through `duckdb_data_chunk_get_validity`"]
+    #[doc = " row: The row index"]
+    #[doc = " returns: true if the row is valid, false otherwise"]
+    pub fn duckdb_validity_row_is_valid(validity: *mut u64, row: idx_t) -> bool;
+}
+extern "C" {
+    #[doc = "In a validity mask, sets a specific row to either valid or invalid."]
+    #[doc = ""]
+    #[doc = "Note that `duckdb_data_chunk_ensure_validity_writable` should be called before calling `duckdb_data_chunk_get_validity`,"]
+    #[doc = "to ensure that there is a validity mask to write to."]
+    #[doc = ""]
+    #[doc = " validity: The validity mask, as obtained through `duckdb_data_chunk_get_validity`."]
+    #[doc = " row: The row index"]
+    #[doc = " valid: Whether or not to set the row to valid, or invalid"]
+    pub fn duckdb_validity_set_row_validity(validity: *mut u64, row: idx_t, valid: bool);
+}
+extern "C" {
+    #[doc = "In a validity mask, sets a specific row to invalid."]
+    #[doc = ""]
+    #[doc = "Equivalent to `duckdb_validity_set_row_validity` with valid set to false."]
+    #[doc = ""]
+    #[doc = " validity: The validity mask"]
+    #[doc = " row: The row index"]
+    pub fn duckdb_validity_set_row_invalid(validity: *mut u64, row: idx_t);
+}
+extern "C" {
+    #[doc = "In a validity mask, sets a specific row to valid."]
+    #[doc = ""]
+    #[doc = "Equivalent to `duckdb_validity_set_row_validity` with valid set to true."]
+    #[doc = ""]
+    #[doc = " validity: The validity mask"]
+    #[doc = " row: The row index"]
+    pub fn duckdb_validity_set_row_valid(validity: *mut u64, row: idx_t);
+}
+pub type duckdb_table_function = *mut ::std::os::raw::c_void;
+pub type duckdb_bind_info = *mut ::std::os::raw::c_void;
+pub type duckdb_init_info = *mut ::std::os::raw::c_void;
+pub type duckdb_function_info = *mut ::std::os::raw::c_void;
+pub type duckdb_table_function_bind_t = ::std::option::Option<unsafe extern "C" fn(info: duckdb_bind_info)>;
+pub type duckdb_table_function_init_t = ::std::option::Option<unsafe extern "C" fn(info: duckdb_init_info)>;
+pub type duckdb_table_function_t =
+    ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info, output: duckdb_data_chunk)>;
+pub type duckdb_delete_callback_t = ::std::option::Option<unsafe extern "C" fn(data: *mut ::std::os::raw::c_void)>;
+extern "C" {
+    #[doc = "Creates a new empty table function."]
+    #[doc = ""]
+    #[doc = "The return value should be destroyed with `duckdb_destroy_table_function`."]
+    #[doc = ""]
+    #[doc = " returns: The table function object."]
+    pub fn duckdb_create_table_function() -> duckdb_table_function;
+}
+extern "C" {
+    #[doc = "Destroys the given table function object."]
+    #[doc = ""]
+    #[doc = " table_function: The table function to destroy"]
+    pub fn duckdb_destroy_table_function(table_function: *mut duckdb_table_function);
+}
+extern "C" {
+    #[doc = "Sets the name of the given table function."]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " name: The name of the table function"]
+    pub fn duckdb_table_function_set_name(table_function: duckdb_table_function, name: *const ::std::os::raw::c_char);
+}
+extern "C" {
+    #[doc = "Adds a parameter to the table function."]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " type: The type of the parameter to add."]
+    pub fn duckdb_table_function_add_parameter(table_function: duckdb_table_function, type_: duckdb_logical_type);
+}
+extern "C" {
+    #[doc = "Assigns extra information to the table function that can be fetched during binding, etc."]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " extra_info: The extra information"]
+    #[doc = " destroy: The callback that will be called to destroy the bind data (if any)"]
+    pub fn duckdb_table_function_set_extra_info(
+        table_function: duckdb_table_function,
+        extra_info: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    );
+}
+extern "C" {
+    #[doc = "Sets the bind function of the table function"]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " bind: The bind function"]
+    pub fn duckdb_table_function_set_bind(table_function: duckdb_table_function, bind: duckdb_table_function_bind_t);
+}
+extern "C" {
+    #[doc = "Sets the init function of the table function"]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " init: The init function"]
+    pub fn duckdb_table_function_set_init(table_function: duckdb_table_function, init: duckdb_table_function_init_t);
+}
+extern "C" {
+    #[doc = "Sets the main function of the table function"]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " function: The function"]
+    pub fn duckdb_table_function_set_function(table_function: duckdb_table_function, function: duckdb_table_function_t);
+}
+extern "C" {
+    #[doc = "Sets whether or not the given table function supports projection pushdown."]
+    #[doc = ""]
+    #[doc = "If this is set to true, the system will provide a list of all required columns in the `init` stage through"]
+    #[doc = "the `duckdb_init_get_column_count` and `duckdb_init_get_column_index` functions."]
+    #[doc = "If this is set to false (the default), the system will expect all columns to be projected."]
+    #[doc = ""]
+    #[doc = " table_function: The table function"]
+    #[doc = " pushdown: True if the table function supports projection pushdown, false otherwise."]
+    pub fn duckdb_table_function_supports_projection_pushdown(table_function: duckdb_table_function, pushdown: bool);
+}
+extern "C" {
+    #[doc = "Register the table function object within the given connection."]
+    #[doc = ""]
+    #[doc = "The function requires at least a name, a bind function, an init function and a main function."]
+    #[doc = ""]
+    #[doc = "If the function is incomplete or a function with this name already exists DuckDBError is returned."]
+    #[doc = ""]
+    #[doc = " con: The connection to register it in."]
+    #[doc = " function: The function pointer"]
+    #[doc = " returns: Whether or not the registration was successful."]
+    pub fn duckdb_register_table_function(con: duckdb_connection, function: duckdb_table_function) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "Retrieves the extra info of the function as set in `duckdb_table_function_set_extra_info`"]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The extra info"]
+    pub fn duckdb_bind_get_extra_info(info: duckdb_bind_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Adds a result column to the output of the table function."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " name: The name of the column"]
+    #[doc = " type: The logical type of the column"]
+    pub fn duckdb_bind_add_result_column(
+        info: duckdb_bind_info,
+        name: *const ::std::os::raw::c_char,
+        type_: duckdb_logical_type,
+    );
+}
+extern "C" {
+    #[doc = "Retrieves the number of regular (non-named) parameters to the function."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The number of parameters"]
+    pub fn duckdb_bind_get_parameter_count(info: duckdb_bind_info) -> idx_t;
+}
+extern "C" {
+    #[doc = "Retrieves the parameter at the given index."]
+    #[doc = ""]
+    #[doc = "The result must be destroyed with `duckdb_destroy_value`."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " index: The index of the parameter to get"]
+    #[doc = " returns: The value of the parameter. Must be destroyed with `duckdb_destroy_value`."]
+    pub fn duckdb_bind_get_parameter(info: duckdb_bind_info, index: idx_t) -> duckdb_value;
+}
+extern "C" {
+    #[doc = "Sets the user-provided bind data in the bind object. This object can be retrieved again during execution."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " extra_data: The bind data object."]
+    #[doc = " destroy: The callback that will be called to destroy the bind data (if any)"]
+    pub fn duckdb_bind_set_bind_data(
+        info: duckdb_bind_info,
+        bind_data: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    );
+}
+extern "C" {
+    #[doc = "Report that an error has occurred while calling bind."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " error: The error message"]
+    pub fn duckdb_bind_set_error(info: duckdb_bind_info, error: *const ::std::os::raw::c_char);
+}
+extern "C" {
+    #[doc = "Retrieves the extra info of the function as set in `duckdb_table_function_set_extra_info`"]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The extra info"]
+    pub fn duckdb_init_get_extra_info(info: duckdb_init_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Gets the bind data set by `duckdb_bind_set_bind_data` during the bind."]
+    #[doc = ""]
+    #[doc = "Note that the bind data should be considered as read-only."]
+    #[doc = "For tracking state, use the init data instead."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The bind data object"]
+    pub fn duckdb_init_get_bind_data(info: duckdb_init_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Sets the user-provided init data in the init object. This object can be retrieved again during execution."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " extra_data: The init data object."]
+    #[doc = " destroy: The callback that will be called to destroy the init data (if any)"]
+    pub fn duckdb_init_set_init_data(
+        info: duckdb_init_info,
+        init_data: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    );
+}
+extern "C" {
+    #[doc = "Returns the number of projected columns."]
+    #[doc = ""]
+    #[doc = "This function must be used if projection pushdown is enabled to figure out which columns to emit."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The number of projected columns."]
+    pub fn duckdb_init_get_column_count(info: duckdb_init_info) -> idx_t;
+}
+extern "C" {
+    #[doc = "Returns the column index of the projected column at the specified position."]
+    #[doc = ""]
+    #[doc = "This function must be used if projection pushdown is enabled to figure out which columns to emit."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " column_index: The index at which to get the projected column index, from 0..duckdb_init_get_column_count(info)"]
+    #[doc = " returns: The column index of the projected column."]
+    pub fn duckdb_init_get_column_index(info: duckdb_init_info, column_index: idx_t) -> idx_t;
+}
+extern "C" {
+    #[doc = "Report that an error has occurred while calling init."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " error: The error message"]
+    pub fn duckdb_init_set_error(info: duckdb_init_info, error: *const ::std::os::raw::c_char);
+}
+extern "C" {
+    #[doc = "Retrieves the extra info of the function as set in `duckdb_table_function_set_extra_info`"]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The extra info"]
+    pub fn duckdb_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Gets the bind data set by `duckdb_bind_set_bind_data` during the bind."]
+    #[doc = ""]
+    #[doc = "Note that the bind data should be considered as read-only."]
+    #[doc = "For tracking state, use the init data instead."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The bind data object"]
+    pub fn duckdb_function_get_bind_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Gets the init data set by `duckdb_bind_set_init_data` during the bind."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " returns: The init data object"]
+    pub fn duckdb_function_get_init_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Report that an error has occurred while executing the function."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " error: The error message"]
+    pub fn duckdb_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char);
+}
+pub type duckdb_replacement_scan_info = *mut ::std::os::raw::c_void;
+pub type duckdb_replacement_callback_t = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_replacement_scan_info,
+        table_name: *const ::std::os::raw::c_char,
+        data: *mut ::std::os::raw::c_void,
+    ),
+>;
+extern "C" {
+    #[doc = "Add a replacement scan definition to the specified database"]
+    #[doc = ""]
+    #[doc = " db: The database object to add the replacement scan to"]
+    #[doc = " replacement: The replacement scan callback"]
+    #[doc = " extra_data: Extra data that is passed back into the specified callback"]
+    #[doc = " delete_callback: The delete callback to call on the extra data, if any"]
+    pub fn duckdb_add_replacement_scan(
+        db: duckdb_database,
+        replacement: duckdb_replacement_callback_t,
+        extra_data: *mut ::std::os::raw::c_void,
+        delete_callback: duckdb_delete_callback_t,
+    );
+}
+extern "C" {
+    #[doc = "Sets the replacement function name to use. If this function is called in the replacement callback,"]
+    #[doc = "the replacement scan is performed. If it is not called, the replacement callback is not performed."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " function_name: The function name to substitute."]
+    pub fn duckdb_replacement_scan_set_function_name(
+        info: duckdb_replacement_scan_info,
+        function_name: *const ::std::os::raw::c_char,
+    );
+}
+extern "C" {
+    #[doc = "Adds a parameter to the replacement scan function."]
+    #[doc = ""]
+    #[doc = " info: The info object"]
+    #[doc = " parameter: The parameter to add."]
+    pub fn duckdb_replacement_scan_add_parameter(info: duckdb_replacement_scan_info, parameter: duckdb_value);
+}
+extern "C" {
     #[doc = "Creates an appender object."]
     #[doc = ""]
     #[doc = " connection: The connection context to create the appender in."]
@@ -11644,6 +12376,18 @@ extern "C" {
 extern "C" {
     #[doc = "Append a NULL value to the appender (of any type)."]
     pub fn duckdb_append_null(appender: duckdb_appender) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "Appends a pre-filled data chunk to the specified appender."]
+    #[doc = ""]
+    #[doc = "The types of the data chunk must exactly match the types of the table, no casting is performed."]
+    #[doc = "If the types do not match or the appender is in an invalid state, DuckDBError is returned."]
+    #[doc = "If the append is successful, DuckDBSuccess is returned."]
+    #[doc = ""]
+    #[doc = " appender: The appender to append to."]
+    #[doc = " chunk: The data chunk to append."]
+    #[doc = " returns: The return state."]
+    pub fn duckdb_append_data_chunk(appender: duckdb_appender, chunk: duckdb_data_chunk) -> duckdb_state;
 }
 extern "C" {
     #[doc = "Executes a SQL query within a connection and stores the full (materialized) result in an arrow structure."]
