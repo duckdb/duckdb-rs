@@ -1,5 +1,6 @@
 # duckdb-rs
 
+[![Downloads](https://img.shields.io/crates/d/duckdb)](https://img.shields.io/crates/d/duckdb)
 [![Build Status](https://github.com/wangfenjin/duckdb-rs/workflows/CI/badge.svg)](https://github.com/wangfenjin/duckdb-rs/actions)
 [![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
 [![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/main/graph/badge.svg?token=0xV88q8KU0)](https://codecov.io/gh/wangfenjin/duckdb-rs)
