@@ -686,7 +686,7 @@ mod tests {
         use crate::ToSql;
         use std::convert::TryFrom;
 
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         conn.execute(
             "CREATE TABLE test (a INTEGER)",
             crate::params_from_iter(std::iter::empty::<&dyn ToSql>()),
@@ -703,7 +703,7 @@ mod tests {
     fn test_try_from_row_for_tuple_2() -> Result<()> {
         use std::convert::TryFrom;
 
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         conn.execute("CREATE TABLE test (a INTEGER, b INTEGER)", [])?;
         conn.execute("INSERT INTO test VALUES (42, 47)", [])?;
         let val = conn.query_row("SELECT a, b FROM test", [], |row| <(u32, u32)>::try_from(row))?;
@@ -774,7 +774,7 @@ mod tests {
             u32,
         );
 
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         conn.execute(create_table, [])?;
         conn.execute(insert_values, [])?;
         let val = conn.query_row("SELECT * FROM test", [], |row| BigTuple::try_from(row))?;

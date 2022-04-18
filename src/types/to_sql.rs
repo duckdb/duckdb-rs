@@ -302,7 +302,7 @@ mod test {
     fn test_uuid_gen() -> crate::Result<()> {
         use crate::Connection;
 
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (id uuid NOT NULL);")?;
 
         db.execute("INSERT INTO foo (id) VALUES (gen_random_uuid())", [])?;
@@ -321,7 +321,7 @@ mod test {
         use crate::{params, Connection};
         use uuid::Uuid;
 
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (id BLOB CONSTRAINT uuidchk CHECK (octet_length(id) = 16), label TEXT);")?;
 
         let id = Uuid::new_v4();
@@ -344,7 +344,7 @@ mod test {
         use crate::{params, Connection};
         use uuid::Uuid;
 
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (id uuid, label TEXT);")?;
 
         let id = Uuid::new_v4();

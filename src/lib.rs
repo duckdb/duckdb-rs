@@ -14,7 +14,7 @@
 //! }
 //!
 //! fn main() -> Result<()> {
-//!     let conn = Connection::open_in_memory()?;
+//!     let mut conn = Connection::open_in_memory()?;
 //!
 //!     conn.execute_batch(
 //!         r"CREATE SEQUENCE seq;
@@ -120,7 +120,7 @@ pub(crate) mod util;
 ///     data: Option<Vec<u8>>,
 /// }
 ///
-/// fn add_person(conn: &Connection, person: &Person) -> Result<()> {
+/// fn add_person(conn: &mut Connection, person: &Person) -> Result<()> {
 ///     conn.execute("INSERT INTO person (name, age_in_years, data)
 ///                   VALUES (?1, ?2, ?3)",
 ///                  params![person.name, person.age_in_years, person.data])?;
@@ -218,7 +218,7 @@ impl Connection {
     /// # use duckdb::{Connection, Result};
     /// fn open_my_db() -> Result<()> {
     ///     let path = "./my_db.db3";
-    ///     let db = Connection::open(&path)?;
+    ///     let mut db = Connection::open(&path)?;
     ///     println!("{}", db.is_autocommit());
     ///     Ok(())
     /// }
@@ -287,7 +287,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn create_tables(conn: &Connection) -> Result<()> {
+    /// fn create_tables(conn: &mut Connection) -> Result<()> {
     ///     conn.execute_batch("BEGIN;
     ///                         CREATE TABLE foo(x INTEGER);
     ///                         CREATE TABLE bar(y TEXT);
@@ -300,7 +300,7 @@ impl Connection {
     ///
     /// Will return `Err` if `sql` cannot be converted to a C-compatible string
     /// or if the underlying DuckDB call fails.
-    pub fn execute_batch(&self, sql: &str) -> Result<()> {
+    pub fn execute_batch(&mut self, sql: &str) -> Result<()> {
         self.db.borrow_mut().execute(sql)
     }
 
@@ -315,7 +315,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection};
-    /// fn update_rows(conn: &Connection) {
+    /// fn update_rows(conn: &mut Connection) {
     ///     match conn.execute("UPDATE foo SET bar = 'baz' WHERE qux = ?", [1i32]) {
     ///         Ok(updated) => println!("{} rows were updated", updated),
     ///         Err(err) => println!("update failed: {}", err),
@@ -327,7 +327,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, params};
-    /// fn update_rows(conn: &Connection) {
+    /// fn update_rows(conn: &mut Connection) {
     ///     match conn.execute("UPDATE foo SET bar = ? WHERE qux = ?", params![&"baz", 1i32]) {
     ///         Ok(updated) => println!("{} rows were updated", updated),
     ///         Err(err) => println!("update failed: {}", err),
@@ -340,7 +340,7 @@ impl Connection {
     /// Will return `Err` if `sql` cannot be converted to a C-compatible string
     /// or if the underlying DuckDB call fails.
     #[inline]
-    pub fn execute<P: Params>(&self, sql: &str, params: P) -> Result<usize> {
+    pub fn execute<P: Params>(&mut self, sql: &str, params: P) -> Result<usize> {
         self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
     }
 
@@ -357,7 +357,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Result, Connection};
-    /// fn preferred_locale(conn: &Connection) -> Result<String> {
+    /// fn preferred_locale(conn: &mut Connection) -> Result<String> {
     ///     conn.query_row(
     ///         "SELECT value FROM preferences WHERE name='locale'",
     ///         [],
@@ -378,7 +378,7 @@ impl Connection {
     /// Will return `Err` if `sql` cannot be converted to a C-compatible string
     /// or if the underlying DuckDB call fails.
     #[inline]
-    pub fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> Result<T>
+    pub fn query_row<T, P, F>(&mut self, sql: &str, params: P, f: F) -> Result<T>
     where
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T>,
@@ -395,7 +395,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Result, Connection};
-    /// fn preferred_locale(conn: &Connection) -> Result<String> {
+    /// fn preferred_locale(conn: &mut Connection) -> Result<String> {
     ///     conn.query_row_and_then(
     ///         "SELECT value FROM preferences WHERE name='locale'",
     ///         [],
@@ -412,7 +412,7 @@ impl Connection {
     /// Will return `Err` if `sql` cannot be converted to a C-compatible string
     /// or if the underlying DuckDB call fails.
     #[inline]
-    pub fn query_row_and_then<T, E, P, F>(&self, sql: &str, params: P, f: F) -> Result<T, E>
+    pub fn query_row_and_then<T, E, P, F>(&mut self, sql: &str, params: P, f: F) -> Result<T, E>
     where
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T, E>,
@@ -431,7 +431,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn insert_new_people(conn: &Connection) -> Result<()> {
+    /// fn insert_new_people(conn: &mut Connection) -> Result<()> {
     ///     let mut stmt = conn.prepare("INSERT INTO People (name) VALUES (?)")?;
     ///     stmt.execute(["Joe Smith"])?;
     ///     stmt.execute(["Bob Jones"])?;
@@ -444,7 +444,7 @@ impl Connection {
     /// Will return `Err` if `sql` cannot be converted to a C-compatible string
     /// or if the underlying DuckDB call fails.
     #[inline]
-    pub fn prepare(&self, sql: &str) -> Result<Statement<'_>> {
+    pub fn prepare(&mut self, sql: &str) -> Result<Statement<'_>> {
         self.db.borrow_mut().prepare(self, sql)
     }
 
@@ -455,7 +455,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
-    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    /// fn insert_rows(conn: &mut Connection) -> Result<()> {
     ///     let mut app = conn.appender("foo")?;
     ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
     ///     Ok(())
@@ -465,7 +465,7 @@ impl Connection {
     /// # Failure
     ///
     /// Will return `Err` if `table` not exists
-    pub fn appender(&self, table: &str) -> Result<Appender<'_>> {
+    pub fn appender(&mut self, table: &str) -> Result<Appender<'_>> {
         self.appender_to_db(table, &DatabaseName::Main.to_string())
     }
 
@@ -475,7 +475,7 @@ impl Connection {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params, DatabaseName};
-    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    /// fn insert_rows(conn: &mut Connection) -> Result<()> {
     ///     let mut app = conn.appender_to_db("foo", &DatabaseName::Main.to_string())?;
     ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
     ///     Ok(())
@@ -485,7 +485,7 @@ impl Connection {
     /// # Failure
     ///
     /// Will return `Err` if `table` not exists
-    pub fn appender_to_db(&self, table: &str, schema: &str) -> Result<Appender<'_>> {
+    pub fn appender_to_db(&mut self, table: &str, schema: &str) -> Result<Appender<'_>> {
         self.db.borrow_mut().appender(self, table, schema)
     }
 
@@ -546,7 +546,7 @@ mod test {
 
     #[test]
     fn test_params_of_vary_types() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let sql = "BEGIN;
                    CREATE TABLE foo(bar TEXT, qux INTEGER);
                    INSERT INTO foo VALUES ('baz', 1), ('baz', 2), ('baz', 3);
@@ -577,8 +577,8 @@ mod test {
             Connection::open_with_flags(&path, Config::default().access_mode(config::AccessMode::ReadWrite)?)?;
 
         {
-            let tx1 = db1.transaction()?;
-            let tx2 = db2.transaction()?;
+            let mut tx1 = db1.transaction()?;
+            let mut tx2 = db2.transaction()?;
 
             // SELECT first makes sqlite lock with a shared lock
             tx1.query_row("SELECT x FROM foo LIMIT 1", [], |_| Ok(()))?;
@@ -602,7 +602,7 @@ mod test {
         let path = temp_dir.path().join("test.db3");
 
         {
-            let db = Connection::open(&path)?;
+            let mut db = Connection::open(&path)?;
             let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER);
                    INSERT INTO foo VALUES(42);
@@ -611,7 +611,7 @@ mod test {
         }
 
         let path_string = path.to_str().unwrap();
-        let db = Connection::open(&path_string)?;
+        let mut db = Connection::open(&path_string)?;
         let the_answer: Result<i64> = db.query_row("SELECT x FROM foo", [], |r| r.get(0));
 
         assert_eq!(42i64, the_answer?);
@@ -668,7 +668,7 @@ mod test {
         }
         let db_path = path.join(OsStr::from_bytes(&[0xFF]));
         {
-            let db = Connection::open(&db_path)?;
+            let mut db = Connection::open(&db_path)?;
             let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER);
                    INSERT INTO foo VALUES(42);
@@ -676,7 +676,7 @@ mod test {
             db.execute_batch(sql)?;
         }
 
-        let db = Connection::open(&db_path)?;
+        let mut db = Connection::open(&db_path)?;
         let the_answer: Result<i64> = db.query_row("SELECT x FROM foo", [], |r| r.get(0));
 
         assert_eq!(42i64, the_answer?);
@@ -695,7 +695,7 @@ mod test {
 
     #[test]
     fn test_execute_batch() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER);
                    INSERT INTO foo VALUES(1);
@@ -713,7 +713,7 @@ mod test {
 
     #[test]
     fn test_execute_single() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER)")?;
 
         assert_eq!(
@@ -731,7 +731,7 @@ mod test {
 
     #[test]
     fn test_prepare_column_names() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
         let mut stmt = db.prepare("SELECT * FROM foo")?;
@@ -748,7 +748,7 @@ mod test {
 
     #[test]
     fn test_prepare_execute() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
         let mut insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?)")?;
@@ -770,7 +770,7 @@ mod test {
 
     #[test]
     fn test_prepare_query() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
         let mut insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?)")?;
@@ -805,7 +805,7 @@ mod test {
 
     #[test]
     fn test_query_map() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER, y TEXT);
                    INSERT INTO foo VALUES(4, 'hello');
@@ -824,7 +824,7 @@ mod test {
 
     #[test]
     fn test_query_row() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER);
                    INSERT INTO foo VALUES(1);
@@ -853,7 +853,7 @@ mod test {
 
     #[test]
     fn test_optional() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
 
         let result: Result<i64> = db.query_row("SELECT 1 WHERE 0 <> 0", [], |r| r.get(0));
         let result = result.optional();
@@ -877,7 +877,7 @@ mod test {
 
     #[test]
     fn test_prepare_failures() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
         let _ = db.prepare("SELECT * FROM does_not_exist").unwrap_err();
@@ -894,7 +894,7 @@ mod test {
     #[test]
     #[ignore = "not supported"]
     fn test_statement_debugging() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let query = "SELECT 12345";
         let stmt = db.prepare(query)?;
 
@@ -904,7 +904,7 @@ mod test {
 
     #[test]
     fn test_notnull_constraint_error() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x TEXT NOT NULL)")?;
 
         let result = db.execute("INSERT INTO foo (x) VALUES (NULL)", []);
@@ -924,7 +924,7 @@ mod test {
     fn test_clone() -> Result<()> {
         let owned_con = checked_memory_handle();
         {
-            let cloned_con = owned_con.clone();
+            let mut cloned_con = owned_con.clone();
             cloned_con.execute_batch("PRAGMA VERSION")?;
         }
         owned_con.close().unwrap();
@@ -973,7 +973,7 @@ mod test {
 
         #[test]
         fn test_query_and_then() -> Result<()> {
-            let db = checked_memory_handle();
+            let mut db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -992,7 +992,7 @@ mod test {
 
         #[test]
         fn test_query_and_then_fails() -> Result<()> {
-            let db = checked_memory_handle();
+            let mut db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -1021,7 +1021,7 @@ mod test {
 
         #[test]
         fn test_query_and_then_custom_error() -> CustomResult<()> {
-            let db = checked_memory_handle();
+            let mut db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -1042,7 +1042,7 @@ mod test {
 
         #[test]
         fn test_query_and_then_custom_error_fails() -> Result<()> {
-            let db = checked_memory_handle();
+            let mut db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -1083,7 +1083,7 @@ mod test {
 
         #[test]
         fn test_query_row_and_then_custom_error() -> CustomResult<()> {
-            let db = checked_memory_handle();
+            let mut db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -1100,7 +1100,7 @@ mod test {
 
         #[test]
         fn test_query_row_and_then_custom_error_fails() -> Result<()> {
-            let db = checked_memory_handle();
+            let mut db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -1137,7 +1137,7 @@ mod test {
 
     #[test]
     fn test_dynamic() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
                        INSERT INTO foo VALUES(4, 'hello');
@@ -1151,7 +1151,7 @@ mod test {
     }
     #[test]
     fn test_dyn_box() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
         let b: Box<dyn ToSql> = Box::new(5);
         db.execute("INSERT INTO foo VALUES(?)", [b])?;
@@ -1163,7 +1163,7 @@ mod test {
 
     #[test]
     fn test_alter_table() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("CREATE TABLE x(t INTEGER);")?;
         // `execute_batch` should be used but `execute` should also work
         db.execute("ALTER TABLE x RENAME TO y;", [])?;
@@ -1172,7 +1172,7 @@ mod test {
 
     #[test]
     fn test_query_arrow_record_batch_small() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         let sql = "BEGIN TRANSACTION;
                    CREATE TABLE test(t INTEGER);
                    INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);
@@ -1201,7 +1201,7 @@ mod test {
 
     #[test]
     fn test_query_arrow_record_batch_large() -> Result<()> {
-        let db = checked_memory_handle();
+        let mut db = checked_memory_handle();
         db.execute_batch("BEGIN TRANSACTION")?;
         db.execute_batch("CREATE TABLE test(t INTEGER);")?;
         for _ in 0..300 {

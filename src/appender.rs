@@ -22,7 +22,7 @@ impl Appender<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
-    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    /// fn insert_rows(conn: &mut Connection) -> Result<()> {
     ///     let mut app = conn.appender("foo")?;
     ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
     ///     Ok(())
@@ -50,7 +50,7 @@ impl Appender<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
-    /// fn insert_row(conn: &Connection) -> Result<()> {
+    /// fn insert_row(conn: &mut Connection) -> Result<()> {
     ///     let mut app = conn.appender("foo")?;
     ///     app.append_row([1, 2])?;
     ///     Ok(())
@@ -156,7 +156,7 @@ mod test {
 
     #[test]
     fn test_append_one_row() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER)")?;
 
         {
@@ -171,7 +171,7 @@ mod test {
 
     #[test]
     fn test_append_rows() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER, y INTEGER)")?;
 
         {
@@ -191,7 +191,7 @@ mod test {
     fn test_append_uuid() -> Result<()> {
         use uuid::Uuid;
 
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x UUID)")?;
 
         let id = Uuid::new_v4();

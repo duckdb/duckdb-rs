@@ -62,7 +62,7 @@ use sealed::Sealed;
 ///
 /// ```rust,no_run
 /// # use duckdb::{Connection, Result, params};
-/// fn update_rows(conn: &Connection) -> Result<()> {
+/// fn update_rows(conn: &mut Connection) -> Result<()> {
 ///     let mut stmt = conn.prepare("INSERT INTO test (a, b) VALUES (?, ?)")?;
 ///
 ///     // Using `duckdb::params!`:
@@ -96,7 +96,7 @@ use sealed::Sealed;
 ///
 /// ```rust,no_run
 /// # use duckdb::{Connection, Result, params};
-/// fn delete_all_users(conn: &Connection) -> Result<()> {
+/// fn delete_all_users(conn: &mut Connection) -> Result<()> {
 ///     // Just use an empty array (e.g. `[]`) for no params.
 ///     conn.execute("DELETE FROM users", [])?;
 ///     Ok(())
@@ -201,7 +201,7 @@ impl_for_array_ref!(
 /// use duckdb::{Connection, Result, params_from_iter};
 /// use std::collections::BTreeSet;
 ///
-/// fn query(conn: &Connection, ids: &BTreeSet<String>) -> Result<()> {
+/// fn query(conn: &mut Connection, ids: &BTreeSet<String>) -> Result<()> {
 ///     assert_eq!(ids.len(), 3, "Unrealistic sample code");
 ///
 ///     let mut stmt = conn.prepare("SELECT * FROM users WHERE id IN (?, ?, ?)")?;
@@ -220,7 +220,7 @@ impl_for_array_ref!(
 /// ```rust,no_run
 /// use duckdb::{Connection, Result};
 ///
-/// pub fn any_active_users(conn: &Connection, usernames: &[String]) -> Result<bool> {
+/// pub fn any_active_users(conn: &mut Connection, usernames: &[String]) -> Result<bool> {
 ///     if usernames.is_empty() {
 ///         return Ok(false);
 ///     }

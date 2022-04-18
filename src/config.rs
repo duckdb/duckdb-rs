@@ -140,7 +140,7 @@ mod test {
     #[test]
     fn test_default_config() -> Result<()> {
         let config = Config::default();
-        let db = Connection::open_in_memory_with_flags(config)?;
+        let mut db = Connection::open_in_memory_with_flags(config)?;
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
         let mut stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
@@ -174,7 +174,7 @@ mod test {
             .enable_object_cache(false)?
             .max_memory("2GB")?
             .threads(4)?;
-        let db = Connection::open_in_memory_with_flags(config)?;
+        let mut db = Connection::open_in_memory_with_flags(config)?;
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
         let mut stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;

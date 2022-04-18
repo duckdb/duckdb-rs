@@ -147,7 +147,12 @@ impl Connection {
     ///
     /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
     /// `SELECT user_version FROM pragma_user_version;`
-    pub fn pragma_query_value<T, F>(&self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, f: F) -> Result<T>
+    pub fn pragma_query_value<T, F>(
+        &mut self,
+        schema_name: Option<DatabaseName<'_>>,
+        pragma_name: &str,
+        f: F,
+    ) -> Result<T>
     where
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
@@ -160,7 +165,7 @@ impl Connection {
     ///
     /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
     /// `SELECT * FROM pragma_collation_list;`
-    pub fn pragma_query<F>(&self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, mut f: F) -> Result<()>
+    pub fn pragma_query<F>(&mut self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, mut f: F) -> Result<()>
     where
         F: FnMut(&Row<'_>) -> Result<()>,
     {
@@ -184,7 +189,7 @@ impl Connection {
     /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
     /// `SELECT * FROM pragma_table_info(?);`
     pub fn pragma<F>(
-        &self,
+        &mut self,
         schema_name: Option<DatabaseName<'_>>,
         pragma_name: &str,
         pragma_value: &dyn ToSql,
@@ -215,7 +220,7 @@ impl Connection {
     /// Some pragmas will return the updated value which cannot be retrieved
     /// with this method.
     pub fn pragma_update(
-        &self,
+        &mut self,
         schema_name: Option<DatabaseName<'_>>,
         pragma_name: &str,
         pragma_value: &dyn ToSql,
@@ -234,7 +239,7 @@ impl Connection {
     ///
     /// Only few pragmas automatically return the updated value.
     pub fn pragma_update_and_check<F, T>(
-        &self,
+        &mut self,
         schema_name: Option<DatabaseName<'_>>,
         pragma_name: &str,
         pragma_value: &dyn ToSql,
@@ -289,7 +294,7 @@ mod test {
 
     #[test]
     fn pragma_query_value() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let version: String = db.pragma_query_value(None, "version", |row| row.get(0))?;
         assert!(!version.is_empty());
         Ok(())
@@ -298,7 +303,7 @@ mod test {
     #[test]
     #[ignore = "not supported"]
     fn pragma_query_with_schema() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let mut version = "".to_string();
         db.pragma_query(Some(DatabaseName::Main), "version", |row| {
             version = row.get(0)?;
@@ -310,7 +315,7 @@ mod test {
 
     #[test]
     fn pragma() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let mut columns = Vec::new();
         db.pragma(None, "table_info", &"sqlite_master", |row| {
             let column: String = row.get(1)?;
@@ -323,14 +328,14 @@ mod test {
 
     #[test]
     fn pragma_update() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.pragma_update(None, "explain_output", &"PHYSICAL_ONLY")
     }
 
     #[test]
     #[ignore = "don't support query pragma"]
     fn test_pragma_update_and_check() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let journal_mode: String =
             db.pragma_update_and_check(None, "explain_output", &"OPTIMIZED_ONLY", |row| row.get(0))?;
         assert_eq!("OPTIMIZED_ONLY", &journal_mode);
@@ -362,7 +367,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_locking_mode() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let r = db.pragma_update(None, "locking_mode", &"exclusive");
         if cfg!(feature = "extra_check") {
             r.unwrap_err();

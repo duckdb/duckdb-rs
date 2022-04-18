@@ -1,5 +1,5 @@
 use crate::{Connection, Result};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 /// Options for transaction behavior. See [BEGIN
 /// TRANSACTION](http://www.sqlite.org/lang_transaction.html) for details.
@@ -60,7 +60,7 @@ pub enum DropBehavior {
 /// ```
 #[derive(Debug)]
 pub struct Transaction<'conn> {
-    conn: &'conn Connection,
+    conn: &'conn mut Connection,
     drop_behavior: DropBehavior,
 }
 
@@ -88,7 +88,7 @@ pub struct Transaction<'conn> {
 /// }
 /// ```
 pub struct Savepoint<'conn> {
-    conn: &'conn Connection,
+    conn: &'conn mut Connection,
     name: String,
     depth: u32,
     drop_behavior: DropBehavior,
@@ -113,7 +113,7 @@ impl Transaction<'_> {
     /// possible, [`Transaction::new`] should be preferred, as it provides a
     /// compile-time guarantee that transactions are not nested.
     #[inline]
-    fn new_unchecked(conn: &Connection, _: TransactionBehavior) -> Result<Transaction<'_>> {
+    fn new_unchecked(conn: &mut Connection, _: TransactionBehavior) -> Result<Transaction<'_>> {
         // TODO(wangfenjin): not supported
         // let query = match behavior {
         //     TransactionBehavior::Deferred => "BEGIN DEFERRED",
@@ -237,6 +237,12 @@ impl Deref for Transaction<'_> {
     }
 }
 
+impl DerefMut for Transaction<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.conn
+    }
+}
+
 #[allow(unused_must_use)]
 impl Drop for Transaction<'_> {
     #[inline]
@@ -247,7 +253,7 @@ impl Drop for Transaction<'_> {
 
 impl Savepoint<'_> {
     #[inline]
-    fn with_depth_and_name<T: Into<String>>(conn: &Connection, depth: u32, name: T) -> Result<Savepoint<'_>> {
+    fn with_depth_and_name<T: Into<String>>(conn: &mut Connection, depth: u32, name: T) -> Result<Savepoint<'_>> {
         let name = name.into();
         conn.execute_batch(&format!("SAVEPOINT {}", name)).map(|_| Savepoint {
             conn,
@@ -259,7 +265,7 @@ impl Savepoint<'_> {
     }
 
     #[inline]
-    fn with_depth(conn: &Connection, depth: u32) -> Result<Savepoint<'_>> {
+    fn with_depth(conn: &mut Connection, depth: u32) -> Result<Savepoint<'_>> {
         let name = format!("_duckdb_sp_{}", depth);
         Savepoint::with_depth_and_name(conn, depth, name)
     }
@@ -359,6 +365,12 @@ impl Deref for Savepoint<'_> {
     }
 }
 
+impl DerefMut for Savepoint<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.conn
+    }
+}
+
 #[allow(unused_must_use)]
 impl Drop for Savepoint<'_> {
     #[inline]
@@ -412,41 +424,6 @@ impl Connection {
         Transaction::new_unchecked(self, behavior)
     }
 
-    /// Begin a new transaction with the default behavior (DEFERRED).
-    ///
-    /// Attempt to open a nested transaction will result in a DuckDB error.
-    /// `Connection::transaction` prevents this at compile time by taking `&mut
-    /// self`, but `Connection::unchecked_transaction()` may be used to defer
-    /// the checking until runtime.
-    ///
-    /// See [`Connection::transaction`] and [`Transaction::new_unchecked`]
-    /// (which can be used if the default transaction behavior is undesirable).
-    ///
-    /// ## Example
-    ///
-    /// ```rust,no_run
-    /// # use duckdb::{Connection, Result};
-    /// # use std::rc::Rc;
-    /// # fn do_queries_part_1(_conn: &Connection) -> Result<()> { Ok(()) }
-    /// # fn do_queries_part_2(_conn: &Connection) -> Result<()> { Ok(()) }
-    /// fn perform_queries(conn: Rc<Connection>) -> Result<()> {
-    ///     let tx = conn.unchecked_transaction()?;
-    ///
-    ///     do_queries_part_1(&tx)?; // tx causes rollback if this fails
-    ///     do_queries_part_2(&tx)?; // tx causes rollback if this fails
-    ///
-    ///     tx.commit()
-    /// }
-    /// ```
-    ///
-    /// # Failure
-    ///
-    /// Will return `Err` if the underlying DuckDB call fails. The specific
-    /// error returned if transactions are nested is currently unspecified.
-    pub fn unchecked_transaction(&self) -> Result<Transaction<'_>> {
-        Transaction::new_unchecked(self, TransactionBehavior::Deferred)
-    }
-
     /// Begin a new savepoint with the default behavior (DEFERRED).
     ///
     /// The savepoint defaults to rolling back when it is dropped. If you want
@@ -497,7 +474,7 @@ mod test {
     use crate::{Connection, Result};
 
     fn checked_no_autocommit_memory_handle() -> Result<Connection> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch(
             r"
             CREATE TABLE foo (x INTEGER);
@@ -511,7 +488,7 @@ mod test {
     fn test_drop() -> Result<()> {
         let mut db = checked_no_autocommit_memory_handle()?;
         {
-            let tx = db.transaction()?;
+            let mut tx = db.transaction()?;
             assert!(tx.execute_batch("INSERT INTO foo VALUES(1)").is_ok());
             // default: rollback
         }
@@ -521,7 +498,7 @@ mod test {
             tx.set_drop_behavior(DropBehavior::Commit);
         }
         {
-            let tx = db.transaction()?;
+            let mut tx = db.transaction()?;
             assert_eq!(
                 2i32,
                 tx.query_row::<i32, _, _>("SELECT SUM(x) FROM foo", [], |r| r.get(0))?
@@ -531,45 +508,20 @@ mod test {
     }
 
     #[test]
-    fn test_unchecked_nesting() -> Result<()> {
-        let db = checked_no_autocommit_memory_handle()?;
-
-        {
-            db.unchecked_transaction()?;
-            // default: rollback
-        }
-        {
-            let tx = db.unchecked_transaction()?;
-            tx.execute_batch("INSERT INTO foo VALUES(1)")?;
-            // Ensure this doesn't interfere with ongoing transaction
-            // let e = tx.unchecked_transaction().unwrap_err();
-            // assert_nested_tx_error(e);
-            tx.execute_batch("INSERT INTO foo VALUES(1)")?;
-            tx.commit()?;
-        }
-
-        assert_eq!(
-            2i32,
-            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo", [], |r| r.get(0))?
-        );
-        Ok(())
-    }
-
-    #[test]
     fn test_explicit_rollback_commit() -> Result<()> {
         let mut db = checked_no_autocommit_memory_handle()?;
         {
-            let tx = db.transaction()?;
+            let mut tx = db.transaction()?;
             tx.execute_batch("INSERT INTO foo VALUES(1)")?;
             tx.rollback()?;
         }
         {
-            let tx = db.transaction()?;
+            let mut tx = db.transaction()?;
             tx.execute_batch("INSERT INTO foo VALUES(4)")?;
             tx.commit()?;
         }
         {
-            let tx = db.transaction()?;
+            let mut tx = db.transaction()?;
             assert_eq!(
                 4i32,
                 tx.query_row::<i32, _, _>("SELECT SUM(x) FROM foo", [], |r| r.get(0))?
@@ -585,32 +537,32 @@ mod test {
         {
             let mut tx = db.transaction()?;
             tx.execute_batch("INSERT INTO foo VALUES(1)")?;
-            assert_current_sum(1, &tx)?;
+            assert_current_sum(1, &mut tx)?;
             tx.set_drop_behavior(DropBehavior::Commit);
             {
                 let mut sp1 = tx.savepoint()?;
                 sp1.execute_batch("INSERT INTO foo VALUES(2)")?;
-                assert_current_sum(3, &sp1)?;
+                assert_current_sum(3, &mut sp1)?;
                 // will rollback sp1
                 {
                     let mut sp2 = sp1.savepoint()?;
                     sp2.execute_batch("INSERT INTO foo VALUES(4)")?;
-                    assert_current_sum(7, &sp2)?;
+                    assert_current_sum(7, &mut sp2)?;
                     // will rollback sp2
                     {
-                        let sp3 = sp2.savepoint()?;
+                        let mut sp3 = sp2.savepoint()?;
                         sp3.execute_batch("INSERT INTO foo VALUES(8)")?;
-                        assert_current_sum(15, &sp3)?;
+                        assert_current_sum(15, &mut sp3)?;
                         sp3.commit()?;
                         // committed sp3, but will be erased by sp2 rollback
                     }
-                    assert_current_sum(15, &sp2)?;
+                    assert_current_sum(15, &mut sp2)?;
                 }
-                assert_current_sum(3, &sp1)?;
+                assert_current_sum(3, &mut sp1)?;
             }
-            assert_current_sum(1, &tx)?;
+            assert_current_sum(1, &mut tx)?;
         }
-        assert_current_sum(1, &db)?;
+        assert_current_sum(1, &mut db)?;
         Ok(())
     }
 
@@ -622,18 +574,18 @@ mod test {
         let mut tx = db.transaction()?;
         {
             let mut sp1 = tx.savepoint()?;
-            insert(1, &sp1)?;
+            insert(1, &mut sp1)?;
             sp1.rollback()?;
-            insert(2, &sp1)?;
+            insert(2, &mut sp1)?;
             {
                 let mut sp2 = sp1.savepoint()?;
                 sp2.set_drop_behavior(DropBehavior::Ignore);
-                insert(4, &sp2)?;
+                insert(4, &mut sp2)?;
             }
-            assert_current_sum(6, &sp1)?;
+            assert_current_sum(6, &mut sp1)?;
             sp1.commit()?;
         }
-        assert_current_sum(6, &tx)?;
+        assert_current_sum(6, &mut tx)?;
         Ok(())
     }
 
@@ -644,28 +596,28 @@ mod test {
 
         {
             let mut sp1 = db.savepoint_with_name("my_sp")?;
-            insert(1, &sp1)?;
-            assert_current_sum(1, &sp1)?;
+            insert(1, &mut sp1)?;
+            assert_current_sum(1, &mut sp1)?;
             {
                 let mut sp2 = sp1.savepoint_with_name("my_sp")?;
                 sp2.set_drop_behavior(DropBehavior::Commit);
-                insert(2, &sp2)?;
-                assert_current_sum(3, &sp2)?;
+                insert(2, &mut sp2)?;
+                assert_current_sum(3, &mut sp2)?;
                 sp2.rollback()?;
-                assert_current_sum(1, &sp2)?;
-                insert(4, &sp2)?;
+                assert_current_sum(1, &mut sp2)?;
+                insert(4, &mut sp2)?;
             }
-            assert_current_sum(5, &sp1)?;
+            assert_current_sum(5, &mut sp1)?;
             sp1.rollback()?;
             {
                 let mut sp2 = sp1.savepoint_with_name("my_sp")?;
                 sp2.set_drop_behavior(DropBehavior::Ignore);
-                insert(8, &sp2)?;
+                insert(8, &mut sp2)?;
             }
-            assert_current_sum(8, &sp1)?;
+            assert_current_sum(8, &mut sp1)?;
             sp1.commit()?;
         }
-        assert_current_sum(8, &db)?;
+        assert_current_sum(8, &mut db)?;
         Ok(())
     }
 
@@ -680,11 +632,11 @@ mod test {
         Ok(())
     }
 
-    fn insert(x: i32, conn: &Connection) -> Result<usize> {
+    fn insert(x: i32, conn: &mut Connection) -> Result<usize> {
         conn.execute("INSERT INTO foo VALUES(?)", [x])
     }
 
-    fn assert_current_sum(x: i32, conn: &Connection) -> Result<()> {
+    fn assert_current_sum(x: i32, conn: &mut Connection) -> Result<()> {
         let i = conn.query_row::<i32, _, _>("SELECT SUM(x) FROM foo", [], |r| r.get(0))?;
         assert_eq!(x, i);
         Ok(())

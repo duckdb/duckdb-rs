@@ -263,7 +263,7 @@ mod test {
 
     #[test]
     fn test_timestamp_raw() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE timestamp (sec TIMESTAMP_S, milli TIMESTAMP_MS, micro TIMESTAMP_US, nano TIMESTAMP_NS );
                    INSERT INTO timestamp VALUES (NULL,NULL,NULL,NULL );
@@ -282,7 +282,7 @@ mod test {
 
     #[test]
     fn test_time64_raw() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE time64 (t time);
                    INSERT INTO time64 VALUES ('20:08:10.998');
@@ -295,7 +295,7 @@ mod test {
 
     #[test]
     fn test_date32_raw() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE date32 (d date);
                    INSERT INTO date32 VALUES ('2008-01-01');
@@ -308,7 +308,7 @@ mod test {
 
     #[test]
     fn test_unsigned_integer() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE unsigned_int (u1 utinyint, u2 usmallint, u4 uinteger, u8 ubigint);
                    INSERT INTO unsigned_int VALUES (255, 65535, 4294967295, 18446744073709551615);
@@ -324,7 +324,7 @@ mod test {
     // This test asserts that i128s above/below the i64 max/min can written and retrieved properly.
     #[test]
     fn test_hugeint_max_min() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute("CREATE TABLE huge_int (u1 hugeint, u2 hugeint);", [])?;
         // Min/Max value defined in here: https://duckdb.org/docs/sql/data_types/numeric
         let i128max: i128 = i128::MAX;
@@ -337,9 +337,9 @@ mod test {
 
     #[test]
     fn test_integral_ranges() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
 
-        fn check_ranges<T>(db: &Connection, out_of_range: &[i128], in_range: &[i128])
+        fn check_ranges<T>(db: &mut Connection, out_of_range: &[i128], in_range: &[i128])
         where
             T: Into<i128> + FromSql + ::std::fmt::Debug,
         {
@@ -355,23 +355,23 @@ mod test {
             }
         }
 
-        check_ranges::<i8>(&db, &[-129, 128], &[-128, 0, 1, 127]);
-        check_ranges::<i16>(&db, &[-32769, 32768], &[-32768, -1, 0, 1, 32767]);
+        check_ranges::<i8>(&mut db, &[-129, 128], &[-128, 0, 1, 127]);
+        check_ranges::<i16>(&mut db, &[-32769, 32768], &[-32768, -1, 0, 1, 32767]);
         check_ranges::<i32>(
-            &db,
+            &mut db,
             &[-2_147_483_649, 2_147_483_648],
             &[-2_147_483_648, -1, 0, 1, 2_147_483_647],
         );
-        check_ranges::<u8>(&db, &[-2, -1, 256], &[0, 1, 255]);
-        check_ranges::<u16>(&db, &[-2, -1, 65536], &[0, 1, 65535]);
-        check_ranges::<u32>(&db, &[-2, -1, 4_294_967_296], &[0, 1, 4_294_967_295]);
+        check_ranges::<u8>(&mut db, &[-2, -1, 256], &[0, 1, 255]);
+        check_ranges::<u16>(&mut db, &[-2, -1, 65536], &[0, 1, 65535]);
+        check_ranges::<u32>(&mut db, &[-2, -1, 4_294_967_296], &[0, 1, 4_294_967_295]);
         Ok(())
     }
 
     // Don't need uuid crate if we only care about the string value of uuid
     #[test]
     fn test_uuid_string() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE uuid (u uuid);
                    INSERT INTO uuid VALUES ('10203040-5060-7080-0102-030405060708'),(NULL),('47183823-2574-4bfd-b411-99ed177d3e43');
@@ -393,7 +393,7 @@ mod test {
     #[cfg(feature = "uuid")]
     #[test]
     fn test_uuid_from_string() -> crate::Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE uuid (u uuid);
                    INSERT INTO uuid VALUES ('10203040-5060-7080-0102-030405060708'),(NULL),('47183823-2574-4bfd-b411-99ed177d3e43');

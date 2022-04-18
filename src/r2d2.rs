@@ -28,7 +28,7 @@
 //!         .map(|i| {
 //!             let pool = pool.clone();
 //!             thread::spawn(move || {
-//!                 let conn = pool.get().unwrap();
+//!                 let mut conn = pool.get().unwrap();
 //!                 conn.execute("INSERT INTO foo (bar) VALUES (?)", &[&i])
 //!                     .unwrap();
 //!             })
@@ -204,7 +204,7 @@ mod test {
             .threads(4)?;
         let manager = DuckdbConnectionManager::file_with_flags(":memory:", config)?;
         let pool = r2d2::Pool::builder().max_size(2).build(manager).unwrap();
-        let conn = pool.get().unwrap();
+        let mut conn = pool.get().unwrap();
         conn.execute_batch("CREATE TABLE foo(x Text)")?;
 
         let mut stmt = conn.prepare("INSERT INTO foo(x) VALUES (?)")?;

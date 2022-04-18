@@ -30,7 +30,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
-    /// fn update_rows(conn: &Connection) -> Result<()> {
+    /// fn update_rows(conn: &mut Connection) -> Result<()> {
     ///     let mut stmt = conn.prepare("UPDATE foo SET bar = 'baz' WHERE qux = ?")?;
     ///     // The `duckdb::params!` macro is mostly useful when the parameters do not
     ///     // all have the same type, or if there are more than 32 parameters
@@ -48,7 +48,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
-    /// fn delete_all(conn: &Connection) -> Result<()> {
+    /// fn delete_all(conn: &mut Connection) -> Result<()> {
     ///     let mut stmt = conn.prepare("DELETE FROM users")?;
     ///     stmt.execute([])?;
     ///     Ok(())
@@ -96,7 +96,7 @@ impl Statement<'_> {
     /// ```rust,no_run
     /// # use duckdb::{Result, Connection};
     /// # use arrow::record_batch::RecordBatch;
-    /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
+    /// fn get_arrow_data(conn: &mut Connection) -> Result<Vec<RecordBatch>> {
     ///     Ok(conn.prepare("SELECT * FROM test")?.query_arrow([])?.collect())
     /// }
     /// ```
@@ -124,7 +124,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn get_names(conn: &Connection) -> Result<Vec<String>> {
+    /// fn get_names(conn: &mut Connection) -> Result<Vec<String>> {
     ///     let mut stmt = conn.prepare("SELECT name FROM people")?;
     ///     let mut rows = stmt.query([])?;
     ///
@@ -141,7 +141,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn query(conn: &Connection, name: &str) -> Result<()> {
+    /// fn query(conn: &mut Connection, name: &str) -> Result<()> {
     ///     let mut stmt = conn.prepare("SELECT * FROM test where name = ?")?;
     ///     let mut rows = stmt.query(duckdb::params![name])?;
     ///     while let Some(row) = rows.next()? {
@@ -155,7 +155,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn query(conn: &Connection, name: &str) -> Result<()> {
+    /// fn query(conn: &mut Connection, name: &str) -> Result<()> {
     ///     let mut stmt = conn.prepare("SELECT * FROM test where name = ?")?;
     ///     let mut rows = stmt.query([name])?;
     ///     while let Some(row) = rows.next()? {
@@ -188,7 +188,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn get_names(conn: &Connection) -> Result<Vec<String>> {
+    /// fn get_names(conn: &mut Connection) -> Result<Vec<String>> {
     ///     let mut stmt = conn.prepare("SELECT name FROM people")?;
     ///     let rows = stmt.query_map([], |row| row.get(0))?;
     ///
@@ -224,7 +224,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn get_names(conn: &Connection) -> Result<Vec<String>> {
+    /// fn get_names(conn: &mut Connection) -> Result<Vec<String>> {
     ///     let mut stmt = conn.prepare("SELECT name FROM people WHERE id = ?")?;
     ///     let rows = stmt.query_and_then(["one"], |row| row.get::<_, String>(0))?;
     ///
@@ -348,7 +348,7 @@ impl Statement<'_> {
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
-    /// fn query(conn: &Connection) -> Result<()> {
+    /// fn query(conn: &mut Connection) -> Result<()> {
     ///     let mut stmt = conn.prepare("SELECT * FROM test WHERE name = ? AND value > ?2")?;
     ///     stmt.raw_bind_parameter(1, "foo")?;
     ///     stmt.raw_bind_parameter(2, 100)?;
@@ -480,7 +480,7 @@ mod test {
 
     #[test]
     fn test_execute() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER)")?;
 
         assert_eq!(db.execute("INSERT INTO foo(x) VALUES (?)", &[&2i32])?, 1);
@@ -500,7 +500,7 @@ mod test {
 
     #[test]
     fn test_stmt_execute() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = r#"
         CREATE SEQUENCE seq;
         CREATE TABLE test (id INTEGER DEFAULT NEXTVAL('seq'), name TEXT NOT NULL, flag INTEGER);
@@ -517,7 +517,7 @@ mod test {
 
     #[test]
     fn test_query() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = r#"
         CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
         INSERT INTO test(id, name) VALUES (1, 'one');
@@ -535,7 +535,7 @@ mod test {
 
     #[test]
     fn test_query_and_then() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = r#"
         CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
         INSERT INTO test(id, name) VALUES (1, 'one');
@@ -569,7 +569,7 @@ mod test {
 
     #[test]
     fn test_unbound_parameters_are_error() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "CREATE TABLE test (x TEXT, y TEXT)";
         db.execute_batch(sql)?;
 
@@ -580,7 +580,7 @@ mod test {
 
     #[test]
     fn test_insert_empty_text_is_none() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "CREATE TABLE test (x TEXT, y TEXT)";
         db.execute_batch(sql)?;
 
@@ -594,7 +594,7 @@ mod test {
 
     #[test]
     fn test_raw_binding() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE test (name TEXT, value INTEGER)")?;
         {
             let mut stmt = db.prepare("INSERT INTO test (name, value) VALUES (?, ?)")?;
@@ -625,7 +625,7 @@ mod test {
 
     #[test]
     fn test_insert_duplicate() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")?;
         let mut stmt = db.prepare("INSERT INTO foo (x) VALUES (?)")?;
         // TODO(wangfenjin): currently always 1
@@ -643,7 +643,7 @@ mod test {
     #[test]
     fn test_insert_different_tables() -> Result<()> {
         // Test for https://github.com/duckdb/duckdb/issues/171
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch(
             r"
             CREATE TABLE foo(x INTEGER);
@@ -658,7 +658,7 @@ mod test {
 
     #[test]
     fn test_exists() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER);
                    INSERT INTO foo VALUES(1);
@@ -674,7 +674,7 @@ mod test {
 
     #[test]
     fn test_query_row() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER, y INTEGER);
                    INSERT INTO foo VALUES(1, 3);
@@ -689,7 +689,7 @@ mod test {
 
     #[test]
     fn test_query_by_column_name() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER, y INTEGER);
                    INSERT INTO foo VALUES(1, 3);
@@ -703,7 +703,7 @@ mod test {
 
     #[test]
     fn test_query_by_column_name_ignore_case() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER, y INTEGER);
                    INSERT INTO foo VALUES(1, 3);
@@ -718,7 +718,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_bind_parameters() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         // dynamic slice:
         db.query_row(
             "SELECT ?1, ?2, ?3",
@@ -749,7 +749,7 @@ mod test {
 
     #[test]
     fn test_empty_stmt() -> Result<()> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         let stmt = conn.prepare("");
         assert!(stmt.is_err());
 
@@ -758,14 +758,14 @@ mod test {
 
     #[test]
     fn test_comment_empty_stmt() -> Result<()> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         assert!(conn.prepare("/*SELECT 1;*/").is_err());
         Ok(())
     }
 
     #[test]
     fn test_comment_and_sql_stmt() -> Result<()> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         let mut stmt = conn.prepare("/*...*/ SELECT 1;")?;
         stmt.execute([])?;
         assert_eq!(1, stmt.column_count());
@@ -775,7 +775,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_utf16_conversion() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.pragma_update(None, "encoding", &"UTF-16le")?;
         let encoding: String = db.pragma_query_value(None, "encoding", |row| row.get(0))?;
         assert_eq!("UTF-16le", encoding);
@@ -790,7 +790,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_nul_byte() -> Result<()> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let expected = "a\x00b";
         let actual: String = db.query_row("SELECT CAST(? AS VARCHAR)", [expected], |row| row.get(0))?;
         assert_eq!(expected, actual);

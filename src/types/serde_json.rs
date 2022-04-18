@@ -32,14 +32,14 @@ mod test {
     use crate::{Connection, Result};
 
     fn checked_memory_handle() -> Result<Connection> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (t TEXT, b BLOB)")?;
         Ok(db)
     }
 
     #[test]
     fn test_json_value() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         let json = r#"{"foo": 13, "bar": "baz"}"#;
         let data: serde_json::Value = serde_json::from_str(json).unwrap();

@@ -131,14 +131,14 @@ mod test {
     use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
     fn checked_memory_handle() -> Result<Connection> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (d DATE, t Text, i INTEGER, f FLOAT, b TIMESTAMP, tt time)")?;
         Ok(db)
     }
 
     #[test]
     fn test_naive_time() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let time = NaiveTime::from_hms_micro(23, 56, 4, 12_345);
         db.execute("INSERT INTO foo (tt) VALUES (?)", [time])?;
 
@@ -151,7 +151,7 @@ mod test {
 
     #[test]
     fn test_naive_date() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let date = NaiveDate::from_ymd(2016, 2, 23);
         db.execute("INSERT INTO foo (d) VALUES (?)", [date])?;
 
@@ -164,7 +164,7 @@ mod test {
 
     #[test]
     fn test_naive_date_time() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let date = NaiveDate::from_ymd(2016, 2, 23);
         let time = NaiveTime::from_hms(23, 56, 4);
         let dt = NaiveDateTime::new(date, time);
@@ -187,7 +187,7 @@ mod test {
 
     #[test]
     fn test_date_time_utc() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let date = NaiveDate::from_ymd(2016, 2, 23);
         let time = NaiveTime::from_hms_milli(23, 56, 4, 789);
         let dt = NaiveDateTime::new(date, time);
@@ -214,7 +214,7 @@ mod test {
 
     #[test]
     fn test_date_time_local() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let date = NaiveDate::from_ymd(2016, 2, 23);
         let time = NaiveTime::from_hms_milli(23, 56, 4, 789);
         let dt = NaiveDateTime::new(date, time);
@@ -232,7 +232,7 @@ mod test {
 
     #[test]
     fn test_duckdb_datetime_functions() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let result: Result<NaiveDate> = db.query_row("SELECT CURRENT_DATE", [], |r| r.get(0));
         assert!(result.is_ok());
         let result: Result<NaiveDateTime> = db.query_row("SELECT CURRENT_TIMESTAMP", [], |r| r.get(0));
@@ -246,7 +246,7 @@ mod test {
 
     #[test]
     fn test_naive_date_time_param() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         let result: Result<bool> = db.query_row(
             "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",
             [Utc::now().naive_utc()],
@@ -258,7 +258,7 @@ mod test {
 
     #[test]
     fn test_date_time_param() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
         // TODO(wangfenjin): why need 2 params?
         let result: Result<bool> = db.query_row(
             "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",

@@ -93,7 +93,7 @@ mod value_ref;
 /// # use duckdb::{Connection, Result};
 /// # use duckdb::types::{Null};
 ///
-/// fn insert_null(conn: &Connection) -> Result<usize> {
+/// fn insert_null(conn: &mut Connection) -> Result<usize> {
 ///     conn.execute("INSERT INTO people (name) VALUES (?)", [Null])
 /// }
 /// ```
@@ -176,19 +176,19 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod test {
     use super::Value;
-    use crate::{params, Connection, Error, Result, Statement};
+    use crate::{Connection, Error, Result};
     use std::f64::EPSILON;
     use std::os::raw::{c_double, c_int};
 
     fn checked_memory_handle() -> Result<Connection> {
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo (b BLOB, t TEXT, i INTEGER, f FLOAT, n BLOB)")?;
         Ok(db)
     }
 
     #[test]
     fn test_blob() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         let v1234 = vec![1u8, 2, 3, 4];
         db.execute("INSERT INTO foo(b) VALUES (?)", &[&v1234])?;
@@ -200,7 +200,7 @@ mod test {
 
     #[test]
     fn test_empty_blob() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         let empty = vec![];
         db.execute("INSERT INTO foo(b) VALUES (?)", &[&empty])?;
@@ -212,7 +212,7 @@ mod test {
 
     #[test]
     fn test_str() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         let s = "hello, world!";
         db.execute("INSERT INTO foo(t) VALUES (?)", &[&s])?;
@@ -224,7 +224,7 @@ mod test {
 
     #[test]
     fn test_string() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         let s = "hello, world!";
         let result = db.execute("INSERT INTO foo(t) VALUES (?)", [s.to_owned()]);
@@ -239,7 +239,7 @@ mod test {
 
     #[test]
     fn test_value() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         db.execute("INSERT INTO foo(i) VALUES (?)", [Value::BigInt(10)])?;
 
@@ -249,7 +249,7 @@ mod test {
 
     #[test]
     fn test_option() -> Result<()> {
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         let s = Some("hello, world!");
         let b = Some(vec![1u8, 2, 3, 4]);
@@ -286,7 +286,7 @@ mod test {
             matches!(err, Error::InvalidColumnType(..))
         }
 
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
 
@@ -353,7 +353,7 @@ mod test {
     #[test]
     fn test_dynamic_type() -> Result<()> {
         use super::Value;
-        let db = checked_memory_handle()?;
+        let mut db = checked_memory_handle()?;
 
         db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
 
@@ -371,93 +371,6 @@ mod test {
             x => panic!("Invalid Value {:?}", x),
         }
         assert_eq!(Value::Null, row.get::<_, Value>(4)?);
-        Ok(())
-    }
-
-    macro_rules! test_conversion {
-        ($db_etc:ident, $insert_value:expr, $get_type:ty,expect $expected_value:expr) => {
-            $db_etc.insert_statement.execute(params![$insert_value])?;
-            let res = $db_etc
-                .query_statement
-                .query_row([], |row| row.get::<_, $get_type>(0));
-            assert_eq!(res?, $expected_value);
-            $db_etc.delete_statement.execute([])?;
-        };
-        ($db_etc:ident, $insert_value:expr, $get_type:ty,expect_from_sql_error) => {
-            $db_etc.insert_statement.execute(params![$insert_value])?;
-            let res = $db_etc
-                .query_statement
-                .query_row([], |row| row.get::<_, $get_type>(0));
-            res.unwrap_err();
-            $db_etc.delete_statement.execute([])?;
-        };
-        ($db_etc:ident, $insert_value:expr, $get_type:ty,expect_to_sql_error) => {
-            $db_etc
-                .insert_statement
-                .execute(params![$insert_value])
-                .unwrap_err();
-        };
-    }
-
-    #[test]
-    #[ignore = "duckdb doesn't support this"]
-    fn test_numeric_conversions() -> Result<()> {
-        #![allow(clippy::float_cmp)]
-
-        // Test what happens when we store an f32 and retrieve an i32 etc.
-        let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo (x)")?;
-
-        // DuckDB actually ignores the column types, so we just need to test
-        // different numeric values.
-
-        struct DbEtc<'conn> {
-            insert_statement: Statement<'conn>,
-            query_statement: Statement<'conn>,
-            delete_statement: Statement<'conn>,
-        }
-
-        let mut db_etc = DbEtc {
-            insert_statement: db.prepare("INSERT INTO foo VALUES (?1)")?,
-            query_statement: db.prepare("SELECT x FROM foo")?,
-            delete_statement: db.prepare("DELETE FROM foo")?,
-        };
-
-        // Basic non-converting test.
-        test_conversion!(db_etc, 0u8, u8, expect 0u8);
-
-        // In-range integral conversions.
-        test_conversion!(db_etc, 100u8, i8, expect 100i8);
-        test_conversion!(db_etc, 200u8, u8, expect 200u8);
-        test_conversion!(db_etc, 100u16, i8, expect 100i8);
-        test_conversion!(db_etc, 200u16, u8, expect 200u8);
-        test_conversion!(db_etc, u32::MAX, u64, expect u32::MAX as u64);
-        test_conversion!(db_etc, i64::MIN, i64, expect i64::MIN);
-        test_conversion!(db_etc, i64::MAX, i64, expect i64::MAX);
-        test_conversion!(db_etc, i64::MAX, u64, expect i64::MAX as u64);
-        test_conversion!(db_etc, 100usize, usize, expect 100usize);
-        test_conversion!(db_etc, 100u64, u64, expect 100u64);
-        test_conversion!(db_etc, i64::MAX as u64, u64, expect i64::MAX as u64);
-
-        // Out-of-range integral conversions.
-        test_conversion!(db_etc, 200u8, i8, expect_from_sql_error);
-        test_conversion!(db_etc, 400u16, i8, expect_from_sql_error);
-        test_conversion!(db_etc, 400u16, u8, expect_from_sql_error);
-        test_conversion!(db_etc, -1i8, u8, expect_from_sql_error);
-        test_conversion!(db_etc, i64::MIN, u64, expect_from_sql_error);
-        test_conversion!(db_etc, u64::MAX, i64, expect_to_sql_error);
-        test_conversion!(db_etc, u64::MAX, u64, expect_to_sql_error);
-        test_conversion!(db_etc, i64::MAX as u64 + 1, u64, expect_to_sql_error);
-
-        // FromSql integer to float, always works.
-        test_conversion!(db_etc, i64::MIN, f32, expect i64::MIN as f32);
-        test_conversion!(db_etc, i64::MAX, f32, expect i64::MAX as f32);
-        test_conversion!(db_etc, i64::MIN, f64, expect i64::MIN as f64);
-        test_conversion!(db_etc, i64::MAX, f64, expect i64::MAX as f64);
-
-        // FromSql float to int conversion, never works even if the actual value
-        // is an integer.
-        test_conversion!(db_etc, 0f64, i64, expect_from_sql_error);
         Ok(())
     }
 }

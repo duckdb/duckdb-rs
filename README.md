@@ -24,7 +24,7 @@ struct Person {
 }
 
 fn main() -> Result<()> {
-    let conn = Connection::open_in_memory()?;
+    let mut conn = Connection::open_in_memory()?;
 
     conn.execute_batch(
         r"CREATE SEQUENCE seq;

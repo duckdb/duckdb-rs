@@ -59,7 +59,7 @@ impl Statement<'_> {
     /// ```compile_fail
     /// use duckdb::{Connection, Result};
     /// fn main() -> Result<()> {
-    ///     let db = Connection::open_in_memory()?;
+    ///     let mut db = Connection::open_in_memory()?;
     ///     let mut stmt = db.prepare("SELECT 1 as x")?;
     ///     let column_name = stmt.column_name(0)?;
     ///     let x = stmt.query_row([], |r| r.get::<_, i64>(0))?; // E0502
@@ -148,7 +148,7 @@ mod test {
     fn test_columns() -> Result<()> {
         use super::Column;
 
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         let query = db.prepare("SELECT * FROM sqlite_master")?;
         let columns = query.columns();
         let column_names: Vec<&str> = columns.iter().map(Column::name).collect();
@@ -167,7 +167,7 @@ mod test {
     #[test]
     fn test_column_name_in_error() -> Result<()> {
         use crate::{types::Type, Error};
-        let db = Connection::open_in_memory()?;
+        let mut db = Connection::open_in_memory()?;
         db.execute_batch(
             "BEGIN;
              CREATE TABLE foo(x INTEGER, y TEXT);
