@@ -232,7 +232,7 @@ impl FromSql for uuid::Uuid {
                 .and_then(|bytes| {
                     uuid::Builder::from_slice(bytes).map_err(|_| FromSqlError::InvalidUuidSize(bytes.len()))
                 })
-                .map(|mut builder| builder.build()),
+                .map(|builder| builder.into_uuid()),
             _ => Err(FromSqlError::InvalidType),
         }
     }
