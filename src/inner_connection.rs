@@ -16,25 +16,19 @@ pub struct InnerConnection {
     owned: bool,
 }
 
-impl Clone for InnerConnection {
-    fn clone(&self) -> Self {
-        unsafe { InnerConnection::new(self.db, false) }
-    }
-}
-
 impl InnerConnection {
-    #[allow(clippy::mutex_atomic)]
     #[inline]
-    pub unsafe fn new(db: ffi::duckdb_database, owned: bool) -> InnerConnection {
+    pub unsafe fn new(db: ffi::duckdb_database, owned: bool) -> Result<InnerConnection> {
         let mut con: ffi::duckdb_connection = ptr::null_mut();
         let r = ffi::duckdb_connect(db, &mut con);
         if r != ffi::DuckDBSuccess {
             ffi::duckdb_disconnect(&mut con);
-            let e = Error::DuckDBFailure(ffi::Error::new(r), Some("connect error".to_owned()));
-            // TODO: fix this
-            panic!("error {:?}", e);
+            return Err(Error::DuckDBFailure(
+                ffi::Error::new(r),
+                Some("connect error".to_owned()),
+            ));
         }
-        InnerConnection { db, con, owned }
+        Ok(InnerConnection { db, con, owned })
     }
 
     pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<InnerConnection> {
@@ -47,11 +41,10 @@ impl InnerConnection {
                 ffi::duckdb_free(c_err as *mut c_void);
                 return Err(Error::DuckDBFailure(ffi::Error::new(r as u32), msg));
             }
-            Ok(InnerConnection::new(db, true))
+            InnerConnection::new(db, true)
         }
     }
 
-    #[allow(clippy::mutex_atomic)]
     pub fn close(&mut self) -> Result<()> {
         if self.db.is_null() {
             return Ok(());
@@ -69,6 +62,11 @@ impl InnerConnection {
             }
         }
         Ok(())
+    }
+
+    /// Creates a new connection to the already-opened database.
+    pub fn try_clone(&self) -> Result<Self> {
+        unsafe { InnerConnection::new(self.db, false) }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<()> {
@@ -104,12 +102,6 @@ impl InnerConnection {
         };
         result_from_duckdb_appender(r, c_app)?;
         Ok(Appender::new(conn, c_app))
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    pub fn changes(&mut self) -> usize {
-        panic!("changes: not supported")
     }
 
     #[inline]

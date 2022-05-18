@@ -197,16 +197,6 @@ pub struct Connection {
 
 unsafe impl Send for Connection {}
 
-impl Clone for Connection {
-    /// Open a new db connection
-    fn clone(&self) -> Self {
-        Connection {
-            db: RefCell::new(self.db.borrow().clone()),
-            path: self.path.clone(),
-        }
-    }
-}
-
 impl Connection {
     /// Open a new connection to a DuckDB database.
     ///
@@ -509,6 +499,15 @@ impl Connection {
     #[inline]
     pub fn is_autocommit(&self) -> bool {
         self.db.borrow().is_autocommit()
+    }
+
+    /// Creates a new connection to the already-opened database.
+    pub fn try_clone(&self) -> Result<Self> {
+        let inner = self.db.borrow().try_clone()?;
+        Ok(Connection {
+            db: RefCell::new(inner),
+            path: self.path.clone(),
+        })
     }
 }
 
@@ -924,7 +923,7 @@ mod test {
     fn test_clone() -> Result<()> {
         let owned_con = checked_memory_handle();
         {
-            let cloned_con = owned_con.clone();
+            let cloned_con = owned_con.try_clone().unwrap();
             cloned_con.execute_batch("PRAGMA VERSION")?;
         }
         owned_con.close().unwrap();
