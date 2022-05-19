@@ -86,7 +86,7 @@ impl r2d2::ManageConnection for DuckdbConnectionManager {
 
     fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let conn = self.connection.lock().unwrap();
-        Ok(conn.clone())
+        conn.try_clone()
     }
 
     fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
