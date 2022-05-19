@@ -933,12 +933,14 @@ mod test {
             owned_con.close().unwrap();
         }
 
-        // 2. Drop the original connection first. The cloned connection should still be able to run queries.
+        // 2. Close the original connection first. The cloned connection should still be able to run queries.
         {
             let cloned_con = {
                 let owned_con = checked_memory_handle();
+                let clone = owned_con.try_clone().unwrap();
                 owned_con.execute_batch("create table test (c1 bigint)")?;
-                owned_con.try_clone().unwrap()
+                owned_con.close().unwrap();
+                clone
             };
             cloned_con.execute_batch("create table test2 (c1 bigint)")?;
             cloned_con.close().unwrap();
