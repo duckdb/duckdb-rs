@@ -197,16 +197,6 @@ pub struct Connection {
 
 unsafe impl Send for Connection {}
 
-impl Clone for Connection {
-    /// Open a new db connection
-    fn clone(&self) -> Self {
-        Connection {
-            db: RefCell::new(self.db.borrow().clone()),
-            path: self.path.clone(),
-        }
-    }
-}
-
 impl Connection {
     /// Open a new connection to a DuckDB database.
     ///
@@ -509,6 +499,15 @@ impl Connection {
     #[inline]
     pub fn is_autocommit(&self) -> bool {
         self.db.borrow().is_autocommit()
+    }
+
+    /// Creates a new connection to the already-opened database.
+    pub fn try_clone(&self) -> Result<Self> {
+        let inner = self.db.borrow().try_clone()?;
+        Ok(Connection {
+            db: RefCell::new(inner),
+            path: self.path.clone(),
+        })
     }
 }
 
@@ -922,12 +921,30 @@ mod test {
 
     #[test]
     fn test_clone() -> Result<()> {
-        let owned_con = checked_memory_handle();
+        // 1. Drop the cloned connection first. The original connection should still be able to run queries.
         {
-            let cloned_con = owned_con.clone();
-            cloned_con.execute_batch("PRAGMA VERSION")?;
+            let owned_con = checked_memory_handle();
+            {
+                let cloned_con = owned_con.try_clone().unwrap();
+                cloned_con.execute_batch("create table test (c1 bigint)")?;
+                cloned_con.close().unwrap();
+            }
+            owned_con.execute_batch("create table test2 (c1 bigint)")?;
+            owned_con.close().unwrap();
         }
-        owned_con.close().unwrap();
+
+        // 2. Close the original connection first. The cloned connection should still be able to run queries.
+        {
+            let cloned_con = {
+                let owned_con = checked_memory_handle();
+                let clone = owned_con.try_clone().unwrap();
+                owned_con.execute_batch("create table test (c1 bigint)")?;
+                owned_con.close().unwrap();
+                clone
+            };
+            cloned_con.execute_batch("create table test2 (c1 bigint)")?;
+            cloned_con.close().unwrap();
+        }
         Ok(())
     }
 
