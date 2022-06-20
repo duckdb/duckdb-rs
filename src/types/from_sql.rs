@@ -76,11 +76,19 @@ macro_rules! from_sql_integral(
             #[inline]
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
                 match value {
+                    // TODO: Update all cast operation same to HugeInt
                     ValueRef::TinyInt(i) => Ok(<$t as cast::From<i8>>::cast(i).unwrap()),
                     ValueRef::SmallInt(i) => Ok(<$t as cast::From<i16>>::cast(i).unwrap()),
                     ValueRef::Int(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
                     ValueRef::BigInt(i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
-                    ValueRef::HugeInt(i) => Ok(<$t as cast::From<i128>>::cast(i).unwrap()),
+                    ValueRef::HugeInt(i) => {
+                        let v = <$t as cast::From<i128>>::cast(i);
+                        if v.is_ok() {
+                            Ok(v.unwrap())
+                        } else {
+                            Err(FromSqlError::OutOfRange(i))
+                        }
+                    },
 
                     ValueRef::UTinyInt(i) => Ok(<$t as cast::From<u8>>::cast(i).unwrap()),
                     ValueRef::USmallInt(i) => Ok(<$t as cast::From<u16>>::cast(i).unwrap()),
@@ -123,6 +131,7 @@ macro_rules! from_sql_integral(
 /// We can always call unwrap() for the cast() function.
 trait Unwrap {
     fn unwrap(self) -> Self;
+    fn is_ok(&self) -> bool;
 }
 
 macro_rules! unwrap_integral(
@@ -131,6 +140,11 @@ macro_rules! unwrap_integral(
             #[inline]
             fn unwrap(self) -> Self {
                 self
+            }
+
+            #[inline]
+            fn is_ok(&self) -> bool {
+                true
             }
         }
     )
