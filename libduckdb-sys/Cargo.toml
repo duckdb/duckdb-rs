@@ -28,4 +28,4 @@ cc = { version = "1.0", features = ["parallel"], optional = true }
 vcpkg = { version = "0.2", optional = true }
 
 [dev-dependencies]
-arrow = { version = "16", default-features = false }
+arrow = { version = "17", default-features = false }
