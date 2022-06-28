@@ -480,9 +480,12 @@ impl<'stmt> Row<'stmt> {
                 }
                 // hugeint: d:38,0
                 if array.scale() == 0 {
-                    return ValueRef::HugeInt(array.value(row));
+                    return ValueRef::HugeInt(array.value(row).into());
                 }
-                ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
+                ValueRef::Decimal(Decimal::from_i128_with_scale(
+                    array.value(row).into(),
+                    array.scale() as u32,
+                ))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
                 let array = column.as_any().downcast_ref::<array::TimestampSecondArray>().unwrap();
