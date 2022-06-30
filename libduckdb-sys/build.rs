@@ -65,7 +65,6 @@ mod build_bundled {
             .cpp(true)
             // .static_flag(true)
             .shared_flag(true)
-            .pic(true)
             .flag_if_supported("-std=c++11")
             .flag_if_supported("-stdlib=libc++")
             .flag_if_supported("-stdlib=libstdc++")
