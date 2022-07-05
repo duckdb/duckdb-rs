@@ -13,8 +13,8 @@ pub use bindings::*;
 
 use std::os::raw::c_uint;
 
-pub const DuckDBError: c_uint = duckdb_state_DuckDBError;
-pub const DuckDBSuccess: c_uint = duckdb_state_DuckDBSuccess;
+pub const DuckDBError: c_uint = duckdb_state_DuckDBError as c_uint;
+pub const DuckDBSuccess: c_uint = duckdb_state_DuckDBSuccess as c_uint;
 
 pub use self::error::*;
 mod error;
