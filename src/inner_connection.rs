@@ -39,7 +39,7 @@ impl InnerConnection {
             if r != ffi::DuckDBSuccess {
                 let msg = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
                 ffi::duckdb_free(c_err as *mut c_void);
-                return Err(Error::DuckDBFailure(ffi::Error::new(r as u32), msg));
+                return Err(Error::DuckDBFailure(ffi::Error::new(r), msg));
             }
             InnerConnection::new(db, true)
         }

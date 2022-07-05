@@ -1,6 +1,6 @@
+use crate::duckdb_state;
 use std::error;
 use std::fmt;
-use std::os::raw::c_uint;
 
 /// Error Codes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,11 +59,11 @@ pub enum ErrorCode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Error {
     pub code: ErrorCode,
-    pub extended_code: c_uint,
+    pub extended_code: duckdb_state,
 }
 
 impl Error {
-    pub fn new(result_code: c_uint) -> Error {
+    pub fn new(result_code: duckdb_state) -> Error {
         Error {
             code: ErrorCode::Unknown,
             extended_code: result_code,
@@ -88,6 +88,6 @@ impl error::Error for Error {
     }
 }
 
-pub fn code_to_str(_: c_uint) -> &'static str {
+pub fn code_to_str(_: duckdb_state) -> &'static str {
     "Unknown error code"
 }

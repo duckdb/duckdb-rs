@@ -116,7 +116,7 @@ impl Config {
         };
         if state != ffi::DuckDBSuccess {
             return Err(Error::DuckDBFailure(
-                ffi::Error::new(state as u32),
+                ffi::Error::new(state),
                 Some(format!("set {}:{} error", key, value)),
             ));
         }
