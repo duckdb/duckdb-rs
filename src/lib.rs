@@ -66,6 +66,7 @@ use std::path::{Path, PathBuf};
 use std::result;
 use std::str;
 
+use crate::cache::StatementCache;
 use crate::inner_connection::InnerConnection;
 use crate::raw_statement::RawStatement;
 use crate::types::ValueRef;
@@ -73,6 +74,7 @@ use crate::types::ValueRef;
 pub use crate::appender::Appender;
 pub use crate::appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter};
 pub use crate::arrow_batch::Arrow;
+pub use crate::cache::CachedStatement;
 pub use crate::column::Column;
 pub use crate::config::{AccessMode, Config, DefaultNullOrder, DefaultOrder};
 pub use crate::error::Error;
@@ -90,6 +92,7 @@ mod error;
 mod appender;
 mod appender_params;
 mod arrow_batch;
+mod cache;
 mod column;
 mod config;
 mod inner_connection;
@@ -105,6 +108,9 @@ mod transaction;
 pub mod types;
 
 pub(crate) mod util;
+
+// Number of cached prepared statements we'll hold on to.
+const STATEMENT_CACHE_DEFAULT_CAPACITY: usize = 16;
 
 /// A macro making it more convenient to pass heterogeneous or long lists of
 /// parameters as a `&[&dyn ToSql]`.
@@ -192,6 +198,7 @@ pub const TEMP_DB: DatabaseName<'static> = DatabaseName::Temp;
 /// A connection to a DuckDB database.
 pub struct Connection {
     db: RefCell<InnerConnection>,
+    cache: StatementCache,
     path: Option<PathBuf>,
 }
 
@@ -256,6 +263,7 @@ impl Connection {
         let c_path = path_to_cstring(path.as_ref())?;
         InnerConnection::open_with_flags(&c_path, config).map(|db| Connection {
             db: RefCell::new(db),
+            cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
             path: Some(path.as_ref().to_path_buf()),
         })
     }
@@ -506,6 +514,7 @@ impl Connection {
         let inner = self.db.borrow().try_clone()?;
         Ok(Connection {
             db: RefCell::new(inner),
+            cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
             path: self.path.clone(),
         })
     }

@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::iter::IntoIterator;
 use std::os::raw::c_char;
-use std::{convert, fmt, str};
+use std::{convert, fmt, mem, ptr, str};
 
 use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
@@ -442,6 +442,16 @@ impl Statement<'_> {
     #[inline]
     fn execute_with_bound_parameters(&mut self) -> Result<usize> {
         self.stmt.execute()
+    }
+
+    /// Safety: This is unsafe, because using `sqlite3_stmt` after the
+    /// connection has closed is illegal, but `RawStatement` does not enforce
+    /// this, as it loses our protective `'conn` lifetime bound.
+    #[inline]
+    pub(crate) unsafe fn into_raw(mut self) -> RawStatement {
+        let mut stmt = RawStatement::new(ptr::null_mut());
+        mem::swap(&mut stmt, &mut self.stmt);
+        stmt
     }
 }
 
