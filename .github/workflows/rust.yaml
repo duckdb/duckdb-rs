@@ -35,6 +35,7 @@ jobs:
           components: 'rustfmt, clippy'
 
       - run: cargo fmt --all -- --check
+        if: matrix.os == 'ubuntu-latest'
       
       # download libduckdb
       - uses: robinraju/release-downloader@v1.4
@@ -66,13 +67,18 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+      - name: Add path to PATH environment variable
+        if: matrix.os == 'windows-latest'
+        uses: myci-actions/export-env-var-powershell@1
+        with:
+          name: PATH
+          value: $env:PATH;${{ github.workspace }}/libduckdb
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
         run: cargo test --features "buildtime_bindgen" --features "modern-full"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          PATH: ${{ github.workspace }}/libduckdb
       - name: Run cargo-tarpaulin
         if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/tarpaulin@v0.1
