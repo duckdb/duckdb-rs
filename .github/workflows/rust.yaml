@@ -54,7 +54,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: ihiroky/extract-action@v1
         with:
-          file_path: ${env:GITHUB_WORKSPACE}\${{ matrix.duckdb }}
+          # file_path: ${{ github.workspace }}\${{ matrix.duckdb }} # not work
+          file_path: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
           extract_dir: ${{ github.workspace }}/libduckdb
 
       # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
