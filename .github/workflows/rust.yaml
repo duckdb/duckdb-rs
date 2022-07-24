@@ -14,8 +14,8 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { target: x86_64-pc-windows-msvc, os: windows-latest }
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, duckdb: libduckdb-windows-amd64.zip }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, duckdb: libduckdb-linux-amd64.zip }
           #- { target: x86_64-apple-darwin, os: macos-latest }
           #- {
               #target: x86_64-pc-windows-gnu,
@@ -35,10 +35,23 @@ jobs:
           components: 'rustfmt, clippy'
 
       - run: cargo fmt --all -- --check
-      - name: Download DuckDB
-        run: |
-          wget https://github.com/duckdb/duckdb/releases/download/v0.4.0/libduckdb-linux-amd64.zip -O libduckdb.zip
-          unzip libduckdb.zip -d libduckdb
+      
+
+      - uses: robinraju/release-downloader@v1.4
+        with:
+          repository: "duckdb/duckdb"
+          tag: "v0.4.0"
+          fileName: ${{ matrix.duckdb }}
+          rename: "libduckdb.zip"
+      - name: Extract duckdb
+        uses: ihiroky/extract-action@v1
+        with:
+          file_path: libduckdb.zip
+          extract_dir: libduckdb
+      # - name: Download DuckDB
+      #   run: |
+      #     wget https://github.com/duckdb/duckdb/releases/download/v0.4.0/libduckdb-linux-amd64.zip -O libduckdb.zip
+      #     unzip libduckdb.zip -d libduckdb
       # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
       - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
         name: run cargo clippy
