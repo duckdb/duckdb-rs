@@ -36,21 +36,20 @@ jobs:
 
       - run: cargo fmt --all -- --check
       
-
+      # download libduckdb
       - uses: robinraju/release-downloader@v1.4
+        name: Download duckdb
         with:
           repository: "duckdb/duckdb"
           tag: "v0.4.0"
           fileName: ${{ matrix.duckdb }}
+          out-file-path: .
       - name: Extract duckdb
         uses: ihiroky/extract-action@v1
         with:
           file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
-      # - name: Download DuckDB
-      #   run: |
-      #     wget https://github.com/duckdb/duckdb/releases/download/v0.4.0/libduckdb-linux-amd64.zip -O libduckdb.zip
-      #     unzip libduckdb.zip -d libduckdb
+
       # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
       - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
         name: run cargo clippy
@@ -70,6 +69,7 @@ jobs:
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
       - name: Upload to codecov.io
+        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v1
 
   sanitizer:
