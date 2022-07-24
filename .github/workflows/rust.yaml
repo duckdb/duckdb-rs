@@ -33,10 +33,6 @@ jobs:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
-
-      - run: cargo fmt --all -- --check
-        if: matrix.os == 'ubuntu-latest'
-      
       # download libduckdb
       - uses: robinraju/release-downloader@v1.4
         name: Download duckdb
@@ -45,21 +41,16 @@ jobs:
           tag: "v0.4.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
+
+      # For Linux
       - name: Linux extract duckdb
         if: matrix.os == 'ubuntu-latest'
         uses: ihiroky/extract-action@v1
         with:
           file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
-      - name: Windows extract duckdb
-        if: matrix.os == 'windows-latest'
-        uses: DuckSoft/extract-7z-action@v1.0
-        with:
-          # file_path: ${{ github.workspace }}\${{ matrix.duckdb }} # not work
-          pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
-          pathTarget: ${{ github.workspace }}/libduckdb
-
-      # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
+      - run: cargo fmt --all -- --check
+        if: matrix.os == 'ubuntu-latest'
       - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
         if: matrix.os == 'ubuntu-latest'
         name: run cargo clippy
@@ -67,6 +58,29 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+      - name: Run cargo-tarpaulin
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          # Intentionally omit time feature until we're on time 0.3, at which
+          # point it should be added to `bundled-full`.
+          args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+      - name: Upload to codecov.io
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v1
+
+      # For windows
+      - name: Windows extract duckdb
+        if: matrix.os == 'windows-latest'
+        uses: DuckSoft/extract-7z-action@v1.0
+        with:
+          pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
+          pathTarget: ${{ github.workspace }}/libduckdb
+
       - name: Add path to PATH environment variable
         if: matrix.os == 'windows-latest'
         uses: myci-actions/export-env-var-powershell@1
@@ -79,23 +93,20 @@ jobs:
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-      - name: Run cargo-tarpaulin
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          # Intentionally omit time feature until we're on time 0.3, at which
-          # point it should be added to `bundled-full`.
-          args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
-          # args: '--features "bundled" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
-      - name: Upload to codecov.io
-        if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v1
 
-  sanitizer:
+  Windows:
+    name: Window build from Source
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          targets: x86_64-pc-windows-msvc
+      - run: cargo test --features "bundled" --features "modern-full"
+
+  Sanitizer:
     name: Address Sanitizer
     needs: test
     runs-on: ubuntu-latest
