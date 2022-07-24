@@ -11,6 +11,7 @@ use crate::error::result_from_duckdb_arrow;
 use arrow::array::{ArrayData, StructArray};
 use arrow::datatypes::{DataType, Schema, SchemaRef};
 use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
+use ffi::DuckDBSuccess;
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
 // TODO: destroy statement and result
@@ -19,6 +20,17 @@ pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
     result: Option<ffi::duckdb_arrow>,
     schema: Option<SchemaRef>,
+    // Cached SQL (trimmed) that we use as the key when we're in the statement
+    // cache. This is None for statements which didn't come from the statement
+    // cache.
+    //
+    // This is probably the same as `self.sql()` in most cases, but we don't
+    // care either way -- It's a better cache key as it is anyway since it's the
+    // actual source we got from rust.
+    //
+    // One example of a case where the result of `sqlite_sql` and the value in
+    // `statement_cache_key` might differ is if the statement has a `tail`.
+    statement_cache_key: Option<Arc<str>>,
 }
 
 impl RawStatement {
@@ -28,6 +40,7 @@ impl RawStatement {
             ptr: stmt,
             result: None,
             schema: None,
+            statement_cache_key: None,
         }
     }
 
@@ -39,6 +52,22 @@ impl RawStatement {
     #[inline]
     pub unsafe fn ptr(&self) -> ffi::duckdb_prepared_statement {
         self.ptr
+    }
+
+    #[inline]
+    pub(crate) fn set_statement_cache_key(&mut self, p: impl Into<Arc<str>>) {
+        self.statement_cache_key = Some(p.into());
+    }
+
+    #[inline]
+    pub(crate) fn statement_cache_key(&self) -> Option<Arc<str>> {
+        self.statement_cache_key.clone()
+    }
+
+    #[inline]
+    pub fn clear_bindings(&self) -> ffi::duckdb_state {
+        // unsafe { ffi::sqlite3_clear_bindings(self.ptr) }
+        DuckDBSuccess
     }
 
     #[inline]
