@@ -95,7 +95,7 @@ jobs:
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
 
   Windows:
-    name: Window build from Source
+    name: Windows build from source
     needs: test
     runs-on: windows-latest
     steps:
