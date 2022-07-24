@@ -52,7 +52,7 @@ jobs:
           extract_dir: libduckdb
       - name: Windows extract duckdb
         if: matrix.os == 'windows-latest'
-        uses: DuckSoft/extract-7z-action@v1
+        uses: DuckSoft/extract-7z-action@v1.0
         with:
           # file_path: ${{ github.workspace }}\${{ matrix.duckdb }} # not work
           pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
