@@ -44,19 +44,19 @@ jobs:
           tag: "v0.4.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
-      - name: Extract duckdb
+      - name: Linux extract duckdb
         if: matrix.os == 'ubuntu-latest'
         uses: ihiroky/extract-action@v1
         with:
           file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
-      - name: Extract duckdb
+      - name: Windows extract duckdb
         if: matrix.os == 'windows-latest'
-        uses: ihiroky/extract-action@v1
+        uses: extract-7z-action@v1
         with:
           # file_path: ${{ github.workspace }}\${{ matrix.duckdb }} # not work
-          file_path: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
-          extract_dir: ${{ github.workspace }}/libduckdb
+          pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
+          pathTarget: ${{ github.workspace }}/libduckdb
 
       # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
       - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
