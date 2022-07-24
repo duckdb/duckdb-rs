@@ -42,11 +42,10 @@ jobs:
           repository: "duckdb/duckdb"
           tag: "v0.4.0"
           fileName: ${{ matrix.duckdb }}
-          rename: "libduckdb.zip"
       - name: Extract duckdb
         uses: ihiroky/extract-action@v1
         with:
-          file_path: libduckdb.zip
+          file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
       # - name: Download DuckDB
       #   run: |
