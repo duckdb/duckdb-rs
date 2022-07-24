@@ -46,7 +46,7 @@
 //!     for person in person_iter {
 //!         println!("Found person {:?}", person.unwrap());
 //!     }
-//!    
+//!
 //!     // query table by arrow
 //!     let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
 //!     print_batches(&rbs);
@@ -558,6 +558,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "Windows doesn't allow concurrent writes to a file")]
     fn test_concurrent_transactions_busy_commit() -> Result<()> {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("transactions.db3");

@@ -38,6 +38,8 @@ fn main() {
 mod build_bundled {
     use std::path::Path;
 
+    use crate::win_target;
+
     pub fn main(out_dir: &str, out_path: &Path) {
         let lib_name = super::lib_name();
 
@@ -63,13 +65,16 @@ mod build_bundled {
         let mut cfg = cc::Build::new();
         cfg.file(format!("{}/duckdb.cpp", lib_name))
             .cpp(true)
-            // .static_flag(true)
-            .shared_flag(true)
-            .pic(true)
             .flag_if_supported("-std=c++11")
             .flag_if_supported("-stdlib=libc++")
             .flag_if_supported("-stdlib=libstdc++")
+            .flag_if_supported("/bigobj")
             .warnings(false);
+
+        if win_target() {
+            cfg.define("DUCKDB_BUILD_LIBRARY", None);
+        }
+
         cfg.compile(lib_name);
 
         println!("cargo:lib_dir={}", out_dir);

@@ -14,8 +14,8 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          #- { target: x86_64-pc-windows-msvc, os: windows-latest }
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, duckdb: libduckdb-windows-amd64.zip }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, duckdb: libduckdb-linux-amd64.zip }
           #- { target: x86_64-apple-darwin, os: macos-latest }
           #- {
               #target: x86_64-pc-windows-gnu,
@@ -33,34 +33,80 @@ jobs:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
+      # download libduckdb
+      - uses: robinraju/release-downloader@v1.4
+        name: Download duckdb
+        with:
+          repository: "duckdb/duckdb"
+          tag: "v0.4.0"
+          fileName: ${{ matrix.duckdb }}
+          out-file-path: .
 
+      # For Linux
+      - name: Linux extract duckdb
+        if: matrix.os == 'ubuntu-latest'
+        uses: ihiroky/extract-action@v1
+        with:
+          file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
+          extract_dir: libduckdb
       - run: cargo fmt --all -- --check
-      - name: Download DuckDB
-        run: |
-          wget https://github.com/duckdb/duckdb/releases/download/v0.4.0/libduckdb-linux-amd64.zip -O libduckdb.zip
-          unzip libduckdb.zip -d libduckdb
-      # - run: cargo clippy --all-targets --workspace --features bundled --features modern-full -- -D warnings -A clippy::redundant-closure
+        if: matrix.os == 'ubuntu-latest'
       - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
+        if: matrix.os == 'ubuntu-latest'
         name: run cargo clippy
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
       - name: Run cargo-tarpaulin
+        if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/tarpaulin@v0.1
         with:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
           args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
-          # args: '--features "bundled" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
       - name: Upload to codecov.io
+        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v1
 
-  sanitizer:
+      # For windows
+      - name: Windows extract duckdb
+        if: matrix.os == 'windows-latest'
+        uses: DuckSoft/extract-7z-action@v1.0
+        with:
+          pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
+          pathTarget: ${{ github.workspace }}/libduckdb
+
+      - name: Add path to PATH environment variable
+        if: matrix.os == 'windows-latest'
+        uses: myci-actions/export-env-var-powershell@1
+        with:
+          name: PATH
+          value: $env:PATH;${{ github.workspace }}/libduckdb
+      - name: Run cargo-test
+        if: matrix.os == 'windows-latest'
+        run: cargo test --features "buildtime_bindgen" --features "modern-full"
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+
+  Windows:
+    name: Windows build from source
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          targets: x86_64-pc-windows-msvc
+      - run: cargo test --features "bundled" --features "modern-full"
+
+  Sanitizer:
     name: Address Sanitizer
     needs: test
     runs-on: ubuntu-latest

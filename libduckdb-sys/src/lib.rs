@@ -11,10 +11,8 @@ mod bindings {
 #[allow(clippy::all)]
 pub use bindings::*;
 
-use std::os::raw::c_uint;
-
-pub const DuckDBError: c_uint = duckdb_state_DuckDBError;
-pub const DuckDBSuccess: c_uint = duckdb_state_DuckDBSuccess;
+pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
+pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
 
 pub use self::error::*;
 mod error;

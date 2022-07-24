@@ -624,6 +624,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "Windows doesn't allow concurrent writes to a file")]
     fn test_insert_duplicate() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")?;

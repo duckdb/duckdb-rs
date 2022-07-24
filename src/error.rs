@@ -5,7 +5,6 @@ use crate::types::Type;
 use std::error;
 use std::ffi::CStr;
 use std::fmt;
-use std::os::raw::c_uint;
 use std::path::PathBuf;
 use std::str;
 
@@ -216,13 +215,13 @@ impl error::Error for Error {
 // These are public but not re-exported by lib.rs, so only visible within crate.
 
 #[inline]
-fn error_from_duckdb_code(code: c_uint, message: Option<String>) -> Result<()> {
-    Err(Error::DuckDBFailure(ffi::Error::new(code as u32), message))
+fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> Result<()> {
+    Err(Error::DuckDBFailure(ffi::Error::new(code), message))
 }
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_appender(code: c_uint, mut appender: ffi::duckdb_appender) -> Result<()> {
+pub fn result_from_duckdb_appender(code: ffi::duckdb_state, mut appender: ffi::duckdb_appender) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
@@ -241,7 +240,7 @@ pub fn result_from_duckdb_appender(code: c_uint, mut appender: ffi::duckdb_appen
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_prepare(code: c_uint, mut prepare: ffi::duckdb_prepared_statement) -> Result<()> {
+pub fn result_from_duckdb_prepare(code: ffi::duckdb_state, mut prepare: ffi::duckdb_prepared_statement) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
@@ -260,7 +259,7 @@ pub fn result_from_duckdb_prepare(code: c_uint, mut prepare: ffi::duckdb_prepare
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_arrow(code: c_uint, mut out: ffi::duckdb_arrow) -> Result<()> {
+pub fn result_from_duckdb_arrow(code: ffi::duckdb_state, mut out: ffi::duckdb_arrow) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
