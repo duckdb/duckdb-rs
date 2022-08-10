@@ -472,7 +472,7 @@ impl<'stmt> Row<'stmt> {
                 }
                 ValueRef::Double(array.value(row))
             }
-            DataType::Decimal(..) => {
+            DataType::Decimal128(..) => {
                 let array = column.as_any().downcast_ref::<array::Decimal128Array>().unwrap();
 
                 if array.is_null(row) {
