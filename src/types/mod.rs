@@ -102,7 +102,7 @@ pub struct Null;
 
 /// DuckDB data types.
 /// See [Fundamental Datatypes](https://duckdb.org/docs/sql/data_types/overview).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     /// NULL
     Null,
