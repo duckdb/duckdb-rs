@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::{Error, Result, Statement};
 use crate::types::{self, FromSql, FromSqlError, ValueRef};
 
-use arrow::array::{self, Array, BasicDecimalArray, StructArray};
+use arrow::array::{self, Array, StructArray};
 use arrow::datatypes::*;
 use fallible_iterator::FallibleIterator;
 use fallible_streaming_iterator::FallibleStreamingIterator;
