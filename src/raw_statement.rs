@@ -11,7 +11,6 @@ use crate::error::result_from_duckdb_arrow;
 use arrow::array::{ArrayData, StructArray};
 use arrow::datatypes::{DataType, Schema, SchemaRef};
 use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
-use ffi::DuckDBSuccess;
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
 // TODO: destroy statement and result
