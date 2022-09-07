@@ -280,17 +280,10 @@ mod test {
         "#,
         )?;
 
-        let sql = "SELECT x FROM foo";
+        let sql = "SELECT * FROM foo";
 
         {
             let mut stmt = db.prepare_cached(sql)?;
-            assert_eq!(Ok(Some(1i32)), stmt.query([])?.map(|r| r.get(0)).next());
-        }
-
-        let sql_cannot_cache = "SELECT * FROM foo";
-
-        {
-            let mut stmt = db.prepare_cached(sql_cannot_cache)?;
             assert_eq!(Ok(Some(1i32)), stmt.query([])?.map(|r| r.get(0)).next());
         }
 
@@ -302,15 +295,12 @@ mod test {
         )?;
 
         {
-            let mut stmt = db.prepare_cached(sql)?;
-            assert_eq!(Ok(Some(1i32)), stmt.query([])?.map(|r| r.get(0)).next());
-        }
-
-        {
             // Rebinding statement after catalog change resulted in change of types
-            let mut stmt = db.prepare_cached(sql_cannot_cache)?;
-            let result = stmt.query([]);
-            assert!(result.is_err());
+            let mut stmt = db.prepare_cached(sql)?;
+            assert_eq!(
+                Ok(Some((1i32, 2i32))),
+                stmt.query([])?.map(|r| <(i32, i32)>::try_from(r)).next()
+            );
         }
         Ok(())
     }

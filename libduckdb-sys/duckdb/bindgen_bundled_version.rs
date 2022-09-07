@@ -106,7 +106,6 @@ pub const __DARWIN_NO_LONG_LONG: u32 = 0;
 pub const _DARWIN_FEATURE_64_BIT_INODE: u32 = 1;
 pub const _DARWIN_FEATURE_ONLY_UNIX_CONFORMANCE: u32 = 1;
 pub const _DARWIN_FEATURE_UNIX_CONFORMANCE: u32 = 3;
-pub const __has_ptrcheck: u32 = 0;
 pub const __PTHREAD_SIZE__: u32 = 8176;
 pub const __PTHREAD_ATTR_SIZE__: u32 = 56;
 pub const __PTHREAD_MUTEXATTR_SIZE__: u32 = 8;
@@ -203,8 +202,6 @@ pub const __MAC_11_5: u32 = 110500;
 pub const __MAC_11_6: u32 = 110600;
 pub const __MAC_12_0: u32 = 120000;
 pub const __MAC_12_1: u32 = 120100;
-pub const __MAC_12_2: u32 = 120200;
-pub const __MAC_12_3: u32 = 120300;
 pub const __IPHONE_2_0: u32 = 20000;
 pub const __IPHONE_2_1: u32 = 20100;
 pub const __IPHONE_2_2: u32 = 20200;
@@ -263,8 +260,6 @@ pub const __IPHONE_14_8: u32 = 140800;
 pub const __IPHONE_15_0: u32 = 150000;
 pub const __IPHONE_15_1: u32 = 150100;
 pub const __IPHONE_15_2: u32 = 150200;
-pub const __IPHONE_15_3: u32 = 150300;
-pub const __IPHONE_15_4: u32 = 150400;
 pub const __TVOS_9_0: u32 = 90000;
 pub const __TVOS_9_1: u32 = 90100;
 pub const __TVOS_9_2: u32 = 90200;
@@ -296,8 +291,6 @@ pub const __TVOS_14_7: u32 = 140700;
 pub const __TVOS_15_0: u32 = 150000;
 pub const __TVOS_15_1: u32 = 150100;
 pub const __TVOS_15_2: u32 = 150200;
-pub const __TVOS_15_3: u32 = 150300;
-pub const __TVOS_15_4: u32 = 150400;
 pub const __WATCHOS_1_0: u32 = 10000;
 pub const __WATCHOS_2_0: u32 = 20000;
 pub const __WATCHOS_2_1: u32 = 20100;
@@ -327,8 +320,6 @@ pub const __WATCHOS_7_6: u32 = 70600;
 pub const __WATCHOS_8_0: u32 = 80000;
 pub const __WATCHOS_8_1: u32 = 80100;
 pub const __WATCHOS_8_3: u32 = 80300;
-pub const __WATCHOS_8_4: u32 = 80400;
-pub const __WATCHOS_8_5: u32 = 80500;
 pub const MAC_OS_X_VERSION_10_0: u32 = 1000;
 pub const MAC_OS_X_VERSION_10_1: u32 = 1010;
 pub const MAC_OS_X_VERSION_10_2: u32 = 1020;
@@ -366,7 +357,7 @@ pub const MAC_OS_VERSION_12_0: u32 = 120000;
 pub const __DRIVERKIT_19_0: u32 = 190000;
 pub const __DRIVERKIT_20_0: u32 = 200000;
 pub const __DRIVERKIT_21_0: u32 = 210000;
-pub const __MAC_OS_X_VERSION_MAX_ALLOWED: u32 = 120300;
+pub const __MAC_OS_X_VERSION_MAX_ALLOWED: u32 = 120100;
 pub const __ENABLE_LEGACY_MAC_AVAILABILITY: u32 = 1;
 pub const __DARWIN_WCHAR_MIN: i32 = -2147483648;
 pub const _FORTIFY_SOURCE: u32 = 2;
@@ -14577,10 +14568,7 @@ extern "C" {
     pub fn valloc(arg1: size_t) -> *mut ::std::os::raw::c_void;
 }
 extern "C" {
-    pub fn aligned_alloc(
-        __alignment: ::std::os::raw::c_ulong,
-        __size: ::std::os::raw::c_ulong,
-    ) -> *mut ::std::os::raw::c_void;
+    pub fn aligned_alloc(__alignment: size_t, __size: size_t) -> *mut ::std::os::raw::c_void;
 }
 extern "C" {
     pub fn posix_memalign(
@@ -15910,6 +15898,7 @@ fn bindgen_test_layout_duckdb_result() {
 pub type duckdb_database = *mut ::std::os::raw::c_void;
 pub type duckdb_connection = *mut ::std::os::raw::c_void;
 pub type duckdb_prepared_statement = *mut ::std::os::raw::c_void;
+pub type duckdb_pending_result = *mut ::std::os::raw::c_void;
 pub type duckdb_appender = *mut ::std::os::raw::c_void;
 pub type duckdb_arrow = *mut ::std::os::raw::c_void;
 pub type duckdb_config = *mut ::std::os::raw::c_void;
@@ -15922,6 +15911,10 @@ pub type duckdb_value = *mut ::std::os::raw::c_void;
 pub const duckdb_state_DuckDBSuccess: duckdb_state = 0;
 pub const duckdb_state_DuckDBError: duckdb_state = 1;
 pub type duckdb_state = ::std::os::raw::c_uint;
+pub const duckdb_pending_state_DUCKDB_PENDING_RESULT_READY: duckdb_pending_state = 0;
+pub const duckdb_pending_state_DUCKDB_PENDING_RESULT_NOT_READY: duckdb_pending_state = 1;
+pub const duckdb_pending_state_DUCKDB_PENDING_ERROR: duckdb_pending_state = 2;
+pub type duckdb_pending_state = ::std::os::raw::c_uint;
 extern "C" {
     #[doc = "Creates a new database or opens an existing database file stored at the the given path."]
     #[doc = "If no path is given a new in-memory database is created instead."]
@@ -16155,7 +16148,7 @@ extern "C" {
     #[doc = ""]
     #[doc = "The result of this function must not be freed. It will be cleaned up when `duckdb_destroy_result` is called."]
     #[doc = ""]
-    #[doc = " result: The result object to fetch the nullmask from."]
+    #[doc = " result: The result object to fetch the error from."]
     #[doc = " returns: The error of the result."]
     pub fn duckdb_result_error(result: *mut duckdb_result) -> *const ::std::os::raw::c_char;
 }
@@ -16414,6 +16407,10 @@ extern "C" {
     pub fn duckdb_param_type(prepared_statement: duckdb_prepared_statement, param_idx: idx_t) -> duckdb_type;
 }
 extern "C" {
+    #[doc = "Clear the params bind to the prepared statement."]
+    pub fn duckdb_clear_bindings(prepared_statement: duckdb_prepared_statement) -> duckdb_state;
+}
+extern "C" {
     #[doc = "Binds a bool value to the prepared statement at the specified index."]
     pub fn duckdb_bind_boolean(
         prepared_statement: duckdb_prepared_statement,
@@ -16574,6 +16571,64 @@ extern "C" {
     pub fn duckdb_execute_prepared_arrow(
         prepared_statement: duckdb_prepared_statement,
         out_result: *mut duckdb_arrow,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "Executes the prepared statement with the given bound parameters, and returns a pending result."]
+    #[doc = "The pending result represents an intermediate structure for a query that is not yet fully executed."]
+    #[doc = "The pending result can be used to incrementally execute a query, returning control to the client between tasks."]
+    #[doc = ""]
+    #[doc = "Note that after calling `duckdb_pending_prepared`, the pending result should always be destroyed using"]
+    #[doc = "`duckdb_destroy_pending`, even if this function returns DuckDBError."]
+    #[doc = ""]
+    #[doc = " prepared_statement: The prepared statement to execute."]
+    #[doc = " out_result: The pending query result."]
+    #[doc = " returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    pub fn duckdb_pending_prepared(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_pending_result,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "Closes the pending result and de-allocates all memory allocated for the result."]
+    #[doc = ""]
+    #[doc = " pending_result: The pending result to destroy."]
+    pub fn duckdb_destroy_pending(pending_result: *mut duckdb_pending_result);
+}
+extern "C" {
+    #[doc = "Returns the error message contained within the pending result."]
+    #[doc = ""]
+    #[doc = "The result of this function must not be freed. It will be cleaned up when `duckdb_destroy_pending` is called."]
+    #[doc = ""]
+    #[doc = " result: The pending result to fetch the error from."]
+    #[doc = " returns: The error of the pending result."]
+    pub fn duckdb_pending_error(pending_result: duckdb_pending_result) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "Executes a single task within the query, returning whether or not the query is ready."]
+    #[doc = ""]
+    #[doc = "If this returns DUCKDB_PENDING_RESULT_READY, the duckdb_execute_pending function can be called to obtain the result."]
+    #[doc = "If this returns DUCKDB_PENDING_RESULT_NOT_READY, the duckdb_pending_execute_task function should be called again."]
+    #[doc = "If this returns DUCKDB_PENDING_ERROR, an error occurred during execution."]
+    #[doc = ""]
+    #[doc = "The error message can be obtained by calling duckdb_pending_error on the pending_result."]
+    #[doc = ""]
+    #[doc = " pending_result: The pending result to execute a task within.."]
+    #[doc = " returns: The state of the pending result after the execution."]
+    pub fn duckdb_pending_execute_task(pending_result: duckdb_pending_result) -> duckdb_pending_state;
+}
+extern "C" {
+    #[doc = "Fully execute a pending query result, returning the final query result."]
+    #[doc = ""]
+    #[doc = "If duckdb_pending_execute_task has been called until DUCKDB_PENDING_RESULT_READY was returned, this will return fast."]
+    #[doc = "Otherwise, all remaining tasks must be executed first."]
+    #[doc = ""]
+    #[doc = " pending_result: The pending result to execute."]
+    #[doc = " out_result: The result object."]
+    #[doc = " returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    pub fn duckdb_execute_pending(
+        pending_result: duckdb_pending_result,
+        out_result: *mut duckdb_result,
     ) -> duckdb_state;
 }
 extern "C" {
@@ -17110,6 +17165,13 @@ extern "C" {
     );
 }
 extern "C" {
+    #[doc = "Sets the cardinality estimate for the table function, used for optimization."]
+    #[doc = ""]
+    #[doc = " info: The bind data object."]
+    #[doc = " is_exact: Whether or not the cardinality estimate is exact, or an approximation"]
+    pub fn duckdb_bind_set_cardinality(info: duckdb_bind_info, cardinality: idx_t, is_exact: bool);
+}
+extern "C" {
     #[doc = "Report that an error has occurred while calling bind."]
     #[doc = ""]
     #[doc = " info: The info object"]
@@ -17495,6 +17557,7 @@ extern "C" {
     #[doc = " result: The result to destroy."]
     pub fn duckdb_destroy_arrow(result: *mut duckdb_arrow);
 }
+pub type duckdb_task_state = *mut ::std::os::raw::c_void;
 extern "C" {
     #[doc = "Execute DuckDB tasks on this thread."]
     #[doc = ""]
@@ -17503,6 +17566,60 @@ extern "C" {
     #[doc = " database: The database object to execute tasks for"]
     #[doc = " max_tasks: The maximum amount of tasks to execute"]
     pub fn duckdb_execute_tasks(database: duckdb_database, max_tasks: idx_t);
+}
+extern "C" {
+    #[doc = "Creates a task state that can be used with duckdb_execute_tasks_state to execute tasks until"]
+    #[doc = "duckdb_finish_execution is called on the state."]
+    #[doc = ""]
+    #[doc = "duckdb_destroy_state should be called on the result in order to free memory."]
+    #[doc = ""]
+    #[doc = " database: The database object to create the task state for"]
+    #[doc = " returns: The task state that can be used with duckdb_execute_tasks_state."]
+    pub fn duckdb_create_task_state(database: duckdb_database) -> duckdb_task_state;
+}
+extern "C" {
+    #[doc = "Execute DuckDB tasks on this thread."]
+    #[doc = ""]
+    #[doc = "The thread will keep on executing tasks forever, until duckdb_finish_execution is called on the state."]
+    #[doc = "Multiple threads can share the same duckdb_task_state."]
+    #[doc = ""]
+    #[doc = " state: The task state of the executor"]
+    pub fn duckdb_execute_tasks_state(state: duckdb_task_state);
+}
+extern "C" {
+    #[doc = "Execute DuckDB tasks on this thread."]
+    #[doc = ""]
+    #[doc = "The thread will keep on executing tasks until either duckdb_finish_execution is called on the state,"]
+    #[doc = "max_tasks tasks have been executed or there are no more tasks to be executed."]
+    #[doc = ""]
+    #[doc = "Multiple threads can share the same duckdb_task_state."]
+    #[doc = ""]
+    #[doc = " state: The task state of the executor"]
+    #[doc = " max_tasks: The maximum amount of tasks to execute"]
+    #[doc = " returns: The amount of tasks that have actually been executed"]
+    pub fn duckdb_execute_n_tasks_state(state: duckdb_task_state, max_tasks: idx_t) -> idx_t;
+}
+extern "C" {
+    #[doc = "Finish execution on a specific task."]
+    #[doc = ""]
+    #[doc = " state: The task state to finish execution"]
+    pub fn duckdb_finish_execution(state: duckdb_task_state);
+}
+extern "C" {
+    #[doc = "Check if the provided duckdb_task_state has finished execution"]
+    #[doc = ""]
+    #[doc = " state: The task state to inspect"]
+    #[doc = " returns: Whether or not duckdb_finish_execution has been called on the task state"]
+    pub fn duckdb_task_state_is_finished(state: duckdb_task_state) -> bool;
+}
+extern "C" {
+    #[doc = "Destroys the task state returned from duckdb_create_task_state."]
+    #[doc = ""]
+    #[doc = "Note that this should not be called while there is an active duckdb_execute_tasks_state running"]
+    #[doc = "on the task state."]
+    #[doc = ""]
+    #[doc = " state: The task state to clean up"]
+    pub fn duckdb_destroy_task_state(state: duckdb_task_state);
 }
 pub type __builtin_va_list = [__va_list_tag; 1usize];
 #[repr(C)]

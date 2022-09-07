@@ -328,8 +328,8 @@ mod test {
         let id_vec = id.as_bytes().to_vec();
         db.execute("INSERT INTO foo (id, label) VALUES (?, ?)", params![id_vec, "target"])?;
 
-        let mut stmt = db.prepare("SELECT id, label FROM foo WHERE id = ?")?;
-        let mut rows = stmt.query(params![id_vec])?;
+        let mut stmt = db.prepare("SELECT id, label FROM foo")?;
+        let mut rows = stmt.query([])?;
         let row = rows.next()?.unwrap();
         let found_id: Uuid = row.get_unwrap(0);
         let found_label: String = row.get_unwrap(1);

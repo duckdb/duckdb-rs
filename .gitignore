@@ -15,8 +15,9 @@ Cargo.lock
 /target
 **/target
 
-# Ignore vscode
+# Ignore vscode and intellij
 .vscode
+.idea
 
 # Ignore zip file
 *.zip
