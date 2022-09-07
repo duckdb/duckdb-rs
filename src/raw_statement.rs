@@ -66,8 +66,7 @@ impl RawStatement {
 
     #[inline]
     pub fn clear_bindings(&self) -> ffi::duckdb_state {
-        // unsafe { ffi::sqlite3_clear_bindings(self.ptr) }
-        DuckDBSuccess
+        unsafe { ffi::duckdb_clear_bindings(self.ptr) }
     }
 
     #[inline]
