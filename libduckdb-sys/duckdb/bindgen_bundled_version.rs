@@ -106,6 +106,7 @@ pub const __DARWIN_NO_LONG_LONG: u32 = 0;
 pub const _DARWIN_FEATURE_64_BIT_INODE: u32 = 1;
 pub const _DARWIN_FEATURE_ONLY_UNIX_CONFORMANCE: u32 = 1;
 pub const _DARWIN_FEATURE_UNIX_CONFORMANCE: u32 = 3;
+pub const __has_ptrcheck: u32 = 0;
 pub const __PTHREAD_SIZE__: u32 = 8176;
 pub const __PTHREAD_ATTR_SIZE__: u32 = 56;
 pub const __PTHREAD_MUTEXATTR_SIZE__: u32 = 8;
@@ -202,6 +203,8 @@ pub const __MAC_11_5: u32 = 110500;
 pub const __MAC_11_6: u32 = 110600;
 pub const __MAC_12_0: u32 = 120000;
 pub const __MAC_12_1: u32 = 120100;
+pub const __MAC_12_2: u32 = 120200;
+pub const __MAC_12_3: u32 = 120300;
 pub const __IPHONE_2_0: u32 = 20000;
 pub const __IPHONE_2_1: u32 = 20100;
 pub const __IPHONE_2_2: u32 = 20200;
@@ -260,6 +263,8 @@ pub const __IPHONE_14_8: u32 = 140800;
 pub const __IPHONE_15_0: u32 = 150000;
 pub const __IPHONE_15_1: u32 = 150100;
 pub const __IPHONE_15_2: u32 = 150200;
+pub const __IPHONE_15_3: u32 = 150300;
+pub const __IPHONE_15_4: u32 = 150400;
 pub const __TVOS_9_0: u32 = 90000;
 pub const __TVOS_9_1: u32 = 90100;
 pub const __TVOS_9_2: u32 = 90200;
@@ -291,6 +296,8 @@ pub const __TVOS_14_7: u32 = 140700;
 pub const __TVOS_15_0: u32 = 150000;
 pub const __TVOS_15_1: u32 = 150100;
 pub const __TVOS_15_2: u32 = 150200;
+pub const __TVOS_15_3: u32 = 150300;
+pub const __TVOS_15_4: u32 = 150400;
 pub const __WATCHOS_1_0: u32 = 10000;
 pub const __WATCHOS_2_0: u32 = 20000;
 pub const __WATCHOS_2_1: u32 = 20100;
@@ -320,6 +327,8 @@ pub const __WATCHOS_7_6: u32 = 70600;
 pub const __WATCHOS_8_0: u32 = 80000;
 pub const __WATCHOS_8_1: u32 = 80100;
 pub const __WATCHOS_8_3: u32 = 80300;
+pub const __WATCHOS_8_4: u32 = 80400;
+pub const __WATCHOS_8_5: u32 = 80500;
 pub const MAC_OS_X_VERSION_10_0: u32 = 1000;
 pub const MAC_OS_X_VERSION_10_1: u32 = 1010;
 pub const MAC_OS_X_VERSION_10_2: u32 = 1020;
@@ -357,7 +366,7 @@ pub const MAC_OS_VERSION_12_0: u32 = 120000;
 pub const __DRIVERKIT_19_0: u32 = 190000;
 pub const __DRIVERKIT_20_0: u32 = 200000;
 pub const __DRIVERKIT_21_0: u32 = 210000;
-pub const __MAC_OS_X_VERSION_MAX_ALLOWED: u32 = 120100;
+pub const __MAC_OS_X_VERSION_MAX_ALLOWED: u32 = 120300;
 pub const __ENABLE_LEGACY_MAC_AVAILABILITY: u32 = 1;
 pub const __DARWIN_WCHAR_MIN: i32 = -2147483648;
 pub const _FORTIFY_SOURCE: u32 = 2;
@@ -14568,7 +14577,10 @@ extern "C" {
     pub fn valloc(arg1: size_t) -> *mut ::std::os::raw::c_void;
 }
 extern "C" {
-    pub fn aligned_alloc(__alignment: size_t, __size: size_t) -> *mut ::std::os::raw::c_void;
+    pub fn aligned_alloc(
+        __alignment: ::std::os::raw::c_ulong,
+        __size: ::std::os::raw::c_ulong,
+    ) -> *mut ::std::os::raw::c_void;
 }
 extern "C" {
     pub fn posix_memalign(
