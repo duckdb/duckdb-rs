@@ -9,3 +9,6 @@ DUCKDB_INCLUDE_DIR = /Users/wangfenjin/duckdb
 all:
 	cargo test --features buildtime_bindgen --features modern-full -- --nocapture
 	cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
+
+test:
+	cargo test --features bundled --features modern-full -- --nocapture
