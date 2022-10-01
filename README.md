@@ -8,7 +8,7 @@
 [![Docs](https://img.shields.io/badge/docs.rs-duckdb-green)](https://docs.rs/duckdb)
 
 duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
-an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Acctually the initial code and even this README is
+an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Actually the initial code and even this README is
 forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
 
 ```rust
