@@ -61,7 +61,7 @@ fn main() -> Result<()> {
 
     // query table by arrow
     let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
-    print_batches(&rbs);
+    print_batches(&rbs).unwrap();
     Ok(())
 }
 ```
