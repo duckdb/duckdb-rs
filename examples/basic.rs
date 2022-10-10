@@ -8,7 +8,7 @@ use duckdb::{params, Connection, Result};
 
 #[derive(Debug)]
 struct Person {
-    id: i32,
+    _id: i32,
     name: String,
     data: Option<Vec<u8>>,
 }
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     )?;
 
     let me = Person {
-        id: 0,
+        _id: 0,
         name: "Steven".to_string(),
         data: None,
     };
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     let mut stmt = conn.prepare("SELECT id, name, data FROM person")?;
     let person_iter = stmt.query_map([], |row| {
         Ok(Person {
-            id: row.get(0)?,
+            _id: row.get(0)?,
             name: row.get(1)?,
             data: row.get(2)?,
         })
