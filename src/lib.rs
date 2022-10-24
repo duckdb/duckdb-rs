@@ -87,6 +87,9 @@ pub use crate::statement::Statement;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
 
+// re-export dependencies from arrow-rs to minimise version maintenance for crate users
+pub use arrow;
+
 #[macro_use]
 mod error;
 mod appender;
