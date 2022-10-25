@@ -13,6 +13,9 @@ forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
 
 ```rust
 use duckdb::{params, Connection, Result};
+// In your Cargo.toml, use * as the version; features can be toggled according to your needs
+// https://github.com/wangfenjin/duckdb-rs/issues/92
+// arrow = { version = "*", default-features = false, features = ["prettyprint"] }
 use arrow::record_batch::RecordBatch;
 use arrow::util::pretty::print_batches;
 
