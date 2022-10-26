@@ -3,8 +3,8 @@
 //!
 //! ```rust
 //! use duckdb::{params, Connection, Result};
-//! use arrow::record_batch::RecordBatch;
-//! use arrow::util::pretty::print_batches;
+//! use duckdb::arrow::record_batch::RecordBatch;
+//! use duckdb::arrow::util::pretty::print_batches;
 //!
 //! #[derive(Debug)]
 //! struct Person {
@@ -86,6 +86,9 @@ pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
 pub use crate::statement::Statement;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
+
+// re-export dependencies from arrow-rs to minimise version maintenance for crate users
+pub use arrow;
 
 #[macro_use]
 mod error;
