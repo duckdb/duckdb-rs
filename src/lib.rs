@@ -3,8 +3,8 @@
 //!
 //! ```rust
 //! use duckdb::{params, Connection, Result};
-//! use arrow::record_batch::RecordBatch;
-//! use arrow::util::pretty::print_batches;
+//! use duckdb::arrow::record_batch::RecordBatch;
+//! use duckdb::arrow::util::pretty::print_batches;
 //!
 //! #[derive(Debug)]
 //! struct Person {
