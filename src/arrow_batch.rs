@@ -1,5 +1,5 @@
+use super::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use super::Statement;
-use arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 
 /// An handle for the resulting RecordBatch of a query.
 #[must_use = "Arrow is lazy and will do nothing unless consumed"]
