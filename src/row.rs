@@ -638,7 +638,7 @@ impl RowIndex for usize {
 impl RowIndex for &'_ str {
     #[inline]
     fn idx(&self, stmt: &Statement<'_>) -> Result<usize> {
-        stmt.column_index(*self)
+        stmt.column_index(self)
     }
 }
 

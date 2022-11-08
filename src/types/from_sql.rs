@@ -358,14 +358,14 @@ mod test {
             T: Into<i128> + FromSql + ::std::fmt::Debug,
         {
             for n in out_of_range {
-                let err = db.query_row("SELECT ?", &[n], |r| r.get::<_, T>(0)).unwrap_err();
+                let err = db.query_row("SELECT ?", [n], |r| r.get::<_, T>(0)).unwrap_err();
                 match err {
                     Error::IntegralValueOutOfRange(_, value) => assert_eq!(*n, value),
                     _ => panic!("unexpected error: {}", err),
                 }
             }
             for n in in_range {
-                assert_eq!(*n, db.query_row("SELECT ?", &[n], |r| r.get::<_, T>(0)).unwrap().into());
+                assert_eq!(*n, db.query_row("SELECT ?", [n], |r| r.get::<_, T>(0)).unwrap().into());
             }
         }
 

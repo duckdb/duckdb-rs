@@ -208,9 +208,9 @@ mod test {
         conn.execute_batch("CREATE TABLE foo(x Text)")?;
 
         let mut stmt = conn.prepare("INSERT INTO foo(x) VALUES (?)")?;
-        stmt.execute(&[&"a"])?;
-        stmt.execute(&[&"b"])?;
-        stmt.execute(&[&"c"])?;
+        stmt.execute([&"a"])?;
+        stmt.execute([&"b"])?;
+        stmt.execute([&"c"])?;
         stmt.execute([Value::Null])?;
 
         let val: Result<Vec<Option<String>>> = conn
