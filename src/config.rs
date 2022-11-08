@@ -144,9 +144,9 @@ mod test {
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
         let mut stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
-        stmt.execute(&[&"a"])?;
-        stmt.execute(&[&"b"])?;
-        stmt.execute(&[&"c"])?;
+        stmt.execute([&"a"])?;
+        stmt.execute([&"b"])?;
+        stmt.execute([&"c"])?;
         stmt.execute([Value::Null])?;
 
         let val: Result<Vec<Option<String>>> = db
@@ -178,9 +178,9 @@ mod test {
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
         let mut stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
-        stmt.execute(&[&"a"])?;
-        stmt.execute(&[&"b"])?;
-        stmt.execute(&[&"c"])?;
+        stmt.execute([&"a"])?;
+        stmt.execute([&"b"])?;
+        stmt.execute([&"c"])?;
         stmt.execute([Value::Null])?;
 
         let val: Result<Vec<Option<String>>> = db

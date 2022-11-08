@@ -493,17 +493,17 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER)")?;
 
-        assert_eq!(db.execute("INSERT INTO foo(x) VALUES (?)", &[&2i32])?, 1);
-        assert_eq!(db.execute("INSERT INTO foo(x) VALUES (?)", &[&3i32])?, 1);
+        assert_eq!(db.execute("INSERT INTO foo(x) VALUES (?)", [&2i32])?, 1);
+        assert_eq!(db.execute("INSERT INTO foo(x) VALUES (?)", [&3i32])?, 1);
 
         // TODO(wangfenjin): No column type for SUM(x)?
         assert_eq!(
             5i32,
-            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", &[&0i32], |r| r.get(0))?
+            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", [&0i32], |r| r.get(0))?
         );
         assert_eq!(
             3i32,
-            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", &[&2i32], |r| r.get(0))?
+            db.query_row::<i32, _, _>("SELECT SUM(x) FROM foo WHERE x > ?", [&2i32], |r| r.get(0))?
         );
         Ok(())
     }
@@ -518,10 +518,10 @@ mod test {
         db.execute_batch(sql)?;
 
         let mut stmt = db.prepare("INSERT INTO test (name) VALUES (?)")?;
-        stmt.execute(&[&"one"])?;
+        stmt.execute([&"one"])?;
 
         let mut stmt = db.prepare("SELECT COUNT(*) FROM test WHERE name = ?")?;
-        assert_eq!(1i32, stmt.query_row::<i32, _, _>(&[&"one"], |r| r.get(0))?);
+        assert_eq!(1i32, stmt.query_row::<i32, _, _>([&"one"], |r| r.get(0))?);
         Ok(())
     }
 
@@ -536,7 +536,7 @@ mod test {
 
         let mut stmt = db.prepare("SELECT id FROM test where name = ?")?;
         {
-            let mut rows = stmt.query(&[&"one"])?;
+            let mut rows = stmt.query([&"one"])?;
             let id: Result<i32> = rows.next()?.unwrap().get(0);
             assert_eq!(Ok(1), id);
         }
@@ -554,7 +554,7 @@ mod test {
         db.execute_batch(sql)?;
 
         let mut stmt = db.prepare("SELECT id FROM test where name = ? ORDER BY id ASC")?;
-        let mut rows = stmt.query_and_then(&[&"one"], |row| {
+        let mut rows = stmt.query_and_then([&"one"], |row| {
             let id: i32 = row.get(0)?;
             if id == 1 {
                 Ok(id)
@@ -584,7 +584,7 @@ mod test {
         db.execute_batch(sql)?;
 
         let mut stmt = db.prepare("INSERT INTO test (x, y) VALUES (?, ?)")?;
-        assert!(stmt.execute(&[&"one"]).is_err());
+        assert!(stmt.execute([&"one"]).is_err());
         Ok(())
     }
 
@@ -595,7 +595,7 @@ mod test {
         db.execute_batch(sql)?;
 
         let mut stmt = db.prepare("INSERT INTO test (x) VALUES (?)")?;
-        stmt.execute(&[&"one"])?;
+        stmt.execute([&"one"])?;
 
         let result: Option<String> = db.query_row("SELECT y FROM test WHERE x = 'one'", [], |row| row.get(0))?;
         assert!(result.is_none());
@@ -731,11 +731,9 @@ mod test {
     fn test_bind_parameters() -> Result<()> {
         let db = Connection::open_in_memory()?;
         // dynamic slice:
-        db.query_row(
-            "SELECT ?1, ?2, ?3",
-            &[&1u8 as &dyn ToSql, &"one", &Some("one")],
-            |row| row.get::<_, u8>(0),
-        )?;
+        db.query_row("SELECT ?1, ?2, ?3", [&1u8 as &dyn ToSql, &"one", &Some("one")], |row| {
+            row.get::<_, u8>(0)
+        })?;
         // existing collection:
         let data = vec![1, 2, 3];
         db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| row.get::<_, u8>(0))?;
@@ -792,7 +790,7 @@ mod test {
         assert_eq!("UTF-16le", encoding);
         db.execute_batch("CREATE TABLE foo(x TEXT)")?;
         let expected = "テスト";
-        db.execute("INSERT INTO foo(x) VALUES (?)", &[&expected])?;
+        db.execute("INSERT INTO foo(x) VALUES (?)", [&expected])?;
         let actual: String = db.query_row("SELECT x FROM foo", [], |row| row.get(0))?;
         assert_eq!(expected, actual);
         Ok(())
