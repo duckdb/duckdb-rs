@@ -61,13 +61,12 @@ impl FromSql for NaiveDateTime {
                     TimeUnit::Microsecond => (t / 1_000_000, (t % 1_000_000) * 1000),
                     TimeUnit::Nanosecond => (t / 1_000_000_000, t % 1_000_000_000),
                 };
-                Ok(NaiveDateTime::from_timestamp(secs, nsecs as u32))
+                Ok(NaiveDateTime::from_timestamp_opt(secs, nsecs as u32).unwrap())
             }
-            ValueRef::Date32(d) => Ok(NaiveDateTime::from_timestamp(24 * 3600 * (d as i64), 0)),
-            ValueRef::Time64(TimeUnit::Microsecond, d) => Ok(NaiveDateTime::from_timestamp(
-                d / 1_000_000,
-                ((d % 1_000_000) * 1_000) as u32,
-            )),
+            ValueRef::Date32(d) => Ok(NaiveDateTime::from_timestamp_opt(24 * 3600 * (d as i64), 0).unwrap()),
+            ValueRef::Time64(TimeUnit::Microsecond, d) => {
+                Ok(NaiveDateTime::from_timestamp_opt(d / 1_000_000, ((d % 1_000_000) * 1_000) as u32).unwrap())
+            }
             ValueRef::Text(s) => {
                 let mut s = std::str::from_utf8(s).unwrap();
                 let format = match s.len() {
@@ -139,7 +138,7 @@ mod test {
     #[test]
     fn test_naive_time() -> Result<()> {
         let db = checked_memory_handle()?;
-        let time = NaiveTime::from_hms_micro(23, 56, 4, 12_345);
+        let time = NaiveTime::from_hms_micro_opt(23, 56, 4, 12_345).unwrap();
         db.execute("INSERT INTO foo (tt) VALUES (?)", [time])?;
 
         let s: String = db.query_row("SELECT tt FROM foo", [], |r| r.get(0))?;
@@ -152,7 +151,7 @@ mod test {
     #[test]
     fn test_naive_date() -> Result<()> {
         let db = checked_memory_handle()?;
-        let date = NaiveDate::from_ymd(2016, 2, 23);
+        let date = NaiveDate::from_ymd_opt(2016, 2, 23).unwrap();
         db.execute("INSERT INTO foo (d) VALUES (?)", [date])?;
 
         let s: String = db.query_row("SELECT d FROM foo", [], |r| r.get(0))?;
@@ -165,8 +164,8 @@ mod test {
     #[test]
     fn test_naive_date_time() -> Result<()> {
         let db = checked_memory_handle()?;
-        let date = NaiveDate::from_ymd(2016, 2, 23);
-        let time = NaiveTime::from_hms(23, 56, 4);
+        let date = NaiveDate::from_ymd_opt(2016, 2, 23).unwrap();
+        let time = NaiveTime::from_hms_opt(23, 56, 4).unwrap();
         let dt = NaiveDateTime::new(date, time);
 
         db.execute("INSERT INTO foo (b) VALUES (?)", [dt])?;
@@ -188,8 +187,8 @@ mod test {
     #[test]
     fn test_date_time_utc() -> Result<()> {
         let db = checked_memory_handle()?;
-        let date = NaiveDate::from_ymd(2016, 2, 23);
-        let time = NaiveTime::from_hms_milli(23, 56, 4, 789);
+        let date = NaiveDate::from_ymd_opt(2016, 2, 23).unwrap();
+        let time = NaiveTime::from_hms_milli_opt(23, 56, 4, 789).unwrap();
         let dt = NaiveDateTime::new(date, time);
         let utc = Utc.from_utc_datetime(&dt);
 
@@ -215,8 +214,8 @@ mod test {
     #[test]
     fn test_date_time_local() -> Result<()> {
         let db = checked_memory_handle()?;
-        let date = NaiveDate::from_ymd(2016, 2, 23);
-        let time = NaiveTime::from_hms_milli(23, 56, 4, 789);
+        let date = NaiveDate::from_ymd_opt(2016, 2, 23).unwrap();
+        let time = NaiveTime::from_hms_milli_opt(23, 56, 4, 789).unwrap();
         let dt = NaiveDateTime::new(date, time);
         let local = Local.from_local_datetime(&dt).single().unwrap();
 
@@ -248,7 +247,7 @@ mod test {
     fn test_naive_date_time_param() -> Result<()> {
         let db = checked_memory_handle()?;
         let result: Result<bool> = db.query_row(
-            "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",
+            "SELECT 1 WHERE ? BETWEEN (now()::timestamp - INTERVAL '1 minute') AND (now()::timestamp + INTERVAL '1 minute')",
             [Utc::now().naive_utc()],
             |r| r.get(0),
         );
@@ -261,10 +260,11 @@ mod test {
         let db = checked_memory_handle()?;
         // TODO(wangfenjin): why need 2 params?
         let result: Result<bool> = db.query_row(
-            "SELECT 1 WHERE ? BETWEEN (now() - INTERVAL '1 minute') AND (now() + INTERVAL '1 minute')",
+            "SELECT 1 WHERE ? BETWEEN (now()::timestamp - INTERVAL '1 minute') AND (now()::timestamp + INTERVAL '1 minute')",
             [Utc::now()],
             |r| r.get(0),
         );
+        println!("{:?}", result);
         assert!(result.is_ok());
         Ok(())
     }

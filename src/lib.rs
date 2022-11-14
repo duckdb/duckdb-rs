@@ -1234,13 +1234,14 @@ mod test {
         let db = checked_memory_handle();
         db.execute_batch("BEGIN TRANSACTION")?;
         db.execute_batch("CREATE TABLE test(t INTEGER);")?;
-        for _ in 0..300 {
+        for _ in 0..600 {
             db.execute_batch("INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);")?;
         }
         db.execute_batch("END TRANSACTION")?;
         let rbs: Vec<RecordBatch> = db.prepare("select t from test order by t")?.query_arrow([])?.collect();
-        assert_eq!(rbs.len(), 2);
-        assert_eq!(rbs.iter().map(|rb| rb.num_rows()).sum::<usize>(), 1500);
+        // batch size is not stable
+        // assert_eq!(rbs.len(), 3);
+        assert_eq!(rbs.iter().map(|rb| rb.num_rows()).sum::<usize>(), 3000);
         assert_eq!(
             rbs.iter()
                 .map(|rb| rb
@@ -1252,7 +1253,7 @@ mod test {
                     .map(|i| i.unwrap())
                     .sum::<i32>())
                 .sum::<i32>(),
-            4500
+            9000
         );
         Ok(())
     }
