@@ -38,7 +38,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.5.1"
+          tag: "v0.6.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
