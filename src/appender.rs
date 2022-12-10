@@ -6,7 +6,7 @@ use std::iter::IntoIterator;
 use std::os::raw::c_char;
 
 use crate::error::result_from_duckdb_appender;
-use crate::types::{ToSql, ToSqlOutput};
+use crate::types::{ToSql, ToSqlOutput, TimeUnit};
 use crate::Error;
 
 /// Appender for fast import data
@@ -107,6 +107,15 @@ impl Appender<'_> {
             ValueRef::Double(r) => unsafe { ffi::duckdb_append_double(ptr, r) },
             ValueRef::Text(s) => unsafe {
                 ffi::duckdb_append_varchar_length(ptr, s.as_ptr() as *const c_char, s.len() as u64)
+            },
+            ValueRef::Timestamp(u, i) => unsafe {
+                let micros = match u {
+                    TimeUnit::Second => i * 1_000_000,
+                    TimeUnit::Millisecond => i * 1_000,
+                    TimeUnit::Microsecond => i,
+                    TimeUnit::Nanosecond => i / 1_000,
+                };
+                ffi::duckdb_append_timestamp(ptr, ffi::duckdb_timestamp { micros })
             },
             ValueRef::Blob(b) => unsafe { ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64) },
             _ => unreachable!("not supported"),
@@ -217,6 +226,21 @@ mod test {
 
         let val = db.query_row("SELECT x FROM foo", [], |row| <(String,)>::try_from(row))?;
         assert_eq!(val, ("2022-04-09 15:56:37.544".to_string(),));
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_timestamp() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x TIMESTAMP)")?;
+
+        {
+            let mut app = db.appender("foo")?;
+            app.append_row([Timestamp::Second(1)])?;
+        }
+
+        let val = db.query_row("SELECT x FROM foo", [], |row| <(i32,)>::try_from(row))?;
+        assert_eq!(val, (1000000,));
         Ok(())
     }
 }

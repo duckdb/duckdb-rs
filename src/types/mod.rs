@@ -85,6 +85,30 @@ mod url;
 mod value;
 mod value_ref;
 
+/// Wrapper struct for timestamp, can be used for appending timestamp in appender
+#[derive(Copy, Clone)]
+pub enum Timestamp {
+    /// Second
+    Second(i64),
+    /// Millisecond
+    Millisecond(i64),
+    /// Microsecond
+    Microsecond(i64),
+    /// Nanosecond
+    Nanosecond(i64),
+}
+
+impl ToSql for Timestamp {
+    fn to_sql(&self) -> crate::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Owned(match *self {
+            Timestamp::Second(i) => Value::Timestamp(TimeUnit::Second, i),
+            Timestamp::Millisecond(i) => Value::Timestamp(TimeUnit::Millisecond, i),
+            Timestamp::Microsecond(i) => Value::Timestamp(TimeUnit::Microsecond, i),
+            Timestamp::Nanosecond(i) => Value::Timestamp(TimeUnit::Nanosecond, i),
+        }))
+    }
+}
+
 /// Empty struct that can be used to fill in a query parameter as `NULL`.
 ///
 /// ## Example
