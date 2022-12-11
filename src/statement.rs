@@ -7,7 +7,7 @@ use super::ffi;
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
 use crate::arrow_batch::Arrow;
 use crate::error::result_from_duckdb_prepare;
-use crate::types::{ToSql, ToSqlOutput};
+use crate::types::{TimeUnit, ToSql, ToSqlOutput};
 
 use arrow::array::StructArray;
 use arrow::datatypes::DataType;
@@ -434,7 +434,16 @@ impl Statement<'_> {
             ValueRef::Blob(b) => unsafe {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
-            _ => unreachable!("not supported"),
+            ValueRef::Timestamp(u, i) => unsafe {
+                let micros = match u {
+                    TimeUnit::Second => i * 1_000_000,
+                    TimeUnit::Millisecond => i * 1_000,
+                    TimeUnit::Microsecond => i,
+                    TimeUnit::Nanosecond => i / 1_000,
+                };
+                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros })
+            },
+            _ => unreachable!("not supported: {}", value.data_type()),
         };
         result_from_duckdb_prepare(rc, ptr)
     }

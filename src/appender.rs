@@ -6,7 +6,7 @@ use std::iter::IntoIterator;
 use std::os::raw::c_char;
 
 use crate::error::result_from_duckdb_appender;
-use crate::types::{ToSql, ToSqlOutput, TimeUnit};
+use crate::types::{TimeUnit, ToSql, ToSqlOutput};
 use crate::Error;
 
 /// Appender for fast import data
