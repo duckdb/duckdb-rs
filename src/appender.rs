@@ -161,7 +161,7 @@ impl fmt::Debug for Appender<'_> {
 #[cfg(test)]
 mod test {
     use crate::{Connection, Result};
-    use std::{convert::TryFrom};
+    use std::convert::TryFrom;
 
     #[test]
     fn test_append_one_row() -> Result<()> {
