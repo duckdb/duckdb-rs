@@ -224,13 +224,14 @@ mod test {
             app.append_row(["2022-04-09 15:56:37.544"])?;
         }
 
-        let val = db.query_row("SELECT x FROM foo", [], |row| <(String,)>::try_from(row))?;
-        assert_eq!(val, ("2022-04-09 15:56:37.544".to_string(),));
+        let val = db.query_row("SELECT x FROM foo", [], |row| <(i64,)>::try_from(row))?;
+        assert_eq!(val, (1649519797544000,));
         Ok(())
     }
 
     #[test]
     fn test_append_timestamp() -> Result<()> {
+        use crate::types::Timestamp;
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x TIMESTAMP)")?;
 
