@@ -161,7 +161,7 @@ impl fmt::Debug for Appender<'_> {
 #[cfg(test)]
 mod test {
     use crate::{Connection, Result};
-    use std::convert::TryFrom;
+    use std::{convert::TryFrom};
 
     #[test]
     fn test_append_one_row() -> Result<()> {
@@ -231,13 +231,13 @@ mod test {
 
     #[test]
     fn test_append_timestamp() -> Result<()> {
-        use crate::types::Timestamp;
+        use std::time::Duration;
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x TIMESTAMP)")?;
 
         {
             let mut app = db.appender("foo")?;
-            app.append_row([Timestamp::Second(1)])?;
+            app.append_row([Duration::from_secs(1)])?;
         }
 
         let val = db.query_row("SELECT x FROM foo", [], |row| <(i32,)>::try_from(row))?;
