@@ -279,14 +279,14 @@ mod test {
     fn test_timestamp_raw() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let sql = "BEGIN;
-                   CREATE TABLE timestamp (sec TIMESTAMP_S, milli TIMESTAMP_MS, micro TIMESTAMP_US, nano TIMESTAMP_NS );
-                   INSERT INTO timestamp VALUES (NULL,NULL,NULL,NULL );
-                   INSERT INTO timestamp VALUES ('2008-01-01 00:00:01','2008-01-01 00:00:01.594','2008-01-01 00:00:01.88926','2008-01-01 00:00:01.889268321' );
-                   INSERT INTO timestamp VALUES (NULL,NULL,NULL,1199145601889268321 );
+                   CREATE TABLE ts (sec TIMESTAMP_S, milli TIMESTAMP_MS, micro TIMESTAMP_US, nano TIMESTAMP_NS );
+                   INSERT INTO ts VALUES (NULL,NULL,NULL,NULL );
+                   INSERT INTO ts VALUES ('2008-01-01 00:00:01','2008-01-01 00:00:01.594','2008-01-01 00:00:01.88926','2008-01-01 00:00:01.889268321' );
+                   -- INSERT INTO ts VALUES (NULL,NULL,NULL,1199145601889268321 );
                    END;";
         db.execute_batch(sql)?;
         let v = db.query_row(
-            "SELECT sec, milli, micro, nano FROM timestamp WHERE sec is not null",
+            "SELECT sec, milli, micro, nano FROM ts WHERE sec is not null",
             [],
             |row| <(i64, i64, i64, i64)>::try_from(row),
         )?;
