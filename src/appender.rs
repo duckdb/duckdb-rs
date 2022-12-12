@@ -235,13 +235,14 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x TIMESTAMP)")?;
 
+        let d = Duration::from_secs(1);
         {
             let mut app = db.appender("foo")?;
-            app.append_row([Duration::from_secs(1)])?;
+            app.append_row([d])?;
         }
 
-        let val = db.query_row("SELECT x FROM foo", [], |row| <(i32,)>::try_from(row))?;
-        assert_eq!(val, (1000000,));
+        let val = db.query_row("SELECT x FROM foo where x=?", [d], |row| <(i32,)>::try_from(row))?;
+        assert_eq!(val, (d.as_micros() as i32,));
         Ok(())
     }
 }
