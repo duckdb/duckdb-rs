@@ -1,4 +1,4 @@
-use super::{Null, Value, ValueRef};
+use super::{Null, TimeUnit, Value, ValueRef};
 use crate::Result;
 use std::borrow::Cow;
 
@@ -199,6 +199,15 @@ impl<T: ToSql> ToSql for Option<T> {
             None => Ok(ToSqlOutput::from(Null)),
             Some(ref t) => t.to_sql(),
         }
+    }
+}
+
+impl ToSql for std::time::Duration {
+    fn to_sql(&self) -> crate::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Owned(Value::Timestamp(
+            TimeUnit::Microsecond,
+            self.as_micros() as i64,
+        )))
     }
 }
 
