@@ -62,11 +62,10 @@ impl From<bool> for Value {
     }
 }
 
-// FIXME
 impl From<usize> for Value {
     #[inline]
     fn from(i: usize) -> Value {
-        Value::BigInt(i as i64)
+        Value::UBigInt(i as u64)
     }
 }
 
@@ -113,23 +112,33 @@ impl From<i64> for Value {
     }
 }
 
-macro_rules! from_i64(
-    ($t:ty) => (
-        impl From<$t> for Value {
-            #[inline]
-            fn from(i: $t) -> Value {
-                Value::BigInt(i as i64)
-            }
-        }
-    )
-);
+impl From<u8> for Value {
+    #[inline]
+    fn from(i: u8) -> Value {
+        Value::UTinyInt(i)
+    }
+}
 
-// TODO: need to update duckdb.h to support more type
-// so we can bind the value
-from_i64!(u8);
-from_i64!(u16);
-from_i64!(u32);
-from_i64!(u64);
+impl From<u16> for Value {
+    #[inline]
+    fn from(i: u16) -> Value {
+        Value::USmallInt(i)
+    }
+}
+
+impl From<u32> for Value {
+    #[inline]
+    fn from(i: u32) -> Value {
+        Value::UInt(i)
+    }
+}
+
+impl From<u64> for Value {
+    #[inline]
+    fn from(i: u64) -> Value {
+        Value::UBigInt(i)
+    }
+}
 
 impl From<i128> for Value {
     #[inline]
