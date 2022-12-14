@@ -648,9 +648,13 @@ mod test {
             db.execute_batch("CREATE TABLE test (name TEXT, value UINTEGER)")?;
             let mut stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
             stmt.raw_bind_parameter(1, "negative")?;
-            stmt.raw_bind_parameter(2, 0xFFFFFFFFu32)?;
+            stmt.raw_bind_parameter(2, u32::MAX)?;
             let n = stmt.raw_execute()?;
             assert_eq!(n, 1);
+            assert_eq!(
+                u32::MAX,
+                db.query_row::<u32, _, _>("SELECT value FROM test", [], |r| r.get(0))?
+            );
         }
 
         {
@@ -658,9 +662,13 @@ mod test {
             db.execute_batch("CREATE TABLE test (name TEXT, value UBIGINT)")?;
             let mut stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
             stmt.raw_bind_parameter(1, "negative")?;
-            stmt.raw_bind_parameter(2, 0xFFFFFFFFFFFFFFFFu64)?;
+            stmt.raw_bind_parameter(2, u64::MAX)?;
             let n = stmt.raw_execute()?;
             assert_eq!(n, 1);
+            assert_eq!(
+                u64::MAX,
+                db.query_row::<u64, _, _>("SELECT value FROM test", [], |r| r.get(0))?
+            );
         }
 
         Ok(())
