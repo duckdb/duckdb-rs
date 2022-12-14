@@ -103,12 +103,12 @@ impl Appender<'_> {
             ValueRef::USmallInt(i) => unsafe { ffi::duckdb_append_uint16(ptr, i) },
             ValueRef::UInt(i) => unsafe { ffi::duckdb_append_uint32(ptr, i) },
             ValueRef::UBigInt(i) => unsafe { ffi::duckdb_append_uint64(ptr, i) },
-            ValueRef::HugeInt(i) => unsafe { 
+            ValueRef::HugeInt(i) => unsafe {
                 let hi = ffi::duckdb_hugeint {
                     lower: i as u64,
                     upper: (i >> 64) as i64,
                 };
-                ffi::duckdb_append_hugeint(ptr, hi) 
+                ffi::duckdb_append_hugeint(ptr, hi)
             },
 
             ValueRef::Float(r) => unsafe { ffi::duckdb_append_float(ptr, r) },
