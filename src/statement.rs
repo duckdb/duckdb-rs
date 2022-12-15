@@ -426,6 +426,10 @@ impl Statement<'_> {
                 };
                 ffi::duckdb_bind_hugeint(ptr, col as u64, hi)
             },
+            ValueRef::UTinyInt(i) => unsafe { ffi::duckdb_bind_uint8(ptr, col as u64, i) },
+            ValueRef::USmallInt(i) => unsafe { ffi::duckdb_bind_uint16(ptr, col as u64, i) },
+            ValueRef::UInt(i) => unsafe { ffi::duckdb_bind_uint32(ptr, col as u64, i) },
+            ValueRef::UBigInt(i) => unsafe { ffi::duckdb_bind_uint64(ptr, col as u64, i) },
             ValueRef::Float(r) => unsafe { ffi::duckdb_bind_float(ptr, col as u64, r) },
             ValueRef::Double(r) => unsafe { ffi::duckdb_bind_double(ptr, col as u64, r) },
             ValueRef::Text(s) => unsafe {
@@ -637,6 +641,34 @@ mod test {
                 assert_eq!(value, 50);
             }
             assert!(rows.next()?.is_none());
+        }
+
+        {
+            let db = Connection::open_in_memory()?;
+            db.execute_batch("CREATE TABLE test (name TEXT, value UINTEGER)")?;
+            let mut stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
+            stmt.raw_bind_parameter(1, "negative")?;
+            stmt.raw_bind_parameter(2, u32::MAX)?;
+            let n = stmt.raw_execute()?;
+            assert_eq!(n, 1);
+            assert_eq!(
+                u32::MAX,
+                db.query_row::<u32, _, _>("SELECT value FROM test", [], |r| r.get(0))?
+            );
+        }
+
+        {
+            let db = Connection::open_in_memory()?;
+            db.execute_batch("CREATE TABLE test (name TEXT, value UBIGINT)")?;
+            let mut stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
+            stmt.raw_bind_parameter(1, "negative")?;
+            stmt.raw_bind_parameter(2, u64::MAX)?;
+            let n = stmt.raw_execute()?;
+            assert_eq!(n, 1);
+            assert_eq!(
+                u64::MAX,
+                db.query_row::<u64, _, _>("SELECT value FROM test", [], |r| r.get(0))?
+            );
         }
 
         Ok(())
