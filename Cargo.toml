@@ -51,6 +51,8 @@ arrow = { version = "29", default-features = false, features = ["prettyprint", "
 rust_decimal = "1.14"
 strum = { version = "0.24", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
+num-derive = { version = "0.3.3" }
+num-traits = { version = "0.2.15" }
 
 [dev-dependencies]
 doc-comment = "0.3"

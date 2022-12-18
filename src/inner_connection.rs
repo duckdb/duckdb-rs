@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
-use std::ptr;
+use std::ptr::{self, null};
 use std::str;
 
 use super::ffi;
@@ -9,6 +9,7 @@ use super::{Appender, Config, Connection, Result};
 use crate::error::{result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_prepare, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
+use crate::table_function::TableFunction;
 
 pub struct InnerConnection {
     pub db: ffi::duckdb_database,
@@ -86,6 +87,14 @@ impl InnerConnection {
         let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
         result_from_duckdb_prepare(r, c_stmt)?;
         Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
+    }
+
+    pub fn register_table_funcion(&mut self, table_function: TableFunction) -> Result<()> {
+        unsafe {
+            // FIXME
+            let _ = ffi::duckdb_register_table_function(self.con, table_function.ptr);
+        }
+        Ok(())
     }
 
     pub fn appender<'a>(&mut self, conn: &'a Connection, table: &str, schema: &str) -> Result<Appender<'a>> {

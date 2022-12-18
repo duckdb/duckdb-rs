@@ -108,7 +108,10 @@ mod row;
 mod statement;
 mod transaction;
 
+pub mod table_function;
 pub mod types;
+
+use table_function::TableFunction;
 
 pub(crate) mod util;
 
@@ -510,6 +513,11 @@ impl Connection {
     #[inline]
     pub fn is_autocommit(&self) -> bool {
         self.db.borrow().is_autocommit()
+    }
+
+    #[inline]
+    pub fn register_table_function(&self, table_function: TableFunction) -> Result<()> {
+        self.db.borrow_mut().register_table_funcion(table_function)
     }
 
     /// Creates a new connection to the already-opened database.
