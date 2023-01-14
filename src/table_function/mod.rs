@@ -342,7 +342,7 @@ impl ValidityMask {
     /// # Arguments
     ///  * `row`: The row index
     pub fn set_row_invalid(&self, row: idx_t) {
-        unsafe { duckdb_validity_set_row_invalid(self.0, row) }
+        self.set_row_validity(row, false)
     }
     /// In a validity mask, sets a specific row to valid.
     ///
@@ -351,7 +351,7 @@ impl ValidityMask {
     /// # Arguments
     ///  * `row`: The row index
     pub fn set_row_valid(&self, row: idx_t) {
-        unsafe { duckdb_validity_set_row_valid(self.0, row) }
+        self.set_row_validity(row, true)
     }
 }
 
