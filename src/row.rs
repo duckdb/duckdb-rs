@@ -304,7 +304,7 @@ impl<'stmt> Row<'stmt> {
                 Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
             }
             FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
-            FromSqlError::Other(err) => Error::FromSqlConversionFailure(idx as usize, value.data_type(), err),
+            FromSqlError::Other(err) => Error::FromSqlConversionFailure(idx, value.data_type(), err),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(_) => {
                 Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
