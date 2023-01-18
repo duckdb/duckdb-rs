@@ -91,7 +91,7 @@ impl LogicalType {
     pub fn new(typ: LogicalTypeId) -> Self {
         unsafe {
             Self {
-                typ: duckdb_create_logical_type((typ as u32).try_into().unwrap()),
+                typ: duckdb_create_logical_type(typ as ffi::duckdb_type),
             }
         }
     }
@@ -167,7 +167,9 @@ impl LogicalType {
     pub fn type_id(&self) -> LogicalTypeId {
         let id = unsafe { duckdb_get_type_id(self.typ) };
 
-        FromPrimitive::from_u32(id.try_into().unwrap()).unwrap()
+        // use u64 as to bypass the issue
+        // https://github.com/rust-lang/rust-bindgen/issues/1361
+        FromPrimitive::from_u64(id.try_into().unwrap()).unwrap()
     }
 }
 
