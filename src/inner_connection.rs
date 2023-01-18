@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
-use std::ptr::{self, null};
+use std::ptr;
 use std::str;
 
 use super::ffi;

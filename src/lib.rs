@@ -108,6 +108,7 @@ mod row;
 mod statement;
 mod transaction;
 
+/// The duckdb table function interface
 pub mod table_function;
 pub mod types;
 
@@ -515,6 +516,7 @@ impl Connection {
         self.db.borrow().is_autocommit()
     }
 
+    /// Register the given TableFunction with the current db
     #[inline]
     pub fn register_table_function(&self, table_function: TableFunction) -> Result<()> {
         self.db.borrow_mut().register_table_funcion(table_function)
