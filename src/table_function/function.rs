@@ -347,6 +347,7 @@ use super::ffi::{
     duckdb_replacement_scan_set_function_name,
 };
 
+#[allow(unused_variables)]
 pub struct ReplacementScanInfo(pub(crate) duckdb_replacement_scan_info);
 
 impl ReplacementScanInfo {

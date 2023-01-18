@@ -34,7 +34,9 @@ pub unsafe fn malloc_struct<T>() -> *mut T {
     duckdb_malloc(size_of::<T>()).cast::<T>()
 }
 
+/// Rust equivalent of duckdb LogicalTypeId
 #[derive(Debug, Eq, PartialEq, FromPrimitive)]
+#[allow(missing_docs)]
 pub enum LogicalTypeId {
     Boolean = ffi::DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN as isize,
     Tinyint = ffi::DUCKDB_TYPE_DUCKDB_TYPE_TINYINT as isize,
@@ -132,28 +134,28 @@ impl LogicalType {
     //     Self::make_meta_type(shape, duckdb_create_union)
     // }
 
-    fn make_meta_type(
-        shape: HashMap<&str, LogicalType>,
-        x: unsafe extern "C" fn(
-            nmembers: idx_t,
-            names: *mut *const c_char,
-            types: *const duckdb_logical_type,
-        ) -> duckdb_logical_type,
-    ) -> LogicalType {
-        let keys: Vec<CString> = shape.keys().map(|it| CString::new(it.deref()).unwrap()).collect();
-        let values: Vec<duckdb_logical_type> = shape.values().map(|it| it.typ).collect();
-        let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();
-
-        unsafe {
-            Self {
-                typ: x(
-                    shape.len().try_into().unwrap(),
-                    name_ptrs.as_slice().as_ptr().cast_mut(),
-                    values.as_slice().as_ptr(),
-                ),
-            }
-        }
-    }
+    // fn make_meta_type(
+    //     shape: HashMap<&str, LogicalType>,
+    //     x: unsafe extern "C" fn(
+    //         nmembers: idx_t,
+    //         names: *mut *const c_char,
+    //         types: *const duckdb_logical_type,
+    //     ) -> duckdb_logical_type,
+    // ) -> LogicalType {
+    //     let keys: Vec<CString> = shape.keys().map(|it| CString::new(it.deref()).unwrap()).collect();
+    //     let values: Vec<duckdb_logical_type> = shape.values().map(|it| it.typ).collect();
+    //     let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();
+    //
+    //     unsafe {
+    //         Self {
+    //             typ: x(
+    //                 shape.len().try_into().unwrap(),
+    //                 name_ptrs.as_slice().as_ptr().cast_mut(),
+    //                 values.as_slice().as_ptr(),
+    //             ),
+    //         }
+    //     }
+    // }
 
     /// Retrieves the type class of a `duckdb_logical_type`.
     ///
@@ -300,6 +302,7 @@ impl<T> Vector<T> {
     }
 }
 
+/// A bit mask to determine if each row is valid
 pub struct ValidityMask(*mut u64, idx_t);
 
 impl Debug for ValidityMask {
@@ -437,7 +440,6 @@ impl Drop for DataChunk {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_data_chunk_construction() {
