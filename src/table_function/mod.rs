@@ -65,8 +65,8 @@ pub enum LogicalTypeId {
     Struct = ffi::DUCKDB_TYPE_DUCKDB_TYPE_STRUCT as isize,
     Map = ffi::DUCKDB_TYPE_DUCKDB_TYPE_MAP as isize,
     Uuid = ffi::DUCKDB_TYPE_DUCKDB_TYPE_UUID as isize,
-    Union = ffi::DUCKDB_TYPE_DUCKDB_TYPE_UNION as isize,
     Json = ffi::DUCKDB_TYPE_DUCKDB_TYPE_JSON as isize,
+    Union = ffi::DUCKDB_TYPE_DUCKDB_TYPE_UNION as isize,
 }
 
 use ffi::{
@@ -74,9 +74,7 @@ use ffi::{
     duckdb_get_type_id, duckdb_logical_type, idx_t,
 };
 use num_traits::FromPrimitive;
-use std::collections::HashMap;
 use std::ffi::{c_char, CString};
-use std::ops::Deref;
 
 /// Represents a logical type in the database - the underlying physical type can differ depending on the implementation
 #[derive(Debug)]
@@ -85,6 +83,11 @@ pub struct LogicalType {
 }
 
 impl LogicalType {
+    /// Creates a map type from type id.
+    ///
+    /// # Arguments
+    /// * `type`: The type id.
+    /// * `returns`: The logical type.
     pub fn new(typ: LogicalTypeId) -> Self {
         unsafe {
             Self {
@@ -218,8 +221,7 @@ impl Drop for Value {
     }
 }
 use ffi::{
-    duckdb_validity_row_is_valid, duckdb_validity_set_row_invalid, duckdb_validity_set_row_valid,
-    duckdb_validity_set_row_validity, duckdb_vector, duckdb_vector_assign_string_element,
+    duckdb_validity_row_is_valid, duckdb_validity_set_row_validity, duckdb_vector, duckdb_vector_assign_string_element,
     duckdb_vector_assign_string_element_len, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type,
     duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_size,
 };

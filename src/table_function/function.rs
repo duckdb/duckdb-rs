@@ -352,6 +352,7 @@ pub struct ReplacementScanInfo(pub(crate) duckdb_replacement_scan_info);
 
 impl ReplacementScanInfo {
     /// Sets the replacement function name to use. If this function is called in the replacement callback, the replacement scan is performed. If it is not called, the replacement callback is not performed.
+    #[allow(dead_code)]
     pub fn set_function_name(&mut self, function_name: &str) {
         unsafe {
             let function_name = CString::new(function_name).unwrap();
@@ -359,12 +360,14 @@ impl ReplacementScanInfo {
         }
     }
     /// Adds a parameter to the replacement scan function.
+    #[allow(dead_code)]
     pub fn add_parameter(&mut self, parameter: Value) {
         unsafe {
             duckdb_replacement_scan_add_parameter(self.0, parameter.0);
         }
     }
     /// Report that an error has occurred while executing the replacement scan.
+    #[allow(dead_code)]
     pub fn set_error(&mut self, error: &str) {
         unsafe {
             let error = CString::new(error).unwrap();
