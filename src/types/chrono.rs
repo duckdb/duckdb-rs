@@ -264,7 +264,7 @@ mod test {
             [Utc::now()],
             |r| r.get(0),
         );
-        println!("{:?}", result);
+        println!("{result:?}");
         assert!(result.is_ok());
         Ok(())
     }

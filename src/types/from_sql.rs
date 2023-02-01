@@ -44,7 +44,7 @@ impl fmt::Display for FromSqlError {
             FromSqlError::OutOfRange(i) => write!(f, "Value {i} out of range"),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(s) => {
-                write!(f, "Cannot read UUID value out of {} byte blob", s)
+                write!(f, "Cannot read UUID value out of {s} byte blob")
             }
             FromSqlError::Other(ref err) => err.fmt(f),
         }
