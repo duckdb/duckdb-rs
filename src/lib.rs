@@ -187,7 +187,7 @@ impl<'a> fmt::Display for DatabaseName<'a> {
         match *self {
             DatabaseName::Main => write!(f, "main"),
             DatabaseName::Temp => write!(f, "temp"),
-            DatabaseName::Attached(s) => write!(f, "{}", s),
+            DatabaseName::Attached(s) => write!(f, "{s}"),
         }
     }
 }
@@ -655,9 +655,7 @@ mod test {
             // assert_eq!(ErrorCode::CannotOpen, e.code);
             assert!(
                 msg.contains(filename),
-                "error message '{}' does not contain '{}'",
-                msg,
-                filename
+                "error message '{msg}' does not contain '{filename}'"
             );
         } else {
             panic!("DuckDBFailure expected");
@@ -854,7 +852,7 @@ mod test {
         let result: Result<i64> = db.query_row("SELECT x FROM foo WHERE x > 5", [], |r| r.get(0));
         match result.unwrap_err() {
             Error::QueryReturnedNoRows => (),
-            err => panic!("Unexpected error {}", err),
+            err => panic!("Unexpected error {err}"),
         }
 
         let bad_query_result = db.query_row("NOT A PROPER QUERY; test123", [], |_| Ok(()));
@@ -910,7 +908,7 @@ mod test {
         let query = "SELECT 12345";
         let stmt = db.prepare(query)?;
 
-        assert!(format!("{:?}", stmt).contains(query));
+        assert!(format!("{stmt:?}").contains(query));
         Ok(())
     }
 
@@ -927,7 +925,7 @@ mod test {
                 // TODO(wangfenjin): Update errorcode
                 assert_eq!(err.code, ErrorCode::Unknown);
             }
-            err => panic!("Unexpected error {}", err),
+            err => panic!("Unexpected error {err}"),
         }
         Ok(())
     }
@@ -975,7 +973,7 @@ mod test {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
                 match *self {
                     CustomError::SomeError => write!(f, "my custom error"),
-                    CustomError::Sqlite(ref se) => write!(f, "my custom error: {}", se),
+                    CustomError::Sqlite(ref se) => write!(f, "my custom error: {se}"),
                 }
             }
         }
@@ -1037,14 +1035,14 @@ mod test {
 
             match bad_type.unwrap_err() {
                 Error::InvalidColumnType(..) => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
 
             let bad_idx: Result<Vec<String>> = query.query_and_then([], |row| row.get(3))?.collect();
 
             match bad_idx.unwrap_err() {
                 Error::InvalidColumnIndex(_) => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
             Ok(())
         }
@@ -1089,7 +1087,7 @@ mod test {
 
             match bad_type.unwrap_err() {
                 CustomError::Sqlite(Error::InvalidColumnType(..)) => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
 
             let bad_idx: CustomResult<Vec<String>> = query
@@ -1098,7 +1096,7 @@ mod test {
 
             match bad_idx.unwrap_err() {
                 CustomError::Sqlite(Error::InvalidColumnIndex(_)) => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
 
             let non_sqlite_err: CustomResult<Vec<String>> =
@@ -1106,7 +1104,7 @@ mod test {
 
             match non_sqlite_err.unwrap_err() {
                 CustomError::SomeError => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
             Ok(())
         }
@@ -1143,7 +1141,7 @@ mod test {
 
             match bad_type.unwrap_err() {
                 CustomError::Sqlite(Error::InvalidColumnType(..)) => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
 
             let bad_idx: CustomResult<String> =
@@ -1151,7 +1149,7 @@ mod test {
 
             match bad_idx.unwrap_err() {
                 CustomError::Sqlite(Error::InvalidColumnIndex(_)) => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
 
             let non_sqlite_err: CustomResult<String> =
@@ -1159,7 +1157,7 @@ mod test {
 
             match non_sqlite_err.unwrap_err() {
                 CustomError::SomeError => (),
-                err => panic!("Unexpected error {}", err),
+                err => panic!("Unexpected error {err}"),
             }
             Ok(())
         }

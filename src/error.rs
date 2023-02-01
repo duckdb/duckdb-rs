@@ -145,40 +145,38 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Error::DuckDBFailure(ref err, None) => err.fmt(f),
-            Error::DuckDBFailure(_, Some(ref s)) => write!(f, "{}", s),
+            Error::DuckDBFailure(_, Some(ref s)) => write!(f, "{s}"),
             Error::FromSqlConversionFailure(i, ref t, ref err) => {
                 if i != UNKNOWN_COLUMN {
-                    write!(f, "Conversion error from type {} at index: {}, {}", t, i, err)
+                    write!(f, "Conversion error from type {t} at index: {i}, {err}")
                 } else {
                     err.fmt(f)
                 }
             }
             Error::IntegralValueOutOfRange(col, val) => {
                 if col != UNKNOWN_COLUMN {
-                    write!(f, "Integer {} out of range at index {}", val, col)
+                    write!(f, "Integer {val} out of range at index {col}")
                 } else {
-                    write!(f, "Integer {} out of range", val)
+                    write!(f, "Integer {val} out of range")
                 }
             }
             Error::Utf8Error(ref err) => err.fmt(f),
             Error::NulError(ref err) => err.fmt(f),
-            Error::InvalidParameterName(ref name) => write!(f, "Invalid parameter name: {}", name),
+            Error::InvalidParameterName(ref name) => write!(f, "Invalid parameter name: {name}"),
             Error::InvalidPath(ref p) => write!(f, "Invalid path: {}", p.to_string_lossy()),
             Error::ExecuteReturnedResults => {
                 write!(f, "Execute returned results - did you mean to call query?")
             }
             Error::QueryReturnedNoRows => write!(f, "Query returned no rows"),
-            Error::InvalidColumnIndex(i) => write!(f, "Invalid column index: {}", i),
-            Error::InvalidColumnName(ref name) => write!(f, "Invalid column name: {}", name),
+            Error::InvalidColumnIndex(i) => write!(f, "Invalid column index: {i}"),
+            Error::InvalidColumnName(ref name) => write!(f, "Invalid column name: {name}"),
             Error::InvalidColumnType(i, ref name, ref t) => {
-                write!(f, "Invalid column type {} at index: {}, name: {}", t, i, name)
+                write!(f, "Invalid column type {t} at index: {i}, name: {name}")
             }
-            Error::InvalidParameterCount(i1, n1) => write!(
-                f,
-                "Wrong number of parameters passed to query. Got {}, needed {}",
-                i1, n1
-            ),
-            Error::StatementChangedRows(i) => write!(f, "Query changed {} rows", i),
+            Error::InvalidParameterCount(i1, n1) => {
+                write!(f, "Wrong number of parameters passed to query. Got {i1}, needed {n1}")
+            }
+            Error::StatementChangedRows(i) => write!(f, "Query changed {i} rows"),
             Error::ToSqlConversionFailure(ref err) => err.fmt(f),
             Error::InvalidQuery => write!(f, "Query is not read-only"),
             Error::MultipleStatement => write!(f, "Multiple statements provided"),

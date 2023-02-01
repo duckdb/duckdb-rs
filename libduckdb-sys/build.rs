@@ -51,7 +51,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{}/duckdb.h", lib_name));
+            let header = HeaderLocation::FromPath(format!("{lib_name}/duckdb.h"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -60,10 +60,10 @@ mod build_bundled {
             fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name), out_path)
                 .expect("Could not copy bindings to output directory");
         }
-        println!("cargo:rerun-if-changed={}/duckdb.hpp", lib_name);
-        println!("cargo:rerun-if-changed={}/duckdb.cpp", lib_name);
+        println!("cargo:rerun-if-changed={lib_name}/duckdb.hpp");
+        println!("cargo:rerun-if-changed={lib_name}/duckdb.cpp");
         let mut cfg = cc::Build::new();
-        cfg.file(format!("{}/duckdb.cpp", lib_name))
+        cfg.file(format!("{lib_name}/duckdb.cpp"))
             .cpp(true)
             .flag_if_supported("-std=c++11")
             .flag_if_supported("-stdlib=libc++")
@@ -77,7 +77,7 @@ mod build_bundled {
 
         cfg.compile(lib_name);
 
-        println!("cargo:lib_dir={}", out_dir);
+        println!("cargo:lib_dir={out_dir}");
     }
 }
 
