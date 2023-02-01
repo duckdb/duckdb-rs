@@ -65,6 +65,7 @@ jobs:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
           args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+          version: 0.22.0
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb

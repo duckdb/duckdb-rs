@@ -33,7 +33,7 @@ impl Sql {
         } else {
             Err(Error::DuckDBFailure(
                 ffi::Error::new(ffi::DuckDBError),
-                Some(format!("Invalid keyword \"{}\"", keyword)),
+                Some(format!("Invalid keyword \"{keyword}\"")),
             ))
         }
     }
@@ -74,7 +74,7 @@ impl Sql {
             _ => {
                 return Err(Error::DuckDBFailure(
                     ffi::Error::new(ffi::DuckDBError),
-                    Some(format!("Unsupported value \"{:?}\"", value)),
+                    Some(format!("Unsupported value \"{value:?}\"")),
                 ));
             }
         };

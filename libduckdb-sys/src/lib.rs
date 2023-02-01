@@ -42,7 +42,7 @@ mod tests {
         for row_idx in 0..duckdb_row_count(&mut result) {
             for col_idx in 0..duckdb_column_count(&mut result) {
                 let val = duckdb_value_int32(&mut result, col_idx, row_idx);
-                print!("{} ", val);
+                print!("{val} ");
             }
             println!();
         }

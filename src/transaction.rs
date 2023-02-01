@@ -249,7 +249,7 @@ impl Savepoint<'_> {
     #[inline]
     fn with_depth_and_name<T: Into<String>>(conn: &Connection, depth: u32, name: T) -> Result<Savepoint<'_>> {
         let name = name.into();
-        conn.execute_batch(&format!("SAVEPOINT {}", name)).map(|_| Savepoint {
+        conn.execute_batch(&format!("SAVEPOINT {name}")).map(|_| Savepoint {
             conn,
             name,
             depth,
@@ -260,7 +260,7 @@ impl Savepoint<'_> {
 
     #[inline]
     fn with_depth(conn: &Connection, depth: u32) -> Result<Savepoint<'_>> {
-        let name = format!("_duckdb_sp_{}", depth);
+        let name = format!("_duckdb_sp_{depth}");
         Savepoint::with_depth_and_name(conn, depth, name)
     }
 

@@ -51,7 +51,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{}/duckdb.h", lib_name));
+            let header = HeaderLocation::FromPath(format!("{lib_name}/duckdb.h"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -60,10 +60,10 @@ mod build_bundled {
             fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name), out_path)
                 .expect("Could not copy bindings to output directory");
         }
-        println!("cargo:rerun-if-changed={}/duckdb.hpp", lib_name);
-        println!("cargo:rerun-if-changed={}/duckdb.cpp", lib_name);
+        println!("cargo:rerun-if-changed={lib_name}/duckdb.hpp");
+        println!("cargo:rerun-if-changed={lib_name}/duckdb.cpp");
         let mut cfg = cc::Build::new();
-        cfg.file(format!("{}/duckdb.cpp", lib_name))
+        cfg.file(format!("{lib_name}/duckdb.cpp"))
             .cpp(true)
             .flag_if_supported("-std=c++11")
             .flag_if_supported("-stdlib=libc++")
@@ -77,7 +77,7 @@ mod build_bundled {
 
         cfg.compile(lib_name);
 
-        println!("cargo:lib_dir={}", out_dir);
+        println!("cargo:lib_dir={out_dir}");
     }
 }
 
@@ -100,7 +100,7 @@ impl From<HeaderLocation> for String {
         match header {
             HeaderLocation::FromEnvironment => {
                 let prefix = env_prefix();
-                let mut header = env::var(format!("{}_INCLUDE_DIR", prefix))
+                let mut header = env::var(format!("{prefix}_INCLUDE_DIR"))
                     .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
                 header.push_str("/duckdb.h");
                 header
@@ -162,23 +162,23 @@ mod build_linked {
         // `links=` value in our Cargo.toml) to get this value. This might be
         // useful if you need to ensure whatever crypto library sqlcipher relies
         // on is available, for example.
-        println!("cargo:link-target={}", link_lib);
+        println!("cargo:link-target={link_lib}");
 
         if win_target() && cfg!(feature = "winduckdb") {
-            println!("cargo:rustc-link-lib=dylib={}", link_lib);
+            println!("cargo:rustc-link-lib=dylib={link_lib}");
             return HeaderLocation::Wrapper;
         }
 
         // Allow users to specify where to find DuckDB.
         if let Ok(dir) = env::var(format!("{}_LIB_DIR", env_prefix())) {
-            println!("cargo:rustc-env=LD_LIBRARY_PATH={}", dir);
+            println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
             env::set_var("PKG_CONFIG_PATH", pkgconfig_path);
             if pkg_config::Config::new().probe(link_lib).is_err() {
                 // Otherwise just emit the bare minimum link commands.
                 println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
-                println!("cargo:rustc-link-search={}", dir);
+                println!("cargo:rustc-link-search={dir}");
             }
             return HeaderLocation::FromEnvironment;
         }
@@ -241,7 +241,7 @@ mod bindings {
             .parse_callbacks(Box::new(bindgen::CargoCallbacks))
             .rustfmt_bindings(true)
             .generate()
-            .unwrap_or_else(|_| panic!("could not run bindgen on header {}", header))
+            .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
         let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
@@ -250,9 +250,9 @@ mod bindings {
             .truncate(true)
             .create(true)
             .open(out_path)
-            .unwrap_or_else(|_| panic!("Could not write to {:?}", out_path));
+            .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
 
         file.write_all(output.as_bytes())
-            .unwrap_or_else(|_| panic!("Could not write to {:?}", out_path));
+            .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
     }
 }

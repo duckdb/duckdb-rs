@@ -368,7 +368,7 @@ mod test {
         assert_eq!(Value::Int(1), row.get::<_, Value>(2)?);
         match row.get::<_, Value>(3)? {
             Value::Float(val) => assert!((1.5 - val).abs() < EPSILON as f32),
-            x => panic!("Invalid Value {:?}", x),
+            x => panic!("Invalid Value {x:?}"),
         }
         assert_eq!(Value::Null, row.get::<_, Value>(4)?);
         Ok(())

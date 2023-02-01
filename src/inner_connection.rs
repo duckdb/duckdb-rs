@@ -117,9 +117,9 @@ impl Drop for InnerConnection {
         use std::thread::panicking;
         if let Err(e) = self.close() {
             if panicking() {
-                eprintln!("Error while closing DuckDB connection: {:?}", e);
+                eprintln!("Error while closing DuckDB connection: {e:?}");
             } else {
-                panic!("Error while closing DuckDB connection: {:?}", e);
+                panic!("Error while closing DuckDB connection: {e:?}");
             }
         }
     }

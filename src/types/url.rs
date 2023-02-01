@@ -71,7 +71,7 @@ mod test {
                 assert_eq!(*e.downcast::<ParseError>().unwrap(), ParseError::RelativeUrlWithoutBase,);
             }
             e => {
-                panic!("Expected conversion failure, got {}", e);
+                panic!("Expected conversion failure, got {e}");
             }
         }
         Ok(())

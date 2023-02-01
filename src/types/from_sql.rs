@@ -41,10 +41,10 @@ impl fmt::Display for FromSqlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             FromSqlError::InvalidType => write!(f, "Invalid type"),
-            FromSqlError::OutOfRange(i) => write!(f, "Value {} out of range", i),
+            FromSqlError::OutOfRange(i) => write!(f, "Value {i} out of range"),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(s) => {
-                write!(f, "Cannot read UUID value out of {} byte blob", s)
+                write!(f, "Cannot read UUID value out of {s} byte blob")
             }
             FromSqlError::Other(ref err) => err.fmt(f),
         }
@@ -361,7 +361,7 @@ mod test {
                 let err = db.query_row("SELECT ?", [n], |r| r.get::<_, T>(0)).unwrap_err();
                 match err {
                     Error::IntegralValueOutOfRange(_, value) => assert_eq!(*n, value),
-                    _ => panic!("unexpected error: {}", err),
+                    _ => panic!("unexpected error: {err}"),
                 }
             }
             for n in in_range {
