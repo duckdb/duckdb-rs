@@ -86,6 +86,12 @@ impl Config {
         Ok(self)
     }
 
+    /// Allow to load third-party duckdb extensions.
+    pub fn allow_unsigned_extensions(mut self) -> Result<Config> {
+        self.set("allow_unsigned_extensions", "true")?;
+        Ok(self)
+    }
+
     /// The maximum memory of the system (e.g. 1GB)
     pub fn max_memory(mut self, memory: &str) -> Result<Config> {
         self.set("max_memory", memory)?;
@@ -172,6 +178,7 @@ mod test {
             .default_order(crate::DefaultOrder::Desc)?
             .enable_external_access(true)?
             .enable_object_cache(false)?
+            .allow_unsigned_extensions()?
             .max_memory("2GB")?
             .threads(4)?;
         let db = Connection::open_in_memory_with_flags(config)?;
