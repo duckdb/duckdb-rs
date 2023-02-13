@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 use std::ffi::CStr;
-use std::os::raw::c_void;
 use std::ptr;
 use std::sync::Arc;
 
@@ -84,7 +83,7 @@ impl RawStatement {
         unsafe {
             let mut arrays = &FFI_ArrowArray::empty();
             let arrays = &mut arrays;
-            if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut *mut c_void)
+            if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut ffi::duckdb_arrow_array)
                 != ffi::DuckDBSuccess
             {
                 return None;
@@ -95,7 +94,7 @@ impl RawStatement {
 
             let mut schema = &FFI_ArrowSchema::empty();
             let schema = &mut schema;
-            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut *mut c_void)
+            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut ffi::duckdb_arrow_schema)
                 != ffi::DuckDBSuccess
             {
                 return None;
@@ -178,7 +177,7 @@ impl RawStatement {
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
             let mut c_schema = Arc::into_raw(Arc::new(FFI_ArrowSchema::empty()));
-            let rc = ffi::duckdb_query_arrow_schema(out, &mut c_schema as *mut _ as *mut *mut c_void);
+            let rc = ffi::duckdb_query_arrow_schema(out, &mut c_schema as *mut _ as *mut ffi::duckdb_arrow_schema);
             if rc != ffi::DuckDBSuccess {
                 Arc::from_raw(c_schema);
                 result_from_duckdb_arrow(rc, out)?;

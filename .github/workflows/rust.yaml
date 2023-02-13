@@ -38,7 +38,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.6.1"
+          tag: "v0.7.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -118,34 +118,17 @@ jobs:
         with:
           rust-version: nightly
           components: rust-src
-      # download libduckdb
-      - uses: robinraju/release-downloader@v1.4
-        name: Download duckdb
-        with:
-          repository: "duckdb/duckdb"
-          tag: "v0.6.1"
-          fileName: "libduckdb-linux-amd64.zip"
-          out-file-path: .
-      - name: Linux extract duckdb
-        uses: ihiroky/extract-action@v1
-        with:
-          file_path: ${{ github.workspace }}/libduckdb-linux-amd64.zip
-          extract_dir: libduckdb
       - name: Tests with asan
         env:
           RUSTFLAGS: -Zsanitizer=address
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
           # Work around https://github.com/rust-lang/rust/issues/59125 by
           # disabling backtraces. In an ideal world we'd probably suppress the
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        # run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu
-        run: cargo -Z build-std test --features 'modern-full' --target x86_64-unknown-linux-gnu
+        run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu
 
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
