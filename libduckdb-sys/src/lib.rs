@@ -23,7 +23,7 @@ mod tests {
     use std::convert::TryFrom;
     use std::ffi::{CStr, CString};
     use std::mem;
-    use std::os::raw::{c_char, c_void};
+    use std::os::raw::c_char;
     use std::ptr;
 
     use arrow::array::{Array, ArrayData, Int32Array, StructArray};
@@ -87,11 +87,15 @@ mod tests {
             let mut arrays = &FFI_ArrowArray::empty();
             let mut schema = &FFI_ArrowSchema::empty();
             let schema = &mut schema;
-            if duckdb_query_arrow_schema(result, schema as *mut _ as *mut *mut c_void) != duckdb_state_DuckDBSuccess {
+            if duckdb_query_arrow_schema(result, schema as *mut _ as *mut duckdb_arrow_schema)
+                != duckdb_state_DuckDBSuccess
+            {
                 panic!("SELECT error")
             }
             let arrays = &mut arrays;
-            if duckdb_query_arrow_array(result, arrays as *mut _ as *mut *mut c_void) != duckdb_state_DuckDBSuccess {
+            if duckdb_query_arrow_array(result, arrays as *mut _ as *mut duckdb_arrow_array)
+                != duckdb_state_DuckDBSuccess
+            {
                 panic!("SELECT error")
             }
             let arrow_array =

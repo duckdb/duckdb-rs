@@ -38,7 +38,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.6.1"
+          tag: "v0.7.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -123,7 +123,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.6.1"
+          tag: "v0.7.0"
           fileName: "libduckdb-linux-amd64.zip"
           out-file-path: .
       - name: Linux extract duckdb
