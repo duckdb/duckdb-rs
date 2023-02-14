@@ -84,23 +84,23 @@ mod tests {
             assert_eq!(duckdb_arrow_row_count(result), 3);
             assert_eq!(duckdb_arrow_column_count(result), 2);
 
-            let mut arrays = &FFI_ArrowArray::empty();
-            let mut schema = &FFI_ArrowSchema::empty();
-            let schema = &mut schema;
-            if duckdb_query_arrow_schema(result, schema as *mut _ as *mut duckdb_arrow_schema)
-                != duckdb_state_DuckDBSuccess
+            let mut arrays = FFI_ArrowArray::empty();
+            let mut schema = FFI_ArrowSchema::empty();
+            if duckdb_query_arrow_schema(
+                result,
+                &mut std::ptr::addr_of_mut!(schema) as *mut _ as *mut duckdb_arrow_schema,
+            ) != duckdb_state_DuckDBSuccess
             {
                 panic!("SELECT error")
             }
-            let arrays = &mut arrays;
-            if duckdb_query_arrow_array(result, arrays as *mut _ as *mut duckdb_arrow_array)
-                != duckdb_state_DuckDBSuccess
+            if duckdb_query_arrow_array(
+                result,
+                &mut std::ptr::addr_of_mut!(arrays) as *mut _ as *mut duckdb_arrow_array,
+            ) != duckdb_state_DuckDBSuccess
             {
                 panic!("SELECT error")
             }
-            let arrow_array =
-                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, *schema as *const FFI_ArrowSchema)
-                    .expect("ok");
+            let arrow_array = ArrowArray::new(arrays, schema);
             let array_data = ArrayData::try_from(arrow_array).expect("ok");
             let struct_array = StructArray::from(array_data);
             assert_eq!(struct_array.len(), 3);

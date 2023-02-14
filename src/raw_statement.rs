@@ -81,28 +81,28 @@ impl RawStatement {
     pub fn step(&self) -> Option<StructArray> {
         self.result?;
         unsafe {
-            let mut arrays = &FFI_ArrowArray::empty();
-            let arrays = &mut arrays;
-            if ffi::duckdb_query_arrow_array(self.result_unwrap(), arrays as *mut _ as *mut ffi::duckdb_arrow_array)
-                != ffi::DuckDBSuccess
+            let mut arrays = FFI_ArrowArray::empty();
+            if ffi::duckdb_query_arrow_array(
+                self.result_unwrap(),
+                &mut std::ptr::addr_of_mut!(arrays) as *mut _ as *mut ffi::duckdb_arrow_array,
+            ) != ffi::DuckDBSuccess
             {
                 return None;
             }
-            if (**arrays).is_empty() {
+            if arrays.is_empty() {
                 return None;
             }
 
-            let mut schema = &FFI_ArrowSchema::empty();
-            let schema = &mut schema;
-            if ffi::duckdb_query_arrow_schema(self.result_unwrap(), schema as *mut _ as *mut ffi::duckdb_arrow_schema)
-                != ffi::DuckDBSuccess
+            let mut schema = FFI_ArrowSchema::empty();
+            if ffi::duckdb_query_arrow_schema(
+                self.result_unwrap(),
+                &mut std::ptr::addr_of_mut!(schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
+            ) != ffi::DuckDBSuccess
             {
                 return None;
             }
 
-            let arrow_array =
-                ArrowArray::try_from_raw(*arrays as *const FFI_ArrowArray, *schema as *const FFI_ArrowSchema)
-                    .expect("ok");
+            let arrow_array = ArrowArray::new(arrays, schema);
             let array_data = ArrayData::try_from(arrow_array).expect("ok");
             let struct_array = StructArray::from(array_data);
             Some(struct_array)
