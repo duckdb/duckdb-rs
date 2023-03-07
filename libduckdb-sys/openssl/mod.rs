@@ -6,6 +6,7 @@
 // 1) Renamed main.rs -> mod.rs (so it can be used as a library)
 // 2) Changed the main() function to get_openssl() and return (lib_dirs, include_dirs) from it
 // 3) Changed references of build/expando.c to openssl/expando.c
+// 4) Rename the "bindgen" feature to "openssl_bindgen" to avoid interfering with DuckDB bindgen
 //
 // If you update this in the future, make sure to re-apply these changes!
 
@@ -16,7 +17,7 @@
 )]
 
 extern crate autocfg;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "openssl_bindgen")]
 extern crate bindgen;
 extern crate cc;
 #[cfg(feature = "vendored")]
@@ -34,7 +35,7 @@ mod cfgs;
 mod find_normal;
 #[cfg(feature = "vendored")]
 mod find_vendored;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "openssl_bindgen")]
 mod run_bindgen;
 
 #[derive(PartialEq)]
@@ -156,7 +157,7 @@ fn check_rustc_versions() {
 #[allow(clippy::let_and_return)]
 fn postprocess(include_dirs: &[PathBuf]) -> Version {
     let version = validate_headers(include_dirs);
-    #[cfg(feature = "bindgen")]
+    #[cfg(feature = "openssl_bindgen")]
     run_bindgen::run(&include_dirs);
 
     version
