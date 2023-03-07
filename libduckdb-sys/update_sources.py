@@ -25,7 +25,11 @@ shutil.copyfile(
 )
 
 # Clear the duckdb directory
-shutil.rmtree(os.path.join(TARGET_DIR))
+try:
+    shutil.rmtree(os.path.join(TARGET_DIR))
+except FileNotFoundError:
+    pass
+
 os.mkdir(TARGET_DIR)
 
 import sys
@@ -99,4 +103,10 @@ os.remove(
     os.path.join(
         SCRIPT_DIR, "duckdb-sources", "extension", "httpfs", "httpfs_config.py"
     )
+)
+
+subprocess.check_call(
+    "tar -czf duckdb.tar.gz duckdb",
+    shell=True,
+    cwd=SCRIPT_DIR,
 )

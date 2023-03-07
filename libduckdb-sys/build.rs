@@ -71,8 +71,19 @@ mod build_bundled {
         cfg.define(&format!("BUILD_{}_EXTENSION", extension.to_uppercase()), Some("1"));
     }
 
+    fn untar_archive() {
+        let path = "duckdb.tar.gz";
+
+        let tar_gz = std::fs::File::open(path).expect("archive file");
+        let tar = flate2::read::GzDecoder::new(tar_gz);
+        let mut archive = tar::Archive::new(tar);
+        archive.unpack(".").expect("archive");
+    }
+
     pub fn main(out_dir: &str, out_path: &Path) {
         let lib_name = super::lib_name();
+
+        untar_archive();
 
         if !cfg!(feature = "bundled") {
             // This is just a sanity check, the top level `main` should ensure this.
