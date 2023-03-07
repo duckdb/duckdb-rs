@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-#[cfg(feature = "bundled")]
+#[cfg(feature = "httpfs")]
 mod openssl;
 
 /// Tells whether we're building for Windows. This is more suitable than a plain
@@ -39,14 +39,36 @@ fn main() {
 
 #[cfg(feature = "bundled")]
 mod build_bundled {
+    use std::collections::{HashMap, HashSet};
     use std::path::Path;
 
     use crate::win_target;
 
     #[derive(serde::Deserialize)]
+    struct Sources {
+        cpp_files: HashSet<String>,
+        include_dirs: HashSet<String>,
+    }
+
+    #[derive(serde::Deserialize)]
     struct Manifest {
-        cpp_files: Vec<String>,
-        include_dirs: Vec<String>,
+        base: Sources,
+
+        #[allow(unused)]
+        extensions: HashMap<String, Sources>,
+    }
+
+    #[allow(unused)]
+    fn add_extension(
+        cfg: &mut cc::Build,
+        manifest: &Manifest,
+        extension: &str,
+        cpp_files: &mut HashSet<String>,
+        include_dirs: &mut HashSet<String>,
+    ) {
+        cpp_files.extend(manifest.extensions.get(extension).unwrap().cpp_files.clone());
+        include_dirs.extend(manifest.extensions.get(extension).unwrap().include_dirs.clone());
+        cfg.define(&format!("BUILD_{}_EXTENSION", extension.to_uppercase()), Some("1"));
     }
 
     pub fn main(out_dir: &str, out_path: &Path) {
@@ -73,20 +95,37 @@ mod build_bundled {
         let manifest_file = std::fs::File::open(format!("{}/manifest.json", lib_name)).expect("manifest file");
         let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
 
-        let (_, openssl_include_dir) = super::openssl::get_openssl();
+        let mut cpp_files = HashSet::new();
+        let mut include_dirs = HashSet::new();
+
+        cpp_files.extend(manifest.base.cpp_files.clone());
+        include_dirs.extend(manifest.base.include_dirs.clone());
+
+        let mut cfg = cc::Build::new();
+
+        #[cfg(feature = "httpfs")]
+        {
+            let (_, openssl_include_dir) = super::openssl::get_openssl();
+            cfg.include(openssl_include_dir);
+
+            add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
+        }
+
+        #[cfg(feature = "parquet")]
+        add_extension(&mut cfg, &manifest, "parquet", &mut cpp_files, &mut include_dirs);
+
+        #[cfg(feature = "json")]
+        add_extension(&mut cfg, &manifest, "json", &mut cpp_files, &mut include_dirs);
 
         // Since the manifest controls the set of files, we require it to be changed to know whether
         // to rebuild the project
         println!("cargo:rerun-if-changed={}/manifest.json", lib_name);
 
-        let mut cfg = cc::Build::new();
-
         cfg.include(lib_name);
-        cfg.include(openssl_include_dir);
 
-        cfg.includes(manifest.include_dirs.iter().map(|x| format!("{}/{}", lib_name, x)));
+        cfg.includes(include_dirs.iter().map(|x| format!("{}/{}", lib_name, x)));
 
-        for f in manifest.cpp_files {
+        for f in cpp_files {
             cfg.file(format!("{}", f));
         }
 
@@ -100,10 +139,6 @@ mod build_bundled {
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
         }
-
-        cfg.define("BUILD_HTTPFS_EXTENSION", Some("1"));
-        cfg.define("BUILD_JSON_EXTENSION", Some("1"));
-        cfg.define("BUILD_PARQUET_EXTENSION", Some("1"));
 
         cfg.compile(lib_name);
         println!("cargo:lib_dir={out_dir}");
