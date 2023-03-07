@@ -413,6 +413,10 @@ mod build_bundled {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
         }
 
+        cfg.define("BUILD_HTTPFS_EXTENSION", Some("1"));
+        cfg.define("BUILD_JSON_EXTENSION", Some("1"));
+        cfg.define("BUILD_PARQUET_EXTENSION", Some("1"));
+
         cfg.compile(lib_name);
     }
 }
