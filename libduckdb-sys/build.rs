@@ -1,6 +1,8 @@
 use std::env;
 use std::path::Path;
 
+mod openssl;
+
 /// Tells whether we're building for Windows. This is more suitable than a plain
 /// `cfg!(windows)`, since the latter does not properly handle cross-compilation
 ///
@@ -322,68 +324,7 @@ mod build_bundled {
             "extension/parquet/include",
         ];
 
-        println!("cargo:lib_dir={out_dir}");
-        println!("cargo:rustc-cfg=const_fn");
-        println!("cargo:rustc-cfg=openssl");
-        println!("cargo:rerun-if-env-changed=AARCH64_APPLE_DARWIN_OPENSSL_LIB_DIR");
-        println!("AARCH64_APPLE_DARWIN_OPENSSL_LIB_DIR unset");
-        println!("cargo:rerun-if-env-changed=OPENSSL_LIB_DIR");
-        println!("OPENSSL_LIB_DIR unset");
-        println!("cargo:rerun-if-env-changed=AARCH64_APPLE_DARWIN_OPENSSL_INCLUDE_DIR");
-        println!("AARCH64_APPLE_DARWIN_OPENSSL_INCLUDE_DIR unset");
-        println!("cargo:rerun-if-env-changed=OPENSSL_INCLUDE_DIR");
-        println!("OPENSSL_INCLUDE_DIR unset");
-        println!("cargo:rerun-if-env-changed=AARCH64_APPLE_DARWIN_OPENSSL_DIR");
-        println!("AARCH64_APPLE_DARWIN_OPENSSL_DIR unset");
-        println!("cargo:rerun-if-env-changed=OPENSSL_DIR");
-        println!("OPENSSL_DIR unset");
-        println!("cargo:rustc-link-search=native=/opt/homebrew/opt/openssl@3/lib");
-        println!("cargo:include=/opt/homebrew/opt/openssl@3/include");
-        println!("cargo:rerun-if-changed=build/expando.c");
-        println!("cargo:rerun-if-env-changed=CC_aarch64-apple-darwin");
-        println!("CC_aarch64-apple-darwin = None");
-        println!("cargo:rerun-if-env-changed=CC_aarch64_apple_darwin");
-        println!("CC_aarch64_apple_darwin = None");
-        println!("cargo:rerun-if-env-changed=HOST_CC");
-        println!("HOST_CC = None");
-        println!("cargo:rerun-if-env-changed=CC");
-        println!("CC = None");
-        println!("cargo:rerun-if-env-changed=CFLAGS_aarch64-apple-darwin");
-        println!("CFLAGS_aarch64-apple-darwin = None");
-        println!("cargo:rerun-if-env-changed=CFLAGS_aarch64_apple_darwin");
-        println!("CFLAGS_aarch64_apple_darwin = None");
-        println!("cargo:rerun-if-env-changed=HOST_CFLAGS");
-        println!("HOST_CFLAGS = None");
-        println!("cargo:rerun-if-env-changed=CFLAGS");
-        println!("CFLAGS = None");
-        println!("cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS");
-        println!("CRATE_CC_NO_DEFAULTS = None");
-        println!("version: 3_0_8");
-        println!("cargo:rustc-cfg=osslconf=\"OPENSSL_NO_SSL3_METHOD\"");
-        println!("cargo:conf=OPENSSL_NO_SSL3_METHOD");
-        println!("cargo:rustc-cfg=ossl300");
-        println!("cargo:rustc-cfg=ossl101");
-        println!("cargo:rustc-cfg=ossl102");
-        println!("cargo:rustc-cfg=ossl102f");
-        println!("cargo:rustc-cfg=ossl102h");
-        println!("cargo:rustc-cfg=ossl110");
-        println!("cargo:rustc-cfg=ossl110f");
-        println!("cargo:rustc-cfg=ossl110g");
-        println!("cargo:rustc-cfg=ossl110h");
-        println!("cargo:rustc-cfg=ossl111");
-        println!("cargo:rustc-cfg=ossl111b");
-        println!("cargo:rustc-cfg=ossl111c");
-        println!("cargo:version_number=30000080");
-        println!("cargo:rerun-if-env-changed=AARCH64_APPLE_DARWIN_OPENSSL_LIBS");
-        println!("AARCH64_APPLE_DARWIN_OPENSSL_LIBS unset");
-        println!("cargo:rerun-if-env-changed=OPENSSL_LIBS");
-        println!("OPENSSL_LIBS unset");
-        println!("cargo:rerun-if-env-changed=AARCH64_APPLE_DARWIN_OPENSSL_STATIC");
-        println!("AARCH64_APPLE_DARWIN_OPENSSL_STATIC unset");
-        println!("cargo:rerun-if-env-changed=OPENSSL_STATIC");
-        println!("OPENSSL_STATIC unset");
-        println!("cargo:rustc-link-lib=dylib=ssl");
-        println!("cargo:rustc-link-lib=dylib=crypto");
+        let (lib_dirs, include_dir) = super::openssl::get_openssl();
 
         // XXX FIX
         /*
