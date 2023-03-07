@@ -1,6 +1,7 @@
 use std::env;
 use std::path::Path;
 
+#[cfg(feature = "bundled")]
 mod openssl;
 
 /// Tells whether we're building for Windows. This is more suitable than a plain
@@ -36,17 +37,17 @@ fn main() {
     }
 }
 
-#[derive(serde::Deserialize)]
-struct Manifest {
-    cpp_files: Vec<String>,
-    include_dirs: Vec<String>,
-}
-
 #[cfg(feature = "bundled")]
 mod build_bundled {
     use std::path::Path;
 
     use crate::win_target;
+
+    #[derive(serde::Deserialize)]
+    struct Manifest {
+        cpp_files: Vec<String>,
+        include_dirs: Vec<String>,
+    }
 
     pub fn main(out_dir: &str, out_path: &Path) {
         let lib_name = super::lib_name();
@@ -70,9 +71,9 @@ mod build_bundled {
         }
 
         let manifest_file = std::fs::File::open(format!("{}/manifest.json", lib_name)).expect("manifest file");
-        let manifest: super::Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
+        let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
 
-        let (openssl_lib_dirs, openssl_include_dir) = super::openssl::get_openssl();
+        let (_, openssl_include_dir) = super::openssl::get_openssl();
 
         // Since the manifest controls the set of files, we require it to be changed to know whether
         // to rebuild the project
@@ -105,6 +106,7 @@ mod build_bundled {
         cfg.define("BUILD_PARQUET_EXTENSION", Some("1"));
 
         cfg.compile(lib_name);
+        println!("cargo:lib_dir={out_dir}");
     }
 }
 
