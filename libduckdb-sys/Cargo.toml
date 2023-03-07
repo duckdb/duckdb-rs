@@ -11,6 +11,7 @@ keywords = ["duckdb", "ffi", "database"]
 readme = "README.md"
 categories = ["external-ffi-bindings", "database"]
 description = "Native bindings to the libduckdb library, C API"
+exclude = ["duckdb-sources"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
