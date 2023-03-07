@@ -208,10 +208,7 @@ fn try_pkg_config() {
         return;
     }
 
-    let lib = match pkg_config::Config::new()
-        .print_system_libs(false)
-        .probe("openssl")
-    {
+    let lib = match pkg_config::Config::new().print_system_libs(false).probe("openssl") {
         Ok(lib) => lib,
         Err(e) => {
             println!("run pkg_config fail: {:?}", e);
@@ -237,10 +234,7 @@ fn try_vcpkg() {
     // vcpkg will not emit any metadata if it can not find libraries
     // appropriate for the target triple with the desired linkage.
 
-    let lib = match vcpkg::Config::new()
-        .emit_includes(true)
-        .find_package("openssl")
-    {
+    let lib = match vcpkg::Config::new().emit_includes(true).find_package("openssl") {
         Ok(lib) => lib,
         Err(e) => {
             println!("note: vcpkg did not find openssl: {}", e);
