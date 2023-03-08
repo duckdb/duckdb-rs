@@ -102,9 +102,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: vcpkg install openssl:x64-windows
       # https://github.com/sfackler/rust-openssl/issues/1062#issuecomment-489441940
       - run: echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - run: vcpkg install openssl:x64-windows-static-md
       - uses: actions/cache@v3
         with:
           path: ~/.cargo/registry/index
