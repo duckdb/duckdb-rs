@@ -110,13 +110,13 @@ mod build_bundled {
         let mut include_dirs = HashSet::new();
 
         cpp_files.extend(manifest.base.cpp_files.clone());
-        include_dirs.extend(manifest.base.include_dirs.clone());
+        include_dirs.extend(manifest.base.include_dirs);
 
         let mut cfg = cc::Build::new();
 
         #[cfg(feature = "httpfs")]
         {
-            (_, openssl_include_dir) = super::openssl::get_openssl()?;
+            (_, openssl_include_dir) = super::openssl::get_openssl().expect("Could not find OpenSSL");
             println!("openssl_include_dir: {:?}", openssl_include_dir);
             cfg.include(openssl_include_dir);
             add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
