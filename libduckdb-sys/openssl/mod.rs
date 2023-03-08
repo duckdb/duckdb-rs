@@ -7,6 +7,8 @@
 // 2) Changed the main() function to get_openssl() and return (lib_dirs, include_dirs) from it
 // 3) Changed references of build/expando.c to openssl/expando.c
 // 4) Rename the "bindgen" feature to "openssl_bindgen" to avoid interfering with DuckDB bindgen
+// 5) Replace a bunch of exit(0)'s with Result-based control flow that bails out of the openssl
+//    path but does not exit.
 //
 // If you update this in the future, make sure to re-apply these changes!
 
@@ -64,36 +66,37 @@ fn env(name: &str) -> Option<OsString> {
     env_inner(&prefixed).or_else(|| env_inner(name))
 }
 
-fn find_openssl(target: &str) -> (Vec<PathBuf>, PathBuf) {
+fn find_openssl(target: &str) -> Result<(Vec<PathBuf>, PathBuf), ()> {
     #[cfg(feature = "vendored")]
     {
         // vendor if the feature is present, unless
         // OPENSSL_NO_VENDOR exists and isn't `0`
         if env("OPENSSL_NO_VENDOR").map_or(true, |s| s == "0") {
-            return find_vendored::get_openssl(target);
+            return Ok(find_vendored::get_openssl(target));
         }
     }
     find_normal::get_openssl(target)
 }
 
-fn check_ssl_kind() {
+fn check_ssl_kind() -> Result<(), ()> {
     if cfg!(feature = "unstable_boringssl") {
         println!("cargo:rustc-cfg=boringssl");
         // BoringSSL does not have any build logic, exit early
-        std::process::exit(0);
+        return Err(());
     } else {
         println!("cargo:rustc-cfg=openssl");
+        return Ok(());
     }
 }
 
-pub fn get_openssl() -> (Vec<PathBuf>, PathBuf) {
+pub fn get_openssl() -> Result<(Vec<PathBuf>, PathBuf), ()> {
     check_rustc_versions();
 
-    check_ssl_kind();
+    check_ssl_kind()?;
 
     let target = env::var("TARGET").unwrap();
 
-    let (lib_dirs, include_dir) = find_openssl(&target);
+    let (lib_dirs, include_dir) = find_openssl(&target)?;
 
     if !lib_dirs.iter().all(|p| Path::new(p).exists()) {
         panic!("OpenSSL library directory does not exist: {:?}", lib_dirs);
@@ -143,7 +146,7 @@ pub fn get_openssl() -> (Vec<PathBuf>, PathBuf) {
         println!("cargo:rustc-link-lib=dylib=advapi32");
     }
 
-    (lib_dirs, include_dir)
+    Ok((lib_dirs, include_dir))
 }
 
 fn check_rustc_versions() {

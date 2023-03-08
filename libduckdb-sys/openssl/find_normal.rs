@@ -4,14 +4,17 @@ use std::process::{self, Command};
 
 use super::env;
 
-pub fn get_openssl(target: &str) -> (Vec<PathBuf>, PathBuf) {
+pub fn get_openssl(target: &str) -> Result<(Vec<PathBuf>, PathBuf), ()> {
     let lib_dir = env("OPENSSL_LIB_DIR").map(PathBuf::from);
     let include_dir = env("OPENSSL_INCLUDE_DIR").map(PathBuf::from);
 
-    match (lib_dir, include_dir) {
+    Ok(match (lib_dir, include_dir) {
         (Some(lib_dir), Some(include_dir)) => (vec![lib_dir], include_dir),
         (lib_dir, include_dir) => {
-            let openssl_dir = env("OPENSSL_DIR").unwrap_or_else(|| find_openssl_dir(target));
+            let openssl_dir = match env("OPENSSL_DIR") {
+                Some(s) => s,
+                None => find_openssl_dir(target)?,
+            };
             let openssl_dir = Path::new(&openssl_dir);
             let lib_dir = lib_dir.map(|d| vec![d]).unwrap_or_else(|| {
                 let mut lib_dirs = vec![];
@@ -28,7 +31,7 @@ pub fn get_openssl(target: &str) -> (Vec<PathBuf>, PathBuf) {
             let include_dir = include_dir.unwrap_or_else(|| openssl_dir.join("include"));
             (lib_dir, include_dir)
         }
-    }
+    })
 }
 
 fn resolve_with_wellknown_homebrew_location(dir: &str) -> Option<PathBuf> {
@@ -69,7 +72,7 @@ fn resolve_with_wellknown_location(dir: &str) -> Option<PathBuf> {
     }
 }
 
-fn find_openssl_dir(target: &str) -> OsString {
+fn find_openssl_dir(target: &str) -> Result<OsString, ()> {
     let host = env::var("HOST").unwrap();
 
     if host == target && target.ends_with("-apple-darwin") {
@@ -79,27 +82,27 @@ fn find_openssl_dir(target: &str) -> OsString {
         };
 
         if let Some(dir) = resolve_with_wellknown_homebrew_location(homebrew_dir) {
-            return dir.into();
+            return Ok(dir.into());
         } else if let Some(dir) = resolve_with_wellknown_location("/opt/pkg") {
             // pkgsrc
-            return dir.into();
+            return Ok(dir.into());
         } else if let Some(dir) = resolve_with_wellknown_location("/opt/local") {
             // MacPorts
-            return dir.into();
+            return Ok(dir.into());
         }
     }
 
-    try_pkg_config();
-    try_vcpkg();
+    try_pkg_config()?;
+    try_vcpkg()?;
 
     // FreeBSD ships with OpenSSL but doesn't include a pkg-config file :(
     if host == target && target.contains("freebsd") {
-        return OsString::from("/usr");
+        return Ok(OsString::from("/usr"));
     }
 
     // DragonFly has libressl (or openssl) in ports, but this doesn't include a pkg-config file
     if host == target && target.contains("dragonfly") {
-        return OsString::from("/usr/local");
+        return Ok(OsString::from("/usr/local"));
     }
 
     let mut msg = format!(
@@ -194,7 +197,7 @@ https://github.com/sfackler/rust-openssl#windows
 ///
 /// Note that if this succeeds then the function does not return as pkg-config
 /// typically tells us all the information that we need.
-fn try_pkg_config() {
+fn try_pkg_config() -> Result<(), ()> {
     let target = env::var("TARGET").unwrap();
     let host = env::var("HOST").unwrap();
 
@@ -205,14 +208,14 @@ fn try_pkg_config() {
     if target.contains("windows-gnu") && host.contains("windows") {
         env::set_var("PKG_CONFIG_ALLOW_CROSS", "1");
     } else if target.contains("windows") {
-        return;
+        return Ok(());
     }
 
     let lib = match pkg_config::Config::new().print_system_libs(false).probe("openssl") {
         Ok(lib) => lib,
         Err(e) => {
             println!("run pkg_config fail: {:?}", e);
-            return;
+            return Ok(());
         }
     };
 
@@ -222,7 +225,7 @@ fn try_pkg_config() {
         println!("cargo:include={}", include.display());
     }
 
-    process::exit(0);
+    Err(())
 }
 
 /// Attempt to find OpenSSL through vcpkg.
@@ -230,7 +233,7 @@ fn try_pkg_config() {
 /// Note that if this succeeds then the function does not return as vcpkg
 /// should emit all of the cargo metadata that we need.
 #[cfg(target_env = "msvc")]
-fn try_vcpkg() {
+fn try_vcpkg() -> Result<(), ()> {
     // vcpkg will not emit any metadata if it can not find libraries
     // appropriate for the target triple with the desired linkage.
 
@@ -238,7 +241,7 @@ fn try_vcpkg() {
         Ok(lib) => lib,
         Err(e) => {
             println!("note: vcpkg did not find openssl: {}", e);
-            return;
+            return Ok(());
         }
     };
 
@@ -248,11 +251,13 @@ fn try_vcpkg() {
     println!("cargo:rustc-link-lib=gdi32");
     println!("cargo:rustc-link-lib=crypt32");
 
-    process::exit(0);
+    Err(())
 }
 
 #[cfg(not(target_env = "msvc"))]
-fn try_vcpkg() {}
+fn try_vcpkg() -> Result<(), ()> {
+    Ok(())
+}
 
 fn execute_command_and_get_output(cmd: &str, args: &[&str]) -> Option<String> {
     let out = Command::new(cmd).args(args).output();
