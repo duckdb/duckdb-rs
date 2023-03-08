@@ -105,6 +105,11 @@ jobs:
       - run: vcpkg install openssl:x64-windows
       # https://github.com/sfackler/rust-openssl/issues/1062#issuecomment-489441940
       - run: echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+      # https://github.com/sfackler/rust-openssl/issues/1062#issuecomment-555202055
+      - run: echo 'OPENSSL_DIR="C:\\Dev\\vcpkg\\installed\\x64-windows"' | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: echo 'OPENSSL_LIB_DIR="C:\\Dev\\vcpkg\\installed\\x64-windows\\lib"' | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: echo 'OPENSSL_INCLUDE_DIR="C:\\Dev\\vcpkg\\installed\\x64-windows\\include"' | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - uses: actions/cache@v3
         with:
           path: ~/.cargo/registry/index
