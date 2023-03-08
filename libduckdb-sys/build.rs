@@ -116,9 +116,9 @@ mod build_bundled {
 
         #[cfg(feature = "httpfs")]
         {
-            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl() {
-                cfg.include(openssl_include_dir);
-            }
+            (_, openssl_include_dir) = super::openssl::get_openssl()?;
+            println!("openssl_include_dir: {:?}", openssl_include_dir);
+            cfg.include(openssl_include_dir);
             add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
         }
 
