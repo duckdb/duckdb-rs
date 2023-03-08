@@ -82,10 +82,10 @@ fn check_ssl_kind() -> Result<(), ()> {
     if cfg!(feature = "unstable_boringssl") {
         println!("cargo:rustc-cfg=boringssl");
         // BoringSSL does not have any build logic, exit early
-        return Err(());
+        Err(())
     } else {
         println!("cargo:rustc-cfg=openssl");
-        return Ok(());
+        Ok(())
     }
 }
 

@@ -116,11 +116,8 @@ mod build_bundled {
 
         #[cfg(feature = "httpfs")]
         {
-            match super::openssl::get_openssl() {
-                Ok((_, openssl_include_dir)) => {
-                    cfg.include(openssl_include_dir);
-                }
-                Err(()) => {}
+            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl() {
+                cfg.include(openssl_include_dir);
             }
             add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
         }
@@ -140,7 +137,7 @@ mod build_bundled {
         cfg.includes(include_dirs.iter().map(|x| format!("{}/{}", lib_name, x)));
 
         for f in cpp_files {
-            cfg.file(format!("{}", f));
+            cfg.file(f);
         }
 
         cfg.cpp(true)
