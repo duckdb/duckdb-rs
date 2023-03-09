@@ -89,7 +89,22 @@ fn check_ssl_kind() -> Result<(), ()> {
     }
 }
 
-pub fn get_openssl() -> Result<(Vec<PathBuf>, PathBuf), ()> {
+static mut INCLUDE_DIR: Option<PathBuf> = None;
+
+pub fn get_openssl_v2() -> Result<(Vec<PathBuf>, PathBuf), ()> {
+    if let Ok((lib_dirs, include_dir)) = get_openssl() {
+        return Ok((lib_dirs, include_dir));
+    } else {
+        unsafe {
+            if INCLUDE_DIR.is_some() {
+                return Ok((vec![], INCLUDE_DIR.clone().unwrap()));
+            }
+        }
+    }
+    Err(())
+}
+
+fn get_openssl() -> Result<(Vec<PathBuf>, PathBuf), ()> {
     check_rustc_versions();
 
     check_ssl_kind()?;
@@ -160,6 +175,11 @@ fn check_rustc_versions() {
 #[allow(clippy::let_and_return)]
 fn postprocess(include_dirs: &[PathBuf]) -> Version {
     let version = validate_headers(include_dirs);
+    if include_dirs.len() > 0 {
+        unsafe {
+            INCLUDE_DIR = Some(include_dirs[0].clone());
+        }
+    }
     #[cfg(feature = "openssl_bindgen")]
     run_bindgen::run(&include_dirs);
 

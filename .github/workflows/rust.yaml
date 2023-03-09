@@ -102,14 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - run: vcpkg install openssl:x64-windows
-      # https://github.com/sfackler/rust-openssl/issues/1062#issuecomment-489441940
-      - run: echo "VCPKGRS_DYNAMIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-      # https://github.com/sfackler/rust-openssl/issues/1062#issuecomment-555202055
-      - run: echo 'OPENSSL_DIR="C:\\Dev\\vcpkg\\installed\\x64-windows"' | Out-File -FilePath $env:GITHUB_ENV -Append
-      - run: echo 'OPENSSL_LIB_DIR="C:\\Dev\\vcpkg\\installed\\x64-windows\\lib"' | Out-File -FilePath $env:GITHUB_ENV -Append
-      - run: echo 'OPENSSL_INCLUDE_DIR="C:\\Dev\\vcpkg\\installed\\x64-windows\\include"' | Out-File -FilePath $env:GITHUB_ENV -Append
-
+      - run: vcpkg install openssl:x64-windows-static-md
       - uses: actions/cache@v3
         with:
           path: ~/.cargo/registry/index
@@ -120,7 +113,7 @@ jobs:
         with:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
-      - run: cargo test --features "bundled" --features "modern-full extensions-full"
+      - run: cargo test --features "bundled modern-full extensions-full"
 
   Sanitizer:
     name: Address Sanitizer
@@ -143,7 +136,7 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features 'bundled' --features 'modern-full extensions-full' --target x86_64-unknown-linux-gnu
+        run: cargo -Z build-std test --features "bundled modern-full extensions-full" --target x86_64-unknown-linux-gnu
 
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run

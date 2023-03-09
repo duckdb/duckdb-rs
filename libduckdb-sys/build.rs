@@ -110,13 +110,16 @@ mod build_bundled {
         let mut include_dirs = HashSet::new();
 
         cpp_files.extend(manifest.base.cpp_files.clone());
+        // otherwise clippy will remove the clone here...
+        // https://github.com/rust-lang/rust-clippy/issues/9011
+        #[allow(clippy::all)]
         include_dirs.extend(manifest.base.include_dirs.clone());
 
         let mut cfg = cc::Build::new();
 
         #[cfg(feature = "httpfs")]
         {
-            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl() {
+            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
                 cfg.include(openssl_include_dir);
             }
             add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
