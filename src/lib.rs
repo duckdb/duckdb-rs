@@ -108,6 +108,9 @@ mod row;
 mod statement;
 mod transaction;
 
+#[cfg(feature = "extensions-full")]
+mod extension;
+
 pub mod types;
 
 pub(crate) mod util;
