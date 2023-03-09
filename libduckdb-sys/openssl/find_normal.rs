@@ -92,18 +92,8 @@ fn find_openssl_dir(target: &str) -> Result<OsString, ()> {
         }
     }
 
-    if let Err(err) = try_pkg_config() {
-        if err.is_none() {
-            return Err(());
-        }
-        return Ok(err.unwrap());
-    }
-    if let Err(err) = try_vcpkg() {
-        if err.is_none() {
-            return Err(());
-        }
-        return Ok(err.unwrap());
-    }
+    try_pkg_config()?;
+    try_vcpkg()?;
 
     // FreeBSD ships with OpenSSL but doesn't include a pkg-config file :(
     if host == target && target.contains("freebsd") {
@@ -207,7 +197,7 @@ https://github.com/sfackler/rust-openssl#windows
 ///
 /// Note that if this succeeds then the function does not return as pkg-config
 /// typically tells us all the information that we need.
-fn try_pkg_config() -> Result<(), Option<OsString>> {
+fn try_pkg_config() -> Result<(), ()> {
     let target = env::var("TARGET").unwrap();
     let host = env::var("HOST").unwrap();
 
@@ -235,10 +225,7 @@ fn try_pkg_config() -> Result<(), Option<OsString>> {
         println!("cargo:include={}", include.display());
     }
 
-    if lib.include_paths.is_empty() {
-        return Err(None);
-    }
-    Err(Some(OsString::from(&lib.include_paths[0])))
+    Err(())
 }
 
 /// Attempt to find OpenSSL through vcpkg.
@@ -246,7 +233,7 @@ fn try_pkg_config() -> Result<(), Option<OsString>> {
 /// Note that if this succeeds then the function does not return as vcpkg
 /// should emit all of the cargo metadata that we need.
 #[cfg(target_env = "msvc")]
-fn try_vcpkg() -> Result<(), Option<OsString>> {
+fn try_vcpkg() -> Result<(), ()> {
     // vcpkg will not emit any metadata if it can not find libraries
     // appropriate for the target triple with the desired linkage.
 
@@ -264,14 +251,11 @@ fn try_vcpkg() -> Result<(), Option<OsString>> {
     println!("cargo:rustc-link-lib=gdi32");
     println!("cargo:rustc-link-lib=crypt32");
 
-    if lib.include_paths.is_empty() {
-        return Err(None);
-    }
-    Err(Some(OsString::from(&lib.include_paths[0])))
+    Err(())
 }
 
 #[cfg(not(target_env = "msvc"))]
-fn try_vcpkg() -> Result<(), Option<OsString>> {
+fn try_vcpkg() -> Result<(), ()> {
     Ok(())
 }
 
