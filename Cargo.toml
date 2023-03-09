@@ -23,6 +23,11 @@ members = ["libduckdb-sys"]
 [features]
 default = []
 bundled = ["libduckdb-sys/bundled"]
+httpfs = ["libduckdb-sys/httpfs"]
+json = ["libduckdb-sys/json"]
+parquet = ["libduckdb-sys/parquet"]
+extensions-full = ["httpfs", "json", "parquet"]
+
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = [
     "chrono",

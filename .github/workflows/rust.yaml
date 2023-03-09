@@ -51,7 +51,7 @@ jobs:
           extract_dir: libduckdb
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
-      - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features modern-full -- -D warnings -A clippy::redundant-closure
+      - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features "modern-full" -- -D warnings -A clippy::redundant-closure
         if: matrix.os == 'ubuntu-latest'
         name: run cargo clippy
         env:
@@ -101,11 +101,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
+      - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: vcpkg install openssl:x64-windows-static-md
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry/index
+          key: index-${{ runner.os }}-${{ github.run_number }}
+          restore-keys: |
+            index-${{ runner.os }}-
       - uses: hecrj/setup-rust-action@v1
         with:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
-      - run: cargo test --features "bundled" --features "modern-full"
+      - run: cargo test --features "bundled modern-full extensions-full"
 
   Sanitizer:
     name: Address Sanitizer
@@ -128,7 +136,7 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features 'bundled' --features 'modern-full' --target x86_64-unknown-linux-gnu
+        run: cargo -Z build-std test --features "bundled modern-full extensions-full" --target x86_64-unknown-linux-gnu
 
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run

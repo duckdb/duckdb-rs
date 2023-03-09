@@ -11,6 +11,7 @@ keywords = ["duckdb", "ffi", "database"]
 readme = "README.md"
 categories = ["external-ffi-bindings", "database"]
 description = "Native bindings to the libduckdb library, C API"
+exclude = ["duckdb-sources"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,13 +20,23 @@ default = ["vcpkg", "pkg-config"]
 bundled = ["cc"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 
+httpfs = ["bundled"]
+json = ["bundled"]
+parquet = ["bundled"]
+extensions-full = ["httpfs", "json", "parquet"]
+
 [dependencies]
 
 [build-dependencies]
+autocfg = "1.0"
 bindgen = { version = "0.64", optional = true, default-features = false, features = ["runtime"] }
+flate2 = "1.0"
 pkg-config = { version = "0.3.24", optional = true }
 cc = { version = "1.0", features = ["parallel"], optional = true }
 vcpkg = { version = "0.2", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+tar = "0.4.38"
 
 [dev-dependencies]
 arrow = { version = "34", default-features = false, features = ["ffi"] }
