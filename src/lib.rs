@@ -524,6 +524,11 @@ impl Connection {
             path: self.path.clone(),
         })
     }
+
+    /// Returns the version of the DuckDB library
+    pub fn version(&self) -> Result<String> {
+        self.query_row("PRAGMA version", [], |row| row.get(0))
+    }
 }
 
 impl fmt::Debug for Connection {
@@ -1264,6 +1269,16 @@ mod test {
         assert_eq!(DatabaseName::Main.to_string(), "main");
         assert_eq!(DatabaseName::Temp.to_string(), "temp");
         assert_eq!(DatabaseName::Attached("abc").to_string(), "abc");
+        Ok(())
+    }
+
+    #[cfg(feature = "bundled")]
+    #[test]
+    fn test_version() -> Result<()> {
+        let db = checked_memory_handle();
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
+        let version = db.version()?;
+        assert_eq!(version, VERSION);
         Ok(())
     }
 }
