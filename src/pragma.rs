@@ -269,16 +269,11 @@ fn is_identifier(s: &str) -> bool {
 }
 
 fn is_identifier_start(c: char) -> bool {
-    ('A'..='Z').contains(&c) || c == '_' || ('a'..='z').contains(&c) || c > '\x7F'
+    c.is_ascii_alphabetic() || c == '_' || c > '\x7F'
 }
 
 fn is_identifier_continue(c: char) -> bool {
-    c == '$'
-        || ('0'..='9').contains(&c)
-        || ('A'..='Z').contains(&c)
-        || c == '_'
-        || ('a'..='z').contains(&c)
-        || c > '\x7F'
+    c == '$' || c.is_ascii_alphanumeric() || c == '_' || c > '\x7F'
 }
 
 #[cfg(test)]
