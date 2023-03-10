@@ -175,7 +175,7 @@ fn check_rustc_versions() {
 #[allow(clippy::let_and_return)]
 fn postprocess(include_dirs: &[PathBuf]) -> Version {
     let version = validate_headers(include_dirs);
-    if include_dirs.len() > 0 {
+    if !include_dirs.is_empty() {
         unsafe {
             INCLUDE_DIR = Some(include_dirs[0].clone());
         }

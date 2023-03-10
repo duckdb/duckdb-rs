@@ -51,7 +51,7 @@ jobs:
           extract_dir: libduckdb
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
-      - run: cargo clippy --all-targets --workspace --features buildtime_bindgen --features "modern-full" -- -D warnings -A clippy::redundant-closure
+      - run: cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
         if: matrix.os == 'ubuntu-latest'
         name: run cargo clippy
         env:
@@ -64,7 +64,7 @@ jobs:
         with:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
-          args: '--features "buildtime_bindgen" --features "modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+          args: '--features "buildtime_bindgen modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
           version: 0.22.0
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
@@ -90,7 +90,7 @@ jobs:
           value: $env:PATH;${{ github.workspace }}/libduckdb
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
-        run: cargo test --features "buildtime_bindgen" --features "modern-full"
+        run: cargo test --features "buildtime_bindgen modern-full"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb

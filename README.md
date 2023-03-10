@@ -130,8 +130,8 @@ See to [Contributing.md](CONTRIBUTING.md)
 ### Checklist
 
 - Run `cargo fmt` to ensure your Rust code is correctly formatted.
-- Ensure `cargo clippy --all-targets --workspace --features bundled` passes without warnings.
-- Ensure `cargo test --all-targets --workspace --features bundled` reports no failures.
+- Run `cargo clippy --fix --allow-dirty --all-targets --workspace --all-features -- -D warnings` to fix all clippy issues.
+- Ensure `cargo test --all-targets --workspace --features "modern-full extensions-full"` reports no failures.
 
 ### TODOs
 
