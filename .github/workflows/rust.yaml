@@ -88,6 +88,9 @@ jobs:
         with:
           name: PATH
           value: $env:PATH;${{ github.workspace }}/libduckdb
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: taiki-e/install-action@cargo-minimal-versions
+      - run: cargo minimal-versions test
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
         run: cargo test --features "buildtime_bindgen modern-full"
