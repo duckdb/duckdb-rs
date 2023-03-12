@@ -49,6 +49,12 @@ jobs:
         with:
           file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
+      - uses: taiki-e/install-action@cargo-hack
+        if: matrix.os == 'ubuntu-latest'
+      - uses: taiki-e/install-action@cargo-minimal-versions
+        if: matrix.os == 'ubuntu-latest'
+      - run: cargo minimal-versions test
+        if: matrix.os == 'ubuntu-latest'
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
       - run: cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
@@ -88,9 +94,6 @@ jobs:
         with:
           name: PATH
           value: $env:PATH;${{ github.workspace }}/libduckdb
-      - uses: taiki-e/install-action@cargo-hack
-      - uses: taiki-e/install-action@cargo-minimal-versions
-      - run: cargo minimal-versions test
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
         run: cargo test --features "buildtime_bindgen modern-full"
