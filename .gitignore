@@ -26,3 +26,5 @@ Cargo.lock
 .ccls-cache/
 
 *.db
+
+libduckdb-sys/duckdb-sources
