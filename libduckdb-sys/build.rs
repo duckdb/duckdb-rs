@@ -148,7 +148,8 @@ mod build_bundled {
             .flag_if_supported("-stdlib=libc++")
             .flag_if_supported("-stdlib=libstdc++")
             .flag_if_supported("/bigobj")
-            .warnings(false);
+            .warnings(false)
+            .flag_if_supported("-w");
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
