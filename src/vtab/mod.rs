@@ -3,6 +3,8 @@ use crate::inner_connection::InnerConnection;
 use crate::{Connection, Result};
 
 use super::ffi;
+use super::ffi::duckdb_free;
+use std::ffi::c_void;
 
 mod data_chunk;
 #[cfg(feature = "excel")]
@@ -128,23 +130,49 @@ impl InnerConnection {
     }
 }
 
+/// free bind or info data
+///
+/// # Safety
+///   This function is obviously unsafe
+pub unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
+    let actual = v.cast::<T>();
+    drop(actual);
+    duckdb_free(v);
+}
+
 #[cfg(test)]
 mod test {
-    use super::ffi::duckdb_free;
     use super::malloc_struct;
     use super::*;
     use crate::{Connection, Result};
     use std::error::Error;
+    use std::ffi::{c_char, CString};
 
     #[repr(C)]
     struct HelloBindData {
-        name: String,
+        name: *mut c_char,
+    }
+
+    impl Drop for HelloBindData {
+        fn drop(&mut self) {
+            unsafe {
+                drop(CString::from_raw(self.name));
+            }
+        }
     }
 
     #[repr(C)]
     struct HelloInitData {
         done: bool,
-        output: String,
+        output: *mut c_char,
+    }
+
+    impl Drop for HelloInitData {
+        fn drop(&mut self) {
+            unsafe {
+                drop(CString::from_raw(self.output));
+            }
+        }
     }
 
     struct HelloVTab;
@@ -155,8 +183,8 @@ mod test {
             let param = bind.get_parameter(0).to_string();
             unsafe {
                 let data = malloc_struct::<HelloBindData>();
-                (*data).name = param;
-                bind.set_bind_data(data.cast(), Some(duckdb_free));
+                (*data).name = CString::new(param).unwrap().into_raw();
+                bind.set_bind_data(data.cast(), Some(drop_data_c::<HelloBindData>));
             }
             Ok(())
         }
@@ -166,8 +194,13 @@ mod test {
                 let bind = init.get_bind_data::<HelloBindData>();
                 let data = malloc_struct::<HelloInitData>();
                 (*data).done = false;
-                (*data).output = "Hello ".to_owned() + &(*bind).name;
-                init.set_init_data(data.cast(), Some(duckdb_free))
+                (*data).output = CString::new(format!(
+                    "Hello {}",
+                    CString::from_raw((*bind).name as *mut c_char).to_str().unwrap()
+                ))
+                .unwrap()
+                .into_raw();
+                init.set_init_data(data.cast(), Some(drop_data_c::<HelloInitData>));
             }
             Ok(())
         }
@@ -181,8 +214,8 @@ mod test {
                 } else {
                     (*init_info).done = true;
                     let vector = output.flat_vector(0);
-                    let result = (*init_info).output.to_string();
-                    vector.insert(0, result.as_str());
+                    let result = CString::from_raw((*init_info).output as *mut c_char);
+                    vector.insert(0, result);
                     output.set_len(1);
                 }
             }

@@ -90,7 +90,7 @@ jobs:
           value: $env:PATH;${{ github.workspace }}/libduckdb
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
-        run: cargo test --features "buildtime_bindgen modern-full"
+        run: cargo test --features "buildtime_bindgen modern-full vtab-full"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb

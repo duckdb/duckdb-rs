@@ -2,12 +2,10 @@
 //!
 //! Port of C [generate series "function"](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/series.c):
 //! `https://www.sqlite.org/series.html`
-use super::ffi::duckdb_free;
 use super::malloc_struct;
-use super::{BindInfo, DataChunk, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
+use super::{drop_data_c, BindInfo, DataChunk, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
 use crate::vtab::vector::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
-use std::ffi::c_void;
 
 #[repr(C)]
 struct ExcelBindData {
@@ -16,13 +14,12 @@ struct ExcelBindData {
     height: usize,
 }
 
-/// Drop the ExcelBindData from C.
-///
-/// # Safety
-unsafe extern "C" fn drop_excel_bind_data_c(v: *mut c_void) {
-    let actual = v.cast::<ExcelBindData>();
-    drop(Box::from_raw((*actual).range));
-    duckdb_free(v);
+impl Drop for ExcelBindData {
+    fn drop(&mut self) {
+        unsafe {
+            drop(Box::from_raw(self.range));
+        }
+    }
 }
 
 #[repr(C)]
@@ -30,11 +27,8 @@ struct ExcelInitData {
     start: usize,
 }
 
-/// Drop the ExcelBindData from C.
-///
-/// # Safety
-unsafe extern "C" fn drop_excel_init_data_c(v: *mut c_void) {
-    duckdb_free(v);
+impl Drop for ExcelInitData {
+    fn drop(&mut self) {}
 }
 
 struct ExcelVTab;
@@ -129,7 +123,7 @@ impl VTab for ExcelVTab {
             (*data).width = range.get_size().1;
             (*data).height = range.get_size().0;
             (*data).range = Box::into_raw(Box::new(range));
-            bind.set_bind_data(data.cast(), Some(drop_excel_bind_data_c));
+            bind.set_bind_data(data.cast(), Some(drop_data_c::<ExcelBindData>));
         }
         Ok(())
     }
@@ -138,7 +132,7 @@ impl VTab for ExcelVTab {
         unsafe {
             let data = malloc_struct::<ExcelInitData>();
             (*data).start = 1;
-            init.set_init_data(data.cast(), Some(drop_excel_init_data_c));
+            init.set_init_data(data.cast(), Some(drop_data_c::<ExcelInitData>));
         }
         Ok(())
     }
