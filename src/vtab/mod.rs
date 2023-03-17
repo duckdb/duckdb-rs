@@ -47,10 +47,15 @@ pub unsafe fn malloc_struct<T>() -> *mut T {
 /// See to the HelloVTab example for more details
 /// https://duckdb.org/docs/api/c/table_functions
 pub trait VTab: Sized {
+    /// The data type of the bind data
+    type InitData: Sized + Drop;
+    /// The data type of the init data
+    type BindData: Sized + Drop;
+
     /// Bind data to the table function
-    fn bind(bind: &BindInfo) -> Result<(), Box<dyn std::error::Error>>;
+    fn bind(bind: &BindInfo, data: *mut Self::BindData) -> Result<(), Box<dyn std::error::Error>>;
     /// Initialize the table function
-    fn init(init: &InitInfo) -> Result<(), Box<dyn std::error::Error>>;
+    fn init(init: &InitInfo, data: *mut Self::InitData) -> Result<(), Box<dyn std::error::Error>>;
     /// The actual function
     fn func(func: &FunctionInfo, output: &DataChunk) -> Result<(), Box<dyn std::error::Error>>;
     /// Does the table function support pushdown
@@ -82,7 +87,9 @@ where
     T: VTab,
 {
     let info = InitInfo::from(info);
-    let result = T::init(&info);
+    let data = malloc_struct::<T::InitData>();
+    let result = T::init(&info, data);
+    info.set_init_data(data.cast(), Some(drop_data_c::<T::InitData>));
     if result.is_err() {
         info.set_error(&result.err().unwrap().to_string());
     }
@@ -93,7 +100,9 @@ where
     T: VTab,
 {
     let info = BindInfo::from(info);
-    let result = T::bind(&info);
+    let data = malloc_struct::<T::BindData>();
+    let result = T::bind(&info, data);
+    info.set_bind_data(data.cast(), Some(drop_data_c::<T::BindData>));
     if result.is_err() {
         info.set_error(&result.err().unwrap().to_string());
     }
@@ -142,7 +151,6 @@ pub unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
 
 #[cfg(test)]
 mod test {
-    use super::malloc_struct;
     use super::*;
     use crate::{Connection, Result};
     use std::error::Error;
@@ -178,21 +186,21 @@ mod test {
     struct HelloVTab;
 
     impl VTab for HelloVTab {
-        fn bind(bind: &BindInfo) -> Result<(), Box<dyn std::error::Error>> {
+        type InitData = HelloInitData;
+        type BindData = HelloBindData;
+
+        fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
             bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
             let param = bind.get_parameter(0).to_string();
             unsafe {
-                let data = malloc_struct::<HelloBindData>();
                 (*data).name = CString::new(param).unwrap().into_raw();
-                bind.set_bind_data(data.cast(), Some(drop_data_c::<HelloBindData>));
             }
             Ok(())
         }
 
-        fn init(init: &InitInfo) -> Result<(), Box<dyn std::error::Error>> {
+        fn init(init: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
             unsafe {
                 let bind = init.get_bind_data::<HelloBindData>();
-                let data = malloc_struct::<HelloInitData>();
                 (*data).done = false;
                 (*data).output = CString::new(format!(
                     "Hello {}",
@@ -200,7 +208,6 @@ mod test {
                 ))
                 .unwrap()
                 .into_raw();
-                init.set_init_data(data.cast(), Some(drop_data_c::<HelloInitData>));
             }
             Ok(())
         }

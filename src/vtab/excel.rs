@@ -2,8 +2,7 @@
 //!
 //! Port of C [generate series "function"](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/series.c):
 //! `https://www.sqlite.org/series.html`
-use super::malloc_struct;
-use super::{drop_data_c, BindInfo, DataChunk, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunk, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
 use crate::vtab::vector::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
@@ -34,7 +33,10 @@ impl Drop for ExcelInitData {
 struct ExcelVTab;
 
 impl VTab for ExcelVTab {
-    fn bind(bind: &BindInfo) -> Result<(), Box<dyn std::error::Error>> {
+    type BindData = ExcelBindData;
+    type InitData = ExcelInitData;
+
+    fn bind(bind: &BindInfo, data: *mut ExcelBindData) -> Result<(), Box<dyn std::error::Error>> {
         let param_count = bind.get_parameter_count();
         assert!(param_count == 2);
         let path = bind.get_parameter(0).to_string();
@@ -119,20 +121,16 @@ impl VTab for ExcelVTab {
         }
 
         unsafe {
-            let data = malloc_struct::<ExcelBindData>();
             (*data).width = range.get_size().1;
             (*data).height = range.get_size().0;
             (*data).range = Box::into_raw(Box::new(range));
-            bind.set_bind_data(data.cast(), Some(drop_data_c::<ExcelBindData>));
         }
         Ok(())
     }
 
-    fn init(init: &InitInfo) -> Result<(), Box<dyn std::error::Error>> {
+    fn init(_: &InitInfo, data: *mut ExcelInitData) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
-            let data = malloc_struct::<ExcelInitData>();
             (*data).start = 1;
-            init.set_init_data(data.cast(), Some(drop_data_c::<ExcelInitData>));
         }
         Ok(())
     }
