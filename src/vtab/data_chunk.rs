@@ -81,7 +81,7 @@ mod test {
 
     #[test]
     fn test_data_chunk_construction() {
-        let dc = DataChunk::new(&vec![LogicalType::new(LogicalTypeId::Integer)]);
+        let dc = DataChunk::new(&[LogicalType::new(LogicalTypeId::Integer)]);
 
         assert_eq!(dc.num_columns(), 1);
 
@@ -90,7 +90,7 @@ mod test {
 
     #[test]
     fn test_vector() {
-        let datachunk = DataChunk::new(&vec![LogicalType::new(LogicalTypeId::Bigint)]);
+        let datachunk = DataChunk::new(&[LogicalType::new(LogicalTypeId::Bigint)]);
         let mut vector = datachunk.flat_vector(0);
         let data = vector.as_mut_slice::<i64>();
 

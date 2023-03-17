@@ -54,13 +54,13 @@ impl VTab for ExcelVTab {
         let mut workbook = open_workbook_auto(path)?;
         let range = workbook
             .worksheet_range(&sheet)
-            .expect(&format!("Can't find sheet: {} ?", sheet))?;
+            .unwrap_or_else(|| panic!("Can't find sheet: {} ?", sheet))?;
         let column_count = range.get_size().1;
         let mut rows = range.rows();
         let mut start = 0;
         while let Some(header) = rows.next() {
             start += 1;
-            while let Some(data) = rows.next() {
+            for data in rows.by_ref() {
                 start += 1;
                 let mut idx = 0;
                 let mut should_break = true;
@@ -69,31 +69,41 @@ impl VTab for ExcelVTab {
                     match cell {
                         DataType::String(_) => {
                             bind.add_result_column(
-                                header[idx].get_string().expect(&format!("idx {} header empty?", idx)),
+                                header[idx]
+                                    .get_string()
+                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
                                 LogicalType::new(LogicalTypeId::Varchar),
                             );
                         }
                         DataType::Float(_) => {
                             bind.add_result_column(
-                                header[idx].get_string().expect(&format!("idx {} header empty?", idx)),
+                                header[idx]
+                                    .get_string()
+                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
                                 LogicalType::new(LogicalTypeId::Double),
                             );
                         }
                         DataType::Int(_) => {
                             bind.add_result_column(
-                                header[idx].get_string().expect(&format!("idx {} header empty?", idx)),
+                                header[idx]
+                                    .get_string()
+                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
                                 LogicalType::new(LogicalTypeId::Bigint),
                             );
                         }
                         DataType::Bool(_) => {
                             bind.add_result_column(
-                                header[idx].get_string().expect(&format!("idx {} header empty?", idx)),
+                                header[idx]
+                                    .get_string()
+                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
                                 LogicalType::new(LogicalTypeId::Boolean),
                             );
                         }
                         DataType::DateTime(_) => {
                             bind.add_result_column(
-                                header[idx].get_string().expect(&format!("idx {} header empty?", idx)),
+                                header[idx]
+                                    .get_string()
+                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
                                 LogicalType::new(LogicalTypeId::Date),
                             );
                         }
