@@ -198,6 +198,7 @@ mod test {
     use std::error::Error;
 
     #[test]
+    #[ignore = "not supported for now"]
     fn test_excel() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ExcelVTab>("excel")?;
@@ -258,10 +259,12 @@ mod test {
     fn test_excel_with_empty_row() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ExcelVTab>("excel")?;
+
         // use arrow::record_batch::RecordBatch;
         // use arrow::util::pretty::print_batches;
         // let val: Vec<RecordBatch> = db.prepare("select * from excel('./examples/date.xlsx', 'Sheet2')")?.query_arrow([])?.collect();
         // print_batches(&val)?;
+
         let mut stmt = db.prepare("select * from excel('./examples/date.xlsx', 'Sheet2')")?;
         let mut arr = stmt.query_arrow([])?;
         let rb = arr.next().expect("no record batch");

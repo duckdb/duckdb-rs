@@ -38,8 +38,20 @@ use std::mem::size_of;
 /// used for the bind_info and init_info
 /// # Safety
 /// This function is obviously unsafe
-pub unsafe fn malloc_struct<T>() -> *mut T {
+unsafe fn malloc_data_c<T>() -> *mut T {
     duckdb_malloc(size_of::<T>()).cast::<T>()
+}
+
+/// free bind or info data
+///
+/// # Safety
+///   This function is obviously unsafe
+/// TODO: maybe we should use a Free trait here
+#[allow(clippy::drop_copy, drop_bounds)]
+unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
+    let actual = v.cast::<T>();
+    drop(actual);
+    duckdb_free(v);
 }
 
 /// Duckdb table function trait
@@ -87,7 +99,7 @@ where
     T: VTab,
 {
     let info = InitInfo::from(info);
-    let data = malloc_struct::<T::InitData>();
+    let data = malloc_data_c::<T::InitData>();
     let result = T::init(&info, data);
     info.set_init_data(data.cast(), Some(drop_data_c::<T::InitData>));
     if result.is_err() {
@@ -100,7 +112,7 @@ where
     T: VTab,
 {
     let info = BindInfo::from(info);
-    let data = malloc_struct::<T::BindData>();
+    let data = malloc_data_c::<T::BindData>();
     let result = T::bind(&info, data);
     info.set_bind_data(data.cast(), Some(drop_data_c::<T::BindData>));
     if result.is_err() {
@@ -137,18 +149,6 @@ impl InnerConnection {
         }
         Ok(())
     }
-}
-
-/// free bind or info data
-///
-/// # Safety
-///   This function is obviously unsafe
-/// TODO: maybe we should use a Free trait here
-#[allow(clippy::drop_copy, drop_bounds)]
-pub unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
-    let actual = v.cast::<T>();
-    drop(actual);
-    duckdb_free(v);
 }
 
 #[cfg(test)]
