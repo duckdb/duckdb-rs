@@ -143,6 +143,8 @@ impl InnerConnection {
 ///
 /// # Safety
 ///   This function is obviously unsafe
+/// TODO: maybe we should use a Free trait here
+#[allow(clippy::drop_copy, drop_bounds)]
 pub unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
     let actual = v.cast::<T>();
     drop(actual);
