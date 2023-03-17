@@ -26,8 +26,10 @@ bundled = ["libduckdb-sys/bundled"]
 httpfs = ["libduckdb-sys/httpfs", "bundled"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
-extensions-full = ["httpfs", "json", "parquet"]
-
+vtab = []
+excel = ["vtab", "calamine"]
+vtab-full = ["excel"]
+extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = [
     "chrono",
@@ -56,6 +58,7 @@ arrow = { version = "35", default-features = false, features = ["prettyprint", "
 rust_decimal = "1.14"
 strum = { version = "0.24", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
+calamine = { version = "0.19.1", optional = true }
 
 [dev-dependencies]
 doc-comment = "0.3"

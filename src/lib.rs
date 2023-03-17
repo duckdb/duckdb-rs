@@ -112,6 +112,9 @@ mod transaction;
 mod extension;
 
 pub mod types;
+/// The duckdb table function interface
+#[cfg(feature = "vtab")]
+pub mod vtab;
 
 pub(crate) mod util;
 

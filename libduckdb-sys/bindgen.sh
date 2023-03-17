@@ -16,12 +16,12 @@ export DU_INCLUDE_DIR="$DUCKDB_LIB_DIR"
 # rm -f libduckdb-src.zip
 
 # Regenerate bindgen file for DUCKDB
-rm -f "$DUCKDB_LIB_DIR/bindgen_bundled_version.rs"
+rm -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs"
 cargo update
 # Just to make sure there is only one bindgen.rs file in target dir
 find "$SCRIPT_DIR/../target" -type f -name bindgen.rs -exec rm {} \;
 env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "bundled buildtime_bindgen"
-find "$SCRIPT_DIR/../target" -type f -name bindgen.rs -exec cp {} "$DUCKDB_LIB_DIR/bindgen_bundled_version.rs" \;
+find "$SCRIPT_DIR/../target" -type f -name bindgen.rs -exec cp {} "$SCRIPT_DIR/src/bindgen_bundled_version.rs" \;
 
 # Sanity checks
 # cd "$SCRIPT_DIR/.." || { echo "fatal error" >&2; exit 1; }

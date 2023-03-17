@@ -64,7 +64,7 @@ jobs:
         with:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
-          args: '--features "buildtime_bindgen modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+          args: '--features "buildtime_bindgen modern-full vtab-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
           version: 0.22.0
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
@@ -90,7 +90,7 @@ jobs:
           value: $env:PATH;${{ github.workspace }}/libduckdb
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
-        run: cargo test --features "buildtime_bindgen modern-full"
+        run: cargo test --features "modern-full vtab-full"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
@@ -115,7 +115,7 @@ jobs:
         with:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
-      - run: cargo test --features "bundled modern-full extensions-full"
+      - run: cargo test --features "modern-full extensions-full"
 
   Sanitizer:
     name: Address Sanitizer
@@ -138,7 +138,7 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features "bundled modern-full extensions-full" --target x86_64-unknown-linux-gnu
+        run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
 
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
