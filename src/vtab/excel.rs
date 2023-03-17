@@ -54,14 +54,27 @@ impl VTab for ExcelVTab {
         let range = workbook
             .worksheet_range(&sheet)
             .unwrap_or_else(|| panic!("Can't find sheet: {} ?", sheet))?;
-        let column_count = range.get_size().1;
+        let _column_count = range.get_size().1;
         let mut rows = range.rows();
         let header = rows.next().unwrap();
         for data in rows.by_ref() {
-            let mut idx = 0;
-            let mut should_break = true;
-            for i in 0..column_count {
-                let cell = &data[i];
+            // find the first row with no empty cell
+            let mut found = true;
+            for (_, cell) in data.iter().enumerate() {
+                match cell {
+                    DataType::Error(_) | DataType::Empty => {
+                        found = false;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            if !found {
+                continue;
+            }
+
+            // use the first row as data type
+            for (idx, cell) in data.iter().enumerate() {
                 match cell {
                     DataType::String(_) => {
                         bind.add_result_column(
@@ -104,15 +117,11 @@ impl VTab for ExcelVTab {
                         );
                     }
                     _ => {
-                        should_break = false;
-                        break;
+                        panic!("Shouldn't happend");
                     }
                 }
-                idx += 1;
             }
-            if should_break {
-                break;
-            }
+            break;
         }
 
         unsafe {
