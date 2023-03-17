@@ -1,7 +1,3 @@
-//! Generate series table function.
-//!
-//! Port of C [generate series "function"](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/series.c):
-//! `https://www.sqlite.org/series.html`
 use super::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
 use crate::vtab::vector::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
