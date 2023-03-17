@@ -1,3 +1,4 @@
 [submodule "libduckdb-sys/duckdb-sources"]
 	path = libduckdb-sys/duckdb-sources
-	url = git@github.com:duckdb/duckdb.git
+    url = git@github.com:duckdb/duckdb.git
+    update = none
