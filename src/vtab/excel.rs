@@ -2,7 +2,7 @@
 //!
 //! Port of C [generate series "function"](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/series.c):
 //! `https://www.sqlite.org/series.html`
-use super::{BindInfo, DataChunk, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
 use crate::vtab::vector::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
@@ -13,9 +13,12 @@ struct ExcelBindData {
     height: usize,
 }
 
-impl Drop for ExcelBindData {
-    fn drop(&mut self) {
+impl Free for ExcelBindData {
+    fn free(&mut self) {
         unsafe {
+            if self.range.is_null() {
+                return;
+            }
             drop(Box::from_raw(self.range));
         }
     }
@@ -26,9 +29,7 @@ struct ExcelInitData {
     start: usize,
 }
 
-impl Drop for ExcelInitData {
-    fn drop(&mut self) {}
-}
+impl Free for ExcelInitData {}
 
 struct ExcelVTab;
 
@@ -198,7 +199,6 @@ mod test {
     use std::error::Error;
 
     #[test]
-    #[ignore = "not supported for now"]
     fn test_excel() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ExcelVTab>("excel")?;

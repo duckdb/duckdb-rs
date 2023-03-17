@@ -39,7 +39,7 @@ use std::mem::size_of;
 /// # Safety
 /// This function is obviously unsafe
 unsafe fn malloc_data_c<T>() -> *mut T {
-    duckdb_malloc(size_of::<T>()).cast::<T>()
+    duckdb_malloc(size_of::<T>()).cast()
 }
 
 /// free bind or info data
@@ -47,11 +47,16 @@ unsafe fn malloc_data_c<T>() -> *mut T {
 /// # Safety
 ///   This function is obviously unsafe
 /// TODO: maybe we should use a Free trait here
-#[allow(clippy::drop_copy, drop_bounds)]
-unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
+unsafe extern "C" fn drop_data_c<T: Free>(v: *mut c_void) {
     let actual = v.cast::<T>();
-    drop(actual);
+    (*actual).free();
     duckdb_free(v);
+}
+
+/// Free trait for the bind and init data
+pub trait Free {
+    /// Free the data
+    fn free(&mut self) {}
 }
 
 /// Duckdb table function trait
@@ -60,9 +65,9 @@ unsafe extern "C" fn drop_data_c<T: Drop>(v: *mut c_void) {
 /// https://duckdb.org/docs/api/c/table_functions
 pub trait VTab: Sized {
     /// The data type of the bind data
-    type InitData: Sized + Drop;
+    type InitData: Sized + Free;
     /// The data type of the init data
-    type BindData: Sized + Drop;
+    type BindData: Sized + Free;
 
     /// Bind data to the table function
     fn bind(bind: &BindInfo, data: *mut Self::BindData) -> Result<(), Box<dyn std::error::Error>>;
@@ -163,9 +168,12 @@ mod test {
         name: *mut c_char,
     }
 
-    impl Drop for HelloBindData {
-        fn drop(&mut self) {
+    impl Free for HelloBindData {
+        fn free(&mut self) {
             unsafe {
+                if self.name.is_null() {
+                    return;
+                }
                 drop(CString::from_raw(self.name));
             }
         }
@@ -174,18 +182,11 @@ mod test {
     #[repr(C)]
     struct HelloInitData {
         done: bool,
-        output: *mut c_char,
-    }
-
-    impl Drop for HelloInitData {
-        fn drop(&mut self) {
-            unsafe {
-                drop(CString::from_raw(self.output));
-            }
-        }
     }
 
     struct HelloVTab;
+
+    impl Free for HelloInitData {}
 
     impl VTab for HelloVTab {
         type InitData = HelloInitData;
@@ -200,22 +201,16 @@ mod test {
             Ok(())
         }
 
-        fn init(init: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
+        fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
             unsafe {
-                let bind = init.get_bind_data::<HelloBindData>();
                 (*data).done = false;
-                (*data).output = CString::new(format!(
-                    "Hello {}",
-                    CString::from_raw((*bind).name as *mut c_char).to_str().unwrap()
-                ))
-                .unwrap()
-                .into_raw();
             }
             Ok(())
         }
 
         fn func(func: &FunctionInfo, output: &DataChunk) -> Result<(), Box<dyn std::error::Error>> {
             let init_info = func.get_init_data::<HelloInitData>();
+            let bind_info = func.get_bind_data::<HelloBindData>();
 
             unsafe {
                 if (*init_info).done {
@@ -223,7 +218,10 @@ mod test {
                 } else {
                     (*init_info).done = true;
                     let vector = output.flat_vector(0);
-                    let result = CString::from_raw((*init_info).output as *mut c_char);
+                    let name = CString::from_raw((*bind_info).name);
+                    let result = CString::new(format!("Hello {}", name.to_str()?))?;
+                    // Can't consume the CString
+                    (*bind_info).name = CString::into_raw(name);
                     vector.insert(0, result);
                     output.set_len(1);
                 }
