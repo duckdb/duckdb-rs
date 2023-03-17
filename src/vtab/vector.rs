@@ -6,8 +6,9 @@ use super::LogicalType;
 use crate::ffi::{
     duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
     duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name,
-    duckdb_struct_vector_get_child, duckdb_vector, duckdb_vector_assign_string_element, duckdb_vector_get_column_type,
-    duckdb_vector_get_data, duckdb_vector_size,
+    duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
+    duckdb_vector_assign_string_element, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type,
+    duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_size,
 };
 
 /// Vector trait.
@@ -71,6 +72,15 @@ impl FlatVector {
     /// Returns the logical type of the vector
     pub fn logical_type(&self) -> LogicalType {
         LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
+    }
+
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.ptr);
+            let idx = duckdb_vector_get_validity(self.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
     }
 
     /// Copy data to the vector.

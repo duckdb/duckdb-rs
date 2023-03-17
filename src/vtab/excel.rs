@@ -12,7 +12,6 @@ use std::ffi::c_void;
 #[repr(C)]
 struct ExcelBindData {
     range: *mut Range<DataType>,
-    start: usize,
     width: usize,
     height: usize,
 }
@@ -57,73 +56,67 @@ impl VTab for ExcelVTab {
             .unwrap_or_else(|| panic!("Can't find sheet: {} ?", sheet))?;
         let column_count = range.get_size().1;
         let mut rows = range.rows();
-        let mut start = 0;
-        while let Some(header) = rows.next() {
-            start += 1;
-            for data in rows.by_ref() {
-                start += 1;
-                let mut idx = 0;
-                let mut should_break = true;
-                for i in 0..column_count {
-                    let cell = &data[i];
-                    match cell {
-                        DataType::String(_) => {
-                            bind.add_result_column(
-                                header[idx]
-                                    .get_string()
-                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                                LogicalType::new(LogicalTypeId::Varchar),
-                            );
-                        }
-                        DataType::Float(_) => {
-                            bind.add_result_column(
-                                header[idx]
-                                    .get_string()
-                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                                LogicalType::new(LogicalTypeId::Double),
-                            );
-                        }
-                        DataType::Int(_) => {
-                            bind.add_result_column(
-                                header[idx]
-                                    .get_string()
-                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                                LogicalType::new(LogicalTypeId::Bigint),
-                            );
-                        }
-                        DataType::Bool(_) => {
-                            bind.add_result_column(
-                                header[idx]
-                                    .get_string()
-                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                                LogicalType::new(LogicalTypeId::Boolean),
-                            );
-                        }
-                        DataType::DateTime(_) => {
-                            bind.add_result_column(
-                                header[idx]
-                                    .get_string()
-                                    .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                                LogicalType::new(LogicalTypeId::Date),
-                            );
-                        }
-                        _ => {
-                            should_break = false;
-                            break;
-                        }
+        let header = rows.next().unwrap();
+        for data in rows.by_ref() {
+            let mut idx = 0;
+            let mut should_break = true;
+            for i in 0..column_count {
+                let cell = &data[i];
+                match cell {
+                    DataType::String(_) => {
+                        bind.add_result_column(
+                            header[idx]
+                                .get_string()
+                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                            LogicalType::new(LogicalTypeId::Varchar),
+                        );
                     }
-                    idx += 1;
+                    DataType::Float(_) => {
+                        bind.add_result_column(
+                            header[idx]
+                                .get_string()
+                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                            LogicalType::new(LogicalTypeId::Double),
+                        );
+                    }
+                    DataType::Int(_) => {
+                        bind.add_result_column(
+                            header[idx]
+                                .get_string()
+                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                            LogicalType::new(LogicalTypeId::Bigint),
+                        );
+                    }
+                    DataType::Bool(_) => {
+                        bind.add_result_column(
+                            header[idx]
+                                .get_string()
+                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                            LogicalType::new(LogicalTypeId::Boolean),
+                        );
+                    }
+                    DataType::DateTime(_) => {
+                        bind.add_result_column(
+                            header[idx]
+                                .get_string()
+                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                            LogicalType::new(LogicalTypeId::Date),
+                        );
+                    }
+                    _ => {
+                        should_break = false;
+                        break;
+                    }
                 }
-                if should_break {
-                    break;
-                }
+                idx += 1;
             }
-            break;
+            if should_break {
+                break;
+            }
         }
 
         unsafe {
             let data = malloc_struct::<ExcelBindData>();
-            (*data).start = start - 1;
             (*data).width = range.get_size().1;
             (*data).height = range.get_size().0;
             (*data).range = Box::into_raw(Box::new(range));
@@ -133,10 +126,9 @@ impl VTab for ExcelVTab {
     }
 
     fn init(init: &InitInfo) -> Result<(), Box<dyn std::error::Error>> {
-        let bind_info = init.get_bind_data::<ExcelBindData>();
         unsafe {
             let data = malloc_struct::<ExcelInitData>();
-            (*data).start = (*bind_info).start;
+            (*data).start = 1;
             init.set_init_data(data.cast(), Some(drop_excel_init_data_c));
         }
         Ok(())
@@ -157,7 +149,7 @@ impl VTab for ExcelVTab {
                 for i in 0..(*bind_info).width {
                     let mut vector = output.flat_vector(i);
                     for j in 0..height {
-                        let cell = range.get_value((((*init_info).start + j) as u32, i as u32));
+                        let cell = range.get(((*init_info).start + j, i));
                         if cell.is_none() {
                             continue;
                         }
@@ -178,7 +170,7 @@ impl VTab for ExcelVTab {
                                 vector.as_mut_slice::<i32>()[j] = d.round() as i32 - 25569;
                             }
                             _ => {
-                                //
+                                vector.set_null(j);
                             }
                         }
                     }
@@ -258,6 +250,31 @@ mod test {
         assert_eq!(column.value(1), 16.0);
         assert!(arr.next().is_none());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_excel_with_empty_row() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ExcelVTab>("excel")?;
+        // use arrow::record_batch::RecordBatch;
+        // use arrow::util::pretty::print_batches;
+        // let val: Vec<RecordBatch> = db.prepare("select * from excel('./examples/date.xlsx', 'Sheet2')")?.query_arrow([])?.collect();
+        // print_batches(&val)?;
+        let mut stmt = db.prepare("select * from excel('./examples/date.xlsx', 'Sheet2')")?;
+        let mut arr = stmt.query_arrow([])?;
+        let rb = arr.next().expect("no record batch");
+        let column = rb.column(0).as_any().downcast_ref::<Date32Array>().unwrap();
+        assert_eq!(column.len(), 3);
+        assert!(column.is_null(0));
+        assert_eq!(column.value_as_date(1).unwrap().to_string(), "2021-01-01");
+        assert_eq!(column.value_as_date(2).unwrap().to_string(), "2021-01-02");
+        let column = rb.column(1).as_any().downcast_ref::<Float64Array>().unwrap();
+        assert_eq!(column.len(), 3);
+        assert!(column.is_null(0));
+        assert_eq!(column.value(1), 15.0);
+        assert_eq!(column.value(2), 16.0);
+        assert!(arr.next().is_none());
         Ok(())
     }
 }
