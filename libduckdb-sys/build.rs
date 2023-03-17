@@ -207,7 +207,7 @@ mod build_linked {
         let header = find_duckdb();
 
         if !cfg!(feature = "buildtime_bindgen") {
-            std::fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name()), out_path)
+            std::fs::copy("src/bindgen_bundled_version.rs", out_path)
                 .expect("Could not copy bindings to output directory");
         } else {
             #[cfg(feature = "buildtime_bindgen")]
