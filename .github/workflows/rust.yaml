@@ -10,6 +10,7 @@ env:
 jobs:
   test:
     name: Test ${{ matrix.target }}
+    needs: Sanitizer
     strategy:
       fail-fast: true
       matrix:
@@ -97,7 +98,7 @@ jobs:
 
   Windows:
     name: Windows build from source
-    needs: test
+    needs: Sanitizer
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
@@ -119,7 +120,6 @@ jobs:
 
   Sanitizer:
     name: Address Sanitizer
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

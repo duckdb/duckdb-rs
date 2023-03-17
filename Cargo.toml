@@ -29,7 +29,8 @@ parquet = ["libduckdb-sys/parquet", "bundled"]
 vtab = []
 excel = ["vtab", "calamine"]
 vtab-full = ["excel"]
-extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
+# extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
+extensions-full = ["httpfs", "json", "parquet", "vtab"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = [
     "chrono",
