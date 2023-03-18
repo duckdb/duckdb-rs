@@ -1,12 +1,9 @@
 use super::Result;
-use crate::ffi;
-use crate::types::FromSqlError;
-use crate::types::Type;
-use std::error;
-use std::ffi::CStr;
-use std::fmt;
-use std::path::PathBuf;
-use std::str;
+use crate::{
+    ffi,
+    types::{FromSqlError, Type},
+};
+use std::{error, ffi::CStr, fmt, path::PathBuf, str};
 
 /// Enum listing possible errors from duckdb.
 #[derive(Debug)]

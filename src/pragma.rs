@@ -2,10 +2,12 @@
 
 use std::ops::Deref;
 
-use crate::error::Error;
-use crate::ffi;
-use crate::types::{ToSql, ToSqlOutput, ValueRef};
-use crate::{Connection, DatabaseName, Result, Row};
+use crate::{
+    error::Error,
+    ffi,
+    types::{ToSql, ToSqlOutput, ValueRef},
+    Connection, DatabaseName, Result, Row,
+};
 
 pub struct Sql {
     buf: String,
@@ -279,8 +281,7 @@ fn is_identifier_continue(c: char) -> bool {
 #[cfg(test)]
 mod test {
     use super::Sql;
-    use crate::pragma;
-    use crate::{Connection, DatabaseName, Result};
+    use crate::{pragma, Connection, DatabaseName, Result};
 
     #[test]
     fn pragma_query_value() -> Result<()> {

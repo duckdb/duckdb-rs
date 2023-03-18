@@ -1,6 +1,5 @@
 use crate::ffi::{duckdb_destroy_value, duckdb_get_int64, duckdb_get_varchar, duckdb_value};
-use std::ffi::CString;
-use std::fmt;
+use std::{ffi::CString, fmt};
 
 /// The Value object holds a single arbitrary value of any type that can be
 /// stored in the database.

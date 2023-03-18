@@ -1,5 +1,4 @@
-use std::ffi::CString;
-use std::fmt::Debug;
+use std::{ffi::CString, fmt::Debug};
 
 use crate::ffi::*;
 

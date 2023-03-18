@@ -1,14 +1,16 @@
-use std::ffi::{c_void, CStr, CString};
-use std::mem;
-use std::os::raw::c_char;
-use std::ptr;
-use std::str;
+use std::{
+    ffi::{c_void, CStr, CString},
+    mem,
+    os::raw::c_char,
+    ptr, str,
+};
 
-use super::ffi;
-use super::{Appender, Config, Connection, Result};
-use crate::error::{result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_prepare, Error};
-use crate::raw_statement::RawStatement;
-use crate::statement::Statement;
+use super::{ffi, Appender, Config, Connection, Result};
+use crate::{
+    error::{result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_prepare, Error},
+    raw_statement::RawStatement,
+    statement::Statement,
+};
 
 pub struct InnerConnection {
     pub db: ffi::duckdb_database,

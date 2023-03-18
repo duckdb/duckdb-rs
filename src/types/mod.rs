@@ -67,10 +67,12 @@ impl ToSql for DateTimeSql {
 //! implements [`ToSql`] or [`FromSql`] for the cases where you want to know if
 //! a value was NULL (which gets translated to `None`).
 
-pub use self::from_sql::{FromSql, FromSqlError, FromSqlResult};
-pub use self::to_sql::{ToSql, ToSqlOutput};
-pub use self::value::Value;
-pub use self::value_ref::{TimeUnit, ValueRef};
+pub use self::{
+    from_sql::{FromSql, FromSqlError, FromSqlResult},
+    to_sql::{ToSql, ToSqlOutput},
+    value::Value,
+    value_ref::{TimeUnit, ValueRef},
+};
 
 use std::fmt;
 
@@ -177,8 +179,10 @@ impl fmt::Display for Type {
 mod test {
     use super::Value;
     use crate::{params, Connection, Error, Result, Statement};
-    use std::f64::EPSILON;
-    use std::os::raw::{c_double, c_int};
+    use std::{
+        f64::EPSILON,
+        os::raw::{c_double, c_int},
+    };
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;

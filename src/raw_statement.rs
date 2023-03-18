@@ -1,15 +1,13 @@
-use std::convert::TryFrom;
-use std::ffi::CStr;
-use std::ptr;
-use std::sync::Arc;
+use std::{convert::TryFrom, ffi::CStr, ptr, sync::Arc};
 
-use super::ffi;
-use super::Result;
+use super::{ffi, Result};
 use crate::error::result_from_duckdb_arrow;
 
-use arrow::array::{ArrayData, StructArray};
-use arrow::datatypes::{DataType, Schema, SchemaRef};
-use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
+use arrow::{
+    array::{ArrayData, StructArray},
+    datatypes::{DataType, Schema, SchemaRef},
+    ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema},
+};
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
 // TODO: destroy statement and result
@@ -140,9 +138,7 @@ impl RawStatement {
 
     #[allow(dead_code)]
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        use ffi::duckdb_column_count;
-        use ffi::duckdb_column_name;
-        use ffi::duckdb_row_count;
+        use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
 
         println!(
             "row-count: {}, column-count: {}",

@@ -1,16 +1,13 @@
-use std::ffi::c_void;
-use std::iter::IntoIterator;
-use std::os::raw::c_char;
-use std::{convert, fmt, mem, ptr, str};
+use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str};
 
-use super::ffi;
-use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
-use crate::arrow_batch::Arrow;
-use crate::error::result_from_duckdb_prepare;
-use crate::types::{TimeUnit, ToSql, ToSqlOutput};
+use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
+use crate::{
+    arrow_batch::Arrow,
+    error::result_from_duckdb_prepare,
+    types::{TimeUnit, ToSql, ToSqlOutput},
+};
 
-use arrow::array::StructArray;
-use arrow::datatypes::DataType;
+use arrow::{array::StructArray, datatypes::DataType};
 
 /// A prepared statement.
 pub struct Statement<'conn> {
@@ -498,8 +495,7 @@ impl Statement<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::types::ToSql;
-    use crate::{params_from_iter, Connection, Error, Result};
+    use crate::{params_from_iter, types::ToSql, Connection, Error, Result};
 
     #[test]
     fn test_execute() -> Result<()> {

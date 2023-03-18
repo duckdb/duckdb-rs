@@ -1,8 +1,7 @@
 extern crate duckdb;
 use std::convert::TryFrom;
 
-use duckdb::DropBehavior;
-use duckdb::{params, Connection, Result};
+use duckdb::{params, Connection, DropBehavior, Result};
 
 fn main() -> Result<()> {
     //let mut db = Connection::open("10m.db")?;
@@ -69,8 +68,7 @@ fn firstn(n: i32) -> impl std::iter::Iterator<Item = User> {
 }
 
 // Modified from https://github.com/avinassh/fast-sqlite3-inserts/blob/master/src/bin/common.rs
-use rand::prelude::SliceRandom;
-use rand::Rng;
+use rand::{prelude::SliceRandom, Rng};
 
 #[inline]
 fn get_random_age() -> i8 {

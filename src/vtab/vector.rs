@@ -1,6 +1,4 @@
-use std::any::Any;
-use std::ffi::CString;
-use std::slice;
+use std::{any::Any, ffi::CString, slice};
 
 use super::LogicalType;
 use crate::ffi::{
