@@ -45,16 +45,12 @@ struct ArrowVTab;
 
 unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
     let ptr = address as *const FFI_ArrowSchema;
-    let schema = std::ptr::read(ptr);
-    std::mem::forget(ptr);
-    schema
+    std::ptr::read(ptr)
 }
 
 unsafe fn address_to_arrow_array(address: usize) -> FFI_ArrowArray {
     let ptr = address as *const FFI_ArrowArray;
-    let array = std::ptr::read(ptr);
-    std::mem::forget(ptr);
-    array
+    std::ptr::read(ptr)
 }
 
 unsafe fn address_to_arrow_ffi(array: usize, schema: usize) -> (FFI_ArrowArray, FFI_ArrowSchema) {
@@ -445,7 +441,9 @@ fn as_fixed_size_list_array(arr: &dyn Array) -> &FixedSizeListArray {
 
 /// Pass array and schema as a pointer to duckdb.
 ///
-/// Safety: The caller must ensure that the pointer is valid
+/// # Safety
+/// The caller must ensure that the pointer is valid
+/// It's recommended to always use this function with arrow()
 pub unsafe fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
     let param = [&array as *const _ as usize, &schema as *const _ as usize];
     std::mem::forget(array);
