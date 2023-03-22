@@ -1,7 +1,8 @@
 extern crate duckdb;
-use duckdb::arrow::record_batch::RecordBatch;
-use duckdb::arrow::util::pretty::print_batches;
-use duckdb::{Connection, Result};
+use duckdb::{
+    arrow::{record_batch::RecordBatch, util::pretty::print_batches},
+    Connection, Result,
+};
 
 fn main() -> Result<()> {
     let db = Connection::open_in_memory()?;

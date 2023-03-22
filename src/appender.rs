@@ -1,13 +1,11 @@
-use super::ffi;
-use super::{AppenderParams, Connection, Result, ValueRef};
-use std::ffi::c_void;
-use std::fmt;
-use std::iter::IntoIterator;
-use std::os::raw::c_char;
+use super::{ffi, AppenderParams, Connection, Result, ValueRef};
+use std::{ffi::c_void, fmt, iter::IntoIterator, os::raw::c_char};
 
-use crate::error::result_from_duckdb_appender;
-use crate::types::{TimeUnit, ToSql, ToSqlOutput};
-use crate::Error;
+use crate::{
+    error::result_from_duckdb_appender,
+    types::{TimeUnit, ToSql, ToSqlOutput},
+    Error,
+};
 
 /// Appender for fast import data
 pub struct Appender<'conn> {

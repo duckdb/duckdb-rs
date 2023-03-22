@@ -1,5 +1,4 @@
-use std::env;
-use std::path::Path;
+use std::{env, path::Path};
 
 #[cfg(feature = "httpfs")]
 mod openssl;
@@ -39,8 +38,10 @@ fn main() {
 
 #[cfg(feature = "bundled")]
 mod build_bundled {
-    use std::collections::{HashMap, HashSet};
-    use std::path::Path;
+    use std::{
+        collections::{HashMap, HashSet},
+        path::Path,
+    };
 
     use crate::win_target;
 
@@ -199,8 +200,7 @@ mod build_linked {
     use super::bindings;
 
     use super::{env_prefix, is_compiler, lib_name, win_target, HeaderLocation};
-    use std::env;
-    use std::path::Path;
+    use std::{env, path::Path};
 
     pub fn main(_out_dir: &str, out_path: &Path) {
         // We need this to config the LD_LIBRARY_PATH
@@ -307,9 +307,7 @@ mod build_linked {
 mod bindings {
     use super::HeaderLocation;
 
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    use std::path::Path;
+    use std::{fs::OpenOptions, io::Write, path::Path};
 
     pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
         let header: String = header.into();

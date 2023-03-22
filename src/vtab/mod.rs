@@ -1,18 +1,20 @@
-use crate::error::Error;
-use crate::inner_connection::InnerConnection;
-use crate::{Connection, Result};
+use crate::{error::Error, inner_connection::InnerConnection, Connection, Result};
 
-use super::ffi;
-use super::ffi::duckdb_free;
+use super::{ffi, ffi::duckdb_free};
 use std::ffi::c_void;
 
 mod data_chunk;
-#[cfg(feature = "excel")]
-mod excel;
 mod function;
 mod logical_type;
 mod value;
 mod vector;
+
+#[cfg(feature = "vtab-arrow")]
+mod arrow;
+#[cfg(feature = "vtab-arrow")]
+pub use self::arrow::arrow_ffi_to_query_params;
+#[cfg(feature = "vtab-excel")]
+mod excel;
 
 pub use data_chunk::DataChunk;
 pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
@@ -74,7 +76,7 @@ pub trait VTab: Sized {
     /// Initialize the table function
     fn init(init: &InitInfo, data: *mut Self::InitData) -> Result<(), Box<dyn std::error::Error>>;
     /// The actual function
-    fn func(func: &FunctionInfo, output: &DataChunk) -> Result<(), Box<dyn std::error::Error>>;
+    fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>>;
     /// Does the table function support pushdown
     /// default is false
     fn supports_pushdown() -> bool {
@@ -92,8 +94,8 @@ where
     T: VTab,
 {
     let info = FunctionInfo::from(info);
-    let output = DataChunk::from(output);
-    let result = T::func(&info, &output);
+    let mut output = DataChunk::from(output);
+    let result = T::func(&info, &mut output);
     if result.is_err() {
         info.set_error(&result.err().unwrap().to_string());
     }
@@ -160,8 +162,10 @@ impl InnerConnection {
 mod test {
     use super::*;
     use crate::{Connection, Result};
-    use std::error::Error;
-    use std::ffi::{c_char, CString};
+    use std::{
+        error::Error,
+        ffi::{c_char, CString},
+    };
 
     #[repr(C)]
     struct HelloBindData {
@@ -208,7 +212,7 @@ mod test {
             Ok(())
         }
 
-        fn func(func: &FunctionInfo, output: &DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+        fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
             let init_info = func.get_init_data::<HelloInitData>();
             let bind_info = func.get_bind_data::<HelloBindData>();
 

@@ -1,5 +1,7 @@
-use super::logical_type::LogicalType;
-use super::vector::{FlatVector, ListVector, StructVector};
+use super::{
+    logical_type::LogicalType,
+    vector::{FlatVector, ListVector, StructVector},
+};
 use crate::ffi::{
     duckdb_create_data_chunk, duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_size,
     duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size, duckdb_destroy_data_chunk,
@@ -76,8 +78,7 @@ impl Drop for DataChunk {
 
 #[cfg(test)]
 mod test {
-    use super::super::logical_type::LogicalTypeId;
-    use super::*;
+    use super::{super::logical_type::LogicalTypeId, *};
 
     #[test]
     fn test_data_chunk_construction() {

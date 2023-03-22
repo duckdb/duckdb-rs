@@ -20,15 +20,19 @@ mod error;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::TryFrom;
-    use std::ffi::{CStr, CString};
-    use std::mem;
-    use std::os::raw::c_char;
-    use std::ptr;
+    use std::{
+        convert::TryFrom,
+        ffi::{CStr, CString},
+        mem,
+        os::raw::c_char,
+        ptr,
+    };
 
-    use arrow::array::{Array, ArrayData, Int32Array, StructArray};
-    use arrow::datatypes::DataType;
-    use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
+    use arrow::{
+        array::{Array, ArrayData, Int32Array, StructArray},
+        datatypes::DataType,
+        ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema},
+    };
 
     unsafe fn print_int_result(mut result: duckdb_result) {
         for i in 0..duckdb_column_count(&mut result) {

@@ -1,6 +1,5 @@
 use crate::duckdb_state;
-use std::error;
-use std::fmt;
+use std::{error, fmt};
 
 /// Error Codes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

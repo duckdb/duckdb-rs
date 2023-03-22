@@ -2,8 +2,10 @@
 
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
-use crate::types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef};
-use crate::Result;
+use crate::{
+    types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
+    Result,
+};
 
 /// ISO 8601 calendar date without timezone => "YYYY-MM-DD"
 impl ToSql for NaiveDate {

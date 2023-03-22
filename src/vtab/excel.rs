@@ -132,7 +132,7 @@ impl VTab for ExcelVTab {
         Ok(())
     }
 
-    fn func(func: &FunctionInfo, output: &DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ExcelInitData>();
         let bind_info = func.get_bind_data::<ExcelBindData>();
         unsafe {

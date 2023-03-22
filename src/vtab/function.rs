@@ -1,16 +1,20 @@
-use super::ffi::{
-    duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_parameter,
-    duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data, duckdb_bind_set_cardinality,
-    duckdb_bind_set_error, duckdb_create_table_function, duckdb_data_chunk, duckdb_delete_callback_t,
-    duckdb_destroy_table_function, duckdb_table_function, duckdb_table_function_add_parameter,
-    duckdb_table_function_init_t, duckdb_table_function_set_bind, duckdb_table_function_set_extra_info,
-    duckdb_table_function_set_function, duckdb_table_function_set_init, duckdb_table_function_set_local_init,
-    duckdb_table_function_set_name, duckdb_table_function_supports_projection_pushdown, idx_t,
+use super::{
+    as_string,
+    ffi::{
+        duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_parameter,
+        duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data, duckdb_bind_set_cardinality,
+        duckdb_bind_set_error, duckdb_create_table_function, duckdb_data_chunk, duckdb_delete_callback_t,
+        duckdb_destroy_table_function, duckdb_table_function, duckdb_table_function_add_parameter,
+        duckdb_table_function_init_t, duckdb_table_function_set_bind, duckdb_table_function_set_extra_info,
+        duckdb_table_function_set_function, duckdb_table_function_set_init, duckdb_table_function_set_local_init,
+        duckdb_table_function_set_name, duckdb_table_function_supports_projection_pushdown, idx_t,
+    },
+    LogicalType, Value,
 };
-use super::LogicalType;
-use super::{as_string, Value};
-use std::ffi::{c_void, CString};
-use std::os::raw::c_char;
+use std::{
+    ffi::{c_void, CString},
+    os::raw::c_char,
+};
 
 /// An interface to store and retrieve data during the function bind stage
 #[derive(Debug)]

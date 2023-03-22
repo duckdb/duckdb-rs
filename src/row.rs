@@ -1,11 +1,12 @@
-use std::convert;
-use std::sync::Arc;
+use std::{convert, sync::Arc};
 
 use super::{Error, Result, Statement};
 use crate::types::{self, FromSql, FromSqlError, ValueRef};
 
-use arrow::array::{self, Array, StructArray};
-use arrow::datatypes::*;
+use arrow::{
+    array::{self, Array, StructArray},
+    datatypes::*,
+};
 use fallible_iterator::FallibleIterator;
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use rust_decimal::prelude::*;

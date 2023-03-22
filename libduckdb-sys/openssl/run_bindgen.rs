@@ -1,7 +1,8 @@
-use bindgen::callbacks::{MacroParsingBehavior, ParseCallbacks};
-use bindgen::RustTarget;
-use std::env;
-use std::path::PathBuf;
+use bindgen::{
+    callbacks::{MacroParsingBehavior, ParseCallbacks},
+    RustTarget,
+};
+use std::{env, path::PathBuf};
 
 const INCLUDES: &str = "
 #include <openssl/aes.h>
