@@ -453,6 +453,7 @@ pub unsafe fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_Arrow
 
 #[cfg(test)]
 mod test {
+    use super::ArrowVTab;
     use crate::{Connection, Result};
     use arrow::{
         array::{ArrayData, Float64Array, StructArray},
@@ -460,7 +461,6 @@ mod test {
         record_batch::RecordBatch,
     };
     use std::error::Error;
-    use super::ArrowVTab;
 
     #[test]
     fn test_vtab_arrow() -> Result<(), Box<dyn Error>> {
