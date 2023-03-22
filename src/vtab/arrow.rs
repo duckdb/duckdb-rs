@@ -460,24 +460,23 @@ mod test {
         record_batch::RecordBatch,
     };
     use std::error::Error;
-
-    use super::{arrow_ffi_to_query_params, ArrowVTab};
+    use super::ArrowVTab;
 
     #[test]
     fn test_vtab_arrow() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ArrowVTab>("arrow")?;
 
-        let param = {
-            let rbs: Vec<RecordBatch> = db
-                .prepare("SELECT * FROM read_parquet('./examples/int32_decimal.parquet');")?
-                .query_arrow([])?
-                .collect();
-            let data = ArrayData::from(StructArray::from(rbs.into_iter().next().unwrap()));
-            let array = FFI_ArrowArray::new(&data);
-            let schema = FFI_ArrowSchema::try_from(data.data_type()).expect("Failed to convert schema");
-            unsafe { arrow_ffi_to_query_params(array, schema) }
-        };
+        let rbs: Vec<RecordBatch> = db
+            .prepare("SELECT * FROM read_parquet('./examples/int32_decimal.parquet');")?
+            .query_arrow([])?
+            .collect();
+        let data = ArrayData::from(StructArray::from(rbs.into_iter().next().unwrap()));
+        let array = FFI_ArrowArray::new(&data);
+        let schema = FFI_ArrowSchema::try_from(data.data_type()).expect("Failed to convert schema");
+        let param = [&array as *const _ as usize, &schema as *const _ as usize];
+        std::mem::forget(array);
+        std::mem::forget(schema);
         let mut stmt = db.prepare("select sum(value) from arrow(?, ?)")?;
         let mut arr = stmt.query_arrow(param)?;
         let rb = arr.next().expect("no record batch");
