@@ -141,13 +141,13 @@ impl Connection {
         for ty in T::parameters().unwrap_or_default() {
             table_function.add_parameter(&ty);
         }
-        self.db.borrow_mut().register_table_funcion(table_function)
+        self.db.borrow_mut().register_table_function(table_function)
     }
 }
 
 impl InnerConnection {
     /// Register the given TableFunction with the current db
-    pub fn register_table_funcion(&mut self, table_function: TableFunction) -> Result<()> {
+    pub fn register_table_function(&mut self, table_function: TableFunction) -> Result<()> {
         unsafe {
             let rc = ffi::duckdb_register_table_function(self.con, table_function.ptr);
             if rc != ffi::DuckDBSuccess {
