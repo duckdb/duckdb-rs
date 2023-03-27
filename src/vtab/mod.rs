@@ -11,8 +11,6 @@ mod vector;
 
 #[cfg(feature = "vtab-arrow")]
 mod arrow;
-#[cfg(feature = "vtab-arrow")]
-pub use self::arrow::arrow_ffi_to_query_params;
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
