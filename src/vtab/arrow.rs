@@ -474,9 +474,7 @@ mod test {
         let data = ArrayData::from(StructArray::from(rbs.into_iter().next().unwrap()));
         let array = FFI_ArrowArray::new(&data);
         let schema = FFI_ArrowSchema::try_from(data.data_type()).expect("Failed to convert schema");
-        let param = [&array as *const _ as usize, &schema as *const _ as usize];
-        std::mem::forget(array);
-        std::mem::forget(schema);
+        let param = unsafe { super::arrow_ffi_to_query_params(array, schema) };
         let mut stmt = db.prepare("select sum(value) from arrow(?, ?)")?;
         let mut arr = stmt.query_arrow(param)?;
         let rb = arr.next().expect("no record batch");
