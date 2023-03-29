@@ -16,7 +16,7 @@ for file in $files; do
     if [ ! -f "${file}" ]; then
         continue
     fi
-    if [ "${file}" -eq 'libduckdb-sys/duckdb/bindgen_bundled_version.rs' ]; then
+    if [ "${file}" = 'libduckdb-sys/src/bindgen_bundled_version.rs' ]; then
         continue
     fi
     if [[ "${file}" == *.rs ]]; then
@@ -25,7 +25,7 @@ for file in $files; do
 done
 if [ ${#rust_files[@]} -ne 0 ]; then
     command -v rustfmt >/dev/null 2>&1 || { echo >&2 "Rustfmt is required but it's not installed. Aborting."; exit 1; }
-    $(command -v rustfmt) ${rust_files[@]} &
+    $(command -v rustfmt) +nightly ${rust_files[@]} &
 fi
 wait
 if [ ${#rust_files[@]} -ne 0 ]; then
