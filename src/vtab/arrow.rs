@@ -44,13 +44,13 @@ impl Free for ArrowInitData {}
 struct ArrowVTab;
 
 unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
-    let ptr = address as *const FFI_ArrowSchema;
-    std::ptr::read(ptr)
+    let ptr = address as *mut FFI_ArrowSchema;
+    *Box::from_raw(ptr)
 }
 
 unsafe fn address_to_arrow_array(address: usize) -> FFI_ArrowArray {
-    let ptr = address as *const FFI_ArrowArray;
-    std::ptr::read(ptr)
+    let ptr = address as *mut FFI_ArrowArray;
+    *Box::from_raw(ptr)
 }
 
 unsafe fn address_to_arrow_ffi(array: usize, schema: usize) -> (FFI_ArrowArray, FFI_ArrowSchema) {
@@ -474,9 +474,9 @@ macro_rules! arrow_arraydata_to_query_params {
 #[macro_export]
 macro_rules! arrow_ffi_to_query_params {
     ($array:expr, $schema:expr) => {{
-        let param = [&$array as *const _ as usize, &$schema as *const _ as usize];
-        std::mem::forget($array);
-        std::mem::forget($schema);
+        let arr = Box::into_raw(Box::new($array));
+        let sch = Box::into_raw(Box::new($schema));
+        let param = [arr as *mut _ as usize, sch as *mut _ as usize];
         param
     }};
 }
