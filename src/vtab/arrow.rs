@@ -451,12 +451,9 @@ fn as_fixed_size_list_array(arr: &dyn Array) -> &FixedSizeListArray {
 /// # Safety
 /// The caller must ensure that the pointer is valid
 /// It's recommended to always use this function with arrow()
-#[macro_export]
-macro_rules! arrow_recordbatch_to_query_params {
-    ($rb:expr) => {{
-        let data = ArrayData::from(StructArray::from($rb));
-        arrow_arraydata_to_query_params!(data)
-    }};
+pub fn arrow_recordbatch_to_query_params(rb: RecordBatch) -> [usize; 2] {
+    let data = ArrayData::from(StructArray::from(rb));
+    arrow_arraydata_to_query_params(data)
 }
 
 /// Pass ArrayData to duckdb.
@@ -464,13 +461,10 @@ macro_rules! arrow_recordbatch_to_query_params {
 /// # Safety
 /// The caller must ensure that the pointer is valid
 /// It's recommended to always use this function with arrow()
-#[macro_export]
-macro_rules! arrow_arraydata_to_query_params {
-    ($data:expr) => {{
-        let array = FFI_ArrowArray::new(&$data);
-        let schema = FFI_ArrowSchema::try_from($data.data_type()).expect("Failed to convert schema");
-        arrow_ffi_to_query_params!(array, schema)
-    }};
+pub fn arrow_arraydata_to_query_params(data: ArrayData) -> [usize; 2] {
+    let array = FFI_ArrowArray::new(&data);
+    let schema = FFI_ArrowSchema::try_from(data.data_type()).expect("Failed to convert schema");
+    arrow_ffi_to_query_params(array, schema)
 }
 
 /// Pass array and schema as a pointer to duckdb.
@@ -478,28 +472,20 @@ macro_rules! arrow_arraydata_to_query_params {
 /// # Safety
 /// The caller must ensure that the pointer is valid
 /// It's recommended to always use this function with arrow()
-#[macro_export]
-macro_rules! arrow_ffi_to_query_params {
-    ($array:expr, $schema:expr) => {{
-        let arr = Box::into_raw(Box::new($array));
-        let sch = Box::into_raw(Box::new($schema));
-        let param = [arr as *mut _ as usize, sch as *mut _ as usize];
-        param
-    }};
-}
+pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
+    let arr = Box::into_raw(Box::new(array));
+    let sch = Box::into_raw(Box::new(schema));
 
-pub use arrow_arraydata_to_query_params;
-pub use arrow_ffi_to_query_params;
-pub use arrow_recordbatch_to_query_params;
+    [arr as *mut _ as usize, sch as *mut _ as usize]
+}
 
 #[cfg(test)]
 mod test {
-    use super::ArrowVTab;
+    use super::{arrow_recordbatch_to_query_params, ArrowVTab};
     use crate::{Connection, Result};
     use arrow::{
-        array::{ArrayData, Float64Array, Int32Array, StructArray},
+        array::{Float64Array, Int32Array},
         datatypes::{DataType, Field, Schema},
-        ffi::{FFI_ArrowArray, FFI_ArrowSchema},
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
@@ -513,7 +499,7 @@ mod test {
             .prepare("SELECT * FROM read_parquet('./examples/int32_decimal.parquet');")?
             .query_arrow([])?
             .collect();
-        let param = arrow_recordbatch_to_query_params!(rbs.into_iter().next().unwrap());
+        let param = arrow_recordbatch_to_query_params(rbs.into_iter().next().unwrap());
         let mut stmt = db.prepare("select sum(value) from arrow(?, ?)")?;
         let mut arr = stmt.query_arrow(param)?;
         let rb = arr.next().expect("no record batch");
@@ -534,7 +520,7 @@ mod test {
         let schema = Schema::new(vec![Field::new("a", DataType::Int32, false)]);
         let array = Int32Array::from(vec![1, 2, 3, 4, 5]);
         let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)]).expect("failed to create record batch");
-        let param = arrow_recordbatch_to_query_params!(rb);
+        let param = arrow_recordbatch_to_query_params(rb);
         let mut stmt = db.prepare("select sum(a)::int32 from arrow(?, ?)")?;
         let mut arr = stmt.query_arrow(param)?;
         let rb = arr.next().expect("no record batch");
