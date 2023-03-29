@@ -11,6 +11,8 @@ mod vector;
 
 #[cfg(feature = "vtab-arrow")]
 mod arrow;
+#[cfg(feature = "vtab-arrow")]
+pub use self::arrow::record_batch_to_duckdb_data_chunk;
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
