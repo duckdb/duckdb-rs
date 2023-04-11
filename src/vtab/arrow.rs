@@ -146,7 +146,7 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::Utf8 | DataType::LargeUtf8 => Varchar,
         DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => List,
         DataType::Struct(_) => Struct,
-        DataType::Union(_, _, _) => Union,
+        DataType::Union(_, _) => Union,
         DataType::Dictionary(_, _) => todo!(),
         // duckdb/src/main/capi/helper-c.cpp does not support decimal
         // DataType::Decimal128(_, _) => Decimal,
