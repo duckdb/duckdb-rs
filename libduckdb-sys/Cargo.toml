@@ -29,7 +29,7 @@ extensions-full = ["httpfs", "json", "parquet"]
 
 [build-dependencies]
 autocfg = "1.0"
-bindgen = { version = "0.64", optional = true, default-features = false, features = ["runtime"] }
+bindgen = { version = "0.65", optional = true, default-features = false, features = ["runtime"] }
 flate2 = "1.0"
 pkg-config = { version = "0.3.24", optional = true }
 cc = { version = "1.0", features = ["parallel"], optional = true }
