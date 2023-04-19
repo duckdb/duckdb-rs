@@ -2,8 +2,6 @@ extern crate duckdb;
 extern crate libduckdb_sys;
 
 use duckdb::{
-    arrow::{record_batch::RecordBatch, util::pretty::print_batches},
-    params,
     vtab::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, Inserter, LogicalType, LogicalTypeId, VTab},
     Connection, Result,
 };
