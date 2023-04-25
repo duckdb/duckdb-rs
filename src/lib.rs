@@ -249,6 +249,23 @@ impl Connection {
         Connection::open_in_memory_with_flags(Config::default())
     }
 
+    /// Open a new connection to an ffi database.
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the underlying DuckDB open call fails.
+    /// # Safety
+    ///
+    /// Need to pass in a valid db instance
+    #[inline]
+    pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Connection> {
+        InnerConnection::new(raw, false).map(|db| Connection {
+            db: RefCell::new(db),
+            cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
+            path: None, // Can we know the path from connection?
+        })
+    }
+
     /// Open a new connection to a DuckDB database.
     ///
     /// # Failure
@@ -554,7 +571,7 @@ mod test {
     // this function is never called, but is still type checked; in
     // particular, calls with specific instantiations will require
     // that those types are `Send`.
-    #[allow(dead_code, unconditional_recursion)]
+    #[allow(dead_code, unconditional_recursion, clippy::extra_unused_type_parameters)]
     fn ensure_send<T: Send>() {
         ensure_send::<Connection>();
     }

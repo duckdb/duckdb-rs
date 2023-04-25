@@ -94,6 +94,8 @@ jobs:
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+      - name: Build loadable extension
+        run: cargo build --example hello-ext --features="vtab-loadable bundled"
 
   Windows:
     name: Windows build from source
@@ -116,6 +118,8 @@ jobs:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
       - run: cargo test --features "modern-full extensions-full"
+      - name: Build loadable extension
+        run: cargo build --example hello-ext --features="vtab-loadable bundled"
 
   Sanitizer:
     name: Address Sanitizer
@@ -139,7 +143,8 @@ jobs:
           # as the other tests have them.
           RUST_BACKTRACE: "0"
         run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
-
+      - name: Build loadable extension
+        run: cargo build --example hello-ext --features="vtab-loadable bundled"
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
         with:

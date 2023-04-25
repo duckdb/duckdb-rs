@@ -18,7 +18,7 @@ categories = ["database"]
 name = "duckdb"
 
 [workspace]
-members = ["libduckdb-sys"]
+members = ["libduckdb-sys", "duckdb-loadable-macros"]
 
 [features]
 default = []
@@ -27,6 +27,7 @@ httpfs = ["libduckdb-sys/httpfs", "bundled"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
 vtab = []
+vtab-loadable = ["vtab", "duckdb-loadable-macros"]
 vtab-excel = ["vtab", "calamine"]
 vtab-arrow = ["vtab", "num"]
 vtab-full = ["vtab-excel", "vtab-arrow"]
@@ -61,6 +62,7 @@ strum = { version = "0.24", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
 calamine = { version = "0.19.1", optional = true }
 num = { version = "0.4", optional = true, default-features = false, features = ["std"] }
+duckdb-loadable-macros = { version = "0.1.0", path="./duckdb-loadable-macros", optional = true }
 
 [dev-dependencies]
 doc-comment = "0.3"
@@ -90,3 +92,8 @@ default-target = "x86_64-unknown-linux-gnu"
 [package.metadata.playground]
 features = []
 all-features = false
+
+[[example]]
+name = "hello-ext"
+crate-type = ["cdylib"]
+required-features = ["vtab-loadable", "bundled"]

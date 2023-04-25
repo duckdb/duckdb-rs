@@ -1,0 +1,22 @@
+[package]
+name = "duckdb-loadable-macros"
+version = "0.1.0"
+authors = ["wangfenjin <wangfenj@gmail.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/wangfenjin/duckdb-rs"
+homepage = "https://github.com/wangfenjin/duckdb-rs"
+keywords = ["duckdb", "ffi", "database"]
+readme = "README.md"
+categories = ["external-ffi-bindings", "database"]
+description = "Native bindings to the libduckdb library, C API; build loadable extensions"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proc-macro2 = { version = "1.0.56" }
+quote = { version = "1.0.21" }
+syn = { version = "1.0.95", features = [ "extra-traits", "full", "fold", "parsing" ] }
+
+[lib]
+proc-macro = true
