@@ -572,7 +572,7 @@ mod test {
     // particular, calls with specific instantiations will require
     // that those types are `Send`.
     #[allow(dead_code, unconditional_recursion)]
-    fn ensure_send<T: Send>() {
+    fn ensure_send() {
         ensure_send::<Connection>();
     }
 
