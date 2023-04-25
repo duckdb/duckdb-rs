@@ -254,15 +254,16 @@ impl Connection {
     /// # Failure
     ///
     /// Will return `Err` if the underlying DuckDB open call fails.
+    /// # Safety
+    ///
+    /// Need to pass in a valid db instance
     #[inline]
-    pub fn open_from_raw(raw: ffi::duckdb_database) -> Result<Connection> {
-        unsafe {
-            InnerConnection::new(raw, false).map(|db| Connection {
-                db: RefCell::new(db),
-                cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
-                path: None, // Can we know the path from connection?
-            })
-        }
+    pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Connection> {
+        InnerConnection::new(raw, false).map(|db| Connection {
+            db: RefCell::new(db),
+            cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
+            path: None, // Can we know the path from connection?
+        })
     }
 
     /// Open a new connection to a DuckDB database.

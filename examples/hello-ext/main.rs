@@ -1,10 +1,12 @@
 extern crate duckdb;
+extern crate duckdb_loadable_macros;
 extern crate libduckdb_sys;
 
 use duckdb::{
     vtab::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, Inserter, LogicalType, LogicalTypeId, VTab},
     Connection, Result,
 };
+use duckdb_loadable_macros::duckdb_entrypoint;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
@@ -82,19 +84,10 @@ impl VTab for HelloVTab {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn libhello_ext_init(db: *mut c_void) {
-    init(db.cast()).expect("init failed");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn libhello_ext_version() -> *const c_char {
-    let c_str = CString::new("v0.7.1").unwrap();
-    c_str.into_raw() as *const c_char
-}
-
-unsafe fn init(db: ffi::duckdb_database) -> Result<(), Box<dyn Error>> {
-    let connection = Connection::open_from_raw(db)?;
-    connection.register_table_function::<HelloVTab>("hello")?;
+// Exposes a extern C function named "libhello_ext_init" in the compiled dynamic library,
+// the "entrypoint" that duckdb will use to load the extension.
+#[duckdb_entrypoint]
+pub fn libhello_ext_init(conn: Connection) -> Result<(), Box<dyn Error>> {
+    conn.register_table_function::<HelloVTab>("hello")?;
     Ok(())
 }
