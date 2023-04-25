@@ -250,7 +250,7 @@ mod test {
         let db = checked_memory_handle()?;
         let result: Result<bool> = db.query_row(
             "SELECT 1 WHERE ? BETWEEN (now()::timestamp - INTERVAL '1 minute') AND (now()::timestamp + INTERVAL '1 minute')",
-            [Utc::now().naive_utc()],
+            [Local::now().naive_local()],
             |r| r.get(0),
         );
         assert!(result.is_ok());
@@ -262,7 +262,7 @@ mod test {
         let db = checked_memory_handle()?;
         // TODO(wangfenjin): why need 2 params?
         let result: Result<bool> = db.query_row(
-            "SELECT 1 WHERE ? BETWEEN (now()::timestamp - INTERVAL '1 minute') AND (now()::timestamp + INTERVAL '1 minute')",
+            "SELECT 1 WHERE ? BETWEEN (now()::timestamptz - INTERVAL '1 minute') AND (now()::timestamptz + INTERVAL '1 minute')",
             [Utc::now()],
             |r| r.get(0),
         );
