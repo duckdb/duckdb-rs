@@ -239,7 +239,7 @@ impl Connection {
         Connection::open_with_flags(path, Config::default())
     }
 
-    /// Open a new connection to an ffi duckdb_database
+    /// Open a new connection to an in-memory DuckDB database.
     ///
     /// # Failure
     ///
@@ -249,7 +249,7 @@ impl Connection {
         Connection::open_in_memory_with_flags(Config::default())
     }
 
-    /// Open a new connection to an in-memory DuckDB database.
+    /// Open a new connection to an ffi database.
     ///
     /// # Failure
     ///
