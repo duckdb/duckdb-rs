@@ -16,7 +16,7 @@ description = "Native bindings to the libduckdb library, C API; build loadable e
 [dependencies]
 proc-macro2 = { version = "1.0.56" }
 quote = { version = "1.0.21" }
-syn = { version = "1.0.95", features = [ "extra-traits", "full", "fold", "parsing" ] }
+syn = { version = "2.0.15", features = [ "extra-traits", "full", "fold", "parsing" ] }
 
 [lib]
 proc-macro = true
