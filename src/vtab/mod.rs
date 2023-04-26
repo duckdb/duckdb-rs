@@ -250,4 +250,17 @@ mod test {
         assert_eq!(val, ("Hello duckdb".to_string(),));
         Ok(())
     }
+
+    #[cfg(feature = "vtab-loadable")]
+    use duckdb_loadable_macros::duckdb_entrypoint;
+
+    // this function is never called, but is still type checked
+    // Exposes a extern C function named "libhello_ext_init" in the compiled dynamic library,
+    // the "entrypoint" that duckdb will use to load the extension.
+    #[cfg(feature = "vtab-loadable")]
+    #[duckdb_entrypoint]
+    fn libhello_ext_init(conn: Connection) -> Result<(), Box<dyn Error>> {
+        conn.register_table_function::<HelloVTab>("hello")?;
+        Ok(())
+    }
 }

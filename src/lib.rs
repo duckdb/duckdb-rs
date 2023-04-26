@@ -669,6 +669,16 @@ mod test {
     }
 
     #[test]
+    fn test_open_from_raw() {
+        let con = Connection::open_in_memory();
+        assert!(con.is_ok());
+        let inner_con: InnerConnection = con.unwrap().db.into_inner();
+        unsafe {
+            assert!(Connection::open_from_raw(inner_con.db).is_ok());
+        }
+    }
+
+    #[test]
     fn test_open_failure() -> Result<()> {
         let filename = "no_such_file.db";
         let result =
