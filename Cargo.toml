@@ -96,4 +96,4 @@ all-features = false
 [[example]]
 name = "hello-ext"
 crate-type = ["cdylib"]
-required-features = ["vtab-loadable", "bundled"]
+required-features = ["vtab-loadable"]
