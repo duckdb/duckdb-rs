@@ -214,6 +214,7 @@ mod test {
         // | Biography   | 1724632.0                 |
         // +-------------+---------------------------+
         let rb = arr.next().expect("no record batch");
+        assert_eq!(rb.num_rows(), 4);
         let column = rb.column(0).as_any().downcast_ref::<StringArray>().unwrap();
         assert_eq!(column.len(), 4);
         assert_eq!(column.value(0), "Action");

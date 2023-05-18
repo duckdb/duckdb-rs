@@ -156,6 +156,7 @@ mod test {
             .collect();
         let val = val?;
         let mut iter = val.iter();
+        assert_eq!(val.len(), 4);
         assert!(iter.next().unwrap().is_none());
         assert_eq!(iter.next().unwrap().as_ref().unwrap(), "a");
         assert_eq!(iter.next().unwrap().as_ref().unwrap(), "b");
