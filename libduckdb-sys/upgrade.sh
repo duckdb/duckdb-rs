@@ -10,12 +10,12 @@ export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 export DU_INCLUDE_DIR="$DUCKDB_LIB_DIR"
 
 # Download and extract amalgamation
-DUCKDB_VERSION=v0.7.1
-git submodule update --init
+DUCKDB_VERSION=v0.8.0
+git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources" || { echo "fatal error" >&2; exit 1; }
 git checkout "$DUCKDB_VERSION"
 cd "$SCRIPT_DIR" || { echo "fatal error" >&2; exit 1; }
-python "$SCRIPT_DIR/update_sources.py"
+python3 "$SCRIPT_DIR/update_sources.py"
 
 # Regenerate bindgen file for DUCKDB
 rm -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs"
