@@ -11465,6 +11465,172 @@ fn bindgen_test_layout_duckdb_string() {
     );
 }
 #[repr(C)]
+#[derive(Copy, Clone)]
+pub struct duckdb_string_t {
+    pub value: duckdb_string_t__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union duckdb_string_t__bindgen_ty_1 {
+    pub pointer: duckdb_string_t__bindgen_ty_1__bindgen_ty_1,
+    pub inlined: duckdb_string_t__bindgen_ty_1__bindgen_ty_2,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct duckdb_string_t__bindgen_ty_1__bindgen_ty_1 {
+    pub length: u32,
+    pub prefix: [::std::os::raw::c_char; 4usize],
+    pub ptr: *mut ::std::os::raw::c_char,
+}
+#[test]
+fn bindgen_test_layout_duckdb_string_t__bindgen_ty_1__bindgen_ty_1() {
+    const UNINIT: ::std::mem::MaybeUninit<duckdb_string_t__bindgen_ty_1__bindgen_ty_1> =
+        ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_1>(),
+        16usize,
+        concat!("Size of: ", stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_1>(),
+        8usize,
+        concat!("Alignment of ", stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).length) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1),
+            "::",
+            stringify!(length)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).prefix) as usize - ptr as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1),
+            "::",
+            stringify!(prefix)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).ptr) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1),
+            "::",
+            stringify!(ptr)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct duckdb_string_t__bindgen_ty_1__bindgen_ty_2 {
+    pub length: u32,
+    pub inlined: [::std::os::raw::c_char; 12usize],
+}
+#[test]
+fn bindgen_test_layout_duckdb_string_t__bindgen_ty_1__bindgen_ty_2() {
+    const UNINIT: ::std::mem::MaybeUninit<duckdb_string_t__bindgen_ty_1__bindgen_ty_2> =
+        ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_2>(),
+        16usize,
+        concat!("Size of: ", stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_2>(),
+        4usize,
+        concat!("Alignment of ", stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).length) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2),
+            "::",
+            stringify!(length)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).inlined) as usize - ptr as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2),
+            "::",
+            stringify!(inlined)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout_duckdb_string_t__bindgen_ty_1() {
+    const UNINIT: ::std::mem::MaybeUninit<duckdb_string_t__bindgen_ty_1> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<duckdb_string_t__bindgen_ty_1>(),
+        16usize,
+        concat!("Size of: ", stringify!(duckdb_string_t__bindgen_ty_1))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<duckdb_string_t__bindgen_ty_1>(),
+        8usize,
+        concat!("Alignment of ", stringify!(duckdb_string_t__bindgen_ty_1))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).pointer) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1),
+            "::",
+            stringify!(pointer)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).inlined) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t__bindgen_ty_1),
+            "::",
+            stringify!(inlined)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout_duckdb_string_t() {
+    const UNINIT: ::std::mem::MaybeUninit<duckdb_string_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<duckdb_string_t>(),
+        16usize,
+        concat!("Size of: ", stringify!(duckdb_string_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<duckdb_string_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(duckdb_string_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).value) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_string_t),
+            "::",
+            stringify!(value)
+        )
+    );
+}
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_blob {
     pub data: *mut ::std::os::raw::c_void,
@@ -12127,7 +12293,7 @@ pub const duckdb_pending_state_DUCKDB_PENDING_RESULT_NOT_READY: duckdb_pending_s
 pub const duckdb_pending_state_DUCKDB_PENDING_ERROR: duckdb_pending_state = 2;
 pub type duckdb_pending_state = ::std::os::raw::c_uint;
 extern "C" {
-    #[doc = "Creates a new database or opens an existing database file stored at the the given path.\nIf no path is given a new in-memory database is created instead.\n\n path: Path to the database file on disk, or `nullptr` or `:memory:` to open an in-memory database.\n out_database: The result database object.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "Creates a new database or opens an existing database file stored at the the given path.\nIf no path is given a new in-memory database is created instead.\nThe instantiated database should be closed with 'duckdb_close'\n\n path: Path to the database file on disk, or `nullptr` or `:memory:` to open an in-memory database.\n out_database: The result database object.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_open(path: *const ::std::os::raw::c_char, out_database: *mut duckdb_database) -> duckdb_state;
 }
 extern "C" {
@@ -12144,7 +12310,7 @@ extern "C" {
     pub fn duckdb_close(database: *mut duckdb_database);
 }
 extern "C" {
-    #[doc = "Opens a connection to a database. Connections are required to query the database, and store transactional state\nassociated with the connection.\n\n database: The database file to connect to.\n out_connection: The result connection object.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "Opens a connection to a database. Connections are required to query the database, and store transactional state\nassociated with the connection.\nThe instantiated connection should be closed using 'duckdb_disconnect'\n\n database: The database file to connect to.\n out_connection: The result connection object.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_connect(database: duckdb_database, out_connection: *mut duckdb_connection) -> duckdb_state;
 }
 extern "C" {
@@ -12236,7 +12402,11 @@ extern "C" {
     pub fn duckdb_result_get_chunk(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk;
 }
 extern "C" {
-    #[doc = "Returns the number of data chunks present in the result.\n\n result: The result object\n returns: The resulting data chunk. Returns `NULL` if the chunk index is out of bounds."]
+    #[doc = "Checks if the type of the internal result is StreamQueryResult.\n\n result: The result object to check.\n returns: Whether or not the result object is of the type StreamQueryResult"]
+    pub fn duckdb_result_is_streaming(result: duckdb_result) -> bool;
+}
+extern "C" {
+    #[doc = "Returns the number of data chunks present in the result.\n\n result: The result object\n returns: Number of data chunks present in the result."]
     pub fn duckdb_result_chunk_count(result: duckdb_result) -> idx_t;
 }
 extern "C" {
@@ -12346,6 +12516,10 @@ extern "C" {
 extern "C" {
     #[doc = "The internal vector size used by DuckDB.\nThis is the amount of tuples that will fit into a data chunk created by `duckdb_create_data_chunk`.\n\n returns: The vector size."]
     pub fn duckdb_vector_size() -> idx_t;
+}
+extern "C" {
+    #[doc = "Whether or not the duckdb_string_t value is inlined.\nThis means that the data of the string does not have a separate allocation."]
+    pub fn duckdb_string_is_inlined(string: duckdb_string_t) -> bool;
 }
 extern "C" {
     #[doc = "Decompose a `duckdb_date` object into year, month and date (stored as `duckdb_date_struct`).\n\n date: The date object, as obtained from a `DUCKDB_TYPE_DATE` column.\n returns: The `duckdb_date_struct` with the decomposed elements."]
@@ -12605,6 +12779,13 @@ extern "C" {
 extern "C" {
     #[doc = "Executes the prepared statement with the given bound parameters, and returns a pending result.\nThe pending result represents an intermediate structure for a query that is not yet fully executed.\nThe pending result can be used to incrementally execute a query, returning control to the client between tasks.\n\nNote that after calling `duckdb_pending_prepared`, the pending result should always be destroyed using\n`duckdb_destroy_pending`, even if this function returns DuckDBError.\n\n prepared_statement: The prepared statement to execute.\n out_result: The pending query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_pending_prepared(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_pending_result,
+    ) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "Executes the prepared statement with the given bound parameters, and returns a pending result.\nThis pending result will create a streaming duckdb_result when executed.\nThe pending result represents an intermediate structure for a query that is not yet fully executed.\n\nNote that after calling `duckdb_pending_prepared_streaming`, the pending result should always be destroyed using\n`duckdb_destroy_pending`, even if this function returns DuckDBError.\n\n prepared_statement: The prepared statement to execute.\n out_result: The pending query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    pub fn duckdb_pending_prepared_streaming(
         prepared_statement: duckdb_prepared_statement,
         out_result: *mut duckdb_pending_result,
     ) -> duckdb_state;
@@ -12870,6 +13051,14 @@ extern "C" {
     pub fn duckdb_table_function_add_parameter(table_function: duckdb_table_function, type_: duckdb_logical_type);
 }
 extern "C" {
+    #[doc = "Adds a named parameter to the table function.\n\n table_function: The table function\n name: The name of the parameter\n type: The type of the parameter to add."]
+    pub fn duckdb_table_function_add_named_parameter(
+        table_function: duckdb_table_function,
+        name: *const ::std::os::raw::c_char,
+        type_: duckdb_logical_type,
+    );
+}
+extern "C" {
     #[doc = "Assigns extra information to the table function that can be fetched during binding, etc.\n\n table_function: The table function\n extra_info: The extra information\n destroy: The callback that will be called to destroy the bind data (if any)"]
     pub fn duckdb_table_function_set_extra_info(
         table_function: duckdb_table_function,
@@ -12923,6 +13112,11 @@ extern "C" {
 extern "C" {
     #[doc = "Retrieves the parameter at the given index.\n\nThe result must be destroyed with `duckdb_destroy_value`.\n\n info: The info object\n index: The index of the parameter to get\n returns: The value of the parameter. Must be destroyed with `duckdb_destroy_value`."]
     pub fn duckdb_bind_get_parameter(info: duckdb_bind_info, index: idx_t) -> duckdb_value;
+}
+extern "C" {
+    #[doc = "Retrieves a named parameter with the given name.\n\nThe result must be destroyed with `duckdb_destroy_value`.\n\n info: The info object\n name: The name of the parameter\n returns: The value of the parameter. Must be destroyed with `duckdb_destroy_value`."]
+    pub fn duckdb_bind_get_named_parameter(info: duckdb_bind_info, name: *const ::std::os::raw::c_char)
+        -> duckdb_value;
 }
 extern "C" {
     #[doc = "Sets the user-provided bind data in the bind object. This object can be retrieved again during execution.\n\n info: The info object\n extra_data: The bind data object.\n destroy: The callback that will be called to destroy the bind data (if any)"]
@@ -13217,6 +13411,10 @@ extern "C" {
 extern "C" {
     #[doc = "Returns true if execution of the current query is finished.\n\n con: The connection on which to check"]
     pub fn duckdb_execution_is_finished(con: duckdb_connection) -> bool;
+}
+extern "C" {
+    #[doc = "Fetches a data chunk from the (streaming) duckdb_result. This function should be called repeatedly until the result is\nexhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nThis function can only be used on duckdb_results created with 'duckdb_pending_prepared_streaming'\n\nIf this function is used, none of the other result functions can be used and vice versa (i.e. this function cannot be\nmixed with the legacy result functions or the materialized result functions).\n\nIt is not known beforehand how many chunks will be returned by this result.\n\n result: The result object to fetch the data chunk from.\n returns: The resulting data chunk. Returns `NULL` if the result has an error."]
+    pub fn duckdb_stream_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk;
 }
 pub type __builtin_va_list = [__va_list_tag; 1usize];
 #[repr(C)]
