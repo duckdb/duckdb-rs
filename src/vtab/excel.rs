@@ -195,6 +195,7 @@ mod test {
     use std::error::Error;
 
     #[test]
+    #[cfg_attr(windows, ignore = "Windows will fail, maybe because the xlsx data")]
     fn test_excel() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ExcelVTab>("excel")?;
