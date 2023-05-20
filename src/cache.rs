@@ -205,14 +205,14 @@ mod test {
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
 
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
 
@@ -231,7 +231,7 @@ mod test {
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
 
@@ -241,7 +241,7 @@ mod test {
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(0, cache.len());
 
@@ -249,7 +249,7 @@ mod test {
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
         Ok(())
@@ -264,7 +264,7 @@ mod test {
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
             stmt.discard();
         }
         assert_eq!(0, cache.len());
@@ -325,14 +325,14 @@ mod test {
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
 
         {
             let mut stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
-            assert_eq!(4, stmt.query_row([], |r| r.get::<_, i64>(0))?);
+            assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
         Ok(())

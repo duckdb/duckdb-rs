@@ -191,7 +191,7 @@ impl VTab for ExcelVTab {
 #[cfg(test)]
 mod test {
     use crate::{vtab::excel::ExcelVTab, Connection, Result};
-    use arrow::array::{Array, Date32Array, Float64Array, StringArray};
+    use arrow::array::{Array, Date32Array, Float64Array, LargeStringArray};
     use std::error::Error;
 
     #[test]
@@ -204,7 +204,6 @@ mod test {
             .query_row::<i64, _, _>([], |row| row.get(0))?;
         assert_eq!(3039, val);
         let mut stmt = db.prepare("select genres, sum(movie_facebook_likes) from excel('./examples/Movies_Social_metadata.xlsx', 'Data') group by genres order by genres limit 4")?;
-        let mut arr = stmt.query_arrow([])?;
         // +-------------+---------------------------+
         // | genres      | sum(movie_facebook_likes) |
         // +-------------+---------------------------+
@@ -213,8 +212,10 @@ mod test {
         // | Animation   | 202219.0                  |
         // | Biography   | 1724632.0                 |
         // +-------------+---------------------------+
+        let mut arr = stmt.query_arrow([])?;
         let rb = arr.next().expect("no record batch");
-        let column = rb.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(rb.num_rows(), 4);
+        let column = rb.column(0).as_any().downcast_ref::<LargeStringArray>().unwrap();
         assert_eq!(column.len(), 4);
         assert_eq!(column.value(0), "Action");
         assert_eq!(column.value(1), "Adventure");

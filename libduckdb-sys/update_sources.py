@@ -11,6 +11,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DUCKDB_SCRIPTS_DIR = os.path.join(SCRIPT_DIR, "duckdb-sources", "scripts")
 # Path to target
 TARGET_DIR = os.path.join(SCRIPT_DIR, "duckdb")
+# Path to src
+SRC_DIR = os.path.join(SCRIPT_DIR, "src")
 
 # List of extensions' sources to grab. Technically, these sources will be compiled
 # but not included in the final build unless they're explicitly enabled.
@@ -27,6 +29,7 @@ shutil.copyfile(
 # Clear the duckdb directory
 try:
     shutil.rmtree(os.path.join(TARGET_DIR))
+    os.remove(os.path.join(SCRIPT_DIR, "duckdb.tar.gz"))
 except FileNotFoundError:
     pass
 
@@ -74,6 +77,12 @@ with open(os.path.join(TARGET_DIR, "manifest.json"), "w") as f:
 
 
 subprocess.check_call(
+    "tar -czf duckdb.tar.gz duckdb",
+    shell=True,
+    cwd=SCRIPT_DIR,
+)
+
+subprocess.check_call(
     'find "' + SCRIPT_DIR + '/../target" -type f -name bindgen.rs -exec rm {} \;',
     shell=True,
 )
@@ -82,18 +91,19 @@ subprocess.check_call(
     'env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "bundled buildtime_bindgen"',
     shell=True,
 )
+
 print(
     'find "'
     + SCRIPT_DIR
     + '/../target" -type f -name "bindgen.rs" -exec cp {} "'
-    + TARGET_DIR
+    + SRC_DIR
     + '/bindgen_bundled_version.rs" \;'
 )
 subprocess.check_call(
     'find "'
     + SCRIPT_DIR
     + '/../target" -type f -name "bindgen.rs" -exec cp {} "'
-    + TARGET_DIR
+    + SRC_DIR
     + '/bindgen_bundled_version.rs" \;',
     shell=True,
 )
@@ -103,10 +113,4 @@ os.remove(
     os.path.join(
         SCRIPT_DIR, "duckdb-sources", "extension", "httpfs", "httpfs_config.py"
     )
-)
-
-subprocess.check_call(
-    "tar -czf duckdb.tar.gz duckdb",
-    shell=True,
-    cwd=SCRIPT_DIR,
 )

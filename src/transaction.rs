@@ -501,7 +501,7 @@ mod test {
         db.execute_batch(
             r"
             CREATE TABLE foo (x INTEGER);
-            SET AUTOCOMMIT TO OFF;
+            -- SET AUTOCOMMIT TO OFF;
         ",
         )?;
         Ok(db)
