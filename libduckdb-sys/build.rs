@@ -100,7 +100,7 @@ mod build_bundled {
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
             use std::fs;
-            fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name), out_path)
+            fs::copy(format!("{}/src/bindgen_bundled_version.rs", lib_name), out_path)
                 .expect("Could not copy bindings to output directory");
         }
 
