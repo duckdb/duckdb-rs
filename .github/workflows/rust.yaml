@@ -147,8 +147,8 @@ jobs:
           # as the other tests have them.
           RUST_BACKTRACE: "0"
         run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
-      - name: Build loadable extension
-        run: cargo build --example hello-ext --features="vtab-loadable bundled"
+      - run: cargo install cargo-examples
+      - run: cargo examples --skip hello-ext --features=bundled
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
         with:
