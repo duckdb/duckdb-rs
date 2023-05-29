@@ -109,6 +109,24 @@ impl Statement<'_> {
         Ok(Arrow::new(self))
     }
 
+    /// Execute the prepared statement, returning a handle to the resulting
+    /// vector of polars DataFrame.
+    ///
+    /// To get a single DataFrame instead of Vec\<DataFrame>, use [PolarsDataFrame](crate::polars_dataframe::PolarsDataFrame)
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// fn get_polars_df(conn: &Connection) -> Result<DataFrame> {
+    ///     let df: DataFrame = conn
+    ///         .prepare("SELECT * FROM test")?
+    ///         .query_polars([])?
+    ///         .collect::<PolarsDataFrame>()
+    ///         .into_inner();
+    ///
+    ///     Ok(df)
+    /// }
+    /// ```
     ///
     #[cfg(feature = "polars")]
     #[inline]
