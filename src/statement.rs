@@ -1,13 +1,15 @@
 use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str};
 
+use arrow::{array::StructArray, datatypes::DataType};
+
 use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
+#[cfg(feature = "polars")]
+use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::Arrow,
     error::result_from_duckdb_prepare,
     types::{TimeUnit, ToSql, ToSqlOutput},
 };
-
-use arrow::{array::StructArray, datatypes::DataType};
 
 /// A prepared statement.
 pub struct Statement<'conn> {
@@ -105,6 +107,14 @@ impl Statement<'_> {
     pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
         Ok(Arrow::new(self))
+    }
+
+    ///
+    #[cfg(feature = "polars")]
+    #[inline]
+    pub fn query_polars<P: Params>(&mut self, params: P) -> Result<Polars<'_>> {
+        self.execute(params)?;
+        Ok(Polars::new(self))
     }
 
     /// Execute the prepared statement, returning a handle to the resulting
