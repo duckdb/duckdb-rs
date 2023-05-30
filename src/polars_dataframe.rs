@@ -1,9 +1,7 @@
-use polars_core::{
-    prelude::{DataFrame, Series},
-    utils::{
-        accumulate_dataframes_vertical_unchecked,
-        rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
-    },
+use polars::{
+    export::rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
+    prelude::DataFrame,
+    series::Series,
 };
 
 use super::{arrow::datatypes::SchemaRef, Statement};
@@ -42,7 +40,7 @@ impl<'stmt> Iterator for Polars<'stmt> {
                 let arrow2_array = arrow2::array::from_data(&arrow_array_data);
                 let name = column_names[i].as_str();
 
-                Series::try_from((name, arrow2_array)).unwrap()
+                Series::try_from((name, arrow2_array)).expect("Failed to construct Series from arrow2 array")
             })
             .collect::<Vec<_>>();
 
@@ -50,22 +48,55 @@ impl<'stmt> Iterator for Polars<'stmt> {
     }
 }
 
-/// Polars DataFrame wrapper
-pub struct PolarsDataFrame {
-    inner: DataFrame,
-}
+#[cfg(test)]
+mod tests {
+    use polars::prelude::*;
+    use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
-impl PolarsDataFrame {
-    /// Take Polars DataFrame
-    pub fn into_inner(self) -> DataFrame {
-        self.inner
+    use crate::{test::checked_memory_handle, Result};
+
+    #[test]
+    fn test_query_polars_small() -> Result<()> {
+        let db = checked_memory_handle();
+        let sql = "BEGIN TRANSACTION;
+                   CREATE TABLE test(t INTEGER);
+                   INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);
+                   END TRANSACTION;";
+        db.execute_batch(sql)?;
+        let mut stmt = db.prepare("select t from test order by t desc")?;
+        let mut polars = stmt.query_polars([])?;
+
+        let df = polars.next().expect("Failed to get DataFrame");
+        assert_eq!(
+            df,
+            df! (
+                "t" => [5i32, 4, 3, 2, 1],
+            )
+            .expect("Failed to construct DataFrame")
+        );
+        assert!(polars.next().is_none());
+
+        Ok(())
     }
-}
 
-impl FromIterator<DataFrame> for PolarsDataFrame {
-    fn from_iter<T: IntoIterator<Item = DataFrame>>(dfs: T) -> Self {
-        PolarsDataFrame {
-            inner: accumulate_dataframes_vertical_unchecked(dfs),
+    #[test]
+    fn test_query_polars_large() -> Result<()> {
+        let db = checked_memory_handle();
+        db.execute_batch("BEGIN TRANSACTION")?;
+        db.execute_batch("CREATE TABLE test(t INTEGER);")?;
+
+        for _ in 0..600 {
+            db.execute_batch("INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);")?;
         }
+
+        db.execute_batch("END TRANSACTION")?;
+        let mut stmt = db.prepare("select t from test order by t")?;
+        let pl = stmt.query_polars([])?;
+
+        let df = accumulate_dataframes_vertical_unchecked(pl);
+        assert_eq!(df.height(), 3000);
+        assert_eq!(df.column("t").unwrap().i32().unwrap().sum().unwrap(), 9000);
+
+        Ok(())
     }
 }

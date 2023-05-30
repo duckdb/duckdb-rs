@@ -112,21 +112,39 @@ impl Statement<'_> {
     /// Execute the prepared statement, returning a handle to the resulting
     /// vector of polars DataFrame.
     ///
-    /// To get a single DataFrame instead of Vec\<DataFrame>, use [PolarsDataFrame](crate::polars_dataframe::PolarsDataFrame)
-    ///
     /// ## Example
     ///
     /// ```rust,no_run
-    /// fn get_polars_df(conn: &Connection) -> Result<DataFrame> {
-    ///     let df: DataFrame = conn
+    /// # use duckdb::{Result, Connection};
+    /// # use polars::prelude::DataFrame;
+    ///
+    /// fn get_polars_dfs(conn: &Connection) -> Result<Vec<DataFrame>> {
+    ///     let dfs: Vec<DataFrame> = conn
     ///         .prepare("SELECT * FROM test")?
     ///         .query_polars([])?
-    ///         .collect::<PolarsDataFrame>()
-    ///         .into_inner();
+    ///         .collect();
     ///
-    ///     Ok(df)
+    ///     Ok(dfs)
     /// }
     /// ```
+    ///
+    /// To derive a DataFrame from Vec\<DataFrame>, we can use function
+    /// [polars_core::utils::accumulate_dataframes_vertical_unchecked](https://docs.rs/polars-core/latest/polars_core/utils/fn.accumulate_dataframes_vertical_unchecked.html).
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use polars::prelude::DataFrame;
+    /// # use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+    ///
+    /// fn get_polars_df(conn: &Connection) -> Result<DataFrame> {
+    ///     let mut stmt = conn.prepare("SELECT * FROM test")?;
+    ///     let pl = stmt.query_polars([])?;
+    ///     let df = accumulate_dataframes_vertical_unchecked(pl);
+    ///
+    ///    Ok(df)
+    /// }
+    /// ```
+    ///
     ///
     #[cfg(feature = "polars")]
     #[inline]
@@ -247,7 +265,7 @@ impl Statement<'_> {
     ///
     /// ### Use with positional params
     ///
-    /// ```rust,no_run
+    /// ```no_run
     /// # use duckdb::{Connection, Result};
     /// fn get_names(conn: &Connection) -> Result<Vec<String>> {
     ///     let mut stmt = conn.prepare("SELECT name FROM people WHERE id = ?")?;

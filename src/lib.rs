@@ -87,10 +87,12 @@ pub use crate::{
     types::ToSql,
 };
 #[cfg(feature = "polars")]
-pub use polars_dataframe::{Polars, PolarsDataFrame};
+pub use polars_dataframe::Polars;
 
-// re-export dependencies from arrow-rs to minimise version maintenance for crate users
+// re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
+#[cfg(feature = "polars")]
+pub use polars;
 
 #[macro_use]
 mod error;
@@ -1264,30 +1266,6 @@ mod test {
         Ok(())
     }
 
-    #[cfg(feature = "polars")]
-    #[test]
-    fn test_query_polars_small() -> Result<()> {
-        use crate::polars_dataframe::PolarsDataFrame;
-        use polars::prelude::{df, NamedFrom};
-
-        let db = checked_memory_handle();
-        let sql = "BEGIN TRANSACTION;
-                   CREATE TABLE test(t INTEGER);
-                   INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);
-                   END TRANSACTION;";
-        db.execute_batch(sql)?;
-        let mut stmt = db.prepare("select t from test order by t desc")?;
-        let actual = stmt.query_polars([])?.collect::<PolarsDataFrame>().into_inner();
-        let expected = df!(
-            "t" => [5i32, 4, 3, 2, 1],
-        )
-        .expect("Failed to construct DataFrame");
-
-        assert_eq!(actual, expected);
-
-        Ok(())
-    }
-
     #[test]
     fn test_query_arrow_record_batch_large() -> Result<()> {
         let db = checked_memory_handle();
@@ -1314,30 +1292,6 @@ mod test {
                 .sum::<i32>(),
             9000
         );
-        Ok(())
-    }
-
-    #[cfg(feature = "polars")]
-    #[test]
-    fn test_query_polars_large() -> Result<()> {
-        use polars_core::prelude::ChunkAgg;
-
-        let db = checked_memory_handle();
-        db.execute_batch("BEGIN TRANSACTION")?;
-        db.execute_batch("CREATE TABLE test(t INTEGER);")?;
-        for _ in 0..600 {
-            db.execute_batch("INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);")?;
-        }
-        db.execute_batch("END TRANSACTION")?;
-        let df = db
-            .prepare("select t from test order by t")?
-            .query_polars([])?
-            .collect::<PolarsDataFrame>()
-            .into_inner();
-
-        assert_eq!(df.height(), 3000);
-        assert_eq!(df.column("t").unwrap().i32().unwrap().sum().unwrap(), 9000);
-
         Ok(())
     }
 
