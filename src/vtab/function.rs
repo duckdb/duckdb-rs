@@ -1,5 +1,4 @@
 use super::{
-    as_string,
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_parameter,
         duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data, duckdb_bind_set_cardinality,
@@ -29,8 +28,9 @@ impl BindInfo {
     ///  * `name`: The name of the column
     ///  * `type`: The logical type of the column
     pub fn add_result_column(&self, column_name: &str, column_type: LogicalType) {
+        let c_str = CString::new(column_name).unwrap();
         unsafe {
-            duckdb_bind_add_result_column(self.ptr, as_string!(column_name), column_type.ptr);
+            duckdb_bind_add_result_column(self.ptr, c_str.as_ptr() as *const c_char, column_type.ptr);
         }
     }
     /// Report that an error has occurred while calling bind.
@@ -38,8 +38,9 @@ impl BindInfo {
     /// # Arguments
     ///  * `error`: The error message
     pub fn set_error(&self, error: &str) {
+        let c_str = CString::new(error).unwrap();
         unsafe {
-            duckdb_bind_set_error(self.ptr, as_string!(error));
+            duckdb_bind_set_error(self.ptr, c_str.as_ptr() as *const c_char);
         }
     }
     /// Sets the user-provided bind data in the bind object. This object can be retrieved again during execution.
@@ -157,7 +158,8 @@ impl InitInfo {
     /// # Arguments
     /// * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        unsafe { duckdb_init_set_error(self.0, as_string!(error)) }
+        let c_str = CString::new(error).unwrap();
+        unsafe { duckdb_init_set_error(self.0, c_str.as_ptr() as *const c_char) }
     }
 }
 
@@ -298,8 +300,9 @@ impl FunctionInfo {
     /// # Arguments
     ///  * `error`: The error message
     pub fn set_error(&self, error: &str) {
+        let c_str = CString::new(error).unwrap();
         unsafe {
-            duckdb_function_set_error(self.0, as_string!(error));
+            duckdb_function_set_error(self.0, c_str.as_ptr() as *const c_char);
         }
     }
     /// Gets the bind data set by [`BindInfo::set_bind_data`] during the bind.
