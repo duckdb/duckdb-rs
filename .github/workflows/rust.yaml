@@ -141,7 +141,7 @@ jobs:
           components: rust-src
       - name: Tests with asan
         env:
-          RUSTFLAGS: -Zsanitizer=address
+          RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
           # Work around https://github.com/rust-lang/rust/issues/59125 by
@@ -149,8 +149,7 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        # --jobs 1 to avoid out of memory
-        run: cargo -Z build-std test --jobs 1 --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
+        run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
         with:
