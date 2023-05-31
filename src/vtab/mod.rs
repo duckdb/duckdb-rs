@@ -27,15 +27,6 @@ pub use vector::{FlatVector, Inserter, ListVector, StructVector, Vector};
 
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
-/// Returns a `*const c_char` pointer to the given string
-#[macro_export]
-macro_rules! as_string {
-    ($x:expr) => {
-        std::ffi::CString::new($x).expect("c string").as_ptr().cast::<c_char>()
-    };
-}
-pub(crate) use as_string;
-
 use ffi::duckdb_malloc;
 use std::mem::size_of;
 
