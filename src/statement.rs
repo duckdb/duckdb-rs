@@ -4,7 +4,7 @@ use arrow::{array::StructArray, datatypes::DataType};
 
 use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
 #[cfg(feature = "polars")]
-use crate::polars_dataframe::Polars;
+use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::Arrow,
     error::result_from_duckdb_prepare,
@@ -331,10 +331,17 @@ impl Statement<'_> {
         self.stmt.row_count()
     }
 
-    /// Get next batch records
+    /// Get next batch records in arrow-rs
     #[inline]
     pub fn step(&self) -> Option<StructArray> {
         self.stmt.step()
+    }
+
+    #[cfg(feature = "polars")]
+    /// Get next batch records in arrow2
+    #[inline]
+    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
+        self.stmt.step2()
     }
 
     #[inline]

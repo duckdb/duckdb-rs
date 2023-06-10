@@ -1,8 +1,4 @@
-use polars::{
-    export::rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
-    prelude::DataFrame,
-    series::Series,
-};
+use polars::prelude::DataFrame;
 
 use super::{arrow::datatypes::SchemaRef, Statement};
 
@@ -29,22 +25,10 @@ impl<'stmt> Iterator for Polars<'stmt> {
     type Item = DataFrame;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let column_names = self.stmt.unwrap().column_names();
-        let arrow_struct_array = self.stmt?.step()?;
-        let (_, arrow_arrays, _) = arrow_struct_array.into_parts();
-        let series_vec = arrow_arrays
-            .into_par_iter()
-            .enumerate()
-            .map(|(i, arrow_array)| {
-                let arrow_array_data = arrow_array.to_data();
-                let arrow2_array = arrow2::array::from_data(&arrow_array_data);
-                let name = column_names[i].as_str();
+        let struct_array = self.stmt?.step2()?;
+        let df = DataFrame::try_from(struct_array).expect("Failed to construct DataFrame from StructArray");
 
-                Series::try_from((name, arrow2_array)).expect("Failed to construct Series from arrow2 array")
-            })
-            .collect::<Vec<_>>();
-
-        Some(DataFrame::new_no_checks(series_vec))
+        Some(df)
     }
 }
 

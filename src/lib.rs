@@ -92,7 +92,7 @@ pub use polars_dataframe::Polars;
 // re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
 #[cfg(feature = "polars")]
-pub use polars;
+pub use polars::{self, export::arrow as arrow2};
 
 #[macro_use]
 mod error;
