@@ -191,7 +191,7 @@ impl VTab for ExcelVTab {
 #[cfg(test)]
 mod test {
     use crate::{vtab::excel::ExcelVTab, Connection, Result};
-    use arrow::array::{Array, Date32Array, Float64Array, LargeStringArray};
+    use arrow::array::{Array, Date32Array, Float64Array, StringArray};
     use std::error::Error;
 
     #[test]
@@ -215,7 +215,7 @@ mod test {
         let mut arr = stmt.query_arrow([])?;
         let rb = arr.next().expect("no record batch");
         assert_eq!(rb.num_rows(), 4);
-        let column = rb.column(0).as_any().downcast_ref::<LargeStringArray>().unwrap();
+        let column = rb.column(0).as_any().downcast_ref::<StringArray>().unwrap();
         assert_eq!(column.len(), 4);
         assert_eq!(column.value(0), "Action");
         assert_eq!(column.value(1), "Adventure");
