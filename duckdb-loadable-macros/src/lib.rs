@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_clone)]
 use proc_macro2::Ident;
 
 use syn::{parse_macro_input, spanned::Spanned, Item};
