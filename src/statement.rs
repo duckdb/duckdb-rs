@@ -1,13 +1,15 @@
 use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str};
 
+use arrow::{array::StructArray, datatypes::DataType};
+
 use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
+#[cfg(feature = "polars")]
+use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::Arrow,
     error::result_from_duckdb_prepare,
     types::{TimeUnit, ToSql, ToSqlOutput},
 };
-
-use arrow::{array::StructArray, datatypes::DataType};
 
 /// A prepared statement.
 pub struct Statement<'conn> {
@@ -105,6 +107,50 @@ impl Statement<'_> {
     pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
         Ok(Arrow::new(self))
+    }
+
+    /// Execute the prepared statement, returning a handle to the resulting
+    /// vector of polars DataFrame.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use polars::prelude::DataFrame;
+    ///
+    /// fn get_polars_dfs(conn: &Connection) -> Result<Vec<DataFrame>> {
+    ///     let dfs: Vec<DataFrame> = conn
+    ///         .prepare("SELECT * FROM test")?
+    ///         .query_polars([])?
+    ///         .collect();
+    ///
+    ///     Ok(dfs)
+    /// }
+    /// ```
+    ///
+    /// To derive a DataFrame from Vec\<DataFrame>, we can use function
+    /// [polars_core::utils::accumulate_dataframes_vertical_unchecked](https://docs.rs/polars-core/latest/polars_core/utils/fn.accumulate_dataframes_vertical_unchecked.html).
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use polars::prelude::DataFrame;
+    /// # use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+    ///
+    /// fn get_polars_df(conn: &Connection) -> Result<DataFrame> {
+    ///     let mut stmt = conn.prepare("SELECT * FROM test")?;
+    ///     let pl = stmt.query_polars([])?;
+    ///     let df = accumulate_dataframes_vertical_unchecked(pl);
+    ///
+    ///    Ok(df)
+    /// }
+    /// ```
+    ///
+    ///
+    #[cfg(feature = "polars")]
+    #[inline]
+    pub fn query_polars<P: Params>(&mut self, params: P) -> Result<Polars<'_>> {
+        self.execute(params)?;
+        Ok(Polars::new(self))
     }
 
     /// Execute the prepared statement, returning a handle to the resulting
@@ -219,7 +265,7 @@ impl Statement<'_> {
     ///
     /// ### Use with positional params
     ///
-    /// ```rust,no_run
+    /// ```no_run
     /// # use duckdb::{Connection, Result};
     /// fn get_names(conn: &Connection) -> Result<Vec<String>> {
     ///     let mut stmt = conn.prepare("SELECT name FROM people WHERE id = ?")?;
@@ -285,10 +331,17 @@ impl Statement<'_> {
         self.stmt.row_count()
     }
 
-    /// Get next batch records
+    /// Get next batch records in arrow-rs
     #[inline]
     pub fn step(&self) -> Option<StructArray> {
         self.stmt.step()
+    }
+
+    #[cfg(feature = "polars")]
+    /// Get next batch records in arrow2
+    #[inline]
+    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
+        self.stmt.step2()
     }
 
     #[inline]

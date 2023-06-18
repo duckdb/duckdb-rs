@@ -123,9 +123,10 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - run: cargo install cargo-examples
       # make the feature set the same so build faster
-      - run: cargo test --features "modern-full extensions-full vtab-loadable"
-      - run: cargo examples --skip hello-ext --features "modern-full extensions-full vtab-loadable"
-      - run: cargo build --example hello-ext --features "modern-full extensions-full vtab-loadable"
+      # don't test modern-full as polars requires too much memory
+      - run: cargo test --features "extensions-full vtab-loadable"
+      - run: cargo examples --skip hello-ext --features "extensions-full vtab-loadable"
+      - run: cargo build --example hello-ext --features "extensions-full vtab-loadable"
 
   Sanitizer:
     name: Address Sanitizer
@@ -140,7 +141,7 @@ jobs:
           components: rust-src
       - name: Tests with asan
         env:
-          RUSTFLAGS: -Zsanitizer=address
+          RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
           # Work around https://github.com/rust-lang/rust/issues/59125 by

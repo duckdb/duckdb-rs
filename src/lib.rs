@@ -86,9 +86,13 @@ pub use crate::{
     transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior},
     types::ToSql,
 };
+#[cfg(feature = "polars")]
+pub use polars_dataframe::Polars;
 
-// re-export dependencies from arrow-rs to minimise version maintenance for crate users
+// re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
+#[cfg(feature = "polars")]
+pub use polars::{self, export::arrow as arrow2};
 
 #[macro_use]
 mod error;
@@ -100,6 +104,8 @@ mod column;
 mod config;
 mod inner_connection;
 mod params;
+#[cfg(feature = "polars")]
+mod polars_dataframe;
 mod pragma;
 #[cfg(feature = "r2d2")]
 mod r2d2;
