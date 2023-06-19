@@ -1,6 +1,8 @@
 //! [`ToSql`] and [`FromSql`] implementation for [`url::Url`].
-use crate::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
-use crate::Result;
+use crate::{
+    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef},
+    Result,
+};
 use url::Url;
 
 /// Serialize `Url` to text.

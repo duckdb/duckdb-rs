@@ -1,15 +1,15 @@
-use std::convert::TryFrom;
-use std::ffi::CStr;
-use std::ptr;
-use std::sync::Arc;
+use std::{convert::TryFrom, ffi::CStr, ptr, sync::Arc};
 
-use super::ffi;
-use super::Result;
+use arrow::{
+    array::{ArrayData, StructArray},
+    datatypes::{DataType, Schema, SchemaRef},
+    ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema},
+};
+
+use super::{ffi, Result};
+#[cfg(feature = "polars")]
+use crate::arrow2;
 use crate::error::result_from_duckdb_arrow;
-
-use arrow::array::{ArrayData, StructArray};
-use arrow::datatypes::{DataType, Schema, SchemaRef};
-use arrow::ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema};
 
 // Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
 // TODO: destroy statement and result
@@ -85,10 +85,12 @@ impl RawStatement {
             if ffi::duckdb_query_arrow_array(
                 self.result_unwrap(),
                 &mut std::ptr::addr_of_mut!(arrays) as *mut _ as *mut ffi::duckdb_arrow_array,
-            ) != ffi::DuckDBSuccess
+            )
+            .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
+
             if arrays.is_empty() {
                 return None;
             }
@@ -106,6 +108,59 @@ impl RawStatement {
             let array_data = ArrayData::try_from(arrow_array).expect("ok");
             let struct_array = StructArray::from(array_data);
             Some(struct_array)
+        }
+    }
+
+    #[cfg(feature = "polars")]
+    #[inline]
+    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
+        self.result?;
+
+        unsafe {
+            let mut ffi_arrow2_array = arrow2::ffi::ArrowArray::empty();
+
+            if ffi::duckdb_query_arrow_array(
+                self.result_unwrap(),
+                &mut std::ptr::addr_of_mut!(ffi_arrow2_array) as *mut _ as *mut ffi::duckdb_arrow_array,
+            )
+            .ne(&ffi::DuckDBSuccess)
+            {
+                return None;
+            }
+
+            let mut ffi_arrow2_schema = arrow2::ffi::ArrowSchema::empty();
+
+            if ffi::duckdb_query_arrow_schema(
+                self.result_unwrap(),
+                &mut std::ptr::addr_of_mut!(ffi_arrow2_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
+            )
+            .ne(&ffi::DuckDBSuccess)
+            {
+                return None;
+            }
+
+            let arrow2_field =
+                arrow2::ffi::import_field_from_c(&ffi_arrow2_schema).expect("Failed to import arrow2 Field from C");
+            let import_arrow2_array = arrow2::ffi::import_array_from_c(ffi_arrow2_array, arrow2_field.data_type);
+
+            if let Err(err) = import_arrow2_array {
+                // When array is empty, import_array_from_c returns error with message
+                // "OutOfSpec("An ArrowArray of type X must have non-null children")
+                // Therefore, we return None when encountering this error.
+                match err {
+                    arrow2::error::Error::OutOfSpec(_) => return None,
+                    _ => panic!("Failed to import arrow2 Array from C: {}", err),
+                }
+            }
+
+            let arrow2_array = import_arrow2_array.unwrap();
+            let arrow2_struct_array = arrow2_array
+                .as_any()
+                .downcast_ref::<arrow2::array::StructArray>()
+                .expect("Failed to downcast arrow2 Array to arrow2 StructArray")
+                .to_owned();
+
+            Some(arrow2_struct_array)
         }
     }
 
@@ -140,9 +195,7 @@ impl RawStatement {
 
     #[allow(dead_code)]
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        use ffi::duckdb_column_count;
-        use ffi::duckdb_column_name;
-        use ffi::duckdb_row_count;
+        use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
 
         println!(
             "row-count: {}, column-count: {}",

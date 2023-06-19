@@ -57,38 +57,42 @@
 
 pub use libduckdb_sys as ffi;
 
-use std::cell::RefCell;
-use std::convert;
-use std::default::Default;
-use std::ffi::CString;
-use std::fmt;
-use std::path::{Path, PathBuf};
-use std::result;
-use std::str;
+use std::{
+    cell::RefCell,
+    convert,
+    default::Default,
+    ffi::CString,
+    fmt,
+    path::{Path, PathBuf},
+    result, str,
+};
 
-use crate::cache::StatementCache;
-use crate::inner_connection::InnerConnection;
-use crate::raw_statement::RawStatement;
-use crate::types::ValueRef;
+use crate::{cache::StatementCache, inner_connection::InnerConnection, raw_statement::RawStatement, types::ValueRef};
 
-pub use crate::appender::Appender;
-pub use crate::appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter};
-pub use crate::arrow_batch::Arrow;
-pub use crate::cache::CachedStatement;
-pub use crate::column::Column;
-pub use crate::config::{AccessMode, Config, DefaultNullOrder, DefaultOrder};
-pub use crate::error::Error;
-pub use crate::ffi::ErrorCode;
-pub use crate::params::{params_from_iter, Params, ParamsFromIter};
 #[cfg(feature = "r2d2")]
 pub use crate::r2d2::DuckdbConnectionManager;
-pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
-pub use crate::statement::Statement;
-pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
-pub use crate::types::ToSql;
+pub use crate::{
+    appender::Appender,
+    appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter},
+    arrow_batch::Arrow,
+    cache::CachedStatement,
+    column::Column,
+    config::{AccessMode, Config, DefaultNullOrder, DefaultOrder},
+    error::Error,
+    ffi::ErrorCode,
+    params::{params_from_iter, Params, ParamsFromIter},
+    row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
+    statement::Statement,
+    transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior},
+    types::ToSql,
+};
+#[cfg(feature = "polars")]
+pub use polars_dataframe::Polars;
 
-// re-export dependencies from arrow-rs to minimise version maintenance for crate users
+// re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
+#[cfg(feature = "polars")]
+pub use polars::{self, export::arrow as arrow2};
 
 #[macro_use]
 mod error;
@@ -100,6 +104,8 @@ mod column;
 mod config;
 mod inner_connection;
 mod params;
+#[cfg(feature = "polars")]
+mod polars_dataframe;
 mod pragma;
 #[cfg(feature = "r2d2")]
 mod r2d2;
@@ -112,6 +118,9 @@ mod transaction;
 mod extension;
 
 pub mod types;
+/// The duckdb table function interface
+#[cfg(feature = "vtab")]
+pub mod vtab;
 
 pub(crate) mod util;
 
@@ -244,6 +253,23 @@ impl Connection {
     #[inline]
     pub fn open_in_memory() -> Result<Connection> {
         Connection::open_in_memory_with_flags(Config::default())
+    }
+
+    /// Open a new connection to an ffi database.
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the underlying DuckDB open call fails.
+    /// # Safety
+    ///
+    /// Need to pass in a valid db instance
+    #[inline]
+    pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Connection> {
+        InnerConnection::new(raw, false).map(|db| Connection {
+            db: RefCell::new(db),
+            cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
+            path: None, // Can we know the path from connection?
+        })
     }
 
     /// Open a new connection to a DuckDB database.
@@ -543,18 +569,15 @@ doc_comment::doctest!("../README.md");
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::error::Error as StdError;
-    use std::fmt;
+    use std::{error::Error as StdError, fmt};
 
-    use arrow::array::Int32Array;
-    use arrow::datatypes::DataType;
-    use arrow::record_batch::RecordBatch;
+    use arrow::{array::Int32Array, datatypes::DataType, record_batch::RecordBatch};
     use fallible_iterator::FallibleIterator;
 
     // this function is never called, but is still type checked; in
     // particular, calls with specific instantiations will require
     // that those types are `Send`.
-    #[allow(dead_code, unconditional_recursion)]
+    #[allow(dead_code, unconditional_recursion, clippy::extra_unused_type_parameters)]
     fn ensure_send<T: Send>() {
         ensure_send::<Connection>();
     }
@@ -652,6 +675,16 @@ mod test {
     }
 
     #[test]
+    fn test_open_from_raw() {
+        let con = Connection::open_in_memory();
+        assert!(con.is_ok());
+        let inner_con: InnerConnection = con.unwrap().db.into_inner();
+        unsafe {
+            assert!(Connection::open_from_raw(inner_con.db).is_ok());
+        }
+    }
+
+    #[test]
     fn test_open_failure() -> Result<()> {
         let filename = "no_such_file.db";
         let result =
@@ -674,9 +707,7 @@ mod test {
     #[cfg(unix)]
     #[test]
     fn test_invalid_unicode_file_names() -> Result<()> {
-        use std::ffi::OsStr;
-        use std::fs::File;
-        use std::os::unix::ffi::OsStrExt;
+        use std::{ffi::OsStr, fs::File, os::unix::ffi::OsStrExt};
         let temp_dir = tempfile::tempdir().unwrap();
 
         let path = temp_dir.path();

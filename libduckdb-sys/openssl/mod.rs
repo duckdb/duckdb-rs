@@ -28,10 +28,12 @@ extern crate pkg_config;
 #[cfg(target_env = "msvc")]
 extern crate vcpkg;
 
-use std::collections::HashSet;
-use std::env;
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    env,
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 mod cfgs;
 
 mod find_normal;

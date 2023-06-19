@@ -38,7 +38,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.7.1"
+          tag: "v0.8.1"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -64,7 +64,7 @@ jobs:
         with:
           # Intentionally omit time feature until we're on time 0.3, at which
           # point it should be added to `bundled-full`.
-          args: '--features "buildtime_bindgen modern-full" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
+          args: '--features "buildtime_bindgen modern-full vtab-full vtab-loadable" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
           version: 0.22.0
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
@@ -90,10 +90,16 @@ jobs:
           value: $env:PATH;${{ github.workspace }}/libduckdb
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
-        run: cargo test --features "buildtime_bindgen modern-full"
+        run: cargo test --features "modern-full vtab-full vtab-loadable"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+      - name: Build loadable extension
+        run: cargo build --example hello-ext --features="vtab-loadable"
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
 
   Windows:
     name: Windows build from source
@@ -101,10 +107,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
-      # - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-      # - run: vcpkg install openssl:x64-windows-static-md
-      - run: choco install openssl
-      - run: echo 'OPENSSL_DIR=C:\Program Files\OpenSSL-Win64' | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: vcpkg install openssl:x64-windows-static-md
+      # - run: choco install openssl
+      # - run: echo 'OPENSSL_DIR=C:\Program Files\OpenSSL-Win64' | Out-File -FilePath $env:GITHUB_ENV -Append
       - uses: actions/cache@v3
         with:
           path: ~/.cargo/registry/index
@@ -115,7 +121,12 @@ jobs:
         with:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
-      - run: cargo test --features "bundled modern-full extensions-full"
+      - run: cargo install cargo-examples
+      # make the feature set the same so build faster
+      # don't test modern-full as polars requires too much memory
+      - run: cargo test --features "extensions-full vtab-loadable"
+      - run: cargo examples --skip hello-ext --features "extensions-full vtab-loadable"
+      - run: cargo build --example hello-ext --features "extensions-full vtab-loadable"
 
   Sanitizer:
     name: Address Sanitizer
@@ -133,7 +144,7 @@ jobs:
       - run: cargo minimal-versions test
       - name: Tests with asan
         env:
-          RUSTFLAGS: -Zsanitizer=address
+          RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
           # Work around https://github.com/rust-lang/rust/issues/59125 by
@@ -141,8 +152,7 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features "bundled modern-full extensions-full" --target x86_64-unknown-linux-gnu
-
+        run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
       - uses: wangfenjin/publish-crates@main
         name: cargo publish --dry-run
         with:

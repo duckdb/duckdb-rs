@@ -1,10 +1,6 @@
-use super::ffi;
-use super::Result;
+use super::{ffi, Result};
 use crate::error::Error;
-use std::default::Default;
-use std::ffi::CString;
-use std::os::raw::c_char;
-use std::ptr;
+use std::{default::Default, ffi::CString, os::raw::c_char, ptr};
 
 use strum::{Display, EnumString};
 
@@ -140,8 +136,7 @@ impl Drop for Config {
 
 #[cfg(test)]
 mod test {
-    use crate::types::Value;
-    use crate::{Config, Connection, Result};
+    use crate::{types::Value, Config, Connection, Result};
 
     #[test]
     fn test_default_config() -> Result<()> {
@@ -161,10 +156,11 @@ mod test {
             .collect();
         let val = val?;
         let mut iter = val.iter();
-        assert!(iter.next().unwrap().is_none());
+        assert_eq!(val.len(), 4);
         assert_eq!(iter.next().unwrap().as_ref().unwrap(), "a");
         assert_eq!(iter.next().unwrap().as_ref().unwrap(), "b");
         assert_eq!(iter.next().unwrap().as_ref().unwrap(), "c");
+        assert!(iter.next().unwrap().is_none());
         assert_eq!(iter.next(), None);
 
         Ok(())

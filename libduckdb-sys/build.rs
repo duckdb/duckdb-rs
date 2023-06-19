@@ -1,5 +1,4 @@
-use std::env;
-use std::path::Path;
+use std::{env, path::Path};
 
 #[cfg(feature = "httpfs")]
 mod openssl;
@@ -39,8 +38,10 @@ fn main() {
 
 #[cfg(feature = "bundled")]
 mod build_bundled {
-    use std::collections::{HashMap, HashSet};
-    use std::path::Path;
+    use std::{
+        collections::{HashMap, HashSet},
+        path::Path,
+    };
 
     use crate::win_target;
 
@@ -99,8 +100,7 @@ mod build_bundled {
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
             use std::fs;
-            fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name), out_path)
-                .expect("Could not copy bindings to output directory");
+            fs::copy("src/bindgen_bundled_version.rs", out_path).expect("Could not copy bindings to output directory");
         }
 
         let manifest_file = std::fs::File::open(format!("{}/manifest.json", lib_name)).expect("manifest file");
@@ -134,6 +134,8 @@ mod build_bundled {
         // Since the manifest controls the set of files, we require it to be changed to know whether
         // to rebuild the project
         println!("cargo:rerun-if-changed={}/manifest.json", lib_name);
+        // Make sure to rebuild the project if tar file changed
+        println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
         cfg.include(lib_name);
 
@@ -148,7 +150,8 @@ mod build_bundled {
             .flag_if_supported("-stdlib=libc++")
             .flag_if_supported("-stdlib=libstdc++")
             .flag_if_supported("/bigobj")
-            .warnings(false);
+            .warnings(false)
+            .flag_if_supported("-w");
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
@@ -198,8 +201,7 @@ mod build_linked {
     use super::bindings;
 
     use super::{env_prefix, is_compiler, lib_name, win_target, HeaderLocation};
-    use std::env;
-    use std::path::Path;
+    use std::{env, path::Path};
 
     pub fn main(_out_dir: &str, out_path: &Path) {
         // We need this to config the LD_LIBRARY_PATH
@@ -207,7 +209,7 @@ mod build_linked {
         let header = find_duckdb();
 
         if !cfg!(feature = "buildtime_bindgen") {
-            std::fs::copy(format!("{}/bindgen_bundled_version.rs", lib_name()), out_path)
+            std::fs::copy("src/bindgen_bundled_version.rs", out_path)
                 .expect("Could not copy bindings to output directory");
         } else {
             #[cfg(feature = "buildtime_bindgen")]
@@ -306,9 +308,7 @@ mod build_linked {
 mod bindings {
     use super::HeaderLocation;
 
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    use std::path::Path;
+    use std::{fs::OpenOptions, io::Write, path::Path};
 
     pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
         let header: String = header.into();
@@ -317,7 +317,6 @@ mod bindings {
             .trust_clang_mangling(false)
             .header(header.clone())
             .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-            .rustfmt_bindings(true)
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
             .write(Box::new(&mut output))

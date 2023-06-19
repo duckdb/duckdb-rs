@@ -27,4 +27,6 @@ Cargo.lock
 
 *.db
 
-libduckdb-sys/duckdb-sources
+libduckdb-sys/duckdb-sources/
+libduckdb-sys/duckdb/
+libduckdb-sys/._duckdb

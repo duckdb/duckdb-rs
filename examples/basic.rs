@@ -2,9 +2,10 @@
 
 extern crate duckdb;
 
-use duckdb::arrow::record_batch::RecordBatch;
-use duckdb::arrow::util::pretty::print_batches;
-use duckdb::{params, Connection, Result};
+use duckdb::{
+    arrow::{record_batch::RecordBatch, util::pretty::print_batches},
+    params, Connection, Result,
+};
 
 #[derive(Debug)]
 struct Person {
