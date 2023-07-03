@@ -39,4 +39,4 @@ serde_json = { version = "1.0" }
 tar = "0.4.38"
 
 [dev-dependencies]
-arrow = { version = "41", default-features = false, features = ["ffi"] }
+arrow = { version = "43", default-features = false, features = ["ffi"] }
