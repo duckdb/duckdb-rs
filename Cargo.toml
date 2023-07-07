@@ -35,6 +35,7 @@ extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
 polars = ["dep:polars"]
+arrow-ipc = ["arrow/ipc"]
 
 [dependencies]
 # time = { version = "0.3.2", features = ["formatting", "parsing"], optional = true }
