@@ -1,3 +1,5 @@
+use arrow::datatypes::DataType;
+
 use super::Result;
 use crate::{
     ffi,
@@ -57,6 +59,9 @@ pub enum Error {
     /// of the result in that column cannot be converted to the requested
     /// Rust type.
     InvalidColumnType(usize, String, Type),
+
+    /// Error when datatype to duckdb type
+    ArrowTypeToDuckdbType(String, DataType),
 
     /// Error when a query that was expected to insert one row did not insert
     /// any or insert many.
@@ -170,6 +175,9 @@ impl fmt::Display for Error {
             Error::InvalidColumnType(i, ref name, ref t) => {
                 write!(f, "Invalid column type {t} at index: {i}, name: {name}")
             }
+            Error::ArrowTypeToDuckdbType(ref name, ref t) => {
+                write!(f, "Invalid column type {t} , name: {name}")
+            }
             Error::InvalidParameterCount(i1, n1) => {
                 write!(f, "Wrong number of parameters passed to query. Got {i1}, needed {n1}")
             }
@@ -201,6 +209,7 @@ impl error::Error for Error {
             | Error::StatementChangedRows(_)
             | Error::InvalidQuery
             | Error::AppendError
+            | Error::ArrowTypeToDuckdbType(..)
             | Error::MultipleStatement => None,
             Error::FromSqlConversionFailure(_, _, ref err) | Error::ToSqlConversionFailure(ref err) => Some(&**err),
         }

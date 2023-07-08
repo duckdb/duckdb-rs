@@ -21,7 +21,7 @@ name = "duckdb"
 members = ["libduckdb-sys", "duckdb-loadable-macros"]
 
 [features]
-default = []
+default = ["bundled","vtab","vtab-arrow"]
 bundled = ["libduckdb-sys/bundled"]
 httpfs = ["libduckdb-sys/httpfs", "bundled"]
 json = ["libduckdb-sys/json", "bundled"]

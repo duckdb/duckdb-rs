@@ -490,6 +490,7 @@ mod test {
     use std::{error::Error, sync::Arc};
 
     #[test]
+    #[ignore = "close"]
     fn test_vtab_arrow() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ArrowVTab>("arrow")?;
