@@ -1,9 +1,9 @@
 use std::{convert::TryFrom, ffi::CStr, ptr, sync::Arc};
 
 use arrow::{
-    array::{ArrayData, StructArray},
+    array::StructArray,
     datatypes::{DataType, Schema, SchemaRef},
-    ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
 };
 
 use super::{ffi, Result};
@@ -104,8 +104,7 @@ impl RawStatement {
                 return None;
             }
 
-            let arrow_array = ArrowArray::new(arrays, schema);
-            let array_data = ArrayData::try_from(arrow_array).expect("ok");
+            let array_data = from_ffi(arrays, &schema).expect("ok");
             let struct_array = StructArray::from(array_data);
             Some(struct_array)
         }

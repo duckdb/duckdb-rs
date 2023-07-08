@@ -12,7 +12,7 @@ use arrow::array::{
 
 use arrow::{
     datatypes::*,
-    ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
     record_batch::RecordBatch,
 };
 
@@ -61,8 +61,7 @@ unsafe fn address_to_arrow_ffi(array: usize, schema: usize) -> (FFI_ArrowArray, 
 
 unsafe fn address_to_arrow_record_batch(array: usize, schema: usize) -> RecordBatch {
     let (array, schema) = address_to_arrow_ffi(array, schema);
-    let array = ArrowArray::new(array, schema);
-    let array_data = ArrayData::try_from(array).expect("ok");
+    let array_data = from_ffi(array, &schema).expect("ok");
     let struct_array = StructArray::from(array_data);
     RecordBatch::from(&struct_array)
 }
