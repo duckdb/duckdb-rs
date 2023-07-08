@@ -1,15 +1,19 @@
-use arrow::record_batch::RecordBatch;
-use ffi::duckdb_append_data_chunk;
-
 use super::{ffi, AppenderParams, Connection, Result, ValueRef};
 use std::{ffi::c_void, fmt, iter::IntoIterator, os::raw::c_char};
 
 use crate::{
     error::result_from_duckdb_appender,
     types::{TimeUnit, ToSql, ToSqlOutput},
-    vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type, DataChunk, LogicalType},
     Error,
 };
+
+#[cfg(feature = "vtab-arrow,vtab")]
+use arrow::record_batch::RecordBatch;
+#[cfg(feature = "vtab-arrow,vtab")]
+use ffi::duckdb_append_data_chunk;
+
+#[cfg(feature = "vtab-arrow,vtab")]
+use vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type, DataChunk, LogicalType};
 
 /// Appender for fast import data
 pub struct Appender<'conn> {
@@ -89,6 +93,7 @@ impl Appender<'_> {
     ///
     /// Will return `Err` if append column count not the same with the table schema
     #[inline]
+    #[cfg(feature = "vtab-arrow,vtab")]
     pub fn append_record_batch(&mut self, record_batch: RecordBatch) -> Result<()> {
         let schema = record_batch.schema();
         let mut logical_type: Vec<LogicalType> = vec![];
@@ -204,13 +209,8 @@ impl fmt::Debug for Appender<'_> {
 
 #[cfg(test)]
 mod test {
-    use arrow::{
-        array::{Int8Array, StringArray},
-        datatypes::{DataType, Field, Schema},
-        record_batch::RecordBatch,
-    };
     use crate::{Connection, Result};
-    use std::{convert::TryFrom, sync::Arc};
+    use std::convert::TryFrom;
 
     #[test]
     fn test_append_one_row() -> Result<()> {
@@ -279,7 +279,14 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "vtab-arrow,vtab")]
     fn test_append_record_batch() -> Result<()> {
+        use arrow::{
+            array::{Int8Array, StringArray},
+            datatypes::{DataType, Field, Schema},
+            record_batch::RecordBatch,
+        };
+        use std::sync::Arc;
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(id TINYINT not null,area TINYINT not null,name Varchar)")?;
         {
@@ -291,17 +298,19 @@ mod test {
                 Field::new("area", DataType::Int8, true),
                 Field::new("area", DataType::Utf8, true),
             ]);
-            let record_batch =
-                RecordBatch::try_new(Arc::new(schema), vec![Arc::new(id_array), Arc::new(area_array), Arc::new(name_array)]).unwrap();
+            let record_batch = RecordBatch::try_new(
+                Arc::new(schema),
+                vec![Arc::new(id_array), Arc::new(area_array), Arc::new(name_array)],
+            )
+            .unwrap();
             let mut app = db.appender("foo")?;
             app.append_record_batch(record_batch)?;
         }
         let mut stmt = db.prepare("SELECT id, area,name  FROM foo")?;
         let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
-        assert_eq!(rbs.iter().map(|op|op.num_rows()).sum::<usize>(),5);
+        assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 5);
         Ok(())
     }
-    
 
     #[test]
     fn test_append_timestamp() -> Result<()> {
