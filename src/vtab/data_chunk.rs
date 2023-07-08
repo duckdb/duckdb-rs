@@ -62,7 +62,7 @@ impl DataChunk {
 
     /// Get the ptr of duckdb_data_chunk in this [DataChunk].
     pub fn get_ptr(&self) -> duckdb_data_chunk {
-        self.ptr.clone()
+        self.ptr
     }
 }
 
