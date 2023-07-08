@@ -60,8 +60,8 @@ impl DataChunk {
         unsafe { duckdb_data_chunk_get_column_count(self.ptr) as usize }
     }
 
-      /// Get the ptr of duckdb_data_chunk in this [DataChunk].
-      pub fn get_ptr(&self) -> duckdb_data_chunk {
+    /// Get the ptr of duckdb_data_chunk in this [DataChunk].
+    pub fn get_ptr(&self) -> duckdb_data_chunk {
         self.ptr.clone()
     }
 }
