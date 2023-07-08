@@ -21,7 +21,6 @@ mod error;
 mod tests {
     use super::*;
     use std::{
-        convert::TryFrom,
         ffi::{CStr, CString},
         mem,
         os::raw::c_char,
@@ -29,9 +28,9 @@ mod tests {
     };
 
     use arrow::{
-        array::{Array, ArrayData, Int32Array, StructArray},
+        array::{Array, Int32Array, StructArray},
         datatypes::DataType,
-        ffi::{ArrowArray, FFI_ArrowArray, FFI_ArrowSchema},
+        ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
     };
 
     unsafe fn print_int_result(mut result: duckdb_result) {
@@ -104,8 +103,7 @@ mod tests {
             {
                 panic!("SELECT error")
             }
-            let arrow_array = ArrowArray::new(arrays, schema);
-            let array_data = ArrayData::try_from(arrow_array).expect("ok");
+            let array_data = from_ffi(arrays, &schema).expect("ok");
             let struct_array = StructArray::from(array_data);
             assert_eq!(struct_array.len(), 3);
             assert_eq!(struct_array.columns().len(), 2);
