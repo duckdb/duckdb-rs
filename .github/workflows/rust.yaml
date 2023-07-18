@@ -9,7 +9,6 @@ env:
   RUST_BACKTRACE: 1
 jobs:
   test:
-    needs: Windows
     name: Test ${{ matrix.target }}
     strategy:
       fail-fast: true
@@ -104,18 +103,14 @@ jobs:
 
   Windows:
     name: Windows build from source
-    # needs: test
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
       # - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
       # - run: vcpkg install openssl:x64-windows-static-md
       - run: choco install openssl
-      - run: Get-ChildItem C:\
-      - run: Get-ChildItem "C:\Program Files"
-      - run: Get-ChildItem "C:\Program Files\OpenSSL-Win64"
-      - run: Get-ChildItem "C:\Program Files\OpenSSL"
-      - run: echo 'OPENSSL_DIR=C:\Program Files\OpenSSL-Win64' | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: echo 'OPENSSL_DIR=C:\Program Files\OpenSSL' | Out-File -FilePath $env:GITHUB_ENV -Append
       - uses: actions/cache@v3
         with:
           path: ~/.cargo/registry/index
