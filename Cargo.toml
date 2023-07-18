@@ -58,7 +58,7 @@ r2d2 = { version = "0.8.9", optional = true }
 calamine = { version = "0.21.0", optional = true }
 num = { version = "0.4", optional = true, default-features = false, features = ["std"] }
 duckdb-loadable-macros = { version = "0.1.0", path="./duckdb-loadable-macros", optional = true }
-polars = { version = "0.30.0", features = ["dtype-full"], optional = true}
+polars = { version = "0.31.1", features = ["dtype-full"], optional = true}
 
 [dev-dependencies]
 doc-comment = "0.3"
@@ -69,7 +69,7 @@ uuid = { version = "1.0", features = ["v4"] }
 unicase = "2.6.0"
 rand = "0.8.3"
 tempdir = "0.3.7"
-polars-core = "0.30.0"
+polars-core = "*"
 # criterion = "0.3"
 
 # [[bench]]
