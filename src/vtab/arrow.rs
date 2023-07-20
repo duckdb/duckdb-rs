@@ -119,6 +119,7 @@ impl VTab for ArrowVTab {
     }
 }
 
+/// Convert arrow DataType to duckdb type id
 pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn std::error::Error>> {
     use LogicalTypeId::*;
 
@@ -160,6 +161,7 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
     Ok(type_id)
 }
 
+/// Convert arrow DataType to duckdb logical type
 pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<dyn std::error::Error>> {
     if data_type.is_primitive()
         || matches!(

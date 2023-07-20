@@ -13,6 +13,9 @@ pub struct Appender<'conn> {
     app: ffi::duckdb_appender,
 }
 
+#[cfg(feature = "appender-arrow")]
+mod arrow;
+
 impl Appender<'_> {
     /// Append multiple rows from Iterator
     ///

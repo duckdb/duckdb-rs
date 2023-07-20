@@ -129,7 +129,7 @@ See to [Contributing.md](CONTRIBUTING.md)
 
 ### Checklist
 
-- Run `cargo fmt` to ensure your Rust code is correctly formatted.
+- Run `cargo +nightly fmt` to ensure your Rust code is correctly formatted.
 - Run `cargo clippy --fix --allow-dirty --all-targets --workspace --all-features -- -D warnings` to fix all clippy issues.
 - Ensure `cargo test --all-targets --workspace --features "modern-full extensions-full"` reports no failures.
 
