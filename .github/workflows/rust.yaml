@@ -139,6 +139,9 @@ jobs:
         with:
           rust-version: nightly
           components: rust-src
+      - uses: taiki-e/install-action@cargo-hack
+      - uses: taiki-e/install-action@cargo-minimal-versions
+      - run: cargo minimal-versions test
       - name: Tests with asan
         env:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
