@@ -179,6 +179,15 @@ impl LogicalType {
         }
     }
 
+    /// Creates a decimal type from its `width` and `scale`.
+    pub fn decimal(width: u8, scale: u8) -> Self {
+        unsafe {
+            Self {
+                ptr: duckdb_create_decimal_type(width, scale),
+            }
+        }
+    }
+
     /// Make a `LogicalType` for `struct`
     pub fn struct_type(fields: &[(&str, LogicalType)]) -> Self {
         let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
@@ -237,5 +246,10 @@ mod test {
     fn test_struct() {
         let fields = vec![("hello", LogicalType::new(crate::vtab::LogicalTypeId::Boolean))];
         LogicalType::struct_type(fields.as_slice());
+    }
+
+    #[test]
+    fn test_decimal() {
+        LogicalType::decimal(10, 2);
     }
 }
