@@ -79,6 +79,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: DuckSoft/extract-7z-action@v1.0
         with:
+          pathSource: duckdb-binaries-windows.zip
+          pathTarget: ${{ github.workspace }}
+
+      # For windows
+      - name: Windows extract duckdb
+        if: matrix.os == 'windows-latest'
+        uses: DuckSoft/extract-7z-action@v1.0
+        with:
           pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
           pathTarget: ${{ github.workspace }}/libduckdb
 
