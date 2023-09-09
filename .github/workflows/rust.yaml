@@ -11,7 +11,7 @@ jobs:
   test:
     name: Test ${{ matrix.target }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { target: x86_64-pc-windows-msvc, os: windows-latest, duckdb: libduckdb-windows-amd64.zip }
