@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, ffi::CStr, ptr, sync::Arc};
+use std::{convert::TryFrom, ffi::CStr, ptr, rc::Rc, sync::Arc};
 
 use arrow::{
     array::StructArray,
@@ -228,14 +228,14 @@ impl RawStatement {
             result_from_duckdb_arrow(rc, out)?;
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
-            let mut c_schema = Arc::into_raw(Arc::new(FFI_ArrowSchema::empty()));
+            let mut c_schema = Rc::into_raw(Rc::new(FFI_ArrowSchema::empty()));
             let rc = ffi::duckdb_query_arrow_schema(out, &mut c_schema as *mut _ as *mut ffi::duckdb_arrow_schema);
             if rc != ffi::DuckDBSuccess {
-                Arc::from_raw(c_schema);
+                Rc::from_raw(c_schema);
                 result_from_duckdb_arrow(rc, out)?;
             }
             self.schema = Some(Arc::new(Schema::try_from(&*c_schema).unwrap()));
-            Arc::from_raw(c_schema);
+            Rc::from_raw(c_schema);
 
             self.result = Some(out);
             Ok(rows_changed as usize)
