@@ -99,10 +99,3 @@ subprocess.check_call(
     + '/bindgen_bundled_version.rs" \;',
     shell=True,
 )
-
-# Remove the extra patch file
-os.remove(
-    os.path.join(
-        SCRIPT_DIR, "duckdb-sources", "extension", "httpfs", "httpfs_config.py"
-    )
-)
