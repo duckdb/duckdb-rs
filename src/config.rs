@@ -42,26 +42,14 @@ pub enum DefaultNullOrder {
 
 /// duckdb configuration
 /// Refer to https://github.com/duckdb/duckdb/blob/master/src/main/config.cpp
+#[derive(Default)]
 pub struct Config {
     config: Option<ffi::duckdb_config>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config { config: None }.autoloadable_extension(true).unwrap()
-    }
 }
 
 impl Config {
     pub(crate) fn duckdb_config(&self) -> ffi::duckdb_config {
         self.config.unwrap_or(std::ptr::null_mut() as ffi::duckdb_config)
-    }
-
-    /// enable autoload extensions
-    pub fn autoloadable_extension(mut self, enabled: bool) -> Result<Config> {
-        self.set("autoinstall_known_extensions", &(enabled as i32).to_string())?;
-        self.set("autoload_known_extensions", &(enabled as i32).to_string())?;
-        Ok(self)
     }
 
     /// Access mode of the database ([AUTOMATIC], READ_ONLY or READ_WRITE)

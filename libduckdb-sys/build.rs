@@ -69,7 +69,10 @@ mod build_bundled {
     ) {
         cpp_files.extend(manifest.extensions.get(extension).unwrap().cpp_files.clone());
         include_dirs.extend(manifest.extensions.get(extension).unwrap().include_dirs.clone());
-        cfg.define(&format!("BUILD_{}_EXTENSION", extension.to_uppercase()), Some("1"));
+        cfg.define(
+            &format!("DUCKDB_EXTENSION_{}_LINKED", extension.to_uppercase()),
+            Some("1"),
+        );
     }
 
     fn untar_archive() {
@@ -130,6 +133,10 @@ mod build_bundled {
 
         #[cfg(feature = "json")]
         add_extension(&mut cfg, &manifest, "json", &mut cpp_files, &mut include_dirs);
+
+        // duckdb/tools/pythonpkg/setup.py
+        cfg.define("DUCKDB_EXTENSION_AUTOINSTALL_DEFAULT", "1");
+        cfg.define("DUCKDB_EXTENSION_AUTOLOAD_DEFAULT", "1");
 
         // Since the manifest controls the set of files, we require it to be changed to know whether
         // to rebuild the project
