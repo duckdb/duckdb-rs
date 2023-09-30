@@ -52,6 +52,13 @@ impl Config {
         self.config.unwrap_or(std::ptr::null_mut() as ffi::duckdb_config)
     }
 
+    /// enable autoload extensions
+    pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Config> {
+        self.set("autoinstall_known_extensions", &(enabled as i32).to_string())?;
+        self.set("autoload_known_extensions", &(enabled as i32).to_string())?;
+        Ok(self)
+    }
+
     /// Access mode of the database ([AUTOMATIC], READ_ONLY or READ_WRITE)
     pub fn access_mode(mut self, mode: AccessMode) -> Result<Config> {
         self.set("access_mode", &mode.to_string())?;
@@ -174,6 +181,7 @@ mod test {
             .default_order(crate::DefaultOrder::Desc)?
             .enable_external_access(true)?
             .enable_object_cache(false)?
+            .enable_autoload_extension(true)?
             .allow_unsigned_extensions()?
             .max_memory("2GB")?
             .threads(4)?;
