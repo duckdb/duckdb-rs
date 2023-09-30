@@ -53,7 +53,7 @@ impl Config {
     }
 
     /// enable autoload extensions
-    pub fn autoloadable_extension(mut self, enabled: bool) -> Result<Config> {
+    pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Config> {
         self.set("autoinstall_known_extensions", &(enabled as i32).to_string())?;
         self.set("autoload_known_extensions", &(enabled as i32).to_string())?;
         Ok(self)
@@ -181,6 +181,7 @@ mod test {
             .default_order(crate::DefaultOrder::Desc)?
             .enable_external_access(true)?
             .enable_object_cache(false)?
+            .enable_autoload_extension(true)?
             .allow_unsigned_extensions()?
             .max_memory("2GB")?
             .threads(4)?;
