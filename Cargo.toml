@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "0.8.1"
+version = "0.9.0"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2021"
 description = "Ergonomic wrapper for DuckDB"
@@ -79,7 +79,7 @@ polars-core = "0.33.2"
 
 [dependencies.libduckdb-sys]
 path = "libduckdb-sys"
-version = "0.8.1"
+version = "0.9.0"
 
 [package.metadata.docs.rs]
 features = []

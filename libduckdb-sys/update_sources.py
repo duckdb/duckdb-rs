@@ -18,14 +18,6 @@ SRC_DIR = os.path.join(SCRIPT_DIR, "src")
 # but not included in the final build unless they're explicitly enabled.
 EXTENSIONS = ["parquet", "json", "httpfs"]
 
-# copy in the https_config.py file that allows https to be included in the cmopiled sources
-shutil.copyfile(
-    os.path.join(SCRIPT_DIR, "extras", "httpfs_config.py"),
-    os.path.join(
-        SCRIPT_DIR, "duckdb-sources", "extension", "httpfs", "httpfs_config.py"
-    ),
-)
-
 # Clear the duckdb directory
 try:
     shutil.rmtree(os.path.join(TARGET_DIR))
@@ -106,11 +98,4 @@ subprocess.check_call(
     + SRC_DIR
     + '/bindgen_bundled_version.rs" \;',
     shell=True,
-)
-
-# Remove the extra patch file
-os.remove(
-    os.path.join(
-        SCRIPT_DIR, "duckdb-sources", "extension", "httpfs", "httpfs_config.py"
-    )
 )
