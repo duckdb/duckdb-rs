@@ -52,14 +52,14 @@ memchr = "2.3"
 uuid = { version = "1.0", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.3", features = ["std"] }
-arrow = { version = "44", default-features = false, features = ["prettyprint", "ffi"] }
+arrow = { version = "47", default-features = false, features = ["prettyprint", "ffi"] }
 rust_decimal = "1.14"
 strum = { version = "0.25", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
-calamine = { version = "0.21.0", optional = true }
+calamine = { version = "0.22.0", optional = true }
 num = { version = "0.4", optional = true, default-features = false, features = ["std"] }
 duckdb-loadable-macros = { version = "0.1.0", path="./duckdb-loadable-macros", optional = true }
-polars = { version = "0.31.1", features = ["dtype-full"], optional = true}
+polars = { version = "0.33.2", features = ["dtype-full"], optional = true}
 
 [dev-dependencies]
 doc-comment = "0.3"
@@ -70,7 +70,7 @@ uuid = { version = "1.0", features = ["v4"] }
 unicase = "2.6.0"
 rand = "0.8.3"
 tempdir = "0.3.7"
-polars-core = "*"
+polars-core = "0.33.2"
 # criterion = "0.3"
 
 # [[bench]]
