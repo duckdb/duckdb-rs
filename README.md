@@ -65,7 +65,9 @@ fn main() -> Result<()> {
     })?;
 
     for person in person_iter {
-        println!("Found person {:?}", person.unwrap());
+        let p = person.unwrap();
+        println!("ID: {}", p.id);
+        println!("Found person {:?}", p);
     }
 
     // query table by arrow
