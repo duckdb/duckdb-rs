@@ -90,9 +90,9 @@ You can adjust this behavior in a number of ways:
   we will use the stable released version from [duckdb](https://github.com/duckdb/duckdb/releases).
   This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
   ```toml
-  [dependencies.duckdb]
-  version = "0.1"
-  features = ["bundled"]
+  [dependencies]
+  # Assume that version DuckDB version 0.9.0 is used.
+  duckdb = { version = "0.9.0", features = ["bundled"] }
   ```
 * When linking against a DuckDB library already on the system (so *not* using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
 * Installing the duckdb development packages will usually be all that is required, but
