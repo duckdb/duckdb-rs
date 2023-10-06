@@ -258,8 +258,12 @@ mod test {
 
     #[test]
     fn test_struct() {
-        let fields = vec![("hello", LogicalType::new(crate::vtab::LogicalTypeId::Boolean))];
-        LogicalType::struct_type(fields.as_slice());
+        let fields = &[("hello", LogicalType::new(crate::vtab::LogicalTypeId::Boolean))];
+        let typ = LogicalType::struct_type(fields);
+
+        assert_eq!(typ.num_children(), 1);
+        assert_eq!(typ.child_name(0), "hello");
+        assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::Boolean);
     }
 
     #[test]
