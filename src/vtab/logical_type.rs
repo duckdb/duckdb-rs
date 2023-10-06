@@ -188,6 +188,20 @@ impl LogicalType {
         }
     }
 
+    /// Retrieves the decimal width
+    /// # Panics
+    /// If the LogicalType is not a decimal
+    pub fn decimal_width(&self) -> u8 {
+        unsafe { duckdb_decimal_width(self.ptr) }
+    }
+
+    /// Retrieves the decimal scale
+    /// # Panics
+    /// If the LogicalType is not a decimal
+    pub fn decimal_scale(&self) -> u8 {
+        unsafe { duckdb_decimal_scale(self.ptr) }
+    }
+
     /// Make a `LogicalType` for `struct`
     pub fn struct_type(fields: &[(&str, LogicalType)]) -> Self {
         let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
@@ -250,6 +264,9 @@ mod test {
 
     #[test]
     fn test_decimal() {
-        LogicalType::decimal(10, 2);
+        let typ = LogicalType::decimal(10, 2);
+
+        assert_eq!(typ.decimal_width(), 10);
+        assert_eq!(typ.decimal_scale(), 2);
     }
 }
