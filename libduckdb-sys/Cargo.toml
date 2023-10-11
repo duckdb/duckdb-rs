@@ -1,6 +1,6 @@
 [package]
 name = "libduckdb-sys"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2021"
 build = "build.rs"
