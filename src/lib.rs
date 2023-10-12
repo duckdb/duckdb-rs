@@ -1307,9 +1307,9 @@ mod test {
     #[test]
     fn test_version() -> Result<()> {
         let db = checked_memory_handle();
-        const VERSION: &str = env!("CARGO_PKG_VERSION");
-        let version = db.version()?;
-        assert_eq!(version, VERSION);
+        let expected: String = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let actual = db.version()?;
+        assert_eq!(expected, actual);
         Ok(())
     }
 }
