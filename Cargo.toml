@@ -70,7 +70,7 @@ uuid = { version = "1.0", features = ["v4"] }
 unicase = "2.6.0"
 rand = "0.8.3"
 tempdir = "0.3.7"
-polars-core = "0.33.2"
+polars-core = "0.34.0"
 # criterion = "0.3"
 
 # [[bench]]
