@@ -299,7 +299,7 @@ impl<'stmt> Row<'stmt> {
     /// 16 bytes, `Error::InvalidColumnType` will also be returned.
     pub fn get<I: RowIndex, T: FromSql>(&self, idx: I) -> Result<T> {
         let idx = idx.idx(self.stmt)?;
-        let value = self.value_ref(self.current_row, idx);
+        let value = self.value_ref(self.current_row, idx)?;
         FromSql::column_result(value).map_err(|err| match err {
             FromSqlError::InvalidType => {
                 Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
@@ -333,164 +333,116 @@ impl<'stmt> Row<'stmt> {
         // Narrowing from `ValueRef<'stmt>` (which `self.stmt.value_ref(idx)`
         // returns) to `ValueRef<'a>` is needed because it's only valid until
         // the next call to sqlite3_step.
-        let val_ref = self.value_ref(self.current_row, idx);
+        let val_ref = self.value_ref(self.current_row, idx)?;
         Ok(val_ref)
     }
 
-    fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
+    fn value_ref(&self, row: usize, col: usize) -> Result<ValueRef<'_>> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
-        if column.is_null(row) {
-            return ValueRef::Null;
+        macro_rules! check_null {
+            ($val: expr) => {
+                if $val.is_null(row) {
+                    return Ok(ValueRef::Null);
+                }
+            };
         }
+        check_null!(column);
         // duckdb.cpp SetArrowFormat
         // https://github.com/duckdb/duckdb/blob/71f1c7a7e4b8737cff5e78d1f090c54f5e78e17b/src/main/query_result.cpp#L148
-        match column.data_type() {
+        let value = match column.data_type() {
             DataType::Utf8 => {
                 let array = column.as_any().downcast_ref::<array::StringArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::from(array.value(row))
             }
             DataType::LargeUtf8 => {
                 let array = column.as_any().downcast_ref::<array::LargeStringArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::from(array.value(row))
             }
             DataType::Binary => {
                 let array = column.as_any().downcast_ref::<array::BinaryArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Blob(array.value(row))
             }
             DataType::LargeBinary => {
                 let array = column.as_any().downcast_ref::<array::LargeBinaryArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Blob(array.value(row))
             }
             DataType::Boolean => {
                 let array = column.as_any().downcast_ref::<array::BooleanArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Boolean(array.value(row))
             }
             DataType::Int8 => {
                 let array = column.as_any().downcast_ref::<array::Int8Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::TinyInt(array.value(row))
             }
             DataType::Int16 => {
                 let array = column.as_any().downcast_ref::<array::Int16Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::SmallInt(array.value(row))
             }
             DataType::Int32 => {
                 let array = column.as_any().downcast_ref::<array::Int32Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Int(array.value(row))
             }
             DataType::Int64 => {
                 let array = column.as_any().downcast_ref::<array::Int64Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::BigInt(array.value(row))
             }
             DataType::UInt8 => {
                 let array = column.as_any().downcast_ref::<array::UInt8Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::UTinyInt(array.value(row))
             }
             DataType::UInt16 => {
                 let array = column.as_any().downcast_ref::<array::UInt16Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::USmallInt(array.value(row))
             }
             DataType::UInt32 => {
                 let array = column.as_any().downcast_ref::<array::UInt32Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::UInt(array.value(row))
             }
             DataType::UInt64 => {
                 let array = column.as_any().downcast_ref::<array::UInt64Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::UBigInt(array.value(row))
             }
             DataType::Float16 => {
                 let array = column.as_any().downcast_ref::<array::Float32Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Float(array.value(row))
             }
             DataType::Float32 => {
                 let array = column.as_any().downcast_ref::<array::Float32Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Float(array.value(row))
             }
             DataType::Float64 => {
                 let array = column.as_any().downcast_ref::<array::Float64Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Double(array.value(row))
             }
             DataType::Decimal128(..) => {
                 let array = column.as_any().downcast_ref::<array::Decimal128Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 // hugeint: d:38,0
                 if array.scale() == 0 {
-                    return ValueRef::HugeInt(array.value(row));
+                    ValueRef::HugeInt(array.value(row))
+                } else {
+                    ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
                 }
-                ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
                 let array = column.as_any().downcast_ref::<array::TimestampSecondArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Timestamp(types::TimeUnit::Second, array.value(row))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Millisecond => {
@@ -498,10 +450,7 @@ impl<'stmt> Row<'stmt> {
                     .as_any()
                     .downcast_ref::<array::TimestampMillisecondArray>()
                     .unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Timestamp(types::TimeUnit::Millisecond, array.value(row))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Microsecond => {
@@ -509,10 +458,7 @@ impl<'stmt> Row<'stmt> {
                     .as_any()
                     .downcast_ref::<array::TimestampMicrosecondArray>()
                     .unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Timestamp(types::TimeUnit::Microsecond, array.value(row))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Nanosecond => {
@@ -520,26 +466,17 @@ impl<'stmt> Row<'stmt> {
                     .as_any()
                     .downcast_ref::<array::TimestampNanosecondArray>()
                     .unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Timestamp(types::TimeUnit::Nanosecond, array.value(row))
             }
             DataType::Date32 => {
                 let array = column.as_any().downcast_ref::<array::Date32Array>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Date32(array.value(row))
             }
             DataType::Time64(TimeUnit::Microsecond) => {
                 let array = column.as_any().downcast_ref::<array::Time64MicrosecondArray>().unwrap();
-
-                if array.is_null(row) {
-                    return ValueRef::Null;
-                }
+                check_null!(array);
                 ValueRef::Time64(types::TimeUnit::Microsecond, array.value(row))
             }
             // TODO: support more data types
@@ -578,8 +515,14 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
-            _ => unreachable!("invalid value: {}, {}", col, self.stmt.column_type(col)),
-        }
+            _ => {
+                return Err(Error::Unimplemented(format!(
+                    "Column: {col} Type: {}",
+                    self.stmt.column_type(col)
+                )))
+            }
+        };
+        return Ok(value);
     }
 
     /// Get the value of a particular column of the result row as a `ValueRef`,
