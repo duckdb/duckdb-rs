@@ -109,8 +109,8 @@ impl Config {
 
     /// Add any setting to the config. DuckDB will return an error if the setting is unknown or
     /// otherwise invalid.
-    pub fn with(mut self, key: &str, value: &str) -> Result<Config> {
-        self.set(key, value)?;
+    pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<Config> {
+        self.set(key.as_ref(), value.as_ref())?;
         Ok(self)
     }
 
