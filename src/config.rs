@@ -107,6 +107,13 @@ impl Config {
         Ok(self)
     }
 
+    /// Add any setting to the config. DuckDB will return an error if the setting is unknown or
+    /// otherwise invalid.
+    pub fn with(mut self, key: &str, value: &str) -> Result<Config> {
+        self.set(key, value)?;
+        Ok(self)
+    }
+
     fn set(&mut self, key: &str, value: &str) -> Result<()> {
         if self.config.is_none() {
             let mut config: ffi::duckdb_config = ptr::null_mut();
@@ -184,7 +191,9 @@ mod test {
             .enable_autoload_extension(true)?
             .allow_unsigned_extensions()?
             .max_memory("2GB")?
-            .threads(4)?;
+            .threads(4)?
+            .with("preserve_insertion_order", "true")?;
+
         let db = Connection::open_in_memory_with_flags(config)?;
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
