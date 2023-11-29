@@ -20,7 +20,7 @@ if [ $duckdb_version = $duckdb_rs_version ]; then
     exit 0
 fi
 
-echo "Start to upgrade from $duckdb_version to $duckdb_rs_version"
+echo "Start to upgrade from $duckdb_rs_version to $duckdb_version"
 
 sed -i '' "s/$duckdb_rs_version/$duckdb_version/g" Cargo.toml libduckdb-sys/upgrade.sh libduckdb-sys/Cargo.toml .github/workflows/rust.yaml
 ./libduckdb-sys/upgrade.sh
