@@ -217,4 +217,15 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_invalid_setting() -> Result<()> {
+        let config = Config::default().with("some-invalid-setting", "true")?;
+        let res = Connection::open_in_memory_with_flags(config);
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Invalid Input Error: Unrecognized configuration property \"some-invalid-setting\""
+        );
+        Ok(())
+    }
 }
