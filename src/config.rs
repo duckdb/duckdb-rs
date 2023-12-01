@@ -107,6 +107,13 @@ impl Config {
         Ok(self)
     }
 
+    /// Add any setting to the config. DuckDB will return an error if the setting is unknown or
+    /// otherwise invalid.
+    pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<Config> {
+        self.set(key.as_ref(), value.as_ref())?;
+        Ok(self)
+    }
+
     fn set(&mut self, key: &str, value: &str) -> Result<()> {
         if self.config.is_none() {
             let mut config: ffi::duckdb_config = ptr::null_mut();
@@ -184,7 +191,9 @@ mod test {
             .enable_autoload_extension(true)?
             .allow_unsigned_extensions()?
             .max_memory("2GB")?
-            .threads(4)?;
+            .threads(4)?
+            .with("preserve_insertion_order", "true")?;
+
         let db = Connection::open_in_memory_with_flags(config)?;
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
@@ -206,6 +215,17 @@ mod test {
         assert!(iter.next().unwrap().is_none());
         assert_eq!(iter.next(), None);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_setting() -> Result<()> {
+        let config = Config::default().with("some-invalid-setting", "true")?;
+        let res = Connection::open_in_memory_with_flags(config);
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Invalid Input Error: Unrecognized configuration property \"some-invalid-setting\""
+        );
         Ok(())
     }
 }
