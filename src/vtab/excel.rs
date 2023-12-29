@@ -53,7 +53,7 @@ impl VTab for ExcelVTab {
         for data in rows.by_ref() {
             // find the first row with no empty cell
             let mut found = true;
-            for (_, cell) in data.iter().enumerate() {
+            for cell in data.iter() {
                 match cell {
                     DataType::Error(_) | DataType::Empty => {
                         found = false;
