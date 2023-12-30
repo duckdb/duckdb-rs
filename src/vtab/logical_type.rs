@@ -270,7 +270,16 @@ mod test {
     fn test_decimal() {
         let typ = LogicalType::decimal(10, 2);
 
+        assert_eq!(typ.id(), crate::vtab::LogicalTypeId::Decimal);
         assert_eq!(typ.decimal_width(), 10);
         assert_eq!(typ.decimal_scale(), 2);
+    }
+
+    #[test]
+    fn test_decimal_methods() {
+        let typ = LogicalType::new(crate::vtab::LogicalTypeId::Varchar);
+
+        assert_eq!(typ.decimal_width(), 0);
+        assert_eq!(typ.decimal_scale(), 0);
     }
 }
