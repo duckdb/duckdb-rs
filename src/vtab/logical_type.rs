@@ -243,9 +243,8 @@ impl LogicalType {
     /// Logical type children num
     pub fn num_children(&self) -> usize {
         match self.id() {
-            LogicalTypeId::Union | LogicalTypeId::Struct => unsafe {
-                duckdb_struct_type_child_count(self.ptr) as usize
-            },
+            LogicalTypeId::Struct => unsafe { duckdb_struct_type_child_count(self.ptr) as usize },
+            LogicalTypeId::Union => unsafe { duckdb_union_type_member_count(self.ptr) as usize },
             LogicalTypeId::List => 1,
             _ => 0,
         }
@@ -255,9 +254,12 @@ impl LogicalType {
     ///
     /// Panics if the logical type is not a struct or union
     pub fn child_name(&self, idx: usize) -> String {
-        assert!(self.id() == LogicalTypeId::Struct || self.id() == LogicalTypeId::Union);
         unsafe {
-            let child_name_ptr = duckdb_struct_type_child_name(self.ptr, idx as u64);
+            let child_name_ptr = match self.id() {
+                LogicalTypeId::Struct => duckdb_struct_type_child_name(self.ptr, idx as u64),
+                LogicalTypeId::Union => duckdb_union_type_member_name(self.ptr, idx as u64),
+                _ => panic!("not a struct or union"),
+            };
             let c_str = CString::from_raw(child_name_ptr);
             let name = c_str.to_str().unwrap();
             name.to_string()
@@ -266,7 +268,13 @@ impl LogicalType {
 
     /// Logical type child by idx
     pub fn child(&self, idx: usize) -> Self {
-        let c_logical_type = unsafe { duckdb_struct_type_child_type(self.ptr, idx as u64) };
+        let c_logical_type = unsafe {
+            match self.id() {
+                LogicalTypeId::Struct => duckdb_struct_type_child_type(self.ptr, idx as u64),
+                LogicalTypeId::Union => duckdb_union_type_member_type(self.ptr, idx as u64),
+                _ => panic!("not a struct or union"),
+            }
+        };
         Self::from(c_logical_type)
     }
 }
@@ -317,20 +325,10 @@ mod test {
 
         assert_eq!(typ.num_children(), 2);
 
-        // first child is the union tag
-        // TODO: should we hide this?
-        assert_eq!(typ.child_name(0), "");
-        assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::UTinyint);
+        assert_eq!(typ.child_name(0), "hello");
+        assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::Boolean);
 
-        assert_eq!(typ.child_name(1), "hello");
-        assert_eq!(typ.child(1).id(), crate::vtab::LogicalTypeId::Boolean);
-
-        for i in 0..typ.num_children() {
-            println!("{}: {:?}", i, typ.child(i));
-        }
-
-        assert_eq!(typ.child_name(2), "world");
-        return; // FIXME: this is broken
-        assert_eq!(typ.child(2).id(), crate::vtab::LogicalTypeId::Integer);
+        assert_eq!(typ.child_name(1), "world");
+        assert_eq!(typ.child(1).id(), crate::vtab::LogicalTypeId::Integer);
     }
 }
