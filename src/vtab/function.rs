@@ -65,8 +65,18 @@ impl BindInfo {
     ///  * `index`: The index of the parameter to get
     ///
     /// returns: The value of the parameter
+    ///
+    /// # Panics
+    /// If requested parameter is out of range for function definition
     pub fn get_parameter(&self, param_index: u64) -> Value {
-        unsafe { Value::from(duckdb_bind_get_parameter(self.ptr, param_index)) }
+        unsafe {
+            let ptr = duckdb_bind_get_parameter(self.ptr, param_index);
+            if ptr.is_null() {
+                panic!("{} is out of range for function definition", param_index);
+            } else {
+                Value::from(ptr)
+            }
+        }
     }
 
     /// Retrieves the named parameter with the given name.
@@ -75,10 +85,15 @@ impl BindInfo {
     /// * `name`: The name of the parameter to get
     ///
     /// returns: The value of the parameter
-    pub fn get_named_parameter(&self, name: &str) -> Value {
+    pub fn get_named_parameter(&self, name: &str) -> Option<Value> {
         unsafe {
             let name = &CString::new(name).unwrap();
-            Value::from(duckdb_bind_get_named_parameter(self.ptr, name.as_ptr()))
+            let ptr = duckdb_bind_get_named_parameter(self.ptr, name.as_ptr());
+            if ptr.is_null() {
+                None
+            } else {
+                Some(Value::from(ptr))
+            }
         }
     }
 

@@ -238,10 +238,6 @@ mod test {
         fn parameters() -> Option<Vec<LogicalType>> {
             Some(vec![LogicalType::new(LogicalTypeId::Varchar)])
         }
-
-        fn named_parameters() -> Option<Vec<(std::string::String, logical_type::LogicalType)>> {
-            Some(vec![("name".to_string(), LogicalType::new(LogicalTypeId::Varchar))])
-        }
     }
 
     struct HelloWithNamedVTab {}
@@ -251,7 +247,8 @@ mod test {
 
         fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
             bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
-            let param = bind.get_named_parameter("name").to_string();
+            let param = bind.get_named_parameter("name").unwrap().to_string();
+            assert!(bind.get_named_parameter("unknown_name").is_none());
             unsafe {
                 (*data).name = CString::new(param).unwrap().into_raw();
             }
