@@ -1,4 +1,7 @@
-use std::{ffi::CString, fmt::Debug};
+use std::{
+    ffi::{c_char, CString},
+    fmt::Debug,
+};
 
 use crate::ffi::*;
 
@@ -176,25 +179,43 @@ impl LogicalType {
         }
     }
 
-    /// Make a `LogicalType` for `struct`
-    // pub fn struct_type(fields: &[(&str, LogicalType)]) -> Self {
-    //     let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
-    //     let values: Vec<duckdb_logical_type> = fields.iter().map(|it| it.1.ptr).collect();
-    //     let name_ptrs = keys
-    //         .iter()
-    //         .map(|it| it.as_ptr())
-    //         .collect::<Vec<*const c_char>>();
+    /// Creates a decimal type from its `width` and `scale`.
+    pub fn decimal(width: u8, scale: u8) -> Self {
+        unsafe {
+            Self {
+                ptr: duckdb_create_decimal_type(width, scale),
+            }
+        }
+    }
 
-    //     unsafe {
-    //         Self {
-    //             ptr: duckdb_create_struct_type(
-    //                 fields.len() as idx_t,
-    //                 name_ptrs.as_slice().as_ptr().cast_mut(),
-    //                 values.as_slice().as_ptr(),
-    //             ),
-    //         }
-    //     }
-    // }
+    /// Retrieves the decimal width
+    /// Returns 0 if the LogicalType is not a decimal
+    pub fn decimal_width(&self) -> u8 {
+        unsafe { duckdb_decimal_width(self.ptr) }
+    }
+
+    /// Retrieves the decimal scale
+    /// Returns 0 if the LogicalType is not a decimal
+    pub fn decimal_scale(&self) -> u8 {
+        unsafe { duckdb_decimal_scale(self.ptr) }
+    }
+
+    /// Make a `LogicalType` for `struct`
+    pub fn struct_type(fields: &[(&str, LogicalType)]) -> Self {
+        let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
+        let values: Vec<duckdb_logical_type> = fields.iter().map(|it| it.1.ptr).collect();
+        let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();
+
+        unsafe {
+            Self {
+                ptr: duckdb_create_struct_type(
+                    values.as_slice().as_ptr().cast_mut(),
+                    name_ptrs.as_slice().as_ptr().cast_mut(),
+                    fields.len() as idx_t,
+                ),
+            }
+        }
+    }
 
     /// Logical type ID
     pub fn id(&self) -> LogicalTypeId {
@@ -226,5 +247,37 @@ impl LogicalType {
     pub fn child(&self, idx: usize) -> Self {
         let c_logical_type = unsafe { duckdb_struct_type_child_type(self.ptr, idx as u64) };
         Self::from(c_logical_type)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::vtab::LogicalType;
+
+    #[test]
+    fn test_struct() {
+        let fields = &[("hello", LogicalType::new(crate::vtab::LogicalTypeId::Boolean))];
+        let typ = LogicalType::struct_type(fields);
+
+        assert_eq!(typ.num_children(), 1);
+        assert_eq!(typ.child_name(0), "hello");
+        assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::Boolean);
+    }
+
+    #[test]
+    fn test_decimal() {
+        let typ = LogicalType::decimal(10, 2);
+
+        assert_eq!(typ.id(), crate::vtab::LogicalTypeId::Decimal);
+        assert_eq!(typ.decimal_width(), 10);
+        assert_eq!(typ.decimal_scale(), 2);
+    }
+
+    #[test]
+    fn test_decimal_methods() {
+        let typ = LogicalType::new(crate::vtab::LogicalTypeId::Varchar);
+
+        assert_eq!(typ.decimal_width(), 0);
+        assert_eq!(typ.decimal_scale(), 0);
     }
 }
