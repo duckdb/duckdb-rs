@@ -1,5 +1,5 @@
 #![allow(clippy::redundant_clone)]
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span};
 
 use syn::{parse_macro_input, spanned::Spanned, Item};
 
@@ -13,6 +13,10 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
     match ast {
         Item::Fn(mut func) => {
             let c_entrypoint = func.sig.ident.clone();
+            let c_entrypoint_version = Ident::new(
+                c_entrypoint.to_string().replace("_init", "_version").as_str(),
+                Span::call_site(),
+            );
 
             let original_funcname = func.sig.ident.to_string();
             func.sig.ident = Ident::new(format!("_{}", original_funcname).as_str(), func.sig.ident.span());
@@ -35,7 +39,7 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 ///
                 /// Predefined function, don't need to change unless you are sure
                 #[no_mangle]
-                pub unsafe extern "C" fn libhello_ext_version() -> *const c_char {
+                pub unsafe extern "C" fn #c_entrypoint_version() -> *const c_char {
                     ffi::duckdb_library_version()
                 }
 
