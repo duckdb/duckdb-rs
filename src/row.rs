@@ -48,6 +48,11 @@ impl<'stmt> Rows<'stmt> {
         Ok((*self).get())
     }
 
+    /// The statement that created this `Rows`.
+    pub fn stmt(&self) -> Option<&Statement<'stmt>> {
+        self.stmt
+    }
+
     #[inline]
     fn batch_row_count(&self) -> usize {
         if self.arr.is_none() {
