@@ -329,6 +329,11 @@ mod test {
         assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::Boolean);
 
         assert_eq!(typ.child_name(1), "world");
-        assert_eq!(typ.child(1).id(), crate::vtab::LogicalTypeId::Integer);
+
+        let panicked = std::panic::catch_unwind(|| {
+            assert_eq!(typ.child(1).id(), crate::vtab::LogicalTypeId::Integer);
+        });
+        // this bug was fixed in https://github.com/duckdb/duckdb/pull/10097, can remove catch_unwind then
+        assert!(panicked.is_err());
     }
 }
