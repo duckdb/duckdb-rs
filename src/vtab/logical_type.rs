@@ -281,7 +281,7 @@ impl LogicalType {
 
 #[cfg(test)]
 mod test {
-    use crate::vtab::LogicalType;
+    use super::{LogicalType, LogicalTypeId};
 
     #[test]
     fn test_struct() {
@@ -312,27 +312,22 @@ mod test {
 
     #[test]
     fn test_union_type() {
-        assert_eq!(
-            LogicalType::new(crate::vtab::LogicalTypeId::Integer).id(),
-            crate::vtab::LogicalTypeId::Integer
-        );
-
         let fields = &[
-            ("hello", LogicalType::new(crate::vtab::LogicalTypeId::Boolean)),
-            ("world", LogicalType::new(crate::vtab::LogicalTypeId::Integer)),
+            ("hello", LogicalType::new(LogicalTypeId::Boolean)),
+            ("world", LogicalType::new(LogicalTypeId::Integer)),
         ];
         let typ = LogicalType::union_type(fields);
 
         assert_eq!(typ.num_children(), 2);
 
         assert_eq!(typ.child_name(0), "hello");
-        assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::Boolean);
+        assert_eq!(typ.child(0).id(), LogicalTypeId::Boolean);
 
         assert_eq!(typ.child_name(1), "world");
 
         // this bug was fixed in https://github.com/duckdb/duckdb/pull/10097, can unwrap if then
         if std::env::var("CARGO_PKG_VERSION").unwrap().starts_with("0.10.0") {
-            assert_eq!(typ.child(1).id(), crate::vtab::LogicalTypeId::Integer);
+            assert_eq!(typ.child(1).id(), LogicalTypeId::Integer);
             panic!("FIXME: unwrap this if after duckdb 0.10.0 is released");
         }
     }
