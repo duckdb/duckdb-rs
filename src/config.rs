@@ -158,7 +158,7 @@ mod test {
         let db = Connection::open_in_memory_with_flags(config)?;
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
-        let mut stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
+        let stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
         stmt.execute([&"a"])?;
         stmt.execute([&"b"])?;
         stmt.execute([&"c"])?;
@@ -197,7 +197,7 @@ mod test {
         let db = Connection::open_in_memory_with_flags(config)?;
         db.execute_batch("CREATE TABLE foo(x Text)")?;
 
-        let mut stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
+        let stmt = db.prepare("INSERT INTO foo(x) VALUES (?)")?;
         stmt.execute([&"a"])?;
         stmt.execute([&"b"])?;
         stmt.execute([&"c"])?;

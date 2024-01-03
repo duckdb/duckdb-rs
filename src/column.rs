@@ -31,6 +31,7 @@ impl Statement<'_> {
     /// calling this method.
     pub fn column_names(&self) -> Vec<String> {
         self.stmt
+            .borrow()
             .schema()
             .fields()
             .iter()
@@ -46,7 +47,7 @@ impl Statement<'_> {
     /// calling this method.
     #[inline]
     pub fn column_count(&self) -> usize {
-        self.stmt.column_count()
+        self.stmt.borrow().column_count()
     }
 
     /// Check that column name reference lifetime is limited:
@@ -56,13 +57,15 @@ impl Statement<'_> {
     /// `column_name` reference can become invalid if `stmt` is reprepared
     /// (because of schema change) when `query_row` is called. So we assert
     /// that a compilation error happens if this reference is kept alive:
-    /// ```compile_fail
+    /// use duckdb::{Connection, Result};
+    /// ```rust
     /// use duckdb::{Connection, Result};
     /// fn main() -> Result<()> {
     ///     let db = Connection::open_in_memory()?;
-    ///     let mut stmt = db.prepare("SELECT 1 as x")?;
-    ///     let column_name = stmt.column_name(0)?;
-    ///     let x = stmt.query_row([], |r| r.get::<_, i64>(0))?; // E0502
+    ///     let stmt = db.prepare("SELECT 1 as x")?;
+    ///     // Calling stmt.column_name(0) here will panic because the schema isn't set
+    ///     let x = stmt.query_row([], |r| r.get::<_, i64>(0))?;
+    ///     let column_name = stmt.column_name(0).unwrap();
     ///     assert_eq!(1, x);
     ///     assert_eq!("x", column_name);
     ///     Ok(())
@@ -90,7 +93,9 @@ impl Statement<'_> {
     /// Panics when column name is not valid UTF-8.
     #[inline]
     pub fn column_name(&self, col: usize) -> Result<&String> {
-        self.stmt.column_name(col).ok_or(Error::InvalidColumnIndex(col))
+        unsafe {
+        (*self.stmt.as_ptr()).column_name(col).ok_or(Error::InvalidColumnIndex(col))
+        }
     }
 
     /// Returns the column index in the result set for a given column name.
@@ -112,7 +117,7 @@ impl Statement<'_> {
         for i in 0..n {
             // Note: `column_name` is only fallible if `i` is out of bounds,
             // which we've already checked.
-            if name.eq_ignore_ascii_case(self.stmt.column_name(i).unwrap()) {
+            if name.eq_ignore_ascii_case(self.column_name(i).unwrap()) {
                 return Ok(i);
             }
         }
@@ -130,7 +135,7 @@ impl Statement<'_> {
         let mut cols = Vec::with_capacity(n as usize);
         for i in 0..n {
             let name = self.column_name_unwrap(i);
-            let slice = self.stmt.column_decltype(i);
+            let slice = self.stmt.borrow().column_decltype(i);
             let decl_type =
                 slice.map(|s| str::from_utf8(s.to_bytes()).expect("Invalid UTF-8 sequence in column declaration"));
             cols.push(Column { name, decl_type });
@@ -174,7 +179,7 @@ mod test {
              INSERT INTO foo VALUES(4, NULL);
              END;",
         )?;
-        let mut stmt = db.prepare("SELECT x as renamed, y FROM foo")?;
+        let stmt = db.prepare("SELECT x as renamed, y FROM foo")?;
         let mut rows = stmt.query([])?;
         let row = rows.next()?.unwrap();
         match row.get::<_, String>(0).unwrap_err() {

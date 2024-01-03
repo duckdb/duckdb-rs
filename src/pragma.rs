@@ -168,7 +168,7 @@ impl Connection {
     {
         let mut query = Sql::new();
         query.push_pragma(schema_name, pragma_name)?;
-        let mut stmt = self.prepare(&query)?;
+        let stmt = self.prepare(&query)?;
         let mut rows = stmt.query([])?;
         while let Some(result_row) = rows.next()? {
             f(result_row)?;
@@ -203,7 +203,7 @@ impl Connection {
         sql.open_brace();
         sql.push_value(pragma_value)?;
         sql.close_brace();
-        let mut stmt = self.prepare(&sql)?;
+        let stmt = self.prepare(&sql)?;
         let mut rows = stmt.query([])?;
         while let Some(result_row) = rows.next()? {
             let row = result_row;

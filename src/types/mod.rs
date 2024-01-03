@@ -261,7 +261,7 @@ mod test {
         db.execute("INSERT INTO foo(t) VALUES (?)", [&s])?;
         db.execute("INSERT INTO foo(b) VALUES (?)", [&b])?;
 
-        let mut stmt = db.prepare("SELECT t, b FROM foo ORDER BY ROWID ASC")?;
+        let stmt = db.prepare("SELECT t, b FROM foo ORDER BY ROWID ASC")?;
         let mut rows = stmt.query([])?;
 
         {
@@ -294,7 +294,7 @@ mod test {
 
         db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
 
-        let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
+        let stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
 
         let row = rows.next()?.unwrap();
@@ -361,7 +361,7 @@ mod test {
 
         db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
 
-        let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
+        let stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
 
         let row = rows.next()?.unwrap();
@@ -421,7 +421,7 @@ mod test {
             delete_statement: Statement<'conn>,
         }
 
-        let mut db_etc = DbEtc {
+        let db_etc = DbEtc {
             insert_statement: db.prepare("INSERT INTO foo VALUES (?1)")?,
             query_statement: db.prepare("SELECT x FROM foo")?,
             delete_statement: db.prepare("DELETE FROM foo")?,

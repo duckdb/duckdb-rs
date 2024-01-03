@@ -18,13 +18,13 @@ impl Connection {
     /// # use duckdb::{Connection, Result};
     /// fn insert_new_people(conn: &Connection) -> Result<()> {
     ///     {
-    ///         let mut stmt = conn.prepare_cached("INSERT INTO People (name) VALUES (?)")?;
+    ///         let stmt = conn.prepare_cached("INSERT INTO People (name) VALUES (?)")?;
     ///         stmt.execute(["Joe Smith"])?;
     ///     }
     ///     {
     ///         // This will return the same underlying SQLite statement handle without
     ///         // having to prepare it again.
-    ///         let mut stmt = conn.prepare_cached("INSERT INTO People (name) VALUES (?)")?;
+    ///         let stmt = conn.prepare_cached("INSERT INTO People (name) VALUES (?)")?;
     ///         stmt.execute(["Bob Jones"])?;
     ///     }
     ///     Ok(())
@@ -143,8 +143,8 @@ impl StatementCache {
             Some(raw_stmt) => Ok(Statement::new(conn, raw_stmt)),
             None => conn.prepare(trimmed),
         };
-        stmt.map(|mut stmt| {
-            stmt.stmt.set_statement_cache_key(trimmed);
+        stmt.map(|stmt| {
+            stmt.stmt.borrow_mut().set_statement_cache_key(trimmed);
             CachedStatement::new(stmt, self)
         })
     }
@@ -203,14 +203,14 @@ mod test {
 
         let sql = "PRAGMA database_list";
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
 
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
@@ -229,7 +229,7 @@ mod test {
 
         let sql = "PRAGMA database_list";
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
@@ -239,7 +239,7 @@ mod test {
         assert_eq!(0, cache.len());
 
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
@@ -247,7 +247,7 @@ mod test {
 
         db.set_prepared_statement_cache_capacity(8);
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
@@ -262,7 +262,7 @@ mod test {
 
         let sql = "PRAGMA database_list";
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
             stmt.discard();
@@ -284,7 +284,7 @@ mod test {
         let sql = "SELECT * FROM foo";
 
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(Ok(Some(1i32)), stmt.query([])?.map(|r| r.get(0)).next());
         }
 
@@ -297,7 +297,7 @@ mod test {
 
         {
             // Rebinding statement after catalog change resulted in change of types
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(
                 Ok(Some((1i32, 2i32))),
                 stmt.query([])?.map(|r| <(i32, i32)>::try_from(r)).next()
@@ -323,14 +323,14 @@ mod test {
 
         let sql = "PRAGMA database_list; ";
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }
         assert_eq!(1, cache.len());
 
         {
-            let mut stmt = db.prepare_cached(sql)?;
+            let stmt = db.prepare_cached(sql)?;
             assert_eq!(0, cache.len());
             assert_eq!("memory", stmt.query_row([], |r| r.get::<_, String>(1))?);
         }

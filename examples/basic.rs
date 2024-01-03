@@ -38,7 +38,7 @@ fn main() -> Result<()> {
     )?;
 
     // query table by rows
-    let mut stmt = conn.prepare("SELECT id, name, data FROM person")?;
+    let stmt = conn.prepare("SELECT id, name, data FROM person")?;
     let person_iter = stmt.query_map([], |row| {
         Ok(Person {
             _id: row.get(0)?,

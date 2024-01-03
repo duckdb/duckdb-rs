@@ -1,4 +1,4 @@
-use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str};
+use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str, cell::RefCell};
 
 use arrow::{array::StructArray, datatypes::DataType};
 
@@ -14,7 +14,7 @@ use crate::{
 /// A prepared statement.
 pub struct Statement<'conn> {
     conn: &'conn Connection,
-    pub(crate) stmt: RawStatement,
+    pub(crate) stmt: RefCell<RawStatement>,
 }
 
 impl Statement<'_> {
@@ -30,7 +30,7 @@ impl Statement<'_> {
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
     /// fn update_rows(conn: &Connection) -> Result<()> {
-    ///     let mut stmt = conn.prepare("UPDATE foo SET bar = 'baz' WHERE qux = ?")?;
+    ///     let stmt = conn.prepare("UPDATE foo SET bar = 'baz' WHERE qux = ?")?;
     ///     // The `duckdb::params!` macro is mostly useful when the parameters do not
     ///     // all have the same type, or if there are more than 32 parameters
     ///     // at once.
@@ -48,7 +48,7 @@ impl Statement<'_> {
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result, params};
     /// fn delete_all(conn: &Connection) -> Result<()> {
-    ///     let mut stmt = conn.prepare("DELETE FROM users")?;
+    ///     let stmt = conn.prepare("DELETE FROM users")?;
     ///     stmt.execute([])?;
     ///     Ok(())
     /// }
@@ -60,7 +60,7 @@ impl Statement<'_> {
     /// returns rows (in which case `query` should be used instead), or the
     /// underlying DuckDB call fails.
     #[inline]
-    pub fn execute<P: Params>(&mut self, params: P) -> Result<usize> {
+    pub fn execute<P: Params>(&self, params: P) -> Result<usize> {
         params.__bind_in(self)?;
         self.execute_with_bound_parameters()
     }
@@ -79,7 +79,7 @@ impl Statement<'_> {
     ///
     /// Will return `Err` if no row is inserted or many rows are inserted.
     #[inline]
-    pub fn insert<P: Params>(&mut self, params: P) -> Result<()> {
+    pub fn insert<P: Params>(&self, params: P) -> Result<()> {
         let changes = self.execute(params)?;
         match changes {
             1 => Ok(()),
@@ -104,7 +104,7 @@ impl Statement<'_> {
     ///
     /// Will return `Err` if binding parameters fails.
     #[inline]
-    pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
+    pub fn query_arrow<P: Params>(&self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
         Ok(Arrow::new(self))
     }
@@ -148,7 +148,7 @@ impl Statement<'_> {
     ///
     #[cfg(feature = "polars")]
     #[inline]
-    pub fn query_polars<P: Params>(&mut self, params: P) -> Result<Polars<'_>> {
+    pub fn query_polars<P: Params>(&self, params: P) -> Result<Polars<'_>> {
         self.execute(params)?;
         Ok(Polars::new(self))
     }
@@ -168,7 +168,7 @@ impl Statement<'_> {
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
     /// fn get_names(conn: &Connection) -> Result<Vec<String>> {
-    ///     let mut stmt = conn.prepare("SELECT name FROM people")?;
+    ///     let stmt = conn.prepare("SELECT name FROM people")?;
     ///     let mut rows = stmt.query([])?;
     ///
     ///     let mut names = Vec::new();
@@ -185,7 +185,7 @@ impl Statement<'_> {
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
     /// fn query(conn: &Connection, name: &str) -> Result<()> {
-    ///     let mut stmt = conn.prepare("SELECT * FROM test where name = ?")?;
+    ///     let stmt = conn.prepare("SELECT * FROM test where name = ?")?;
     ///     let mut rows = stmt.query(duckdb::params![name])?;
     ///     while let Some(row) = rows.next()? {
     ///         // ...
@@ -212,7 +212,7 @@ impl Statement<'_> {
     ///
     /// Will return `Err` if binding parameters fails.
     #[inline]
-    pub fn query<P: Params>(&mut self, params: P) -> Result<Rows<'_>> {
+    pub fn query<P: Params>(&self, params: P) -> Result<Rows<'_>> {
         self.execute(params)?;
         Ok(Rows::new(self))
     }
@@ -247,7 +247,7 @@ impl Statement<'_> {
     /// ## Failure
     ///
     /// Will return `Err` if binding parameters fails.
-    pub fn query_map<T, P, F>(&mut self, params: P, f: F) -> Result<MappedRows<'_, F>>
+    pub fn query_map<T, P, F>(&self, params: P, f: F) -> Result<MappedRows<'_, F>>
     where
         P: Params,
         F: FnMut(&Row<'_>) -> Result<T>,
@@ -284,7 +284,7 @@ impl Statement<'_> {
     ///
     /// Will return `Err` if binding parameters fails.
     #[inline]
-    pub fn query_and_then<T, E, P, F>(&mut self, params: P, f: F) -> Result<AndThenRows<'_, F>>
+    pub fn query_and_then<T, E, P, F>(&self, params: P, f: F) -> Result<AndThenRows<'_, F>>
     where
         P: Params,
         E: convert::From<Error>,
@@ -296,7 +296,7 @@ impl Statement<'_> {
     /// Return `true` if a query in the SQL statement it executes returns one
     /// or more rows and `false` if the SQL returns an empty set.
     #[inline]
-    pub fn exists<P: Params>(&mut self, params: P) -> Result<bool> {
+    pub fn exists<P: Params>(&self, params: P) -> Result<bool> {
         let mut rows = self.query(params)?;
         let exists = rows.next()?.is_some();
         Ok(exists)
@@ -317,7 +317,7 @@ impl Statement<'_> {
     /// # Failure
     ///
     /// Will return `Err` if the underlying DuckDB call fails.
-    pub fn query_row<T, P, F>(&mut self, params: P, f: F) -> Result<T>
+    pub fn query_row<T, P, F>(&self, params: P, f: F) -> Result<T>
     where
         P: Params,
         F: FnOnce(&Row<'_>) -> Result<T>,
@@ -328,13 +328,13 @@ impl Statement<'_> {
     /// Return the row count
     #[inline]
     pub fn row_count(&self) -> usize {
-        self.stmt.row_count()
+        self.stmt.borrow().row_count()
     }
 
     /// Get next batch records in arrow-rs
     #[inline]
     pub fn step(&self) -> Option<StructArray> {
-        self.stmt.step()
+        self.stmt.borrow().step()
     }
 
     #[cfg(feature = "polars")]
@@ -345,12 +345,12 @@ impl Statement<'_> {
     }
 
     #[inline]
-    pub(crate) fn bind_parameters<P>(&mut self, params: P) -> Result<()>
+    pub(crate) fn bind_parameters<P>(&self, params: P) -> Result<()>
     where
         P: IntoIterator,
         P::Item: ToSql,
     {
-        let expected = self.stmt.bind_parameter_count();
+        let expected = self.stmt.borrow().bind_parameter_count();
         let mut index = 0;
         for p in params.into_iter() {
             index += 1; // The leftmost SQL parameter has an index of 1.
@@ -369,7 +369,7 @@ impl Statement<'_> {
     /// Return the number of parameters that can be bound to this statement.
     #[inline]
     pub fn parameter_count(&self) -> usize {
-        self.stmt.bind_parameter_count()
+        self.stmt.borrow().bind_parameter_count()
     }
 
     /// Low level API to directly bind a parameter to a given index.
@@ -410,9 +410,9 @@ impl Statement<'_> {
     /// }
     /// ```
     #[inline]
-    pub fn raw_bind_parameter<T: ToSql>(&mut self, one_based_col_index: usize, param: T) -> Result<()> {
+    pub fn raw_bind_parameter<T: ToSql>(&self, one_based_col_index: usize, param: T) -> Result<()> {
         // This is the same as `bind_parameter` but slightly more ergonomic and
-        // correctly takes `&mut self`.
+        // correctly takes `&self`.
         self.bind_parameter(&param, one_based_col_index)
     }
 
@@ -431,7 +431,7 @@ impl Statement<'_> {
     /// Will return `Err` if the executed statement returns rows (in which case
     /// `query` should be used instead), or the underlying DuckDB call fails.
     #[inline]
-    pub fn raw_execute(&mut self) -> Result<usize> {
+    pub fn raw_execute(&self) -> Result<usize> {
         self.execute_with_bound_parameters()
     }
 
@@ -448,7 +448,7 @@ impl Statement<'_> {
     /// Note that if the SQL does not return results, [`Statement::raw_execute`]
     /// should be used instead.
     #[inline]
-    pub fn raw_query(&mut self) -> Rows<'_> {
+    pub fn raw_query(&self) -> Rows<'_> {
         Rows::new(self)
     }
 
@@ -456,7 +456,7 @@ impl Statement<'_> {
     fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P, col: usize) -> Result<()> {
         let value = param.to_sql()?;
 
-        let ptr = unsafe { self.stmt.ptr() };
+        let ptr = unsafe { self.stmt.borrow().ptr() };
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
@@ -503,31 +503,32 @@ impl Statement<'_> {
     }
 
     #[inline]
-    fn execute_with_bound_parameters(&mut self) -> Result<usize> {
-        self.stmt.execute()
+    fn execute_with_bound_parameters(&self) -> Result<usize> {
+        self.stmt.borrow_mut().execute()
     }
 
     /// Safety: This is unsafe, because using `sqlite3_stmt` after the
     /// connection has closed is illegal, but `RawStatement` does not enforce
     /// this, as it loses our protective `'conn` lifetime bound.
     #[inline]
-    pub(crate) unsafe fn into_raw(mut self) -> RawStatement {
+    pub(crate) unsafe fn into_raw(self) -> RawStatement {
         let mut stmt = RawStatement::new(ptr::null_mut());
-        mem::swap(&mut stmt, &mut self.stmt);
+        mem::swap(&mut stmt, &mut self.stmt.borrow_mut());
         stmt
     }
 }
 
 impl fmt::Debug for Statement<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let sql = if self.stmt.is_null() {
+        let stmt = self.stmt.borrow();
+        let sql = if stmt.is_null() {
             Ok("")
         } else {
-            str::from_utf8(self.stmt.sql().unwrap().to_bytes())
+            str::from_utf8(stmt.sql().unwrap().to_bytes())
         };
         f.debug_struct("Statement")
             .field("conn", self.conn)
-            .field("stmt", &self.stmt)
+            .field("stmt", &self.stmt.borrow())
             .field("sql", &sql)
             .finish()
     }
@@ -536,13 +537,14 @@ impl fmt::Debug for Statement<'_> {
 impl Statement<'_> {
     #[inline]
     pub(super) fn new(conn: &Connection, stmt: RawStatement) -> Statement<'_> {
+        let stmt = RefCell::new(stmt);
         Statement { conn, stmt }
     }
 
     /// column_type
     #[inline]
     pub fn column_type(&self, idx: usize) -> DataType {
-        self.stmt.column_type(idx)
+        self.stmt.borrow().column_type(idx)
     }
 }
 
@@ -579,10 +581,10 @@ mod test {
         "#;
         db.execute_batch(sql)?;
 
-        let mut stmt = db.prepare("INSERT INTO test (name) VALUES (?)")?;
+        let stmt = db.prepare("INSERT INTO test (name) VALUES (?)")?;
         stmt.execute([&"one"])?;
 
-        let mut stmt = db.prepare("SELECT COUNT(*) FROM test WHERE name = ?")?;
+        let stmt = db.prepare("SELECT COUNT(*) FROM test WHERE name = ?")?;
         assert_eq!(1i32, stmt.query_row::<i32, _, _>([&"one"], |r| r.get(0))?);
         Ok(())
     }
@@ -596,7 +598,7 @@ mod test {
         "#;
         db.execute_batch(sql)?;
 
-        let mut stmt = db.prepare("SELECT id FROM test where name = ?")?;
+        let stmt = db.prepare("SELECT id FROM test where name = ?")?;
         {
             let mut rows = stmt.query([&"one"])?;
             let id: Result<i32> = rows.next()?.unwrap().get(0);
@@ -615,7 +617,7 @@ mod test {
         "#;
         db.execute_batch(sql)?;
 
-        let mut stmt = db.prepare("SELECT id FROM test where name = ? ORDER BY id ASC")?;
+        let stmt = db.prepare("SELECT id FROM test where name = ? ORDER BY id ASC")?;
         let mut rows = stmt.query_and_then([&"one"], |row| {
             let id: i32 = row.get(0)?;
             if id == 1 {
@@ -645,7 +647,7 @@ mod test {
         let sql = "CREATE TABLE test (x TEXT, y TEXT)";
         db.execute_batch(sql)?;
 
-        let mut stmt = db.prepare("INSERT INTO test (x, y) VALUES (?, ?)")?;
+        let stmt = db.prepare("INSERT INTO test (x, y) VALUES (?, ?)")?;
         assert!(stmt.execute([&"one"]).is_err());
         Ok(())
     }
@@ -656,7 +658,7 @@ mod test {
         let sql = "CREATE TABLE test (x TEXT, y TEXT)";
         db.execute_batch(sql)?;
 
-        let mut stmt = db.prepare("INSERT INTO test (x) VALUES (?)")?;
+        let stmt = db.prepare("INSERT INTO test (x) VALUES (?)")?;
         stmt.execute([&"one"])?;
 
         let result: Option<String> = db.query_row("SELECT y FROM test WHERE x = 'one'", [], |row| row.get(0))?;
@@ -669,7 +671,7 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE test (name TEXT, value INTEGER)")?;
         {
-            let mut stmt = db.prepare("INSERT INTO test (name, value) VALUES (?, ?)")?;
+            let stmt = db.prepare("INSERT INTO test (name, value) VALUES (?, ?)")?;
 
             stmt.raw_bind_parameter(2, 50i32)?;
             stmt.raw_bind_parameter(1, "example")?;
@@ -678,7 +680,7 @@ mod test {
         }
 
         {
-            let mut stmt = db.prepare("SELECT name, value FROM test WHERE value = ?")?;
+            let stmt = db.prepare("SELECT name, value FROM test WHERE value = ?")?;
             stmt.raw_bind_parameter(1, 50)?;
             stmt.raw_execute()?;
             let mut rows = stmt.raw_query();
@@ -695,7 +697,7 @@ mod test {
         {
             let db = Connection::open_in_memory()?;
             db.execute_batch("CREATE TABLE test (name TEXT, value UINTEGER)")?;
-            let mut stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
+            let stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
             stmt.raw_bind_parameter(1, "negative")?;
             stmt.raw_bind_parameter(2, u32::MAX)?;
             let n = stmt.raw_execute()?;
@@ -709,7 +711,7 @@ mod test {
         {
             let db = Connection::open_in_memory()?;
             db.execute_batch("CREATE TABLE test (name TEXT, value UBIGINT)")?;
-            let mut stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
+            let stmt = db.prepare("INSERT INTO test(name, value) VALUES (?, ?)")?;
             stmt.raw_bind_parameter(1, "negative")?;
             stmt.raw_bind_parameter(2, u64::MAX)?;
             let n = stmt.raw_execute()?;
@@ -728,12 +730,12 @@ mod test {
     fn test_insert_duplicate() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER UNIQUE)")?;
-        let mut stmt = db.prepare("INSERT INTO foo (x) VALUES (?)")?;
+        let stmt = db.prepare("INSERT INTO foo (x) VALUES (?)")?;
         // TODO(wangfenjin): currently always 1
         stmt.insert([1i32])?;
         stmt.insert([2i32])?;
         assert!(stmt.insert([1i32]).is_err());
-        let mut multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")?;
+        let multi = db.prepare("INSERT INTO foo (x) SELECT 3 UNION ALL SELECT 4")?;
         match multi.insert([]).unwrap_err() {
             Error::StatementChangedRows(2) => (),
             err => panic!("Unexpected error {err}"),
@@ -766,7 +768,7 @@ mod test {
                    INSERT INTO foo VALUES(2);
                    END;";
         db.execute_batch(sql)?;
-        let mut stmt = db.prepare("SELECT 1 FROM foo WHERE x = ?")?;
+        let stmt = db.prepare("SELECT 1 FROM foo WHERE x = ?")?;
         assert!(stmt.exists([1i32])?);
         assert!(stmt.exists([2i32])?);
         assert!(!stmt.exists([0i32])?);
@@ -782,7 +784,7 @@ mod test {
                    INSERT INTO foo VALUES(2, 4);
                    END;";
         db.execute_batch(sql)?;
-        let mut stmt = db.prepare("SELECT y FROM foo WHERE x = ?")?;
+        let stmt = db.prepare("SELECT y FROM foo WHERE x = ?")?;
         let y: Result<i32> = stmt.query_row([1i32], |r| r.get(0));
         assert_eq!(3i32, y?);
         Ok(())
@@ -796,7 +798,7 @@ mod test {
                    INSERT INTO foo VALUES(1, 3);
                    END;";
         db.execute_batch(sql)?;
-        let mut stmt = db.prepare("SELECT y FROM foo")?;
+        let stmt = db.prepare("SELECT y FROM foo")?;
         let y: Result<i64> = stmt.query_row([], |r| r.get("y"));
         assert_eq!(3i64, y?);
         Ok(())
@@ -810,7 +812,7 @@ mod test {
                    INSERT INTO foo VALUES(1, 3);
                    END;";
         db.execute_batch(sql)?;
-        let mut stmt = db.prepare("SELECT y as Y FROM foo")?;
+        let stmt = db.prepare("SELECT y as Y FROM foo")?;
         let y: Result<i64> = stmt.query_row([], |r| r.get("y"));
         assert_eq!(3i64, y?);
         Ok(())
@@ -865,7 +867,7 @@ mod test {
     #[test]
     fn test_comment_and_sql_stmt() -> Result<()> {
         let conn = Connection::open_in_memory()?;
-        let mut stmt = conn.prepare("/*...*/ SELECT 1;")?;
+        let stmt = conn.prepare("/*...*/ SELECT 1;")?;
         stmt.execute([])?;
         assert_eq!(1, stmt.column_count());
         Ok(())

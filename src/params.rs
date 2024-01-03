@@ -124,7 +124,7 @@ pub trait Params: Sealed {
     //
     // For now, just hide the function in the docs...
     #[doc(hidden)]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()>;
+    fn __bind_in(self, stmt: &Statement<'_>) -> Result<()>;
 }
 
 // Explicitly impl for empty array. Critically, for `conn.execute([])` to be
@@ -133,7 +133,7 @@ pub trait Params: Sealed {
 impl Sealed for [&dyn ToSql; 0] {}
 impl Params for [&dyn ToSql; 0] {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn __bind_in(self, stmt: &Statement<'_>) -> Result<()> {
         // Note: Can't just return `Ok(())` — `Statement::bind_parameters`
         // checks that the right number of params were passed too.
         // TODO: we should have tests for `Error::InvalidParameterCount`...
@@ -144,7 +144,7 @@ impl Params for [&dyn ToSql; 0] {
 impl Sealed for &[&dyn ToSql] {}
 impl Params for &[&dyn ToSql] {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn __bind_in(self, stmt: &Statement<'_>) -> Result<()> {
         stmt.bind_parameters(self)
     }
 }
@@ -155,14 +155,14 @@ macro_rules! impl_for_array_ref {
         // avoid the compile time hit from making them all inline for now.
         impl<T: ToSql + ?Sized> Sealed for &[&T; $N] {}
         impl<T: ToSql + ?Sized> Params for &[&T; $N] {
-            fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+            fn __bind_in(self, stmt: &Statement<'_>) -> Result<()> {
                 stmt.bind_parameters(self)
             }
         }
         impl<T: ToSql> Sealed for [T; $N] {}
         impl<T: ToSql> Params for [T; $N] {
             #[inline]
-            fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+            fn __bind_in(self, stmt: &Statement<'_>) -> Result<()> {
                 stmt.bind_parameters(&self)
             }
         }
@@ -299,7 +299,7 @@ where
     I::Item: ToSql,
 {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn __bind_in(self, stmt: &Statement<'_>) -> Result<()> {
         stmt.bind_parameters(self.0)
     }
 }

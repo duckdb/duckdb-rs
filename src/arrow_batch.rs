@@ -18,7 +18,7 @@ impl<'stmt> Arrow<'stmt> {
     /// return arrow schema
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
-        self.stmt.unwrap().stmt.schema()
+        self.stmt.unwrap().stmt.borrow().schema()
     }
 }
 

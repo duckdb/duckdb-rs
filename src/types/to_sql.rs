@@ -316,7 +316,7 @@ mod test {
 
         db.execute("INSERT INTO foo (id) VALUES (gen_random_uuid())", [])?;
 
-        let mut stmt = db.prepare("SELECT id FROM foo")?;
+        let stmt = db.prepare("SELECT id FROM foo")?;
         let mut rows = stmt.query([])?;
         let row = rows.next()?.unwrap();
         let found_id: String = row.get_unwrap(0);

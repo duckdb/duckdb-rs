@@ -34,7 +34,7 @@
 //!         params![me.name, me.data],
 //!     )?;
 //!
-//!     let mut stmt = conn.prepare("SELECT id, name, data FROM person")?;
+//!     let stmt = conn.prepare("SELECT id, name, data FROM person")?;
 //!     let person_iter = stmt.query_map([], |row| {
 //!         Ok(Person {
 //!             id: row.get(0)?,
@@ -371,7 +371,7 @@ impl Connection {
     /// or if the underlying DuckDB call fails.
     #[inline]
     pub fn execute<P: Params>(&self, sql: &str, params: P) -> Result<usize> {
-        self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
+        self.prepare(sql).and_then(|stmt| stmt.execute(params))
     }
 
     /// Returns the path to the database file, if one exists and is known.
@@ -462,7 +462,7 @@ impl Connection {
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
     /// fn insert_new_people(conn: &Connection) -> Result<()> {
-    ///     let mut stmt = conn.prepare("INSERT INTO People (name) VALUES (?)")?;
+    ///     let stmt = conn.prepare("INSERT INTO People (name) VALUES (?)")?;
     ///     stmt.execute(["Joe Smith"])?;
     ///     stmt.execute(["Bob Jones"])?;
     ///     Ok(())
@@ -783,12 +783,12 @@ mod test {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
-        let mut stmt = db.prepare("SELECT * FROM foo")?;
+        let stmt = db.prepare("SELECT * FROM foo")?;
         stmt.execute([])?;
         assert_eq!(stmt.column_count(), 1);
         assert_eq!(stmt.column_names(), vec!["x"]);
 
-        let mut stmt = db.prepare("SELECT x AS a, x AS b FROM foo")?;
+        let stmt = db.prepare("SELECT x AS a, x AS b FROM foo")?;
         stmt.execute([])?;
         assert_eq!(stmt.column_count(), 2);
         assert_eq!(stmt.column_names(), vec!["a", "b"]);
@@ -800,7 +800,7 @@ mod test {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
-        let mut insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?)")?;
+        let insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?)")?;
         assert_eq!(insert_stmt.execute([1i32])?, 1);
         assert_eq!(insert_stmt.execute([2i32])?, 1);
         assert_eq!(insert_stmt.execute([3i32])?, 1);
@@ -810,7 +810,7 @@ mod test {
         // assert!(insert_stmt.execute(["goodbye"]).is_err());
         // assert!(insert_stmt.execute([types::Null]).is_err());
 
-        let mut update_stmt = db.prepare("UPDATE foo SET x=? WHERE x<?")?;
+        let update_stmt = db.prepare("UPDATE foo SET x=? WHERE x<?")?;
         assert_eq!(update_stmt.execute([3i32, 3i32])?, 2);
         assert_eq!(update_stmt.execute([3i32, 3i32])?, 0);
         assert_eq!(update_stmt.execute([8i32, 8i32])?, 3);
@@ -822,12 +822,12 @@ mod test {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo(x INTEGER);")?;
 
-        let mut insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?)")?;
+        let insert_stmt = db.prepare("INSERT INTO foo(x) VALUES(?)")?;
         assert_eq!(insert_stmt.execute([1i32])?, 1);
         assert_eq!(insert_stmt.execute([2i32])?, 1);
         assert_eq!(insert_stmt.execute([3i32])?, 1);
 
-        let mut query = db.prepare("SELECT x FROM foo WHERE x < ? ORDER BY x DESC")?;
+        let query = db.prepare("SELECT x FROM foo WHERE x < ? ORDER BY x DESC")?;
         {
             let mut rows = query.query([4i32])?;
             let mut v = Vec::<i32>::new();
@@ -864,7 +864,7 @@ mod test {
                    END;";
         db.execute_batch(sql)?;
 
-        let mut query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
+        let query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
         let results: Result<Vec<String>> = query.query([])?.map(|row| row.get(1)).collect();
 
         assert_eq!(results?.concat(), "hello, world!");
@@ -1050,7 +1050,7 @@ mod test {
                        END;";
             db.execute_batch(sql)?;
 
-            let mut query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
+            let query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
             let results: Result<Vec<String>> = query.query_and_then([], |row| row.get(1))?.collect();
 
             assert_eq!(results?.concat(), "hello, world!");
@@ -1069,7 +1069,7 @@ mod test {
                        END;";
             db.execute_batch(sql)?;
 
-            let mut query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
+            let query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
             let bad_type: Result<Vec<f64>> = query.query_and_then([], |row| row.get(1))?.collect();
 
             match bad_type.unwrap_err() {
@@ -1098,7 +1098,7 @@ mod test {
                        END;";
             db.execute_batch(sql)?;
 
-            let mut query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
+            let query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
             let results: CustomResult<Vec<String>> = query
                 .query_and_then([], |row| row.get(1).map_err(CustomError::Sqlite))?
                 .collect();
@@ -1119,7 +1119,7 @@ mod test {
                        END;";
             db.execute_batch(sql)?;
 
-            let mut query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
+            let query = db.prepare("SELECT x, y FROM foo ORDER BY x DESC")?;
             let bad_type: CustomResult<Vec<f64>> = query
                 .query_and_then([], |row| row.get(1).map_err(CustomError::Sqlite))?
                 .collect();
@@ -1245,7 +1245,7 @@ mod test {
                    INSERT INTO test VALUES (1); INSERT INTO test VALUES (2); INSERT INTO test VALUES (3); INSERT INTO test VALUES (4); INSERT INTO test VALUES (5);
                    END TRANSACTION;";
         db.execute_batch(sql)?;
-        let mut stmt = db.prepare("select t from test order by t desc")?;
+        let stmt = db.prepare("select t from test order by t desc")?;
         let mut arr = stmt.query_arrow([])?;
 
         let schema = arr.get_schema();

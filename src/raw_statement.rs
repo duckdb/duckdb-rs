@@ -189,7 +189,7 @@ impl RawStatement {
         if idx >= self.column_count() {
             return None;
         }
-        Some(self.schema.as_ref().unwrap().field(idx).name())
+        Some(self.schema.as_ref()?.field(idx).name())
     }
 
     #[allow(dead_code)]
