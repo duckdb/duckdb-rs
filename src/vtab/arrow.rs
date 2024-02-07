@@ -19,7 +19,7 @@ use arrow::{
 use num::cast::AsPrimitive;
 
 #[repr(C)]
-struct ArrowBindData {
+pub struct ArrowBindData {
     rb: *mut RecordBatch,
 }
 
@@ -35,13 +35,13 @@ impl Free for ArrowBindData {
 }
 
 #[repr(C)]
-struct ArrowInitData {
+pub struct ArrowInitData {
     done: bool,
 }
 
 impl Free for ArrowInitData {}
 
-struct ArrowVTab;
+pub struct ArrowVTab;
 
 unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
     let ptr = address as *mut FFI_ArrowSchema;

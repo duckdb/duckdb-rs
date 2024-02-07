@@ -10,7 +10,7 @@ mod value;
 mod vector;
 
 #[cfg(feature = "vtab-arrow")]
-mod arrow;
+pub mod arrow;
 #[cfg(feature = "vtab-arrow")]
 pub use self::arrow::{
     arrow_arraydata_to_query_params, arrow_ffi_to_query_params, arrow_recordbatch_to_query_params,
