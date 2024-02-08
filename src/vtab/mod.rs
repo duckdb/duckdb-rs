@@ -81,6 +81,11 @@ pub trait VTab: Sized {
     fn parameters() -> Option<Vec<LogicalType>> {
         None
     }
+    /// The named parameters of the table function
+    /// default is None
+    fn named_parameters() -> Option<Vec<(String, LogicalType)>> {
+        None
+    }
 }
 
 unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chunk)
@@ -134,6 +139,9 @@ impl Connection {
             .set_function(Some(func::<T>));
         for ty in T::parameters().unwrap_or_default() {
             table_function.add_parameter(&ty);
+        }
+        for (name, ty) in T::named_parameters().unwrap_or_default() {
+            table_function.add_named_parameter(&name, &ty);
         }
         self.db.borrow_mut().register_table_function(table_function)
     }
@@ -232,6 +240,34 @@ mod test {
         }
     }
 
+    struct HelloWithNamedVTab {}
+    impl VTab for HelloWithNamedVTab {
+        type InitData = HelloInitData;
+        type BindData = HelloBindData;
+
+        fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
+            bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
+            let param = bind.get_named_parameter("name").unwrap().to_string();
+            assert!(bind.get_named_parameter("unknown_name").is_none());
+            unsafe {
+                (*data).name = CString::new(param).unwrap().into_raw();
+            }
+            Ok(())
+        }
+
+        fn init(init_info: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn Error>> {
+            HelloVTab::init(init_info, data)
+        }
+
+        fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn Error>> {
+            HelloVTab::func(func, output)
+        }
+
+        fn named_parameters() -> Option<Vec<(String, LogicalType)>> {
+            Some(vec![("name".to_string(), LogicalType::new(LogicalTypeId::Varchar))])
+        }
+    }
+
     #[test]
     fn test_table_function() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
@@ -239,6 +275,20 @@ mod test {
 
         let val = conn.query_row("select * from hello('duckdb')", [], |row| <(String,)>::try_from(row))?;
         assert_eq!(val, ("Hello duckdb".to_string(),));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_table_function() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_table_function::<HelloWithNamedVTab>("hello_named")?;
+
+        let val = conn.query_row("select * from hello_named(name = 'duckdb')", [], |row| {
+            <(String,)>::try_from(row)
+        })?;
+        assert_eq!(val, ("Hello duckdb".to_string(),));
+
         Ok(())
     }
 
