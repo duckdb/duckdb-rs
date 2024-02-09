@@ -280,7 +280,7 @@ mod test {
         type InitData = HelloInitData;
         type BindData = HelloBindData;
 
-        fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
+        unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
             bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
             let param = bind.get_named_parameter("name").unwrap().to_string();
             assert!(bind.get_named_parameter("unknown_name").is_none());
@@ -290,11 +290,11 @@ mod test {
             Ok(())
         }
 
-        fn init(init_info: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn Error>> {
+        unsafe fn init(init_info: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn Error>> {
             HelloVTab::init(init_info, data)
         }
 
-        fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn Error>> {
+        unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn Error>> {
             HelloVTab::func(func, output)
         }
 
