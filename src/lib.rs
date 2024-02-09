@@ -102,6 +102,7 @@ mod arrow_batch;
 mod cache;
 mod column;
 mod config;
+mod database;
 mod inner_connection;
 mod params;
 #[cfg(feature = "polars")]
@@ -220,6 +221,12 @@ pub struct Connection {
 unsafe impl Send for Connection {}
 
 impl Connection {
+    /// Get a handle to the Database which can be shared between threads to start new connections
+    pub fn db(&self) -> crate::database::DatabaseHandle {
+        let db = self.db.borrow().db;
+        crate::database::DatabaseHandle::new(crate::database::Database(db))
+    }
+
     /// Open a new connection to a DuckDB database.
     ///
     /// `Connection::open(path)` is equivalent to

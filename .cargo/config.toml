@@ -1,0 +1,5 @@
+[env]
+DYLD_LIBRARY_PATH = "./../duckdb/build/release/src"
+LD_LIBRARY_PATH = "./../duckdb/build/release/src:$LD_LIBRARY_PATH"
+DUCKDB_INCLUDE_DIR = "~/github/duckdb/src/include"
+DUCKDB_LIB_DIR = "./../duckdb/build/release/src"
