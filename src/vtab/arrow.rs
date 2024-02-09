@@ -18,6 +18,7 @@ use arrow::{
 
 use num::cast::AsPrimitive;
 
+/// A pointer to the Arrow record batch for the table function.
 #[repr(C)]
 pub struct ArrowBindData {
     rb: *mut RecordBatch,
@@ -34,6 +35,7 @@ impl Free for ArrowBindData {
     }
 }
 
+/// Keeps track of whether the Arrow record batch has been consumed.
 #[repr(C)]
 pub struct ArrowInitData {
     done: bool,
@@ -41,6 +43,7 @@ pub struct ArrowInitData {
 
 impl Free for ArrowInitData {}
 
+/// The Arrow table function.
 pub struct ArrowVTab;
 
 unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
@@ -70,7 +73,7 @@ impl VTab for ArrowVTab {
     type BindData = ArrowBindData;
     type InitData = ArrowInitData;
 
-    fn bind(bind: &BindInfo, data: *mut ArrowBindData) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn bind(bind: &BindInfo, data: *mut ArrowBindData) -> Result<(), Box<dyn std::error::Error>> {
         let param_count = bind.get_parameter_count();
         assert!(param_count == 2);
         let array = bind.get_parameter(0).to_int64();
@@ -88,14 +91,14 @@ impl VTab for ArrowVTab {
         Ok(())
     }
 
-    fn init(_: &InitInfo, data: *mut ArrowInitData) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn init(_: &InitInfo, data: *mut ArrowInitData) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             (*data).done = false;
         }
         Ok(())
     }
 
-    fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ArrowInitData>();
         let bind_info = func.get_bind_data::<ArrowBindData>();
         unsafe {
