@@ -1,12 +1,13 @@
 use super::{
     ffi::{
-        duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_parameter,
-        duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data, duckdb_bind_set_cardinality,
-        duckdb_bind_set_error, duckdb_create_table_function, duckdb_data_chunk, duckdb_delete_callback_t,
-        duckdb_destroy_table_function, duckdb_table_function, duckdb_table_function_add_parameter,
-        duckdb_table_function_init_t, duckdb_table_function_set_bind, duckdb_table_function_set_extra_info,
-        duckdb_table_function_set_function, duckdb_table_function_set_init, duckdb_table_function_set_local_init,
-        duckdb_table_function_set_name, duckdb_table_function_supports_projection_pushdown, idx_t,
+        duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
+        duckdb_bind_get_parameter, duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data,
+        duckdb_bind_set_cardinality, duckdb_bind_set_error, duckdb_create_table_function, duckdb_data_chunk,
+        duckdb_delete_callback_t, duckdb_destroy_table_function, duckdb_table_function,
+        duckdb_table_function_add_named_parameter, duckdb_table_function_add_parameter, duckdb_table_function_init_t,
+        duckdb_table_function_set_bind, duckdb_table_function_set_extra_info, duckdb_table_function_set_function,
+        duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
+        duckdb_table_function_supports_projection_pushdown, idx_t,
     },
     LogicalType, Value,
 };
@@ -64,8 +65,36 @@ impl BindInfo {
     ///  * `index`: The index of the parameter to get
     ///
     /// returns: The value of the parameter
+    ///
+    /// # Panics
+    /// If requested parameter is out of range for function definition
     pub fn get_parameter(&self, param_index: u64) -> Value {
-        unsafe { Value::from(duckdb_bind_get_parameter(self.ptr, param_index)) }
+        unsafe {
+            let ptr = duckdb_bind_get_parameter(self.ptr, param_index);
+            if ptr.is_null() {
+                panic!("{} is out of range for function definition", param_index);
+            } else {
+                Value::from(ptr)
+            }
+        }
+    }
+
+    /// Retrieves the named parameter with the given name.
+    ///
+    /// # Arguments
+    /// * `name`: The name of the parameter to get
+    ///
+    /// returns: The value of the parameter
+    pub fn get_named_parameter(&self, name: &str) -> Option<Value> {
+        unsafe {
+            let name = &CString::new(name).unwrap();
+            let ptr = duckdb_bind_get_named_parameter(self.ptr, name.as_ptr());
+            if ptr.is_null() {
+                None
+            } else {
+                Some(Value::from(ptr))
+            }
+        }
     }
 
     /// Sets the cardinality estimate for the table function, used for optimization.
@@ -200,6 +229,19 @@ impl TableFunction {
     pub fn add_parameter(&self, logical_type: &LogicalType) -> &Self {
         unsafe {
             duckdb_table_function_add_parameter(self.ptr, logical_type.ptr);
+        }
+        self
+    }
+
+    /// Adds a named parameter to the table function.
+    ///
+    /// # Arguments
+    /// * `name`: The name of the parameter to add.
+    /// * `logical_type`: The type of the parameter to add.
+    pub fn add_named_parameter(&self, name: &str, logical_type: &LogicalType) -> &Self {
+        unsafe {
+            let string = CString::new(name).unwrap();
+            duckdb_table_function_add_named_parameter(self.ptr, string.as_ptr(), logical_type.ptr);
         }
         self
     }
