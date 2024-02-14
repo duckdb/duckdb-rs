@@ -124,8 +124,9 @@ jobs:
       - run: cargo install cargo-examples
       # make the feature set the same so build faster
       # don't test modern-full as polars requires too much memory
-      - run: cargo examples --skip hello-ext --features "extensions-full vtab-loadable"
-      - run: cargo build --example hello-ext --features "extensions-full vtab-loadable"
+      - run: cargo test --features "vtab-loadable"
+      - run: cargo examples --skip hello-ext --features "vtab-loadable"
+      - run: cargo build --example hello-ext --features "vtab-loadable"
 
   Sanitizer:
     name: Address Sanitizer
