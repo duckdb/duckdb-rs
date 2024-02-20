@@ -226,7 +226,7 @@ impl LogicalType {
         unsafe {
             Self {
                 ptr: duckdb_create_union_type(
-                    *values.as_slice().as_ptr(),
+                    values.as_slice().as_ptr().cast_mut(),
                     name_ptrs.as_slice().as_ptr().cast_mut(),
                     fields.len() as idx_t,
                 ),
