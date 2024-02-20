@@ -324,11 +324,6 @@ mod test {
         assert_eq!(typ.child(0).id(), LogicalTypeId::Boolean);
 
         assert_eq!(typ.child_name(1), "world");
-
-        // this bug was fixed in https://github.com/duckdb/duckdb/pull/10097, can unwrap if then
-        if std::env::var("CARGO_PKG_VERSION").unwrap().starts_with("0.10.0") {
-            assert_eq!(typ.child(1).id(), LogicalTypeId::Integer);
-            panic!("FIXME: unwrap this if after duckdb 0.10.0 is released");
-        }
+        assert_eq!(typ.child(1).id(), LogicalTypeId::Integer);
     }
 }
