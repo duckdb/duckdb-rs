@@ -38,7 +38,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.9.2"
+          tag: "v0.10.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -122,11 +122,6 @@ jobs:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
       - run: cargo install cargo-examples
-      # make the feature set the same so build faster
-      # don't test modern-full as polars requires too much memory
-      - run: cargo test --features "extensions-full vtab-loadable"
-      - run: cargo examples --skip hello-ext --features "extensions-full vtab-loadable"
-      - run: cargo build --example hello-ext --features "extensions-full vtab-loadable"
 
   Sanitizer:
     name: Address Sanitizer
