@@ -79,4 +79,24 @@ mod test {
         assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 5);
         Ok(())
     }
+
+    #[test]
+    fn test_append_record_batch_large() -> Result<()> {
+        let record_count = usize::pow(2, 16) + 1;
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INT)")?;
+        {
+            let id_array = Int32Array::from(vec![42; record_count]);
+            let schema = Schema::new(vec![Field::new("id", DataType::Int32, true)]);
+            let record_batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(id_array)]).unwrap();
+            let mut app = db.appender("foo")?;
+            app.append_record_batch(record_batch)?;
+        }
+        let count = db.query_row("SELECT COUNT(*) FROM foo", [], |row| {
+            let count: usize = row.get(0)?;
+            Ok(count)
+        })?;
+        assert_eq!(count, record_count);
+        Ok(())
+    }
 }
