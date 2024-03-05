@@ -36,6 +36,9 @@ impl Appender<'_> {
         }
 
         let mut data_chunk = DataChunk::new(&logical_type);
+        if record_batch.num_rows() > data_chunk.len() {
+            data_chunk.set_len(record_batch.num_rows());
+        }
         record_batch_to_duckdb_data_chunk(&record_batch, &mut data_chunk).map_err(|_op| Error::AppendError)?;
 
         let rc = unsafe { duckdb_append_data_chunk(self.app, data_chunk.get_ptr()) };
