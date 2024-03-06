@@ -36,7 +36,7 @@ pub enum Value {
     Double(f64),
     /// The value is a Decimal.
     Decimal(Decimal),
-    /// The value is a timestap.
+    /// The value is a timestamp.
     Timestamp(TimeUnit, i64),
     /// The value is a text string.
     Text(String),

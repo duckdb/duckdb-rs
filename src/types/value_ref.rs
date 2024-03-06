@@ -39,11 +39,11 @@ pub enum ValueRef<'a> {
     HugeInt(i128),
     /// The value is a unsigned tiny integer.
     UTinyInt(u8),
-    /// The value is a usigned small integer.
+    /// The value is a unsigned small integer.
     USmallInt(u16),
-    /// The value is a usigned integer.
+    /// The value is a unsigned integer.
     UInt(u32),
-    /// The value is a usigned big integer.
+    /// The value is a unsigned big integer.
     UBigInt(u64),
     /// The value is a f32.
     Float(f32),
@@ -51,7 +51,7 @@ pub enum ValueRef<'a> {
     Double(f64),
     /// The value is a decimal
     Decimal(Decimal),
-    /// The value is a timestap.
+    /// The value is a timestamp.
     Timestamp(TimeUnit, i64),
     /// The value is a text string.
     Text(&'a [u8]),

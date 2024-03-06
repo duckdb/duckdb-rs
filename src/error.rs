@@ -81,7 +81,7 @@ pub enum Error {
     /// given, the 2nd is how many were expected.
     InvalidParameterCount(usize, usize),
 
-    /// Apppend Error
+    /// Append Error
     AppendError,
 }
 
