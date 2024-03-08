@@ -10,7 +10,7 @@ export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 export DU_INCLUDE_DIR="$DUCKDB_LIB_DIR"
 
 # Download and extract amalgamation
-DUCKDB_VERSION=v0.9.2
+DUCKDB_VERSION=v0.10.0
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources" || { echo "fatal error" >&2; exit 1; }
 git fetch
