@@ -1,4 +1,4 @@
-use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str};
+use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 
 use arrow::{array::StructArray, datatypes::DataType};
 

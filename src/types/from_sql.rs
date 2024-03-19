@@ -272,7 +272,6 @@ impl FromSql for Value {
 mod test {
     use super::FromSql;
     use crate::{Connection, Error, Result};
-    use std::convert::TryFrom;
 
     #[test]
     fn test_timestamp_raw() -> Result<()> {

@@ -6,8 +6,8 @@ use super::{
 use crate::vtab::vector::Inserter;
 use arrow::array::{
     as_boolean_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array, Array, ArrayData,
-    ArrowPrimitiveType, BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray, OffsetSizeTrait,
-    PrimitiveArray, StringArray, StructArray,
+    BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray, OffsetSizeTrait, PrimitiveArray, StringArray,
+    StructArray,
 };
 
 use arrow::{
