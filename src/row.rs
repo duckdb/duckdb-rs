@@ -583,7 +583,7 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
-            _ => unreachable!("invalid value: {}, {}", col, self.stmt.column_type(col)),
+            _ => unreachable!("invalid value: {}", col),
         }
     }
 
