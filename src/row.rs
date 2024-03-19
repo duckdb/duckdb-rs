@@ -7,6 +7,7 @@ use arrow::{
     array::{self, Array, StructArray},
     datatypes::*,
 };
+use arrow::array::ArrayRef;
 use fallible_iterator::FallibleIterator;
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use rust_decimal::prelude::*;
@@ -339,6 +340,10 @@ impl<'stmt> Row<'stmt> {
 
     fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
+        Self::value_ref_internal(row, col, column)
+    }
+
+    fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
         if column.is_null(row) {
             return ValueRef::Null;
         }
