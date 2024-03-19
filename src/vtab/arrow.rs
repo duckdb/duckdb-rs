@@ -7,7 +7,7 @@ use crate::vtab::vector::Inserter;
 use arrow::array::{
     as_boolean_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array, Array, ArrayData,
     ArrowPrimitiveType, BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray, OffsetSizeTrait,
-    PrimitiveArray, StringArray, StructArray,
+    PrimitiveArray, StringArray, StructArray, TimestampMicrosecondArray,
 };
 
 use arrow::{
@@ -317,7 +317,16 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) {
                 array
                     .as_any()
                     .downcast_ref::<Decimal128Array>()
-                    .expect("Unable to downcast to BooleanArray"),
+                    .expect("Unable to downcast to Decimal128Array"),
+                out.as_mut_any().downcast_mut().unwrap(),
+            );
+        }
+        DataType::Timestamp(_, _) => {
+            primitive_array_to_flat_vector(
+                array
+                    .as_any()
+                    .downcast_ref::<TimestampMicrosecondArray>()
+                    .expect("Unable to downcast to TimestampMicrosecondArray"),
                 out.as_mut_any().downcast_mut().unwrap(),
             );
         }
