@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, ffi::CStr, ptr, rc::Rc, sync::Arc};
+use std::{ffi::CStr, ptr, rc::Rc, sync::Arc};
 
 use arrow::{
     array::StructArray,
