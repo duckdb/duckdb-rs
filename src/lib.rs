@@ -60,7 +60,6 @@ pub use libduckdb_sys as ffi;
 use std::{
     cell::RefCell,
     convert,
-    default::Default,
     ffi::CString,
     fmt,
     path::{Path, PathBuf},
