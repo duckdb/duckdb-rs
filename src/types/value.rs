@@ -59,6 +59,7 @@ pub enum Value {
     List(Vec<Value>),
     /// The value is an enum
     Enum(String),
+    /// The value is a struct
     Struct(Vec<Value>),
 }
 

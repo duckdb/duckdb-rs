@@ -78,6 +78,7 @@ pub enum ValueRef<'a> {
     List(&'a ListArray, usize),
     /// The value is an enum
     Enum(EnumType<'a>, usize),
+    /// The value is a struct
     Struct(&'a ArrayRef, usize),
 }
 
