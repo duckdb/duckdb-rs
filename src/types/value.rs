@@ -46,6 +46,7 @@ pub enum Value {
     Date32(i32),
     /// The value is a time64
     Time64(TimeUnit, i64),
+    /// The value is a list
     List(Vec<Value>),
 }
 
