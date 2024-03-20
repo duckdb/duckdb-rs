@@ -4,7 +4,7 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::{Array, DictionaryArray, ListArray};
+use arrow::array::{Array, ArrayRef, DictionaryArray, ListArray};
 use arrow::datatypes::{UInt16Type, UInt32Type, UInt8Type};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
@@ -78,6 +78,7 @@ pub enum ValueRef<'a> {
     List(&'a ListArray, usize),
     /// The value is an enum
     Enum(EnumType<'a>, usize),
+    Struct(&'a ArrayRef, usize),
 }
 
 /// Wrapper type for different enum sizes
@@ -118,6 +119,7 @@ impl ValueRef<'_> {
             ValueRef::Interval { .. } => Type::Interval,
             ValueRef::List(arr, _) => arr.data_type().into(),
             ValueRef::Enum(..) => Type::Enum,
+            ValueRef::Struct(..) => todo!(),
         }
     }
 
@@ -203,6 +205,13 @@ impl From<ValueRef<'_>> for Value {
                     panic!("Enum value is not a string")
                 }
             }
+            ValueRef::Struct(items, idx) => {
+                let range = 0..items.len();
+                let map: Vec<Value> = range
+                    .map(|row| Row::value_ref_internal(row, idx, items).to_owned())
+                    .collect();
+                Value::Struct(map)
+            }
         }
     }
 }
@@ -247,6 +256,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
             Value::List(..) => unimplemented!(),
             Value::Enum(..) => todo!(),
+            Value::Struct(..) => unimplemented!(),
         }
     }
 }

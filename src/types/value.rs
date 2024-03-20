@@ -59,6 +59,7 @@ pub enum Value {
     List(Vec<Value>),
     /// The value is an enum
     Enum(String),
+    Struct(Vec<Value>),
 }
 
 impl From<Null> for Value {
@@ -226,7 +227,7 @@ impl Value {
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
-            Value::List(_) => todo!(),
+            Value::Struct(_) | Value::List(_) => todo!(),
             Value::Enum(..) => Type::Enum,
         }
     }

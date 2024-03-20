@@ -620,6 +620,7 @@ impl<'stmt> Row<'stmt> {
                     row,
                 )
             }
+            DataType::Struct(_) => ValueRef::Struct(column, row),
             _ => unreachable!("invalid value: {} {}", col, column.data_type()),
         }
     }
