@@ -4,7 +4,7 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::{Array, ArrayRef, DictionaryArray, ListArray};
+use arrow::array::{Array, ArrayRef, DictionaryArray, ListArray, StructArray};
 use arrow::datatypes::{UInt16Type, UInt32Type, UInt8Type};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
@@ -79,7 +79,7 @@ pub enum ValueRef<'a> {
     /// The value is an enum
     Enum(EnumType<'a>, usize),
     /// The value is a struct
-    Struct(&'a ArrayRef, usize),
+    Struct(&'a StructArray, usize),
 }
 
 /// Wrapper type for different enum sizes
@@ -206,13 +206,13 @@ impl From<ValueRef<'_>> for Value {
                     panic!("Enum value is not a string")
                 }
             }
-            ValueRef::Struct(items, idx) => {
-                let range = 0..items.len();
-                let map: Vec<Value> = range
-                    .map(|row| Row::value_ref_internal(row, idx, items).to_owned())
-                    .collect();
-                Value::Struct(map)
-            }
+            ValueRef::Struct(items, idx) => Value::Struct(
+                items
+                    .columns()
+                    .iter()
+                    .map(|column| Row::value_ref_internal(0, idx, column).to_owned())
+                    .collect()
+            )
         }
     }
 }
