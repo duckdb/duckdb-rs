@@ -151,6 +151,10 @@ pub enum Type {
     List(Box<Type>),
     /// ENUM
     Enum,
+    /// STRUCT
+    Struct(Vec<(String, Type)>),
+    /// MAP
+    Map(Box<Type>, Box<Type>),
     /// Any
     Any,
 }
@@ -220,8 +224,10 @@ impl fmt::Display for Type {
             Type::Date32 => f.pad("Date32"),
             Type::Time64 => f.pad("Time64"),
             Type::Interval => f.pad("Interval"),
+            Type::Struct(..) => f.pad("Struct"),
             Type::List(..) => f.pad("List"),
             Type::Enum => f.pad("Enum"),
+            Type::Map(..) => f.pad("Map"),
             Type::Any => f.pad("Any"),
         }
     }
