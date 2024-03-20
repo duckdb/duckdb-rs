@@ -155,6 +155,8 @@ pub enum Type {
     Struct(Vec<(String, Type)>),
     /// MAP
     Map(Box<Type>, Box<Type>),
+    /// ARRAY
+    Array(Box<Type>, u32),
     /// Any
     Any,
 }
@@ -228,6 +230,7 @@ impl fmt::Display for Type {
             Type::List(..) => f.pad("List"),
             Type::Enum => f.pad("Enum"),
             Type::Map(..) => f.pad("Map"),
+            Type::Array(..) => f.pad("Array"),
             Type::Any => f.pad("Any"),
         }
     }

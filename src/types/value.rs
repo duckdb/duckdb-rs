@@ -61,6 +61,8 @@ pub enum Value {
     Enum(String),
     /// The value is a struct
     Struct(Vec<Value>),
+    /// The value is an array
+    Array(Vec<Value>),
     /// The value is a map
     Map(Vec<(Value, Value)>),
 }

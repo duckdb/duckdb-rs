@@ -3,7 +3,6 @@ use std::{convert, sync::Arc};
 use super::{Error, Result, Statement};
 use crate::types::{self, EnumType, FromSql, FromSqlError, ValueRef};
 
-use arrow::array::DictionaryArray;
 use arrow::{
     array::{self, Array, ArrayRef, ListArray, StructArray},
     datatypes::*,
@@ -628,7 +627,11 @@ impl<'stmt> Row<'stmt> {
                 let arr = column.as_any().downcast_ref::<MapArray>().unwrap();
                 ValueRef::Map(arr, row)
             }
-            _ => unreachable!("invalid value: {} {}", col, column.data_type()),
+            DataType::FixedSizeList(..) => {
+                let arr = column.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                ValueRef::Array(arr, row)
+            }
+            _ => unreachable!("invalid value: {}, {}", col, column.data_type()),
         }
     }
 
