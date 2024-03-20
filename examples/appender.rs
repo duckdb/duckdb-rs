@@ -1,5 +1,4 @@
 extern crate duckdb;
-use std::convert::TryFrom;
 
 use duckdb::{params, Connection, DropBehavior, Result};
 

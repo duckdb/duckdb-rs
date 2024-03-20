@@ -63,12 +63,15 @@ impl FromSql for NaiveDateTime {
                     TimeUnit::Microsecond => (t / 1_000_000, (t % 1_000_000) * 1000),
                     TimeUnit::Nanosecond => (t / 1_000_000_000, t % 1_000_000_000),
                 };
-                Ok(NaiveDateTime::from_timestamp_opt(secs, nsecs as u32).unwrap())
+                Ok(DateTime::from_timestamp(secs, nsecs as u32).unwrap().naive_utc())
             }
-            ValueRef::Date32(d) => Ok(NaiveDateTime::from_timestamp_opt(24 * 3600 * (d as i64), 0).unwrap()),
-            ValueRef::Time64(TimeUnit::Microsecond, d) => {
-                Ok(NaiveDateTime::from_timestamp_opt(d / 1_000_000, ((d % 1_000_000) * 1_000) as u32).unwrap())
-            }
+            ValueRef::Date32(d) => Ok(DateTime::from_timestamp(24 * 3600 * (d as i64), 0).unwrap().naive_utc()),
+            ValueRef::Time64(TimeUnit::Microsecond, d) => Ok(DateTime::from_timestamp(
+                d / 1_000_000,
+                ((d % 1_000_000) * 1_000) as u32,
+            )
+            .unwrap()
+            .naive_utc()),
             ValueRef::Text(s) => {
                 let mut s = std::str::from_utf8(s).unwrap();
                 let format = match s.len() {
@@ -206,7 +209,7 @@ mod test {
         assert_eq!(utc, v2);
 
         let v3: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04'", [], |r| r.get(0))?;
-        assert_eq!(utc - Duration::milliseconds(789), v3);
+        assert_eq!(utc - Duration::try_milliseconds(789).unwrap(), v3);
 
         let v4: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
         assert_eq!(utc, v4);

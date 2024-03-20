@@ -110,7 +110,7 @@ impl VTab for ExcelVTab {
                         );
                     }
                     _ => {
-                        panic!("Shouldn't happend");
+                        panic!("Shouldn't happen");
                     }
                 }
             }

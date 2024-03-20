@@ -198,7 +198,6 @@ impl InnerConnection {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Connection, Result};
     use std::{
         error::Error,
         ffi::{c_char, CString},
