@@ -95,8 +95,9 @@ impl ValueRef<'_> {
         }
     }
 
+    /// Returns an owned version of this ValueRef
     pub fn to_owned(&self) -> Value {
-        (*self).clone().into()
+        (*self).into()
     }
 }
 
