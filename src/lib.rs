@@ -604,7 +604,6 @@ mod test {
         Ok(())
     }
 
-
     #[test]
     #[cfg_attr(windows, ignore = "Windows doesn't allow concurrent writes to a file")]
     fn test_concurrent_transactions_busy_commit() -> Result<()> {

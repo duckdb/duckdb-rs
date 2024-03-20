@@ -61,6 +61,8 @@ pub enum Value {
     Enum(String),
     /// The value is a struct
     Struct(Vec<Value>),
+    /// The value is a map
+    Map(Vec<(Value, Value)>),
 }
 
 impl From<Null> for Value {
@@ -228,7 +230,7 @@ impl Value {
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
-            Value::Struct(_) | Value::List(_) => todo!(),
+            Value::Struct(_) | Value::List(_) | Value::Map(..) => todo!(),
             Value::Enum(..) => Type::Enum,
         }
     }

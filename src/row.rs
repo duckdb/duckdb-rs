@@ -624,6 +624,10 @@ impl<'stmt> Row<'stmt> {
                 let res = column.as_any().downcast_ref::<StructArray>().unwrap();
                 ValueRef::Struct(res, row)
             }
+            DataType::Map(..) => {
+                let arr = column.as_any().downcast_ref::<MapArray>().unwrap();
+                ValueRef::Map(arr, row)
+            }
             _ => unreachable!("invalid value: {} {}", col, column.data_type()),
         }
     }

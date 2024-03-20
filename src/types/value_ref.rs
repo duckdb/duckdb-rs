@@ -4,7 +4,7 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::{Array, ArrayRef, DictionaryArray, ListArray, StructArray};
+use arrow::array::{Array, ArrayRef, DictionaryArray, ListArray, MapArray, StructArray};
 use arrow::datatypes::{UInt16Type, UInt32Type, UInt8Type};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
@@ -80,6 +80,8 @@ pub enum ValueRef<'a> {
     Enum(EnumType<'a>, usize),
     /// The value is a struct
     Struct(&'a StructArray, usize),
+    /// The value is a map
+    Map(&'a MapArray, usize),
 }
 
 /// Wrapper type for different enum sizes
@@ -120,7 +122,7 @@ impl ValueRef<'_> {
             ValueRef::Interval { .. } => Type::Interval,
             ValueRef::List(arr, _) => arr.data_type().into(),
             ValueRef::Enum(..) => Type::Enum,
-            ValueRef::Struct(..) => todo!(),
+            ValueRef::Struct(..) | ValueRef::Map(..) => todo!(),
         }
     }
 
@@ -210,9 +212,25 @@ impl From<ValueRef<'_>> for Value {
                 items
                     .columns()
                     .iter()
-                    .map(|column| Row::value_ref_internal(0, idx, column).to_owned())
-                    .collect()
-            )
+                    .map(|column| Row::value_ref_internal(idx, 0, column).to_owned())
+                    .collect(),
+            ),
+            ValueRef::Map(arr, idx) => {
+                let keys = arr.keys();
+                let values = arr.values();
+                let offsets = arr.offsets();
+                let range = offsets[idx]..offsets[idx + 1];
+                Value::Map(
+                    range
+                        .map(|row| {
+                            let row = row.try_into().unwrap();
+                            let key = Row::value_ref_internal(row, idx, keys).to_owned();
+                            let value = Row::value_ref_internal(row, idx, values).to_owned();
+                            (key, value)
+                        })
+                        .collect(),
+                )
+            }
         }
     }
 }
@@ -255,9 +273,8 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
-            Value::List(..) => unimplemented!(),
             Value::Enum(..) => todo!(),
-            Value::Struct(..) => unimplemented!(),
+            Value::List(..) | Value::Struct(..) | Value::Map(..) => unimplemented!(),
         }
     }
 }
