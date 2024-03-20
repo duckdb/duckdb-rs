@@ -4,7 +4,7 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::ArrayRef;
+use arrow::array::ListArray;
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
 /// Copy from arrow::datatypes::TimeUnit
@@ -65,7 +65,7 @@ pub enum ValueRef<'a> {
     /// The value is a time64
     Time64(TimeUnit, i64),
     /// The value is a list
-    List(&'a ArrayRef, usize),
+    List(&'a ListArray, usize),
 }
 
 impl ValueRef<'_> {
@@ -152,9 +152,10 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Date32(d) => Value::Date32(d),
             ValueRef::Time64(t, d) => Value::Time64(t, d),
             ValueRef::List(items, idx) => {
-                let range = 0..items.len();
+                let offsets = items.offsets();
+                let range = offsets[idx]..offsets[idx + 1];
                 let map: Vec<Value> = range
-                    .map(|row| Row::value_ref_internal(row, idx, items).to_owned())
+                    .map(|row| Row::value_ref_internal(row.try_into().unwrap(), idx, items.values()).to_owned())
                     .collect();
                 Value::List(map)
             }

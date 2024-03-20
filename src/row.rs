@@ -583,10 +583,10 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
-            DataType::List(data) => {
-                let res = column.as_any().downcast_ref::<ListArray>().unwrap().values();
+            DataType::List(_data) => {
+                let arr = column.as_any().downcast_ref::<ListArray>().unwrap();
 
-                ValueRef::List(res, row)
+                ValueRef::List(arr, row)
             }
             _ => unreachable!("invalid value: {}", col),
         }
