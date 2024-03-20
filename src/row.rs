@@ -3,11 +3,11 @@ use std::{convert, sync::Arc};
 use super::{Error, Result, Statement};
 use crate::types::{self, FromSql, FromSqlError, ValueRef};
 
+use arrow::array::{ArrayRef, ListArray};
 use arrow::{
     array::{self, Array, StructArray},
     datatypes::*,
 };
-use arrow::array::ArrayRef;
 use fallible_iterator::FallibleIterator;
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use rust_decimal::prelude::*;
@@ -343,7 +343,7 @@ impl<'stmt> Row<'stmt> {
         Self::value_ref_internal(row, col, column)
     }
 
-    fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
+    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
         if column.is_null(row) {
             return ValueRef::Null;
         }
@@ -583,6 +583,11 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
+            DataType::List(data) => {
+                let res = column.as_any().downcast_ref::<ListArray>().unwrap().values();
+
+                ValueRef::List(res, row)
+            }
             _ => unreachable!("invalid value: {}", col),
         }
     }
