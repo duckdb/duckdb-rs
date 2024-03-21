@@ -23,7 +23,8 @@ buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 httpfs = ["bundled"]
 json = ["bundled"]
 parquet = ["bundled"]
-extensions-full = ["httpfs", "json", "parquet"]
+jemalloc = ["bundled"]
+extensions-full = ["httpfs", "json", "parquet", "jemalloc"]
 
 [dependencies]
 
