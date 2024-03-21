@@ -50,7 +50,7 @@ impl Appender<'_> {
 mod test {
     use crate::{Connection, Result};
     use arrow::{
-        array::{Int8Array, StringArray},
+        array::{Int32Array, Int8Array, StringArray},
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
