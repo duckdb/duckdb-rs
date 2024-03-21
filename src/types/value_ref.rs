@@ -4,7 +4,7 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::ListArray;
+use arrow::array::{Array, ListArray};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
 /// Copy from arrow::datatypes::TimeUnit
@@ -92,7 +92,7 @@ impl ValueRef<'_> {
             ValueRef::Blob(_) => Type::Blob,
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
-            ValueRef::List(..) => todo!(),
+            ValueRef::List(arr, _) => arr.data_type().into(),
         }
     }
 
