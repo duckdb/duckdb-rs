@@ -190,14 +190,30 @@ impl From<&DataType> for Type {
             DataType::Utf8 => Self::Text,
             // DataType::LargeUtf8 => Self::LargeUtf8,
             DataType::List(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
-            // DataType::FixedSizeList(field, size) => Self::Array,
+            DataType::FixedSizeList(field, size) => {
+                Self::Array(Box::new(Type::from(field.data_type())), (*size).try_into().unwrap())
+            }
             // DataType::LargeList(_) => Self::LargeList,
-            // DataType::Struct(inner) => Self::Struct,
+            DataType::Struct(inner) => Self::Struct(
+                inner
+                    .iter()
+                    .map(|f| (f.name().to_owned(), Type::from(f.data_type())))
+                    .collect(),
+            ),
             // DataType::Union(_, _) => Self::Union,
             // DataType::Dictionary(_, _) => Self::Enum,
             DataType::Decimal128(..) => Self::Decimal,
             DataType::Decimal256(..) => Self::Decimal,
-            // DataType::Map(field, ..) => Self::Map,
+            DataType::Map(field, ..) => {
+                let data_type = field.data_type();
+                match data_type {
+                    DataType::Struct(fields) => Self::Map(
+                        Box::new(Type::from(fields[0].data_type())),
+                        Box::new(Type::from(fields[1].data_type())),
+                    ),
+                    _ => unreachable!(),
+                }
+            }
             res => unimplemented!("{}", res),
         }
     }

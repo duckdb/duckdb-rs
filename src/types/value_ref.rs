@@ -124,7 +124,10 @@ impl ValueRef<'_> {
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
             ValueRef::Interval { .. } => Type::Interval,
+            ValueRef::Struct(arr, _) => arr.data_type().into(),
             ValueRef::List(arr, _) => arr.data_type().into(),
+            ValueRef::Map(arr, _) => arr.data_type().into(),
+            ValueRef::Array(arr, _) => arr.data_type().into(),
             ValueRef::Enum(..) => Type::Enum,
             ValueRef::Struct(..) | ValueRef::Map(..) => todo!(),
         }
