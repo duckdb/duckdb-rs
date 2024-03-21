@@ -91,6 +91,13 @@ You can adjust this behavior in a number of ways:
   as we are still in development, we will update it regularly. After we are more stable,
   we will use the stable released version from [duckdb](https://github.com/duckdb/duckdb/releases).
   This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
+
+  ```bash
+  cargo add duckdb --features bundled
+  ```
+
+  `Cargo.toml` will be updated.
+  
   ```toml
   [dependencies]
   # Assume that version DuckDB version 0.9.2 is used.
