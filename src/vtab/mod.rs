@@ -9,8 +9,9 @@ mod logical_type;
 mod value;
 mod vector;
 
+/// The duckdb Arrow table function interface
 #[cfg(feature = "vtab-arrow")]
-mod arrow;
+pub mod arrow;
 #[cfg(feature = "vtab-arrow")]
 pub use self::arrow::{
     arrow_arraydata_to_query_params, arrow_ffi_to_query_params, arrow_recordbatch_to_query_params,
@@ -66,11 +67,45 @@ pub trait VTab: Sized {
     type BindData: Sized + Free;
 
     /// Bind data to the table function
-    fn bind(bind: &BindInfo, data: *mut Self::BindData) -> Result<(), Box<dyn std::error::Error>>;
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences raw pointers (`data`) and manipulates the memory directly.
+    /// The caller must ensure that:
+    ///
+    /// - The `data` pointer is valid and points to a properly initialized `BindData` instance.
+    /// - The lifetime of `data` must outlive the execution of `bind` to avoid dangling pointers, especially since
+    ///   `bind` does not take ownership of `data`.
+    /// - Concurrent access to `data` (if applicable) must be properly synchronized.
+    /// - The `bind` object must be valid and correctly initialized.
+    unsafe fn bind(bind: &BindInfo, data: *mut Self::BindData) -> Result<(), Box<dyn std::error::Error>>;
     /// Initialize the table function
-    fn init(init: &InitInfo, data: *mut Self::InitData) -> Result<(), Box<dyn std::error::Error>>;
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it performs raw pointer dereferencing on the `data` argument.
+    /// The caller is responsible for ensuring that:
+    ///
+    /// - The `data` pointer is non-null and points to a valid `InitData` instance.
+    /// - There is no data race when accessing `data`, meaning if `data` is accessed from multiple threads,
+    ///   proper synchronization is required.
+    /// - The lifetime of `data` extends beyond the scope of this call to avoid use-after-free errors.
+    unsafe fn init(init: &InitInfo, data: *mut Self::InitData) -> Result<(), Box<dyn std::error::Error>>;
     /// The actual function
-    fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>>;
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it:
+    ///
+    /// - Dereferences multiple raw pointers (`func` to access `init_info` and `bind_info`).
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - All pointers (`func`, `output`, internal `init_info`, and `bind_info`) are valid and point to the expected types of data structures.
+    /// - The `init_info` and `bind_info` data pointed to remains valid and is not freed until after this function completes.
+    /// - No other threads are concurrently mutating the data pointed to by `init_info` and `bind_info` without proper synchronization.
+    /// - The `output` parameter is correctly initialized and can safely be written to.
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>>;
     /// Does the table function support pushdown
     /// default is false
     fn supports_pushdown() -> bool {
@@ -197,7 +232,7 @@ mod test {
         type InitData = HelloInitData;
         type BindData = HelloBindData;
 
-        fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
             bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
             let param = bind.get_parameter(0).to_string();
             unsafe {
@@ -206,14 +241,14 @@ mod test {
             Ok(())
         }
 
-        fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
             unsafe {
                 (*data).done = false;
             }
             Ok(())
         }
 
-        fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
             let init_info = func.get_init_data::<HelloInitData>();
             let bind_info = func.get_bind_data::<HelloBindData>();
 
@@ -244,7 +279,7 @@ mod test {
         type InitData = HelloInitData;
         type BindData = HelloBindData;
 
-        fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
+        unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
             bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
             let param = bind.get_named_parameter("name").unwrap().to_string();
             assert!(bind.get_named_parameter("unknown_name").is_none());
@@ -254,11 +289,11 @@ mod test {
             Ok(())
         }
 
-        fn init(init_info: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn Error>> {
+        unsafe fn init(init_info: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn Error>> {
             HelloVTab::init(init_info, data)
         }
 
-        fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn Error>> {
+        unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn Error>> {
             HelloVTab::func(func, output)
         }
 

@@ -33,7 +33,7 @@ impl VTab for ExcelVTab {
     type BindData = ExcelBindData;
     type InitData = ExcelInitData;
 
-    fn bind(bind: &BindInfo, data: *mut ExcelBindData) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn bind(bind: &BindInfo, data: *mut ExcelBindData) -> Result<(), Box<dyn std::error::Error>> {
         let param_count = bind.get_parameter_count();
         assert!(param_count == 2);
         let path = bind.get_parameter(0).to_string();
@@ -125,14 +125,14 @@ impl VTab for ExcelVTab {
         Ok(())
     }
 
-    fn init(_: &InitInfo, data: *mut ExcelInitData) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn init(_: &InitInfo, data: *mut ExcelInitData) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             (*data).start = 1;
         }
         Ok(())
     }
 
-    fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ExcelInitData>();
         let bind_info = func.get_bind_data::<ExcelBindData>();
         unsafe {

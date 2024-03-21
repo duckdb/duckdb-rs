@@ -52,7 +52,7 @@ memchr = "2.3"
 uuid = { version = "1.0", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.3", features = ["std"] }
-arrow = { version = "49", default-features = false, features = ["prettyprint", "ffi"] }
+arrow = { version = "50", default-features = false, features = ["prettyprint", "ffi"] }
 rust_decimal = "1.14"
 strum = { version = "0.25", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
