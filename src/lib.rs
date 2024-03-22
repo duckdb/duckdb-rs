@@ -121,6 +121,9 @@ pub mod types;
 #[cfg(feature = "vtab")]
 pub mod vtab;
 
+#[cfg(test)]
+mod test_all_types;
+
 pub(crate) mod util;
 
 // Number of cached prepared statements we'll hold on to.
