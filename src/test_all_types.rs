@@ -17,19 +17,6 @@ fn test_all_types() -> crate::Result<()> {
         "dec38_10",
         // union is currently blocked by https://github.com/duckdb/duckdb/pull/11326
         "union",
-        // these remaining types are not yet supported by duckdb-rs
-        "struct",
-        "struct_of_arrays",
-        "array_of_structs",
-        "map",
-        "fixed_int_array",
-        "fixed_varchar_array",
-        "fixed_nested_int_array",
-        "fixed_nested_varchar_array",
-        "fixed_struct_array",
-        "struct_of_fixed_array",
-        "fixed_array_of_int_list",
-        "list_of_fixed_int_array",
     ];
 
     let mut binding = database.prepare(&format!(
@@ -239,6 +226,14 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
             }
             _ => assert_eq!(value, ValueRef::Null),
         },
+        "float_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![Value::Float(1.0), Value::Float(2.0)])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
         "date_array" => match idx {
             0 => assert_eq!(value.to_owned(), Value::List(vec![])),
             1 => assert_eq!(
@@ -320,6 +315,247 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
                     ],)
                 )
             }
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "struct" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::Struct(vec![Value::Null, Value::Null])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Struct(vec![Value::Int(42), Value::Text("🦆🦆🦆🦆🦆🦆".to_string()),])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "struct_of_arrays" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::Struct(vec![Value::Null, Value::Null,])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Struct(vec![
+                    Value::List(vec![
+                        Value::Int(42),
+                        Value::Int(999),
+                        Value::Null,
+                        Value::Null,
+                        Value::Int(-42)
+                    ]),
+                    Value::List(vec![
+                        Value::Text("🦆🦆🦆🦆🦆🦆".to_string()),
+                        Value::Text("goose".to_string()),
+                        Value::Null,
+                        Value::Text("".to_string()),
+                    ]),
+                ],)
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "array_of_structs" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Struct(vec![Value::Null, Value::Null]),
+                    Value::Struct(vec![Value::Int(42), Value::Text("🦆🦆🦆🦆🦆🦆".to_string())]),
+                    Value::Null
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "map" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::Map(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Map(vec![
+                    (Value::Text("key1".to_string()), Value::Text("🦆🦆🦆🦆🦆🦆".to_string())),
+                    (Value::Text("key2".to_string()), Value::Text("goose".to_string())),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "fixed_int_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "fixed_varchar_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Text("a".to_string()),
+                    Value::Null,
+                    Value::Text("c".to_string())
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Text("d".to_string()),
+                    Value::Text("e".to_string()),
+                    Value::Text("f".to_string())
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "fixed_nested_int_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)]),
+                    Value::Null,
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)])
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]),
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)]),
+                    Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "fixed_nested_varchar_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Array(vec![
+                        Value::Text("a".to_string()),
+                        Value::Null,
+                        Value::Text("c".to_string())
+                    ]),
+                    Value::Null,
+                    Value::Array(vec![
+                        Value::Text("a".to_string()),
+                        Value::Null,
+                        Value::Text("c".to_string())
+                    ])
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Array(vec![
+                        Value::Text("d".to_string()),
+                        Value::Text("e".to_string()),
+                        Value::Text("f".to_string())
+                    ]),
+                    Value::Array(vec![
+                        Value::Text("a".to_string()),
+                        Value::Null,
+                        Value::Text("c".to_string())
+                    ]),
+                    Value::Array(vec![
+                        Value::Text("d".to_string()),
+                        Value::Text("e".to_string()),
+                        Value::Text("f".to_string())
+                    ]),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "fixed_struct_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Struct(vec![Value::Null, Value::Null]),
+                    Value::Struct(vec![Value::Int(42), Value::Text("🦆🦆🦆🦆🦆🦆".to_string())]),
+                    Value::Struct(vec![Value::Null, Value::Null]),
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::Struct(vec![Value::Int(42), Value::Text("🦆🦆🦆🦆🦆🦆".to_string())]),
+                    Value::Struct(vec![Value::Null, Value::Null]),
+                    Value::Struct(vec![Value::Int(42), Value::Text("🦆🦆🦆🦆🦆🦆".to_string())]),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "struct_of_fixed_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Struct(vec![
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)]),
+                    Value::Array(vec![
+                        Value::Text("a".to_string()),
+                        Value::Null,
+                        Value::Text("c".to_string())
+                    ]),
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Struct(vec![
+                    Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]),
+                    Value::Array(vec![
+                        Value::Text("d".to_string()),
+                        Value::Text("e".to_string()),
+                        Value::Text("f".to_string())
+                    ]),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "fixed_array_of_int_list" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::List(vec![]),
+                    Value::List(vec![
+                        Value::Int(42),
+                        Value::Int(999),
+                        Value::Null,
+                        Value::Null,
+                        Value::Int(-42),
+                    ]),
+                    Value::List(vec![]),
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::Array(vec![
+                    Value::List(vec![
+                        Value::Int(42),
+                        Value::Int(999),
+                        Value::Null,
+                        Value::Null,
+                        Value::Int(-42),
+                    ]),
+                    Value::List(vec![]),
+                    Value::List(vec![
+                        Value::Int(42),
+                        Value::Int(999),
+                        Value::Null,
+                        Value::Null,
+                        Value::Int(-42),
+                    ]),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "list_of_fixed_int_array" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)]),
+                    Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]),
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)]),
+                ])
+            ),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]),
+                    Value::Array(vec![Value::Null, Value::Int(2), Value::Int(3)]),
+                    Value::Array(vec![Value::Int(4), Value::Int(5), Value::Int(6)]),
+                ])
+            ),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "bit" => match idx {

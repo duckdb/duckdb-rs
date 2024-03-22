@@ -232,7 +232,7 @@ impl Value {
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
-            Value::Struct(_) | Value::List(_) | Value::Map(..) => todo!(),
+            Value::Struct(..) | Value::List(..) | Value::Array(..) | Value::Map(..) => todo!(),
             Value::Enum(..) => Type::Enum,
         }
     }
