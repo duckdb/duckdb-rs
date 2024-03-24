@@ -65,6 +65,8 @@ pub enum Value {
     Array(Vec<Value>),
     /// The value is a map
     Map(Vec<(Value, Value)>),
+    /// The value is a union
+    Union(Box<Value>),
 }
 
 impl From<Null> for Value {
@@ -232,7 +234,7 @@ impl Value {
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
-            Value::Struct(..) | Value::List(..) | Value::Array(..) | Value::Map(..) => todo!(),
+            Value::Union(..) | Value::Struct(..) | Value::List(..) | Value::Array(..) | Value::Map(..) => todo!(),
             Value::Enum(..) => Type::Enum,
         }
     }

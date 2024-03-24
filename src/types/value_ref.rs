@@ -86,6 +86,8 @@ pub enum ValueRef<'a> {
     Array(&'a FixedSizeListArray, usize),
     /// The value is a map
     Map(&'a MapArray, usize),
+    /// The value is a union
+    Union(&'a ArrayRef, usize),
 }
 
 /// Wrapper type for different enum sizes
@@ -129,7 +131,7 @@ impl ValueRef<'_> {
             ValueRef::Map(arr, _) => arr.data_type().into(),
             ValueRef::Array(arr, _) => arr.data_type().into(),
             ValueRef::Enum(..) => Type::Enum,
-            ValueRef::Struct(..) | ValueRef::Map(..) => todo!(),
+            ValueRef::Union(arr, _) => arr.data_type().into(),
         }
     }
 
@@ -247,6 +249,14 @@ impl From<ValueRef<'_>> for Value {
                         .collect(),
                 )
             }
+            ValueRef::Union(column, idx) => {
+                let column = column.as_any().downcast_ref::<UnionArray>().unwrap();
+                let type_id = column.type_id(idx);
+                let value_offset = column.value_offset(idx);
+
+                let tag = Row::value_ref_internal(idx, value_offset, column.child(type_id));
+                Value::Union(Box::new(tag.to_owned()))
+            }
         }
     }
 }
@@ -290,7 +300,9 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
             Value::Enum(..) => todo!(),
-            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) => unimplemented!(),
+            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
+                unimplemented!()
+            }
         }
     }
 }

@@ -631,6 +631,7 @@ impl<'stmt> Row<'stmt> {
                 let arr = column.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
                 ValueRef::Array(arr, row)
             }
+            DataType::Union(..) => ValueRef::Union(column, row),
             _ => unreachable!("invalid value: {}, {}", col, column.data_type()),
         }
     }

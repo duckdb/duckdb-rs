@@ -597,6 +597,14 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
             1 => assert_eq!(value.to_owned(), Value::Enum("enum_69999".to_string())),
             _ => assert_eq!(value, ValueRef::Null),
         },
+        "union" => match idx {
+            0 => assert_eq!(
+                value.to_owned(),
+                Value::Union(Box::new(Value::Text("Frank".to_owned())))
+            ),
+            1 => assert_eq!(value.to_owned(), Value::Union(Box::new(Value::SmallInt(5)))),
+            _ => assert_eq!(value.to_owned(), Value::Union(Box::new(Value::Null))),
+        },
         _ => todo!("{column:?}"),
     }
 }

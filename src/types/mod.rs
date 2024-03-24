@@ -157,6 +157,8 @@ pub enum Type {
     Map(Box<Type>, Box<Type>),
     /// ARRAY
     Array(Box<Type>, u32),
+    /// UNION
+    Union,
     /// Any
     Any,
 }
@@ -247,6 +249,7 @@ impl fmt::Display for Type {
             Type::Enum => f.pad("Enum"),
             Type::Map(..) => f.pad("Map"),
             Type::Array(..) => f.pad("Array"),
+            Type::Union => f.pad("Union"),
             Type::Any => f.pad("Any"),
         }
     }
