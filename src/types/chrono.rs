@@ -160,7 +160,7 @@ impl ToSql for Duration {
 #[cfg(test)]
 mod test {
     use crate::{
-        types::{FromSql, ValueRef},
+        types::{FromSql, ToSql, ToSqlOutput, ValueRef},
         Connection, Result,
     };
     use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone, Utc};
@@ -248,6 +248,12 @@ mod test {
     }
 
     #[test]
+    fn test_time_delta_roundtrip() {
+        roundtrip_type(TimeDelta::new(3600, 0).unwrap());
+        roundtrip_type(TimeDelta::new(3600, 1000).unwrap());
+    }
+
+    #[test]
     fn test_time_delta() -> Result<()> {
         let db = checked_memory_handle()?;
         let td = TimeDelta::new(3600, 0).unwrap();
@@ -257,6 +263,17 @@ mod test {
         assert_eq!(row.unwrap(), td);
 
         Ok(())
+    }
+
+    fn roundtrip_type<T: FromSql + ToSql + Eq + std::fmt::Debug>(td: T) {
+        let sqled = td.to_sql().unwrap();
+        let value = match sqled {
+            ToSqlOutput::Borrowed(v) => v,
+            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+        };
+        let reversed = FromSql::column_result(value).unwrap();
+
+        assert_eq!(td, reversed);
     }
 
     #[test]
