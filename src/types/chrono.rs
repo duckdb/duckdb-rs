@@ -149,10 +149,13 @@ impl FromSql for Duration {
 
 impl ToSql for Duration {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        let nanos = self.num_nanoseconds().unwrap();
+        let (days, nanos) = nanos.div_mod_floor(&NANOS_PER_DAY);
+        let (months, days) = days.div_mod_floor(&DAYS_PER_MONTH);
         Ok(ToSqlOutput::Owned(Value::Interval(
-            0,
-            0,
-            self.num_nanoseconds().unwrap().try_into().unwrap(),
+            months.try_into().unwrap(),
+            days.try_into().unwrap(),
+            nanos,
         )))
     }
 }
