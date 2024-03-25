@@ -1,6 +1,6 @@
 use super::{
     logical_type::LogicalType,
-    vector::{FlatVector, ListVector, StructVector},
+    vector::{FlatVector, ListVector, StructVector, UnionVector},
 };
 use crate::ffi::{
     duckdb_create_data_chunk, duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_size,
@@ -38,6 +38,11 @@ impl DataChunk {
     /// Get struct vector at the column index: `idx`.
     pub fn struct_vector(&self, idx: usize) -> StructVector {
         StructVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
+    }
+
+    /// Get union vector at the column index: `idx`.
+    pub fn union_vector(&self, idx: usize) -> UnionVector {
+        UnionVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
     }
 
     /// Set the size of the data chunk

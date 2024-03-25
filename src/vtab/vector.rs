@@ -1,5 +1,7 @@
 use std::{any::Any, ffi::CString, slice};
 
+use libduckdb_sys::{duckdb_union_type_member_count, duckdb_union_type_member_name};
+
 use super::LogicalType;
 use crate::ffi::{
     duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
@@ -219,5 +221,57 @@ impl StructVector {
     pub fn num_children(&self) -> usize {
         let logical_type = self.logical_type();
         unsafe { duckdb_struct_type_child_count(logical_type.ptr) as usize }
+    }
+}
+
+impl From<duckdb_vector> for UnionVector {
+    fn from(ptr: duckdb_vector) -> Self {
+        Self { ptr }
+    }
+}
+
+/// A union vector
+pub struct UnionVector {
+    /// UnionVector does not own the vector pointer
+    ptr: duckdb_vector,
+}
+
+impl UnionVector {
+    /// Get the logical type of this struct vector.
+    pub fn logical_type(&self) -> LogicalType {
+        LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
+    }
+
+    /// Retrieves the member vector of a union vecotr
+    pub fn tag_vector(&self) -> FlatVector {
+        FlatVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, 0) })
+    }
+
+    /// Retrieves the member vector of a union vecotr
+    pub fn member_vector(&self, idx: usize) -> FlatVector {
+        FlatVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, (idx + 1) as u64) })
+    }
+
+    /// Retrieves the child type of the given union member at the specified index
+    pub fn member_child_type(&self, idx: usize) -> LogicalType {
+        self.logical_type().child(idx + 1)
+    }
+
+    /// Get the name of the union member.
+    pub fn member_name(&self, idx: usize) -> String {
+        let logical_type = self.logical_type();
+        unsafe {
+            let member_name_ptr = duckdb_union_type_member_name(logical_type.ptr, idx as u64);
+            let c_str = CString::from_raw(member_name_ptr);
+            let name = c_str.to_str().unwrap();
+            // duckdb_free(child_name_ptr.cast());
+            name.to_string()
+        }
+    }
+
+    /// Returns the number of members that the union type ha
+    pub fn num_union_members(&self) -> usize {
+        let logical_type = self.logical_type();
+        unsafe { duckdb_union_type_member_count(logical_type.ptr) as usize }
     }
 }

@@ -1,13 +1,13 @@
 use super::{
-    vector::{FlatVector, ListVector, Vector},
+    vector::{FlatVector, ListVector, UnionVector, Vector},
     BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, StructVector, VTab,
 };
 
 use crate::vtab::vector::Inserter;
 use arrow::array::{
-    as_boolean_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array, as_struct_array, Array,
-    ArrayData, BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray, OffsetSizeTrait, PrimitiveArray,
-    StringArray, StructArray,
+    as_boolean_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array, as_struct_array,
+    as_union_array, Array, ArrayData, BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray,
+    OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, UnionArray,
 };
 
 use arrow::{
@@ -178,6 +178,12 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<d
             shape.push((field.name().as_str(), to_duckdb_logical_type(field.data_type())?));
         }
         Ok(LogicalType::struct_type(shape.as_slice()))
+    } else if let DataType::Union(fields, _mode) = data_type {
+        let mut shape = vec![];
+        for (_, field) in fields.iter() {
+            shape.push((field.name().as_str(), to_duckdb_logical_type(field.data_type())?));
+        }
+        Ok(LogicalType::union_type(shape.as_slice()))
     } else if let DataType::List(child) = data_type {
         Ok(LogicalType::list(&to_duckdb_logical_type(child.data_type())?))
     } else if let DataType::LargeList(child) = data_type {
@@ -226,6 +232,16 @@ pub fn record_batch_to_duckdb_data_chunk(
                 let struct_array = as_struct_array(col.as_ref());
                 let mut struct_vector = chunk.struct_vector(i);
                 struct_array_to_vector(struct_array, &mut struct_vector);
+            }
+            DataType::Union(fields, mode) => {
+                assert_eq!(
+                    mode,
+                    &UnionMode::Sparse,
+                    "duckdb only supports Sparse array for union types"
+                );
+                let union_array = as_union_array(col.as_ref());
+                let mut union_vector = chunk.union_vector(i);
+                union_array_to_vector(fields, union_array, &mut union_vector);
             }
             _ => {
                 unimplemented!(
@@ -440,6 +456,30 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector) {
     }
 }
 
+fn union_array_to_vector(union_fields: &UnionFields, array: &UnionArray, out: &mut UnionVector) {
+    // set the tag array 
+    let out_tag_array = &mut out.tag_vector();
+    out_tag_array.copy(array.type_ids());
+
+    for (i, (type_id, _)) in union_fields.iter().enumerate() {
+        let column = array.child(type_id);
+        match column.data_type() {
+            dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
+                primitive_array_to_vector(column, &mut out.member_vector(i));
+            }
+            DataType::Utf8 => {
+                string_array_to_vector(as_string_array(column.as_ref()), &mut out.member_vector(i));
+            }
+            _ => {
+                unimplemented!(
+                    "Unsupported data type: {}, please file an issue https://github.com/wangfenjin/duckdb-rs",
+                    column.data_type()
+                );
+            }
+        }
+    }
+}
+
 /// Pass RecordBatch to duckdb.
 ///
 /// # Safety
@@ -478,8 +518,9 @@ mod test {
     use super::{arrow_recordbatch_to_query_params, ArrowVTab};
     use crate::{Connection, Result};
     use arrow::{
-        array::{ArrayRef, Float64Array, Int32Array, StringArray, StructArray},
-        datatypes::{DataType, Field, Fields, Schema},
+        array::{Array, ArrayRef, Float64Array, Int32Array, StringArray, StructArray, UnionArray},
+        buffer::Buffer,
+        datatypes::{DataType, Field, Fields, Schema, UnionFields},
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
@@ -555,6 +596,47 @@ mod test {
             app.append_record_batch(record_batch)?;
         }
         let mut stmt = db.prepare("SELECT s FROM t1")?;
+        let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
+        assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_union() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+
+        db.execute_batch("CREATE TABLE tbl1 (u UNION(num INT, str VARCHAR));")?;
+
+        {
+            let int_array = Int32Array::from(vec![Some(1), None, Some(34)]);
+            let string_array = StringArray::from(vec![None, Some("foo"), None]);
+            let type_id_buffer = Buffer::from_slice_ref(&[0_i8, 1, 0]);
+
+            let children: Vec<(Field, Arc<dyn Array>)> = vec![
+                (Field::new("num", DataType::Int32, false), Arc::new(int_array)),
+                (Field::new("str", DataType::Utf8, true), Arc::new(string_array)),
+            ];
+
+            let union_array = UnionArray::try_new(&vec![0, 1], type_id_buffer, None, children).unwrap();
+
+            let union_fields = UnionFields::new(
+                vec![0, 1],
+                vec![
+                    Field::new("num", DataType::Int32, false),
+                    Field::new("str", DataType::Utf8, true),
+                ],
+            );
+
+            let schema = Schema::new(vec![Field::new(
+                "u",
+                DataType::Union(union_fields, arrow::datatypes::UnionMode::Sparse),
+                true,
+            )]);
+            let record_batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(union_array)])?;
+            let mut app = db.appender("tbl1")?;
+            app.append_record_batch(record_batch)?;
+        }
+        let mut stmt = db.prepare("SELECT u FROM tbl1")?;
         let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
         assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 2);
         Ok(())
