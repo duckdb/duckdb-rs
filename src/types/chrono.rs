@@ -1,11 +1,13 @@
 //! Convert most of the [Time Strings](http://sqlite.org/lang_datefunc.html) to chrono types.
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
 use crate::{
     types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
     Result,
 };
+
+use super::Value;
 
 /// ISO 8601 calendar date without timezone => "YYYY-MM-DD"
 impl ToSql for NaiveDate {
@@ -126,13 +128,42 @@ impl FromSql for DateTime<Local> {
     }
 }
 
+impl FromSql for Duration {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        match value {
+            ValueRef::Interval(months, days, nanos) => {
+                let days = days + (months * 30);
+                let seconds: i64 = i64::from(days) * 24 * 3600;
+
+                if let Ok(nanos) = nanos.try_into() {
+                    if let Some(duration) = Duration::new(seconds, nanos) {
+                        return Ok(duration);
+                    }
+                }
+                return Err(FromSqlError::Other("Invalid duration".into()));
+            }
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+}
+
+impl ToSql for Duration {
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Owned(Value::Interval(
+            0,
+            0,
+            self.num_nanoseconds().unwrap().try_into().unwrap(),
+        )))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
         types::{FromSql, ValueRef},
         Connection, Result,
     };
-    use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+    use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
@@ -213,6 +244,18 @@ mod test {
 
         let v4: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
         assert_eq!(utc, v4);
+        Ok(())
+    }
+
+    #[test]
+    fn test_time_delta() -> Result<()> {
+        let db = checked_memory_handle()?;
+        let td = TimeDelta::new(3600, 0).unwrap();
+
+        let row: Result<TimeDelta> = db.query_row("SELECT ?", [td], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td);
+
         Ok(())
     }
 
