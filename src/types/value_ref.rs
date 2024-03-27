@@ -61,7 +61,7 @@ pub enum ValueRef<'a> {
     Date32(i32),
     /// The value is a time64
     Time64(TimeUnit, i64),
-    /// The value is an interval (day, month, nano)
+    /// The value is an interval (month, day, nano)
     Interval(i32, i32, i64),
 }
 

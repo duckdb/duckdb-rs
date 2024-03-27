@@ -1,6 +1,7 @@
 //! Convert most of the [Time Strings](http://sqlite.org/lang_datefunc.html) to chrono types.
 
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use num_integer::Integer;
 
 use crate::{
     types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
@@ -146,6 +147,10 @@ impl FromSql for Duration {
         }
     }
 }
+
+const DAYS_PER_MONTH: i64 = 30;
+const SECONDS_PER_DAY: i64 = 24 * 3600;
+const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * 1_000_000_000;
 
 impl ToSql for Duration {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {

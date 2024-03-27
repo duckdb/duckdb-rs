@@ -18,7 +18,6 @@ fn test_all_types() -> crate::Result<()> {
         // union is currently blocked by https://github.com/duckdb/duckdb/pull/11326
         "union",
         // these remaining types are not yet supported by duckdb-rs
-        "interval",
         "small_enum",
         "medium_enum",
         "large_enum",
@@ -217,6 +216,11 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
         "bit" => match idx {
             0 => assert_eq!(value, ValueRef::Blob(&[1, 145, 46, 42, 215]),),
             1 => assert_eq!(value, ValueRef::Blob(&[3, 245])),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "interval" => match idx {
+            0 => assert_eq!(value, ValueRef::Interval(0, 0, 0)),
+            1 => assert_eq!(value, ValueRef::Interval(999, 999, 999999)),
             _ => assert_eq!(value, ValueRef::Null),
         },
         _ => todo!("{column:?}"),
