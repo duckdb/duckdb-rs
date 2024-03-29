@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 use rust_decimal::Decimal;
 
 use crate::{
-    types::{TimeUnit, Value, ValueRef},
+    types::{TimeUnit, Type, Value, ValueRef},
     Connection,
 };
 
@@ -51,6 +51,9 @@ fn test_all_types() -> crate::Result<()> {
         idx += 1;
         for column in row.stmt.column_names() {
             let value = row.get_ref_unwrap(row.stmt.column_index(&column)?);
+            if idx != 2 {
+                assert_ne!(value.data_type(), Type::Null);
+            }
             test_single(&mut idx, column, value);
         }
     }
