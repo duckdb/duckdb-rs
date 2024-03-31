@@ -62,7 +62,14 @@ pub enum ValueRef<'a> {
     /// The value is a time64
     Time64(TimeUnit, i64),
     /// The value is an interval (month, day, nano)
-    Interval(i32, i32, i64),
+    Interval {
+        /// months
+        months: i32,
+        /// days
+        days: i32,
+        /// nanos
+        nanos: i64,
+    },
 }
 
 impl ValueRef<'_> {
@@ -89,7 +96,7 @@ impl ValueRef<'_> {
             ValueRef::Blob(_) => Type::Blob,
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
-            ValueRef::Interval(..) => Type::Interval,
+            ValueRef::Interval { .. } => Type::Interval,
         }
     }
 }
@@ -143,7 +150,7 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Blob(b) => Value::Blob(b.to_vec()),
             ValueRef::Date32(d) => Value::Date32(d),
             ValueRef::Time64(t, d) => Value::Time64(t, d),
-            ValueRef::Interval(month, day, nano) => Value::Interval(month, day, nano),
+            ValueRef::Interval { months, days, nanos } => Value::Interval { months, days, nanos },
         }
     }
 }
@@ -185,7 +192,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Blob(ref b) => ValueRef::Blob(b),
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
-            Value::Interval(month, day, nano) => ValueRef::Interval(month, day, nano),
+            Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
         }
     }
 }

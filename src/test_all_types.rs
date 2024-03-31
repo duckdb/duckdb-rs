@@ -219,8 +219,22 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
             _ => assert_eq!(value, ValueRef::Null),
         },
         "interval" => match idx {
-            0 => assert_eq!(value, ValueRef::Interval(0, 0, 0)),
-            1 => assert_eq!(value, ValueRef::Interval(999, 999, 999999)),
+            0 => assert_eq!(
+                value,
+                ValueRef::Interval {
+                    months: 0,
+                    days: 0,
+                    nanos: 0
+                }
+            ),
+            1 => assert_eq!(
+                value,
+                ValueRef::Interval {
+                    months: 999,
+                    days: 999,
+                    nanos: 999999
+                }
+            ),
             _ => assert_eq!(value, ValueRef::Null),
         },
         _ => todo!("{column:?}"),

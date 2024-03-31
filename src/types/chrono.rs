@@ -132,7 +132,7 @@ impl FromSql for DateTime<Local> {
 impl FromSql for Duration {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
-            ValueRef::Interval(months, days, nanos) => {
+            ValueRef::Interval { months, days, nanos } => {
                 let days = days + (months * 30);
                 let seconds: i64 = i64::from(days) * 24 * 3600;
 
@@ -157,11 +157,11 @@ impl ToSql for Duration {
         let nanos = self.num_nanoseconds().unwrap();
         let (days, nanos) = nanos.div_mod_floor(&NANOS_PER_DAY);
         let (months, days) = days.div_mod_floor(&DAYS_PER_MONTH);
-        Ok(ToSqlOutput::Owned(Value::Interval(
-            months.try_into().unwrap(),
-            days.try_into().unwrap(),
+        Ok(ToSqlOutput::Owned(Value::Interval {
+            months: months.try_into().unwrap(),
+            days: days.try_into().unwrap(),
             nanos,
-        )))
+        }))
     }
 }
 

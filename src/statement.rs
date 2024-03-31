@@ -497,7 +497,7 @@ impl Statement<'_> {
                 };
                 ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros })
             },
-            ValueRef::Interval(months, days, nanos) => unsafe {
+            ValueRef::Interval { months, days, nanos } => unsafe {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
             },

@@ -1304,7 +1304,11 @@ mod test {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo (t INTERVAL);")?;
 
-        let d = Value::Interval(1, 2, 3);
+        let d = Value::Interval {
+            months: 1,
+            days: 2,
+            nanos: 3,
+        };
         db.execute("INSERT INTO foo VALUES (?)", [d])?;
 
         let mut stmt = db.prepare("SELECT t FROM foo")?;
