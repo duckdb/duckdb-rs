@@ -1,5 +1,5 @@
 use super::{Type, Value};
-use crate::types::{FromSqlError, FromSqlResult};
+use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
 
 use crate::Row;
 use rust_decimal::prelude::*;
@@ -217,19 +217,23 @@ impl From<ValueRef<'_>> for Value {
                     panic!("Enum value is not a string")
                 }
             }
-            ValueRef::Struct(items, idx) => Value::Struct(
-                items
+            ValueRef::Struct(items, idx) => {
+                let value: Vec<(String, Value)> = items
                     .columns()
                     .iter()
-                    .map(|column| Row::value_ref_internal(idx, 0, column).to_owned())
-                    .collect(),
-            ),
+                    .zip(items.fields().iter().map(|f| f.name().to_owned()))
+                    .map(|(column, name)| -> (String, Value) {
+                        (name, Row::value_ref_internal(idx, 0, column).to_owned())
+                    })
+                    .collect();
+                Value::Struct(OrderedMap::from(value))
+            }
             ValueRef::Map(arr, idx) => {
                 let keys = arr.keys();
                 let values = arr.values();
                 let offsets = arr.offsets();
                 let range = offsets[idx]..offsets[idx + 1];
-                Value::Map(
+                Value::Map(OrderedMap::from(
                     range
                         .map(|row| {
                             let row = row.try_into().unwrap();
@@ -237,8 +241,8 @@ impl From<ValueRef<'_>> for Value {
                             let value = Row::value_ref_internal(row, idx, values).to_owned();
                             (key, value)
                         })
-                        .collect(),
-                )
+                        .collect::<Vec<_>>(),
+                ))
             }
             ValueRef::Array(items, idx) => {
                 let value_length = usize::try_from(items.value_length()).unwrap();

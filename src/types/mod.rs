@@ -69,6 +69,7 @@ impl ToSql for DateTimeSql {
 
 pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
+    ordered_map::OrderedMap,
     to_sql::{ToSql, ToSqlOutput},
     value::Value,
     value_ref::{EnumType, TimeUnit, ValueRef},
@@ -87,6 +88,8 @@ mod to_sql;
 mod url;
 mod value;
 mod value_ref;
+
+mod ordered_map;
 
 /// Empty struct that can be used to fill in a query parameter as `NULL`.
 ///

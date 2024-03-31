@@ -1,4 +1,4 @@
-use super::{Null, TimeUnit, Type};
+use super::{Null, OrderedMap, TimeUnit, Type};
 use rust_decimal::prelude::*;
 
 /// Owning [dynamic type value](http://sqlite.org/datatype3.html). Value's type is typically
@@ -60,11 +60,11 @@ pub enum Value {
     /// The value is an enum
     Enum(String),
     /// The value is a struct
-    Struct(Vec<Value>),
+    Struct(OrderedMap<String, Value>),
     /// The value is an array
     Array(Vec<Value>),
     /// The value is a map
-    Map(Vec<(Value, Value)>),
+    Map(OrderedMap<Value, Value>),
     /// The value is a union
     Union(Box<Value>),
 }
