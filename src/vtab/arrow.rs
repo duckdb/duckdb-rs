@@ -2,6 +2,7 @@ use super::{
     vector::{FlatVector, ListVector, Vector},
     BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab,
 };
+use std::ptr::null_mut;
 
 use crate::vtab::vector::Inserter;
 use arrow::array::{
@@ -74,6 +75,7 @@ impl VTab for ArrowVTab {
     type InitData = ArrowInitData;
 
     unsafe fn bind(bind: &BindInfo, data: *mut ArrowBindData) -> Result<(), Box<dyn std::error::Error>> {
+        (*data).rb = null_mut();
         let param_count = bind.get_parameter_count();
         if param_count != 2 {
             return Err(format!("Bad param count: {param_count}, expected 2").into());
