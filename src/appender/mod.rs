@@ -142,9 +142,10 @@ impl Appender<'_> {
 
     /// Flush data into DB
     #[inline]
-    pub fn flush(&mut self) {
+    pub fn flush(&mut self) -> Result<()> {
         unsafe {
-            ffi::duckdb_appender_flush(self.app);
+            let res = ffi::duckdb_appender_flush(self.app);
+            result_from_duckdb_appender(res, self.app)
         }
     }
 }
@@ -152,7 +153,7 @@ impl Appender<'_> {
 impl Drop for Appender<'_> {
     fn drop(&mut self) {
         if !self.app.is_null() {
-            self.flush();
+            let _ = self.flush(); // can't safely handle failures here
             unsafe {
                 ffi::duckdb_appender_close(self.app);
                 ffi::duckdb_appender_destroy(&mut self.app);
