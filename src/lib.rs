@@ -60,7 +60,6 @@ pub use libduckdb_sys as ffi;
 use std::{
     cell::RefCell,
     convert,
-    default::Default,
     ffi::CString,
     fmt,
     path::{Path, PathBuf},
@@ -121,6 +120,9 @@ pub mod types;
 /// The duckdb table function interface
 #[cfg(feature = "vtab")]
 pub mod vtab;
+
+#[cfg(test)]
+mod test_all_types;
 
 pub(crate) mod util;
 

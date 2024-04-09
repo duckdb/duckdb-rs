@@ -1,5 +1,5 @@
 use super::{ffi, AppenderParams, Connection, Result, ValueRef};
-use std::{ffi::c_void, fmt, iter::IntoIterator, os::raw::c_char};
+use std::{ffi::c_void, fmt, os::raw::c_char};
 
 use crate::{
     error::result_from_duckdb_appender,
@@ -170,7 +170,6 @@ impl fmt::Debug for Appender<'_> {
 #[cfg(test)]
 mod test {
     use crate::{Connection, Result};
-    use std::convert::TryFrom;
 
     #[test]
     fn test_append_one_row() -> Result<()> {
