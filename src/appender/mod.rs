@@ -253,4 +253,24 @@ mod test {
         assert_eq!(val, (d.as_micros() as i32,));
         Ok(())
     }
+
+    #[test]
+    fn test_appender_error() -> Result<(), crate::Error> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute(
+            r"CREATE TABLE foo (
+            foobar TEXT,
+            foobar_split TEXT[] AS (split(trim(foobar), ','))
+            );",
+            [],
+        )?;
+        let mut appender = conn.appender("foo")?;
+        match appender.append_row(["foo"]) {
+            Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
+                assert_eq!(msg, "Call to EndRow before all rows have been appended to!")
+            }
+            _ => panic!("expected error"),
+        }
+        Ok(())
+    }
 }
