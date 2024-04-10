@@ -631,7 +631,7 @@ mod test {
 
         let mid = arrow::temporal_conversions::MILLISECONDS_IN_DAY;
         check_rust_primitive_array_roundtrip(
-            Date64Array::from(vec![1 * mid, 2 * mid, 3 * mid]),
+            Date64Array::from(vec![mid, 2 * mid, 3 * mid]),
             Date32Array::from(vec![1, 2, 3]),
         )?;
 
