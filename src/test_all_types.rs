@@ -232,7 +232,7 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
                 ValueRef::Interval {
                     months: 999,
                     days: 999,
-                    nanos: 999999
+                    nanos: 999999999000
                 }
             ),
             _ => assert_eq!(value, ValueRef::Null),

@@ -554,7 +554,9 @@ impl<'stmt> Row<'stmt> {
                     }
 
                     let value = array.value(row);
-                    let (months, days, nanos) = IntervalMonthDayNanoType::to_parts(value);
+                    let months = (value) as i32;
+                    let days = (value >> 32) as i32;
+                    let nanos = (value >> 64) as i64;
                     ValueRef::Interval { months, days, nanos }
                 }
                 _ => unimplemented!("{:?}", unit),
