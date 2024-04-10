@@ -141,7 +141,7 @@ impl FromSql for Duration {
                         return Ok(duration);
                     }
                 }
-                return Err(FromSqlError::Other("Invalid duration".into()));
+                Err(FromSqlError::Other("Invalid duration".into()))
             }
             _ => Err(FromSqlError::InvalidType),
         }
