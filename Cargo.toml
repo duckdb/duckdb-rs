@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "0.10.0"
+version = "0.10.1"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2021"
 description = "Ergonomic wrapper for DuckDB"
@@ -52,7 +52,7 @@ memchr = "2.3"
 uuid = { version = "1.0", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.3", features = ["std"] }
-arrow = { version = "49", default-features = false, features = ["prettyprint", "ffi"] }
+arrow = { version = "50", default-features = false, features = ["prettyprint", "ffi"] }
 rust_decimal = "1.14"
 strum = { version = "0.25", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
@@ -71,6 +71,7 @@ unicase = "2.6.0"
 rand = "0.8.3"
 tempdir = "0.3.7"
 polars-core = "0.35.4"
+pretty_assertions = "1.4.0"
 # criterion = "0.3"
 
 # [[bench]]
@@ -79,7 +80,7 @@ polars-core = "0.35.4"
 
 [dependencies.libduckdb-sys]
 path = "libduckdb-sys"
-version = "0.10.0"
+version = "0.10.1"
 
 [package.metadata.docs.rs]
 features = []
