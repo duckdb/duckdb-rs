@@ -34,7 +34,7 @@ appender-arrow = ["vtab-arrow"]
 vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
 extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
-modern-full = ["chrono", "num-integer", "serde_json", "url", "r2d2", "uuid", "polars"]
+modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
 polars = ["dep:polars"]
 chrono = ["dep:chrono", "num-integer"]
 
