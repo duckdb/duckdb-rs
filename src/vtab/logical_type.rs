@@ -66,6 +66,8 @@ pub enum LogicalTypeId {
     Uuid = DUCKDB_TYPE_DUCKDB_TYPE_UUID,
     /// Union
     Union = DUCKDB_TYPE_DUCKDB_TYPE_UNION,
+    /// Timestamp TZ
+    TimestampTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ,
 }
 
 impl From<u32> for LogicalTypeId {
@@ -100,6 +102,7 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_MAP => Self::Map,
             DUCKDB_TYPE_DUCKDB_TYPE_UUID => Self::Uuid,
             DUCKDB_TYPE_DUCKDB_TYPE_UNION => Self::Union,
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ => Self::TimestampTZ,
             _ => panic!(),
         }
     }
