@@ -138,7 +138,12 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::UInt64 => UBigint,
         DataType::Float32 => Float,
         DataType::Float64 => Double,
-        DataType::Timestamp(_, None) => Timestamp,
+        DataType::Timestamp(unit, None) => match unit {
+            TimeUnit::Second => TimestampS,
+            TimeUnit::Millisecond => TimestampMs,
+            TimeUnit::Microsecond => Timestamp,
+            TimeUnit::Nanosecond => TimestampNs,
+        },
         DataType::Timestamp(_, Some(_)) => TimestampTZ,
         DataType::Date32 => Date,
         DataType::Date64 => Date,
@@ -337,11 +342,31 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) {
             );
         }
         DataType::Decimal256(_, _) => todo!("Decimal256 is not supported yet"),
-        DataType::Timestamp(_, tz) => primitive_array_to_flat_vector_cast::<TimestampMicrosecondType>(
-            DataType::Timestamp(TimeUnit::Microsecond, tz.clone()),
+
+        // DuckDB Only supports timetamp_tz in microsecond precision
+        DataType::Timestamp(_, Some(tz)) => primitive_array_to_flat_vector_cast::<TimestampMicrosecondType>(
+            DataType::Timestamp(TimeUnit::Microsecond, Some(tz.clone())),
             array,
             out,
         ),
+        DataType::Timestamp(unit, None) => match unit {
+            TimeUnit::Second => primitive_array_to_flat_vector::<TimestampSecondType>(
+                as_primitive_array(array),
+                out.as_mut_any().downcast_mut().unwrap(),
+            ),
+            TimeUnit::Millisecond => primitive_array_to_flat_vector::<TimestampMillisecondType>(
+                as_primitive_array(array),
+                out.as_mut_any().downcast_mut().unwrap(),
+            ),
+            TimeUnit::Microsecond => primitive_array_to_flat_vector::<TimestampMicrosecondType>(
+                as_primitive_array(array),
+                out.as_mut_any().downcast_mut().unwrap(),
+            ),
+            TimeUnit::Nanosecond => primitive_array_to_flat_vector::<TimestampNanosecondType>(
+                as_primitive_array(array),
+                out.as_mut_any().downcast_mut().unwrap(),
+            ),
+        },
         DataType::Date32 => {
             primitive_array_to_flat_vector::<Date32Type>(
                 as_primitive_array(array),
@@ -611,20 +636,48 @@ mod test {
     fn test_timestamp_roundtrip() -> Result<(), Box<dyn Error>> {
         check_rust_primitive_array_roundtrip(Int32Array::from(vec![1, 2, 3]), Int32Array::from(vec![1, 2, 3]))?;
 
-        // DuckDB can only return timestamps in microseconds
         check_rust_primitive_array_roundtrip(
-            TimestampNanosecondArray::from(vec![1000, 2000, 3000]),
+            TimestampMicrosecondArray::from(vec![1, 2, 3]),
             TimestampMicrosecondArray::from(vec![1, 2, 3]),
         )?;
 
         check_rust_primitive_array_roundtrip(
-            TimestampMillisecondArray::from(vec![1, 2, 3]),
-            TimestampMicrosecondArray::from(vec![1000, 2000, 3000]),
+            TimestampNanosecondArray::from(vec![1, 2, 3]),
+            TimestampNanosecondArray::from(vec![1, 2, 3]),
         )?;
 
         check_rust_primitive_array_roundtrip(
             TimestampSecondArray::from(vec![1, 2, 3]),
-            TimestampMicrosecondArray::from(vec![1_000_000, 2_000_000, 3_000_000]),
+            TimestampSecondArray::from(vec![1, 2, 3]),
+        )?;
+
+        check_rust_primitive_array_roundtrip(
+            TimestampMillisecondArray::from(vec![1, 2, 3]),
+            TimestampMillisecondArray::from(vec![1, 2, 3]),
+        )?;
+
+        // DuckDB can only return timestamp_tz in microseconds
+        // Note: DuckDB by default returns timestamp_tz with UTC because the rust
+        // driver doesnt support timestamp_tz properly when reading. In the
+        // future we should be able to roundtrip timestamp_tz with other timezones too
+        check_rust_primitive_array_roundtrip(
+            TimestampNanosecondArray::from(vec![1000, 2000, 3000]).with_timezone("UTC"),
+            TimestampMicrosecondArray::from(vec![1, 2, 3]).with_timezone("UTC"),
+        )?;
+
+        check_rust_primitive_array_roundtrip(
+            TimestampMillisecondArray::from(vec![1, 2, 3]).with_timezone("UTC"),
+            TimestampMicrosecondArray::from(vec![1000, 2000, 3000]).with_timezone("UTC"),
+        )?;
+
+        check_rust_primitive_array_roundtrip(
+            TimestampSecondArray::from(vec![1, 2, 3]).with_timezone("UTC"),
+            TimestampMicrosecondArray::from(vec![1_000_000, 2_000_000, 3_000_000]).with_timezone("UTC"),
+        )?;
+
+        check_rust_primitive_array_roundtrip(
+            TimestampMicrosecondArray::from(vec![1, 2, 3]).with_timezone("UTC"),
+            TimestampMicrosecondArray::from(vec![1, 2, 3]).with_timezone("UTC"),
         )?;
 
         check_rust_primitive_array_roundtrip(Date32Array::from(vec![1, 2, 3]), Date32Array::from(vec![1, 2, 3]))?;
@@ -639,6 +692,7 @@ mod test {
             Time32SecondArray::from(vec![1, 2, 3]),
             Time64MicrosecondArray::from(vec![1_000_000, 2_000_000, 3_000_000]),
         )?;
+
         Ok(())
     }
 
