@@ -554,9 +554,12 @@ impl<'stmt> Row<'stmt> {
                     }
 
                     let value = array.value(row);
+
+                    // TODO: remove this manual conversion once arrow-rs bug is fixed
                     let months = (value) as i32;
                     let days = (value >> 32) as i32;
                     let nanos = (value >> 64) as i64;
+
                     ValueRef::Interval { months, days, nanos }
                 }
                 _ => unimplemented!("{:?}", unit),
