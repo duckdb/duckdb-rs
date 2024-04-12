@@ -325,7 +325,6 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<
                 out.as_mut_any().downcast_mut().unwrap(),
             );
         }
-        DataType::Float16 => todo!("Float16 is not supported yet"),
         DataType::Float32 => {
             primitive_array_to_flat_vector::<Float32Type>(
                 as_primitive_array(array),
@@ -347,7 +346,6 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<
                 out.as_mut_any().downcast_mut().unwrap(),
             );
         }
-        DataType::Decimal256(_, _) => todo!("Decimal256 is not supported yet"),
 
         // DuckDB Only supports timetamp_tz in microsecond precision
         DataType::Timestamp(_, Some(tz)) => primitive_array_to_flat_vector_cast::<TimestampMicrosecondType>(
