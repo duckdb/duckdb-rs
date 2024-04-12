@@ -547,10 +547,11 @@ pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema)
 mod test {
     use super::{arrow_recordbatch_to_query_params, ArrowVTab};
     use crate::{Connection, Result};
-    use arrow::array::{ArrayRef, StringArray, TimestampMillisecondArray};
+    use arrow::array::Decimal256Array;
+    use arrow::datatypes::i256;
     use arrow::{
         array::{
-            Array, AsArray, Date32Array, Date64Array, Float64Array, Int32Array, PrimitiveArray, StringArray,
+            Array, ArrayRef, AsArray, Date32Array, Date64Array, Float64Array, Int32Array, PrimitiveArray, StringArray,
             Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
             TimestampNanosecondArray, TimestampSecondArray,
         },
