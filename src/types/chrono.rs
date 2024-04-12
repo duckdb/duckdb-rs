@@ -136,12 +136,16 @@ impl FromSql for Duration {
                 let days = days + (months * 30);
                 let seconds: i64 = i64::from(days) * 24 * 3600;
 
-                if let Ok(nanos) = nanos.try_into() {
-                    if let Some(duration) = Duration::new(seconds, nanos) {
-                        return Ok(duration);
+                match nanos.try_into() {
+                    Ok(nanos) => {
+                        if let Some(duration) = Duration::new(seconds, nanos) {
+                            Ok(duration)
+                        } else {
+                            Err(FromSqlError::Other("Invalid duration".into()))
+                        }
                     }
+                    Err(err) => Err(FromSqlError::Other(format!("Invalid duration: {err}").into())),
                 }
-                Err(FromSqlError::Other("Invalid duration".into()))
             }
             _ => Err(FromSqlError::InvalidType),
         }
