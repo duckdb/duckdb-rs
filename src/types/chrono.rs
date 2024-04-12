@@ -134,7 +134,8 @@ impl FromSql for Duration {
         match value {
             ValueRef::Interval { months, days, nanos } => {
                 let days = days + (months * 30);
-                let seconds: i64 = i64::from(days) * 24 * 3600;
+                let (additional_seconds, nanos) = nanos.div_mod_floor(&1_000_000_000);
+                let seconds = additional_seconds + (i64::from(days) * 24 * 3600);
 
                 match nanos.try_into() {
                     Ok(nanos) => {
