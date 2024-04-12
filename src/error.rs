@@ -83,6 +83,11 @@ pub enum Error {
 
     /// Append Error
     AppendError,
+
+    /// Not yet implemented
+    ///
+    /// NOTE: It may be removed in the future.
+    Unimplemented(String),
 }
 
 impl PartialEq for Error {
@@ -145,18 +150,18 @@ impl From<FromSqlError> for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
+        match self {
             Error::DuckDBFailure(ref err, None) => err.fmt(f),
             Error::DuckDBFailure(_, Some(ref s)) => write!(f, "{s}"),
             Error::FromSqlConversionFailure(i, ref t, ref err) => {
-                if i != UNKNOWN_COLUMN {
+                if *i != UNKNOWN_COLUMN {
                     write!(f, "Conversion error from type {t} at index: {i}, {err}")
                 } else {
                     err.fmt(f)
                 }
             }
             Error::IntegralValueOutOfRange(col, val) => {
-                if col != UNKNOWN_COLUMN {
+                if *col != UNKNOWN_COLUMN {
                     write!(f, "Integer {val} out of range at index {col}")
                 } else {
                     write!(f, "Integer {val} out of range")
@@ -186,6 +191,7 @@ impl fmt::Display for Error {
             Error::InvalidQuery => write!(f, "Query is not read-only"),
             Error::MultipleStatement => write!(f, "Multiple statements provided"),
             Error::AppendError => write!(f, "Append error"),
+            Error::Unimplemented(msg) => write!(f, "Unimplemented: {msg}"),
         }
     }
 }
@@ -209,6 +215,7 @@ impl error::Error for Error {
             | Error::StatementChangedRows(_)
             | Error::InvalidQuery
             | Error::AppendError
+            | Error::Unimplemented(..)
             | Error::ArrowTypeToDuckdbType(..)
             | Error::MultipleStatement => None,
             Error::FromSqlConversionFailure(_, _, ref err) | Error::ToSqlConversionFailure(ref err) => Some(&**err),
