@@ -588,7 +588,7 @@ impl<'stmt> Row<'stmt> {
 
                 ValueRef::List(arr, row)
             }
-            _ => unreachable!("invalid value: {}", col),
+            _ => unreachable!("invalid value: {} {}", col, column.data_type()),
         }
     }
 
