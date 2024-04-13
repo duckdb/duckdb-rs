@@ -18,9 +18,6 @@ fn test_all_types() -> crate::Result<()> {
         // union is currently blocked by https://github.com/duckdb/duckdb/pull/11326
         "union",
         // these remaining types are not yet supported by duckdb-rs
-        "small_enum",
-        "medium_enum",
-        "large_enum",
         "struct",
         "struct_of_arrays",
         "array_of_structs",
@@ -347,6 +344,21 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
                     nanos: 999999999000
                 }
             ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "small_enum" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::Enum("DUCK_DUCK_ENUM".to_string())),
+            1 => assert_eq!(value.to_owned(), Value::Enum("GOOSE".to_string())),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "medium_enum" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::Enum("enum_0".to_string())),
+            1 => assert_eq!(value.to_owned(), Value::Enum("enum_1".to_string())),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "large_enum" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::Enum("enum_0".to_string())),
+            1 => assert_eq!(value.to_owned(), Value::Enum("enum_69999".to_string())),
             _ => assert_eq!(value, ValueRef::Null),
         },
         _ => todo!("{column:?}"),

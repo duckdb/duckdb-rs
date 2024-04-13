@@ -194,7 +194,8 @@ impl From<ValueRef<'_>> for Value {
                         EnumType::UInt16(res) => res.values(),
                         EnumType::UInt32(res) => res.values(),
                     },
-                ).to_owned();
+                )
+                .to_owned();
 
                 if let Value::Text(s) = value {
                     Value::Enum(s)
