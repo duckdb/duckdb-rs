@@ -134,7 +134,7 @@ impl FromSql for Duration {
         match value {
             ValueRef::Interval { months, days, nanos } => {
                 let days = days + (months * 30);
-                let (additional_seconds, nanos) = nanos.div_mod_floor(&1_000_000_000);
+                let (additional_seconds, nanos) = nanos.div_mod_floor(&NANOS_PER_SECOND);
                 let seconds = additional_seconds + (i64::from(days) * 24 * 3600);
 
                 match nanos.try_into() {
@@ -155,7 +155,8 @@ impl FromSql for Duration {
 
 const DAYS_PER_MONTH: i64 = 30;
 const SECONDS_PER_DAY: i64 = 24 * 3600;
-const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * 1_000_000_000;
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * NANOS_PER_SECOND;
 
 impl ToSql for Duration {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
