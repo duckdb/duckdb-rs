@@ -208,7 +208,6 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<d
 ///
 /// * `batch` - A reference to the `RecordBatch` to be converted to a `DataChunk`.
 /// * `chunk` - A mutable reference to the `DataChunk` to store the converted data.
-/// ```
 pub fn record_batch_to_duckdb_data_chunk(
     batch: &RecordBatch,
     chunk: &mut DataChunk,
