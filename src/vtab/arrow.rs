@@ -110,6 +110,7 @@ impl VTab for ArrowVTab {
                 output.set_len(0);
             } else {
                 let rb = Box::from_raw((*bind_info).rb);
+                (*bind_info).rb = null_mut(); // erase ref in case of failure in record_batch_to_duckdb_data_chunk
                 record_batch_to_duckdb_data_chunk(&rb, output)?;
                 (*bind_info).rb = Box::into_raw(rb);
                 (*init_info).done = true;
