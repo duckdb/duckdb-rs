@@ -532,7 +532,7 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, AsArray, Date32Array, Date64Array, Float64Array, Int32Array, PrimitiveArray, StringArray,
+            Array, ArrayRef, AsArray, Date32Array, Date64Array, Float64Array, Int32Array, PrimitiveArray, StringArray,
             StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
             TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
@@ -614,6 +614,8 @@ mod test {
         let mut stmt = db.prepare("SELECT s FROM t1")?;
         let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
         assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 2);
+
+        Ok(())
     }
 
     fn check_rust_primitive_array_roundtrip<T1, T2>(
