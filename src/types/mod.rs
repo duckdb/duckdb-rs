@@ -145,6 +145,8 @@ pub enum Type {
     Date32,
     /// TIME64
     Time64,
+    /// INTERVAL
+    Interval,
     /// LIST
     List(Box<Type>),
     /// Any
@@ -215,6 +217,7 @@ impl fmt::Display for Type {
             Type::Blob => f.pad("Blob"),
             Type::Date32 => f.pad("Date32"),
             Type::Time64 => f.pad("Time64"),
+            Type::Interval => f.pad("Interval"),
             Type::List(..) => f.pad("List"),
             Type::Any => f.pad("Any"),
         }
