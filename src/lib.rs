@@ -121,6 +121,9 @@ pub mod types;
 #[cfg(feature = "vtab")]
 pub mod vtab;
 
+#[cfg(test)]
+mod test_all_types;
+
 pub(crate) mod util;
 
 // Number of cached prepared statements we'll hold on to.
@@ -567,6 +570,8 @@ doc_comment::doctest!("../README.md");
 
 #[cfg(test)]
 mod test {
+    use crate::types::Value;
+
     use super::*;
     use std::{error::Error as StdError, fmt};
 
@@ -1291,6 +1296,26 @@ mod test {
                 .sum::<i32>(),
             9000
         );
+        Ok(())
+    }
+
+    #[test]
+    fn round_trip_interval() -> Result<()> {
+        let db = checked_memory_handle();
+        db.execute_batch("CREATE TABLE foo (t INTERVAL);")?;
+
+        let d = Value::Interval {
+            months: 1,
+            days: 2,
+            nanos: 3,
+        };
+        db.execute("INSERT INTO foo VALUES (?)", [d])?;
+
+        let mut stmt = db.prepare("SELECT t FROM foo")?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+        let d: Value = row.get_unwrap(0);
+        assert_eq!(d, d);
         Ok(())
     }
 

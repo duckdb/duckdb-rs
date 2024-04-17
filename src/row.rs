@@ -542,15 +542,29 @@ impl<'stmt> Row<'stmt> {
                 }
                 ValueRef::Time64(types::TimeUnit::Microsecond, array.value(row))
             }
+            DataType::Interval(unit) => match unit {
+                IntervalUnit::MonthDayNano => {
+                    let array = column
+                        .as_any()
+                        .downcast_ref::<array::IntervalMonthDayNanoArray>()
+                        .unwrap();
+
+                    if array.is_null(row) {
+                        return ValueRef::Null;
+                    }
+
+                    let value = array.value(row);
+
+                    // TODO: remove this manual conversion once arrow-rs bug is fixed
+                    let months = (value) as i32;
+                    let days = (value >> 32) as i32;
+                    let nanos = (value >> 64) as i64;
+
+                    ValueRef::Interval { months, days, nanos }
+                }
+                _ => unimplemented!("{:?}", unit),
+            },
             // TODO: support more data types
-            // DataType::Interval(unit) => match unit {
-            //     IntervalUnit::DayTime => {
-            //         make_string_interval_day_time!(column, row)
-            //     }
-            //     IntervalUnit::YearMonth => {
-            //         make_string_interval_year_month!(column, row)
-            //     }
-            // },
             // DataType::List(_) => make_string_from_list!(column, row),
             // DataType::Dictionary(index_type, _value_type) => match **index_type {
             //     DataType::Int8 => dict_array_value_to_string::<Int8Type>(column, row),
