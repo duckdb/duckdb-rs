@@ -41,7 +41,7 @@ pub enum DefaultNullOrder {
 }
 
 /// duckdb configuration
-/// Refer to https://github.com/duckdb/duckdb/blob/master/src/main/config.cpp
+/// Refer to <https://github.com/duckdb/duckdb/blob/master/src/main/config.cpp>
 #[derive(Default)]
 pub struct Config {
     config: Option<ffi::duckdb_config>,
