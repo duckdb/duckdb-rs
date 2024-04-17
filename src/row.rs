@@ -4,7 +4,7 @@ use super::{Error, Result, Statement};
 use crate::types::{self, FromSql, FromSqlError, ValueRef};
 
 use arrow::{
-    array::{self, Array, StructArray},
+    array::{self, Array, ArrayRef, ListArray, StructArray},
     datatypes::*,
 };
 use fallible_iterator::FallibleIterator;
@@ -339,6 +339,10 @@ impl<'stmt> Row<'stmt> {
 
     fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
+        Self::value_ref_internal(row, col, column)
+    }
+
+    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
         if column.is_null(row) {
             return ValueRef::Null;
         }
@@ -592,7 +596,12 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
-            _ => unreachable!("invalid value: {}, {}", col, self.stmt.column_type(col)),
+            DataType::List(_data) => {
+                let arr = column.as_any().downcast_ref::<ListArray>().unwrap();
+
+                ValueRef::List(arr, row)
+            }
+            _ => unreachable!("invalid value: {} {}", col, column.data_type()),
         }
     }
 

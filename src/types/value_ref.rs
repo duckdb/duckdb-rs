@@ -1,7 +1,10 @@
 use super::{Type, Value};
 use crate::types::{FromSqlError, FromSqlResult};
 
+use crate::Row;
 use rust_decimal::prelude::*;
+
+use arrow::array::{Array, ListArray};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
 /// Copy from arrow::datatypes::TimeUnit
@@ -70,6 +73,8 @@ pub enum ValueRef<'a> {
         /// nanos
         nanos: i64,
     },
+    /// The value is a list
+    List(&'a ListArray, usize),
 }
 
 impl ValueRef<'_> {
@@ -97,7 +102,13 @@ impl ValueRef<'_> {
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
             ValueRef::Interval { .. } => Type::Interval,
+            ValueRef::List(arr, _) => arr.data_type().into(),
         }
+    }
+
+    /// Returns an owned version of this ValueRef
+    pub fn to_owned(&self) -> Value {
+        (*self).into()
     }
 }
 
@@ -151,6 +162,14 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Date32(d) => Value::Date32(d),
             ValueRef::Time64(t, d) => Value::Time64(t, d),
             ValueRef::Interval { months, days, nanos } => Value::Interval { months, days, nanos },
+            ValueRef::List(items, idx) => {
+                let offsets = items.offsets();
+                let range = offsets[idx]..offsets[idx + 1];
+                let map: Vec<Value> = range
+                    .map(|row| Row::value_ref_internal(row.try_into().unwrap(), idx, items.values()).to_owned())
+                    .collect();
+                Value::List(map)
+            }
         }
     }
 }
@@ -193,6 +212,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
+            Value::List(..) => unimplemented!(),
         }
     }
 }

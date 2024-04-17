@@ -74,6 +74,7 @@ pub use self::{
     value_ref::{TimeUnit, ValueRef},
 };
 
+use arrow::datatypes::DataType;
 use std::fmt;
 
 #[cfg(feature = "chrono")]
@@ -146,8 +147,52 @@ pub enum Type {
     Time64,
     /// INTERVAL
     Interval,
+    /// LIST
+    List(Box<Type>),
     /// Any
     Any,
+}
+
+impl From<&DataType> for Type {
+    fn from(value: &DataType) -> Self {
+        match value {
+            DataType::Null => Self::Null,
+            DataType::Boolean => Self::Boolean,
+            DataType::Int8 => Self::TinyInt,
+            DataType::Int16 => Self::SmallInt,
+            DataType::Int32 => Self::Int,
+            DataType::Int64 => Self::BigInt,
+            DataType::UInt8 => Self::UTinyInt,
+            DataType::UInt16 => Self::USmallInt,
+            DataType::UInt32 => Self::UInt,
+            DataType::UInt64 => Self::UBigInt,
+            // DataType::Float16 => Self::Float16,
+            // DataType::Float32 => Self::Float32,
+            DataType::Float64 => Self::Float,
+            DataType::Timestamp(_, _) => Self::Timestamp,
+            DataType::Date32 => Self::Date32,
+            // DataType::Date64 => Self::Date64,
+            // DataType::Time32(_) => Self::Time32,
+            DataType::Time64(_) => Self::Time64,
+            // DataType::Duration(_) => Self::Duration,
+            // DataType::Interval(_) => Self::Interval,
+            DataType::Binary => Self::Blob,
+            // DataType::FixedSizeBinary(_) => Self::FixedSizeBinary,
+            // DataType::LargeBinary => Self::LargeBinary,
+            DataType::Utf8 => Self::Text,
+            // DataType::LargeUtf8 => Self::LargeUtf8,
+            DataType::List(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
+            // DataType::FixedSizeList(field, size) => Self::Array,
+            // DataType::LargeList(_) => Self::LargeList,
+            // DataType::Struct(inner) => Self::Struct,
+            // DataType::Union(_, _) => Self::Union,
+            // DataType::Dictionary(_, _) => Self::Enum,
+            DataType::Decimal128(..) => Self::Decimal,
+            DataType::Decimal256(..) => Self::Decimal,
+            // DataType::Map(field, ..) => Self::Map,
+            res => unimplemented!("{}", res),
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -173,6 +218,7 @@ impl fmt::Display for Type {
             Type::Date32 => f.pad("Date32"),
             Type::Time64 => f.pad("Time64"),
             Type::Interval => f.pad("Interval"),
+            Type::List(..) => f.pad("List"),
             Type::Any => f.pad("Any"),
         }
     }
