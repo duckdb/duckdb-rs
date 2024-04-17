@@ -59,7 +59,7 @@ pub trait Free {
 /// Duckdb table function trait
 ///
 /// See to the HelloVTab example for more details
-/// https://duckdb.org/docs/api/c/table_functions
+/// <https://duckdb.org/docs/api/c/table_functions>
 pub trait VTab: Sized {
     /// The data type of the bind data
     type InitData: Sized + Free;

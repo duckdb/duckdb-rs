@@ -55,6 +55,8 @@ pub enum Value {
         /// nanos
         nanos: i64,
     },
+    /// The value is a list
+    List(Vec<Value>),
 }
 
 impl From<Null> for Value {
@@ -222,6 +224,7 @@ impl Value {
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
+            Value::List(_) => todo!(),
         }
     }
 }
