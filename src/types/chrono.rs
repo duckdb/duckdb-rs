@@ -1,11 +1,14 @@
 //! Convert most of the [Time Strings](http://sqlite.org/lang_datefunc.html) to chrono types.
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use num_integer::Integer;
 
 use crate::{
     types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
     Result,
 };
+
+use super::Value;
 
 /// ISO 8601 calendar date without timezone => "YYYY-MM-DD"
 impl ToSql for NaiveDate {
@@ -126,13 +129,55 @@ impl FromSql for DateTime<Local> {
     }
 }
 
+impl FromSql for Duration {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        match value {
+            ValueRef::Interval { months, days, nanos } => {
+                let days = days + (months * 30);
+                let (additional_seconds, nanos) = nanos.div_mod_floor(&NANOS_PER_SECOND);
+                let seconds = additional_seconds + (i64::from(days) * 24 * 3600);
+
+                match nanos.try_into() {
+                    Ok(nanos) => {
+                        if let Some(duration) = Duration::new(seconds, nanos) {
+                            Ok(duration)
+                        } else {
+                            Err(FromSqlError::Other("Invalid duration".into()))
+                        }
+                    }
+                    Err(err) => Err(FromSqlError::Other(format!("Invalid duration: {err}").into())),
+                }
+            }
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+}
+
+const DAYS_PER_MONTH: i64 = 30;
+const SECONDS_PER_DAY: i64 = 24 * 3600;
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * NANOS_PER_SECOND;
+
+impl ToSql for Duration {
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        let nanos = self.num_nanoseconds().unwrap();
+        let (days, nanos) = nanos.div_mod_floor(&NANOS_PER_DAY);
+        let (months, days) = days.div_mod_floor(&DAYS_PER_MONTH);
+        Ok(ToSqlOutput::Owned(Value::Interval {
+            months: months.try_into().unwrap(),
+            days: days.try_into().unwrap(),
+            nanos,
+        }))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
-        types::{FromSql, ValueRef},
+        types::{FromSql, ToSql, ToSqlOutput, ValueRef},
         Connection, Result,
     };
-    use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+    use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
@@ -214,6 +259,35 @@ mod test {
         let v4: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
         assert_eq!(utc, v4);
         Ok(())
+    }
+
+    #[test]
+    fn test_time_delta_roundtrip() {
+        roundtrip_type(TimeDelta::new(3600, 0).unwrap());
+        roundtrip_type(TimeDelta::new(3600, 1000).unwrap());
+    }
+
+    #[test]
+    fn test_time_delta() -> Result<()> {
+        let db = checked_memory_handle()?;
+        let td = TimeDelta::new(3600, 0).unwrap();
+
+        let row: Result<TimeDelta> = db.query_row("SELECT ?", [td], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td);
+
+        Ok(())
+    }
+
+    fn roundtrip_type<T: FromSql + ToSql + Eq + std::fmt::Debug>(td: T) {
+        let sqled = td.to_sql().unwrap();
+        let value = match sqled {
+            ToSqlOutput::Borrowed(v) => v,
+            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+        };
+        let reversed = FromSql::column_result(value).unwrap();
+
+        assert_eq!(td, reversed);
     }
 
     #[test]
