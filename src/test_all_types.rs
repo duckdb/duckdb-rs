@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 use rust_decimal::Decimal;
 
 use crate::{
-    types::{TimeUnit, ValueRef},
+    types::{TimeUnit, Type, Value, ValueRef},
     Connection,
 };
 
@@ -21,13 +21,6 @@ fn test_all_types() -> crate::Result<()> {
         "small_enum",
         "medium_enum",
         "large_enum",
-        "int_array",
-        "double_array",
-        "date_array",
-        "timestamp_array",
-        "timestamptz_array",
-        "varchar_array",
-        "nested_int_array",
         "struct",
         "struct_of_arrays",
         "array_of_structs",
@@ -57,6 +50,9 @@ fn test_all_types() -> crate::Result<()> {
         idx += 1;
         for column in row.stmt.column_names() {
             let value = row.get_ref_unwrap(row.stmt.column_index(&column)?);
+            if idx != 2 {
+                assert_ne!(value.data_type(), Type::Null);
+            }
             test_single(&mut idx, column, value);
         }
     }
@@ -213,6 +209,122 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
             1 => assert_eq!(value, ValueRef::Blob(&[0, 0, 0, 97])),
             _ => assert_eq!(value, ValueRef::Null),
         },
+        "int_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Int(42),
+                    Value::Int(999),
+                    Value::Null,
+                    Value::Null,
+                    Value::Int(-42),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "double_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => {
+                let value = value.to_owned();
+
+                if let Value::List(values) = value {
+                    assert_eq!(values.len(), 6);
+                    assert_eq!(values[0], Value::Double(42.0));
+                    assert!(unwrap(&values[1]).is_nan());
+                    let val = unwrap(&values[2]);
+                    assert!(val.is_infinite() && val.is_sign_positive());
+                    let val = unwrap(&values[3]);
+                    assert!(val.is_infinite() && val.is_sign_negative());
+                    assert_eq!(values[4], Value::Null);
+                    assert_eq!(values[5], Value::Double(-42.0));
+                }
+            }
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "date_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Date32(0),
+                    Value::Date32(2147483647),
+                    Value::Date32(-2147483647),
+                    Value::Null,
+                    Value::Date32(19124),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "timestamp_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Timestamp(TimeUnit::Microsecond, 0,),
+                    Value::Timestamp(TimeUnit::Microsecond, 9223372036854775807,),
+                    Value::Timestamp(TimeUnit::Microsecond, -9223372036854775807,),
+                    Value::Null,
+                    Value::Timestamp(TimeUnit::Microsecond, 1652372625000000,),
+                ],)
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "timestamptz_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Timestamp(TimeUnit::Microsecond, 0,),
+                    Value::Timestamp(TimeUnit::Microsecond, 9223372036854775807,),
+                    Value::Timestamp(TimeUnit::Microsecond, -9223372036854775807,),
+                    Value::Null,
+                    Value::Timestamp(TimeUnit::Microsecond, 1652397825000000,),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "varchar_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => assert_eq!(
+                value.to_owned(),
+                Value::List(vec![
+                    Value::Text("🦆🦆🦆🦆🦆🦆".to_string()),
+                    Value::Text("goose".to_string()),
+                    Value::Null,
+                    Value::Text("".to_string()),
+                ])
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "nested_int_array" => match idx {
+            0 => assert_eq!(value.to_owned(), Value::List(vec![])),
+            1 => {
+                assert_eq!(
+                    value.to_owned(),
+                    Value::List(vec![
+                        Value::List(vec![],),
+                        Value::List(vec![
+                            Value::Int(42,),
+                            Value::Int(999,),
+                            Value::Null,
+                            Value::Null,
+                            Value::Int(-42,),
+                        ],),
+                        Value::Null,
+                        Value::List(vec![],),
+                        Value::List(vec![
+                            Value::Int(42,),
+                            Value::Int(999,),
+                            Value::Null,
+                            Value::Null,
+                            Value::Int(-42,),
+                        ],),
+                    ],)
+                )
+            }
+            _ => assert_eq!(value, ValueRef::Null),
+        },
         "bit" => match idx {
             0 => assert_eq!(value, ValueRef::Blob(&[1, 145, 46, 42, 215]),),
             1 => assert_eq!(value, ValueRef::Blob(&[3, 245])),
@@ -238,5 +350,13 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
             _ => assert_eq!(value, ValueRef::Null),
         },
         _ => todo!("{column:?}"),
+    }
+}
+
+fn unwrap(value: &Value) -> f64 {
+    if let Value::Double(val) = value {
+        *val
+    } else {
+        panic!();
     }
 }
