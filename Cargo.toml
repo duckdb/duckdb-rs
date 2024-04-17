@@ -36,6 +36,7 @@ extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
 polars = ["dep:polars"]
+chrono = ["dep:chrono", "num-integer"]
 
 [dependencies]
 # time = { version = "0.3.2", features = ["formatting", "parsing"], optional = true }
@@ -52,7 +53,7 @@ memchr = "2.3"
 uuid = { version = "1.0", optional = true }
 smallvec = "1.6.1"
 cast = { version = "0.3", features = ["std"] }
-arrow = { version = "50", default-features = false, features = ["prettyprint", "ffi"] }
+arrow = { version = "51", default-features = false, features = ["prettyprint", "ffi"] }
 rust_decimal = "1.14"
 strum = { version = "0.25", features = ["derive"] }
 r2d2 = { version = "0.8.9", optional = true }
@@ -60,6 +61,7 @@ calamine = { version = "0.22.0", optional = true }
 num = { version = "0.4", optional = true, default-features = false, features = ["std"] }
 duckdb-loadable-macros = { version = "0.1.1", path="./duckdb-loadable-macros", optional = true }
 polars = { version = "0.35.4", features = ["dtype-full"], optional = true}
+num-integer = {version = "0.1.46", optional = true}
 
 [dev-dependencies]
 doc-comment = "0.3"
