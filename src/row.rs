@@ -4,7 +4,7 @@ use super::{Error, Result, Statement};
 use crate::types::{self, EnumType, FromSql, FromSqlError, ValueRef};
 
 use arrow::{
-    array::{self, Array, ArrayRef, ListArray, StructArray},
+    array::{self, Array, ArrayRef, DictionaryArray, FixedSizeListArray, ListArray, MapArray, StructArray},
     datatypes::*,
 };
 use fallible_iterator::FallibleIterator;
