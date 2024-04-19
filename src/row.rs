@@ -4,7 +4,7 @@ use super::{Error, Result, Statement};
 use crate::types::{self, FromSql, FromSqlError, ValueRef};
 
 use arrow::{
-    array::{self, Array, StructArray},
+    array::{self, Array, ArrayRef, ListArray, StructArray},
     datatypes::*,
 };
 use fallible_iterator::FallibleIterator;
@@ -339,6 +339,10 @@ impl<'stmt> Row<'stmt> {
 
     fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
+        Self::value_ref_internal(row, col, column)
+    }
+
+    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
         if column.is_null(row) {
             return ValueRef::Null;
         }
@@ -542,15 +546,29 @@ impl<'stmt> Row<'stmt> {
                 }
                 ValueRef::Time64(types::TimeUnit::Microsecond, array.value(row))
             }
+            DataType::Interval(unit) => match unit {
+                IntervalUnit::MonthDayNano => {
+                    let array = column
+                        .as_any()
+                        .downcast_ref::<array::IntervalMonthDayNanoArray>()
+                        .unwrap();
+
+                    if array.is_null(row) {
+                        return ValueRef::Null;
+                    }
+
+                    let value = array.value(row);
+
+                    // TODO: remove this manual conversion once arrow-rs bug is fixed
+                    let months = (value) as i32;
+                    let days = (value >> 32) as i32;
+                    let nanos = (value >> 64) as i64;
+
+                    ValueRef::Interval { months, days, nanos }
+                }
+                _ => unimplemented!("{:?}", unit),
+            },
             // TODO: support more data types
-            // DataType::Interval(unit) => match unit {
-            //     IntervalUnit::DayTime => {
-            //         make_string_interval_day_time!(column, row)
-            //     }
-            //     IntervalUnit::YearMonth => {
-            //         make_string_interval_year_month!(column, row)
-            //     }
-            // },
             // DataType::List(_) => make_string_from_list!(column, row),
             // DataType::Dictionary(index_type, _value_type) => match **index_type {
             //     DataType::Int8 => dict_array_value_to_string::<Int8Type>(column, row),
@@ -578,7 +596,12 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
-            _ => unreachable!("invalid value: {}, {}", col, self.stmt.column_type(col)),
+            DataType::List(_data) => {
+                let arr = column.as_any().downcast_ref::<ListArray>().unwrap();
+
+                ValueRef::List(arr, row)
+            }
+            _ => unreachable!("invalid value: {} {}", col, column.data_type()),
         }
     }
 

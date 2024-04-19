@@ -1,4 +1,4 @@
-use std::{convert, ffi::c_void, fmt, iter::IntoIterator, mem, os::raw::c_char, ptr, str};
+use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 
 use arrow::{array::StructArray, datatypes::DataType};
 
@@ -496,6 +496,10 @@ impl Statement<'_> {
                     TimeUnit::Nanosecond => i / 1_000,
                 };
                 ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros })
+            },
+            ValueRef::Interval { months, days, nanos } => unsafe {
+                let micros = nanos / 1_000;
+                ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
             },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
