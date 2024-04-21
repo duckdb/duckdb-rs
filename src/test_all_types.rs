@@ -10,7 +10,7 @@ use crate::{
 fn test_all_types() -> crate::Result<()> {
     let database = Connection::open_in_memory()?;
 
-    let excluded = vec![
+    let excluded = [
         // uhugeint, time_tz, and dec38_10 aren't supported in the duckdb arrow layer
         "uhugeint",
         "time_tz",
