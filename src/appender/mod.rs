@@ -67,7 +67,7 @@ impl Appender<'_> {
         params.__bind_in(self)?;
         // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
-        result_from_duckdb_appender(rc, self.app)
+        result_from_duckdb_appender(rc, &mut self.app)
     }
 
     #[inline]
@@ -145,7 +145,7 @@ impl Appender<'_> {
     pub fn flush(&mut self) -> Result<()> {
         unsafe {
             let res = ffi::duckdb_appender_flush(self.app);
-            result_from_duckdb_appender(res, self.app)
+            result_from_duckdb_appender(res, &mut self.app)
         }
     }
 }
