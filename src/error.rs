@@ -225,17 +225,17 @@ fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> R
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_appender(code: ffi::duckdb_state, mut appender: ffi::duckdb_appender) -> Result<()> {
+pub fn result_from_duckdb_appender(code: ffi::duckdb_state, appender: *mut ffi::duckdb_appender) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
     unsafe {
-        let message = if appender.is_null() {
+        let message = if (*appender).is_null() {
             Some("appender is null".to_string())
         } else {
-            let c_err = ffi::duckdb_appender_error(appender);
+            let c_err = ffi::duckdb_appender_error(*appender);
             let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-            ffi::duckdb_appender_destroy(&mut appender);
+            ffi::duckdb_appender_destroy(appender);
             message
         };
         error_from_duckdb_code(code, message)
