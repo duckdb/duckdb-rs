@@ -57,6 +57,8 @@ pub enum Value {
     },
     /// The value is a list
     List(Vec<Value>),
+    /// The value is an enum
+    Enum(String),
 }
 
 impl From<Null> for Value {
@@ -225,6 +227,7 @@ impl Value {
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
             Value::List(_) => todo!(),
+            Value::Enum(..) => Type::Enum,
         }
     }
 }
