@@ -422,17 +422,20 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     match value_array.data_type() {
         dt if dt.is_primitive() => {
             primitive_array_to_vector(value_array.as_ref(), &mut child)?;
-            for i in 0..array.len() {
-                let offset = array.value_offsets()[i];
-                let length = array.value_length(i);
-                out.set_entry(i, offset.as_(), length.as_());
-            }
+        }
+        DataType::Utf8 => {
+            string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
         }
         _ => {
             return Err("Nested list is not supported yet.".into());
         }
     }
 
+    for i in 0..array.len() {
+        let offset = array.value_offsets()[i];
+        let length = array.value_length(i);
+        out.set_entry(i, offset.as_(), length.as_());
+    }
     Ok(())
 }
 
@@ -452,10 +455,19 @@ fn fixed_size_list_array_to_vector(
             }
             out.set_len(value_array.len());
         }
+        DataType::Utf8 => {
+            string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
+        }
         _ => {
             return Err("Nested list is not supported yet.".into());
         }
     }
+    for i in 0..array.len() {
+        let offset = array.value_offset(i);
+        let length = array.value_length();
+        out.set_entry(i, offset as usize, length as usize);
+    }
+    out.set_len(value_array.len());
 
     Ok(())
 }
