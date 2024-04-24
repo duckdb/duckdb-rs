@@ -71,7 +71,7 @@ pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     to_sql::{ToSql, ToSqlOutput},
     value::Value,
-    value_ref::{TimeUnit, ValueRef},
+    value_ref::{EnumType, TimeUnit, ValueRef},
 };
 
 use arrow::datatypes::DataType;
@@ -149,6 +149,8 @@ pub enum Type {
     Interval,
     /// LIST
     List(Box<Type>),
+    /// ENUM
+    Enum,
     /// Any
     Any,
 }
@@ -219,6 +221,7 @@ impl fmt::Display for Type {
             Type::Time64 => f.pad("Time64"),
             Type::Interval => f.pad("Interval"),
             Type::List(..) => f.pad("List"),
+            Type::Enum => f.pad("Enum"),
             Type::Any => f.pad("Any"),
         }
     }

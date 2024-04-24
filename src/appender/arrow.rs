@@ -39,7 +39,7 @@ impl Appender<'_> {
         record_batch_to_duckdb_data_chunk(&record_batch, &mut data_chunk).map_err(|_op| Error::AppendError)?;
 
         let rc = unsafe { duckdb_append_data_chunk(self.app, data_chunk.get_ptr()) };
-        result_from_duckdb_appender(rc, self.app)
+        result_from_duckdb_appender(rc, &mut self.app)
     }
 }
 
