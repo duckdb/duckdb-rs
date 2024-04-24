@@ -561,7 +561,7 @@ mod test {
             TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
-        datatypes::{i256, ArrowNativeType, ArrowPrimitiveType, DataType, Field, Fields, Schema},
+        datatypes::{i256, ArrowPrimitiveType, DataType, Field, Fields, Schema},
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
