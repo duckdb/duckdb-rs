@@ -72,7 +72,7 @@ uuid = { version = "1.0", features = ["v4"] }
 unicase = "2.6.0"
 rand = "0.8.3"
 tempdir = "0.3.7"
-polars-core = "0.35.4"
+polars-core = "0.39.2"
 pretty_assertions = "1.4.0"
 # criterion = "0.3"
 
