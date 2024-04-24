@@ -84,6 +84,7 @@ pretty_assertions = "1.4.0"
 path = "libduckdb-sys"
 version = "0.10.1"
 
+
 [package.metadata.docs.rs]
 features = ['vtab', 'chrono']
 all-features = false
