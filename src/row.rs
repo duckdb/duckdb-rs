@@ -570,21 +570,6 @@ impl<'stmt> Row<'stmt> {
                 _ => unimplemented!("{:?}", unit),
             },
             // TODO: support more data types
-            // DataType::Dictionary(index_type, _value_type) => match **index_type {
-            //     DataType::Int8 => dict_array_value_to_string::<Int8Type>(column, row),
-            //     DataType::Int16 => dict_array_value_to_string::<Int16Type>(column, row),
-            //     DataType::Int32 => dict_array_value_to_string::<Int32Type>(column, row),
-            //     DataType::Int64 => dict_array_value_to_string::<Int64Type>(column, row),
-            //     DataType::UInt8 => dict_array_value_to_string::<UInt8Type>(column, row),
-            //     DataType::UInt16 => dict_array_value_to_string::<UInt16Type>(column, row),
-            //     DataType::UInt32 => dict_array_value_to_string::<UInt32Type>(column, row),
-            //     DataType::UInt64 => dict_array_value_to_string::<UInt64Type>(column, row),
-            //     _ => Err(ArrowError::InvalidArgumentError(format!(
-            //         "Pretty printing not supported for {:?} due to index type",
-            //         column.data_type()
-            //     ))),
-            // },
-
             // NOTE: DataTypes not supported by duckdb
             // DataType::Date64 => make_string_date!(array::Date64Array, column, row),
             // DataType::Time32(unit) if *unit == TimeUnit::Second => {
