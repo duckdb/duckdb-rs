@@ -8,8 +8,18 @@ use crate::{
 
 #[test]
 fn test_all_types() -> crate::Result<()> {
-    let database = Connection::open_in_memory()?;
+    test_with_database(&Connection::open_in_memory()?)
+}
 
+#[test]
+fn test_large_arrow_types() -> crate::Result<()> {
+    let cfg = crate::Config::default().with("arrow_large_buffer_size", "true")?;
+    let database = Connection::open_in_memory_with_flags(cfg)?;
+
+    test_with_database(&database)
+}
+
+fn test_with_database(database: &Connection) -> crate::Result<()> {
     let excluded = vec![
         // uhugeint, time_tz, and dec38_10 aren't supported in the duckdb arrow layer
         "uhugeint",
