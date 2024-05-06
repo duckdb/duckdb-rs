@@ -1,8 +1,9 @@
 use std::{convert, sync::Arc};
 
 use super::{Error, Result, Statement};
-use crate::types::{self, FromSql, FromSqlError, ValueRef};
+use crate::types::{self, EnumType, FromSql, FromSqlError, ValueRef};
 
+use arrow::array::DictionaryArray;
 use arrow::{
     array::{self, Array, ArrayRef, ListArray, StructArray},
     datatypes::*,
@@ -600,6 +601,24 @@ impl<'stmt> Row<'stmt> {
                 let arr = column.as_any().downcast_ref::<ListArray>().unwrap();
 
                 ValueRef::List(arr, row)
+            }
+            DataType::Dictionary(key_type, ..) => {
+                let column = column.as_any();
+                ValueRef::Enum(
+                    match key_type.as_ref() {
+                        DataType::UInt8 => {
+                            EnumType::UInt8(column.downcast_ref::<DictionaryArray<UInt8Type>>().unwrap())
+                        }
+                        DataType::UInt16 => {
+                            EnumType::UInt16(column.downcast_ref::<DictionaryArray<UInt16Type>>().unwrap())
+                        }
+                        DataType::UInt32 => {
+                            EnumType::UInt32(column.downcast_ref::<DictionaryArray<UInt32Type>>().unwrap())
+                        }
+                        typ => panic!("Unsupported key type: {typ:?}"),
+                    },
+                    row,
+                )
             }
             _ => unreachable!("invalid value: {} {}", col, column.data_type()),
         }

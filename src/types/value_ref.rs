@@ -4,7 +4,8 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::{Array, ListArray};
+use arrow::array::{Array, DictionaryArray, ListArray};
+use arrow::datatypes::{UInt16Type, UInt32Type, UInt8Type};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
 /// Copy from arrow::datatypes::TimeUnit
@@ -75,6 +76,19 @@ pub enum ValueRef<'a> {
     },
     /// The value is a list
     List(&'a ListArray, usize),
+    /// The value is an enum
+    Enum(EnumType<'a>, usize),
+}
+
+/// Wrapper type for different enum sizes
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum EnumType<'a> {
+    /// The underlying enum type is u8
+    UInt8(&'a DictionaryArray<UInt8Type>),
+    /// The underlying enum type is u16
+    UInt16(&'a DictionaryArray<UInt16Type>),
+    /// The underlying enum type is u32
+    UInt32(&'a DictionaryArray<UInt32Type>),
 }
 
 impl ValueRef<'_> {
@@ -103,6 +117,7 @@ impl ValueRef<'_> {
             ValueRef::Time64(..) => Type::Time64,
             ValueRef::Interval { .. } => Type::Interval,
             ValueRef::List(arr, _) => arr.data_type().into(),
+            ValueRef::Enum(..) => Type::Enum,
         }
     }
 
@@ -170,6 +185,24 @@ impl From<ValueRef<'_>> for Value {
                     .collect();
                 Value::List(map)
             }
+            ValueRef::Enum(items, idx) => {
+                let value = Row::value_ref_internal(
+                    idx,
+                    0,
+                    match items {
+                        EnumType::UInt8(res) => res.values(),
+                        EnumType::UInt16(res) => res.values(),
+                        EnumType::UInt32(res) => res.values(),
+                    },
+                )
+                .to_owned();
+
+                if let Value::Text(s) = value {
+                    Value::Enum(s)
+                } else {
+                    panic!("Enum value is not a string")
+                }
+            }
         }
     }
 }
@@ -213,6 +246,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
             Value::List(..) => unimplemented!(),
+            Value::Enum(..) => todo!(),
         }
     }
 }
