@@ -46,6 +46,19 @@ pub enum Value {
     Date32(i32),
     /// The value is a time64
     Time64(TimeUnit, i64),
+    /// The value is an interval (month, day, nano)
+    Interval {
+        /// months
+        months: i32,
+        /// days
+        days: i32,
+        /// nanos
+        nanos: i64,
+    },
+    /// The value is a list
+    List(Vec<Value>),
+    /// The value is an enum
+    Enum(String),
 }
 
 impl From<Null> for Value {
@@ -212,6 +225,9 @@ impl Value {
             Value::Blob(_) => Type::Blob,
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
+            Value::Interval { .. } => Type::Interval,
+            Value::List(_) => todo!(),
+            Value::Enum(..) => Type::Enum,
         }
     }
 }

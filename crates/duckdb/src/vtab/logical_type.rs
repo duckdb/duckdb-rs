@@ -6,7 +6,7 @@ use std::{
 use crate::ffi::*;
 
 /// Logical Type Id
-/// https://duckdb.org/docs/api/c/types
+/// <https://duckdb.org/docs/api/c/types>
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum LogicalTypeId {
@@ -66,6 +66,8 @@ pub enum LogicalTypeId {
     Uuid = DUCKDB_TYPE_DUCKDB_TYPE_UUID,
     /// Union
     Union = DUCKDB_TYPE_DUCKDB_TYPE_UNION,
+    /// Timestamp TZ
+    TimestampTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ,
 }
 
 impl From<u32> for LogicalTypeId {
@@ -100,13 +102,14 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_MAP => Self::Map,
             DUCKDB_TYPE_DUCKDB_TYPE_UUID => Self::Uuid,
             DUCKDB_TYPE_DUCKDB_TYPE_UNION => Self::Union,
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ => Self::TimestampTZ,
             _ => panic!(),
         }
     }
 }
 
 /// DuckDB Logical Type.
-/// https://duckdb.org/docs/sql/data_types/overview
+/// <https://duckdb.org/docs/sql/data_types/overview>
 pub struct LogicalType {
     pub(crate) ptr: duckdb_logical_type,
 }

@@ -102,7 +102,7 @@ impl InnerConnection {
                 &mut c_app,
             )
         };
-        result_from_duckdb_appender(r, c_app)?;
+        result_from_duckdb_appender(r, &mut c_app)?;
         Ok(Appender::new(conn, c_app))
     }
 
