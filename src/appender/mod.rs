@@ -67,7 +67,7 @@ impl Appender<'_> {
         params.__bind_in(self)?;
         // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
-        result_from_duckdb_appender(rc, self.app)
+        result_from_duckdb_appender(rc, &mut self.app)
     }
 
     #[inline]
@@ -142,9 +142,10 @@ impl Appender<'_> {
 
     /// Flush data into DB
     #[inline]
-    pub fn flush(&mut self) {
+    pub fn flush(&mut self) -> Result<()> {
         unsafe {
-            ffi::duckdb_appender_flush(self.app);
+            let res = ffi::duckdb_appender_flush(self.app);
+            result_from_duckdb_appender(res, &mut self.app)
         }
     }
 }
@@ -152,7 +153,7 @@ impl Appender<'_> {
 impl Drop for Appender<'_> {
     fn drop(&mut self) {
         if !self.app.is_null() {
-            self.flush();
+            let _ = self.flush(); // can't safely handle failures here
             unsafe {
                 ffi::duckdb_appender_close(self.app);
                 ffi::duckdb_appender_destroy(&mut self.app);
@@ -251,6 +252,26 @@ mod test {
 
         let val = db.query_row("SELECT x FROM foo where x=?", [d], |row| <(i32,)>::try_from(row))?;
         assert_eq!(val, (d.as_micros() as i32,));
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_error() -> Result<(), crate::Error> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute(
+            r"CREATE TABLE foo (
+            foobar TEXT,
+            foobar_split TEXT[] AS (split(trim(foobar), ','))
+            );",
+            [],
+        )?;
+        let mut appender = conn.appender("foo")?;
+        match appender.append_row(["foo"]) {
+            Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
+                assert_eq!(msg, "Call to EndRow before all rows have been appended to!")
+            }
+            _ => panic!("expected error"),
+        }
         Ok(())
     }
 }
