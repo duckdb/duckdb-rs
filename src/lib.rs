@@ -546,6 +546,7 @@ impl Connection {
     /// Creates a new connection to the already-opened database.
     pub fn try_clone(&self) -> Result<Self> {
         let inner = self.db.borrow().try_clone()?;
+
         Ok(Connection {
             db: RefCell::new(inner),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
@@ -1000,6 +1001,40 @@ mod test {
             cloned_con.close().unwrap();
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_clone_after_close() {
+        // Additional querying test to make sure our connections are still
+        // usable. The original crash would happen without doing any queries.
+        fn assert_can_query(conn: &Connection) {
+            conn.execute("INSERT INTO test (c1) VALUES (1)", []).expect("insert");
+        }
+
+        // 1. Open owned connection
+        let owned = checked_memory_handle();
+        owned
+            .execute_batch("create table test (c1 bigint)")
+            .expect("create table");
+        assert_can_query(&owned);
+
+        // 2. Create a first clone from owned
+        let clone1 = owned.try_clone().expect("first clone");
+        assert_can_query(&owned);
+
+        // 3. Close owned connection
+        drop(owned);
+        assert_can_query(&clone1);
+
+        // 4. Create a second clone from the first clone. Crashes on the inner
+        //    `duckdb_connect` with a segmentation fault.
+        let clone2 = clone1.try_clone().expect("second clone");
+        assert_can_query(&clone1);
+        assert_can_query(&clone2);
+
+        // 5. Small additional test
+        drop(clone1);
+        assert_can_query(&clone2);
     }
 
     mod query_and_then_tests {
