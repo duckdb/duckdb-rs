@@ -36,6 +36,9 @@ impl Appender<'_> {
         }
 
         let mut data_chunk = DataChunk::new(&logical_type);
+        if record_batch.num_rows() > data_chunk.len() {
+            data_chunk.set_len(record_batch.num_rows());
+        }
         record_batch_to_duckdb_data_chunk(&record_batch, &mut data_chunk).map_err(|_op| Error::AppendError)?;
 
         let rc = unsafe { duckdb_append_data_chunk(self.app, data_chunk.get_ptr()) };
@@ -47,7 +50,7 @@ impl Appender<'_> {
 mod test {
     use crate::{Connection, Result};
     use arrow::{
-        array::{Int8Array, StringArray},
+        array::{Int32Array, Int8Array, StringArray},
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
@@ -77,6 +80,26 @@ mod test {
         let mut stmt = db.prepare("SELECT id, area,name  FROM foo")?;
         let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
         assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_record_batch_large() -> Result<()> {
+        let record_count = usize::pow(2, 16) + 1;
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INT)")?;
+        {
+            let id_array = Int32Array::from(vec![42; record_count]);
+            let schema = Schema::new(vec![Field::new("id", DataType::Int32, true)]);
+            let record_batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(id_array)]).unwrap();
+            let mut app = db.appender("foo")?;
+            app.append_record_batch(record_batch)?;
+        }
+        let count = db.query_row("SELECT COUNT(*) FROM foo", [], |row| {
+            let count: usize = row.get(0)?;
+            Ok(count)
+        })?;
+        assert_eq!(count, record_count);
         Ok(())
     }
 }
