@@ -669,7 +669,7 @@ mod test {
         db.register_table_function::<ArrowVTab>("arrow")?;
 
         // Roundtrip a record batch from Rust to DuckDB and back to Rust
-        let schema = Schema::new(vec![Field::new("a", input_array.data_type().clone(), false)]);
+        let schema = Schema::new(vec![Field::new("a", input_array.data_type().clone(), true)]);
 
         let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(input_array.clone())])?;
         let param = arrow_recordbatch_to_query_params(rb);
@@ -756,6 +756,22 @@ mod test {
             ])),
             None,
         ))?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_primitive_roundtrip_contains_nulls() -> Result<(), Box<dyn Error>> {
+        let mut builder = arrow::array::PrimitiveBuilder::<arrow::datatypes::Int32Type>::new();
+        builder.append_value(1);
+        builder.append_null();
+        builder.append_value(3);
+        builder.append_null();
+        builder.append_null();
+        builder.append_value(6);
+        let array = builder.finish();
+
+        check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
         Ok(())
     }
