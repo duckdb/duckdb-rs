@@ -197,7 +197,10 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<d
     } else if let DataType::LargeList(child) = data_type {
         Ok(LogicalType::list(&to_duckdb_logical_type(child.data_type())?))
     } else if let DataType::FixedSizeList(child, array_size) = data_type {
-        Ok(LogicalType::array(&to_duckdb_logical_type(child.data_type())?, *array_size as u64))
+        Ok(LogicalType::array(
+            &to_duckdb_logical_type(child.data_type())?,
+            *array_size as u64,
+        ))
     } else {
         Err(
             format!("Unsupported data type: {data_type}, please file an issue https://github.com/wangfenjin/duckdb-rs")
