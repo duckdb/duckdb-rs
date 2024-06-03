@@ -1,7 +1,7 @@
 use std::{convert, sync::Arc};
 
 use super::{Error, Result, Statement};
-use crate::types::{self, EnumType, FromSql, FromSqlError, ValueRef};
+use crate::types::{self, EnumType, FromSql, FromSqlError, ListType, ValueRef};
 
 use arrow::array::DictionaryArray;
 use arrow::{
@@ -570,22 +570,6 @@ impl<'stmt> Row<'stmt> {
                 _ => unimplemented!("{:?}", unit),
             },
             // TODO: support more data types
-            // DataType::List(_) => make_string_from_list!(column, row),
-            // DataType::Dictionary(index_type, _value_type) => match **index_type {
-            //     DataType::Int8 => dict_array_value_to_string::<Int8Type>(column, row),
-            //     DataType::Int16 => dict_array_value_to_string::<Int16Type>(column, row),
-            //     DataType::Int32 => dict_array_value_to_string::<Int32Type>(column, row),
-            //     DataType::Int64 => dict_array_value_to_string::<Int64Type>(column, row),
-            //     DataType::UInt8 => dict_array_value_to_string::<UInt8Type>(column, row),
-            //     DataType::UInt16 => dict_array_value_to_string::<UInt16Type>(column, row),
-            //     DataType::UInt32 => dict_array_value_to_string::<UInt32Type>(column, row),
-            //     DataType::UInt64 => dict_array_value_to_string::<UInt64Type>(column, row),
-            //     _ => Err(ArrowError::InvalidArgumentError(format!(
-            //         "Pretty printing not supported for {:?} due to index type",
-            //         column.data_type()
-            //     ))),
-            // },
-
             // NOTE: DataTypes not supported by duckdb
             // DataType::Date64 => make_string_date!(array::Date64Array, column, row),
             // DataType::Time32(unit) if *unit == TimeUnit::Second => {
@@ -597,10 +581,15 @@ impl<'stmt> Row<'stmt> {
             // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
             //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
-            DataType::List(_data) => {
+            DataType::LargeList(..) => {
+                let arr = column.as_any().downcast_ref::<array::LargeListArray>().unwrap();
+
+                ValueRef::List(ListType::Large(arr), row)
+            }
+            DataType::List(..) => {
                 let arr = column.as_any().downcast_ref::<ListArray>().unwrap();
 
-                ValueRef::List(arr, row)
+                ValueRef::List(ListType::Regular(arr), row)
             }
             DataType::Dictionary(key_type, ..) => {
                 let column = column.as_any();
