@@ -141,7 +141,7 @@ openssl-sys = {}
 openssl-sys crate build failed: no supported version of OpenSSL found.
 
 Ways to fix it:
-- Use the `vendored` feature of openssl-sys crate to build OpenSSL from source.
+- Use the `openssl_vendored` feature of libduckdb-sys crate to build OpenSSL from source.
 - Use Homebrew to install the `openssl` package.
 
 ",
