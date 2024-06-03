@@ -138,6 +138,8 @@ mod build_bundled {
 
         cfg.include(lib_name);
 
+        // Note: dont move this, the link order is important and we need to make
+        // sure we link openssl after duckdb
         #[cfg(feature = "httpfs")]
         {
             if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
