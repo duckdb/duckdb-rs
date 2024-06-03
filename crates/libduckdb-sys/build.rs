@@ -140,6 +140,14 @@ mod build_bundled {
 
         cfg.includes(include_dirs.iter().map(|x| format!("{}/{}", lib_name, x)));
 
+        #[cfg(feature = "httpfs")]
+        {
+            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
+                cfg.include(openssl_include_dir);
+            }
+            add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
+        }
+
         for f in cpp_files {
             cfg.file(f);
         }
@@ -155,15 +163,6 @@ mod build_bundled {
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
         }
-
-        #[cfg(feature = "httpfs")]
-        {
-            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
-                cfg.include(openssl_include_dir);
-            }
-            add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
-        }
-
         cfg.compile(lib_name);
         println!("cargo:lib_dir={out_dir}");
     }
