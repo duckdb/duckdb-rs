@@ -71,7 +71,7 @@ pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     to_sql::{ToSql, ToSqlOutput},
     value::Value,
-    value_ref::{EnumType, TimeUnit, ValueRef},
+    value_ref::{EnumType, ListType, TimeUnit, ValueRef},
 };
 
 use arrow::datatypes::DataType;
@@ -181,14 +181,12 @@ impl From<&DataType> for Type {
             DataType::Binary => Self::Blob,
             // DataType::FixedSizeBinary(_) => Self::FixedSizeBinary,
             // DataType::LargeBinary => Self::LargeBinary,
-            DataType::Utf8 => Self::Text,
-            // DataType::LargeUtf8 => Self::LargeUtf8,
+            DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
             DataType::List(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
             // DataType::FixedSizeList(field, size) => Self::Array,
-            // DataType::LargeList(_) => Self::LargeList,
+            DataType::LargeList(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
             // DataType::Struct(inner) => Self::Struct,
             // DataType::Union(_, _) => Self::Union,
-            // DataType::Dictionary(_, _) => Self::Enum,
             DataType::Decimal128(..) => Self::Decimal,
             DataType::Decimal256(..) => Self::Decimal,
             // DataType::Map(field, ..) => Self::Map,

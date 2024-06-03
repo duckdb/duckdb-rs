@@ -5,7 +5,7 @@ use crate::Row;
 use rust_decimal::prelude::*;
 
 use arrow::{
-    array::{Array, DictionaryArray, ListArray},
+    array::{Array, ArrayRef, DictionaryArray, LargeListArray, ListArray},
     datatypes::{UInt16Type, UInt32Type, UInt8Type},
 };
 
@@ -77,9 +77,18 @@ pub enum ValueRef<'a> {
         nanos: i64,
     },
     /// The value is a list
-    List(&'a ListArray, usize),
+    List(ListType<'a>, usize),
     /// The value is an enum
     Enum(EnumType<'a>, usize),
+}
+
+/// Wrapper type for different list sizes
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum ListType<'a> {
+    /// The underlying list is a `ListArray`
+    Regular(&'a ListArray),
+    /// The underlying list is a `LargeListArray`
+    Large(&'a LargeListArray),
 }
 
 /// Wrapper type for different enum sizes
@@ -118,7 +127,10 @@ impl ValueRef<'_> {
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
             ValueRef::Interval { .. } => Type::Interval,
-            ValueRef::List(arr, _) => arr.data_type().into(),
+            ValueRef::List(arr, _) => match arr {
+                ListType::Large(arr) => arr.data_type().into(),
+                ListType::Regular(arr) => arr.data_type().into(),
+            },
             ValueRef::Enum(..) => Type::Enum,
         }
     }
@@ -179,14 +191,26 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Date32(d) => Value::Date32(d),
             ValueRef::Time64(t, d) => Value::Time64(t, d),
             ValueRef::Interval { months, days, nanos } => Value::Interval { months, days, nanos },
-            ValueRef::List(items, idx) => {
-                let offsets = items.offsets();
-                let range = offsets[idx]..offsets[idx + 1];
-                let map: Vec<Value> = range
-                    .map(|row| Row::value_ref_internal(row.try_into().unwrap(), idx, items.values()).to_owned())
-                    .collect();
-                Value::List(map)
-            }
+            ValueRef::List(items, idx) => match items {
+                ListType::Regular(items) => {
+                    let offsets = items.offsets();
+                    from_list(
+                        offsets[idx].try_into().unwrap(),
+                        offsets[idx + 1].try_into().unwrap(),
+                        idx,
+                        items.values(),
+                    )
+                }
+                ListType::Large(items) => {
+                    let offsets = items.offsets();
+                    from_list(
+                        offsets[idx].try_into().unwrap(),
+                        offsets[idx + 1].try_into().unwrap(),
+                        idx,
+                        items.values(),
+                    )
+                }
+            },
             ValueRef::Enum(items, idx) => {
                 let value = Row::value_ref_internal(
                     idx,
@@ -207,6 +231,14 @@ impl From<ValueRef<'_>> for Value {
             }
         }
     }
+}
+
+fn from_list(start: usize, end: usize, idx: usize, values: &ArrayRef) -> Value {
+    Value::List(
+        (start..end)
+            .map(|row| Row::value_ref_internal(row, idx, values).to_owned())
+            .collect(),
+    )
 }
 
 impl<'a> From<&'a str> for ValueRef<'a> {
