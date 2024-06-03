@@ -182,6 +182,15 @@ impl LogicalType {
         }
     }
 
+    /// Creates an array type from its child type.
+    pub fn array(child_type: &LogicalType, array_size: u64) -> Self {
+        unsafe {
+            Self {
+                ptr: duckdb_create_array_type(child_type.ptr, array_size),
+            }
+        }
+    }
+
     /// Creates a decimal type from its `width` and `scale`.
     pub fn decimal(width: u8, scale: u8) -> Self {
         unsafe {
