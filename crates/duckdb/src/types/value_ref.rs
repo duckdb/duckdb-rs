@@ -4,8 +4,10 @@ use crate::types::{FromSqlError, FromSqlResult};
 use crate::Row;
 use rust_decimal::prelude::*;
 
-use arrow::array::{Array, ArrayRef, DictionaryArray, LargeListArray, ListArray};
-use arrow::datatypes::{UInt16Type, UInt32Type, UInt8Type};
+use arrow::{
+    array::{Array, ArrayRef, DictionaryArray, LargeListArray, ListArray},
+    datatypes::{UInt16Type, UInt32Type, UInt8Type},
+};
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
 /// Copy from arrow::datatypes::TimeUnit

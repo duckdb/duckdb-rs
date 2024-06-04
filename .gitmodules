@@ -1,4 +1,4 @@
-[submodule "libduckdb-sys/duckdb-sources"]
-	path = libduckdb-sys/duckdb-sources
+[submodule "crates/libduckdb-sys/duckdb-sources"]
+	path = crates/libduckdb-sys/duckdb-sources
 	url = https://github.com/duckdb/duckdb
 	update = none

@@ -566,7 +566,7 @@ impl fmt::Debug for Connection {
 }
 
 #[cfg(doctest)]
-doc_comment::doctest!("../README.md");
+doc_comment::doctest!("../../../README.md");
 
 #[cfg(test)]
 mod test {

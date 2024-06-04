@@ -1,0 +1,42 @@
+[package]
+name = "libduckdb-sys"
+version = "0.10.2"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+readme.workspace = true
+build = "build.rs"
+categories = ["external-ffi-bindings", "database"]
+description = "Native bindings to the libduckdb library, C API"
+exclude = ["duckdb-sources"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["vcpkg", "pkg-config"]
+bundled = ["cc"]
+buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
+
+httpfs = ["bundled"]
+json = ["bundled"]
+parquet = ["bundled"]
+extensions-full = ["httpfs", "json", "parquet"]
+
+[dependencies]
+
+[build-dependencies]
+autocfg = { workspace = true }
+bindgen = { workspace = true, features = ["runtime"], optional = true }
+flate2 = { workspace = true }
+pkg-config = { workspace = true, optional = true }
+cc = { workspace = true, features = ["parallel"], optional = true }
+vcpkg = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tar = { workspace = true }
+
+[dev-dependencies]
+arrow = { workspace = true, features = ["ffi"] }

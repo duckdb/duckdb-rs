@@ -33,18 +33,15 @@ mod tests {
         ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
     };
 
-    unsafe fn print_int_result(mut result: duckdb_result) {
-        for i in 0..duckdb_column_count(&mut result) {
-            print!(
-                "{} ",
-                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
-            );
+    unsafe fn print_int_result(result: &mut duckdb_result) {
+        for i in 0..duckdb_column_count(result) {
+            print!("{} ", CStr::from_ptr(duckdb_column_name(result, i)).to_string_lossy());
         }
         println!();
         // print the data of the result
-        for row_idx in 0..duckdb_row_count(&mut result) {
-            for col_idx in 0..duckdb_column_count(&mut result) {
-                let val = duckdb_value_int32(&mut result, col_idx, row_idx);
+        for row_idx in 0..duckdb_row_count(result) {
+            for col_idx in 0..duckdb_column_count(result) {
+                let val = duckdb_value_int32(result, col_idx, row_idx);
                 print!("{val} ");
             }
             println!();
@@ -162,7 +159,7 @@ mod tests {
             }
             assert_eq!(duckdb_row_count(&mut result), 3);
             assert_eq!(duckdb_column_count(&mut result), 2);
-            print_int_result(result);
+            print_int_result(&mut result);
             duckdb_destroy_result(&mut result);
 
             // test prepare
@@ -179,7 +176,7 @@ mod tests {
             }
             assert_eq!(duckdb_row_count(&mut result), 2);
             assert_eq!(duckdb_column_count(&mut result), 2);
-            print_int_result(result);
+            print_int_result(&mut result);
             duckdb_destroy_result(&mut result);
 
             // test bind params again
@@ -191,7 +188,7 @@ mod tests {
             }
             assert_eq!(duckdb_row_count(&mut result), 1);
             assert_eq!(duckdb_column_count(&mut result), 2);
-            print_int_result(result);
+            print_int_result(&mut result);
             duckdb_destroy_result(&mut result);
             duckdb_destroy_prepare(&mut stmt);
 
