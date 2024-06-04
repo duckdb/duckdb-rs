@@ -183,7 +183,7 @@ fn postprocess(include_dirs: &[PathBuf]) -> Version {
         }
     }
     #[cfg(feature = "openssl_bindgen")]
-    run_bindgen::run(&include_dirs);
+    run_bindgen::run(include_dirs);
 
     version
 }
