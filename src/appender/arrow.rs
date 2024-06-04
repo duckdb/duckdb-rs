@@ -64,7 +64,7 @@ mod test {
             let schema = Schema::new(vec![
                 Field::new("id", DataType::Int8, true),
                 Field::new("area", DataType::Int8, true),
-                Field::new("area", DataType::Utf8, true),
+                Field::new("name", DataType::Utf8, true),
             ]);
             let record_batch = RecordBatch::try_new(
                 Arc::new(schema),
@@ -74,7 +74,7 @@ mod test {
             let mut app = db.appender("foo")?;
             app.append_record_batch(record_batch)?;
         }
-        let mut stmt = db.prepare("SELECT id, area,name  FROM foo")?;
+        let mut stmt = db.prepare("SELECT id, area, name FROM foo")?;
         let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
         assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 5);
         Ok(())
