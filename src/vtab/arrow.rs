@@ -913,7 +913,7 @@ mod test {
 
     #[test]
     fn test_arrow_binary() {
-        let byte_array = BinaryArray::from_iter_values(vec![b"test"].iter());
+        let byte_array = BinaryArray::from_iter_values([b"test"].iter());
         let arc: ArrayRef = Arc::new(byte_array);
         let batch = RecordBatch::try_from_iter(vec![("x", arc)]).unwrap();
 
