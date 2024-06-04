@@ -1,6 +1,6 @@
 [package]
 name = "libduckdb-sys"
-version.workspace = true
+version = "0.10.2"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

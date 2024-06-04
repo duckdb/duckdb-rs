@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version.workspace = true
+version = "0.10.2"
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
