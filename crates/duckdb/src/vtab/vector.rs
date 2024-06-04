@@ -1,5 +1,7 @@
 use std::{any::Any, ffi::CString, slice};
 
+use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child};
+
 use super::LogicalType;
 use crate::ffi::{
     duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
@@ -170,6 +172,42 @@ impl ListVector {
     }
 }
 
+/// A array vector. (fixed-size list)
+pub struct ArrayVector {
+    /// ArrayVector does not own the vector pointer.
+    ptr: duckdb_vector,
+}
+
+impl From<duckdb_vector> for ArrayVector {
+    fn from(ptr: duckdb_vector) -> Self {
+        Self { ptr }
+    }
+}
+
+impl ArrayVector {
+    /// Get the logical type of this ArrayVector.
+    pub fn logical_type(&self) -> LogicalType {
+        LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
+    }
+
+    pub fn get_array_size(&self) -> u64 {
+        let ty = self.logical_type();
+        unsafe { duckdb_array_type_array_size(ty.ptr) as u64 }
+    }
+
+    /// Returns the child vector.
+    /// capacity should be a multiple of the array size.
+    // TODO: not ideal interface. Where should we keep count.
+    pub fn child(&self, capacity: usize) -> FlatVector {
+        FlatVector::with_capacity(unsafe { duckdb_array_vector_get_child(self.ptr) }, capacity)
+    }
+
+    /// Set primitive data to the child node.
+    pub fn set_child<T: Copy>(&self, data: &[T]) {
+        self.child(data.len()).copy(data);
+    }
+}
+
 /// A struct vector.
 pub struct StructVector {
     /// ListVector does not own the vector pointer.
@@ -196,6 +234,11 @@ impl StructVector {
     /// Take the child as [ListVector].
     pub fn list_vector_child(&self, idx: usize) -> ListVector {
         ListVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
+    }
+
+    /// Take the child as [ArrayVector].
+    pub fn array_vector_child(&self, idx: usize) -> ArrayVector {
+        ArrayVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
     }
 
     /// Get the logical type of this struct vector.
