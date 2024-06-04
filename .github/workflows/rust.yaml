@@ -151,4 +151,4 @@ jobs:
           path: './'
           args: --allow-dirty --all-features
           dry-run: true
-          ignore-unpublished-change: true
+          ignore-unpublished-changes: true
