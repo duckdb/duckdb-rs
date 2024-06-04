@@ -26,7 +26,7 @@ jobs:
           path: './'
           args: --no-verify --allow-dirty --all-features
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          ignore-published: true
+          ignore-unpublished-change: true
 
       # create release
       - name: "Build Changelog"
