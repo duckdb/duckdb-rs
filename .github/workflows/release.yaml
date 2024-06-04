@@ -20,7 +20,7 @@ jobs:
           components: 'rustfmt, clippy'
 
       # cargo publish
-      - uses: katyo/publish-crates@main
+      - uses: wangfenjin/publish-crates@main
         name: cargo publish
         with:
           path: './'
