@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = [
+    "crates/duckdb",
+    "crates/libduckdb-sys",
+    "crates/duckdb-loadable-macros"
+]
 
 [workspace.package]
 version = "0.10.2"
