@@ -22,7 +22,7 @@ impl Connection {
     ///         stmt.execute(["Joe Smith"])?;
     ///     }
     ///     {
-    ///         // This will return the same underlying SQLite statement handle without
+    ///         // This will return the same underlying DuckDB statement handle without
     ///         // having to prepare it again.
     ///         let mut stmt = conn.prepare_cached("INSERT INTO People (name) VALUES (?)")?;
     ///         stmt.execute(["Bob Jones"])?;
@@ -34,7 +34,7 @@ impl Connection {
     /// # Failure
     ///
     /// Will return `Err` if `sql` cannot be converted to a C-compatible string
-    /// or if the underlying SQLite call fails.
+    /// or if the underlying DuckDB call fails.
     #[inline]
     pub fn prepare_cached(&self, sql: &str) -> Result<CachedStatement<'_>> {
         self.cache.get(self, sql)
@@ -135,7 +135,7 @@ impl StatementCache {
     // # Failure
     //
     // Will return `Err` if no cached statement can be found and the underlying
-    // SQLite prepare call fails.
+    // DuckDB prepare call fails.
     fn get<'conn>(&'conn self, conn: &'conn Connection, sql: &str) -> Result<CachedStatement<'conn>> {
         let trimmed = sql.trim();
         let mut cache = self.0.borrow_mut();

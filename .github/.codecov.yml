@@ -1,6 +1,6 @@
 ignore:
-  - "libduckdb-sys/duckdb"
-  - "libduckdb-sys/src/bindgen_bundled_version.rs"
+  - "crates/libduckdb-sys/duckdb"
+  - "crates/libduckdb-sys/src/bindgen_bundled_version.rs"
 coverage:
   status:
     project:
