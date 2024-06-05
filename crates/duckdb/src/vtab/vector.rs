@@ -7,8 +7,9 @@ use crate::ffi::{
     duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
     duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name,
     duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
-    duckdb_vector_assign_string_element, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type,
-    duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_size,
+    duckdb_vector_assign_string_element, duckdb_vector_assign_string_element_len,
+    duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
+    duckdb_vector_get_validity, duckdb_vector_size,
 };
 
 /// Vector trait.
@@ -109,6 +110,21 @@ impl Inserter<&str> for FlatVector {
         let cstr = CString::new(value.as_bytes()).unwrap();
         unsafe {
             duckdb_vector_assign_string_element(self.ptr, index as u64, cstr.as_ptr());
+        }
+    }
+}
+
+impl Inserter<&[u8]> for FlatVector {
+    fn insert(&self, index: usize, value: &[u8]) {
+        let value_size = value.len();
+        unsafe {
+            // This function also works for binary data. https://duckdb.org/docs/api/c/api#duckdb_vector_assign_string_element_len
+            duckdb_vector_assign_string_element_len(
+                self.ptr,
+                index as u64,
+                value.as_ptr() as *const ::std::os::raw::c_char,
+                value_size as u64,
+            );
         }
     }
 }

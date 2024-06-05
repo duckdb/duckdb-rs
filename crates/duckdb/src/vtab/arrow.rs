@@ -6,9 +6,9 @@ use std::ptr::null_mut;
 
 use crate::vtab::vector::Inserter;
 use arrow::array::{
-    as_boolean_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array, as_struct_array, Array,
-    ArrayData, AsArray, BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray, OffsetSizeTrait,
-    PrimitiveArray, StringArray, StructArray,
+    as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array,
+    as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array, FixedSizeListArray,
+    GenericListArray, OffsetSizeTrait, PrimitiveArray, StringArray, StructArray,
 };
 
 use arrow::{
@@ -230,6 +230,9 @@ pub fn record_batch_to_duckdb_data_chunk(
             DataType::Utf8 => {
                 string_array_to_vector(as_string_array(col.as_ref()), &mut chunk.flat_vector(i));
             }
+            DataType::Binary => {
+                binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector(i));
+            }
             DataType::List(_) => {
                 list_array_to_vector(as_list_array(col.as_ref()), &mut chunk.list_vector(i))?;
             }
@@ -430,6 +433,15 @@ fn string_array_to_vector(array: &StringArray, out: &mut FlatVector) {
     }
 }
 
+fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
+    assert!(array.len() <= out.capacity());
+
+    for i in 0..array.len() {
+        let s = array.value(i);
+        out.insert(i, s);
+    }
+}
+
 fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     array: &GenericListArray<O>,
     out: &mut ListVector,
@@ -442,6 +454,9 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
         }
         DataType::Utf8 => {
             string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
+        }
+        DataType::Binary => {
+            binary_array_to_vector(as_generic_binary_array(value_array.as_ref()), &mut child);
         }
         _ => {
             return Err("Nested list is not supported yet.".into());
@@ -469,6 +484,9 @@ fn fixed_size_list_array_to_vector(
         DataType::Utf8 => {
             string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
         }
+        DataType::Binary => {
+            binary_array_to_vector(as_generic_binary_array(value_array.as_ref()), &mut child);
+        }
         _ => {
             return Err("Nested array is not supported yet.".into());
         }
@@ -492,6 +510,9 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector) -> Result
             }
             DataType::Utf8 => {
                 string_array_to_vector(as_string_array(column.as_ref()), &mut out.child(i));
+            }
+            DataType::Binary => {
+                binary_array_to_vector(as_generic_binary_array(column.as_ref()), &mut out.child(i));
             }
             DataType::List(_) => {
                 list_array_to_vector(as_list_array(column.as_ref()), &mut out.list_vector_child(i))?;
@@ -560,10 +581,10 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, ArrayRef, AsArray, Date32Array, Date64Array, Decimal256Array, FixedSizeListArray, Float64Array,
-            GenericListArray, Int32Array, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray, StructArray,
-            Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
-            TimestampNanosecondArray, TimestampSecondArray,
+            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal256Array, FixedSizeListArray,
+            Float64Array, GenericListArray, Int32Array, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray,
+            StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
+            TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{i256, ArrowPrimitiveType, DataType, Field, Fields, Schema},
@@ -923,5 +944,24 @@ mod test {
                 Some("Invalid Input Error: Data type \"Decimal256(76, 10)\" not yet supported by ArrowVTab".to_owned())
             )
         );
+    }
+
+    #[test]
+    fn test_arrow_binary() {
+        let byte_array = BinaryArray::from_iter_values([b"test"].iter());
+        let arc: ArrayRef = Arc::new(byte_array);
+        let batch = RecordBatch::try_from_iter(vec![("x", arc)]).unwrap();
+
+        let db = Connection::open_in_memory().unwrap();
+        db.register_table_function::<ArrowVTab>("arrow").unwrap();
+
+        let mut stmt = db.prepare("SELECT * FROM arrow(?, ?)").unwrap();
+
+        let mut arr = stmt.query_arrow(arrow_recordbatch_to_query_params(batch)).unwrap();
+        let rb = arr.next().expect("no record batch");
+
+        let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
+        assert_eq!(column.len(), 1);
+        assert_eq!(column.value(0), b"test");
     }
 }
