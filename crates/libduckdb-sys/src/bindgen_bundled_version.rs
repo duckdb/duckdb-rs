@@ -4,253 +4,642 @@ pub const DUCKDB_API_0_3_1: u32 = 1;
 pub const DUCKDB_API_0_3_2: u32 = 2;
 pub const DUCKDB_API_LATEST: u32 = 2;
 pub const DUCKDB_API_VERSION: u32 = 2;
+pub const __bool_true_false_are_defined: u32 = 1;
 pub const true_: u32 = 1;
 pub const false_: u32 = 0;
-pub const __bool_true_false_are_defined: u32 = 1;
-pub const _STDINT_H: u32 = 1;
-pub const _FEATURES_H: u32 = 1;
-pub const _DEFAULT_SOURCE: u32 = 1;
-pub const __GLIBC_USE_ISOC2X: u32 = 0;
-pub const __USE_ISOC11: u32 = 1;
-pub const __USE_ISOC99: u32 = 1;
-pub const __USE_ISOC95: u32 = 1;
-pub const __USE_POSIX_IMPLICITLY: u32 = 1;
-pub const _POSIX_SOURCE: u32 = 1;
-pub const _POSIX_C_SOURCE: u32 = 200809;
-pub const __USE_POSIX: u32 = 1;
-pub const __USE_POSIX2: u32 = 1;
-pub const __USE_POSIX199309: u32 = 1;
-pub const __USE_POSIX199506: u32 = 1;
-pub const __USE_XOPEN2K: u32 = 1;
-pub const __USE_XOPEN2K8: u32 = 1;
-pub const _ATFILE_SOURCE: u32 = 1;
 pub const __WORDSIZE: u32 = 64;
-pub const __WORDSIZE_TIME64_COMPAT32: u32 = 1;
-pub const __SYSCALL_WORDSIZE: u32 = 64;
-pub const __TIMESIZE: u32 = 64;
-pub const __USE_MISC: u32 = 1;
-pub const __USE_ATFILE: u32 = 1;
-pub const __USE_FORTIFY_LEVEL: u32 = 0;
-pub const __GLIBC_USE_DEPRECATED_GETS: u32 = 0;
-pub const __GLIBC_USE_DEPRECATED_SCANF: u32 = 0;
-pub const _STDC_PREDEF_H: u32 = 1;
-pub const __STDC_IEC_559__: u32 = 1;
-pub const __STDC_IEC_60559_BFP__: u32 = 201404;
-pub const __STDC_IEC_559_COMPLEX__: u32 = 1;
-pub const __STDC_IEC_60559_COMPLEX__: u32 = 201404;
-pub const __STDC_ISO_10646__: u32 = 201706;
-pub const __GNU_LIBRARY__: u32 = 6;
-pub const __GLIBC__: u32 = 2;
-pub const __GLIBC_MINOR__: u32 = 35;
-pub const _SYS_CDEFS_H: u32 = 1;
-pub const __glibc_c99_flexarr_available: u32 = 1;
-pub const __LDOUBLE_REDIRECTS_TO_FLOAT128_ABI: u32 = 0;
-pub const __HAVE_GENERIC_SELECTION: u32 = 1;
-pub const __GLIBC_USE_LIB_EXT2: u32 = 0;
-pub const __GLIBC_USE_IEC_60559_BFP_EXT: u32 = 0;
-pub const __GLIBC_USE_IEC_60559_BFP_EXT_C2X: u32 = 0;
-pub const __GLIBC_USE_IEC_60559_EXT: u32 = 0;
-pub const __GLIBC_USE_IEC_60559_FUNCS_EXT: u32 = 0;
-pub const __GLIBC_USE_IEC_60559_FUNCS_EXT_C2X: u32 = 0;
-pub const __GLIBC_USE_IEC_60559_TYPES_EXT: u32 = 0;
-pub const _BITS_TYPES_H: u32 = 1;
-pub const _BITS_TYPESIZES_H: u32 = 1;
-pub const __OFF_T_MATCHES_OFF64_T: u32 = 1;
-pub const __INO_T_MATCHES_INO64_T: u32 = 1;
-pub const __RLIM_T_MATCHES_RLIM64_T: u32 = 1;
-pub const __STATFS_MATCHES_STATFS64: u32 = 1;
-pub const __KERNEL_OLD_TIMEVAL_MATCHES_TIMEVAL64: u32 = 1;
-pub const __FD_SETSIZE: u32 = 1024;
-pub const _BITS_TIME64_H: u32 = 1;
-pub const _BITS_WCHAR_H: u32 = 1;
-pub const _BITS_STDINT_INTN_H: u32 = 1;
-pub const _BITS_STDINT_UINTN_H: u32 = 1;
-pub const INT8_MIN: i32 = -128;
-pub const INT16_MIN: i32 = -32768;
-pub const INT32_MIN: i32 = -2147483648;
+pub const __DARWIN_ONLY_64_BIT_INO_T: u32 = 1;
+pub const __DARWIN_ONLY_UNIX_CONFORMANCE: u32 = 1;
+pub const __DARWIN_ONLY_VERS_1050: u32 = 1;
+pub const __DARWIN_UNIX03: u32 = 1;
+pub const __DARWIN_64_BIT_INO_T: u32 = 1;
+pub const __DARWIN_VERS_1050: u32 = 1;
+pub const __DARWIN_NON_CANCELABLE: u32 = 0;
+pub const __DARWIN_SUF_EXTSN: &[u8; 14] = b"$DARWIN_EXTSN\0";
+pub const __DARWIN_C_ANSI: u32 = 4096;
+pub const __DARWIN_C_FULL: u32 = 900000;
+pub const __DARWIN_C_LEVEL: u32 = 900000;
+pub const __STDC_WANT_LIB_EXT1__: u32 = 1;
+pub const __DARWIN_NO_LONG_LONG: u32 = 0;
+pub const _DARWIN_FEATURE_64_BIT_INODE: u32 = 1;
+pub const _DARWIN_FEATURE_ONLY_64_BIT_INODE: u32 = 1;
+pub const _DARWIN_FEATURE_ONLY_VERS_1050: u32 = 1;
+pub const _DARWIN_FEATURE_ONLY_UNIX_CONFORMANCE: u32 = 1;
+pub const _DARWIN_FEATURE_UNIX_CONFORMANCE: u32 = 3;
+pub const __has_ptrcheck: u32 = 0;
+pub const __PTHREAD_SIZE__: u32 = 8176;
+pub const __PTHREAD_ATTR_SIZE__: u32 = 56;
+pub const __PTHREAD_MUTEXATTR_SIZE__: u32 = 8;
+pub const __PTHREAD_MUTEX_SIZE__: u32 = 56;
+pub const __PTHREAD_CONDATTR_SIZE__: u32 = 8;
+pub const __PTHREAD_COND_SIZE__: u32 = 40;
+pub const __PTHREAD_ONCE_SIZE__: u32 = 8;
+pub const __PTHREAD_RWLOCK_SIZE__: u32 = 192;
+pub const __PTHREAD_RWLOCKATTR_SIZE__: u32 = 16;
 pub const INT8_MAX: u32 = 127;
 pub const INT16_MAX: u32 = 32767;
 pub const INT32_MAX: u32 = 2147483647;
+pub const INT64_MAX: u64 = 9223372036854775807;
+pub const INT8_MIN: i32 = -128;
+pub const INT16_MIN: i32 = -32768;
+pub const INT32_MIN: i32 = -2147483648;
+pub const INT64_MIN: i64 = -9223372036854775808;
 pub const UINT8_MAX: u32 = 255;
 pub const UINT16_MAX: u32 = 65535;
 pub const UINT32_MAX: u32 = 4294967295;
+pub const UINT64_MAX: i32 = -1;
 pub const INT_LEAST8_MIN: i32 = -128;
 pub const INT_LEAST16_MIN: i32 = -32768;
 pub const INT_LEAST32_MIN: i32 = -2147483648;
+pub const INT_LEAST64_MIN: i64 = -9223372036854775808;
 pub const INT_LEAST8_MAX: u32 = 127;
 pub const INT_LEAST16_MAX: u32 = 32767;
 pub const INT_LEAST32_MAX: u32 = 2147483647;
+pub const INT_LEAST64_MAX: u64 = 9223372036854775807;
 pub const UINT_LEAST8_MAX: u32 = 255;
 pub const UINT_LEAST16_MAX: u32 = 65535;
 pub const UINT_LEAST32_MAX: u32 = 4294967295;
+pub const UINT_LEAST64_MAX: i32 = -1;
 pub const INT_FAST8_MIN: i32 = -128;
-pub const INT_FAST16_MIN: i64 = -9223372036854775808;
-pub const INT_FAST32_MIN: i64 = -9223372036854775808;
+pub const INT_FAST16_MIN: i32 = -32768;
+pub const INT_FAST32_MIN: i32 = -2147483648;
+pub const INT_FAST64_MIN: i64 = -9223372036854775808;
 pub const INT_FAST8_MAX: u32 = 127;
-pub const INT_FAST16_MAX: u64 = 9223372036854775807;
-pub const INT_FAST32_MAX: u64 = 9223372036854775807;
+pub const INT_FAST16_MAX: u32 = 32767;
+pub const INT_FAST32_MAX: u32 = 2147483647;
+pub const INT_FAST64_MAX: u64 = 9223372036854775807;
 pub const UINT_FAST8_MAX: u32 = 255;
-pub const UINT_FAST16_MAX: i32 = -1;
-pub const UINT_FAST32_MAX: i32 = -1;
-pub const INTPTR_MIN: i64 = -9223372036854775808;
+pub const UINT_FAST16_MAX: u32 = 65535;
+pub const UINT_FAST32_MAX: u32 = 4294967295;
+pub const UINT_FAST64_MAX: i32 = -1;
 pub const INTPTR_MAX: u64 = 9223372036854775807;
+pub const INTPTR_MIN: i64 = -9223372036854775808;
 pub const UINTPTR_MAX: i32 = -1;
-pub const PTRDIFF_MIN: i64 = -9223372036854775808;
-pub const PTRDIFF_MAX: u64 = 9223372036854775807;
+pub const SIZE_MAX: i32 = -1;
+pub const RSIZE_MAX: i32 = -1;
+pub const WINT_MIN: i32 = -2147483648;
+pub const WINT_MAX: u32 = 2147483647;
 pub const SIG_ATOMIC_MIN: i32 = -2147483648;
 pub const SIG_ATOMIC_MAX: u32 = 2147483647;
-pub const SIZE_MAX: i32 = -1;
-pub const WINT_MIN: u32 = 0;
-pub const WINT_MAX: u32 = 4294967295;
-pub type __u_char = ::std::os::raw::c_uchar;
-pub type __u_short = ::std::os::raw::c_ushort;
-pub type __u_int = ::std::os::raw::c_uint;
-pub type __u_long = ::std::os::raw::c_ulong;
+pub type int_least8_t = i8;
+pub type int_least16_t = i16;
+pub type int_least32_t = i32;
+pub type int_least64_t = i64;
+pub type uint_least8_t = u8;
+pub type uint_least16_t = u16;
+pub type uint_least32_t = u32;
+pub type uint_least64_t = u64;
+pub type int_fast8_t = i8;
+pub type int_fast16_t = i16;
+pub type int_fast32_t = i32;
+pub type int_fast64_t = i64;
+pub type uint_fast8_t = u8;
+pub type uint_fast16_t = u16;
+pub type uint_fast32_t = u32;
+pub type uint_fast64_t = u64;
 pub type __int8_t = ::std::os::raw::c_schar;
 pub type __uint8_t = ::std::os::raw::c_uchar;
 pub type __int16_t = ::std::os::raw::c_short;
 pub type __uint16_t = ::std::os::raw::c_ushort;
 pub type __int32_t = ::std::os::raw::c_int;
 pub type __uint32_t = ::std::os::raw::c_uint;
-pub type __int64_t = ::std::os::raw::c_long;
-pub type __uint64_t = ::std::os::raw::c_ulong;
-pub type __int_least8_t = __int8_t;
-pub type __uint_least8_t = __uint8_t;
-pub type __int_least16_t = __int16_t;
-pub type __uint_least16_t = __uint16_t;
-pub type __int_least32_t = __int32_t;
-pub type __uint_least32_t = __uint32_t;
-pub type __int_least64_t = __int64_t;
-pub type __uint_least64_t = __uint64_t;
-pub type __quad_t = ::std::os::raw::c_long;
-pub type __u_quad_t = ::std::os::raw::c_ulong;
-pub type __intmax_t = ::std::os::raw::c_long;
-pub type __uintmax_t = ::std::os::raw::c_ulong;
-pub type __dev_t = ::std::os::raw::c_ulong;
-pub type __uid_t = ::std::os::raw::c_uint;
-pub type __gid_t = ::std::os::raw::c_uint;
-pub type __ino_t = ::std::os::raw::c_ulong;
-pub type __ino64_t = ::std::os::raw::c_ulong;
-pub type __mode_t = ::std::os::raw::c_uint;
-pub type __nlink_t = ::std::os::raw::c_ulong;
-pub type __off_t = ::std::os::raw::c_long;
-pub type __off64_t = ::std::os::raw::c_long;
-pub type __pid_t = ::std::os::raw::c_int;
+pub type __int64_t = ::std::os::raw::c_longlong;
+pub type __uint64_t = ::std::os::raw::c_ulonglong;
+pub type __darwin_intptr_t = ::std::os::raw::c_long;
+pub type __darwin_natural_t = ::std::os::raw::c_uint;
+pub type __darwin_ct_rune_t = ::std::os::raw::c_int;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct __fsid_t {
-    pub __val: [::std::os::raw::c_int; 2usize],
+#[derive(Copy, Clone)]
+pub union __mbstate_t {
+    pub __mbstate8: [::std::os::raw::c_char; 128usize],
+    pub _mbstateL: ::std::os::raw::c_longlong,
 }
 #[test]
-fn bindgen_test_layout___fsid_t() {
-    const UNINIT: ::std::mem::MaybeUninit<__fsid_t> = ::std::mem::MaybeUninit::uninit();
+fn bindgen_test_layout___mbstate_t() {
+    const UNINIT: ::std::mem::MaybeUninit<__mbstate_t> = ::std::mem::MaybeUninit::uninit();
     let ptr = UNINIT.as_ptr();
     assert_eq!(
-        ::std::mem::size_of::<__fsid_t>(),
+        ::std::mem::size_of::<__mbstate_t>(),
+        128usize,
+        concat!("Size of: ", stringify!(__mbstate_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<__mbstate_t>(),
         8usize,
-        concat!("Size of: ", stringify!(__fsid_t))
+        concat!("Alignment of ", stringify!(__mbstate_t))
     );
     assert_eq!(
-        ::std::mem::align_of::<__fsid_t>(),
-        4usize,
-        concat!("Alignment of ", stringify!(__fsid_t))
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).__val) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).__mbstate8) as usize - ptr as usize },
         0usize,
-        concat!("Offset of field: ", stringify!(__fsid_t), "::", stringify!(__val))
+        concat!(
+            "Offset of field: ",
+            stringify!(__mbstate_t),
+            "::",
+            stringify!(__mbstate8)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr)._mbstateL) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(__mbstate_t),
+            "::",
+            stringify!(_mbstateL)
+        )
     );
 }
-pub type __clock_t = ::std::os::raw::c_long;
-pub type __rlim_t = ::std::os::raw::c_ulong;
-pub type __rlim64_t = ::std::os::raw::c_ulong;
-pub type __id_t = ::std::os::raw::c_uint;
-pub type __time_t = ::std::os::raw::c_long;
-pub type __useconds_t = ::std::os::raw::c_uint;
-pub type __suseconds_t = ::std::os::raw::c_long;
-pub type __suseconds64_t = ::std::os::raw::c_long;
-pub type __daddr_t = ::std::os::raw::c_int;
-pub type __key_t = ::std::os::raw::c_int;
-pub type __clockid_t = ::std::os::raw::c_int;
-pub type __timer_t = *mut ::std::os::raw::c_void;
-pub type __blksize_t = ::std::os::raw::c_long;
-pub type __blkcnt_t = ::std::os::raw::c_long;
-pub type __blkcnt64_t = ::std::os::raw::c_long;
-pub type __fsblkcnt_t = ::std::os::raw::c_ulong;
-pub type __fsblkcnt64_t = ::std::os::raw::c_ulong;
-pub type __fsfilcnt_t = ::std::os::raw::c_ulong;
-pub type __fsfilcnt64_t = ::std::os::raw::c_ulong;
-pub type __fsword_t = ::std::os::raw::c_long;
-pub type __ssize_t = ::std::os::raw::c_long;
-pub type __syscall_slong_t = ::std::os::raw::c_long;
-pub type __syscall_ulong_t = ::std::os::raw::c_ulong;
-pub type __loff_t = __off64_t;
-pub type __caddr_t = *mut ::std::os::raw::c_char;
-pub type __intptr_t = ::std::os::raw::c_long;
-pub type __socklen_t = ::std::os::raw::c_uint;
-pub type __sig_atomic_t = ::std::os::raw::c_int;
-pub type int_least8_t = __int_least8_t;
-pub type int_least16_t = __int_least16_t;
-pub type int_least32_t = __int_least32_t;
-pub type int_least64_t = __int_least64_t;
-pub type uint_least8_t = __uint_least8_t;
-pub type uint_least16_t = __uint_least16_t;
-pub type uint_least32_t = __uint_least32_t;
-pub type uint_least64_t = __uint_least64_t;
-pub type int_fast8_t = ::std::os::raw::c_schar;
-pub type int_fast16_t = ::std::os::raw::c_long;
-pub type int_fast32_t = ::std::os::raw::c_long;
-pub type int_fast64_t = ::std::os::raw::c_long;
-pub type uint_fast8_t = ::std::os::raw::c_uchar;
-pub type uint_fast16_t = ::std::os::raw::c_ulong;
-pub type uint_fast32_t = ::std::os::raw::c_ulong;
-pub type uint_fast64_t = ::std::os::raw::c_ulong;
-pub type intmax_t = __intmax_t;
-pub type uintmax_t = __uintmax_t;
-pub type wchar_t = ::std::os::raw::c_int;
+pub type __darwin_mbstate_t = __mbstate_t;
+pub type __darwin_ptrdiff_t = ::std::os::raw::c_long;
+pub type __darwin_size_t = ::std::os::raw::c_ulong;
+pub type __darwin_va_list = __builtin_va_list;
+pub type __darwin_wchar_t = ::std::os::raw::c_int;
+pub type __darwin_rune_t = __darwin_wchar_t;
+pub type __darwin_wint_t = ::std::os::raw::c_int;
+pub type __darwin_clock_t = ::std::os::raw::c_ulong;
+pub type __darwin_socklen_t = __uint32_t;
+pub type __darwin_ssize_t = ::std::os::raw::c_long;
+pub type __darwin_time_t = ::std::os::raw::c_long;
+pub type __darwin_blkcnt_t = __int64_t;
+pub type __darwin_blksize_t = __int32_t;
+pub type __darwin_dev_t = __int32_t;
+pub type __darwin_fsblkcnt_t = ::std::os::raw::c_uint;
+pub type __darwin_fsfilcnt_t = ::std::os::raw::c_uint;
+pub type __darwin_gid_t = __uint32_t;
+pub type __darwin_id_t = __uint32_t;
+pub type __darwin_ino64_t = __uint64_t;
+pub type __darwin_ino_t = __darwin_ino64_t;
+pub type __darwin_mach_port_name_t = __darwin_natural_t;
+pub type __darwin_mach_port_t = __darwin_mach_port_name_t;
+pub type __darwin_mode_t = __uint16_t;
+pub type __darwin_off_t = __int64_t;
+pub type __darwin_pid_t = __int32_t;
+pub type __darwin_sigset_t = __uint32_t;
+pub type __darwin_suseconds_t = __int32_t;
+pub type __darwin_uid_t = __uint32_t;
+pub type __darwin_useconds_t = __uint32_t;
+pub type __darwin_uuid_t = [::std::os::raw::c_uchar; 16usize];
+pub type __darwin_uuid_string_t = [::std::os::raw::c_char; 37usize];
 #[repr(C)]
-#[repr(align(16))]
 #[derive(Debug, Copy, Clone)]
-pub struct max_align_t {
-    pub __clang_max_align_nonce1: ::std::os::raw::c_longlong,
-    pub __bindgen_padding_0: u64,
-    pub __clang_max_align_nonce2: u128,
+pub struct __darwin_pthread_handler_rec {
+    pub __routine: ::std::option::Option<unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void)>,
+    pub __arg: *mut ::std::os::raw::c_void,
+    pub __next: *mut __darwin_pthread_handler_rec,
 }
 #[test]
-fn bindgen_test_layout_max_align_t() {
-    const UNINIT: ::std::mem::MaybeUninit<max_align_t> = ::std::mem::MaybeUninit::uninit();
+fn bindgen_test_layout___darwin_pthread_handler_rec() {
+    const UNINIT: ::std::mem::MaybeUninit<__darwin_pthread_handler_rec> = ::std::mem::MaybeUninit::uninit();
     let ptr = UNINIT.as_ptr();
     assert_eq!(
-        ::std::mem::size_of::<max_align_t>(),
-        32usize,
-        concat!("Size of: ", stringify!(max_align_t))
+        ::std::mem::size_of::<__darwin_pthread_handler_rec>(),
+        24usize,
+        concat!("Size of: ", stringify!(__darwin_pthread_handler_rec))
     );
     assert_eq!(
-        ::std::mem::align_of::<max_align_t>(),
-        16usize,
-        concat!("Alignment of ", stringify!(max_align_t))
+        ::std::mem::align_of::<__darwin_pthread_handler_rec>(),
+        8usize,
+        concat!("Alignment of ", stringify!(__darwin_pthread_handler_rec))
     );
     assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).__clang_max_align_nonce1) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).__routine) as usize - ptr as usize },
         0usize,
         concat!(
             "Offset of field: ",
-            stringify!(max_align_t),
+            stringify!(__darwin_pthread_handler_rec),
             "::",
-            stringify!(__clang_max_align_nonce1)
+            stringify!(__routine)
         )
     );
     assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).__clang_max_align_nonce2) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).__arg) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(__darwin_pthread_handler_rec),
+            "::",
+            stringify!(__arg)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__next) as usize - ptr as usize },
         16usize,
         concat!(
             "Offset of field: ",
-            stringify!(max_align_t),
+            stringify!(__darwin_pthread_handler_rec),
             "::",
-            stringify!(__clang_max_align_nonce2)
+            stringify!(__next)
         )
     );
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_attr_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 56usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_attr_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_attr_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_attr_t>(),
+        64usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_attr_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_attr_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_attr_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_attr_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_attr_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_cond_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 40usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_cond_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_cond_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_cond_t>(),
+        48usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_cond_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_cond_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_cond_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_cond_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_cond_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_condattr_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 8usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_condattr_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_condattr_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_condattr_t>(),
+        16usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_condattr_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_condattr_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_condattr_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_condattr_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_condattr_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_mutex_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 56usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_mutex_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_mutex_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_mutex_t>(),
+        64usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_mutex_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_mutex_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_mutex_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_mutex_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_mutex_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_mutexattr_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 8usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_mutexattr_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_mutexattr_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_mutexattr_t>(),
+        16usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_mutexattr_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_mutexattr_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_mutexattr_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_mutexattr_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_mutexattr_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_once_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 8usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_once_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_once_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_once_t>(),
+        16usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_once_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_once_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_once_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_once_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_once_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_rwlock_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 192usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_rwlock_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_rwlock_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_rwlock_t>(),
+        200usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_rwlock_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_rwlock_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_rwlock_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_rwlock_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_rwlock_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_rwlockattr_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __opaque: [::std::os::raw::c_char; 16usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_rwlockattr_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_rwlockattr_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_rwlockattr_t>(),
+        24usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_rwlockattr_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_rwlockattr_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_rwlockattr_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_rwlockattr_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_rwlockattr_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _opaque_pthread_t {
+    pub __sig: ::std::os::raw::c_long,
+    pub __cleanup_stack: *mut __darwin_pthread_handler_rec,
+    pub __opaque: [::std::os::raw::c_char; 8176usize],
+}
+#[test]
+fn bindgen_test_layout__opaque_pthread_t() {
+    const UNINIT: ::std::mem::MaybeUninit<_opaque_pthread_t> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_opaque_pthread_t>(),
+        8192usize,
+        concat!("Size of: ", stringify!(_opaque_pthread_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_opaque_pthread_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_opaque_pthread_t))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__sig) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_t),
+            "::",
+            stringify!(__sig)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__cleanup_stack) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_t),
+            "::",
+            stringify!(__cleanup_stack)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).__opaque) as usize - ptr as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_opaque_pthread_t),
+            "::",
+            stringify!(__opaque)
+        )
+    );
+}
+pub type __darwin_pthread_attr_t = _opaque_pthread_attr_t;
+pub type __darwin_pthread_cond_t = _opaque_pthread_cond_t;
+pub type __darwin_pthread_condattr_t = _opaque_pthread_condattr_t;
+pub type __darwin_pthread_key_t = ::std::os::raw::c_ulong;
+pub type __darwin_pthread_mutex_t = _opaque_pthread_mutex_t;
+pub type __darwin_pthread_mutexattr_t = _opaque_pthread_mutexattr_t;
+pub type __darwin_pthread_once_t = _opaque_pthread_once_t;
+pub type __darwin_pthread_rwlock_t = _opaque_pthread_rwlock_t;
+pub type __darwin_pthread_rwlockattr_t = _opaque_pthread_rwlockattr_t;
+pub type __darwin_pthread_t = *mut _opaque_pthread_t;
+pub type u_int8_t = ::std::os::raw::c_uchar;
+pub type u_int16_t = ::std::os::raw::c_ushort;
+pub type u_int32_t = ::std::os::raw::c_uint;
+pub type u_int64_t = ::std::os::raw::c_ulonglong;
+pub type register_t = i64;
+pub type user_addr_t = u_int64_t;
+pub type user_size_t = u_int64_t;
+pub type user_ssize_t = i64;
+pub type user_long_t = i64;
+pub type user_ulong_t = u_int64_t;
+pub type user_time_t = i64;
+pub type user_off_t = i64;
+pub type syscall_arg_t = u_int64_t;
+pub type intmax_t = ::std::os::raw::c_long;
+pub type uintmax_t = ::std::os::raw::c_ulong;
+pub type rsize_t = ::std::os::raw::c_ulong;
+pub type wchar_t = ::std::os::raw::c_int;
+pub type max_align_t = f64;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_INVALID: DUCKDB_TYPE = 0;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN: DUCKDB_TYPE = 1;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_TINYINT: DUCKDB_TYPE = 2;
@@ -1900,7 +2289,7 @@ extern "C" {
     pub fn duckdb_column_count(result: *mut duckdb_result) -> idx_t;
 }
 extern "C" {
-    #[doc = "Returns the number of rows present in the result object.\n\n result: The result object.\n returns: The number of rows present in the result object."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReturns the number of rows present in the result object.\n\n result: The result object.\n returns: The number of rows present in the result object."]
     pub fn duckdb_row_count(result: *mut duckdb_result) -> idx_t;
 }
 extern "C" {
@@ -1920,15 +2309,15 @@ extern "C" {
     pub fn duckdb_result_error(result: *mut duckdb_result) -> *const ::std::os::raw::c_char;
 }
 extern "C" {
-    #[doc = "Fetches a data chunk from the duckdb_result. This function should be called repeatedly until the result is exhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nThis function supersedes all `duckdb_value` functions, as well as the `duckdb_column_data` and `duckdb_nullmask_data`\nfunctions. It results in significantly better performance, and should be preferred in newer code-bases.\n\nIf this function is used, none of the other result functions can be used and vice versa (i.e. this function cannot be\nmixed with the legacy result functions).\n\nUse `duckdb_result_chunk_count` to figure out how many chunks there are in the result.\n\n result: The result object to fetch the data chunk from.\n chunk_index: The chunk index to fetch from.\n returns: The resulting data chunk. Returns `NULL` if the chunk index is out of bounds."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nFetches a data chunk from the duckdb_result. This function should be called repeatedly until the result is exhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nThis function supersedes all `duckdb_value` functions, as well as the `duckdb_column_data` and `duckdb_nullmask_data`\nfunctions. It results in significantly better performance, and should be preferred in newer code-bases.\n\nIf this function is used, none of the other result functions can be used and vice versa (i.e. this function cannot be\nmixed with the legacy result functions).\n\nUse `duckdb_result_chunk_count` to figure out how many chunks there are in the result.\n\n result: The result object to fetch the data chunk from.\n chunk_index: The chunk index to fetch from.\n returns: The resulting data chunk. Returns `NULL` if the chunk index is out of bounds."]
     pub fn duckdb_result_get_chunk(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk;
 }
 extern "C" {
-    #[doc = "Checks if the type of the internal result is StreamQueryResult.\n\n result: The result object to check.\n returns: Whether or not the result object is of the type StreamQueryResult"]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nChecks if the type of the internal result is StreamQueryResult.\n\n result: The result object to check.\n returns: Whether or not the result object is of the type StreamQueryResult"]
     pub fn duckdb_result_is_streaming(result: duckdb_result) -> bool;
 }
 extern "C" {
-    #[doc = "Returns the number of data chunks present in the result.\n\n result: The result object\n returns: Number of data chunks present in the result."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReturns the number of data chunks present in the result.\n\n result: The result object\n returns: Number of data chunks present in the result."]
     pub fn duckdb_result_chunk_count(result: duckdb_result) -> idx_t;
 }
 extern "C" {
@@ -1936,75 +2325,75 @@ extern "C" {
     pub fn duckdb_result_return_type(result: duckdb_result) -> duckdb_result_type;
 }
 extern "C" {
-    #[doc = " returns: The boolean value at the specified location, or false if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The boolean value at the specified location, or false if the value cannot be converted."]
     pub fn duckdb_value_boolean(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool;
 }
 extern "C" {
-    #[doc = " returns: The int8_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The int8_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_int8(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i8;
 }
 extern "C" {
-    #[doc = " returns: The int16_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The int16_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_int16(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i16;
 }
 extern "C" {
-    #[doc = " returns: The int32_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The int32_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_int32(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i32;
 }
 extern "C" {
-    #[doc = " returns: The int64_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The int64_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_int64(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i64;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_hugeint value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_hugeint value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_hugeint(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_hugeint;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_uhugeint value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_uhugeint value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_uhugeint(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_uhugeint;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_decimal value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_decimal value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_decimal(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_decimal;
 }
 extern "C" {
-    #[doc = " returns: The uint8_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The uint8_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_uint8(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u8;
 }
 extern "C" {
-    #[doc = " returns: The uint16_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The uint16_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_uint16(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u16;
 }
 extern "C" {
-    #[doc = " returns: The uint32_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The uint32_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_uint32(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u32;
 }
 extern "C" {
-    #[doc = " returns: The uint64_t value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The uint64_t value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_uint64(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u64;
 }
 extern "C" {
-    #[doc = " returns: The float value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The float value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_float(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f32;
 }
 extern "C" {
-    #[doc = " returns: The double value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The double value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_double(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f64;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_date value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_date value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_date(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_date;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_time value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_time value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_time(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_time;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_timestamp value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_timestamp value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_timestamp(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_timestamp;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_interval value at the specified location, or 0 if the value cannot be converted."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_interval value at the specified location, or 0 if the value cannot be converted."]
     pub fn duckdb_value_interval(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_interval;
 }
 extern "C" {
@@ -2012,7 +2401,7 @@ extern "C" {
     pub fn duckdb_value_varchar(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char;
 }
 extern "C" {
-    #[doc = " returns: The string value at the specified location.\n The resulting field \"string.data\" must be freed with `duckdb_free.`"]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The string value at the specified location. Attempts to cast the result value to string.\n No support for nested types, and for other complex types.\n The resulting field \"string.data\" must be freed with `duckdb_free.`"]
     pub fn duckdb_value_string(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string;
 }
 extern "C" {
@@ -2028,11 +2417,11 @@ extern "C" {
     pub fn duckdb_value_string_internal(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string;
 }
 extern "C" {
-    #[doc = " returns: The duckdb_blob value at the specified location. Returns a blob with blob.data set to nullptr if the\nvalue cannot be converted. The resulting field \"blob.data\" must be freed with `duckdb_free.`"]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: The duckdb_blob value at the specified location. Returns a blob with blob.data set to nullptr if the\nvalue cannot be converted. The resulting field \"blob.data\" must be freed with `duckdb_free.`"]
     pub fn duckdb_value_blob(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_blob;
 }
 extern "C" {
-    #[doc = " returns: Returns true if the value at the specified index is NULL, and false otherwise."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\n returns: Returns true if the value at the specified index is NULL, and false otherwise."]
     pub fn duckdb_value_is_null(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool;
 }
 extern "C" {
@@ -2332,7 +2721,7 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Executes the prepared statement with the given bound parameters, and returns an optionally-streaming query result.\nTo determine if the resulting query was in fact streamed, use `duckdb_result_is_streaming`\n\nThis method can be called multiple times for each prepared statement, and the parameters can be modified\nbetween calls to this function.\n\nNote that the result must be freed with `duckdb_destroy_result`.\n\n prepared_statement: The prepared statement to execute.\n out_result: The query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nExecutes the prepared statement with the given bound parameters, and returns an optionally-streaming query result.\nTo determine if the resulting query was in fact streamed, use `duckdb_result_is_streaming`\n\nThis method can be called multiple times for each prepared statement, and the parameters can be modified\nbetween calls to this function.\n\nNote that the result must be freed with `duckdb_destroy_result`.\n\n prepared_statement: The prepared statement to execute.\n out_result: The query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_execute_prepared_streaming(
         prepared_statement: duckdb_prepared_statement,
         out_result: *mut duckdb_result,
@@ -2373,7 +2762,7 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Executes the prepared statement with the given bound parameters, and returns a pending result.\nThis pending result will create a streaming duckdb_result when executed.\nThe pending result represents an intermediate structure for a query that is not yet fully executed.\n\nNote that after calling `duckdb_pending_prepared_streaming`, the pending result should always be destroyed using\n`duckdb_destroy_pending`, even if this function returns DuckDBError.\n\n prepared_statement: The prepared statement to execute.\n out_result: The pending query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nExecutes the prepared statement with the given bound parameters, and returns a pending result.\nThis pending result will create a streaming duckdb_result when executed.\nThe pending result represents an intermediate structure for a query that is not yet fully executed.\n\nNote that after calling `duckdb_pending_prepared_streaming`, the pending result should always be destroyed using\n`duckdb_destroy_pending`, even if this function returns DuckDBError.\n\n prepared_statement: The prepared statement to execute.\n out_result: The pending query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_pending_prepared_streaming(
         prepared_statement: duckdb_prepared_statement,
         out_result: *mut duckdb_pending_result,
@@ -2875,15 +3264,15 @@ extern "C" {
     pub fn duckdb_appender_error(appender: duckdb_appender) -> *const ::std::os::raw::c_char;
 }
 extern "C" {
-    #[doc = "Flush the appender to the table, forcing the cache of the appender to be cleared and the data to be appended to the\nbase table.\n\nThis should generally not be used unless you know what you are doing. Instead, call `duckdb_appender_destroy` when you\nare done with the appender.\n\n appender: The appender to flush.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "Flush the appender to the table, forcing the cache of the appender to be cleared. If flushing the data triggers a\nconstraint violation or any other error, then all data is invalidated, and this function returns DuckDBError.\nIt is not possible to append more values. Call duckdb_appender_error to obtain the error message followed by\nduckdb_appender_destroy to destroy the invalidated appender.\n\n appender: The appender to flush.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_appender_flush(appender: duckdb_appender) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Close the appender, flushing all intermediate state in the appender to the table and closing it for further appends.\n\nThis is generally not necessary. Call `duckdb_appender_destroy` instead.\n\n appender: The appender to flush and close.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "Closes the appender by flushing all intermediate states and closing it for further appends. If flushing the data\ntriggers a constraint violation or any other error, then all data is invalidated, and this function returns DuckDBError.\nCall duckdb_appender_error to obtain the error message followed by duckdb_appender_destroy to destroy the invalidated\nappender.\n\n appender: The appender to flush and close.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_appender_close(appender: duckdb_appender) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Close the appender and destroy it. Flushing all intermediate state in the appender to the table, and de-allocating\nall memory associated with the appender.\n\n appender: The appender to flush, close and destroy.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "Closes the appender by flushing all intermediate states to the table and destroying it. By destroying it, this function\nde-allocates all memory associated with the appender. If flushing the data triggers a constraint violation,\nthen all data is invalidated, and this function returns DuckDBError. Due to the destruction of the appender, it is no\nlonger possible to obtain the specific error message with duckdb_appender_error. Therefore, call duckdb_appender_close\nbefore destroying the appender, if you need insights into the specific error.\n\n appender: The appender to flush, close and destroy.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_appender_destroy(appender: *mut duckdb_appender) -> duckdb_state;
 }
 extern "C" {
@@ -2991,7 +3380,7 @@ extern "C" {
     pub fn duckdb_append_data_chunk(appender: duckdb_appender, chunk: duckdb_data_chunk) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Executes a SQL query within a connection and stores the full (materialized) result in an arrow structure.\nIf the query fails to execute, DuckDBError is returned and the error message can be retrieved by calling\n`duckdb_query_arrow_error`.\n\nNote that after running `duckdb_query_arrow`, `duckdb_destroy_arrow` must be called on the result object even if the\nquery fails, otherwise the error stored within the result will not be freed correctly.\n\n connection: The connection to perform the query in.\n query: The SQL query to run.\n out_result: The query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nExecutes a SQL query within a connection and stores the full (materialized) result in an arrow structure.\nIf the query fails to execute, DuckDBError is returned and the error message can be retrieved by calling\n`duckdb_query_arrow_error`.\n\nNote that after running `duckdb_query_arrow`, `duckdb_destroy_arrow` must be called on the result object even if the\nquery fails, otherwise the error stored within the result will not be freed correctly.\n\n connection: The connection to perform the query in.\n query: The SQL query to run.\n out_result: The query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_query_arrow(
         connection: duckdb_connection,
         query: *const ::std::os::raw::c_char,
@@ -2999,18 +3388,18 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Fetch the internal arrow schema from the arrow result. Remember to call release on the respective\nArrowSchema object.\n\n result: The result to fetch the schema from.\n out_schema: The output schema.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nFetch the internal arrow schema from the arrow result. Remember to call release on the respective\nArrowSchema object.\n\n result: The result to fetch the schema from.\n out_schema: The output schema.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_query_arrow_schema(result: duckdb_arrow, out_schema: *mut duckdb_arrow_schema) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Fetch the internal arrow schema from the prepared statement. Remember to call release on the respective\nArrowSchema object.\n\n result: The prepared statement to fetch the schema from.\n out_schema: The output schema.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nFetch the internal arrow schema from the prepared statement. Remember to call release on the respective\nArrowSchema object.\n\n result: The prepared statement to fetch the schema from.\n out_schema: The output schema.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_prepared_arrow_schema(
         prepared: duckdb_prepared_statement,
         out_schema: *mut duckdb_arrow_schema,
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Convert a data chunk into an arrow struct array. Remember to call release on the respective\nArrowArray object.\n\n result: The result object the data chunk have been fetched from.\n chunk: The data chunk to convert.\n out_array: The output array."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nConvert a data chunk into an arrow struct array. Remember to call release on the respective\nArrowArray object.\n\n result: The result object the data chunk have been fetched from.\n chunk: The data chunk to convert.\n out_array: The output array."]
     pub fn duckdb_result_arrow_array(
         result: duckdb_result,
         chunk: duckdb_data_chunk,
@@ -3018,42 +3407,42 @@ extern "C" {
     );
 }
 extern "C" {
-    #[doc = "Fetch an internal arrow struct array from the arrow result. Remember to call release on the respective\nArrowArray object.\n\nThis function can be called multiple time to get next chunks, which will free the previous out_array.\nSo consume the out_array before calling this function again.\n\n result: The result to fetch the array from.\n out_array: The output array.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nFetch an internal arrow struct array from the arrow result. Remember to call release on the respective\nArrowArray object.\n\nThis function can be called multiple time to get next chunks, which will free the previous out_array.\nSo consume the out_array before calling this function again.\n\n result: The result to fetch the array from.\n out_array: The output array.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_query_arrow_array(result: duckdb_arrow, out_array: *mut duckdb_arrow_array) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Returns the number of columns present in the arrow result object.\n\n result: The result object.\n returns: The number of columns present in the result object."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReturns the number of columns present in the arrow result object.\n\n result: The result object.\n returns: The number of columns present in the result object."]
     pub fn duckdb_arrow_column_count(result: duckdb_arrow) -> idx_t;
 }
 extern "C" {
-    #[doc = "Returns the number of rows present in the arrow result object.\n\n result: The result object.\n returns: The number of rows present in the result object."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReturns the number of rows present in the arrow result object.\n\n result: The result object.\n returns: The number of rows present in the result object."]
     pub fn duckdb_arrow_row_count(result: duckdb_arrow) -> idx_t;
 }
 extern "C" {
-    #[doc = "Returns the number of rows changed by the query stored in the arrow result. This is relevant only for\nINSERT/UPDATE/DELETE queries. For other queries the rows_changed will be 0.\n\n result: The result object.\n returns: The number of rows changed."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReturns the number of rows changed by the query stored in the arrow result. This is relevant only for\nINSERT/UPDATE/DELETE queries. For other queries the rows_changed will be 0.\n\n result: The result object.\n returns: The number of rows changed."]
     pub fn duckdb_arrow_rows_changed(result: duckdb_arrow) -> idx_t;
 }
 extern "C" {
-    #[doc = "Returns the error message contained within the result. The error is only set if `duckdb_query_arrow` returns\n`DuckDBError`.\n\nThe error message should not be freed. It will be de-allocated when `duckdb_destroy_arrow` is called.\n\n result: The result object to fetch the error from.\n returns: The error of the result."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReturns the error message contained within the result. The error is only set if `duckdb_query_arrow` returns\n`DuckDBError`.\n\nThe error message should not be freed. It will be de-allocated when `duckdb_destroy_arrow` is called.\n\n result: The result object to fetch the error from.\n returns: The error of the result."]
     pub fn duckdb_query_arrow_error(result: duckdb_arrow) -> *const ::std::os::raw::c_char;
 }
 extern "C" {
-    #[doc = "Closes the result and de-allocates all memory allocated for the arrow result.\n\n result: The result to destroy."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nCloses the result and de-allocates all memory allocated for the arrow result.\n\n result: The result to destroy."]
     pub fn duckdb_destroy_arrow(result: *mut duckdb_arrow);
 }
 extern "C" {
-    #[doc = "Releases the arrow array stream and de-allocates its memory.\n\n stream: The arrow array stream to destroy."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nReleases the arrow array stream and de-allocates its memory.\n\n stream: The arrow array stream to destroy."]
     pub fn duckdb_destroy_arrow_stream(stream_p: *mut duckdb_arrow_stream);
 }
 extern "C" {
-    #[doc = "Executes the prepared statement with the given bound parameters, and returns an arrow query result.\nNote that after running `duckdb_execute_prepared_arrow`, `duckdb_destroy_arrow` must be called on the result object.\n\n prepared_statement: The prepared statement to execute.\n out_result: The query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nExecutes the prepared statement with the given bound parameters, and returns an arrow query result.\nNote that after running `duckdb_execute_prepared_arrow`, `duckdb_destroy_arrow` must be called on the result object.\n\n prepared_statement: The prepared statement to execute.\n out_result: The query result.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_execute_prepared_arrow(
         prepared_statement: duckdb_prepared_statement,
         out_result: *mut duckdb_arrow,
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Scans the Arrow stream and creates a view with the given name.\n\n connection: The connection on which to execute the scan.\n table_name: Name of the temporary view to create.\n arrow: Arrow stream wrapper.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nScans the Arrow stream and creates a view with the given name.\n\n connection: The connection on which to execute the scan.\n table_name: Name of the temporary view to create.\n arrow: Arrow stream wrapper.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_arrow_scan(
         connection: duckdb_connection,
         table_name: *const ::std::os::raw::c_char,
@@ -3061,7 +3450,7 @@ extern "C" {
     ) -> duckdb_state;
 }
 extern "C" {
-    #[doc = "Scans the Arrow array and creates a view with the given name.\nNote that after running `duckdb_arrow_array_scan`, `duckdb_destroy_arrow_stream` must be called on the out stream.\n\n connection: The connection on which to execute the scan.\n table_name: Name of the temporary view to create.\n arrow_schema: Arrow schema wrapper.\n arrow_array: Arrow array wrapper.\n out_stream: Output array stream that wraps around the passed schema, for releasing/deleting once done.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nScans the Arrow array and creates a view with the given name.\nNote that after running `duckdb_arrow_array_scan`, `duckdb_destroy_arrow_stream` must be called on the out stream.\n\n connection: The connection on which to execute the scan.\n table_name: Name of the temporary view to create.\n arrow_schema: Arrow schema wrapper.\n arrow_array: Arrow array wrapper.\n out_stream: Output array stream that wraps around the passed schema, for releasing/deleting once done.\n returns: `DuckDBSuccess` on success or `DuckDBError` on failure."]
     pub fn duckdb_arrow_array_scan(
         connection: duckdb_connection,
         table_name: *const ::std::os::raw::c_char,
@@ -3103,6 +3492,11 @@ extern "C" {
     pub fn duckdb_execution_is_finished(con: duckdb_connection) -> bool;
 }
 extern "C" {
-    #[doc = "Fetches a data chunk from the (streaming) duckdb_result. This function should be called repeatedly until the result is\nexhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nThis function can only be used on duckdb_results created with 'duckdb_pending_prepared_streaming'\n\nIf this function is used, none of the other result functions can be used and vice versa (i.e. this function cannot be\nmixed with the legacy result functions or the materialized result functions).\n\nIt is not known beforehand how many chunks will be returned by this result.\n\n result: The result object to fetch the data chunk from.\n returns: The resulting data chunk. Returns `NULL` if the result has an error."]
+    #[doc = "DEPRECATION NOTICE**: This method is scheduled for removal in a future release.\n\nFetches a data chunk from the (streaming) duckdb_result. This function should be called repeatedly until the result is\nexhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nThis function can only be used on duckdb_results created with 'duckdb_pending_prepared_streaming'\n\nIf this function is used, none of the other result functions can be used and vice versa (i.e. this function cannot be\nmixed with the legacy result functions or the materialized result functions).\n\nIt is not known beforehand how many chunks will be returned by this result.\n\n result: The result object to fetch the data chunk from.\n returns: The resulting data chunk. Returns `NULL` if the result has an error."]
     pub fn duckdb_stream_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk;
 }
+extern "C" {
+    #[doc = "Fetches a data chunk from a duckdb_result. This function should be called repeatedly until the result is exhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nIt is not known beforehand how many chunks will be returned by this result.\n\n result: The result object to fetch the data chunk from.\n returns: The resulting data chunk. Returns `NULL` if the result has an error."]
+    pub fn duckdb_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk;
+}
+pub type __builtin_va_list = *mut ::std::os::raw::c_char;
