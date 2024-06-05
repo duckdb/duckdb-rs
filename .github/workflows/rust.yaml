@@ -145,10 +145,10 @@ jobs:
           # as the other tests have them.
           RUST_BACKTRACE: "0"
         run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
-      - uses: wangfenjin/publish-crates@main
-        name: cargo publish --dry-run
+      - name: publish crates --dry-run
+        uses: katyo/publish-crates@v2
         with:
           path: './'
           args: --allow-dirty --all-features
           dry-run: true
-          ignore-published: true
+          ignore-unpublished-changes: true

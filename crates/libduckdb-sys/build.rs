@@ -120,14 +120,6 @@ mod build_bundled {
 
         let mut cfg = cc::Build::new();
 
-        #[cfg(feature = "httpfs")]
-        {
-            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
-                cfg.include(openssl_include_dir);
-            }
-            add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
-        }
-
         #[cfg(feature = "parquet")]
         add_extension(&mut cfg, &manifest, "parquet", &mut cpp_files, &mut include_dirs);
 
@@ -146,6 +138,16 @@ mod build_bundled {
 
         cfg.include(lib_name);
 
+        // Note: dont move this, the link order is important and we need to make
+        // sure we link openssl after duckdb
+        #[cfg(feature = "httpfs")]
+        {
+            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
+                cfg.include(openssl_include_dir);
+            }
+            add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
+        }
+
         cfg.includes(include_dirs.iter().map(|x| format!("{}/{}", lib_name, x)));
 
         for f in cpp_files {
@@ -163,7 +165,6 @@ mod build_bundled {
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
         }
-
         cfg.compile(lib_name);
         println!("cargo:lib_dir={out_dir}");
     }

@@ -1,0 +1,93 @@
+[package]
+name = "duckdb"
+version = "0.10.2"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+license.workspace = true
+categories.workspace = true
+description = "Ergonomic wrapper for DuckDB"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "duckdb"
+
+[features]
+default = []
+bundled = ["libduckdb-sys/bundled"]
+httpfs = ["libduckdb-sys/httpfs", "bundled"]
+json = ["libduckdb-sys/json", "bundled"]
+parquet = ["libduckdb-sys/parquet", "bundled"]
+vtab = []
+vtab-loadable = ["vtab", "duckdb-loadable-macros"]
+vtab-excel = ["vtab", "calamine"]
+vtab-arrow = ["vtab", "num"]
+appender-arrow = ["vtab-arrow"]
+vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
+extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
+buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
+modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
+polars = ["dep:polars"]
+
+[dependencies]
+libduckdb-sys = { workspace = true }
+hashlink = { workspace = true }
+chrono = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+lazy_static = { workspace = true, optional = true }
+byteorder = { workspace = true, features = ["i128"], optional = true }
+fallible-iterator = { workspace = true }
+fallible-streaming-iterator = { workspace = true }
+memchr = { workspace = true }
+uuid = { workspace = true, optional = true }
+smallvec = { workspace = true }
+cast = { workspace = true, features = ["std"] }
+arrow = { workspace = true, features = ["prettyprint", "ffi"] }
+rust_decimal = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
+r2d2 = { workspace = true, optional = true }
+calamine = { workspace = true, optional = true }
+num = { workspace = true, features = ["std"], optional = true }
+duckdb-loadable-macros = { workspace = true, optional = true }
+polars = { workspace = true, features = ["dtype-full"], optional = true }
+num-integer = {version = "0.1.46"}
+
+[dev-dependencies]
+doc-comment = { workspace = true }
+tempfile = { workspace = true }
+lazy_static = { workspace = true }
+regex = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+unicase = { workspace = true }
+rand = { workspace = true }
+tempdir = { workspace = true }
+polars-core = { workspace = true }
+pretty_assertions = { workspace = true }
+# criterion = "0.3"
+
+# [[bench]]
+# name = "data_types"
+# harness = false
+
+
+[package.metadata.docs.rs]
+features = []
+all-features = false
+no-default-features = true
+default-target = "x86_64-unknown-linux-gnu"
+
+[package.metadata.playground]
+features = []
+all-features = false
+
+[[example]]
+name = "hello-ext"
+crate-type = ["cdylib"]
+required-features = ["vtab-loadable"]

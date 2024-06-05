@@ -3,9 +3,8 @@ use std::{convert, sync::Arc};
 use super::{Error, Result, Statement};
 use crate::types::{self, EnumType, FromSql, FromSqlError, ListType, ValueRef};
 
-use arrow::array::DictionaryArray;
 use arrow::{
-    array::{self, Array, ArrayRef, ListArray, StructArray},
+    array::{self, Array, ArrayRef, DictionaryArray, ListArray, StructArray},
     datatypes::*,
 };
 use fallible_iterator::FallibleIterator;

@@ -1,9 +1,15 @@
-[package]
-name = "duckdb"
+[workspace]
+resolver = "2"
+members = [
+    "crates/duckdb",
+    "crates/libduckdb-sys",
+    "crates/duckdb-loadable-macros"
+]
+
+[workspace.package]
 version = "0.10.2"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2021"
-description = "Ergonomic wrapper for DuckDB"
 repository = "https://github.com/wangfenjin/duckdb-rs"
 homepage = "https://github.com/wangfenjin/duckdb-rs"
 documentation = "http://docs.rs/duckdb/"
@@ -12,90 +18,46 @@ keywords = ["duckdb", "database", "ffi"]
 license = "MIT"
 categories = ["database"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-name = "duckdb"
-
-[workspace]
-members = ["libduckdb-sys", "duckdb-loadable-macros"]
-
-[features]
-default = []
-bundled = ["libduckdb-sys/bundled"]
-httpfs = ["libduckdb-sys/httpfs", "bundled"]
-json = ["libduckdb-sys/json", "bundled"]
-parquet = ["libduckdb-sys/parquet", "bundled"]
-vtab = []
-vtab-loadable = ["vtab", "duckdb-loadable-macros"]
-vtab-excel = ["vtab", "calamine"]
-vtab-arrow = ["vtab", "num"]
-appender-arrow = ["vtab-arrow"]
-vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
-extensions-full = ["httpfs", "json", "parquet", "vtab-full"]
-buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
-modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
-polars = ["dep:polars"]
-chrono = ["dep:chrono", "num-integer"]
-
-[dependencies]
-# time = { version = "0.3.2", features = ["formatting", "parsing"], optional = true }
-hashlink = "0.8"
-chrono = { version = "0.4.22", optional = true }
-serde_json = { version = "1.0", optional = true }
-csv = { version = "1.1", optional = true }
-url = { version = "2.1", optional = true }
-lazy_static = { version = "1.4", optional = true }
-byteorder = { version = "1.3", features = ["i128"], optional = true }
+[workspace.dependencies]
+duckdb = { version = "0.10.2", path = "crates/duckdb" }
+libduckdb-sys = { version = "0.10.2", path = "crates/libduckdb-sys" }
+duckdb-loadable-macros = { version = "0.1.1", path = "crates/duckdb-loadable-macros" }
+autocfg = "1.0"
+bindgen = { version = "0.69", default-features = false }
+byteorder = "1.3"
+calamine = "0.22.0"
+cast = "0.3"
+cc = "1.0"
+chrono = "0.4.22"
+csv = "1.1"
+doc-comment = "0.3"
 fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
-memchr = "2.3"
-uuid = { version = "1.0", optional = true }
-smallvec = "1.6.1"
-cast = { version = "0.3", features = ["std"] }
-arrow = { version = "51", default-features = false, features = ["prettyprint", "ffi"] }
-rust_decimal = "1.14"
-strum = { version = "0.25", features = ["derive"] }
-r2d2 = { version = "0.8.9", optional = true }
-calamine = { version = "0.22.0", optional = true }
-num = { version = "0.4", optional = true, default-features = false, features = ["std"] }
-duckdb-loadable-macros = { version = "0.1.1", path="./duckdb-loadable-macros", optional = true }
-polars = { version = "0.35.4", features = ["dtype-full"], optional = true}
-num-integer = {version = "0.1.46", optional = true}
-
-[dev-dependencies]
-doc-comment = "0.3"
-tempfile = "3.1.0"
+flate2 = "1.0"
+hashlink = "0.8"
 lazy_static = "1.4"
-regex = "1.6"
-uuid = { version = "1.0", features = ["v4"] }
-unicase = "2.6.0"
-rand = "0.8.3"
-tempdir = "0.3.7"
+memchr = "2.3"
+num = { version = "0.4", default-features = false }
+pkg-config = "0.3.24"
+polars = "0.35.4"
 polars-core = "0.35.4"
 pretty_assertions = "1.4.0"
-# criterion = "0.3"
-
-# [[bench]]
-# name = "data_types"
-# harness = false
-
-[dependencies.libduckdb-sys]
-path = "libduckdb-sys"
-version = "0.10.2"
-
-
-[package.metadata.docs.rs]
-features = ['vtab', 'chrono']
-all-features = false
-no-default-features = true
-default-target = "x86_64-unknown-linux-gnu"
-
-[package.metadata.playground]
-features = []
-all-features = false
-
-[[example]]
-name = "hello-ext"
-crate-type = ["cdylib"]
-required-features = ["vtab-loadable"]
+proc-macro2 = "1.0.56"
+quote = "1.0.21"
+r2d2 = "0.8.9"
+rand = "0.8.3"
+regex = "1.6"
+rust_decimal = "1.14"
+serde = "1.0"
+serde_json = "1.0"
+smallvec = "1.6.1"
+strum = "0.25"
+syn = "2.0.15"
+tar = "0.4.38"
+tempdir = "0.3.7"
+tempfile = "3.1.0"
+unicase = "2.6.0"
+url = "2.1"
+uuid = "1.0"
+vcpkg = "0.2"
+arrow = { version = "51", default-features = false }
