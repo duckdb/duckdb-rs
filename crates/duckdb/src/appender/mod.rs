@@ -264,6 +264,29 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "chrono")]
+    fn test_append_datetime() -> Result<()> {
+        use crate::params;
+        use chrono::{NaiveDate, NaiveDateTime};
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x DATE, y TIMESTAMP)")?;
+
+        let date = NaiveDate::from_ymd_opt(2024, 6, 5).unwrap();
+        let timestamp = date.and_hms_opt(18, 26, 53).unwrap();
+        {
+            let mut app = db.appender("foo")?;
+            app.append_row(params![date, timestamp])?;
+        }
+        let (date2, timestamp2) = db.query_row("SELECT x, y FROM foo", [], |row| {
+            Ok((row.get::<_, NaiveDate>(0)?, row.get::<_, NaiveDateTime>(1)?))
+        })?;
+        assert_eq!(date, date2);
+        assert_eq!(timestamp, timestamp2);
+        Ok(())
+    }
+
+    #[test]
     fn test_appender_error() -> Result<(), crate::Error> {
         let conn = Connection::open_in_memory()?;
         conn.execute(
