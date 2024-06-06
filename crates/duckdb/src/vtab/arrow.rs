@@ -638,7 +638,7 @@ mod test {
         assert_eq!(rb.num_columns(), 1);
         let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(column.len(), 1);
-        assert_eq!(column.value(0), i128::from(300_00));
+        assert_eq!(column.value(0), i128::from(30000));
         Ok(())
     }
 
