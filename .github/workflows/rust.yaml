@@ -107,10 +107,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
-      # - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-      # - run: vcpkg install openssl:x64-windows-static-md
-      - run: choco install openssl --execution-timeout 5400
-      - run: echo 'OPENSSL_DIR=C:\Program Files\OpenSSL' | Out-File -FilePath $env:GITHUB_ENV -Append
       - uses: actions/cache@v3
         with:
           path: ~/.cargo/registry/index
