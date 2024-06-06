@@ -612,8 +612,8 @@ mod test {
     use arrow::{
         array::{
             Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
-            FixedSizeListArray, Float64Array, GenericListArray, Int32Array, ListArray, OffsetSizeTrait, PrimitiveArray,
-            StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
+            FixedSizeListArray, GenericListArray, Int32Array, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray,
+            StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
             TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
@@ -638,7 +638,7 @@ mod test {
         assert_eq!(rb.num_columns(), 1);
         let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(column.len(), 1);
-        assert_eq!(column.value(0), i128::from(30000));
+        assert_eq!(column.value(0), i128::from(300_00));
         Ok(())
     }
 
