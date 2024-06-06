@@ -3,7 +3,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 
 use crate::{
     error::result_from_duckdb_appender,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput},
     Error,
 };
 
