@@ -3,7 +3,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 
 use crate::{
     error::result_from_duckdb_appender,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput},
     Error,
 };
 
@@ -118,15 +118,23 @@ impl Appender<'_> {
                 ffi::duckdb_append_varchar_length(ptr, s.as_ptr() as *const c_char, s.len() as u64)
             },
             ValueRef::Timestamp(u, i) => unsafe {
-                let micros = match u {
-                    TimeUnit::Second => i * 1_000_000,
-                    TimeUnit::Millisecond => i * 1_000,
-                    TimeUnit::Microsecond => i,
-                    TimeUnit::Nanosecond => i / 1_000,
-                };
-                ffi::duckdb_append_timestamp(ptr, ffi::duckdb_timestamp { micros })
+                ffi::duckdb_append_timestamp(ptr, ffi::duckdb_timestamp { micros: u.to_micros(i) })
             },
             ValueRef::Blob(b) => unsafe { ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64) },
+            ValueRef::Date32(d) => unsafe { ffi::duckdb_append_date(ptr, ffi::duckdb_date { days: d }) },
+            ValueRef::Time64(u, v) => unsafe {
+                ffi::duckdb_append_time(ptr, ffi::duckdb_time { micros: u.to_micros(v) })
+            },
+            ValueRef::Interval { months, days, nanos } => unsafe {
+                ffi::duckdb_append_interval(
+                    ptr,
+                    ffi::duckdb_interval {
+                        months,
+                        days,
+                        micros: nanos / 1000,
+                    },
+                )
+            },
             _ => unreachable!("not supported"),
         };
         if rc != 0 {
@@ -252,6 +260,29 @@ mod test {
 
         let val = db.query_row("SELECT x FROM foo where x=?", [d], |row| <(i32,)>::try_from(row))?;
         assert_eq!(val, (d.as_micros() as i32,));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "chrono")]
+    fn test_append_datetime() -> Result<()> {
+        use crate::params;
+        use chrono::{NaiveDate, NaiveDateTime};
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x DATE, y TIMESTAMP)")?;
+
+        let date = NaiveDate::from_ymd_opt(2024, 6, 5).unwrap();
+        let timestamp = date.and_hms_opt(18, 26, 53).unwrap();
+        {
+            let mut app = db.appender("foo")?;
+            app.append_row(params![date, timestamp])?;
+        }
+        let (date2, timestamp2) = db.query_row("SELECT x, y FROM foo", [], |row| {
+            Ok((row.get::<_, NaiveDate>(0)?, row.get::<_, NaiveDateTime>(1)?))
+        })?;
+        assert_eq!(date, date2);
+        assert_eq!(timestamp, timestamp2);
         Ok(())
     }
 

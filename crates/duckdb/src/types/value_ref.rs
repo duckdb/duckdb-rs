@@ -23,6 +23,18 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
+impl TimeUnit {
+    /// Convert a number of `TimeUnit` to microseconds.
+    pub fn to_micros(&self, value: i64) -> i64 {
+        match self {
+            TimeUnit::Second => value * 1_000_000,
+            TimeUnit::Millisecond => value * 1000,
+            TimeUnit::Microsecond => value,
+            TimeUnit::Nanosecond => value / 1000,
+        }
+    }
+}
+
 /// A non-owning [static type value](https://duckdb.org/docs/sql/data_types/overview). Typically the
 /// memory backing this value is owned by SQLite.
 ///
