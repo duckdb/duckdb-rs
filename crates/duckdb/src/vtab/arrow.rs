@@ -636,9 +636,9 @@ mod test {
         let mut arr = stmt.query_arrow(param)?;
         let rb = arr.next().expect("no record batch");
         assert_eq!(rb.num_columns(), 1);
-        let column = rb.column(0).as_any().downcast_ref::<Float64Array>().unwrap();
+        let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(column.len(), 1);
-        assert_eq!(column.value(0), 300.0);
+        assert_eq!(column.value(0), i128::from(30000));
         Ok(())
     }
 
