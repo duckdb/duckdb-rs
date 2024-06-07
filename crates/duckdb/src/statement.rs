@@ -1,6 +1,6 @@
 use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 
-use arrow::{array::StructArray, datatypes::DataType};
+use arrow::{array::StructArray, datatypes::SchemaRef};
 
 use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
 #[cfg(feature = "polars")]
@@ -452,6 +452,15 @@ impl Statement<'_> {
         Rows::new(self)
     }
 
+    /// Returns the underlying schema of the prepared statement.
+    ///
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
+    #[inline]
+    pub fn schema(&self) -> SchemaRef {
+        self.stmt.schema()
+    }
+
     // generic because many of these branches can constant fold away.
     fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P, col: usize) -> Result<()> {
         let value = param.to_sql()?;
@@ -541,12 +550,6 @@ impl Statement<'_> {
     #[inline]
     pub(super) fn new(conn: &Connection, stmt: RawStatement) -> Statement<'_> {
         Statement { conn, stmt }
-    }
-
-    /// column_type
-    #[inline]
-    pub fn column_type(&self, idx: usize) -> DataType {
-        self.stmt.column_type(idx)
     }
 }
 
@@ -804,6 +807,41 @@ mod test {
         let y: Result<i64> = stmt.query_row([], |r| r.get("y"));
         assert_eq!(3i64, y?);
         Ok(())
+    }
+
+    #[test]
+    fn test_get_schema_of_executed_result() -> Result<()> {
+        use arrow::datatypes::{DataType, Field, Schema};
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE foo(x STRING, y INTEGER);
+                   INSERT INTO foo VALUES('hello', 3);
+                   END;";
+        db.execute_batch(sql)?;
+        let mut stmt = db.prepare("SELECT x, y FROM foo")?;
+        let _ = stmt.execute([]);
+        let schema = stmt.schema();
+        assert_eq!(
+            *schema,
+            Schema::new(vec![
+                Field::new("x", DataType::Utf8, true),
+                Field::new("y", DataType::Int32, true)
+            ])
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic(expected = "called `Option::unwrap()` on a `None` value")]
+    fn test_unexecuted_schema_panics() {
+        let db = Connection::open_in_memory().unwrap();
+        let sql = "BEGIN;
+                   CREATE TABLE foo(x STRING, y INTEGER);
+                   INSERT INTO foo VALUES('hello', 3);
+                   END;";
+        db.execute_batch(sql).unwrap();
+        let stmt = db.prepare("SELECT x, y FROM foo").unwrap();
+        let _ = stmt.schema();
     }
 
     #[test]
