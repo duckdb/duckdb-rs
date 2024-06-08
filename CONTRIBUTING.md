@@ -43,24 +43,24 @@ export DUCKDB_INCLUDE_DIR=~/duckdb-lib
 Use the exported library and header:
 
 ```shell
-cd ~/github/duckdb-rs/libduckdb-sys
+cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features buildtime_bindgen
 ```
 
 Use the bundled header file:
 ```shell
-cd ~/github/duckdb-rs/libduckdb-sys
+cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features bundled
 ```
 
-Currently in [github actions](https://github.com/wangfenjin/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [bundled-file](https://github.com/wangfenjin/duckdb-rs/tree/main/libduckdb-sys/duckdb).
+Currently in [github actions](https://github.com/wangfenjin/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [bundled-file](https://github.com/wangfenjin/duckdb-rs/tree/main/crates/libduckdb-sys/duckdb).
 You can generated the amalgamated file by:
 
 ```shell
 cd ~/github/duckdb
 mkdir -p build/amaldebug
 python scripts/amalgamation.py
-cp src/amalgamation/duckdb.cpp src/include/duckdb.h src/amalgamation/duckdb.hpp ../duckdb-rs/libduckdb-sys/duckdb/
+cp src/amalgamation/duckdb.cpp src/include/duckdb.h src/amalgamation/duckdb.hpp ../duckdb-rs/crates/libduckdb-sys/duckdb/
 ```
 
 ### duckdb-rs

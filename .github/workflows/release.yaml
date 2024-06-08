@@ -20,13 +20,13 @@ jobs:
           components: 'rustfmt, clippy'
 
       # cargo publish
-      - uses: wangfenjin/publish-crates@main
-        name: cargo publish
+      - name: publish crates
+        uses: katyo/publish-crates@v2
         with:
           path: './'
           args: --no-verify --allow-dirty --all-features
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          ignore-published: true
+          ignore-unpublished-changes: true
 
       # create release
       - name: "Build Changelog"
