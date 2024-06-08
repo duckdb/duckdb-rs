@@ -1,4 +1,4 @@
-use super::{Null, TimeUnit, Type};
+use super::{Null, OrderedMap, TimeUnit, Type};
 use rust_decimal::prelude::*;
 
 /// Owning [dynamic type value](http://sqlite.org/datatype3.html). Value's type is typically
@@ -59,6 +59,14 @@ pub enum Value {
     List(Vec<Value>),
     /// The value is an enum
     Enum(String),
+    /// The value is a struct
+    Struct(OrderedMap<String, Value>),
+    /// The value is an array
+    Array(Vec<Value>),
+    /// The value is a map
+    Map(OrderedMap<Value, Value>),
+    /// The value is a union
+    Union(Box<Value>),
 }
 
 impl From<Null> for Value {
@@ -226,7 +234,7 @@ impl Value {
             Value::Date32(_) => Type::Date32,
             Value::Time64(..) => Type::Time64,
             Value::Interval { .. } => Type::Interval,
-            Value::List(_) => todo!(),
+            Value::Union(..) | Value::Struct(..) | Value::List(..) | Value::Array(..) | Value::Map(..) => todo!(),
             Value::Enum(..) => Type::Enum,
         }
     }

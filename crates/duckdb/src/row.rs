@@ -4,7 +4,7 @@ use super::{Error, Result, Statement};
 use crate::types::{self, EnumType, FromSql, FromSqlError, ListType, ValueRef};
 
 use arrow::{
-    array::{self, Array, ArrayRef, DictionaryArray, ListArray, StructArray},
+    array::{self, Array, ArrayRef, DictionaryArray, FixedSizeListArray, ListArray, MapArray, StructArray},
     datatypes::*,
 };
 use fallible_iterator::FallibleIterator;
@@ -608,7 +608,20 @@ impl<'stmt> Row<'stmt> {
                     row,
                 )
             }
-            _ => unreachable!("invalid value: {} {}", col, column.data_type()),
+            DataType::Struct(_) => {
+                let res = column.as_any().downcast_ref::<StructArray>().unwrap();
+                ValueRef::Struct(res, row)
+            }
+            DataType::Map(..) => {
+                let arr = column.as_any().downcast_ref::<MapArray>().unwrap();
+                ValueRef::Map(arr, row)
+            }
+            DataType::FixedSizeList(..) => {
+                let arr = column.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+                ValueRef::Array(arr, row)
+            }
+            DataType::Union(..) => ValueRef::Union(column, row),
+            _ => unreachable!("invalid value: {}, {}", col, column.data_type()),
         }
     }
 

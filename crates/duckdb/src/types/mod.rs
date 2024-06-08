@@ -69,6 +69,7 @@ impl ToSql for DateTimeSql {
 
 pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
+    ordered_map::OrderedMap,
     to_sql::{ToSql, ToSqlOutput},
     value::Value,
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
@@ -87,6 +88,8 @@ mod to_sql;
 mod url;
 mod value;
 mod value_ref;
+
+mod ordered_map;
 
 /// Empty struct that can be used to fill in a query parameter as `NULL`.
 ///
@@ -151,6 +154,14 @@ pub enum Type {
     List(Box<Type>),
     /// ENUM
     Enum,
+    /// STRUCT
+    Struct(Vec<(String, Type)>),
+    /// MAP
+    Map(Box<Type>, Box<Type>),
+    /// ARRAY
+    Array(Box<Type>, u32),
+    /// UNION
+    Union,
     /// Any
     Any,
 }
@@ -183,13 +194,30 @@ impl From<&DataType> for Type {
             // DataType::LargeBinary => Self::LargeBinary,
             DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
             DataType::List(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
-            // DataType::FixedSizeList(field, size) => Self::Array,
+            DataType::FixedSizeList(field, size) => {
+                Self::Array(Box::new(Type::from(field.data_type())), (*size).try_into().unwrap())
+            }
+            // DataType::LargeList(_) => Self::LargeList,
+            DataType::Struct(inner) => Self::Struct(
+                inner
+                    .iter()
+                    .map(|f| (f.name().to_owned(), Type::from(f.data_type())))
+                    .collect(),
+            ),
             DataType::LargeList(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
-            // DataType::Struct(inner) => Self::Struct,
             // DataType::Union(_, _) => Self::Union,
             DataType::Decimal128(..) => Self::Decimal,
             DataType::Decimal256(..) => Self::Decimal,
-            // DataType::Map(field, ..) => Self::Map,
+            DataType::Map(field, ..) => {
+                let data_type = field.data_type();
+                match data_type {
+                    DataType::Struct(fields) => Self::Map(
+                        Box::new(Type::from(fields[0].data_type())),
+                        Box::new(Type::from(fields[1].data_type())),
+                    ),
+                    _ => unreachable!(),
+                }
+            }
             res => unimplemented!("{}", res),
         }
     }
@@ -218,8 +246,12 @@ impl fmt::Display for Type {
             Type::Date32 => f.pad("Date32"),
             Type::Time64 => f.pad("Time64"),
             Type::Interval => f.pad("Interval"),
+            Type::Struct(..) => f.pad("Struct"),
             Type::List(..) => f.pad("List"),
             Type::Enum => f.pad("Enum"),
+            Type::Map(..) => f.pad("Map"),
+            Type::Array(..) => f.pad("Array"),
+            Type::Union => f.pad("Union"),
             Type::Any => f.pad("Any"),
         }
     }

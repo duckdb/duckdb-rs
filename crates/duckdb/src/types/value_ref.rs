@@ -1,11 +1,14 @@
 use super::{Type, Value};
-use crate::types::{FromSqlError, FromSqlResult};
+use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
 
 use crate::Row;
 use rust_decimal::prelude::*;
 
 use arrow::{
-    array::{Array, ArrayRef, DictionaryArray, LargeListArray, ListArray},
+    array::{
+        Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StructArray,
+        UnionArray,
+    },
     datatypes::{UInt16Type, UInt32Type, UInt8Type},
 };
 
@@ -92,6 +95,14 @@ pub enum ValueRef<'a> {
     List(ListType<'a>, usize),
     /// The value is an enum
     Enum(EnumType<'a>, usize),
+    /// The value is a struct
+    Struct(&'a StructArray, usize),
+    /// The value is an array
+    Array(&'a FixedSizeListArray, usize),
+    /// The value is a map
+    Map(&'a MapArray, usize),
+    /// The value is a union
+    Union(&'a ArrayRef, usize),
 }
 
 /// Wrapper type for different list sizes
@@ -139,11 +150,15 @@ impl ValueRef<'_> {
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
             ValueRef::Interval { .. } => Type::Interval,
+            ValueRef::Struct(arr, _) => arr.data_type().into(),
+            ValueRef::Map(arr, _) => arr.data_type().into(),
+            ValueRef::Array(arr, _) => arr.data_type().into(),
             ValueRef::List(arr, _) => match arr {
                 ListType::Large(arr) => arr.data_type().into(),
                 ListType::Regular(arr) => arr.data_type().into(),
             },
             ValueRef::Enum(..) => Type::Enum,
+            ValueRef::Union(arr, _) => arr.data_type().into(),
         }
     }
 
@@ -241,6 +256,50 @@ impl From<ValueRef<'_>> for Value {
                     panic!("Enum value is not a string")
                 }
             }
+            ValueRef::Struct(items, idx) => {
+                let value: Vec<(String, Value)> = items
+                    .columns()
+                    .iter()
+                    .zip(items.fields().iter().map(|f| f.name().to_owned()))
+                    .map(|(column, name)| -> (String, Value) {
+                        (name, Row::value_ref_internal(idx, 0, column).to_owned())
+                    })
+                    .collect();
+                Value::Struct(OrderedMap::from(value))
+            }
+            ValueRef::Map(arr, idx) => {
+                let keys = arr.keys();
+                let values = arr.values();
+                let offsets = arr.offsets();
+                let range = offsets[idx]..offsets[idx + 1];
+                Value::Map(OrderedMap::from(
+                    range
+                        .map(|row| {
+                            let row = row.try_into().unwrap();
+                            let key = Row::value_ref_internal(row, idx, keys).to_owned();
+                            let value = Row::value_ref_internal(row, idx, values).to_owned();
+                            (key, value)
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+            }
+            ValueRef::Array(items, idx) => {
+                let value_length = usize::try_from(items.value_length()).unwrap();
+                let range = (idx * value_length)..((idx + 1) * value_length);
+                Value::Array(
+                    range
+                        .map(|row| Row::value_ref_internal(row, idx, items.values()).to_owned())
+                        .collect(),
+                )
+            }
+            ValueRef::Union(column, idx) => {
+                let column = column.as_any().downcast_ref::<UnionArray>().unwrap();
+                let type_id = column.type_id(idx);
+                let value_offset = column.value_offset(idx);
+
+                let tag = Row::value_ref_internal(idx, value_offset, column.child(type_id));
+                Value::Union(Box::new(tag.to_owned()))
+            }
         }
     }
 }
@@ -291,8 +350,10 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
-            Value::List(..) => unimplemented!(),
             Value::Enum(..) => todo!(),
+            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
+                unimplemented!()
+            }
         }
     }
 }

@@ -1003,7 +1003,6 @@ mod test {
     }
 
     mod query_and_then_tests {
-
         use super::*;
 
         #[derive(Debug)]
