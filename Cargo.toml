@@ -60,4 +60,4 @@ unicase = "2.6.0"
 url = "2.1"
 uuid = "1.0"
 vcpkg = "0.2"
-arrow = { version = "51", default-features = false }
+arrow = { version = "52", default-features = false }
