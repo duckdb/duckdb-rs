@@ -1,5 +1,7 @@
 use std::str;
 
+use arrow::datatypes::DataType;
+
 use crate::{Error, Result, Statement};
 
 /// Information about a column of a DuckDB query.
@@ -29,6 +31,9 @@ impl Statement<'_> {
     /// If associated DB schema can be altered concurrently, you should make
     /// sure that current statement has already been stepped once before
     /// calling this method.
+    ///
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     pub fn column_names(&self) -> Vec<String> {
         self.stmt
             .schema()
@@ -87,7 +92,9 @@ impl Statement<'_> {
     /// Returns an `Error::InvalidColumnIndex` if `idx` is outside the valid
     /// column range for this row.
     ///
-    /// Panics when column name is not valid UTF-8.
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet
+    /// or when column name is not valid UTF-8.
     #[inline]
     pub fn column_name(&self, col: usize) -> Result<&String> {
         self.stmt.column_name(col).ok_or(Error::InvalidColumnIndex(col))
@@ -106,6 +113,9 @@ impl Statement<'_> {
     ///
     /// Will return an `Error::InvalidColumnName` when there is no column with
     /// the specified `name`.
+    ///
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     #[inline]
     pub fn column_index(&self, name: &str) -> Result<usize> {
         let n = self.column_count();
@@ -117,6 +127,15 @@ impl Statement<'_> {
             }
         }
         Err(Error::InvalidColumnName(String::from(name)))
+    }
+
+    /// Returns the declared data type of the column.
+    ///
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
+    #[inline]
+    pub fn column_type(&self, idx: usize) -> DataType {
+        self.stmt.column_type(idx)
     }
 
     /// Returns a slice describing the columns of the result of the query.
