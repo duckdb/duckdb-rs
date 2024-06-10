@@ -160,7 +160,8 @@ mod build_bundled {
             .flag_if_supported("-stdlib=libstdc++")
             .flag_if_supported("/bigobj")
             .warnings(false)
-            .flag_if_supported("-w");
+            .flag_if_supported("-w")
+            .flag_if_supported("/D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR");
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
