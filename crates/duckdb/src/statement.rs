@@ -448,7 +448,7 @@ impl Statement<'_> {
     /// Note that if the SQL does not return results, [`Statement::raw_execute`]
     /// should be used instead.
     #[inline]
-    pub fn raw_query(&mut self) -> Rows<'_> {
+    pub fn raw_query(&self) -> Rows<'_> {
         Rows::new(self)
     }
 
