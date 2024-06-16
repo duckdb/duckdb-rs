@@ -1,7 +1,9 @@
+mod column_info;
 mod data_chunk;
 mod logical_type;
 mod vector;
 
-pub use data_chunk::DataChunk;
-pub use logical_type::{LogicalType, LogicalTypeId};
+pub(crate) use column_info::*;
+pub use data_chunk::*;
+pub use logical_type::*;
 pub use vector::*;

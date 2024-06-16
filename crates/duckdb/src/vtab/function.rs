@@ -9,7 +9,7 @@ use super::{
         duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
-    LogicalType, Value,
+    LogicalTypeHandle, Value,
 };
 use std::{
     ffi::{c_void, CString},
@@ -28,7 +28,7 @@ impl BindInfo {
     /// # Arguments
     ///  * `name`: The name of the column
     ///  * `type`: The logical type of the column
-    pub fn add_result_column(&self, column_name: &str, column_type: LogicalType) {
+    pub fn add_result_column(&self, column_name: &str, column_type: LogicalTypeHandle) {
         let c_str = CString::new(column_name).unwrap();
         unsafe {
             duckdb_bind_add_result_column(self.ptr, c_str.as_ptr() as *const c_char, column_type.ptr);
@@ -226,7 +226,7 @@ impl TableFunction {
     ///
     /// # Arguments
     ///  * `logical_type`: The type of the parameter to add.
-    pub fn add_parameter(&self, logical_type: &LogicalType) -> &Self {
+    pub fn add_parameter(&self, logical_type: &LogicalTypeHandle) -> &Self {
         unsafe {
             duckdb_table_function_add_parameter(self.ptr, logical_type.ptr);
         }
@@ -238,7 +238,7 @@ impl TableFunction {
     /// # Arguments
     /// * `name`: The name of the parameter to add.
     /// * `logical_type`: The type of the parameter to add.
-    pub fn add_named_parameter(&self, name: &str, logical_type: &LogicalType) -> &Self {
+    pub fn add_named_parameter(&self, name: &str, logical_type: &LogicalTypeHandle) -> &Self {
         unsafe {
             let string = CString::new(name).unwrap();
             duckdb_table_function_add_named_parameter(self.ptr, string.as_ptr(), logical_type.ptr);

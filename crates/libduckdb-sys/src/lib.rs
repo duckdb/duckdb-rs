@@ -11,6 +11,9 @@ mod bindings {
 #[allow(clippy::all)]
 pub use bindings::*;
 
+mod string;
+pub use string::*;
+
 pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
 pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
 
