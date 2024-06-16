@@ -1,6 +1,10 @@
-use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
+use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str, sync::Arc};
 
-use arrow::{array::StructArray, datatypes::SchemaRef};
+use arrow::{
+    array::StructArray,
+    datatypes::{DataType, SchemaRef},
+};
+use arrow_convert::deserialize::{ArrowArray, ArrowDeserialize};
 
 use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
 #[cfg(feature = "polars")]
@@ -107,6 +111,44 @@ impl Statement<'_> {
     pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
         Ok(Arrow::new(self))
+    }
+
+    /// Execute the prepared statement, returning a deserialized vector of type `T` from the resulting arrow RecordBatch.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use arrow::record_batch::RecordBatch;
+    ///
+    /// fn query_and_deserialize(conn: &Connection) -> Result<Vec<i32>> {
+    ///     let result: Vec<i32> = conn
+    ///         .prepare("SELECT num FROM test")?
+    ///         .query_arrow_deserialized([])?;
+    ///     Ok(result)
+    /// }
+    /// ```
+    pub fn query_arrow_deserialized<T>(&mut self, params: impl Params) -> Result<Vec<T>>
+    where
+        T: ArrowDeserialize<Type = T> + 'static,
+    {
+        let arrow_iter = self.query_arrow(params)?;
+        let mut result = Vec::new();
+
+        for rb in arrow_iter {
+            let fields = rb.schema_ref().fields();
+
+            let struct_or_union_array = if fields.len() == 1 && matches!(fields[0].data_type(), DataType::Union(_, _)) {
+                rb.column(0).clone()
+            } else {
+                Arc::new(StructArray::from(rb))
+            };
+            let chunk = T::ArrayType::iter_from_array_ref(&struct_or_union_array)
+                .map(<T as ArrowDeserialize>::arrow_deserialize_internal);
+            result.extend(chunk);
+        }
+
+        Ok(result)
     }
 
     /// Execute the prepared statement, returning a handle to the resulting

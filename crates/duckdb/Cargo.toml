@@ -16,6 +16,7 @@ description = "Ergonomic wrapper for DuckDB"
 
 [lib]
 name = "duckdb"
+bench = false
 
 [features]
 default = []
@@ -54,9 +55,13 @@ strum = { workspace = true, features = ["derive"] }
 r2d2 = { workspace = true, optional = true }
 calamine = { workspace = true, optional = true }
 num = { workspace = true, features = ["std"], optional = true }
+derive_more = { workspace = true }
 duckdb-loadable-macros = { workspace = true, optional = true }
 polars = { workspace = true, features = ["dtype-full"], optional = true }
 num-integer = { workspace = true }
+thiserror = { workspace = true }
+arrow_convert = { workspace = true }
+itertools = { workspace = true }
 
 [dev-dependencies]
 doc-comment = { workspace = true }
@@ -69,12 +74,12 @@ rand = { workspace = true }
 tempdir = { workspace = true }
 polars-core = { workspace = true }
 pretty_assertions = { workspace = true }
-# criterion = "0.3"
+rusqlite = { workspace = true }
+criterion = { workspace = true }
 
 # [[bench]]
 # name = "data_types"
 # harness = false
-
 
 [package.metadata.docs.rs]
 features = []
@@ -90,3 +95,12 @@ all-features = false
 name = "hello-ext"
 crate-type = ["cdylib"]
 required-features = ["vtab-loadable"]
+
+[[example]]
+name = "appender"
+crate-type = ["cdylib"]
+required-features = ["appender-arrow"]
+
+[[bench]]
+name = "issue-282"
+harness = false

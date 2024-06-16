@@ -1,5 +1,5 @@
-use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
-use crate::core::Inserter;
+use super::{BindInfo, Free, FunctionInfo, InitInfo, LogicalTypeHandle, VTab};
+use crate::core::{DataChunk, DataChunkHandle, Inserter, LogicalTypeId};
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
 #[repr(C)]
@@ -33,7 +33,7 @@ impl VTab for ExcelVTab {
     type BindData = ExcelBindData;
     type InitData = ExcelInitData;
 
-    unsafe fn bind(bind: &BindInfo, data: *mut ExcelBindData) -> Result<(), Box<dyn std::error::Error>> {
+    fn bind(bind: &BindInfo, data: *mut ExcelBindData) -> Result<(), Box<dyn std::error::Error>> {
         let param_count = bind.get_parameter_count();
         assert!(param_count == 2);
         let path = bind.get_parameter(0).to_string();
@@ -125,27 +125,30 @@ impl VTab for ExcelVTab {
         Ok(())
     }
 
-    unsafe fn init(_: &InitInfo, data: *mut ExcelInitData) -> Result<(), Box<dyn std::error::Error>> {
+    fn init(_: &InitInfo, data: *mut ExcelInitData) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             (*data).start = 1;
         }
         Ok(())
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(func: &FunctionInfo, output: DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ExcelInitData>();
         let bind_info = func.get_bind_data::<ExcelBindData>();
+        let mut data_chunk = DataChunk::from_existing_handle(output);
+
         unsafe {
             if (*init_info).start >= (*bind_info).height {
-                output.set_len(0);
+                data_chunk.set_len(0);
             } else {
                 let range = (*bind_info).range.as_ref().expect("range is null");
                 let height = std::cmp::min(
-                    output.flat_vector(0).capacity(),
+                    DataChunkHandle::max_capacity(),
                     (*bind_info).height - (*init_info).start,
                 );
                 for i in 0..(*bind_info).width {
-                    let mut vector = output.flat_vector(i);
+                    data_chunk.reserve(height);
+                    let vector = data_chunk.columns[i].try_as_flat_mut().unwrap();
                     for j in 0..height {
                         let cell = range.get(((*init_info).start + j, i));
                         if cell.is_none() {
@@ -174,7 +177,7 @@ impl VTab for ExcelVTab {
                     }
                 }
                 (*init_info).start += height;
-                output.set_len(height);
+                data_chunk.set_len(height);
             }
         }
         Ok(())
@@ -203,7 +206,8 @@ mod test {
             .prepare("select count(*) from excel('./examples/Movies_Social_metadata.xlsx', 'Data')")?
             .query_row::<i64, _, _>([], |row| row.get(0))?;
         assert_eq!(3039, val);
-        let mut stmt = db.prepare("select genres, sum(movie_facebook_likes) from excel('./examples/Movies_Social_metadata.xlsx', 'Data') group by genres order by genres limit 4")?;
+        let mut stmt =
+            db.prepare("select genres, sum(movie_facebook_likes) from excel('./examples/Movies_Social_metadata.xlsx', 'Data') group by genres order by genres limit 4")?;
         // +-------------+---------------------------+
         // | genres      | sum(movie_facebook_likes) |
         // +-------------+---------------------------+
