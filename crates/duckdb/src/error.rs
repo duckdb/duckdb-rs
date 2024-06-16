@@ -1,11 +1,12 @@
-use arrow::datatypes::DataType;
+use std::{error, ffi::CStr, fmt, path::PathBuf, str};
+
+use arrow::{datatypes::DataType, error::ArrowError};
 
 use super::Result;
 use crate::{
     ffi,
     types::{FromSqlError, Type},
 };
-use std::{error, ffi::CStr, fmt, path::PathBuf, str};
 
 /// Enum listing possible errors from duckdb.
 #[derive(Debug)]
@@ -63,6 +64,9 @@ pub enum Error {
     /// Error when datatype to duckdb type
     ArrowTypeToDuckdbType(String, DataType),
 
+    /// Error when datatype to duckdb type
+    ArrowError(ArrowError),
+
     /// Error when a query that was expected to insert one row did not insert
     /// any or insert many.
     StatementChangedRows(usize),
@@ -119,6 +123,13 @@ impl From<::std::ffi::NulError> for Error {
     #[cold]
     fn from(err: ::std::ffi::NulError) -> Error {
         Error::NulError(err)
+    }
+}
+
+impl From<ArrowError> for Error {
+    #[cold]
+    fn from(err: ArrowError) -> Error {
+        Error::ArrowError(err)
     }
 }
 
@@ -186,6 +197,7 @@ impl fmt::Display for Error {
             Error::InvalidQuery => write!(f, "Query is not read-only"),
             Error::MultipleStatement => write!(f, "Multiple statements provided"),
             Error::AppendError => write!(f, "Append error"),
+            Error::ArrowError(_) => write!(f, "Arrow Error"),
         }
     }
 }
@@ -210,6 +222,7 @@ impl error::Error for Error {
             | Error::InvalidQuery
             | Error::AppendError
             | Error::ArrowTypeToDuckdbType(..)
+            | Error::ArrowError(_)
             | Error::MultipleStatement => None,
             Error::FromSqlConversionFailure(_, _, ref err) | Error::ToSqlConversionFailure(ref err) => Some(&**err),
         }
@@ -225,12 +238,12 @@ fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> R
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_appender(code: ffi::duckdb_state, appender: *mut ffi::duckdb_appender) -> Result<()> {
+pub fn result_from_duckdb_appender(code: ffi::duckdb_state, appender: &mut ffi::duckdb_appender) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
     unsafe {
-        let message = if (*appender).is_null() {
+        let message = if appender.is_null() {
             Some("appender is null".to_string())
         } else {
             let c_err = ffi::duckdb_appender_error(*appender);
