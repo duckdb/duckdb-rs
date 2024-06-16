@@ -205,7 +205,8 @@ impl From<&DataType> for Type {
                     .collect(),
             ),
             DataType::LargeList(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
-            // DataType::Union(_, _) => Self::Union,
+            DataType::Union(_, _) => Self::Union,
+            DataType::Dictionary(_, _) => Self::Enum,
             DataType::Decimal128(..) => Self::Decimal,
             DataType::Decimal256(..) => Self::Decimal,
             DataType::Map(field, ..) => {
