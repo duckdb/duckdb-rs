@@ -93,6 +93,7 @@ pub use arrow;
 #[cfg(feature = "polars")]
 pub use polars::{self, export::arrow as arrow2};
 
+pub mod core;
 #[macro_use]
 mod error;
 mod appender;
