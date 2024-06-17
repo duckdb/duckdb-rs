@@ -164,6 +164,7 @@ mod build_bundled {
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
+            cfg.define("_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR", None);
         }
         cfg.compile(lib_name);
         println!("cargo:lib_dir={out_dir}");
