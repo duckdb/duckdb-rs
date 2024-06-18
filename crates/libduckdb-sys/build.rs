@@ -325,6 +325,7 @@ mod bindings {
         bindgen::builder()
             .trust_clang_mangling(false)
             .header(header.clone())
+            .clang_arg("/D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR=1")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
