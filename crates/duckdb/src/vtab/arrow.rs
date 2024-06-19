@@ -873,14 +873,8 @@ mod test {
 
     #[test]
     fn test_utf8_roundtrip() -> Result<(), Box<dyn Error>> {
-        check_rust_primitive_array_roundtrip(
-            StringArray::from(vec![Some("foo"), None, Some("bar")]),
-            StringArray::from(vec![Some("foo"), None, Some("bar")]),
-        )?;
-        check_rust_primitive_array_roundtrip(
-            LargeStringArray::from(vec![Some("foo"), None, Some("bar")]),
-            LargeStringArray::from(vec![Some("foo"), None, Some("bar")]),
-        )?;
+        check_generic_array_roundtrip(StringArray::from(vec![Some("foo"), None, Some("bar")]))?;
+        check_generic_array_roundtrip(LargeStringArray::from(vec![Some("foo"), None, Some("bar")]))?;
         Ok(())
     }
 
