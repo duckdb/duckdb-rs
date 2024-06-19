@@ -40,7 +40,7 @@ memchr = "2.3"
 num = { version = "0.4", default-features = false }
 pkg-config = "0.3.24"
 polars = "0.35.4"
-polars-core = "0.35.4"
+polars-core = "0.40.0"
 pretty_assertions = "1.4.0"
 proc-macro2 = "1.0.56"
 quote = "1.0.21"
