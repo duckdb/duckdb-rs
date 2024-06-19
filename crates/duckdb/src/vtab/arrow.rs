@@ -6,9 +6,7 @@ use std::ptr::null_mut;
 
 use crate::vtab::vector::Inserter;
 use arrow::array::{
-    as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array,
-    as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array, FixedSizeListArray,
-    GenericListArray, OffsetSizeTrait, PrimitiveArray, StringArray, StructArray,
+    as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array, FixedSizeListArray, GenericListArray, GenericStringArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StructArray
 };
 
 use arrow::{
@@ -228,6 +226,12 @@ pub fn record_batch_to_duckdb_data_chunk(
             }
             DataType::Utf8 => {
                 string_array_to_vector(as_string_array(col.as_ref()), &mut chunk.flat_vector(i));
+            },
+            DataType::LargeUtf8 => {
+                string_array_to_vector(
+                    col.as_ref().as_any().downcast_ref::<LargeStringArray>()  .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeStringArray"))?,
+                    &mut chunk.flat_vector(i)
+                );
             }
             DataType::Binary => {
                 binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector(i));
@@ -453,7 +457,7 @@ fn boolean_array_to_vector(array: &BooleanArray, out: &mut FlatVector) {
     }
 }
 
-fn string_array_to_vector(array: &StringArray, out: &mut FlatVector) {
+fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out: &mut FlatVector) {
     assert!(array.len() <= out.capacity());
 
     // TODO: zero copy assignment
@@ -611,10 +615,7 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
-            FixedSizeListArray, GenericListArray, Int32Array, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray,
-            StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
-            TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array, FixedSizeListArray, GenericListArray, Int32Array, LargeStringArray, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{i256, ArrowPrimitiveType, DataType, Field, Fields, Schema},
@@ -859,6 +860,15 @@ mod test {
 
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
+        Ok(())
+    }
+
+
+
+    #[test]
+    fn test_utf8_roundtrip() -> Result<(), Box<dyn Error>> {
+        check_rust_primitive_array_roundtrip(StringArray::from(vec![Some("foo"), None, Some("bar")]), StringArray::from(vec![Some("foo"), None, Some("bar")]))?;
+        check_rust_primitive_array_roundtrip(LargeStringArray::from(vec![Some("foo"), None, Some("bar")]), LargeStringArray::from(vec![Some("foo"), None, Some("bar")]))?;
         Ok(())
     }
 
