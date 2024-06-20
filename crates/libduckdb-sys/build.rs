@@ -164,7 +164,6 @@ mod build_bundled {
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
-            cfg.define("_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR", None);
         }
         cfg.compile(lib_name);
         println!("cargo:lib_dir={out_dir}");
@@ -325,7 +324,6 @@ mod bindings {
         bindgen::builder()
             .trust_clang_mangling(false)
             .header(header.clone())
-            .clang_arg("/D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR=1")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
