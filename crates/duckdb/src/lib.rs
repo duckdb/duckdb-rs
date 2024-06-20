@@ -376,6 +376,14 @@ impl Connection {
         self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
     }
 
+    /// Convenience method to interrupt the current query running on the connection.
+    ///
+    /// This will cause the cancelled query to immediately return an error.
+    #[inline]
+    pub fn interrupt(&self) {
+        unsafe { ffi::duckdb_interrupt(self.db.borrow().con) };
+    }
+
     /// Returns the path to the database file, if one exists and is known.
     #[inline]
     pub fn path(&self) -> Option<&Path> {
