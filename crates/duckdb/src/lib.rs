@@ -376,6 +376,10 @@ impl Connection {
         self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
     }
 
+    pub fn interrupt(&self) {
+        unsafe { ffi::duckdb_interrupt(self.db.borrow_mut().con) };
+    }
+
     /// Returns the path to the database file, if one exists and is known.
     #[inline]
     pub fn path(&self) -> Option<&Path> {
