@@ -377,7 +377,7 @@ impl Connection {
     }
 
     pub fn interrupt(&self) {
-        unsafe { ffi::duckdb_interrupt(self.db.borrow_mut().con) };
+        unsafe { ffi::duckdb_interrupt(self.db.borrow().con) };
     }
 
     /// Returns the path to the database file, if one exists and is known.
