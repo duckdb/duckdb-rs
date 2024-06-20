@@ -376,6 +376,8 @@ impl Connection {
         self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
     }
 
+    /// Convenience method to interrupt the current query running on the connection.
+    #[inline]
     pub fn interrupt(&self) {
         unsafe { ffi::duckdb_interrupt(self.db.borrow().con) };
     }
