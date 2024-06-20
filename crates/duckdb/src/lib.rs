@@ -377,6 +377,8 @@ impl Connection {
     }
 
     /// Convenience method to interrupt the current query running on the connection.
+    ///
+    /// This will cause the cancelled query to immediately return an error.
     #[inline]
     pub fn interrupt(&self) {
         unsafe { ffi::duckdb_interrupt(self.db.borrow().con) };
