@@ -621,12 +621,12 @@ mod test {
     use arrow::{
         array::{
             Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
-            FixedSizeListArray, GenericListArray, Int32Array, LargeStringArray, ListArray, OffsetSizeTrait,
-            PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
+            FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array, LargeStringArray, ListArray,
+            OffsetSizeTrait, PrimitiveArray, StringArray, Time32SecondArray, Time64MicrosecondArray,
             TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
-        datatypes::{i256, ArrowPrimitiveType, DataType, Field, Fields, Schema},
+        datatypes::{i256, ArrowPrimitiveType, ByteArrayType, DataType, Field, Schema},
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
@@ -793,6 +793,48 @@ mod test {
         Ok(())
     }
 
+    fn check_generic_byte_roundtrip<T1, T2>(
+        arry_in: GenericByteArray<T1>,
+        arry_out: GenericByteArray<T2>,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        T1: ByteArrayType,
+        T2: ByteArrayType,
+    {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        // Roundtrip a record batch from Rust to DuckDB and back to Rust
+        let schema = Schema::new(vec![Field::new("a", arry_in.data_type().clone(), false)]);
+
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(arry_in.clone())])?;
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_any_array = rb.column(0);
+
+        assert!(
+            output_any_array.data_type().equals_datatype(arry_out.data_type()),
+            "{} != {}",
+            output_any_array.data_type(),
+            arry_out.data_type()
+        );
+
+        match output_any_array.as_bytes_opt::<T2>() {
+            Some(output_array) => {
+                assert_eq!(output_array.len(), arry_out.len());
+                for i in 0..output_array.len() {
+                    assert_eq!(output_array.is_valid(i), arry_out.is_valid(i));
+                    assert_eq!(output_array.value_data(), arry_out.value_data())
+                }
+            }
+            None => panic!("Expected GenericByteArray"),
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn test_array_roundtrip() -> Result<(), Box<dyn Error>> {
         check_generic_array_roundtrip(ListArray::new(
@@ -873,8 +915,16 @@ mod test {
 
     #[test]
     fn test_utf8_roundtrip() -> Result<(), Box<dyn Error>> {
-        check_generic_array_roundtrip(StringArray::from(vec![Some("foo"), None, Some("bar")]))?;
-        check_generic_array_roundtrip(LargeStringArray::from(vec![Some("foo"), None, Some("bar")]))?;
+        check_generic_byte_roundtrip(
+            StringArray::from(vec![Some("foo"), Some("Baz"), Some("bar")]),
+            StringArray::from(vec![Some("foo"), Some("Baz"), Some("bar")]),
+        )?;
+
+        // [`LargeStringArray`] will be downcasted to [`StringArray`].
+        check_generic_byte_roundtrip(
+            LargeStringArray::from(vec![Some("foo"), Some("Baz"), Some("bar")]),
+            StringArray::from(vec![Some("foo"), Some("Baz"), Some("bar")]),
+        )?;
         Ok(())
     }
 
