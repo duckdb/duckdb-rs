@@ -622,11 +622,11 @@ mod test {
         array::{
             Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
             FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array, LargeStringArray, ListArray,
-            OffsetSizeTrait, PrimitiveArray, StringArray, Time32SecondArray, Time64MicrosecondArray,
+            OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
             TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
-        datatypes::{i256, ArrowPrimitiveType, ByteArrayType, DataType, Field, Schema},
+        datatypes::{i256, ArrowPrimitiveType, ByteArrayType, DataType, Field, Fields, Schema},
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
