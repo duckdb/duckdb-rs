@@ -75,19 +75,19 @@ mod build_bundled {
         );
     }
 
-    fn untar_archive() {
+    fn untar_archive(out_dir: &str) {
         let path = "duckdb.tar.gz";
 
         let tar_gz = std::fs::File::open(path).expect("archive file");
         let tar = flate2::read::GzDecoder::new(tar_gz);
         let mut archive = tar::Archive::new(tar);
-        archive.unpack(".").expect("archive");
+        archive.unpack(out_dir).expect("archive");
     }
 
     pub fn main(out_dir: &str, out_path: &Path) {
         let lib_name = super::lib_name();
 
-        untar_archive();
+        untar_archive(out_dir);
 
         if !cfg!(feature = "bundled") {
             // This is just a sanity check, the top level `main` should ensure this.
@@ -97,7 +97,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{}/src/include/duckdb.h", lib_name));
+            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/duckdb.h"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -106,7 +106,7 @@ mod build_bundled {
             fs::copy("src/bindgen_bundled_version.rs", out_path).expect("Could not copy bindings to output directory");
         }
 
-        let manifest_file = std::fs::File::open(format!("{}/manifest.json", lib_name)).expect("manifest file");
+        let manifest_file = std::fs::File::open(format!("{out_dir}/{lib_name}/manifest.json")).expect("manifest file");
         let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
 
         let mut cpp_files = HashSet::new();
@@ -132,7 +132,7 @@ mod build_bundled {
 
         // Since the manifest controls the set of files, we require it to be changed to know whether
         // to rebuild the project
-        println!("cargo:rerun-if-changed={}/manifest.json", lib_name);
+        println!("cargo:rerun-if-changed={out_dir}/{lib_name}/manifest.json");
         // Make sure to rebuild the project if tar file changed
         println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
@@ -148,9 +148,9 @@ mod build_bundled {
             add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
         }
 
-        cfg.includes(include_dirs.iter().map(|x| format!("{}/{}", lib_name, x)));
+        cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/{lib_name}/{dir}")));
 
-        for f in cpp_files {
+        for f in cpp_files.into_iter().map(|file| format!("{out_dir}/{file}")) {
             cfg.file(f);
         }
 
@@ -166,6 +166,7 @@ mod build_bundled {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
         }
         cfg.compile(lib_name);
+
         println!("cargo:lib_dir={out_dir}");
     }
 }
