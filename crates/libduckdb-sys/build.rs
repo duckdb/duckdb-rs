@@ -97,7 +97,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{}/src/include/duckdb.h", lib_name));
+            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/duckdb.h"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -132,7 +132,7 @@ mod build_bundled {
 
         // Since the manifest controls the set of files, we require it to be changed to know whether
         // to rebuild the project
-        println!("cargo:rerun-if-changed={}/manifest.json", lib_name);
+        println!("cargo:rerun-if-changed={out_dir}/{lib_name}/manifest.json");
         // Make sure to rebuild the project if tar file changed
         println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
