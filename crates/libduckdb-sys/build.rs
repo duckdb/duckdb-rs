@@ -167,9 +167,6 @@ mod build_bundled {
         }
         cfg.compile(lib_name);
 
-        // Remove the extracted files after building.
-        std::fs::remove_dir_all(format!("{out_dir}/{lib_name}")).expect("Could not delete extracted files");
-
         println!("cargo:lib_dir={out_dir}");
     }
 }
