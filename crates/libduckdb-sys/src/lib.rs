@@ -14,6 +14,24 @@ pub use bindings::*;
 pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
 pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
 
+use std::slice;
+impl From<&duckdb_string_t> for String {
+    fn from(source: &duckdb_string_t) -> String {
+        unsafe {
+            let s = if source.value.inlined.length <= 12 {
+                source.value.inlined.inlined.as_ptr()
+            } else {
+                source.value.pointer.ptr
+            };
+            return std::str::from_utf8_unchecked(slice::from_raw_parts(
+                s as *const u8,
+                source.value.inlined.length as usize,
+            ))
+            .to_string();
+        }
+    }
+}
+
 pub use self::error::*;
 mod error;
 
