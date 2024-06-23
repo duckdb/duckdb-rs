@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.10.2"
+version = "1.0.0"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/wangfenjin/duckdb-rs"
@@ -19,8 +19,8 @@ license = "MIT"
 categories = ["database"]
 
 [workspace.dependencies]
-duckdb = { version = "0.10.2", path = "crates/duckdb" }
-libduckdb-sys = { version = "0.10.2", path = "crates/libduckdb-sys" }
+duckdb = { version = "1.0.0", path = "crates/duckdb" }
+libduckdb-sys = { version = "1.0.0", path = "crates/libduckdb-sys" }
 duckdb-loadable-macros = { version = "0.1.1", path = "crates/duckdb-loadable-macros" }
 autocfg = "1.0"
 bindgen = { version = "0.69", default-features = false }
