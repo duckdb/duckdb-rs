@@ -729,6 +729,44 @@ mod test {
         Ok(())
     }
 
+    #[test]
+    fn test_append_struct_contains_null() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE t1 (s STRUCT(v VARCHAR, i INTEGER))")?;
+        {
+            let struct_array = StructArray::try_new(
+                vec![
+                    Arc::new(Field::new("v", DataType::Utf8, true)),
+                    Arc::new(Field::new("i", DataType::Int32, true)),
+                ]
+                .into(),
+                vec![
+                    Arc::new(StringArray::from(vec![Some("foo"), Some("bar")])) as ArrayRef,
+                    Arc::new(Int32Array::from(vec![Some(1), Some(2)])) as ArrayRef,
+                ],
+                Some(vec![true, false].into()),
+            )?;
+
+            let schema = Schema::new(vec![Field::new(
+                "s",
+                DataType::Struct(Fields::from(vec![
+                    Field::new("v", DataType::Utf8, true),
+                    Field::new("i", DataType::Int32, true),
+                ])),
+                true,
+            )]);
+
+            let record_batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(struct_array)])?;
+            let mut app = db.appender("t1")?;
+            app.append_record_batch(record_batch)?;
+        }
+        let mut stmt = db.prepare("SELECT s FROM t1 where s IS NOT NULL")?;
+        let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
+        assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 1);
+
+        Ok(())
+    }
+
     fn check_rust_primitive_array_roundtrip<T1, T2>(
         input_array: PrimitiveArray<T1>,
         expected_array: PrimitiveArray<T2>,
@@ -786,7 +824,7 @@ mod test {
         db.register_table_function::<ArrowVTab>("arrow")?;
 
         // Roundtrip a record batch from Rust to DuckDB and back to Rust
-        let schema = Schema::new(vec![Field::new("a", arry.data_type().clone(), false)]);
+        let schema = Schema::new(vec![Field::new("a", arry.data_type().clone(), true)]);
 
         let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(arry.clone())])?;
         let param = arrow_recordbatch_to_query_params(rb);
@@ -889,6 +927,23 @@ mod test {
 
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_generic_array_roundtrip_contains_null() -> Result<(), Box<dyn Error>> {
+        check_generic_array_roundtrip(ListArray::new(
+            Arc::new(Field::new("item", DataType::Utf8, true)),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 2, 4, 5])),
+            Arc::new(StringArray::from(vec![
+                Some("foo"),
+                Some("baz"),
+                Some("bar"),
+                Some("foo"),
+                Some("baz"),
+            ])),
+            Some(vec![true, false, true].into()),
+        ))?;
         Ok(())
     }
 
