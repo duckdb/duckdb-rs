@@ -19,7 +19,7 @@ use std::{
 /// An interface to store and retrieve data during the function bind stage
 #[derive(Debug)]
 pub struct BindInfo {
-    ptr: *mut c_void,
+    ptr: duckdb_bind_info,
 }
 
 impl BindInfo {
@@ -264,7 +264,7 @@ impl TableFunction {
     ///
     /// # Arguments
     ///  * `function`: The init function
-    pub fn set_init(&self, init_func: Option<unsafe extern "C" fn(*mut c_void)>) -> &Self {
+    pub fn set_init(&self, init_func: Option<unsafe extern "C" fn(duckdb_init_info)>) -> &Self {
         unsafe {
             duckdb_table_function_set_init(self.ptr, init_func);
         }
@@ -275,7 +275,7 @@ impl TableFunction {
     ///
     /// # Arguments
     ///  * `function`: The bind function
-    pub fn set_bind(&self, bind_func: Option<unsafe extern "C" fn(*mut c_void)>) -> &Self {
+    pub fn set_bind(&self, bind_func: Option<unsafe extern "C" fn(duckdb_bind_info)>) -> &Self {
         unsafe {
             duckdb_table_function_set_bind(self.ptr, bind_func);
         }
