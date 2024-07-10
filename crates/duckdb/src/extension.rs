@@ -31,15 +31,4 @@ mod test {
         );
         Ok(())
     }
-
-    // https://duckdb.org/docs/extensions/httpfs
-    #[test]
-    fn test_extension_httpfs() -> Result<()> {
-        let db = Connection::open_in_memory()?;
-        assert_eq!(
-            300f32,
-            db.query_row::<f32, _, _>(r#"SELECT SUM(value) FROM read_parquet('https://github.com/duckdb/duckdb-rs/raw/main/crates/duckdb/examples/int32_decimal.parquet');"#, [], |r| r.get(0))?
-        );
-        Ok(())
-    }
 }

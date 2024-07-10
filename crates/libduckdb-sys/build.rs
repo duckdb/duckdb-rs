@@ -1,8 +1,5 @@
 use std::{env, path::Path};
 
-#[cfg(feature = "httpfs")]
-mod openssl;
-
 /// Tells whether we're building for Windows. This is more suitable than a plain
 /// `cfg!(windows)`, since the latter does not properly handle cross-compilation
 ///
@@ -137,17 +134,6 @@ mod build_bundled {
         println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
         cfg.include(lib_name);
-
-        // Note: dont move this, the link order is important and we need to make
-        // sure we link openssl after duckdb
-        #[cfg(feature = "httpfs")]
-        {
-            if let Ok((_, openssl_include_dir)) = super::openssl::get_openssl_v2() {
-                cfg.include(openssl_include_dir);
-            }
-            add_extension(&mut cfg, &manifest, "httpfs", &mut cpp_files, &mut include_dirs);
-        }
-
         cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/{lib_name}/{dir}")));
 
         for f in cpp_files.into_iter().map(|file| format!("{out_dir}/{file}")) {
