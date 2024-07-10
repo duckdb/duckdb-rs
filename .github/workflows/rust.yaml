@@ -14,7 +14,6 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { target: x86_64-pc-windows-msvc, os: windows-latest, duckdb: libduckdb-windows-amd64.zip }
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, duckdb: libduckdb-linux-amd64.zip }
           #- { target: x86_64-apple-darwin, os: macos-latest }
           #- {
@@ -38,7 +37,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v0.10.1"
+          tag: "v1.0.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
