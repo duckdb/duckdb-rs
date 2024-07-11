@@ -19,15 +19,9 @@ exclude = ["duckdb-sources"]
 default = ["vcpkg", "pkg-config"]
 bundled = ["cc"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
-
-httpfs = ["bundled"]
 json = ["bundled"]
 parquet = ["bundled"]
-extensions-full = ["httpfs", "json", "parquet"]
-
-openssl_vendored = ["bundled", "openssl-src"]
-openssl_bindgen = ["bundled", "bindgen", "pkg-config", "vcpkg"]
-unstable_boringssl = ["bundled"]
+extensions-full = ["json", "parquet"]
 
 [dependencies]
 
@@ -35,7 +29,6 @@ unstable_boringssl = ["bundled"]
 autocfg = { workspace = true }
 bindgen = { workspace = true, features = ["runtime"], optional = true }
 flate2 = { workspace = true }
-openssl-src = { version = "300.3.0", optional = true, features = ["legacy"] }
 pkg-config = { workspace = true, optional = true }
 cc = { workspace = true, features = ["parallel"], optional = true }
 vcpkg = { workspace = true, optional = true }
