@@ -16,7 +16,7 @@ SRC_DIR = os.path.join(SCRIPT_DIR, "src")
 
 # List of extensions' sources to grab. Technically, these sources will be compiled
 # but not included in the final build unless they're explicitly enabled.
-EXTENSIONS = ["parquet", "json", "httpfs"]
+EXTENSIONS = ["parquet", "json"]
 
 # Clear the duckdb directory
 try:
@@ -75,7 +75,7 @@ subprocess.check_call(
 )
 
 subprocess.check_call(
-    'find "' + SCRIPT_DIR + '/../target" -type f -name bindgen.rs -exec rm {} \;',
+    'find "' + SCRIPT_DIR + '/../../target" -type f -name bindgen.rs -exec rm {} \;',
     shell=True,
 )
 
@@ -87,14 +87,14 @@ subprocess.check_call(
 print(
     'find "'
     + SCRIPT_DIR
-    + '/../target" -type f -name "bindgen.rs" -exec cp {} "'
+    + '/../../target" -type f -name "bindgen.rs" -exec cp {} "'
     + SRC_DIR
     + '/bindgen_bundled_version.rs" \;'
 )
 subprocess.check_call(
     'find "'
     + SCRIPT_DIR
-    + '/../target" -type f -name "bindgen.rs" -exec cp {} "'
+    + '/../../target" -type f -name "bindgen.rs" -exec cp {} "'
     + SRC_DIR
     + '/bindgen_bundled_version.rs" \;',
     shell=True,

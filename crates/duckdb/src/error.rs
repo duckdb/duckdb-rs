@@ -122,7 +122,7 @@ impl From<::std::ffi::NulError> for Error {
     }
 }
 
-const UNKNOWN_COLUMN: usize = std::usize::MAX;
+const UNKNOWN_COLUMN: usize = usize::MAX;
 
 /// The conversion isn't precise, but it's convenient to have it
 /// to allow use of `get_raw(…).as_…()?` in callbacks that take `Error`.
