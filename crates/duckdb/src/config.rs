@@ -67,7 +67,7 @@ impl Config {
 
     /// Metadata from DuckDB callers
     pub fn custom_user_agent(mut self, custom_user_agent: &str) -> Result<Config> {
-        self.set("custom_user_agent", &custom_user_agent.to_string())?;
+        self.set("custom_user_agent", custom_user_agent)?;
         Ok(self)
     }
 
@@ -196,6 +196,7 @@ mod test {
             .enable_object_cache(false)?
             .enable_autoload_extension(true)?
             .allow_unsigned_extensions()?
+            .custom_user_agent("test_user_agent")?
             .max_memory("2GB")?
             .threads(4)?
             .with("preserve_insertion_order", "true")?;
@@ -220,6 +221,11 @@ mod test {
         assert_eq!(iter.next().unwrap().as_ref().unwrap(), "a");
         assert!(iter.next().unwrap().is_none());
         assert_eq!(iter.next(), None);
+
+
+        let user_agent: Result<String> = db.query_row("PRAGMA USER_AGENT", [], |row| row.get(0));
+        let user_agent = user_agent.unwrap();
+        assert!(&user_agent.ends_with("rust test_user_agent"));
 
         Ok(())
     }
