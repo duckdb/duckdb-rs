@@ -93,6 +93,9 @@ pub use arrow;
 #[cfg(feature = "polars")]
 pub use polars::{self, export::arrow as arrow2};
 
+/// The core module contains the main functionality of the DuckDB crate.
+pub mod core;
+
 #[macro_use]
 mod error;
 mod appender;

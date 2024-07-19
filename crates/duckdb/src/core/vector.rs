@@ -206,6 +206,7 @@ impl ArrayVector {
         LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
     }
 
+    /// Returns the size of the array type.
     pub fn get_array_size(&self) -> u64 {
         let ty = self.logical_type();
         unsafe { duckdb_array_type_array_size(ty.ptr) as u64 }

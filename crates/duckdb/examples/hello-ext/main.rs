@@ -3,7 +3,8 @@ extern crate duckdb_loadable_macros;
 extern crate libduckdb_sys;
 
 use duckdb::{
-    vtab::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, Inserter, LogicalType, LogicalTypeId, VTab},
+    core::{DataChunk, Inserter, LogicalType, LogicalTypeId},
+    vtab::{BindInfo, Free, FunctionInfo, InitInfo, VTab},
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint;
