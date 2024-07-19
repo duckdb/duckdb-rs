@@ -1,2 +1,7 @@
 max_width = 120
 imports_granularity = "Crate"
+reorder_imports = true
+fn_call_width = 72
+# indent_style = "Block"
+# tab_spaces = 2
+# group_imports="StdExternalCrate"
