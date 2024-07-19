@@ -65,6 +65,12 @@ impl Config {
         Ok(self)
     }
 
+    /// Metadata from DuckDB callers
+    pub fn custom_user_agent(mut self, custom_user_agent: &str) -> Result<Config> {
+        self.set("custom_user_agent", &custom_user_agent.to_string())?;
+        Ok(self)
+    }
+
     /// The order type used when none is specified ([ASC] or DESC)
     pub fn default_order(mut self, order: DefaultOrder) -> Result<Config> {
         self.set("default_order", &order.to_string())?;
