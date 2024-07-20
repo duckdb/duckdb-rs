@@ -293,30 +293,30 @@ impl LogicalType {
 
 #[cfg(test)]
 mod test {
-    use super::{LogicalType, LogicalTypeId};
+    use crate::core::{LogicalType, LogicalTypeId};
 
     #[test]
     fn test_struct() {
-        let fields = &[("hello", LogicalType::new(crate::vtab::LogicalTypeId::Boolean))];
+        let fields = &[("hello", LogicalType::new(crate::core::LogicalTypeId::Boolean))];
         let typ = LogicalType::struct_type(fields);
 
         assert_eq!(typ.num_children(), 1);
         assert_eq!(typ.child_name(0), "hello");
-        assert_eq!(typ.child(0).id(), crate::vtab::LogicalTypeId::Boolean);
+        assert_eq!(typ.child(0).id(), crate::core::LogicalTypeId::Boolean);
     }
 
     #[test]
     fn test_decimal() {
         let typ = LogicalType::decimal(10, 2);
 
-        assert_eq!(typ.id(), crate::vtab::LogicalTypeId::Decimal);
+        assert_eq!(typ.id(), crate::core::LogicalTypeId::Decimal);
         assert_eq!(typ.decimal_width(), 10);
         assert_eq!(typ.decimal_scale(), 2);
     }
 
     #[test]
     fn test_decimal_methods() {
-        let typ = LogicalType::new(crate::vtab::LogicalTypeId::Varchar);
+        let typ = LogicalType::new(crate::core::LogicalTypeId::Varchar);
 
         assert_eq!(typ.decimal_width(), 0);
         assert_eq!(typ.decimal_scale(), 0);

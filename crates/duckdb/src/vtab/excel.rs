@@ -1,5 +1,5 @@
 use super::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
-use crate::vtab::vector::Inserter;
+use crate::core::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
 #[repr(C)]

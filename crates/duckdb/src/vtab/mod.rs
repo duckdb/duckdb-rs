@@ -3,11 +3,8 @@ use crate::{error::Error, inner_connection::InnerConnection, Connection, Result}
 use super::{ffi, ffi::duckdb_free};
 use std::ffi::c_void;
 
-mod data_chunk;
 mod function;
-mod logical_type;
 mod value;
-mod vector;
 
 /// The duckdb Arrow table function interface
 #[cfg(feature = "vtab-arrow")]
@@ -20,12 +17,10 @@ pub use self::arrow::{
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
-pub use data_chunk::DataChunk;
 pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
-pub use logical_type::{LogicalType, LogicalTypeId};
 pub use value::Value;
-pub use vector::{FlatVector, Inserter, ListVector, StructVector, Vector};
 
+use crate::core::{DataChunk, LogicalType, LogicalTypeId};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
 use ffi::duckdb_malloc;
@@ -198,6 +193,7 @@ impl InnerConnection {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::core::Inserter;
     use std::{
         error::Error,
         ffi::{c_char, CString},

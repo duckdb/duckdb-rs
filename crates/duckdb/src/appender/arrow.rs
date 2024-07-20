@@ -1,7 +1,8 @@
 use super::{ffi, Appender, Result};
 use crate::{
+    core::{DataChunk, LogicalType},
     error::result_from_duckdb_appender,
-    vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type, DataChunk, LogicalType},
+    vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type},
     Error,
 };
 use arrow::record_batch::RecordBatch;
