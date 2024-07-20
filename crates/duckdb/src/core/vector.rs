@@ -264,14 +264,11 @@ impl StructVector {
     }
 
     /// Get the name of the child by idx.
-    pub fn child_name(&self, idx: usize) -> String {
+    pub fn child_name(&self, idx: usize) -> DuckDbString {
         let logical_type = self.logical_type();
         unsafe {
             let child_name_ptr = duckdb_struct_type_child_name(logical_type.ptr, idx as u64);
-            let c_str = CString::from_raw(child_name_ptr);
-            let name = c_str.to_str().unwrap();
-            // duckdb_free(child_name_ptr.cast());
-            name.to_string()
+            DuckDbString::from_ptr(child_name_ptr)
         }
     }
 
