@@ -222,7 +222,6 @@ mod test {
         assert!(iter.next().unwrap().is_none());
         assert_eq!(iter.next(), None);
 
-
         let user_agent: Result<String> = db.query_row("PRAGMA USER_AGENT", [], |row| row.get(0));
         let user_agent = user_agent.unwrap();
         assert!(&user_agent.ends_with("rust test_user_agent"));
