@@ -56,7 +56,7 @@ calamine = { workspace = true, optional = true }
 num = { workspace = true, features = ["std"], optional = true }
 duckdb-loadable-macros = { workspace = true, optional = true }
 polars = { workspace = true, features = ["dtype-full"], optional = true }
-num-integer = {version = "0.1.46"}
+num-integer = { workspace = true }
 
 [dev-dependencies]
 doc-comment = { workspace = true }

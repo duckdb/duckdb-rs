@@ -3,7 +3,7 @@ extern crate duckdb_loadable_macros;
 extern crate libduckdb_sys;
 
 use duckdb::{
-    core::{DataChunk, Inserter, LogicalType, LogicalTypeId},
+    core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
     vtab::{BindInfo, Free, FunctionInfo, InitInfo, VTab},
     Connection, Result,
 };
@@ -44,7 +44,7 @@ impl VTab for HelloVTab {
     type BindData = HelloBindData;
 
     unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
-        bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
+        bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         let param = bind.get_parameter(0).to_string();
         unsafe {
             (*data).name = CString::new(param).unwrap().into_raw();
@@ -59,7 +59,7 @@ impl VTab for HelloVTab {
         Ok(())
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<HelloInitData>();
         let bind_info = func.get_bind_data::<HelloBindData>();
 
@@ -80,8 +80,8 @@ impl VTab for HelloVTab {
         Ok(())
     }
 
-    fn parameters() -> Option<Vec<LogicalType>> {
-        Some(vec![LogicalType::new(LogicalTypeId::Varchar)])
+    fn parameters() -> Option<Vec<LogicalTypeHandle>> {
+        Some(vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)])
     }
 }
 
