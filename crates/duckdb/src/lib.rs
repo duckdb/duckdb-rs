@@ -298,6 +298,7 @@ impl Connection {
         }
 
         let c_path = path_to_cstring(path.as_ref())?;
+        let config = config.with("duckdb_api", "rust").unwrap();
         InnerConnection::open_with_flags(&c_path, config).map(|db| Connection {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
