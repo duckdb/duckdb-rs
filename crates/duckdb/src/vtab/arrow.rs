@@ -992,6 +992,8 @@ mod test {
             ])),
             Some(vec![true, false, true].into()),
         ))?;
+
+        Ok(())
     }
 
     #[test]
