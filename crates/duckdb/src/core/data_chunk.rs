@@ -1,5 +1,5 @@
 use super::{
-    logical_type::LogicalType,
+    logical_type::LogicalTypeHandle,
     vector::{ArrayVector, FlatVector, ListVector, StructVector},
 };
 use crate::ffi::{
@@ -7,22 +7,35 @@ use crate::ffi::{
     duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size, duckdb_destroy_data_chunk,
 };
 
-/// DataChunk in DuckDB.
-pub struct DataChunk {
+/// Handle to the DataChunk in DuckDB.
+pub struct DataChunkHandle {
     /// Pointer to the DataChunk in duckdb C API.
     ptr: duckdb_data_chunk,
 
-    /// Whether this [DataChunk] own the [DataChunk::ptr].
+    /// Whether this [DataChunkHandle] own the [DataChunk::ptr].
     owned: bool,
 }
 
-impl DataChunk {
-    /// Create a new [DataChunk] with the given [LogicalType]s.
-    pub fn new(logical_types: &[LogicalType]) -> Self {
+impl Drop for DataChunkHandle {
+    fn drop(&mut self) {
+        if self.owned && !self.ptr.is_null() {
+            unsafe { duckdb_destroy_data_chunk(&mut self.ptr) }
+            self.ptr = std::ptr::null_mut();
+        }
+    }
+}
+
+impl DataChunkHandle {
+    pub(crate) unsafe fn new_unowned(ptr: duckdb_data_chunk) -> Self {
+        Self { ptr, owned: false }
+    }
+
+    /// Create a new [DataChunkHandle] with the given [LogicalTypeHandle]s.
+    pub fn new(logical_types: &[LogicalTypeHandle]) -> Self {
         let num_columns = logical_types.len();
         let mut c_types = logical_types.iter().map(|t| t.ptr).collect::<Vec<_>>();
         let ptr = unsafe { duckdb_create_data_chunk(c_types.as_mut_ptr(), num_columns as u64) };
-        DataChunk { ptr, owned: true }
+        DataChunkHandle { ptr, owned: true }
     }
 
     /// Get the vector at the specific column index: `idx`.
@@ -50,39 +63,24 @@ impl DataChunk {
         unsafe { duckdb_data_chunk_set_size(self.ptr, new_len as u64) };
     }
 
-    /// Get the length / the number of rows in this [DataChunk].
+    /// Get the length / the number of rows in this [DataChunkHandle].
     pub fn len(&self) -> usize {
         unsafe { duckdb_data_chunk_get_size(self.ptr) as usize }
     }
 
-    /// Check whether this [DataChunk] is empty.
+    /// Check whether this [DataChunkHandle] is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Get the number of columns in this [DataChunk].
+    /// Get the number of columns in this [DataChunkHandle].
     pub fn num_columns(&self) -> usize {
         unsafe { duckdb_data_chunk_get_column_count(self.ptr) as usize }
     }
 
-    /// Get the ptr of duckdb_data_chunk in this [DataChunk].
+    /// Get the ptr of duckdb_data_chunk in this [DataChunkHandle].
     pub fn get_ptr(&self) -> duckdb_data_chunk {
         self.ptr
-    }
-}
-
-impl From<duckdb_data_chunk> for DataChunk {
-    fn from(ptr: duckdb_data_chunk) -> Self {
-        Self { ptr, owned: false }
-    }
-}
-
-impl Drop for DataChunk {
-    fn drop(&mut self) {
-        if self.owned && !self.ptr.is_null() {
-            unsafe { duckdb_destroy_data_chunk(&mut self.ptr) }
-            self.ptr = std::ptr::null_mut();
-        }
     }
 }
 
@@ -92,7 +90,7 @@ mod test {
 
     #[test]
     fn test_data_chunk_construction() {
-        let dc = DataChunk::new(&[LogicalType::new(LogicalTypeId::Integer)]);
+        let dc = DataChunkHandle::new(&[LogicalTypeHandle::from(LogicalTypeId::Integer)]);
 
         assert_eq!(dc.num_columns(), 1);
 
@@ -101,7 +99,7 @@ mod test {
 
     #[test]
     fn test_vector() {
-        let datachunk = DataChunk::new(&[LogicalType::new(LogicalTypeId::Bigint)]);
+        let datachunk = DataChunkHandle::new(&[LogicalTypeHandle::from(LogicalTypeId::Bigint)]);
         let mut vector = datachunk.flat_vector(0);
         let data = vector.as_mut_slice::<i64>();
 
@@ -110,11 +108,11 @@ mod test {
 
     #[test]
     fn test_logi() {
-        let key = LogicalType::new(LogicalTypeId::Varchar);
+        let key = LogicalTypeHandle::from(LogicalTypeId::Varchar);
 
-        let value = LogicalType::new(LogicalTypeId::UTinyint);
+        let value = LogicalTypeHandle::from(LogicalTypeId::UTinyint);
 
-        let map = LogicalType::map(&key, &value);
+        let map = LogicalTypeHandle::map(&key, &value);
 
         assert_eq!(map.id(), LogicalTypeId::Map);
 

@@ -1,10 +1,7 @@
-use super::{
-    vector::{ArrayVector, FlatVector, ListVector, Vector},
-    BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, StructVector, VTab,
-};
+use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
 use std::ptr::null_mut;
 
-use crate::vtab::vector::Inserter;
+use crate::core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector};
 use arrow::array::{
     as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array,
     as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array, FixedSizeListArray,
@@ -102,7 +99,7 @@ impl VTab for ArrowVTab {
         Ok(())
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ArrowInitData>();
         let bind_info = func.get_bind_data::<ArrowBindData>();
         unsafe {
@@ -119,10 +116,10 @@ impl VTab for ArrowVTab {
         Ok(())
     }
 
-    fn parameters() -> Option<Vec<LogicalType>> {
+    fn parameters() -> Option<Vec<LogicalTypeHandle>> {
         Some(vec![
-            LogicalType::new(LogicalTypeId::UBigint), // file path
-            LogicalType::new(LogicalTypeId::UBigint), // sheet name
+            LogicalTypeHandle::from(LogicalTypeId::UBigint), // file path
+            LogicalTypeHandle::from(LogicalTypeId::UBigint), // sheet name
         ])
     }
 }
@@ -176,7 +173,7 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
 }
 
 /// Convert arrow DataType to duckdb logical type
-pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<dyn std::error::Error>> {
+pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
     match data_type {
         DataType::Dictionary(_, value_type) => to_duckdb_logical_type(value_type),
         DataType::Struct(fields) => {
@@ -184,23 +181,23 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<d
             for field in fields.iter() {
                 shape.push((field.name().as_str(), to_duckdb_logical_type(field.data_type())?));
             }
-            Ok(LogicalType::struct_type(shape.as_slice()))
+            Ok(LogicalTypeHandle::struct_type(shape.as_slice()))
         }
         DataType::List(child) | DataType::LargeList(child) => {
-            Ok(LogicalType::list(&to_duckdb_logical_type(child.data_type())?))
+            Ok(LogicalTypeHandle::list(&to_duckdb_logical_type(child.data_type())?))
         }
-        DataType::FixedSizeList(child, array_size) => Ok(LogicalType::array(
+        DataType::FixedSizeList(child, array_size) => Ok(LogicalTypeHandle::array(
             &to_duckdb_logical_type(child.data_type())?,
             *array_size as u64,
         )),
         DataType::Decimal128(width, scale) if *scale > 0 => {
             // DuckDB does not support negative decimal scales
-            Ok(LogicalType::decimal(*width, (*scale).try_into().unwrap()))
+            Ok(LogicalTypeHandle::decimal(*width, (*scale).try_into().unwrap()))
         }
         DataType::Boolean | DataType::Utf8 | DataType::LargeUtf8 | DataType::Binary | DataType::LargeBinary => {
-            Ok(LogicalType::new(to_duckdb_type_id(data_type)?))
+            Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?))
         }
-        dtype if dtype.is_primitive() => Ok(LogicalType::new(to_duckdb_type_id(data_type)?)),
+        dtype if dtype.is_primitive() => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         _ => Err(format!(
             "Unsupported data type: {data_type}, please file an issue https://github.com/wangfenjin/duckdb-rs"
         )
@@ -216,7 +213,7 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalType, Box<d
 /// * `chunk` - A mutable reference to the `DataChunk` to store the converted data.
 pub fn record_batch_to_duckdb_data_chunk(
     batch: &RecordBatch,
-    chunk: &mut DataChunk,
+    chunk: &mut DataChunkHandle,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Fill the row
     assert_eq!(batch.num_columns(), chunk.num_columns());

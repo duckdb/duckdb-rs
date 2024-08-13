@@ -93,6 +93,9 @@ pub use arrow;
 #[cfg(feature = "polars")]
 pub use polars::{self, export::arrow as arrow2};
 
+/// The core module contains the main functionality of the DuckDB crate.
+pub mod core;
+
 #[macro_use]
 mod error;
 mod appender;
@@ -295,6 +298,7 @@ impl Connection {
         }
 
         let c_path = path_to_cstring(path.as_ref())?;
+        let config = config.with("duckdb_api", "rust").unwrap();
         InnerConnection::open_with_flags(&c_path, config).map(|db| Connection {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
