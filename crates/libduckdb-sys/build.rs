@@ -94,7 +94,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/duckdb.h"));
+            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -181,8 +181,20 @@ impl From<HeaderLocation> for String {
                 header.push_str("/duckdb.h");
                 header
             }
-            HeaderLocation::Wrapper => "wrapper.h".into(),
-            HeaderLocation::FromPath(path) => path,
+            HeaderLocation::Wrapper => if cfg!(feature = "loadable_extension") {
+                "wrapper_ext.h".into()
+                    } else {
+                "wrapper.h".into()
+            },
+            HeaderLocation::FromPath(path) => format!(
+                "{}/{}",
+                path,
+                if cfg!(feature = "loadable_extension") {
+                   "duckdb.h"
+                } else {
+                   "duckdb_extension.h"
+                }
+            ),
         }
     }
 }
@@ -226,24 +238,27 @@ mod build_linked {
     fn find_duckdb() -> HeaderLocation {
         let link_lib = lib_name();
 
-        println!("cargo:rerun-if-env-changed={}_INCLUDE_DIR", env_prefix());
-        println!("cargo:rerun-if-env-changed={}_LIB_DIR", env_prefix());
-        println!("cargo:rerun-if-env-changed={}_STATIC", env_prefix());
-        if cfg!(feature = "vcpkg") && is_compiler("msvc") {
-            println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
-        }
+        if !cfg!(feature = "loadable_extension") {
+            println!("cargo:rerun-if-env-changed={}_INCLUDE_DIR", env_prefix());
+            println!("cargo:rerun-if-env-changed={}_LIB_DIR", env_prefix());
+            println!("cargo:rerun-if-env-changed={}_STATIC", env_prefix());
+            if cfg!(feature = "vcpkg") && is_compiler("msvc") {
+                println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
+            }
 
-        // dependents can access `DEP_DUCKDB_LINK_TARGET` (`duckdb` being the
-        // `links=` value in our Cargo.toml) to get this value. This might be
-        // useful if you need to ensure whatever crypto library sqlcipher relies
-        // on is available, for example.
-        println!("cargo:link-target={link_lib}");
+            // dependents can access `DEP_DUCKDB_LINK_TARGET` (`duckdb` being the
+            // `links=` value in our Cargo.toml) to get this value. This might be
+            // useful if you need to ensure whatever crypto library sqlcipher relies
+            // on is available, for example.
+            println!("cargo:link-target={link_lib}");
+        }
 
         if win_target() && cfg!(feature = "winduckdb") {
-            println!("cargo:rustc-link-lib=dylib={link_lib}");
+            if !cfg!(feature = "loadable_extension") {
+                println!("cargo:rustc-link-lib=dylib={link_lib}");
+            }
             return HeaderLocation::Wrapper;
         }
-
         // Allow users to specify where to find DuckDB.
         if let Ok(dir) = env::var(format!("{}_LIB_DIR", env_prefix())) {
             println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
@@ -265,8 +280,7 @@ mod build_linked {
         // See if pkg-config can do everything for us.
         match pkg_config::Config::new().print_system_libs(false).probe(link_lib) {
             Ok(mut lib) => {
-                if let Some(mut header) = lib.include_paths.pop() {
-                    header.push("duckdb.h");
+                if let Some(header) = lib.include_paths.pop() {
                     HeaderLocation::FromPath(header.to_string_lossy().into())
                 } else {
                     HeaderLocation::Wrapper
@@ -277,7 +291,9 @@ mod build_linked {
                 // request and hope that the library exists on the system paths. We used to
                 // output /usr/lib explicitly, but that can introduce other linking problems;
                 // see https://github.com/rusqlite/rusqlite/issues/207.
-                println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
+                if !cfg!(feature = "loadable_extension") {
+                    println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
+                }
                 HeaderLocation::Wrapper
             }
         }
@@ -287,8 +303,7 @@ mod build_linked {
         if cfg!(feature = "vcpkg") && is_compiler("msvc") {
             // See if vcpkg can find it.
             if let Ok(mut lib) = vcpkg::Config::new().probe(lib_name()) {
-                if let Some(mut header) = lib.include_paths.pop() {
-                    header.push("duckdb.h");
+                if let Some(header) = lib.include_paths.pop() {
                     return Some(HeaderLocation::FromPath(header.to_string_lossy().into()));
                 }
             }
@@ -299,24 +314,152 @@ mod build_linked {
     }
 }
 
+
 #[cfg(feature = "buildtime_bindgen")]
 mod bindings {
     use super::HeaderLocation;
 
     use std::{fs::OpenOptions, io::Write, path::Path};
 
+    use syn;
+
+    #[cfg(feature = "loadable_extension")]
+    fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
+        match ty {
+            syn::Type::Path(tp) => tp.path.segments.last(),
+            _ => None,
+        }
+        .map(|seg| match &seg.arguments {
+            syn::PathArguments::AngleBracketed(args) => args.args.first(),
+            _ => None,
+        })?
+        .map(|arg| match arg {
+            syn::GenericArgument::Type(t) => Some(t),
+            _ => None,
+        })?
+        .map(|ty| match ty {
+            syn::Type::BareFn(r) => Some(r),
+            _ => None,
+        })?
+    }
+
+    #[cfg(feature = "loadable_extension")]
+    fn generate_functions(output: &mut String) {
+        // (1) parse sqlite3_api_routines fields from bindgen output
+        let ast: syn::File = syn::parse_str(output).expect("could not parse bindgen output");
+        let duckdb_ext_api_v0: syn::ItemStruct = ast
+            .items
+            .into_iter()
+            .find_map(|i| {
+                if let syn::Item::Struct(s) = i {
+                    if s.ident == "duckdb_ext_api_v0" {
+                        Some(s)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .expect("could not find duckdb_ext_api_v0");
+
+    //     let duckdb_ext_api_v0_ident = duckdb_ext_api_v0.ident;
+
+        let p_api = quote::format_ident!("p_api");
+        let mut stores = Vec::new();
+    //     let mut malloc = Vec::new();
+        // (2) `#define sqlite3_xyz sqlite3_api->abc` => `pub unsafe fn
+        // sqlite3_xyz(args) -> ty {...}` for each `abc` field:
+
+        for field in duckdb_ext_api_v0.fields {
+            let ident = field.ident.expect("unnamed field");
+            let span = ident.span();
+            let function_name = ident.to_string();
+            let ptr_name = syn::Ident::new(format!("__{}", function_name.to_uppercase()).as_ref(), span);
+
+            // Create syntax name
+            let duckdb_fn_name = syn::Ident::new(&function_name, span);
+
+            let method = extract_method(&field.ty).unwrap_or_else(|| panic!("unexpected type for {function_name}"));
+
+            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> = method
+                .inputs
+                .iter()
+                .map(|i| &i.name.as_ref().unwrap().0)
+                .collect();
+
+            let args = &method.inputs;
+
+            let ty = &method.output;
+
+            let tokens = quote::quote! {
+                static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+                pub unsafe fn #duckdb_fn_name(#args) #ty {
+                    let function_ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
+                    assert!(!function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
+                    let fun: unsafe extern "C" fn(#args) #ty = ::std::mem::transmute(function_ptr);
+                    (fun)(#arg_names)
+                }
+            };
+
+            output.push_str(&prettyplease::unparse(
+                &syn::parse2(tokens).expect("could not parse quote output"),
+            ));
+
+            output.push('\n');
+
+            stores.push(quote::quote! {
+                if let Some(fun) = (*#p_api).#ident {
+                    #ptr_name.store(
+                        fun as usize as *mut (),
+                        ::std::sync::atomic::Ordering::Release,
+                    );
+                }
+            });
+        }
+
+        // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
+        let tokens = quote::quote! {
+            /// Like DUCKDB_EXTENSION_API_INIT macro
+            pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: duckdb_extension_access) -> ::std::result::Result<(), &'static str> {
+                // TODO: fix this shit
+                let #p_api = access.get_api.unwrap()(info, c"v0.0.2".as_ptr()) as *const duckdb_ext_api_v0;
+                if #p_api.is_null() {
+                    return Err("DuckDB passed a nullpointer while trying to initialize the extension");
+                }
+                #(#stores)*
+                Ok(())
+            }
+        };
+        output.push_str(&prettyplease::unparse(
+            &syn::parse2(tokens).expect("could not parse quote output"),
+        ));
+        output.push('\n');
+    }
+
     pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
         let header: String = header.into();
         let mut output = Vec::new();
-        bindgen::builder()
-            .trust_clang_mangling(false)
+        let mut builder = bindgen::builder();
+
+        if cfg!(feature = "loadable_extension") {
+            builder = builder.ignore_functions();
+        }
+
+        builder.trust_clang_mangling(false)
             .header(header.clone())
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
-        let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
+
+        let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
+
+        if cfg!(feature = "loadable_extension") {
+            generate_functions(&mut output);
+        }
+
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -326,5 +469,6 @@ mod bindings {
 
         file.write_all(output.as_bytes())
             .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
+
     }
 }
