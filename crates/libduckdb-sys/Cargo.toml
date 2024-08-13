@@ -22,6 +22,7 @@ buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
 extensions-full = ["json", "parquet"]
+winduckdb = []
 
 [dependencies]
 

@@ -26,6 +26,7 @@ impl Drop for DataChunkHandle {
 }
 
 impl DataChunkHandle {
+    #[allow(dead_code)]
     pub(crate) unsafe fn new_unowned(ptr: duckdb_data_chunk) -> Self {
         Self { ptr, owned: false }
     }
