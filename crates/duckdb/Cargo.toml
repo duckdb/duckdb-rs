@@ -19,6 +19,8 @@ name = "duckdb"
 
 [features]
 default = []
+# todo: remove this requirement on buildtime_bindgen going forward
+loadable_extension = ["libduckdb-sys/loadable_extension", "buildtime_bindgen"]
 bundled = ["libduckdb-sys/bundled"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
