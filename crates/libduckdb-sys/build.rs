@@ -393,11 +393,11 @@ mod loadable_extension {
             let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> =
                 method.inputs.iter().map(|i| &i.name.as_ref().unwrap().0).collect();
             let args = &method.inputs;
-            // vtab_config/sqlite3_vtab_config: ok
             let varargs = &method.variadic;
-            if varargs.is_some() && "db_config" != name && "log" != name && "vtab_config" != name {
-                continue; // skip ...
+            if varargs.is_some() {
+                continue;
             }
+
             let ty = &method.output;
             let tokens = {
                 quote::quote! {
