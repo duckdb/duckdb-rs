@@ -323,15 +323,28 @@ mod bindings {
     pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
         let header: String = header.into();
         let mut output = Vec::new();
-        bindgen::builder()
+        let mut bindings = bindgen::builder()
             .trust_clang_mangling(false)
             .header(header.clone())
-            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+
+        if cfg!(feature = "loadable_extension") {
+            bindings = bindings.ignore_functions(); // see generate_functions
+        }
+
+        bindings
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
-        let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
+
+        let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
+
+        #[cfg(feature = "loadable_extension")]
+        {
+            super::loadable_extension::generate_functions(&mut output);
+        }
+
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -341,5 +354,111 @@ mod bindings {
 
         file.write_all(output.as_bytes())
             .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
+    }
+}
+
+#[cfg(all(feature = "buildtime_bindgen", feature = "loadable_extension"))]
+mod loadable_extension {
+    fn get_duckdb_api_routines(ast: syn::File) -> syn::ItemStruct {
+        ast.items
+            .into_iter()
+            .find_map(|i| {
+                if let syn::Item::Struct(s) = i {
+                    if s.ident == "duckdb_ext_api_v0" {
+                        Some(s)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .expect("could not find duckdb_ext_api_v0")
+    }
+
+    pub fn generate_functions(output: &mut String) {
+        let ast: syn::File = syn::parse_str(output).expect("could not parse bindgen output");
+        let duckdb_api_routines = get_duckdb_api_routines(ast);
+        let duckdb_api_routines_ident = duckdb_api_routines.ident;
+        let p_api = quote::format_ident!("p_api");
+        let mut stores = Vec::new();
+
+        for field in duckdb_api_routines.fields {
+            let ident = field.ident.expect("unnamed field");
+            let span = ident.span();
+            let name = ident.to_string();
+            let ptr_name = syn::Ident::new(format!("__{}", name.to_uppercase()).as_ref(), span);
+            let duckdb_fn_name = syn::Ident::new(&name, span);
+            let method = extract_method(&field.ty).unwrap_or_else(|| panic!("unexpected type for {name}"));
+            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> =
+                method.inputs.iter().map(|i| &i.name.as_ref().unwrap().0).collect();
+            let args = &method.inputs;
+            // vtab_config/sqlite3_vtab_config: ok
+            let varargs = &method.variadic;
+            if varargs.is_some() && "db_config" != name && "log" != name && "vtab_config" != name {
+                continue; // skip ...
+            }
+            let ty = &method.output;
+            let tokens = {
+                quote::quote! {
+                    static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+                    pub unsafe fn #duckdb_fn_name(#args) #ty {
+                        let fun = {
+                            let ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
+                            assert!(!ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
+                            let fun: unsafe extern "C" fn(#args #varargs) #ty = ::std::mem::transmute(ptr);
+                            fun
+                        };
+
+                        (fun)(#arg_names)
+                    }
+                }
+            };
+
+            output.push_str(&prettyplease::unparse(
+                &syn::parse2(tokens).expect("could not parse quote output"),
+            ));
+
+            output.push('\n');
+            let _ = &mut stores.push(quote::quote! {
+                if let Some(fun) = (*#p_api).#ident {
+                    #ptr_name.store(
+                        fun as usize as *mut (),
+                        ::std::sync::atomic::Ordering::Release,
+                    );
+                }
+            });
+        }
+
+        // todo: check version number
+        let tokens = quote::quote! {
+            pub unsafe fn duckdb_extension_init(#p_api: *mut #duckdb_api_routines_ident) -> ::std::result::Result<(), ()> {
+                #(#stores)*
+                Ok(())
+            }
+        };
+        output.push_str(&prettyplease::unparse(
+            &syn::parse2(tokens).expect("could not parse quote output"),
+        ));
+        output.push('\n');
+    }
+
+    fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
+        match ty {
+            syn::Type::Path(tp) => tp.path.segments.last(),
+            _ => None,
+        }
+        .map(|seg| match &seg.arguments {
+            syn::PathArguments::AngleBracketed(args) => args.args.first(),
+            _ => None,
+        })?
+        .map(|arg| match arg {
+            syn::GenericArgument::Type(t) => Some(t),
+            _ => None,
+        })?
+        .map(|ty| match ty {
+            syn::Type::BareFn(r) => Some(r),
+            _ => None,
+        })?
     }
 }
