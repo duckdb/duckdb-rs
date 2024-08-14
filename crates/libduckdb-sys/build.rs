@@ -94,7 +94,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/duckdb.h"));
+            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -178,11 +178,28 @@ impl From<HeaderLocation> for String {
                 let prefix = env_prefix();
                 let mut header = env::var(format!("{prefix}_INCLUDE_DIR"))
                     .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
-                header.push_str("/duckdb.h");
+                header.push_str(if cfg!(feature = "loadable_extension") {
+                    "/duckdb_extension.h"
+                } else {
+                    "/duckdb.h"
+                });
                 header
             }
-            HeaderLocation::Wrapper => "wrapper.h".into(),
-            HeaderLocation::FromPath(path) => path,
+            HeaderLocation::Wrapper => if cfg!(feature = "loadable_extension") {
+                "wrapper_ext.h"
+            } else {
+                "wrapper.h"
+            }
+            .into(),
+            HeaderLocation::FromPath(path) => format!(
+                "{}/{}",
+                path,
+                if cfg!(feature = "loadable_extension") {
+                    "duckdb_extension.h"
+                } else {
+                    "duckdb.h"
+                }
+            ),
         }
     }
 }
@@ -266,7 +283,6 @@ mod build_linked {
         match pkg_config::Config::new().print_system_libs(false).probe(link_lib) {
             Ok(mut lib) => {
                 if let Some(mut header) = lib.include_paths.pop() {
-                    header.push("duckdb.h");
                     HeaderLocation::FromPath(header.to_string_lossy().into())
                 } else {
                     HeaderLocation::Wrapper
@@ -288,7 +304,6 @@ mod build_linked {
             // See if vcpkg can find it.
             if let Ok(mut lib) = vcpkg::Config::new().probe(lib_name()) {
                 if let Some(mut header) = lib.include_paths.pop() {
-                    header.push("duckdb.h");
                     return Some(HeaderLocation::FromPath(header.to_string_lossy().into()));
                 }
             }

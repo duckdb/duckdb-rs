@@ -1,0 +1,1 @@
+#include "duckdb/duckdb_extension.h"
