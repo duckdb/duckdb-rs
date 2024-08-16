@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 
 SCRIPT_DIR=$(cd "$(dirname "$_")" && pwd)
 CUR_DIR=$(pwd -P)
