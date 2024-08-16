@@ -97,10 +97,17 @@ mod build_bundled {
             let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/"));
             bindings::write_to_out_dir(header, out_path);
         }
+
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
             use std::fs;
-            fs::copy("src/bindgen_bundled_version.rs", out_path).expect("Could not copy bindings to output directory");
+            fs::copy(
+                #[cfg(not(feature = "loadable_extension"))]
+                "src/bindgen_bundled_version.rs",
+                #[cfg(feature = "loadable_extension")]
+                "src/bindgen_bundled_version_loadable.rs",
+                out_path
+            ).expect("Could not copy bindings to output directory");
         }
 
         let manifest_file = std::fs::File::open(format!("{out_dir}/{lib_name}/manifest.json")).expect("manifest file");

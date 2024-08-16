@@ -10,7 +10,7 @@ mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
 export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
 # Download and extract amalgamation
-DUCKDB_VERSION=77a322a4cc42416b7933dc49affe0024d34eebc0
+DUCKDB_VERSION=v1.0.0
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
 git fetch
@@ -20,7 +20,6 @@ python3 "$SCRIPT_DIR/update_sources.py"
 
 # Regenerate bindgen file for DUCKDB
 rm -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs"
-cargo update
 # Just to make sure there is only one bindgen.rs file in target dir
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec rm {} \;
 env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "extensions-full buildtime_bindgen"
@@ -28,6 +27,17 @@ find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec cp {} "$SCRIPT_DI
 
 # Sanity checks
 cd "$SCRIPT_DIR/.."
-cargo update
 cargo test --features "extensions-full buildtime_bindgen"
+
+# Regenerate bindgen file for DUCKDB
+cd "$SCRIPT_DIR"
+rm -f "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs"
+find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec rm {} \;
+env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "extensions-full buildtime_bindgen loadable_extension"
+find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec cp {} "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" \;
+
+# Sanity checks
+cd "$SCRIPT_DIR/.."
+cargo test --features "extensions-full buildtime_bindgen loadable_extension"
+
 printf '    \e[35;1mFinished\e[0m bundled DUCKDB tests\n'
