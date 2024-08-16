@@ -75,7 +75,7 @@ subprocess.check_call(
 )
 
 subprocess.check_call(
-    'find "' + SCRIPT_DIR + '/../../target" -type f -name bindgen.rs -exec rm {} \;',
+    'find "' + SCRIPT_DIR + '/../../target" -type f -name bindgen.rs -exec rm {} \\;',
     shell=True,
 )
 
@@ -89,13 +89,13 @@ print(
     + SCRIPT_DIR
     + '/../../target" -type f -name "bindgen.rs" -exec cp {} "'
     + SRC_DIR
-    + '/bindgen_bundled_version.rs" \;'
+    + '/bindgen_bundled_version.rs" \\;'
 )
 subprocess.check_call(
     'find "'
     + SCRIPT_DIR
     + '/../../target" -type f -name "bindgen.rs" -exec cp {} "'
     + SRC_DIR
-    + '/bindgen_bundled_version.rs" \;',
+    + '/bindgen_bundled_version.rs" \\;',
     shell=True,
 )

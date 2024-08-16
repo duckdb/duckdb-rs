@@ -326,8 +326,6 @@ mod bindings {
 
     use std::{fs::OpenOptions, io::Write, path::Path};
 
-    use syn;
-
     #[cfg(feature = "loadable_extension")]
     fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
         match ty {
@@ -459,7 +457,8 @@ mod bindings {
 
         let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
-        if cfg!(feature = "loadable_extension") {
+        #[cfg(feature = "loadable_extension")]
+        {
             generate_functions(&mut output);
         }
 
