@@ -185,11 +185,13 @@ impl From<HeaderLocation> for String {
                 });
                 header
             }
-            HeaderLocation::Wrapper => if cfg!(feature = "loadable_extension") {
-                "wrapper_ext.h".into()
-                    } else {
-                "wrapper.h".into()
-            },
+            HeaderLocation::Wrapper => {
+                if cfg!(feature = "loadable_extension") {
+                    "wrapper_ext.h".into()
+                } else {
+                    "wrapper.h".into()
+                }
+            }
             HeaderLocation::FromPath(path) => format!(
                 "{}/{}",
                 path,
@@ -318,7 +320,6 @@ mod build_linked {
     }
 }
 
-
 #[cfg(feature = "buildtime_bindgen")]
 mod bindings {
     use super::HeaderLocation;
@@ -367,11 +368,11 @@ mod bindings {
             })
             .expect("could not find duckdb_ext_api_v0");
 
-    //     let duckdb_ext_api_v0_ident = duckdb_ext_api_v0.ident;
+        //     let duckdb_ext_api_v0_ident = duckdb_ext_api_v0.ident;
 
         let p_api = quote::format_ident!("p_api");
         let mut stores = Vec::new();
-    //     let mut malloc = Vec::new();
+        //     let mut malloc = Vec::new();
         // (2) `#define sqlite3_xyz sqlite3_api->abc` => `pub unsafe fn
         // sqlite3_xyz(args) -> ty {...}` for each `abc` field:
 
@@ -386,11 +387,8 @@ mod bindings {
 
             let method = extract_method(&field.ty).unwrap_or_else(|| panic!("unexpected type for {function_name}"));
 
-            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> = method
-                .inputs
-                .iter()
-                .map(|i| &i.name.as_ref().unwrap().0)
-                .collect();
+            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> =
+                method.inputs.iter().map(|i| &i.name.as_ref().unwrap().0).collect();
 
             let args = &method.inputs;
 
@@ -450,7 +448,8 @@ mod bindings {
             builder = builder.ignore_functions();
         }
 
-        builder.trust_clang_mangling(false)
+        builder
+            .trust_clang_mangling(false)
             .header(header.clone())
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
@@ -473,6 +472,5 @@ mod bindings {
 
         file.write_all(output.as_bytes())
             .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
-
     }
 }
