@@ -178,7 +178,11 @@ impl From<HeaderLocation> for String {
                 let prefix = env_prefix();
                 let mut header = env::var(format!("{prefix}_INCLUDE_DIR"))
                     .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
-                header.push_str("/duckdb.h");
+                header.push_str(if cfg!(feature = "loadable_extension") {
+                    "/duckdb_extension.h"
+                } else {
+                    "/duckdb.h"
+                });
                 header
             }
             HeaderLocation::Wrapper => if cfg!(feature = "loadable_extension") {
@@ -190,9 +194,9 @@ impl From<HeaderLocation> for String {
                 "{}/{}",
                 path,
                 if cfg!(feature = "loadable_extension") {
-                   "duckdb.h"
+                    "duckdb_extension.h"
                 } else {
-                   "duckdb_extension.h"
+                    "duckdb.h"
                 }
             ),
         }
