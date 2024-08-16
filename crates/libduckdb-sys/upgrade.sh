@@ -22,7 +22,7 @@ python3 "$SCRIPT_DIR/update_sources.py"
 rm -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs"
 # Just to make sure there is only one bindgen.rs file in target dir
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec rm {} \;
-env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "extensions-full buildtime_bindgen"
+cargo test --features "extensions-full buildtime_bindgen"
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec cp {} "$SCRIPT_DIR/src/bindgen_bundled_version.rs" \;
 
 # Sanity checks
@@ -33,7 +33,7 @@ cargo test --features "extensions-full buildtime_bindgen"
 cd "$SCRIPT_DIR"
 rm -f "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs"
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec rm {} \;
-env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "extensions-full buildtime_bindgen loadable_extension"
+cargo test --features "extensions-full buildtime_bindgen loadable_extension"
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec cp {} "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" \;
 
 # Sanity checks
