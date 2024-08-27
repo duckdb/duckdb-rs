@@ -4,7 +4,6 @@ pub const __bool_true_false_are_defined: u32 = 1;
 pub const true_: u32 = 1;
 pub const false_: u32 = 0;
 pub const __WORDSIZE: u32 = 64;
-pub const __has_safe_buffers: u32 = 1;
 pub const __DARWIN_ONLY_64_BIT_INO_T: u32 = 1;
 pub const __DARWIN_ONLY_UNIX_CONFORMANCE: u32 = 1;
 pub const __DARWIN_ONLY_VERS_1050: u32 = 1;
@@ -768,6 +767,10 @@ pub const duckdb_error_type_DUCKDB_ERROR_SEQUENCE: duckdb_error_type = 41;
 pub const duckdb_error_type_DUCKDB_INVALID_CONFIGURATION: duckdb_error_type = 42;
 #[doc = "! An enum over DuckDB's different result types."]
 pub type duckdb_error_type = ::std::os::raw::c_uint;
+pub const duckdb_cast_mode_DUCKDB_CAST_NORMAL: duckdb_cast_mode = 0;
+pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
+#[doc = "! An enum over DuckDB's different cast modes."]
+pub type duckdb_cast_mode = ::std::os::raw::c_uint;
 #[doc = "! DuckDB's index type."]
 pub type idx_t = u64;
 #[doc = "! The callback that will be called to destroy data, e.g.,\n! bind data (if any), init data (if any), extra data for replacement scans (if any)"]
@@ -2055,6 +2058,39 @@ fn bindgen_test_layout__duckdb_logical_type() {
 }
 #[doc = "! Holds an internal logical type.\n! Must be destroyed with `duckdb_destroy_logical_type`."]
 pub type duckdb_logical_type = *mut _duckdb_logical_type;
+#[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_create_type_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[test]
+fn bindgen_test_layout__duckdb_create_type_info() {
+    const UNINIT: ::std::mem::MaybeUninit<_duckdb_create_type_info> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_duckdb_create_type_info>(),
+        8usize,
+        concat!("Size of: ", stringify!(_duckdb_create_type_info))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_duckdb_create_type_info>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_duckdb_create_type_info))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).internal_ptr) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_duckdb_create_type_info),
+            "::",
+            stringify!(internal_ptr)
+        )
+    );
+}
+#[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
+pub type duckdb_create_type_info = *mut _duckdb_create_type_info;
 #[doc = "! Contains a data chunk from a duckdb_result.\n! Must be destroyed with `duckdb_destroy_data_chunk`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2526,6 +2562,42 @@ pub type duckdb_table_function_init_t = ::std::option::Option<unsafe extern "C" 
 #[doc = "! The main function of the table function."]
 pub type duckdb_table_function_t =
     ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info, output: duckdb_data_chunk)>;
+#[doc = "! A cast function. Must be destroyed with `duckdb_destroy_cast_function`."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_cast_function {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[test]
+fn bindgen_test_layout__duckdb_cast_function() {
+    const UNINIT: ::std::mem::MaybeUninit<_duckdb_cast_function> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_duckdb_cast_function>(),
+        8usize,
+        concat!("Size of: ", stringify!(_duckdb_cast_function))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_duckdb_cast_function>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_duckdb_cast_function))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).internal_ptr) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_duckdb_cast_function),
+            "::",
+            stringify!(internal_ptr)
+        )
+    );
+}
+#[doc = "! A cast function. Must be destroyed with `duckdb_destroy_cast_function`."]
+pub type duckdb_cast_function = *mut _duckdb_cast_function;
+pub type duckdb_cast_function_t = ::std::option::Option<
+    unsafe extern "C" fn(info: duckdb_function_info, count: idx_t, input: duckdb_vector, output: duckdb_vector) -> bool,
+>;
 #[doc = "! Additional replacement scan info. When setting this info, it is necessary to pass a destroy-callback function."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3578,12 +3650,28 @@ extern "C" {
     ) -> duckdb_value;
 }
 extern "C" {
+    #[doc = "Returns the number of elements in a MAP value.\n\n @param value The MAP value.\n @return The number of elements in the map."]
+    pub fn duckdb_get_map_size(value: duckdb_value) -> idx_t;
+}
+extern "C" {
+    #[doc = "Returns the MAP key at index as a duckdb_value.\n\n @param value The MAP value.\n @param index The index of the key.\n @return The key as a duckdb_value."]
+    pub fn duckdb_get_map_key(value: duckdb_value, index: idx_t) -> duckdb_value;
+}
+extern "C" {
+    #[doc = "Returns the MAP value at index as a duckdb_value.\n\n @param value The MAP value.\n @param index The index of the value.\n @return The value as a duckdb_value."]
+    pub fn duckdb_get_map_value(value: duckdb_value, index: idx_t) -> duckdb_value;
+}
+extern "C" {
     #[doc = "Creates a `duckdb_logical_type` from a primitive type.\nThe resulting logical type must be destroyed with `duckdb_destroy_logical_type`.\n\nReturns an invalid logical type, if type is: `DUCKDB_TYPE_INVALID`, `DUCKDB_TYPE_DECIMAL`, `DUCKDB_TYPE_ENUM`,\n`DUCKDB_TYPE_LIST`, `DUCKDB_TYPE_STRUCT`, `DUCKDB_TYPE_MAP`, `DUCKDB_TYPE_ARRAY`, or `DUCKDB_TYPE_UNION`.\n\n @param type The primitive type to create.\n @return The logical type."]
     pub fn duckdb_create_logical_type(type_: duckdb_type) -> duckdb_logical_type;
 }
 extern "C" {
     #[doc = "Returns the alias of a duckdb_logical_type, if set, else `nullptr`.\nThe result must be destroyed with `duckdb_free`.\n\n @param type The logical type\n @return The alias or `nullptr`"]
     pub fn duckdb_logical_type_get_alias(type_: duckdb_logical_type) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    #[doc = "Sets the alias of a duckdb_logical_type.\n\n @param type The logical type\n @param alias The alias to set"]
+    pub fn duckdb_logical_type_set_alias(type_: duckdb_logical_type, alias: *const ::std::os::raw::c_char);
 }
 extern "C" {
     #[doc = "Creates a LIST type from its child type.\nThe return type must be destroyed with `duckdb_destroy_logical_type`.\n\n @param type The child type of the list\n @return The logical type."]
@@ -3702,6 +3790,14 @@ extern "C" {
 extern "C" {
     #[doc = "Destroys the logical type and de-allocates all memory allocated for that type.\n\n @param type The logical type to destroy."]
     pub fn duckdb_destroy_logical_type(type_: *mut duckdb_logical_type);
+}
+extern "C" {
+    #[doc = "Registers a custom type within the given connection.\nThe type must have an alias\n\n @param con The connection to use\n @param type The custom type to register\n @return Whether or not the registration was successful."]
+    pub fn duckdb_register_logical_type(
+        con: duckdb_connection,
+        type_: duckdb_logical_type,
+        info: duckdb_create_type_info,
+    ) -> duckdb_state;
 }
 extern "C" {
     #[doc = "Creates an empty data chunk with the specified column types.\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\n @param types An array of column types. Column types can not contain ANY and INVALID types.\n @param column_count The number of columns.\n @return The data chunk."]
@@ -4173,20 +4269,16 @@ extern "C" {
     ) -> duckdb_value;
 }
 extern "C" {
+    #[doc = "Returns the key-value metric map of this profiling node as a MAP duckdb_value.\nThe individual elements are accessible via the duckdb_value MAP functions.\n\n @param info A profiling information object.\n @return The key-value metric map as a MAP duckdb_value."]
+    pub fn duckdb_profiling_info_get_metrics(info: duckdb_profiling_info) -> duckdb_value;
+}
+extern "C" {
     #[doc = "Returns the number of children in the current profiling info node.\n\n @param info A profiling information object.\n @return The number of children in the current node."]
     pub fn duckdb_profiling_info_get_child_count(info: duckdb_profiling_info) -> idx_t;
 }
 extern "C" {
     #[doc = "Returns the child node at the specified index.\n\n @param info A profiling information object.\n @param index The index of the child node.\n @return The child node at the specified index."]
     pub fn duckdb_profiling_info_get_child(info: duckdb_profiling_info, index: idx_t) -> duckdb_profiling_info;
-}
-extern "C" {
-    #[doc = "Returns the operator name of the current profiling info node, if the node is an Operator Node.\n\n @param info A profiling information object.\n @return The name of the operator of the current node. Returns nullptr, if the node is not an Operator Node. The result\nmust be freed with `duckdb_free`."]
-    pub fn duckdb_profiling_info_get_name(info: duckdb_profiling_info) -> *const ::std::os::raw::c_char;
-}
-extern "C" {
-    #[doc = "Returns the query of the current profiling info node, if the node is the root.\n\n @param info A profiling information object.\n @return The query of the current node. Returns nullptr, if the node is not the root. The result must be freed\n with `duckdb_free`."]
-    pub fn duckdb_profiling_info_get_query(info: duckdb_profiling_info) -> *const ::std::os::raw::c_char;
 }
 extern "C" {
     #[doc = "Creates an appender object.\n\nNote that the object must be destroyed with `duckdb_appender_destroy`.\n\n @param connection The connection context to create the appender in.\n @param schema The schema of the table to append to, or `nullptr` for the default schema.\n @param table The table name to append to.\n @param out_appender The resulting appender object.\n @return `DuckDBSuccess` on success or `DuckDBError` on failure."]
@@ -4474,5 +4566,62 @@ extern "C" {
 extern "C" {
     #[doc = "Fetches a data chunk from a duckdb_result. This function should be called repeatedly until the result is exhausted.\n\nThe result must be destroyed with `duckdb_destroy_data_chunk`.\n\nIt is not known beforehand how many chunks will be returned by this result.\n\n @param result The result object to fetch the data chunk from.\n @return The resulting data chunk. Returns `NULL` if the result has an error."]
     pub fn duckdb_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk;
+}
+extern "C" {
+    #[doc = "Creates a new cast function object.\n\n @return The cast function object."]
+    pub fn duckdb_create_cast_function() -> duckdb_cast_function;
+}
+extern "C" {
+    #[doc = "Sets the source type of the cast function.\n\n @param cast_function The cast function object.\n @param source_type The source type to set."]
+    pub fn duckdb_cast_function_set_source_type(cast_function: duckdb_cast_function, source_type: duckdb_logical_type);
+}
+extern "C" {
+    #[doc = "Sets the target type of the cast function.\n\n @param cast_function The cast function object.\n @param target_type The target type to set."]
+    pub fn duckdb_cast_function_set_target_type(cast_function: duckdb_cast_function, target_type: duckdb_logical_type);
+}
+extern "C" {
+    #[doc = "Sets the \"cost\" of implicitly casting the source type to the target type using this function.\n\n @param cast_function The cast function object.\n @param cost The cost to set."]
+    pub fn duckdb_cast_function_set_implicit_cast_cost(cast_function: duckdb_cast_function, cost: i64);
+}
+extern "C" {
+    #[doc = "Sets the actual cast function to use.\n\n @param cast_function The cast function object.\n @param function The function to set."]
+    pub fn duckdb_cast_function_set_function(cast_function: duckdb_cast_function, function: duckdb_cast_function_t);
+}
+extern "C" {
+    #[doc = "Assigns extra information to the cast function that can be fetched during execution, etc.\n\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
+    pub fn duckdb_cast_function_set_extra_info(
+        cast_function: duckdb_cast_function,
+        extra_info: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    );
+}
+extern "C" {
+    #[doc = "Retrieves the extra info of the function as set in `duckdb_cast_function_set_extra_info`.\n\n @param info The info object.\n @return The extra info."]
+    pub fn duckdb_cast_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    #[doc = "Get the cast execution mode from the given function info.\n\n @param info The info object.\n @return The cast mode."]
+    pub fn duckdb_cast_function_get_cast_mode(info: duckdb_function_info) -> duckdb_cast_mode;
+}
+extern "C" {
+    #[doc = "Report that an error has occurred while executing the cast function.\n\n @param info The info object.\n @param error The error message."]
+    pub fn duckdb_cast_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char);
+}
+extern "C" {
+    #[doc = "Report that an error has occurred while executing the cast function, setting the corresponding output row to NULL.\n\n @param info The info object.\n @param error The error message.\n @param row The index of the row within the output vector to set to NULL.\n @param output The output vector."]
+    pub fn duckdb_cast_function_set_row_error(
+        info: duckdb_function_info,
+        error: *const ::std::os::raw::c_char,
+        row: idx_t,
+        output: duckdb_vector,
+    );
+}
+extern "C" {
+    #[doc = "Registers a cast function within the given connection.\n\n @param con The connection to use.\n @param cast_function The cast function to register.\n @return Whether or not the registration was successful."]
+    pub fn duckdb_register_cast_function(con: duckdb_connection, cast_function: duckdb_cast_function) -> duckdb_state;
+}
+extern "C" {
+    #[doc = "Destroys the cast function object.\n\n @param cast_function The cast function object."]
+    pub fn duckdb_destroy_cast_function(cast_function: *mut duckdb_cast_function);
 }
 pub type __builtin_va_list = *mut ::std::os::raw::c_char;

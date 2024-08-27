@@ -2,7 +2,9 @@
 
 set -e
 
-SCRIPT_DIR=$(cd "$(dirname "$_")" && pwd)
+SCRIPT=$(realpath "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT")
+
 echo "$SCRIPT_DIR"
 cd "$SCRIPT_DIR"
 cargo clean
@@ -11,7 +13,7 @@ export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
 # Download and extract amalgamation
 # todo: fix this version
-DUCKDB_VERSION=77a322a4cc42416b7933dc49affe0024d34eebc0
+DUCKDB_VERSION=1257cea5d4d304bb5b394785704e0e680f33cc20
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
 git fetch
