@@ -1,13 +1,12 @@
 #![allow(clippy::redundant_clone)]
-use proc_macro2::{Ident, Span, Punct, Literal};
+use proc_macro2::{Ident, Literal, Punct, Span};
 
 use syn::{parse_macro_input, spanned::Spanned, Item};
 
 use proc_macro::TokenStream;
 use quote::quote_spanned;
 
-use darling::{Error, FromMeta};
-use darling::ast::NestedMeta;
+use darling::{ast::NestedMeta, Error, FromMeta};
 use syn::ItemFn;
 
 /// For parsing the arguments to the duckdb_entrypoint_c_api macro
@@ -23,18 +22,22 @@ struct CEntryPointMacroArgs {
 pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_args = match NestedMeta::parse_meta_list(attr.into()) {
         Ok(v) => v,
-        Err(e) => { return TokenStream::from(Error::from(e).write_errors()); }
+        Err(e) => {
+            return TokenStream::from(Error::from(e).write_errors());
+        }
     };
 
     let args = match CEntryPointMacroArgs::from_list(&attr_args) {
         Ok(v) => v,
-        Err(e) => { return TokenStream::from(e.write_errors()); }
+        Err(e) => {
+            return TokenStream::from(e.write_errors());
+        }
     };
 
     /// TODO FETCH THE DEFAULT AUTOMATICALLY SOMEHOW
     let minimum_duckdb_version = match args.min_duckdb_version {
         Some(i) => i,
-        None => "dev".to_string()
+        None => "dev".to_string(),
     };
 
     let ast = parse_macro_input!(item as syn::Item);

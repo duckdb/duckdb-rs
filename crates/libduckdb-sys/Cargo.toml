@@ -22,7 +22,7 @@ buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
 extensions-full = ["json", "parquet"]
-loadable_extension = ["buildtime_bindgen"]
+loadable_extension = ["prettyplease", "quote", "syn", "buildtime_bindgen"]
 
 [dependencies]
 
@@ -36,9 +36,9 @@ vcpkg = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tar = { workspace = true }
-prettyplease = "0.2.20"
-syn = "2.0"
-quote = "1.0"
+syn = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
+prettyplease = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }

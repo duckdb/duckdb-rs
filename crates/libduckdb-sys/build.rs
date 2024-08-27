@@ -97,10 +97,17 @@ mod build_bundled {
             let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/"));
             bindings::write_to_out_dir(header, out_path);
         }
+
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
             use std::fs;
-            fs::copy("src/bindgen_bundled_version.rs", out_path).expect("Could not copy bindings to output directory");
+            fs::copy(
+                #[cfg(not(feature = "loadable_extension"))]
+                "src/bindgen_bundled_version.rs",
+                #[cfg(feature = "loadable_extension")]
+                "src/bindgen_bundled_version_loadable.rs",
+                out_path
+            ).expect("Could not copy bindings to output directory");
         }
 
         let manifest_file = std::fs::File::open(format!("{out_dir}/{lib_name}/manifest.json")).expect("manifest file");
@@ -178,21 +185,27 @@ impl From<HeaderLocation> for String {
                 let prefix = env_prefix();
                 let mut header = env::var(format!("{prefix}_INCLUDE_DIR"))
                     .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
-                header.push_str("/duckdb.h");
+                header.push_str(if cfg!(feature = "loadable_extension") {
+                    "/duckdb_extension.h"
+                } else {
+                    "/duckdb.h"
+                });
                 header
             }
-            HeaderLocation::Wrapper => if cfg!(feature = "loadable_extension") {
-                "wrapper_ext.h".into()
-                    } else {
-                "wrapper.h".into()
-            },
+            HeaderLocation::Wrapper => {
+                if cfg!(feature = "loadable_extension") {
+                    "wrapper_ext.h".into()
+                } else {
+                    "wrapper.h".into()
+                }
+            }
             HeaderLocation::FromPath(path) => format!(
                 "{}/{}",
                 path,
                 if cfg!(feature = "loadable_extension") {
-                   "duckdb.h"
+                    "duckdb_extension.h"
                 } else {
-                   "duckdb_extension.h"
+                    "duckdb.h"
                 }
             ),
         }
@@ -314,14 +327,11 @@ mod build_linked {
     }
 }
 
-
 #[cfg(feature = "buildtime_bindgen")]
 mod bindings {
     use super::HeaderLocation;
 
     use std::{fs::OpenOptions, io::Write, path::Path};
-
-    use syn;
 
     #[cfg(feature = "loadable_extension")]
     fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
@@ -363,11 +373,11 @@ mod bindings {
             })
             .expect("could not find duckdb_ext_api_v0");
 
-    //     let duckdb_ext_api_v0_ident = duckdb_ext_api_v0.ident;
+        //     let duckdb_ext_api_v0_ident = duckdb_ext_api_v0.ident;
 
         let p_api = quote::format_ident!("p_api");
         let mut stores = Vec::new();
-    //     let mut malloc = Vec::new();
+        //     let mut malloc = Vec::new();
         // (2) `#define sqlite3_xyz sqlite3_api->abc` => `pub unsafe fn
         // sqlite3_xyz(args) -> ty {...}` for each `abc` field:
 
@@ -382,11 +392,8 @@ mod bindings {
 
             let method = extract_method(&field.ty).unwrap_or_else(|| panic!("unexpected type for {function_name}"));
 
-            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> = method
-                .inputs
-                .iter()
-                .map(|i| &i.name.as_ref().unwrap().0)
-                .collect();
+            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> =
+                method.inputs.iter().map(|i| &i.name.as_ref().unwrap().0).collect();
 
             let args = &method.inputs;
 
@@ -446,7 +453,8 @@ mod bindings {
             builder = builder.ignore_functions();
         }
 
-        builder.trust_clang_mangling(false)
+        builder
+            .trust_clang_mangling(false)
             .header(header.clone())
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
@@ -456,7 +464,8 @@ mod bindings {
 
         let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
-        if cfg!(feature = "loadable_extension") {
+        #[cfg(feature = "loadable_extension")]
+        {
             generate_functions(&mut output);
         }
 
@@ -469,6 +478,5 @@ mod bindings {
 
         file.write_all(output.as_bytes())
             .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
-
     }
 }

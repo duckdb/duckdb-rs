@@ -8,7 +8,7 @@ command -v rustfmt >/dev/null 2>&1 || { echo >&2 "Rustfmt is required but it's n
 # write a whole script to pre-commit hook
 # NOTE: it will overwrite pre-commit file!
 cat > .git/hooks/pre-commit <<'EOF'
-#!/bin/bash -e
+#!/bin/bash
 declare -a rust_files=()
 files=$(git diff-index --name-only --cached HEAD)
 echo 'Formatting source files'
