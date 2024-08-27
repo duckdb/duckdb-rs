@@ -32,6 +32,7 @@ extensions-full = ["json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
 polars = ["dep:polars"]
+time = []
 
 [dependencies]
 libduckdb-sys = { workspace = true }
