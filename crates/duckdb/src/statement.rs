@@ -117,7 +117,7 @@ impl Statement<'_> {
     /// ```rust,no_run
     /// # use duckdb::{Result, Connection};
     /// # use arrow::record_batch::RecordBatch;
-    /// # use arrow::datatypes::SchemaRef
+    /// # use arrow::datatypes::SchemaRef;
     /// fn get_arrow_data(conn: &Connection, schema: SchemaRef) -> Result<Vec<RecordBatch>> {
     ///     Ok(conn.prepare("SELECT * FROM test")?.stream_arrow([], schema)?.collect())
     /// }
