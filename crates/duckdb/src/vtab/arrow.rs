@@ -672,10 +672,17 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array, DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray
+            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
+            DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
+            IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray,
+            OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
+            TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
-        datatypes::{i256, ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, Fields, IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, Schema},
+        datatypes::{
+            i256, ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, Fields, IntervalDayTimeType,
+            IntervalMonthDayNanoType, IntervalYearMonthType, Schema,
+        },
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
