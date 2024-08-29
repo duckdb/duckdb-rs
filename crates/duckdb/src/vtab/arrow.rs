@@ -301,7 +301,7 @@ fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
     array: &dyn Array,
     out_vector: &mut dyn Vector,
 ) {
-    let array = cast(array, &data_type).expect(&format!("array is casted into {data_type}"));
+    let array = cast(array, &data_type).unwrap_or_else(|_| panic!("array is casted into {data_type}"));
     let out_vector: &mut FlatVector = out_vector.as_mut_any().downcast_mut().unwrap();
     out_vector.copy::<T::Native>(array.as_primitive::<T>().values());
     if let Some(nulls) = array.nulls() {
