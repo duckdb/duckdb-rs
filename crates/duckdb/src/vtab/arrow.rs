@@ -268,13 +268,7 @@ pub fn record_batch_to_duckdb_data_chunk(
 fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<T>, out_vector: &mut FlatVector) {
     // assert!(array.len() <= out_vector.capacity());
     out_vector.copy::<T::Native>(array.values());
-    if let Some(nulls) = array.nulls() {
-        for (i, null) in nulls.into_iter().enumerate() {
-            if !null {
-                out_vector.set_null(i);
-            }
-        }
-    }
+    set_nulls_in_flat_vector(array, out_vector);
 }
 
 fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
@@ -285,13 +279,7 @@ fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
     let array = arrow::compute::kernels::cast::cast(array, &data_type).unwrap();
     let out_vector: &mut FlatVector = out_vector.as_mut_any().downcast_mut().unwrap();
     out_vector.copy::<T::Native>(array.as_primitive::<T>().values());
-    if let Some(nulls) = array.nulls() {
-        for (i, null) in nulls.iter().enumerate() {
-            if !null {
-                out_vector.set_null(i);
-            }
-        }
-    }
+    set_nulls_in_flat_vector(&array, out_vector);
 }
 
 fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<(), Box<dyn std::error::Error>> {
@@ -441,13 +429,7 @@ fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector, width:
     }
 
     // Set nulls
-    if let Some(nulls) = array.nulls() {
-        for (i, null) in nulls.into_iter().enumerate() {
-            if !null {
-                out.set_null(i);
-            }
-        }
-    }
+    set_nulls_in_flat_vector(array, out);
 }
 
 /// Convert Arrow [BooleanArray] to a duckdb vector.
@@ -457,6 +439,7 @@ fn boolean_array_to_vector(array: &BooleanArray, out: &mut FlatVector) {
     for i in 0..array.len() {
         out.as_mut_slice()[i] = array.value(i);
     }
+    set_nulls_in_flat_vector(array, out);
 }
 
 fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out: &mut FlatVector) {
@@ -467,6 +450,7 @@ fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out
         let s = array.value(i);
         out.insert(i, s);
     }
+    set_nulls_in_flat_vector(array, out);
 }
 
 fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
@@ -476,6 +460,7 @@ fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
         let s = array.value(i);
         out.insert(i, s);
     }
+    set_nulls_in_flat_vector(array, out);
 }
 
 fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
@@ -504,6 +489,8 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
         let length = array.value_length(i);
         out.set_entry(i, offset.as_(), length.as_());
     }
+    set_nulls_in_list_vector(array, out);
+
     Ok(())
 }
 
@@ -527,6 +514,8 @@ fn fixed_size_list_array_to_vector(
             return Err("Nested array is not supported yet.".into());
         }
     }
+
+    set_nulls_in_array_vector(array, out);
 
     Ok(())
 }
@@ -575,6 +564,7 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector) -> Result
             }
         }
     }
+    set_nulls_in_struct_vector(array, out);
     Ok(())
 }
 
@@ -609,6 +599,46 @@ pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema)
     let sch = Box::into_raw(Box::new(schema));
 
     [arr as *mut _ as usize, sch as *mut _ as usize]
+}
+
+fn set_nulls_in_flat_vector(array: &dyn Array, out_vector: &mut FlatVector) {
+    if let Some(nulls) = array.nulls() {
+        for (i, null) in nulls.into_iter().enumerate() {
+            if !null {
+                out_vector.set_null(i);
+            }
+        }
+    }
+}
+
+fn set_nulls_in_struct_vector(array: &dyn Array, out_vector: &mut StructVector) {
+    if let Some(nulls) = array.nulls() {
+        for (i, null) in nulls.into_iter().enumerate() {
+            if !null {
+                out_vector.set_null(i);
+            }
+        }
+    }
+}
+
+fn set_nulls_in_array_vector(array: &dyn Array, out_vector: &mut ArrayVector) {
+    if let Some(nulls) = array.nulls() {
+        for (i, null) in nulls.into_iter().enumerate() {
+            if !null {
+                out_vector.set_null(i);
+            }
+        }
+    }
+}
+
+fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector) {
+    if let Some(nulls) = array.nulls() {
+        for (i, null) in nulls.into_iter().enumerate() {
+            if !null {
+                out_vector.set_null(i);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -705,6 +735,44 @@ mod test {
         Ok(())
     }
 
+    #[test]
+    fn test_append_struct_contains_null() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE t1 (s STRUCT(v VARCHAR, i INTEGER))")?;
+        {
+            let struct_array = StructArray::try_new(
+                vec![
+                    Arc::new(Field::new("v", DataType::Utf8, true)),
+                    Arc::new(Field::new("i", DataType::Int32, true)),
+                ]
+                .into(),
+                vec![
+                    Arc::new(StringArray::from(vec![Some("foo"), Some("bar")])) as ArrayRef,
+                    Arc::new(Int32Array::from(vec![Some(1), Some(2)])) as ArrayRef,
+                ],
+                Some(vec![true, false].into()),
+            )?;
+
+            let schema = Schema::new(vec![Field::new(
+                "s",
+                DataType::Struct(Fields::from(vec![
+                    Field::new("v", DataType::Utf8, true),
+                    Field::new("i", DataType::Int32, true),
+                ])),
+                true,
+            )]);
+
+            let record_batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(struct_array)])?;
+            let mut app = db.appender("t1")?;
+            app.append_record_batch(record_batch)?;
+        }
+        let mut stmt = db.prepare("SELECT s FROM t1 where s IS NOT NULL")?;
+        let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
+        assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 1);
+
+        Ok(())
+    }
+
     fn check_rust_primitive_array_roundtrip<T1, T2>(
         input_array: PrimitiveArray<T1>,
         expected_array: PrimitiveArray<T2>,
@@ -762,7 +830,7 @@ mod test {
         db.register_table_function::<ArrowVTab>("arrow")?;
 
         // Roundtrip a record batch from Rust to DuckDB and back to Rust
-        let schema = Schema::new(vec![Field::new("a", arry.data_type().clone(), false)]);
+        let schema = Schema::new(vec![Field::new("a", arry.data_type().clone(), true)]);
 
         let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(arry.clone())])?;
         let param = arrow_recordbatch_to_query_params(rb);
@@ -906,6 +974,24 @@ mod test {
         let array = builder.finish();
 
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_generic_array_roundtrip_contains_null() -> Result<(), Box<dyn Error>> {
+        check_generic_array_roundtrip(ListArray::new(
+            Arc::new(Field::new("item", DataType::Utf8, true)),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 2, 4, 5])),
+            Arc::new(StringArray::from(vec![
+                Some("foo"),
+                Some("baz"),
+                Some("bar"),
+                Some("foo"),
+                Some("baz"),
+            ])),
+            Some(vec![true, false, true].into()),
+        ))?;
 
         Ok(())
     }
