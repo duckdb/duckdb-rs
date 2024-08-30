@@ -1,68 +1,3 @@
-//! Traits dealing with DuckDB data types.
-//!
-//! DuckDB uses a [dynamic type system](https://www.sqlite.org/datatype3.html). Implementations of
-//! the [`ToSql`] and [`FromSql`] traits are provided for the basic types that
-//! DuckDB provides methods for:
-//!
-//! * Strings (`String` and `&str`)
-//! * Blobs (`Vec<u8>` and `&[u8]`)
-//! * Numbers
-//!
-//! The number situation is a little complicated due to the fact that all
-//! numbers in DuckDB are stored as `INTEGER` (`i64`) or `REAL` (`f64`).
-//!
-//! [`ToSql`] and [`FromSql`] are implemented for all primitive number types.
-//! [`FromSql`] has different behaviour depending on the SQL and Rust types, and
-//! the value.
-//!
-//! * `INTEGER` to integer: returns an
-//!   [`Error::IntegralValueOutOfRange`](crate::Error::IntegralValueOutOfRange)
-//!   error if the value does not fit in the Rust type.
-//! * `REAL` to integer: always returns an
-//!   [`Error::InvalidColumnType`](crate::Error::InvalidColumnType) error.
-//! * `INTEGER` to float: casts using `as` operator. Never fails.
-//! * `REAL` to float: casts using `as` operator. Never fails.
-//!
-//! [`ToSql`] always succeeds except when storing a `u64` or `usize` value that
-//! cannot fit in an `INTEGER` (`i64`). Also note that DuckDB ignores column
-//! types, so if you store an `i64` in a column with type `REAL` it will be
-//! stored as an `INTEGER`, not a `REAL`.
-//!
-//! If the `time` feature is enabled, implementations are
-//! provided for `time::OffsetDateTime` that use the RFC 3339 date/time format,
-//! `"%Y-%m-%dT%H:%M:%S.%fZ"`, to store time values as strings.  These values
-//! can be parsed by SQLite's builtin
-//! [datetime](https://www.sqlite.org/lang_datefunc.html) functions.  If you
-//! want different storage for datetimes, you can use a newtype.
-#![cfg_attr(
-    feature = "time",
-    doc = r##"
-For example, to store datetimes as `i64`s counting the number of seconds since
-the Unix epoch:
-
-```
-use duckdb::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
-use duckdb::Result;
-
-pub struct DateTimeSql(pub time::OffsetDateTime);
-
-impl FromSql for DateTimeSql {
-    fn column_result(value: ValueRef) -> FromSqlResult<Self> {
-        i64::column_result(value).map(|as_i64| {
-            DateTimeSql(time::OffsetDateTime::from_unix_timestamp(as_i64))
-        })
-    }
-}
-
-impl ToSql for DateTimeSql {
-    fn to_sql(&self) -> Result<ToSqlOutput> {
-        Ok(self.0.timestamp().into())
-    }
-}
-```
-
-"##
-)]
 //! [`ToSql`] and [`FromSql`] are also implemented for `Option<T>` where `T`
 //! implements [`ToSql`] or [`FromSql`] for the cases where you want to know if
 //! a value was NULL (which gets translated to `None`).
@@ -395,10 +330,6 @@ mod test {
         assert!(is_invalid_column_type(row.get::<_, i64>(0).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, c_double>(0).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, String>(0).err().unwrap()));
-        #[cfg(feature = "time")]
-        assert!(is_invalid_column_type(
-            row.get::<_, time::OffsetDateTime>(0).err().unwrap()
-        ));
         assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(0).err().unwrap()));
 
         // 1 is actually a text (String)
@@ -426,10 +357,6 @@ mod test {
         assert!(is_invalid_column_type(row.get::<_, c_double>(4).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, String>(4).err().unwrap()));
         assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(4).err().unwrap()));
-        #[cfg(feature = "time")]
-        assert!(is_invalid_column_type(
-            row.get::<_, time::OffsetDateTime>(4).err().unwrap()
-        ));
         Ok(())
     }
 
