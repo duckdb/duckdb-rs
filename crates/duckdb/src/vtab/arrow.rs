@@ -2,10 +2,14 @@ use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalType
 use std::ptr::null_mut;
 
 use crate::core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector};
-use arrow::array::{
-    as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array, as_string_array,
-    as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array, FixedSizeListArray,
-    GenericListArray, GenericStringArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StructArray,
+use arrow::{
+    array::{
+        as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array,
+        as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array,
+        FixedSizeBinaryArray, FixedSizeListArray, GenericListArray, GenericStringArray, IntervalMonthDayNanoArray,
+        LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StructArray,
+    },
+    compute::cast,
 };
 
 use arrow::{
@@ -194,9 +198,12 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
             // DuckDB does not support negative decimal scales
             Ok(LogicalTypeHandle::decimal(*width, (*scale).try_into().unwrap()))
         }
-        DataType::Boolean | DataType::Utf8 | DataType::LargeUtf8 | DataType::Binary | DataType::LargeBinary => {
-            Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?))
-        }
+        DataType::Boolean
+        | DataType::Utf8
+        | DataType::LargeUtf8
+        | DataType::Binary
+        | DataType::LargeBinary
+        | DataType::FixedSizeBinary(_) => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         dtype if dtype.is_primitive() => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         _ => Err(format!(
             "Unsupported data type: {data_type}, please file an issue https://github.com/wangfenjin/duckdb-rs"
@@ -238,6 +245,18 @@ pub fn record_batch_to_duckdb_data_chunk(
             DataType::Binary => {
                 binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector(i));
             }
+            DataType::FixedSizeBinary(_) => {
+                fixed_size_binary_array_to_vector(col.as_ref().as_fixed_size_binary(), &mut chunk.flat_vector(i));
+            }
+            DataType::LargeBinary => {
+                large_binary_array_to_vector(
+                    col.as_ref()
+                        .as_any()
+                        .downcast_ref::<LargeBinaryArray>()
+                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeBinaryArray"))?,
+                    &mut chunk.flat_vector(i),
+                );
+            }
             DataType::List(_) => {
                 list_array_to_vector(as_list_array(col.as_ref()), &mut chunk.list_vector(i))?;
             }
@@ -276,7 +295,7 @@ fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
     array: &dyn Array,
     out_vector: &mut dyn Vector,
 ) {
-    let array = arrow::compute::kernels::cast::cast(array, &data_type).unwrap();
+    let array = cast(array, &data_type).unwrap_or_else(|_| panic!("array is casted into {data_type}"));
     let out_vector: &mut FlatVector = out_vector.as_mut_any().downcast_mut().unwrap();
     out_vector.copy::<T::Native>(array.as_primitive::<T>().values());
     set_nulls_in_flat_vector(&array, out_vector);
@@ -354,7 +373,21 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<
                 *width,
             );
         }
-
+        DataType::Interval(_) | DataType::Duration(_) => {
+            let array = IntervalMonthDayNanoArray::from(
+                cast(array, &DataType::Interval(IntervalUnit::MonthDayNano))
+                    .expect("array is casted into IntervalMonthDayNanoArray")
+                    .as_primitive::<IntervalMonthDayNanoType>()
+                    .values()
+                    .iter()
+                    .map(|a| IntervalMonthDayNanoType::make_value(a.months, a.days, a.nanoseconds / 1000))
+                    .collect::<Vec<_>>(),
+            );
+            primitive_array_to_flat_vector::<IntervalMonthDayNanoType>(
+                as_primitive_array(&array),
+                out.as_mut_any().downcast_mut().unwrap(),
+            );
+        }
         // DuckDB Only supports timetamp_tz in microsecond precision
         DataType::Timestamp(_, Some(tz)) => primitive_array_to_flat_vector_cast::<TimestampMicrosecondType>(
             DataType::Timestamp(TimeUnit::Microsecond, Some(tz.clone())),
@@ -461,6 +494,28 @@ fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
         out.insert(i, s);
     }
     set_nulls_in_flat_vector(array, out);
+}
+
+fn fixed_size_binary_array_to_vector(array: &FixedSizeBinaryArray, out: &mut FlatVector) {
+    assert!(array.len() <= out.capacity());
+
+    for i in 0..array.len() {
+        let s = array.value(i);
+        out.insert(i, s);
+    }
+    // Put this back once the other PR #
+    // set_nulls_in_flat_vector(array, out);
+}
+
+fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector) {
+    assert!(array.len() <= out.capacity());
+
+    for i in 0..array.len() {
+        let s = array.value(i);
+        out.insert(i, s);
+    }
+    // Put this back once the other PR #
+    // set_nulls_in_flat_vector(array, out);
 }
 
 fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
@@ -648,12 +703,16 @@ mod test {
     use arrow::{
         array::{
             Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
-            FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array, LargeStringArray, ListArray,
+            DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
+            IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray,
             OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
             TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
-        datatypes::{i256, ArrowPrimitiveType, ByteArrayType, DataType, Field, Fields, Schema},
+        datatypes::{
+            i256, ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, Fields, IntervalDayTimeType,
+            IntervalMonthDayNanoType, IntervalYearMonthType, Schema,
+        },
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
@@ -1085,6 +1144,55 @@ mod test {
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
             Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 2));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_interval_roundtrip() -> Result<(), Box<dyn Error>> {
+        let array: PrimitiveArray<IntervalMonthDayNanoType> = IntervalMonthDayNanoArray::from(vec![
+            IntervalMonthDayNanoType::make_value(1, 1, 1000),
+            IntervalMonthDayNanoType::make_value(2, 2, 2000),
+            IntervalMonthDayNanoType::make_value(3, 3, 3000),
+        ]);
+        check_rust_primitive_array_roundtrip(array.clone(), array)?;
+
+        let array: PrimitiveArray<IntervalYearMonthType> = IntervalYearMonthArray::from(vec![
+            IntervalYearMonthType::make_value(1, 10),
+            IntervalYearMonthType::make_value(2, 20),
+            IntervalYearMonthType::make_value(3, 30),
+        ]);
+        let expected_array: PrimitiveArray<IntervalMonthDayNanoType> = IntervalMonthDayNanoArray::from(vec![
+            IntervalMonthDayNanoType::make_value(22, 0, 0),
+            IntervalMonthDayNanoType::make_value(44, 0, 0),
+            IntervalMonthDayNanoType::make_value(66, 0, 0),
+        ]);
+        check_rust_primitive_array_roundtrip(array, expected_array)?;
+
+        let array: PrimitiveArray<IntervalDayTimeType> = IntervalDayTimeArray::from(vec![
+            IntervalDayTimeType::make_value(1, 1),
+            IntervalDayTimeType::make_value(2, 2),
+            IntervalDayTimeType::make_value(3, 3),
+        ]);
+        let expected_array: PrimitiveArray<IntervalMonthDayNanoType> = IntervalMonthDayNanoArray::from(vec![
+            IntervalMonthDayNanoType::make_value(0, 1, 1_000_000),
+            IntervalMonthDayNanoType::make_value(0, 2, 2_000_000),
+            IntervalMonthDayNanoType::make_value(0, 3, 3_000_000),
+        ]);
+        check_rust_primitive_array_roundtrip(array, expected_array)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_duration_roundtrip() -> Result<(), Box<dyn Error>> {
+        let array: PrimitiveArray<DurationSecondType> = DurationSecondArray::from(vec![1, 2, 3]);
+        let expected_array: PrimitiveArray<IntervalMonthDayNanoType> = IntervalMonthDayNanoArray::from(vec![
+            IntervalMonthDayNanoType::make_value(0, 0, 1_000_000_000),
+            IntervalMonthDayNanoType::make_value(0, 0, 2_000_000_000),
+            IntervalMonthDayNanoType::make_value(0, 0, 3_000_000_000),
+        ]);
+        check_rust_primitive_array_roundtrip(array, expected_array)?;
+
         Ok(())
     }
 
