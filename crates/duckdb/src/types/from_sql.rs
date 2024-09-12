@@ -279,7 +279,7 @@ mod test {
         let sql = "BEGIN;
                    CREATE TABLE ts (sec TIMESTAMP_S, milli TIMESTAMP_MS, micro TIMESTAMP_US, nano TIMESTAMP_NS );
                    INSERT INTO ts VALUES (NULL,NULL,NULL,NULL );
-                   INSERT INTO ts VALUES ('2008-01-01 00:00:01','2008-01-01 00:00:01.594','2008-01-01 00:00:01.88926','2008-01-01 00:00:01.889268321' );
+                   INSERT INTO ts VALUES ('2008-01-01 00:00:01','2008-01-01 00:00:01.594','2008-01-01 00:00:01.88926','2008-01-01 00:00:01.889268000' );
                    -- INSERT INTO ts VALUES (NULL,NULL,NULL,1199145601889268321 );
                    END;";
         db.execute_batch(sql)?;
@@ -394,7 +394,7 @@ mod test {
         })?;
         assert_eq!(v, ("47183823-2574-4bfd-b411-99ed177d3e43".to_string(),));
         let v = db.query_row(
-            "SELECT u FROM uuid where u>?",
+            "SELECT u FROM uuid where u>?::UUID",
             ["10203040-5060-7080-0102-030405060708"],
             |row| <(String,)>::try_from(row),
         )?;

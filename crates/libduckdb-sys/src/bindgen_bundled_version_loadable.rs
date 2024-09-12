@@ -4,7 +4,6 @@ pub const __bool_true_false_are_defined: u32 = 1;
 pub const true_: u32 = 1;
 pub const false_: u32 = 0;
 pub const __WORDSIZE: u32 = 64;
-pub const __has_safe_buffers: u32 = 1;
 pub const __DARWIN_ONLY_64_BIT_INO_T: u32 = 1;
 pub const __DARWIN_ONLY_UNIX_CONFORMANCE: u32 = 1;
 pub const __DARWIN_ONLY_VERS_1050: u32 = 1;
@@ -80,7 +79,7 @@ pub const SIG_ATOMIC_MIN: i32 = -2147483648;
 pub const SIG_ATOMIC_MAX: u32 = 2147483647;
 pub const DUCKDB_EXTENSION_API_VERSION_MAJOR: u32 = 0;
 pub const DUCKDB_EXTENSION_API_VERSION_MINOR: u32 = 0;
-pub const DUCKDB_EXTENSION_API_VERSION_PATCH: u32 = 2;
+pub const DUCKDB_EXTENSION_API_VERSION_PATCH: u32 = 1;
 pub type int_least8_t = i8;
 pub type int_least16_t = i16;
 pub type int_least32_t = i32;
@@ -771,6 +770,10 @@ pub const duckdb_error_type_DUCKDB_ERROR_SEQUENCE: duckdb_error_type = 41;
 pub const duckdb_error_type_DUCKDB_INVALID_CONFIGURATION: duckdb_error_type = 42;
 #[doc = "! An enum over DuckDB's different result types."]
 pub type duckdb_error_type = ::std::os::raw::c_uint;
+pub const duckdb_cast_mode_DUCKDB_CAST_NORMAL: duckdb_cast_mode = 0;
+pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
+#[doc = "! An enum over DuckDB's different cast modes."]
+pub type duckdb_cast_mode = ::std::os::raw::c_uint;
 #[doc = "! DuckDB's index type."]
 pub type idx_t = u64;
 #[doc = "! The callback that will be called to destroy data, e.g.,\n! bind data (if any), init data (if any), extra data for replacement scans (if any)"]
@@ -2058,6 +2061,39 @@ fn bindgen_test_layout__duckdb_logical_type() {
 }
 #[doc = "! Holds an internal logical type.\n! Must be destroyed with `duckdb_destroy_logical_type`."]
 pub type duckdb_logical_type = *mut _duckdb_logical_type;
+#[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_create_type_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[test]
+fn bindgen_test_layout__duckdb_create_type_info() {
+    const UNINIT: ::std::mem::MaybeUninit<_duckdb_create_type_info> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_duckdb_create_type_info>(),
+        8usize,
+        concat!("Size of: ", stringify!(_duckdb_create_type_info))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_duckdb_create_type_info>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_duckdb_create_type_info))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).internal_ptr) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_duckdb_create_type_info),
+            "::",
+            stringify!(internal_ptr)
+        )
+    );
+}
+#[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
+pub type duckdb_create_type_info = *mut _duckdb_create_type_info;
 #[doc = "! Contains a data chunk from a duckdb_result.\n! Must be destroyed with `duckdb_destroy_data_chunk`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2529,6 +2565,42 @@ pub type duckdb_table_function_init_t = ::std::option::Option<unsafe extern "C" 
 #[doc = "! The main function of the table function."]
 pub type duckdb_table_function_t =
     ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info, output: duckdb_data_chunk)>;
+#[doc = "! A cast function. Must be destroyed with `duckdb_destroy_cast_function`."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_cast_function {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[test]
+fn bindgen_test_layout__duckdb_cast_function() {
+    const UNINIT: ::std::mem::MaybeUninit<_duckdb_cast_function> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<_duckdb_cast_function>(),
+        8usize,
+        concat!("Size of: ", stringify!(_duckdb_cast_function))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_duckdb_cast_function>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_duckdb_cast_function))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).internal_ptr) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_duckdb_cast_function),
+            "::",
+            stringify!(internal_ptr)
+        )
+    );
+}
+#[doc = "! A cast function. Must be destroyed with `duckdb_destroy_cast_function`."]
+pub type duckdb_cast_function = *mut _duckdb_cast_function;
+pub type duckdb_cast_function_t = ::std::option::Option<
+    unsafe extern "C" fn(info: duckdb_function_info, count: idx_t, input: duckdb_vector, output: duckdb_vector) -> bool,
+>;
 #[doc = "! Additional replacement scan info. When setting this info, it is necessary to pass a destroy-callback function."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3408,10 +3480,8 @@ pub struct duckdb_ext_api_v0 {
         ::std::option::Option<unsafe extern "C" fn(info: duckdb_profiling_info) -> idx_t>,
     pub duckdb_profiling_info_get_child:
         ::std::option::Option<unsafe extern "C" fn(info: duckdb_profiling_info, index: idx_t) -> duckdb_profiling_info>,
-    pub duckdb_profiling_info_get_name:
-        ::std::option::Option<unsafe extern "C" fn(info: duckdb_profiling_info) -> *const ::std::os::raw::c_char>,
-    pub duckdb_profiling_info_get_query:
-        ::std::option::Option<unsafe extern "C" fn(info: duckdb_profiling_info) -> *const ::std::os::raw::c_char>,
+    pub duckdb_profiling_info_get_metrics:
+        ::std::option::Option<unsafe extern "C" fn(info: duckdb_profiling_info) -> duckdb_value>,
     pub duckdb_scalar_function_set_varargs: ::std::option::Option<
         unsafe extern "C" fn(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type),
     >,
@@ -3499,6 +3569,233 @@ pub struct duckdb_ext_api_v0 {
     pub duckdb_register_aggregate_function_set: ::std::option::Option<
         unsafe extern "C" fn(con: duckdb_connection, set: duckdb_aggregate_function_set) -> duckdb_state,
     >,
+    pub duckdb_get_map_size: ::std::option::Option<unsafe extern "C" fn(value: duckdb_value) -> idx_t>,
+    pub duckdb_get_map_key:
+        ::std::option::Option<unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value>,
+    pub duckdb_get_map_value:
+        ::std::option::Option<unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value>,
+    pub duckdb_create_aggregate_function: ::std::option::Option<unsafe extern "C" fn() -> duckdb_aggregate_function>,
+    pub duckdb_destroy_aggregate_function:
+        ::std::option::Option<unsafe extern "C" fn(aggregate_function: *mut duckdb_aggregate_function)>,
+    pub duckdb_aggregate_function_set_name: ::std::option::Option<
+        unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, name: *const ::std::os::raw::c_char),
+    >,
+    pub duckdb_aggregate_function_add_parameter: ::std::option::Option<
+        unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, type_: duckdb_logical_type),
+    >,
+    pub duckdb_aggregate_function_set_return_type: ::std::option::Option<
+        unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, type_: duckdb_logical_type),
+    >,
+    pub duckdb_aggregate_function_set_functions: ::std::option::Option<
+        unsafe extern "C" fn(
+            aggregate_function: duckdb_aggregate_function,
+            state_size: duckdb_aggregate_state_size,
+            state_init: duckdb_aggregate_init_t,
+            update: duckdb_aggregate_update_t,
+            combine: duckdb_aggregate_combine_t,
+            finalize: duckdb_aggregate_finalize_t,
+        ),
+    >,
+    pub duckdb_aggregate_function_set_destructor: ::std::option::Option<
+        unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, destroy: duckdb_aggregate_destroy_t),
+    >,
+    pub duckdb_register_aggregate_function: ::std::option::Option<
+        unsafe extern "C" fn(con: duckdb_connection, aggregate_function: duckdb_aggregate_function) -> duckdb_state,
+    >,
+    pub duckdb_aggregate_function_set_special_handling:
+        ::std::option::Option<unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function)>,
+    pub duckdb_aggregate_function_set_extra_info: ::std::option::Option<
+        unsafe extern "C" fn(
+            aggregate_function: duckdb_aggregate_function,
+            extra_info: *mut ::std::os::raw::c_void,
+            destroy: duckdb_delete_callback_t,
+        ),
+    >,
+    pub duckdb_aggregate_function_get_extra_info:
+        ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void>,
+    pub duckdb_aggregate_function_set_error:
+        ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info, error: *const ::std::os::raw::c_char)>,
+    pub duckdb_logical_type_set_alias:
+        ::std::option::Option<unsafe extern "C" fn(type_: duckdb_logical_type, alias: *const ::std::os::raw::c_char)>,
+    pub duckdb_register_logical_type: ::std::option::Option<
+        unsafe extern "C" fn(
+            con: duckdb_connection,
+            type_: duckdb_logical_type,
+            info: duckdb_create_type_info,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_create_cast_function: ::std::option::Option<unsafe extern "C" fn() -> duckdb_cast_function>,
+    pub duckdb_cast_function_set_source_type: ::std::option::Option<
+        unsafe extern "C" fn(cast_function: duckdb_cast_function, source_type: duckdb_logical_type),
+    >,
+    pub duckdb_cast_function_set_target_type: ::std::option::Option<
+        unsafe extern "C" fn(cast_function: duckdb_cast_function, target_type: duckdb_logical_type),
+    >,
+    pub duckdb_cast_function_set_implicit_cast_cost:
+        ::std::option::Option<unsafe extern "C" fn(cast_function: duckdb_cast_function, cost: i64)>,
+    pub duckdb_cast_function_set_function: ::std::option::Option<
+        unsafe extern "C" fn(cast_function: duckdb_cast_function, function: duckdb_cast_function_t),
+    >,
+    pub duckdb_cast_function_set_extra_info: ::std::option::Option<
+        unsafe extern "C" fn(
+            cast_function: duckdb_cast_function,
+            extra_info: *mut ::std::os::raw::c_void,
+            destroy: duckdb_delete_callback_t,
+        ),
+    >,
+    pub duckdb_cast_function_get_extra_info:
+        ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void>,
+    pub duckdb_cast_function_get_cast_mode:
+        ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info) -> duckdb_cast_mode>,
+    pub duckdb_cast_function_set_error:
+        ::std::option::Option<unsafe extern "C" fn(info: duckdb_function_info, error: *const ::std::os::raw::c_char)>,
+    pub duckdb_cast_function_set_row_error: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_function_info,
+            error: *const ::std::os::raw::c_char,
+            row: idx_t,
+            output: duckdb_vector,
+        ),
+    >,
+    pub duckdb_register_cast_function: ::std::option::Option<
+        unsafe extern "C" fn(con: duckdb_connection, cast_function: duckdb_cast_function) -> duckdb_state,
+    >,
+    pub duckdb_destroy_cast_function:
+        ::std::option::Option<unsafe extern "C" fn(cast_function: *mut duckdb_cast_function)>,
+    pub duckdb_row_count: ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t>,
+    pub duckdb_column_data: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut ::std::os::raw::c_void,
+    >,
+    pub duckdb_nullmask_data:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut bool>,
+    pub duckdb_result_get_chunk:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk>,
+    pub duckdb_result_is_streaming: ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> bool>,
+    pub duckdb_result_chunk_count: ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> idx_t>,
+    pub duckdb_result_return_type:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> duckdb_result_type>,
+    pub duckdb_value_boolean:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool>,
+    pub duckdb_value_int8:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i8>,
+    pub duckdb_value_int16:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i16>,
+    pub duckdb_value_int32:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i32>,
+    pub duckdb_value_int64:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i64>,
+    pub duckdb_value_hugeint: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_hugeint,
+    >,
+    pub duckdb_value_uhugeint: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_uhugeint,
+    >,
+    pub duckdb_value_decimal: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_decimal,
+    >,
+    pub duckdb_value_uint8:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u8>,
+    pub duckdb_value_uint16:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u16>,
+    pub duckdb_value_uint32:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u32>,
+    pub duckdb_value_uint64:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u64>,
+    pub duckdb_value_float:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f32>,
+    pub duckdb_value_double:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f64>,
+    pub duckdb_value_date:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_date>,
+    pub duckdb_value_time:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_time>,
+    pub duckdb_value_timestamp: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_timestamp,
+    >,
+    pub duckdb_value_interval: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_interval,
+    >,
+    pub duckdb_value_varchar: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char,
+    >,
+    pub duckdb_value_string: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string,
+    >,
+    pub duckdb_value_varchar_internal: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char,
+    >,
+    pub duckdb_value_string_internal: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string,
+    >,
+    pub duckdb_value_blob:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_blob>,
+    pub duckdb_value_is_null:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool>,
+    pub duckdb_execute_prepared_streaming: ::std::option::Option<
+        unsafe extern "C" fn(
+            prepared_statement: duckdb_prepared_statement,
+            out_result: *mut duckdb_result,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_pending_prepared_streaming: ::std::option::Option<
+        unsafe extern "C" fn(
+            prepared_statement: duckdb_prepared_statement,
+            out_result: *mut duckdb_pending_result,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_column_has_default: ::std::option::Option<
+        unsafe extern "C" fn(table_description: duckdb_table_description, index: idx_t, out: *mut bool) -> duckdb_state,
+    >,
+    pub duckdb_query_arrow: ::std::option::Option<
+        unsafe extern "C" fn(
+            connection: duckdb_connection,
+            query: *const ::std::os::raw::c_char,
+            out_result: *mut duckdb_arrow,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_query_arrow_schema: ::std::option::Option<
+        unsafe extern "C" fn(result: duckdb_arrow, out_schema: *mut duckdb_arrow_schema) -> duckdb_state,
+    >,
+    pub duckdb_prepared_arrow_schema: ::std::option::Option<
+        unsafe extern "C" fn(prepared: duckdb_prepared_statement, out_schema: *mut duckdb_arrow_schema) -> duckdb_state,
+    >,
+    pub duckdb_result_arrow_array: ::std::option::Option<
+        unsafe extern "C" fn(result: duckdb_result, chunk: duckdb_data_chunk, out_array: *mut duckdb_arrow_array),
+    >,
+    pub duckdb_query_arrow_array: ::std::option::Option<
+        unsafe extern "C" fn(result: duckdb_arrow, out_array: *mut duckdb_arrow_array) -> duckdb_state,
+    >,
+    pub duckdb_arrow_column_count: ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> idx_t>,
+    pub duckdb_arrow_row_count: ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> idx_t>,
+    pub duckdb_arrow_rows_changed: ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> idx_t>,
+    pub duckdb_query_arrow_error:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> *const ::std::os::raw::c_char>,
+    pub duckdb_destroy_arrow: ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_arrow)>,
+    pub duckdb_destroy_arrow_stream: ::std::option::Option<unsafe extern "C" fn(stream_p: *mut duckdb_arrow_stream)>,
+    pub duckdb_execute_prepared_arrow: ::std::option::Option<
+        unsafe extern "C" fn(
+            prepared_statement: duckdb_prepared_statement,
+            out_result: *mut duckdb_arrow,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_arrow_scan: ::std::option::Option<
+        unsafe extern "C" fn(
+            connection: duckdb_connection,
+            table_name: *const ::std::os::raw::c_char,
+            arrow: duckdb_arrow_stream,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_arrow_array_scan: ::std::option::Option<
+        unsafe extern "C" fn(
+            connection: duckdb_connection,
+            table_name: *const ::std::os::raw::c_char,
+            arrow_schema: duckdb_arrow_schema,
+            arrow_array: duckdb_arrow_array,
+            out_stream: *mut duckdb_arrow_stream,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_stream_fetch_chunk:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk>,
 }
 #[test]
 fn bindgen_test_layout_duckdb_ext_api_v0() {
@@ -3506,7 +3803,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     let ptr = UNINIT.as_ptr();
     assert_eq!(
         ::std::mem::size_of::<duckdb_ext_api_v0>(),
-        2352usize,
+        2968usize,
         concat!("Size of: ", stringify!(duckdb_ext_api_v0))
     );
     assert_eq!(
@@ -5877,28 +6174,18 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
         )
     );
     assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_profiling_info_get_name) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_profiling_info_get_metrics) as usize - ptr as usize },
         1888usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
             "::",
-            stringify!(duckdb_profiling_info_get_name)
-        )
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_profiling_info_get_query) as usize - ptr as usize },
-        1896usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(duckdb_ext_api_v0),
-            "::",
-            stringify!(duckdb_profiling_info_get_query)
+            stringify!(duckdb_profiling_info_get_metrics)
         )
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_scalar_function_set_varargs) as usize - ptr as usize },
-        1904usize,
+        1896usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5908,7 +6195,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_scalar_function_set_special_handling) as usize - ptr as usize },
-        1912usize,
+        1904usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5918,7 +6205,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_scalar_function_set_volatile) as usize - ptr as usize },
-        1920usize,
+        1912usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5928,7 +6215,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_scalar_function_get_extra_info) as usize - ptr as usize },
-        1928usize,
+        1920usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5938,7 +6225,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_scalar_function_set_error) as usize - ptr as usize },
-        1936usize,
+        1928usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5948,7 +6235,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_table_description_create) as usize - ptr as usize },
-        1944usize,
+        1936usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5958,7 +6245,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_table_description_destroy) as usize - ptr as usize },
-        1952usize,
+        1944usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5968,7 +6255,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_table_description_error) as usize - ptr as usize },
-        1960usize,
+        1952usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5978,7 +6265,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_result_error_type) as usize - ptr as usize },
-        1968usize,
+        1960usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5988,7 +6275,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_string_t_length) as usize - ptr as usize },
-        1976usize,
+        1968usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -5998,7 +6285,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_string_t_data) as usize - ptr as usize },
-        1984usize,
+        1976usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6008,7 +6295,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_bool) as usize - ptr as usize },
-        1992usize,
+        1984usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6018,7 +6305,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_int8) as usize - ptr as usize },
-        2000usize,
+        1992usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6028,7 +6315,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_uint8) as usize - ptr as usize },
-        2008usize,
+        2000usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6038,7 +6325,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_int16) as usize - ptr as usize },
-        2016usize,
+        2008usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6048,7 +6335,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_uint16) as usize - ptr as usize },
-        2024usize,
+        2016usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6058,7 +6345,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_int32) as usize - ptr as usize },
-        2032usize,
+        2024usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6068,7 +6355,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_uint32) as usize - ptr as usize },
-        2040usize,
+        2032usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6078,7 +6365,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_uint64) as usize - ptr as usize },
-        2048usize,
+        2040usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6088,7 +6375,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_hugeint) as usize - ptr as usize },
-        2056usize,
+        2048usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6098,7 +6385,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_uhugeint) as usize - ptr as usize },
-        2064usize,
+        2056usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6108,7 +6395,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_float) as usize - ptr as usize },
-        2072usize,
+        2064usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6118,7 +6405,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_double) as usize - ptr as usize },
-        2080usize,
+        2072usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6128,7 +6415,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_date) as usize - ptr as usize },
-        2088usize,
+        2080usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6138,7 +6425,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_time) as usize - ptr as usize },
-        2096usize,
+        2088usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6148,7 +6435,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_time_tz_value) as usize - ptr as usize },
-        2104usize,
+        2096usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6158,7 +6445,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_timestamp) as usize - ptr as usize },
-        2112usize,
+        2104usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6168,7 +6455,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_interval) as usize - ptr as usize },
-        2120usize,
+        2112usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6178,7 +6465,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_blob) as usize - ptr as usize },
-        2128usize,
+        2120usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6188,7 +6475,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_bool) as usize - ptr as usize },
-        2136usize,
+        2128usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6198,7 +6485,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_int8) as usize - ptr as usize },
-        2144usize,
+        2136usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6208,7 +6495,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_uint8) as usize - ptr as usize },
-        2152usize,
+        2144usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6218,7 +6505,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_int16) as usize - ptr as usize },
-        2160usize,
+        2152usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6228,7 +6515,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_uint16) as usize - ptr as usize },
-        2168usize,
+        2160usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6238,7 +6525,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_int32) as usize - ptr as usize },
-        2176usize,
+        2168usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6248,7 +6535,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_uint32) as usize - ptr as usize },
-        2184usize,
+        2176usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6258,7 +6545,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_uint64) as usize - ptr as usize },
-        2192usize,
+        2184usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6268,7 +6555,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_hugeint) as usize - ptr as usize },
-        2200usize,
+        2192usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6278,7 +6565,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_uhugeint) as usize - ptr as usize },
-        2208usize,
+        2200usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6288,7 +6575,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_float) as usize - ptr as usize },
-        2216usize,
+        2208usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6298,7 +6585,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_double) as usize - ptr as usize },
-        2224usize,
+        2216usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6308,7 +6595,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_date) as usize - ptr as usize },
-        2232usize,
+        2224usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6318,7 +6605,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_time) as usize - ptr as usize },
-        2240usize,
+        2232usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6328,7 +6615,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_time_tz) as usize - ptr as usize },
-        2248usize,
+        2240usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6338,7 +6625,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_timestamp) as usize - ptr as usize },
-        2256usize,
+        2248usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6348,7 +6635,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_interval) as usize - ptr as usize },
-        2264usize,
+        2256usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6358,7 +6645,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_value_type) as usize - ptr as usize },
-        2272usize,
+        2264usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6368,7 +6655,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_blob) as usize - ptr as usize },
-        2280usize,
+        2272usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6378,7 +6665,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_scalar_function_set) as usize - ptr as usize },
-        2288usize,
+        2280usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6388,7 +6675,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_destroy_scalar_function_set) as usize - ptr as usize },
-        2296usize,
+        2288usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6398,7 +6685,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_add_scalar_function_to_set) as usize - ptr as usize },
-        2304usize,
+        2296usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6408,7 +6695,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_register_scalar_function_set) as usize - ptr as usize },
-        2312usize,
+        2304usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6418,7 +6705,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_aggregate_function_set) as usize - ptr as usize },
-        2320usize,
+        2312usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6428,7 +6715,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_destroy_aggregate_function_set) as usize - ptr as usize },
-        2328usize,
+        2320usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6438,7 +6725,7 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_add_aggregate_function_to_set) as usize - ptr as usize },
-        2336usize,
+        2328usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
@@ -6448,12 +6735,792 @@ fn bindgen_test_layout_duckdb_ext_api_v0() {
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).duckdb_register_aggregate_function_set) as usize - ptr as usize },
-        2344usize,
+        2336usize,
         concat!(
             "Offset of field: ",
             stringify!(duckdb_ext_api_v0),
             "::",
             stringify!(duckdb_register_aggregate_function_set)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_map_size) as usize - ptr as usize },
+        2344usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_get_map_size)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_map_key) as usize - ptr as usize },
+        2352usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_get_map_key)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_get_map_value) as usize - ptr as usize },
+        2360usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_get_map_value)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_aggregate_function) as usize - ptr as usize },
+        2368usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_create_aggregate_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_destroy_aggregate_function) as usize - ptr as usize },
+        2376usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_destroy_aggregate_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_name) as usize - ptr as usize },
+        2384usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_name)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_add_parameter) as usize - ptr as usize },
+        2392usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_add_parameter)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_return_type) as usize - ptr as usize },
+        2400usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_return_type)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_functions) as usize - ptr as usize },
+        2408usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_functions)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_destructor) as usize - ptr as usize },
+        2416usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_destructor)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_register_aggregate_function) as usize - ptr as usize },
+        2424usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_register_aggregate_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_special_handling) as usize - ptr as usize },
+        2432usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_special_handling)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_extra_info) as usize - ptr as usize },
+        2440usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_extra_info)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_get_extra_info) as usize - ptr as usize },
+        2448usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_get_extra_info)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_aggregate_function_set_error) as usize - ptr as usize },
+        2456usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_aggregate_function_set_error)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_logical_type_set_alias) as usize - ptr as usize },
+        2464usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_logical_type_set_alias)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_register_logical_type) as usize - ptr as usize },
+        2472usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_register_logical_type)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_create_cast_function) as usize - ptr as usize },
+        2480usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_create_cast_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_source_type) as usize - ptr as usize },
+        2488usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_source_type)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_target_type) as usize - ptr as usize },
+        2496usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_target_type)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_implicit_cast_cost) as usize - ptr as usize },
+        2504usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_implicit_cast_cost)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_function) as usize - ptr as usize },
+        2512usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_extra_info) as usize - ptr as usize },
+        2520usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_extra_info)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_get_extra_info) as usize - ptr as usize },
+        2528usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_get_extra_info)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_get_cast_mode) as usize - ptr as usize },
+        2536usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_get_cast_mode)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_error) as usize - ptr as usize },
+        2544usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_error)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_cast_function_set_row_error) as usize - ptr as usize },
+        2552usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_cast_function_set_row_error)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_register_cast_function) as usize - ptr as usize },
+        2560usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_register_cast_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_destroy_cast_function) as usize - ptr as usize },
+        2568usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_destroy_cast_function)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_row_count) as usize - ptr as usize },
+        2576usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_row_count)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_column_data) as usize - ptr as usize },
+        2584usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_column_data)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_nullmask_data) as usize - ptr as usize },
+        2592usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_nullmask_data)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_result_get_chunk) as usize - ptr as usize },
+        2600usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_result_get_chunk)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_result_is_streaming) as usize - ptr as usize },
+        2608usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_result_is_streaming)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_result_chunk_count) as usize - ptr as usize },
+        2616usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_result_chunk_count)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_result_return_type) as usize - ptr as usize },
+        2624usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_result_return_type)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_boolean) as usize - ptr as usize },
+        2632usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_boolean)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_int8) as usize - ptr as usize },
+        2640usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_int8)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_int16) as usize - ptr as usize },
+        2648usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_int16)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_int32) as usize - ptr as usize },
+        2656usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_int32)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_int64) as usize - ptr as usize },
+        2664usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_int64)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_hugeint) as usize - ptr as usize },
+        2672usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_hugeint)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_uhugeint) as usize - ptr as usize },
+        2680usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_uhugeint)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_decimal) as usize - ptr as usize },
+        2688usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_decimal)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_uint8) as usize - ptr as usize },
+        2696usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_uint8)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_uint16) as usize - ptr as usize },
+        2704usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_uint16)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_uint32) as usize - ptr as usize },
+        2712usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_uint32)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_uint64) as usize - ptr as usize },
+        2720usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_uint64)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_float) as usize - ptr as usize },
+        2728usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_float)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_double) as usize - ptr as usize },
+        2736usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_double)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_date) as usize - ptr as usize },
+        2744usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_date)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_time) as usize - ptr as usize },
+        2752usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_time)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_timestamp) as usize - ptr as usize },
+        2760usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_timestamp)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_interval) as usize - ptr as usize },
+        2768usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_interval)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_varchar) as usize - ptr as usize },
+        2776usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_varchar)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_string) as usize - ptr as usize },
+        2784usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_string)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_varchar_internal) as usize - ptr as usize },
+        2792usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_varchar_internal)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_string_internal) as usize - ptr as usize },
+        2800usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_string_internal)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_blob) as usize - ptr as usize },
+        2808usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_blob)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_value_is_null) as usize - ptr as usize },
+        2816usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_value_is_null)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_execute_prepared_streaming) as usize - ptr as usize },
+        2824usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_execute_prepared_streaming)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_pending_prepared_streaming) as usize - ptr as usize },
+        2832usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_pending_prepared_streaming)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_column_has_default) as usize - ptr as usize },
+        2840usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_column_has_default)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_query_arrow) as usize - ptr as usize },
+        2848usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_query_arrow)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_query_arrow_schema) as usize - ptr as usize },
+        2856usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_query_arrow_schema)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_prepared_arrow_schema) as usize - ptr as usize },
+        2864usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_prepared_arrow_schema)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_result_arrow_array) as usize - ptr as usize },
+        2872usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_result_arrow_array)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_query_arrow_array) as usize - ptr as usize },
+        2880usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_query_arrow_array)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_arrow_column_count) as usize - ptr as usize },
+        2888usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_arrow_column_count)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_arrow_row_count) as usize - ptr as usize },
+        2896usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_arrow_row_count)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_arrow_rows_changed) as usize - ptr as usize },
+        2904usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_arrow_rows_changed)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_query_arrow_error) as usize - ptr as usize },
+        2912usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_query_arrow_error)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_destroy_arrow) as usize - ptr as usize },
+        2920usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_destroy_arrow)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_destroy_arrow_stream) as usize - ptr as usize },
+        2928usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_destroy_arrow_stream)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_execute_prepared_arrow) as usize - ptr as usize },
+        2936usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_execute_prepared_arrow)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_arrow_scan) as usize - ptr as usize },
+        2944usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_arrow_scan)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_arrow_array_scan) as usize - ptr as usize },
+        2952usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_arrow_array_scan)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).duckdb_stream_fetch_chunk) as usize - ptr as usize },
+        2960usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(duckdb_ext_api_v0),
+            "::",
+            stringify!(duckdb_stream_fetch_chunk)
         )
     );
 }
@@ -10598,37 +11665,20 @@ pub unsafe fn duckdb_profiling_info_get_child(
     (fun)(info, index)
 }
 
-static __DUCKDB_PROFILING_INFO_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+static __DUCKDB_PROFILING_INFO_GET_METRICS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_profiling_info_get_name(
+pub unsafe fn duckdb_profiling_info_get_metrics(
     info: duckdb_profiling_info,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_PROFILING_INFO_GET_NAME
+) -> duckdb_value {
+    let function_ptr = __DUCKDB_PROFILING_INFO_GET_METRICS
         .load(::std::sync::atomic::Ordering::Acquire);
     assert!(
         ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_profiling_info,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
-    (fun)(info)
-}
-
-static __DUCKDB_PROFILING_INFO_GET_QUERY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_profiling_info_get_query(
-    info: duckdb_profiling_info,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_PROFILING_INFO_GET_QUERY
-        .load(::std::sync::atomic::Ordering::Acquire);
-    assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    let fun: unsafe extern "C" fn(info: duckdb_profiling_info) -> duckdb_value = ::std::mem::transmute(
+        function_ptr,
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_profiling_info,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
@@ -11502,6 +12552,1473 @@ pub unsafe fn duckdb_register_aggregate_function_set(
         set: duckdb_aggregate_function_set,
     ) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(con, set)
+}
+
+static __DUCKDB_GET_MAP_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_get_map_size(value: duckdb_value) -> idx_t {
+    let function_ptr = __DUCKDB_GET_MAP_SIZE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(value: duckdb_value) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(value)
+}
+
+static __DUCKDB_GET_MAP_KEY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_get_map_key(value: duckdb_value, index: idx_t) -> duckdb_value {
+    let function_ptr = __DUCKDB_GET_MAP_KEY.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(value, index)
+}
+
+static __DUCKDB_GET_MAP_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_get_map_value(value: duckdb_value, index: idx_t) -> duckdb_value {
+    let function_ptr = __DUCKDB_GET_MAP_VALUE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(value, index)
+}
+
+static __DUCKDB_CREATE_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_create_aggregate_function() -> duckdb_aggregate_function {
+    let function_ptr = __DUCKDB_CREATE_AGGREGATE_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn() -> duckdb_aggregate_function = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)()
+}
+
+static __DUCKDB_DESTROY_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_aggregate_function(
+    aggregate_function: *mut duckdb_aggregate_function,
+) {
+    let function_ptr = __DUCKDB_DESTROY_AGGREGATE_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(aggregate_function: *mut duckdb_aggregate_function) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(aggregate_function)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_set_name(
+    aggregate_function: duckdb_aggregate_function,
+    name: *const ::std::os::raw::c_char,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_NAME
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        aggregate_function: duckdb_aggregate_function,
+        name: *const ::std::os::raw::c_char,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(aggregate_function, name)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_add_parameter(
+    aggregate_function: duckdb_aggregate_function,
+    type_: duckdb_logical_type,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        aggregate_function: duckdb_aggregate_function,
+        type_: duckdb_logical_type,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(aggregate_function, type_)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_set_return_type(
+    aggregate_function: duckdb_aggregate_function,
+    type_: duckdb_logical_type,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        aggregate_function: duckdb_aggregate_function,
+        type_: duckdb_logical_type,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(aggregate_function, type_)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_set_functions(
+    aggregate_function: duckdb_aggregate_function,
+    state_size: duckdb_aggregate_state_size,
+    state_init: duckdb_aggregate_init_t,
+    update: duckdb_aggregate_update_t,
+    combine: duckdb_aggregate_combine_t,
+    finalize: duckdb_aggregate_finalize_t,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        aggregate_function: duckdb_aggregate_function,
+        state_size: duckdb_aggregate_state_size,
+        state_init: duckdb_aggregate_init_t,
+        update: duckdb_aggregate_update_t,
+        combine: duckdb_aggregate_combine_t,
+        finalize: duckdb_aggregate_finalize_t,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(aggregate_function, state_size, state_init, update, combine, finalize)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_set_destructor(
+    aggregate_function: duckdb_aggregate_function,
+    destroy: duckdb_aggregate_destroy_t,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        aggregate_function: duckdb_aggregate_function,
+        destroy: duckdb_aggregate_destroy_t,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(aggregate_function, destroy)
+}
+
+static __DUCKDB_REGISTER_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_register_aggregate_function(
+    con: duckdb_connection,
+    aggregate_function: duckdb_aggregate_function,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_REGISTER_AGGREGATE_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        con: duckdb_connection,
+        aggregate_function: duckdb_aggregate_function,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(con, aggregate_function)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_aggregate_function_set_special_handling(
+    aggregate_function: duckdb_aggregate_function,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(aggregate_function)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_set_extra_info(
+    aggregate_function: duckdb_aggregate_function,
+    extra_info: *mut ::std::os::raw::c_void,
+    destroy: duckdb_delete_callback_t,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        aggregate_function: duckdb_aggregate_function,
+        extra_info: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(aggregate_function, extra_info, destroy)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_get_extra_info(
+    info: duckdb_function_info,
+) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_function_info,
+    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    (fun)(info)
+}
+
+static __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_aggregate_function_set_error(
+    info: duckdb_function_info,
+    error: *const ::std::os::raw::c_char,
+) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_function_info,
+        error: *const ::std::os::raw::c_char,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(info, error)
+}
+
+static __DUCKDB_LOGICAL_TYPE_SET_ALIAS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_logical_type_set_alias(
+    type_: duckdb_logical_type,
+    alias: *const ::std::os::raw::c_char,
+) {
+    let function_ptr = __DUCKDB_LOGICAL_TYPE_SET_ALIAS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        type_: duckdb_logical_type,
+        alias: *const ::std::os::raw::c_char,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(type_, alias)
+}
+
+static __DUCKDB_REGISTER_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_register_logical_type(
+    con: duckdb_connection,
+    type_: duckdb_logical_type,
+    info: duckdb_create_type_info,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_REGISTER_LOGICAL_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        con: duckdb_connection,
+        type_: duckdb_logical_type,
+        info: duckdb_create_type_info,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(con, type_, info)
+}
+
+static __DUCKDB_CREATE_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_create_cast_function() -> duckdb_cast_function {
+    let function_ptr = __DUCKDB_CREATE_CAST_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn() -> duckdb_cast_function = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)()
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_set_source_type(
+    cast_function: duckdb_cast_function,
+    source_type: duckdb_logical_type,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        cast_function: duckdb_cast_function,
+        source_type: duckdb_logical_type,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(cast_function, source_type)
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_set_target_type(
+    cast_function: duckdb_cast_function,
+    target_type: duckdb_logical_type,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        cast_function: duckdb_cast_function,
+        target_type: duckdb_logical_type,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(cast_function, target_type)
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_cast_function_set_implicit_cast_cost(
+    cast_function: duckdb_cast_function,
+    cost: i64,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(cast_function: duckdb_cast_function, cost: i64) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(cast_function, cost)
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_set_function(
+    cast_function: duckdb_cast_function,
+    function: duckdb_cast_function_t,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        cast_function: duckdb_cast_function,
+        function: duckdb_cast_function_t,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(cast_function, function)
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_set_extra_info(
+    cast_function: duckdb_cast_function,
+    extra_info: *mut ::std::os::raw::c_void,
+    destroy: duckdb_delete_callback_t,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        cast_function: duckdb_cast_function,
+        extra_info: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(cast_function, extra_info, destroy)
+}
+
+static __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_get_extra_info(
+    info: duckdb_function_info,
+) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_function_info,
+    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    (fun)(info)
+}
+
+static __DUCKDB_CAST_FUNCTION_GET_CAST_MODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_get_cast_mode(
+    info: duckdb_function_info,
+) -> duckdb_cast_mode {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_GET_CAST_MODE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> duckdb_cast_mode = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(info)
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_set_error(
+    info: duckdb_function_info,
+    error: *const ::std::os::raw::c_char,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_ERROR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_function_info,
+        error: *const ::std::os::raw::c_char,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(info, error)
+}
+
+static __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_cast_function_set_row_error(
+    info: duckdb_function_info,
+    error: *const ::std::os::raw::c_char,
+    row: idx_t,
+    output: duckdb_vector,
+) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_function_info,
+        error: *const ::std::os::raw::c_char,
+        row: idx_t,
+        output: duckdb_vector,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(info, error, row, output)
+}
+
+static __DUCKDB_REGISTER_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_register_cast_function(
+    con: duckdb_connection,
+    cast_function: duckdb_cast_function,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_REGISTER_CAST_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        con: duckdb_connection,
+        cast_function: duckdb_cast_function,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(con, cast_function)
+}
+
+static __DUCKDB_DESTROY_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_cast_function(cast_function: *mut duckdb_cast_function) {
+    let function_ptr = __DUCKDB_DESTROY_CAST_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(cast_function: *mut duckdb_cast_function) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(cast_function)
+}
+
+static __DUCKDB_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_row_count(result: *mut duckdb_result) -> idx_t {
+    let function_ptr = __DUCKDB_ROW_COUNT.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_COLUMN_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_column_data(
+    result: *mut duckdb_result,
+    col: idx_t,
+) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_COLUMN_DATA.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    (fun)(result, col)
+}
+
+static __DUCKDB_NULLMASK_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_nullmask_data(result: *mut duckdb_result, col: idx_t) -> *mut bool {
+    let function_ptr = __DUCKDB_NULLMASK_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut bool = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result, col)
+}
+
+static __DUCKDB_RESULT_GET_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_get_chunk(
+    result: duckdb_result,
+    chunk_index: idx_t,
+) -> duckdb_data_chunk {
+    let function_ptr = __DUCKDB_RESULT_GET_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_result,
+        chunk_index: idx_t,
+    ) -> duckdb_data_chunk = ::std::mem::transmute(function_ptr);
+    (fun)(result, chunk_index)
+}
+
+static __DUCKDB_RESULT_IS_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_is_streaming(result: duckdb_result) -> bool {
+    let function_ptr = __DUCKDB_RESULT_IS_STREAMING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> bool = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_RESULT_CHUNK_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_chunk_count(result: duckdb_result) -> idx_t {
+    let function_ptr = __DUCKDB_RESULT_CHUNK_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_RESULT_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_return_type(result: duckdb_result) -> duckdb_result_type {
+    let function_ptr = __DUCKDB_RESULT_RETURN_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_result_type = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_VALUE_BOOLEAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_boolean(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> bool {
+    let function_ptr = __DUCKDB_VALUE_BOOLEAN
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> bool = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int8(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i8 {
+    let function_ptr = __DUCKDB_VALUE_INT8.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i8 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int16(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i16 {
+    let function_ptr = __DUCKDB_VALUE_INT16.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i16 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int32(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i32 {
+    let function_ptr = __DUCKDB_VALUE_INT32.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i32 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int64(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i64 {
+    let function_ptr = __DUCKDB_VALUE_INT64.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i64 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_hugeint(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_hugeint {
+    let function_ptr = __DUCKDB_VALUE_HUGEINT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_hugeint = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uhugeint(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_uhugeint {
+    let function_ptr = __DUCKDB_VALUE_UHUGEINT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_uhugeint = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_decimal(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_decimal {
+    let function_ptr = __DUCKDB_VALUE_DECIMAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_decimal = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint8(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u8 {
+    let function_ptr = __DUCKDB_VALUE_UINT8.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u8 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint16(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u16 {
+    let function_ptr = __DUCKDB_VALUE_UINT16
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u16 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint32(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u32 {
+    let function_ptr = __DUCKDB_VALUE_UINT32
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u32 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint64(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u64 {
+    let function_ptr = __DUCKDB_VALUE_UINT64
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u64 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_float(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> f32 {
+    let function_ptr = __DUCKDB_VALUE_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> f32 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_double(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> f64 {
+    let function_ptr = __DUCKDB_VALUE_DOUBLE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> f64 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_date(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_date {
+    let function_ptr = __DUCKDB_VALUE_DATE.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_date = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_time(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_time {
+    let function_ptr = __DUCKDB_VALUE_TIME.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_time = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_timestamp(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_timestamp {
+    let function_ptr = __DUCKDB_VALUE_TIMESTAMP
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_timestamp = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_interval(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_interval {
+    let function_ptr = __DUCKDB_VALUE_INTERVAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_interval = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_varchar(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_VALUE_VARCHAR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_STRING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_string(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_string {
+    let function_ptr = __DUCKDB_VALUE_STRING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_string = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_VARCHAR_INTERNAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_varchar_internal(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_VALUE_VARCHAR_INTERNAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_STRING_INTERNAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_string_internal(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_string {
+    let function_ptr = __DUCKDB_VALUE_STRING_INTERNAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_string = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_blob(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_blob {
+    let function_ptr = __DUCKDB_VALUE_BLOB.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_blob = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_IS_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_is_null(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> bool {
+    let function_ptr = __DUCKDB_VALUE_IS_NULL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> bool = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_EXECUTE_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_execute_prepared_streaming(
+    prepared_statement: duckdb_prepared_statement,
+    out_result: *mut duckdb_result,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED_STREAMING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_result,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared_statement, out_result)
+}
+
+static __DUCKDB_PENDING_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_pending_prepared_streaming(
+    prepared_statement: duckdb_prepared_statement,
+    out_result: *mut duckdb_pending_result,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_PENDING_PREPARED_STREAMING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_pending_result,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared_statement, out_result)
+}
+
+static __DUCKDB_COLUMN_HAS_DEFAULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_column_has_default(
+    table_description: duckdb_table_description,
+    index: idx_t,
+    out: *mut bool,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_COLUMN_HAS_DEFAULT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        table_description: duckdb_table_description,
+        index: idx_t,
+        out: *mut bool,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(table_description, index, out)
+}
+
+static __DUCKDB_QUERY_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow(
+    connection: duckdb_connection,
+    query: *const ::std::os::raw::c_char,
+    out_result: *mut duckdb_arrow,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        connection: duckdb_connection,
+        query: *const ::std::os::raw::c_char,
+        out_result: *mut duckdb_arrow,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(connection, query, out_result)
+}
+
+static __DUCKDB_QUERY_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow_schema(
+    result: duckdb_arrow,
+    out_schema: *mut duckdb_arrow_schema,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW_SCHEMA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_arrow,
+        out_schema: *mut duckdb_arrow_schema,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(result, out_schema)
+}
+
+static __DUCKDB_PREPARED_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_prepared_arrow_schema(
+    prepared: duckdb_prepared_statement,
+    out_schema: *mut duckdb_arrow_schema,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_PREPARED_ARROW_SCHEMA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared: duckdb_prepared_statement,
+        out_schema: *mut duckdb_arrow_schema,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared, out_schema)
+}
+
+static __DUCKDB_RESULT_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_arrow_array(
+    result: duckdb_result,
+    chunk: duckdb_data_chunk,
+    out_array: *mut duckdb_arrow_array,
+) {
+    let function_ptr = __DUCKDB_RESULT_ARROW_ARRAY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_result,
+        chunk: duckdb_data_chunk,
+        out_array: *mut duckdb_arrow_array,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(result, chunk, out_array)
+}
+
+static __DUCKDB_QUERY_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow_array(
+    result: duckdb_arrow,
+    out_array: *mut duckdb_arrow_array,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW_ARRAY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_arrow,
+        out_array: *mut duckdb_arrow_array,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(result, out_array)
+}
+
+static __DUCKDB_ARROW_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_column_count(result: duckdb_arrow) -> idx_t {
+    let function_ptr = __DUCKDB_ARROW_COLUMN_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_ARROW_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_row_count(result: duckdb_arrow) -> idx_t {
+    let function_ptr = __DUCKDB_ARROW_ROW_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_ARROW_ROWS_CHANGED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_rows_changed(result: duckdb_arrow) -> idx_t {
+    let function_ptr = __DUCKDB_ARROW_ROWS_CHANGED
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_QUERY_ARROW_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow_error(
+    result: duckdb_arrow,
+) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_QUERY_ARROW_ERROR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_arrow,
+    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(result)
+}
+
+static __DUCKDB_DESTROY_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_arrow(result: *mut duckdb_arrow) {
+    let function_ptr = __DUCKDB_DESTROY_ARROW
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_arrow) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_DESTROY_ARROW_STREAM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_arrow_stream(stream_p: *mut duckdb_arrow_stream) {
+    let function_ptr = __DUCKDB_DESTROY_ARROW_STREAM
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(stream_p: *mut duckdb_arrow_stream) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(stream_p)
+}
+
+static __DUCKDB_EXECUTE_PREPARED_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_execute_prepared_arrow(
+    prepared_statement: duckdb_prepared_statement,
+    out_result: *mut duckdb_arrow,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED_ARROW
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_arrow,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared_statement, out_result)
+}
+
+static __DUCKDB_ARROW_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_scan(
+    connection: duckdb_connection,
+    table_name: *const ::std::os::raw::c_char,
+    arrow: duckdb_arrow_stream,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_ARROW_SCAN.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        connection: duckdb_connection,
+        table_name: *const ::std::os::raw::c_char,
+        arrow: duckdb_arrow_stream,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(connection, table_name, arrow)
+}
+
+static __DUCKDB_ARROW_ARRAY_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_array_scan(
+    connection: duckdb_connection,
+    table_name: *const ::std::os::raw::c_char,
+    arrow_schema: duckdb_arrow_schema,
+    arrow_array: duckdb_arrow_array,
+    out_stream: *mut duckdb_arrow_stream,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_ARROW_ARRAY_SCAN
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        connection: duckdb_connection,
+        table_name: *const ::std::os::raw::c_char,
+        arrow_schema: duckdb_arrow_schema,
+        arrow_array: duckdb_arrow_array,
+        out_stream: *mut duckdb_arrow_stream,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(connection, table_name, arrow_schema, arrow_array, out_stream)
+}
+
+static __DUCKDB_STREAM_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_stream_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk {
+    let function_ptr = __DUCKDB_STREAM_FETCH_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
 }
 
 /// Like DUCKDB_EXTENSION_API_INIT macro
@@ -12460,12 +14977,8 @@ pub unsafe fn duckdb_rs_extension_api_init(
         __DUCKDB_PROFILING_INFO_GET_CHILD
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
-    if let Some(fun) = (*p_api).duckdb_profiling_info_get_name {
-        __DUCKDB_PROFILING_INFO_GET_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
-    }
-    if let Some(fun) = (*p_api).duckdb_profiling_info_get_query {
-        __DUCKDB_PROFILING_INFO_GET_QUERY
+    if let Some(fun) = (*p_api).duckdb_profiling_info_get_metrics {
+        __DUCKDB_PROFILING_INFO_GET_METRICS
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_varargs {
@@ -12690,6 +15203,318 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     if let Some(fun) = (*p_api).duckdb_register_aggregate_function_set {
         __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_get_map_size {
+        __DUCKDB_GET_MAP_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_get_map_key {
+        __DUCKDB_GET_MAP_KEY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_get_map_value {
+        __DUCKDB_GET_MAP_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_create_aggregate_function {
+        __DUCKDB_CREATE_AGGREGATE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_aggregate_function {
+        __DUCKDB_DESTROY_AGGREGATE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_name {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_add_parameter {
+        __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_return_type {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_functions {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_destructor {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_register_aggregate_function {
+        __DUCKDB_REGISTER_AGGREGATE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_special_handling {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_extra_info {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_get_extra_info {
+        __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_aggregate_function_set_error {
+        __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_logical_type_set_alias {
+        __DUCKDB_LOGICAL_TYPE_SET_ALIAS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_register_logical_type {
+        __DUCKDB_REGISTER_LOGICAL_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_create_cast_function {
+        __DUCKDB_CREATE_CAST_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_source_type {
+        __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_target_type {
+        __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_implicit_cast_cost {
+        __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_function {
+        __DUCKDB_CAST_FUNCTION_SET_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_extra_info {
+        __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_get_extra_info {
+        __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_get_cast_mode {
+        __DUCKDB_CAST_FUNCTION_GET_CAST_MODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_error {
+        __DUCKDB_CAST_FUNCTION_SET_ERROR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_cast_function_set_row_error {
+        __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_register_cast_function {
+        __DUCKDB_REGISTER_CAST_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_cast_function {
+        __DUCKDB_DESTROY_CAST_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_row_count {
+        __DUCKDB_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_column_data {
+        __DUCKDB_COLUMN_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_nullmask_data {
+        __DUCKDB_NULLMASK_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_get_chunk {
+        __DUCKDB_RESULT_GET_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_is_streaming {
+        __DUCKDB_RESULT_IS_STREAMING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_chunk_count {
+        __DUCKDB_RESULT_CHUNK_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_return_type {
+        __DUCKDB_RESULT_RETURN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_boolean {
+        __DUCKDB_VALUE_BOOLEAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int8 {
+        __DUCKDB_VALUE_INT8
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int16 {
+        __DUCKDB_VALUE_INT16
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int32 {
+        __DUCKDB_VALUE_INT32
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int64 {
+        __DUCKDB_VALUE_INT64
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_hugeint {
+        __DUCKDB_VALUE_HUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uhugeint {
+        __DUCKDB_VALUE_UHUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_decimal {
+        __DUCKDB_VALUE_DECIMAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint8 {
+        __DUCKDB_VALUE_UINT8
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint16 {
+        __DUCKDB_VALUE_UINT16
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint32 {
+        __DUCKDB_VALUE_UINT32
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint64 {
+        __DUCKDB_VALUE_UINT64
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_float {
+        __DUCKDB_VALUE_FLOAT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_double {
+        __DUCKDB_VALUE_DOUBLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_date {
+        __DUCKDB_VALUE_DATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_time {
+        __DUCKDB_VALUE_TIME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_timestamp {
+        __DUCKDB_VALUE_TIMESTAMP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_interval {
+        __DUCKDB_VALUE_INTERVAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_varchar {
+        __DUCKDB_VALUE_VARCHAR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_string {
+        __DUCKDB_VALUE_STRING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_varchar_internal {
+        __DUCKDB_VALUE_VARCHAR_INTERNAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_string_internal {
+        __DUCKDB_VALUE_STRING_INTERNAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_blob {
+        __DUCKDB_VALUE_BLOB
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_is_null {
+        __DUCKDB_VALUE_IS_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_execute_prepared_streaming {
+        __DUCKDB_EXECUTE_PREPARED_STREAMING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_pending_prepared_streaming {
+        __DUCKDB_PENDING_PREPARED_STREAMING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_column_has_default {
+        __DUCKDB_COLUMN_HAS_DEFAULT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow {
+        __DUCKDB_QUERY_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow_schema {
+        __DUCKDB_QUERY_ARROW_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_prepared_arrow_schema {
+        __DUCKDB_PREPARED_ARROW_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_arrow_array {
+        __DUCKDB_RESULT_ARROW_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow_array {
+        __DUCKDB_QUERY_ARROW_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_column_count {
+        __DUCKDB_ARROW_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_row_count {
+        __DUCKDB_ARROW_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_rows_changed {
+        __DUCKDB_ARROW_ROWS_CHANGED
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow_error {
+        __DUCKDB_QUERY_ARROW_ERROR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_arrow {
+        __DUCKDB_DESTROY_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_arrow_stream {
+        __DUCKDB_DESTROY_ARROW_STREAM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_execute_prepared_arrow {
+        __DUCKDB_EXECUTE_PREPARED_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_scan {
+        __DUCKDB_ARROW_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_array_scan {
+        __DUCKDB_ARROW_ARRAY_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_stream_fetch_chunk {
+        __DUCKDB_STREAM_FETCH_CHUNK
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     Ok(())

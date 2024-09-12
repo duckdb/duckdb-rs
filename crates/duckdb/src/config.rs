@@ -235,7 +235,7 @@ mod test {
         let res = Connection::open_in_memory_with_flags(config);
         assert_eq!(
             res.unwrap_err().to_string(),
-            "Invalid Input Error: Unrecognized configuration property \"some-invalid-setting\""
+            "Invalid Input Error: The following options were not recognized: some-invalid-setting"
         );
         Ok(())
     }

@@ -3043,7 +3043,7 @@ extern "C" {
     pub fn duckdb_value_interval(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_interval;
 }
 extern "C" {
-    #[doc = "DEPRECATION NOTICE**: use duckdb_value_string instead. This function does not work correctly if the string contains\nnull bytes.\n\n @return The text value at the specified location as a null-terminated string, or nullptr if the value cannot be\nconverted. The result must be freed with `duckdb_free`."]
+    #[doc = "DEPRECATED**: Use duckdb_value_string instead. This function does not work correctly if the string contains null\nbytes.\n\n @return The text value at the specified location as a null-terminated string, or nullptr if the value cannot be\nconverted. The result must be freed with `duckdb_free`."]
     pub fn duckdb_value_varchar(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char;
 }
 extern "C" {
@@ -3051,7 +3051,7 @@ extern "C" {
     pub fn duckdb_value_string(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string;
 }
 extern "C" {
-    #[doc = "DEPRECATION NOTICE**: use duckdb_value_string_internal instead. This function does not work correctly if the string\ncontains null bytes.\n\n @return The char* value at the specified location. ONLY works on VARCHAR columns and does not auto-cast.\nIf the column is NOT a VARCHAR column this function will return NULL.\n\nThe result must NOT be freed."]
+    #[doc = "DEPRECATED**: Use duckdb_value_string_internal instead. This function does not work correctly if the string contains\nnull bytes.\n\n @return The char* value at the specified location. ONLY works on VARCHAR columns and does not auto-cast.\nIf the column is NOT a VARCHAR column this function will return NULL.\n\nThe result must NOT be freed."]
     pub fn duckdb_value_varchar_internal(
         result: *mut duckdb_result,
         col: idx_t,
@@ -3059,7 +3059,7 @@ extern "C" {
     ) -> *mut ::std::os::raw::c_char;
 }
 extern "C" {
-    #[doc = "DEPRECATION NOTICE**: use duckdb_value_string_internal instead. This function does not work correctly if the string\ncontains null bytes.\n @return The char* value at the specified location. ONLY works on VARCHAR columns and does not auto-cast.\nIf the column is NOT a VARCHAR column this function will return NULL.\n\nThe result must NOT be freed."]
+    #[doc = "DEPRECATED**: Use duckdb_value_string_internal instead. This function does not work correctly if the string contains\nnull bytes.\n @return The char* value at the specified location. ONLY works on VARCHAR columns and does not auto-cast.\nIf the column is NOT a VARCHAR column this function will return NULL.\n\nThe result must NOT be freed."]
     pub fn duckdb_value_string_internal(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string;
 }
 extern "C" {
@@ -3974,7 +3974,7 @@ extern "C" {
     pub fn duckdb_destroy_scalar_function_set(scalar_function_set: *mut duckdb_scalar_function_set);
 }
 extern "C" {
-    #[doc = "Adds the scalar function as a new overload to the scalar function set.\n\nReturns DuckDBError if the function could not be added, for example if the overload already exists.* @param set The\nscalar function set\n @param function The function to add"]
+    #[doc = "Adds the scalar function as a new overload to the scalar function set.\n\nReturns DuckDBError if the function could not be added, for example if the overload already exists.\n\n @param set The scalar function set\n @param function The function to add"]
     pub fn duckdb_add_scalar_function_to_set(
         set: duckdb_scalar_function_set,
         function: duckdb_scalar_function,
@@ -4068,7 +4068,7 @@ extern "C" {
     pub fn duckdb_destroy_aggregate_function_set(aggregate_function_set: *mut duckdb_aggregate_function_set);
 }
 extern "C" {
-    #[doc = "Adds the aggregate function as a new overload to the aggregate function set.\n\nReturns DuckDBError if the function could not be added, for example if the overload already exists.* @param set The\naggregate function set\n @param function The function to add"]
+    #[doc = "Adds the aggregate function as a new overload to the aggregate function set.\n\nReturns DuckDBError if the function could not be added, for example if the overload already exists.\n\n @param set The aggregate function set\n @param function The function to add"]
     pub fn duckdb_add_aggregate_function_to_set(
         set: duckdb_aggregate_function_set,
         function: duckdb_aggregate_function,
