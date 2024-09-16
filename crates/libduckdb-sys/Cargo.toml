@@ -22,7 +22,7 @@ buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
 extensions-full = ["json", "parquet"]
-loadable_extension = ["prettyplease", "quote", "syn", "buildtime_bindgen"]
+loadable_extension = ["prettyplease", "quote", "syn"]
 
 [dependencies]
 

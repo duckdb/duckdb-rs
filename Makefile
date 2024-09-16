@@ -12,3 +12,9 @@ all:
 
 test:
 	cargo test --features bundled --features modern-full -- --nocapture
+
+# Build the rust-based CAPI extension demo, change the target arch below to
+EXAMPLE_TARGET_ARCH = osx_arm64
+examples-capi-demo:
+	cargo build --example hello-ext-capi --features="vtab-loadable,loadable_extension" --release
+	python3 scripts/append_extension_metadata.py -l target/release/examples/libhello_ext_capi.dylib -n rusty_quack -dv v0.0.1 -ev v0.0.1 -p $EXAMPLE_TARGET_ARCH

@@ -85,7 +85,7 @@ impl VTab for HelloVTab {
     }
 }
 
-#[duckdb_entrypoint_c_api(ext_name = "rusty_quack", min_duckdb_version = "v0.0.2")]
+#[duckdb_entrypoint_c_api(ext_name = "rusty_quack", min_duckdb_version = "v0.0.1")]
 pub unsafe fn ExtensionEntrypoint(con: Connection) -> Result<(), Box<dyn Error>> {
     con.register_table_function::<HelloVTab>("hello")
         .expect("Failed to register hello table function");

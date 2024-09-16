@@ -14025,8 +14025,10 @@ pub unsafe fn duckdb_stream_fetch_chunk(result: duckdb_result) -> duckdb_data_ch
 pub unsafe fn duckdb_rs_extension_api_init(
     info: duckdb_extension_info,
     access: duckdb_extension_access,
+    version: &str,
 ) -> ::std::result::Result<(), &'static str> {
-    let p_api = access.get_api.unwrap()(info, c"v0.0.2".as_ptr())
+    let version_c_string = std::ffi::CString::new(version).unwrap();
+    let p_api = access.get_api.unwrap()(info, version_c_string.as_ptr())
         as *const duckdb_ext_api_v0;
     if p_api.is_null() {
         return Err(

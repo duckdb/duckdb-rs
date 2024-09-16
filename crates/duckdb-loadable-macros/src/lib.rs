@@ -13,7 +13,10 @@ use syn::ItemFn;
 #[derive(Debug, FromMeta)]
 struct CEntryPointMacroArgs {
     #[darling(default)]
+    /// The name to be given to this extension. This name is used in the entrypoint function called by duckdb
     ext_name: String,
+    /// The minimum C API version this extension requires. It is recommended to set this to the lowest possible version
+    /// at which your extension still compiles
     min_duckdb_version: Option<String>,
 }
 
@@ -34,7 +37,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
         }
     };
 
-    /// TODO FETCH THE DEFAULT AUTOMATICALLY SOMEHOW
+    // Set the minimum duckdb version (dev by default)
     let minimum_duckdb_version = match args.min_duckdb_version {
         Some(i) => i,
         None => "dev".to_string(),
@@ -55,7 +58,12 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                 /// Will be called by duckdb
                 #[no_mangle]
                 pub unsafe extern "C" fn #c_entrypoint(info: ffi::duckdb_extension_info, access: ffi::duckdb_extension_access) {
-                    ffi::duckdb_rs_extension_api_init(info, access).expect("Failed to initialize DuckDB C Extension API");
+                    let res = ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version);
+
+                    if let Err(x) = res {
+                        // Error will be handled by DuckDB
+                        return;
+                    }
 
                     let db : ffi::duckdb_database = *access.get_database.unwrap()(info);
                     let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");

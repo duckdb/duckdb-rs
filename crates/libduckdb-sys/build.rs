@@ -228,14 +228,19 @@ mod build_linked {
         #[allow(unused_variables)]
         let header = find_duckdb();
 
-        if !cfg!(feature = "buildtime_bindgen") {
-            std::fs::copy("src/bindgen_bundled_version.rs", out_path)
-                .expect("Could not copy bindings to output directory");
-        } else {
-            #[cfg(feature = "buildtime_bindgen")]
-            {
-                bindings::write_to_out_dir(header, out_path);
-            }
+        #[cfg(not(feature = "buildtime_bindgen"))]
+        {
+            std::fs::copy(
+                #[cfg(not(feature = "loadable_extension"))]
+                "src/bindgen_bundled_version.rs",
+                #[cfg(feature = "loadable_extension")]
+                "src/bindgen_bundled_version_loadable.rs",
+                out_path).expect("Could not copy bindings to output directory");
+        }
+
+        #[cfg(feature = "buildtime_bindgen")]
+        {
+            bindings::write_to_out_dir(header, out_path);
         }
     }
 
@@ -428,9 +433,9 @@ mod bindings {
         // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
         let tokens = quote::quote! {
             /// Like DUCKDB_EXTENSION_API_INIT macro
-            pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: duckdb_extension_access) -> ::std::result::Result<(), &'static str> {
-                // TODO: fix this shit
-                let #p_api = access.get_api.unwrap()(info, c"v0.0.2".as_ptr()) as *const duckdb_ext_api_v0;
+            pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: duckdb_extension_access, version: &str) -> ::std::result::Result<(), &'static str> {
+                let version_c_string = std::ffi::CString::new(version).unwrap();
+                let #p_api = access.get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v0;
                 if #p_api.is_null() {
                     return Err("DuckDB passed a nullpointer while trying to initialize the extension");
                 }
