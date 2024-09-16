@@ -58,7 +58,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                 ///
                 /// Will be called by duckdb
                 #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint(info: ffi::duckdb_extension_info, access: ffi::duckdb_extension_access) {
+                pub unsafe extern "C" fn #c_entrypoint(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) {
                     let res = ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version);
 
                     if let Err(x) = res {
@@ -66,7 +66,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                         return;
                     }
 
-                    let db : ffi::duckdb_database = *access.get_database.unwrap()(info);
+                    let db : ffi::duckdb_database = *(*access).get_database.unwrap()(info);
                     let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
                     #prefixed_original_function(connection).expect("init failed");
                 }
