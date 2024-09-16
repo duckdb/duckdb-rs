@@ -32,6 +32,9 @@ extensions-full = ["json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
 polars = ["dep:polars"]
+# FIXME: These were added to make clippy happy: these features appear unused and should perhaps be removed
+column_decltype = []
+extra_check = []
 
 [dependencies]
 libduckdb-sys = { workspace = true }

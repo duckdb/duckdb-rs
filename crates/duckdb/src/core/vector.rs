@@ -173,6 +173,15 @@ impl ListVector {
         self.entries.as_mut_slice::<duckdb_list_entry>()[idx].length = length as u64;
     }
 
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.entries.ptr);
+            let idx = duckdb_vector_get_validity(self.entries.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
+    }
+
     /// Reserve the capacity for its child node.
     fn reserve(&self, capacity: usize) {
         unsafe {
@@ -190,7 +199,6 @@ impl ListVector {
 
 /// A array vector. (fixed-size list)
 pub struct ArrayVector {
-    /// ArrayVector does not own the vector pointer.
     ptr: duckdb_vector,
 }
 
@@ -223,11 +231,19 @@ impl ArrayVector {
     pub fn set_child<T: Copy>(&self, data: &[T]) {
         self.child(data.len()).copy(data);
     }
+
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.ptr);
+            let idx = duckdb_vector_get_validity(self.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
+    }
 }
 
 /// A struct vector.
 pub struct StructVector {
-    /// ListVector does not own the vector pointer.
     ptr: duckdb_vector,
 }
 
@@ -276,5 +292,14 @@ impl StructVector {
     pub fn num_children(&self) -> usize {
         let logical_type = self.logical_type();
         unsafe { duckdb_struct_type_child_count(logical_type.ptr) as usize }
+    }
+
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.ptr);
+            let idx = duckdb_vector_get_validity(self.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
     }
 }
