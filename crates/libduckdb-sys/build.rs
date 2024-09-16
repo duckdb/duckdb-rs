@@ -106,8 +106,9 @@ mod build_bundled {
                 "src/bindgen_bundled_version.rs",
                 #[cfg(feature = "loadable_extension")]
                 "src/bindgen_bundled_version_loadable.rs",
-                out_path
-            ).expect("Could not copy bindings to output directory");
+                out_path,
+            )
+            .expect("Could not copy bindings to output directory");
         }
 
         let manifest_file = std::fs::File::open(format!("{out_dir}/{lib_name}/manifest.json")).expect("manifest file");
@@ -235,7 +236,9 @@ mod build_linked {
                 "src/bindgen_bundled_version.rs",
                 #[cfg(feature = "loadable_extension")]
                 "src/bindgen_bundled_version_loadable.rs",
-                out_path).expect("Could not copy bindings to output directory");
+                out_path,
+            )
+            .expect("Could not copy bindings to output directory");
         }
 
         #[cfg(feature = "buildtime_bindgen")]

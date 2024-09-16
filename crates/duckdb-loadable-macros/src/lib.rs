@@ -21,6 +21,7 @@ struct CEntryPointMacroArgs {
 }
 
 /// Wraps an entrypoint function to expose an unsafe extern "C" function of the same name.
+/// Warning: experimental!
 #[proc_macro_attribute]
 pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_args = match NestedMeta::parse_meta_list(attr.into()) {
