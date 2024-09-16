@@ -381,13 +381,8 @@ mod bindings {
             })
             .expect("could not find duckdb_ext_api_v0");
 
-        //     let duckdb_ext_api_v0_ident = duckdb_ext_api_v0.ident;
-
         let p_api = quote::format_ident!("p_api");
         let mut stores = Vec::new();
-        //     let mut malloc = Vec::new();
-        // (2) `#define sqlite3_xyz sqlite3_api->abc` => `pub unsafe fn
-        // sqlite3_xyz(args) -> ty {...}` for each `abc` field:
 
         for field in duckdb_ext_api_v0.fields {
             let ident = field.ident.expect("unnamed field");
