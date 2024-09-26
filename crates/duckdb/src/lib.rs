@@ -73,7 +73,7 @@ pub use crate::r2d2::DuckdbConnectionManager;
 pub use crate::{
     appender::Appender,
     appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter},
-    arrow_batch::Arrow,
+    arrow_batch::{Arrow, ArrowStream},
     cache::CachedStatement,
     column::Column,
     config::{AccessMode, Config, DefaultNullOrder, DefaultOrder},
