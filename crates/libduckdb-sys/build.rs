@@ -25,7 +25,7 @@ fn main() {
     let out_path = Path::new(&out_dir).join("bindgen.rs");
     #[cfg(feature = "bundled")]
     {
-        build_bundled::main(&out_dir, &out_path);
+        build_bundled::main(&out_path);
     }
     #[cfg(not(feature = "bundled"))]
     {
@@ -35,56 +35,9 @@ fn main() {
 
 #[cfg(feature = "bundled")]
 mod build_bundled {
-    use std::{
-        collections::{HashMap, HashSet},
-        path::Path,
-    };
+    use std::path::Path;
 
-    use crate::win_target;
-
-    #[derive(serde::Deserialize)]
-    struct Sources {
-        cpp_files: HashSet<String>,
-        include_dirs: HashSet<String>,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct Manifest {
-        base: Sources,
-
-        #[allow(unused)]
-        extensions: HashMap<String, Sources>,
-    }
-
-    #[allow(unused)]
-    fn add_extension(
-        cfg: &mut cc::Build,
-        manifest: &Manifest,
-        extension: &str,
-        cpp_files: &mut HashSet<String>,
-        include_dirs: &mut HashSet<String>,
-    ) {
-        cpp_files.extend(manifest.extensions.get(extension).unwrap().cpp_files.clone());
-        include_dirs.extend(manifest.extensions.get(extension).unwrap().include_dirs.clone());
-        cfg.define(
-            &format!("DUCKDB_EXTENSION_{}_LINKED", extension.to_uppercase()),
-            Some("1"),
-        );
-    }
-
-    fn untar_archive(out_dir: &str) {
-        let path = "duckdb.tar.gz";
-
-        let tar_gz = std::fs::File::open(path).expect("archive file");
-        let tar = flate2::read::GzDecoder::new(tar_gz);
-        let mut archive = tar::Archive::new(tar);
-        archive.unpack(out_dir).expect("archive");
-    }
-
-    pub fn main(out_dir: &str, out_path: &Path) {
-        let lib_name = super::lib_name();
-
-        untar_archive(out_dir);
+    pub fn main(out_path: &Path) {
 
         if !cfg!(feature = "bundled") {
             // This is just a sanity check, the top level `main` should ensure this.
@@ -94,7 +47,7 @@ mod build_bundled {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{out_dir}/{lib_name}/src/include/duckdb.h"));
+            let header = HeaderLocation::FromPath(format!("duckdb/src/include/duckdb.h"));
             bindings::write_to_out_dir(header, out_path);
         }
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -103,57 +56,41 @@ mod build_bundled {
             fs::copy("src/bindgen_bundled_version.rs", out_path).expect("Could not copy bindings to output directory");
         }
 
-        let manifest_file = std::fs::File::open(format!("{out_dir}/{lib_name}/manifest.json")).expect("manifest file");
-        let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
+        // jemalloc is not built; use the rust jemallocator crate
+        #[allow(unused_mut)]
+        let mut extensions = "parquet".to_string();
+        #[cfg(feature="autocomplete")] { extensions += ";autocomplete"; }
+        #[cfg(feature="httpfs")] { println!("cargo:rustc-link-lib=static=httpfs_extension"); extensions += ";httpfs"; }
+        #[cfg(feature="tpcds")] { println!("cargo:rustc-link-lib=static=tpcds_extension"); extensions += ";tpcds"; }
+        #[cfg(feature="fts")] { println!("cargo:rustc-link-lib=static=fts_extension"); extensions += ";fts"; }
+        #[cfg(feature="icu")] { println!("cargo:rustc-link-lib=static=icu_extension"); extensions += ";icu"; }
+        #[cfg(feature="json")] { println!("cargo:rustc-link-lib=static=json_extension"); extensions += ";json"; }
 
-        let mut cpp_files = HashSet::new();
-        let mut include_dirs = HashSet::new();
+        let dst = cmake::Config::new("duckdb")
+            .define("ENABLE_EXTENSION_AUTOLOADING", "1")
+            .define("ENABLE_EXTENSION_AUTOINSTALL", "1")
+            .define("BUILD_JEMALLOC", "0")
+            .define("BUILD_EXTENSIONS", &extensions)
+            .define("SKIP_EXTENSIONS", "jemalloc")
+            .define("BUILD_UNITTESTS", "0")
+            .profile("Release")
+            .build();
+        println!("cargo:rustc-link-search=native={}/lib", dst.display());
+        println!("cargo:rustc-link-lib=static=duckdb_fastpforlib");
+        println!("cargo:rustc-link-lib=static=duckdb_fmt");
+        println!("cargo:rustc-link-lib=static=duckdb_fsst");
+        println!("cargo:rustc-link-lib=static=duckdb_hyperloglog");
+        println!("cargo:rustc-link-lib=static=duckdb_mbedtls");
+        println!("cargo:rustc-link-lib=static=duckdb_miniz");
+        println!("cargo:rustc-link-lib=static=duckdb_pg_query");
+        println!("cargo:rustc-link-lib=static=duckdb_re2");
+        println!("cargo:rustc-link-lib=static=duckdb_skiplistlib");
+        println!("cargo:rustc-link-lib=static=duckdb_static");
+        println!("cargo:rustc-link-lib=static=duckdb_utf8proc");
+        println!("cargo:rustc-link-lib=static=duckdb_yyjson");
+        println!("cargo:rustc-link-lib=static=parquet_extension");
 
-        cpp_files.extend(manifest.base.cpp_files.clone());
-        // otherwise clippy will remove the clone here...
-        // https://github.com/rust-lang/rust-clippy/issues/9011
-        #[allow(clippy::all)]
-        include_dirs.extend(manifest.base.include_dirs.clone());
-
-        let mut cfg = cc::Build::new();
-
-        #[cfg(feature = "parquet")]
-        add_extension(&mut cfg, &manifest, "parquet", &mut cpp_files, &mut include_dirs);
-
-        #[cfg(feature = "json")]
-        add_extension(&mut cfg, &manifest, "json", &mut cpp_files, &mut include_dirs);
-
-        // duckdb/tools/pythonpkg/setup.py
-        cfg.define("DUCKDB_EXTENSION_AUTOINSTALL_DEFAULT", "1");
-        cfg.define("DUCKDB_EXTENSION_AUTOLOAD_DEFAULT", "1");
-
-        // Since the manifest controls the set of files, we require it to be changed to know whether
-        // to rebuild the project
-        println!("cargo:rerun-if-changed={out_dir}/{lib_name}/manifest.json");
-        // Make sure to rebuild the project if tar file changed
-        println!("cargo:rerun-if-changed=duckdb.tar.gz");
-
-        cfg.include(lib_name);
-        cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/{lib_name}/{dir}")));
-
-        for f in cpp_files.into_iter().map(|file| format!("{out_dir}/{file}")) {
-            cfg.file(f);
-        }
-
-        cfg.cpp(true)
-            .flag_if_supported("-std=c++11")
-            .flag_if_supported("-stdlib=libc++")
-            .flag_if_supported("-stdlib=libstdc++")
-            .flag_if_supported("/bigobj")
-            .warnings(false)
-            .flag_if_supported("-w");
-
-        if win_target() {
-            cfg.define("DUCKDB_BUILD_LIBRARY", None);
-        }
-        cfg.compile(lib_name);
-
-        println!("cargo:lib_dir={out_dir}");
+        println!("cargo:rustc-link-lib=stdc++");
     }
 }
 
@@ -161,6 +98,7 @@ fn env_prefix() -> &'static str {
     "DUCKDB"
 }
 
+#[allow(dead_code)]
 fn lib_name() -> &'static str {
     "duckdb"
 }

@@ -2,3 +2,6 @@
 	path = crates/libduckdb-sys/duckdb-sources
 	url = https://github.com/duckdb/duckdb
 	update = none
+[submodule "crates/libduckdb-sys/duckdb"]
+	path = crates/libduckdb-sys/duckdb
+	url = https://github.com/duckdb/duckdb
