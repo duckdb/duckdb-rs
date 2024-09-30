@@ -1,6 +1,6 @@
 [package]
 name = "libduckdb-sys"
-version = "1.0.0"
+version = "1.1.0+libduckdb.1.1.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,25 +17,25 @@ exclude = ["duckdb-sources"]
 
 [features]
 default = ["vcpkg", "pkg-config"]
-bundled = ["cc"]
+bundled = ["cmake"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
-json = ["bundled"]
-parquet = ["bundled"]
-extensions-full = ["json", "parquet"]
+parquet = ["bundled"] # ignored
+extensions-full = ["autocomplete","httpfs","tpcds","fts","icu", "json","parquet"]
 winduckdb = []
+autocomplete = ["bundled"]
+httpfs = ["bundled"]
+tpcds = ["bundled"]
+fts = ["bundled"]
+icu = ["bundled"]
+json = ["bundled"]
 
 [dependencies]
 
 [build-dependencies]
-autocfg = { workspace = true }
 bindgen = { workspace = true, features = ["runtime"], optional = true }
-flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
-cc = { workspace = true, features = ["parallel"], optional = true }
 vcpkg = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-tar = { workspace = true }
+cmake = { version = "0.1.51", optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
