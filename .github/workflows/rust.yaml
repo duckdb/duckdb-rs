@@ -54,6 +54,11 @@ jobs:
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
 
+      # TODO: remove
+      - name: Workaround for https://github.com/pola-rs/polars/issues/19063
+        run: |
+          cargo update indexmap@2.6.0 --precise 2.5.0
+
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
         env:
@@ -61,8 +66,6 @@ jobs:
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
         run: |
-          # Workaround for https://github.com/pola-rs/polars/issues/19063
-          cargo update indexmap@2.6.0 --precise 2.5.0
           cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
           
 
@@ -135,6 +138,7 @@ jobs:
         with:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
+
       - run: cargo install cargo-examples
 
   Sanitizer:
