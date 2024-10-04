@@ -140,7 +140,7 @@ impl RawStatement {
 
             let arrow2_field =
                 arrow2::ffi::import_field_from_c(&ffi_arrow2_schema).expect("Failed to import arrow2 Field from C");
-            let import_arrow2_array = arrow2::ffi::import_array_from_c(ffi_arrow2_array, arrow2_field.dtypegst);
+            let import_arrow2_array = arrow2::ffi::import_array_from_c(ffi_arrow2_array, arrow2_field.dtype);
 
             if let Err(err) = import_arrow2_array {
                 // When array is empty, import_array_from_c returns error with message
