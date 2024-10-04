@@ -88,14 +88,23 @@ jobs:
         with:
           name: PATH
           value: $env:PATH;${{ github.workspace }}/libduckdb
+
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
         run: cargo test --features "modern-full vtab-full vtab-loadable"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+
       - name: Build loadable extension
         run: cargo build --example hello-ext --features="vtab-loadable"
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+
+      - name: Build loadable extension
+        run: cargo build --example hello-ext-capi --features="vtab-loadable,loadable_extension"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
