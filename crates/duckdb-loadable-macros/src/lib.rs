@@ -51,7 +51,10 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
             let c_entrypoint = Ident::new(format!("{}_init_c_api", args.ext_name).as_str(), Span::call_site());
             let original_funcname = func.sig.ident.to_string();
             let prefixed_original_function = func.sig.ident.clone();
-            let c_entrypoint_internal = Ident::new(format!("{}_init_c_api_internal", args.ext_name).as_str(), Span::call_site());
+            let c_entrypoint_internal = Ident::new(
+                format!("{}_init_c_api_internal", args.ext_name).as_str(),
+                Span::call_site(),
+            );
 
             quote_spanned! {func.span()=>
                 pub unsafe fn #c_entrypoint_internal(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) -> Result<bool, Box<dyn std::error::Error>> {
