@@ -51,24 +51,49 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
             let c_entrypoint = Ident::new(format!("{}_init_c_api", args.ext_name).as_str(), Span::call_site());
             let original_funcname = func.sig.ident.to_string();
             let prefixed_original_function = func.sig.ident.clone();
+            let c_entrypoint_internal = Ident::new(format!("{}_init_c_api_internal", args.ext_name).as_str(), Span::call_site());
 
             quote_spanned! {func.span()=>
+                pub unsafe fn #c_entrypoint_internal(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) -> Result<bool, Box<dyn std::error::Error>> {
+                    let have_api_struct = ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version).unwrap();
+
+                    if !have_api_struct {
+                        // initialization failed to return an api struct, likely due to an API version mismatch, we can simply return here
+                        return Ok(false);
+                    }
+
+                    // TODO: handle error here?
+                    let db : ffi::duckdb_database = *(*access).get_database.unwrap()(info);
+                    let connection = Connection::open_from_raw(db.cast())?;
+
+                    #prefixed_original_function(connection)?;
+
+                    return Ok(true);
+                }
 
                 /// # Safety
                 ///
-                /// Will be called by duckdb
+                /// Entrypoint that will be called by DuckDB
                 #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) {
-                    let res = ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version);
+                pub unsafe extern "C" fn #c_entrypoint(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) -> bool {
+                    let init_result = #c_entrypoint_internal(info, access);
 
-                    if let Err(x) = res {
-                        // Error will be handled by DuckDB
-                        return;
+                    if let Err(x) = init_result {
+                        let error_c_string = std::ffi::CString::new(x.description());
+
+                        match error_c_string {
+                            Ok(e) => {
+                                (*access).set_error.unwrap()(info, e.as_ptr());
+                            },
+                            Err(e) => {
+                                let error_alloc_failure = c"An error occured but the extension failed to allocate memory for an error string";
+                                (*access).set_error.unwrap()(info, error_alloc_failure.as_ptr());
+                            }
+                        }
+                        return false;
                     }
 
-                    let db : ffi::duckdb_database = *(*access).get_database.unwrap()(info);
-                    let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
-                    #prefixed_original_function(connection).expect("init failed");
+                    return init_result.unwrap();
                 }
 
                 #func

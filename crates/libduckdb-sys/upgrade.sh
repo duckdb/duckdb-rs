@@ -12,8 +12,7 @@ mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
 export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
 # Download and extract amalgamation
-# todo: fix this version
-DUCKDB_VERSION=v1.1.0
+DUCKDB_VERSION=v1.1.1
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
 git fetch

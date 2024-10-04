@@ -675,6 +675,7 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ: DUCKDB_TYPE = 30;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ: DUCKDB_TYPE = 31;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_ANY: DUCKDB_TYPE = 34;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_VARINT: DUCKDB_TYPE = 35;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL: DUCKDB_TYPE = 36;
 #[doc = "! An enum over DuckDB's internal types."]
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 #[doc = "! An enum over DuckDB's internal types."]
@@ -14026,14 +14027,12 @@ pub unsafe fn duckdb_rs_extension_api_init(
     info: duckdb_extension_info,
     access: *const duckdb_extension_access,
     version: &str,
-) -> ::std::result::Result<(), &'static str> {
+) -> ::std::result::Result<bool, &'static str> {
     let version_c_string = std::ffi::CString::new(version).unwrap();
     let p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr())
         as *const duckdb_ext_api_v0;
     if p_api.is_null() {
-        return Err(
-            "DuckDB passed a nullpointer while trying to initialize the extension",
-        );
+        return Ok(false);
     }
     if let Some(fun) = (*p_api).duckdb_open {
         __DUCKDB_OPEN
@@ -15519,6 +15518,6 @@ pub unsafe fn duckdb_rs_extension_api_init(
         __DUCKDB_STREAM_FETCH_CHUNK
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
-    Ok(())
+    Ok(true)
 }
 

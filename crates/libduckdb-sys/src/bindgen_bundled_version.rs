@@ -672,6 +672,7 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ: DUCKDB_TYPE = 30;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ: DUCKDB_TYPE = 31;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_ANY: DUCKDB_TYPE = 34;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_VARINT: DUCKDB_TYPE = 35;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL: DUCKDB_TYPE = 36;
 #[doc = "! An enum over DuckDB's internal types."]
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 #[doc = "! An enum over DuckDB's internal types."]

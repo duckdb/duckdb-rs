@@ -11,7 +11,7 @@ use duckdb_loadable_macros::duckdb_entrypoint_c_api;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
-    ffi::{c_char, c_void, CString},
+    ffi::{c_char, CString},
 };
 
 #[repr(C)]
@@ -87,6 +87,7 @@ impl VTab for HelloVTab {
 
 #[duckdb_entrypoint_c_api(ext_name = "rusty_quack", min_duckdb_version = "v0.0.1")]
 pub unsafe fn ExtensionEntrypoint(con: Connection) -> Result<(), Box<dyn Error>> {
+    return Err("SHIT THIS THE FAN request".into());
     con.register_table_function::<HelloVTab>("hello")
         .expect("Failed to register hello table function");
     Ok(())
