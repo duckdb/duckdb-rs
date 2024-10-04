@@ -1,5 +1,5 @@
 #![allow(clippy::redundant_clone)]
-use proc_macro2::{Ident, Literal, Punct, Span};
+use proc_macro2::{Ident, Span};
 
 use syn::{parse_macro_input, spanned::Spanned, Item};
 
@@ -7,7 +7,6 @@ use proc_macro::TokenStream;
 use quote::quote_spanned;
 
 use darling::{ast::NestedMeta, Error, FromMeta};
-use syn::ItemFn;
 
 /// For parsing the arguments to the duckdb_entrypoint_c_api macro
 #[derive(Debug, FromMeta)]
@@ -47,9 +46,8 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
     let ast = parse_macro_input!(item as syn::Item);
 
     match ast {
-        Item::Fn(mut func) => {
+        Item::Fn(func) => {
             let c_entrypoint = Ident::new(format!("{}_init_c_api", args.ext_name).as_str(), Span::call_site());
-            let original_funcname = func.sig.ident.to_string();
             let prefixed_original_function = func.sig.ident.clone();
             let c_entrypoint_internal = Ident::new(
                 format!("{}_init_c_api_internal", args.ext_name).as_str(),
@@ -57,6 +55,9 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
             );
 
             quote_spanned! {func.span()=>
+                /// # Safety
+                ///
+                /// Internal Entrypoint for error handling
                 pub unsafe fn #c_entrypoint_internal(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) -> Result<bool, Box<dyn std::error::Error>> {
                     let have_api_struct = ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version).unwrap();
 
@@ -71,7 +72,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
 
                     #prefixed_original_function(connection)?;
 
-                    return Ok(true);
+                    Ok(true)
                 }
 
                 /// # Safety
@@ -82,13 +83,13 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                     let init_result = #c_entrypoint_internal(info, access);
 
                     if let Err(x) = init_result {
-                        let error_c_string = std::ffi::CString::new(x.description());
+                        let error_c_string = std::ffi::CString::new(x.to_string());
 
                         match error_c_string {
                             Ok(e) => {
                                 (*access).set_error.unwrap()(info, e.as_ptr());
                             },
-                            Err(e) => {
+                            Err(_e) => {
                                 let error_alloc_failure = c"An error occured but the extension failed to allocate memory for an error string";
                                 (*access).set_error.unwrap()(info, error_alloc_failure.as_ptr());
                             }
@@ -96,7 +97,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                         return false;
                     }
 
-                    return init_result.unwrap();
+                    init_result.unwrap()
                 }
 
                 #func
