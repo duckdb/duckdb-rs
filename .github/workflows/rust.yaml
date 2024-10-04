@@ -33,6 +33,7 @@ jobs:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
+
       # download libduckdb
       - uses: robinraju/release-downloader@v1.4
         name: Download duckdb
@@ -49,15 +50,22 @@ jobs:
         with:
           file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
+
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
-      - run: cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
+
+      - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
-        name: run cargo clippy
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+        run: |
+          # Workaround for https://github.com/pola-rs/polars/issues/19063
+          cargo update indexmap@2.6.0 --precise 2.5.0
+          cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
+          
+
       - name: Run cargo-tarpaulin
         if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/tarpaulin@v0.1
@@ -70,6 +78,7 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+
       - name: Upload to codecov.io
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v1
