@@ -97,4 +97,4 @@ required-features = ["vtab-loadable"]
 [[example]]
 name = "hello-ext-capi"
 crate-type = ["cdylib"]
-required-features = ["vtab-loadable,loadable-extension"]
+required-features = ["vtab-loadable", "loadable-extension"]
