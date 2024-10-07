@@ -35,6 +35,8 @@ polars = ["dep:polars"]
 # FIXME: These were added to make clippy happy: these features appear unused and should perhaps be removed
 column_decltype = []
 extra_check = []
+# Warning: experimental feature
+loadable-extension = ["libduckdb-sys/loadable-extension"]
 
 [dependencies]
 libduckdb-sys = { workspace = true }
@@ -97,4 +99,4 @@ required-features = ["vtab-loadable"]
 [[example]]
 name = "hello-ext-capi"
 crate-type = ["cdylib"]
-required-features = ["vtab-loadable"]
+required-features = ["vtab-loadable", "loadable-extension"]

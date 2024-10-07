@@ -23,6 +23,7 @@ json = ["bundled"]
 parquet = ["bundled"]
 extensions-full = ["json", "parquet"]
 winduckdb = []
+# Warning: experimental feature
 loadable-extension = ["prettyplease", "quote", "syn"]
 
 [dependencies]
