@@ -24,7 +24,7 @@ python3 "$SCRIPT_DIR/update_sources.py"
 cd "$SCRIPT_DIR"
 rm -f "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs"
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec rm {} \;
-cargo build --features "extensions-full buildtime_bindgen loadable_extension"
+cargo build --features "extensions-full buildtime_bindgen loadable-extension"
 find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec cp {} "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" \;
 
 # Sanity checks

@@ -102,9 +102,9 @@ mod build_bundled {
         {
             use std::fs;
             fs::copy(
-                #[cfg(not(feature = "loadable_extension"))]
+                #[cfg(not(feature = "loadable-extension"))]
                 "src/bindgen_bundled_version.rs",
-                #[cfg(feature = "loadable_extension")]
+                #[cfg(feature = "loadable-extension")]
                 "src/bindgen_bundled_version_loadable.rs",
                 out_path,
             )
@@ -186,7 +186,7 @@ impl From<HeaderLocation> for String {
                 let prefix = env_prefix();
                 let mut header = env::var(format!("{prefix}_INCLUDE_DIR"))
                     .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
-                header.push_str(if cfg!(feature = "loadable_extension") {
+                header.push_str(if cfg!(feature = "loadable-extension") {
                     "/duckdb_extension.h"
                 } else {
                     "/duckdb.h"
@@ -194,7 +194,7 @@ impl From<HeaderLocation> for String {
                 header
             }
             HeaderLocation::Wrapper => {
-                if cfg!(feature = "loadable_extension") {
+                if cfg!(feature = "loadable-extension") {
                     "wrapper_ext.h".into()
                 } else {
                     "wrapper.h".into()
@@ -203,7 +203,7 @@ impl From<HeaderLocation> for String {
             HeaderLocation::FromPath(path) => format!(
                 "{}/{}",
                 path,
-                if cfg!(feature = "loadable_extension") {
+                if cfg!(feature = "loadable-extension") {
                     "duckdb_extension.h"
                 } else {
                     "duckdb.h"
@@ -232,9 +232,9 @@ mod build_linked {
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
             std::fs::copy(
-                #[cfg(not(feature = "loadable_extension"))]
+                #[cfg(not(feature = "loadable-extension"))]
                 "src/bindgen_bundled_version.rs",
-                #[cfg(feature = "loadable_extension")]
+                #[cfg(feature = "loadable-extension")]
                 "src/bindgen_bundled_version_loadable.rs",
                 out_path,
             )
@@ -259,7 +259,7 @@ mod build_linked {
     fn find_duckdb() -> HeaderLocation {
         let link_lib = lib_name();
 
-        if !cfg!(feature = "loadable_extension") {
+        if !cfg!(feature = "loadable-extension") {
             println!("cargo:rerun-if-env-changed={}_INCLUDE_DIR", env_prefix());
             println!("cargo:rerun-if-env-changed={}_LIB_DIR", env_prefix());
             println!("cargo:rerun-if-env-changed={}_STATIC", env_prefix());
@@ -275,7 +275,7 @@ mod build_linked {
         }
 
         if win_target() && cfg!(feature = "winduckdb") {
-            if !cfg!(feature = "loadable_extension") {
+            if !cfg!(feature = "loadable-extension") {
                 println!("cargo:rustc-link-lib=dylib={link_lib}");
             }
             return HeaderLocation::Wrapper;
@@ -312,7 +312,7 @@ mod build_linked {
                 // request and hope that the library exists on the system paths. We used to
                 // output /usr/lib explicitly, but that can introduce other linking problems;
                 // see https://github.com/rusqlite/rusqlite/issues/207.
-                if !cfg!(feature = "loadable_extension") {
+                if !cfg!(feature = "loadable-extension") {
                     println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
                 }
                 HeaderLocation::Wrapper
@@ -341,7 +341,7 @@ mod bindings {
 
     use std::{fs::OpenOptions, io::Write, path::Path};
 
-    #[cfg(feature = "loadable_extension")]
+    #[cfg(feature = "loadable-extension")]
     fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
         match ty {
             syn::Type::Path(tp) => tp.path.segments.last(),
@@ -361,7 +361,7 @@ mod bindings {
         })?
     }
 
-    #[cfg(feature = "loadable_extension")]
+    #[cfg(feature = "loadable-extension")]
     fn generate_functions(output: &mut String) {
         // (1) parse sqlite3_api_routines fields from bindgen output
         let ast: syn::File = syn::parse_str(output).expect("could not parse bindgen output");
@@ -454,7 +454,7 @@ mod bindings {
         let mut output = Vec::new();
         let mut builder = bindgen::builder();
 
-        if cfg!(feature = "loadable_extension") {
+        if cfg!(feature = "loadable-extension") {
             builder = builder.ignore_functions();
         }
 
@@ -469,7 +469,7 @@ mod bindings {
 
         let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
-        #[cfg(feature = "loadable_extension")]
+        #[cfg(feature = "loadable-extension")]
         {
             generate_functions(&mut output);
         }
