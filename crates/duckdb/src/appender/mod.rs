@@ -299,7 +299,7 @@ mod test {
         let mut appender = conn.appender("foo")?;
         match appender.append_row(["foo"]) {
             Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
-                assert_eq!(msg, "Call to EndRow before all rows have been appended to!")
+                assert_eq!(msg, "Call to EndRow before all columns have been appended to!")
             }
             _ => panic!("expected error"),
         }

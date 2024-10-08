@@ -1,6 +1,6 @@
 [package]
 name = "libduckdb-sys"
-version = "1.0.0"
+version = "1.1.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -23,6 +23,8 @@ json = ["bundled"]
 parquet = ["bundled"]
 extensions-full = ["json", "parquet"]
 winduckdb = []
+# Warning: experimental feature
+loadable-extension = ["prettyplease", "quote", "syn"]
 
 [dependencies]
 
@@ -36,6 +38,9 @@ vcpkg = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tar = { workspace = true }
+syn = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
+prettyplease = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
