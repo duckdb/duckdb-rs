@@ -113,7 +113,7 @@ impl Transaction<'_> {
     /// possible, [`Transaction::new`] should be preferred, as it provides a
     /// compile-time guarantee that transactions are not nested.
     #[inline]
-    fn new_unchecked(conn: &Connection, _: TransactionBehavior) -> Result<Transaction<'_>> {
+    pub fn new_unchecked(conn: &Connection, _: TransactionBehavior) -> Result<Transaction<'_>> {
         // TODO(wangfenjin): not supported
         // let query = match behavior {
         //     TransactionBehavior::Deferred => "BEGIN DEFERRED",
