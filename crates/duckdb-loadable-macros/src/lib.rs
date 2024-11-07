@@ -42,12 +42,12 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
     // Set the minimum duckdb version (dev by default)
     let minimum_duckdb_version = match args.min_duckdb_version {
         Some(i) => i,
-        None => env::var("DUCKDB_EXTENSION_MIN_DUCKDB_VERSION").unwrap().to_string()
+        None => env::var("DUCKDB_EXTENSION_MIN_DUCKDB_VERSION").expect("Please either set env var DUCKDB_EXTENSION_MIN_DUCKDB_VERSION or pass it as an argument to the proc macro").to_string()
     };
 
     let extension_name = match args.ext_name {
         Some(i) => i,
-        None => env::var("DUCKDB_EXTENSION_NAME").unwrap().to_string()
+        None => env::var("DUCKDB_EXTENSION_NAME").expect("Please either set env var DUCKDB_EXTENSION_MIN_DUCKDB_VERSION or pass it as an argument to the proc macro").to_string()
     };
 
     let ast = parse_macro_input!(item as syn::Item);
