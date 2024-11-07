@@ -8,12 +8,14 @@ use quote::quote_spanned;
 
 use darling::{ast::NestedMeta, Error, FromMeta};
 
+use std::env;
+
 /// For parsing the arguments to the duckdb_entrypoint_c_api macro
 #[derive(Debug, FromMeta)]
 struct CEntryPointMacroArgs {
     #[darling(default)]
     /// The name to be given to this extension. This name is used in the entrypoint function called by duckdb
-    ext_name: String,
+    ext_name: Option<String>,
     /// The minimum C API version this extension requires. It is recommended to set this to the lowest possible version
     /// at which your extension still compiles
     min_duckdb_version: Option<String>,
@@ -40,17 +42,22 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
     // Set the minimum duckdb version (dev by default)
     let minimum_duckdb_version = match args.min_duckdb_version {
         Some(i) => i,
-        None => "dev".to_string(),
+        None => env::var("DUCKDB_EXTENSION_MIN_DUCKDB_VERSION").unwrap().to_string()
+    };
+
+    let extension_name = match args.ext_name {
+        Some(i) => i,
+        None => env::var("DUCKDB_EXTENSION_NAME").unwrap().to_string()
     };
 
     let ast = parse_macro_input!(item as syn::Item);
 
     match ast {
         Item::Fn(func) => {
-            let c_entrypoint = Ident::new(format!("{}_init_c_api", args.ext_name).as_str(), Span::call_site());
+            let c_entrypoint = Ident::new(format!("{}_init_c_api", extension_name).as_str(), Span::call_site());
             let prefixed_original_function = func.sig.ident.clone();
             let c_entrypoint_internal = Ident::new(
-                format!("{}_init_c_api_internal", args.ext_name).as_str(),
+                format!("{}_init_c_api_internal", extension_name).as_str(),
                 Span::call_site(),
             );
 
