@@ -702,8 +702,8 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
-            DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
+            Array, ArrayRef, AsArray, BinaryArray, BooleanArray, Date32Array, Date64Array, Decimal128Array,
+            Decimal256Array, DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
             IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray,
             OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
             TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
@@ -970,6 +970,24 @@ mod test {
                 Some("bar"),
                 Some("foo"),
                 Some("baz"),
+            ])),
+            None,
+        ))?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_boolean_array_roundtrip() -> Result<(), Box<dyn Error>> {
+        check_generic_array_roundtrip(ListArray::new(
+            Arc::new(Field::new("item", DataType::Boolean, true)),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 2, 4, 5])),
+            Arc::new(BooleanArray::from(vec![
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(true),
+                Some(false),
             ])),
             None,
         ))?;
