@@ -1405,9 +1405,9 @@ mod test {
             .expect("Expected StringArray");
 
         assert_eq!(output_array.len(), 3);
-        assert_eq!(output_array.is_valid(0), true);
-        assert_eq!(output_array.is_valid(1), false);
-        assert_eq!(output_array.is_valid(2), true);
+        assert!(output_array.is_valid(0));
+        assert!(!output_array.is_valid(1));
+        assert!(output_array.is_valid(2));
         assert_eq!(output_array.value(0), "foo");
         assert_eq!(output_array.value(2), "baz");
 
@@ -1434,9 +1434,9 @@ mod test {
             .expect("Expected BinaryArray");
 
         assert_eq!(output_array.len(), 3);
-        assert_eq!(output_array.is_valid(0), true);
-        assert_eq!(output_array.is_valid(1), false);
-        assert_eq!(output_array.is_valid(2), true);
+        assert!(output_array.is_valid(0));
+        assert!(!output_array.is_valid(1));
+        assert!(output_array.is_valid(2));
         assert_eq!(output_array.value(0), b"hello");
         assert_eq!(output_array.value(2), b"!");
 
