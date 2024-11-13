@@ -5,9 +5,10 @@ use crate::core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, V
 use arrow::{
     array::{
         as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array,
-        as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BooleanArray, Decimal128Array,
-        FixedSizeBinaryArray, FixedSizeListArray, GenericListArray, GenericStringArray, IntervalMonthDayNanoArray,
-        LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StructArray,
+        as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray,
+        Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericListArray, GenericStringArray,
+        IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray,
+        StringViewArray, StructArray,
     },
     compute::cast,
 };
@@ -157,8 +158,8 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::Time64(_) => Time,
         DataType::Duration(_) => Interval,
         DataType::Interval(_) => Interval,
-        DataType::Binary | DataType::LargeBinary | DataType::FixedSizeBinary(_) => Blob,
-        DataType::Utf8 | DataType::LargeUtf8 => Varchar,
+        DataType::Binary | DataType::LargeBinary | DataType::FixedSizeBinary(_) | DataType::BinaryView => Blob,
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => Varchar,
         DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => List,
         DataType::Struct(_) => Struct,
         DataType::Union(_, _) => Union,
@@ -201,8 +202,10 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
         DataType::Boolean
         | DataType::Utf8
         | DataType::LargeUtf8
+        | DataType::Utf8View
         | DataType::Binary
         | DataType::LargeBinary
+        | DataType::BinaryView
         | DataType::FixedSizeBinary(_) => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         dtype if dtype.is_primitive() => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         _ => Err(format!(
@@ -242,6 +245,15 @@ pub fn record_batch_to_duckdb_data_chunk(
                     &mut chunk.flat_vector(i),
                 );
             }
+            DataType::Utf8View => {
+                string_view_array_to_vector(
+                    col.as_ref()
+                        .as_any()
+                        .downcast_ref::<StringViewArray>()
+                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
+                    &mut chunk.flat_vector(i),
+                );
+            }
             DataType::Binary => {
                 binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector(i));
             }
@@ -254,6 +266,15 @@ pub fn record_batch_to_duckdb_data_chunk(
                         .as_any()
                         .downcast_ref::<LargeBinaryArray>()
                         .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeBinaryArray"))?,
+                    &mut chunk.flat_vector(i),
+                );
+            }
+            DataType::BinaryView => {
+                binary_view_array_to_vector(
+                    col.as_ref()
+                        .as_any()
+                        .downcast_ref::<BinaryViewArray>()
+                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
                     &mut chunk.flat_vector(i),
                 );
             }
@@ -486,7 +507,27 @@ fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out
     set_nulls_in_flat_vector(array, out);
 }
 
+fn string_view_array_to_vector(array: &StringViewArray, out: &mut FlatVector) {
+    assert!(array.len() <= out.capacity());
+
+    for i in 0..array.len() {
+        let s = array.value(i);
+        out.insert(i, s);
+    }
+    set_nulls_in_flat_vector(array, out);
+}
+
 fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
+    assert!(array.len() <= out.capacity());
+
+    for i in 0..array.len() {
+        let s = array.value(i);
+        out.insert(i, s);
+    }
+    set_nulls_in_flat_vector(array, out);
+}
+
+fn binary_view_array_to_vector(array: &BinaryViewArray, out: &mut FlatVector) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -531,8 +572,28 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
         DataType::Utf8 => {
             string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
         }
+        DataType::Utf8View => {
+            string_view_array_to_vector(
+                value_array
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<StringViewArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
+                &mut child,
+            );
+        }
         DataType::Binary => {
             binary_array_to_vector(as_generic_binary_array(value_array.as_ref()), &mut child);
+        }
+        DataType::BinaryView => {
+            binary_view_array_to_vector(
+                value_array
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<BinaryViewArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
+                &mut child,
+            );
         }
         _ => {
             return Err("Nested list is not supported yet.".into());
@@ -702,11 +763,12 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, ArrayRef, AsArray, BinaryArray, Date32Array, Date64Array, Decimal128Array, Decimal256Array,
-            DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
+            Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, Date32Array, Date64Array, Decimal128Array,
+            Decimal256Array, DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
             IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray,
-            OffsetSizeTrait, PrimitiveArray, StringArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
-            TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+            OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, Time32SecondArray,
+            Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+            TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
@@ -1263,5 +1325,121 @@ mod test {
         let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
         assert_eq!(column.len(), 1);
         assert_eq!(column.value(0), b"test");
+    }
+
+    #[test]
+    fn test_string_view_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let array = StringViewArray::from(vec![Some("foo"), Some("bar"), Some("baz")]);
+        let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), false)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_array = rb
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("Expected StringArray");
+
+        assert_eq!(output_array.len(), 3);
+        assert_eq!(output_array.value(0), "foo");
+        assert_eq!(output_array.value(1), "bar");
+        assert_eq!(output_array.value(2), "baz");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_binary_view_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let array = BinaryViewArray::from(vec![
+            Some(b"hello".as_ref()),
+            Some(b"world".as_ref()),
+            Some(b"!".as_ref()),
+        ]);
+        let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), false)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_array = rb
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("Expected BinaryArray");
+
+        assert_eq!(output_array.len(), 3);
+        assert_eq!(output_array.value(0), b"hello");
+        assert_eq!(output_array.value(1), b"world");
+        assert_eq!(output_array.value(2), b"!");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_view_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let array = StringViewArray::from(vec![Some("foo"), None, Some("baz")]);
+        let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_array = rb
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("Expected StringArray");
+
+        assert_eq!(output_array.len(), 3);
+        assert_eq!(output_array.is_valid(0), true);
+        assert_eq!(output_array.is_valid(1), false);
+        assert_eq!(output_array.is_valid(2), true);
+        assert_eq!(output_array.value(0), "foo");
+        assert_eq!(output_array.value(2), "baz");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_binary_view_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let array = BinaryViewArray::from(vec![Some(b"hello".as_ref()), None, Some(b"!".as_ref())]);
+        let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_array = rb
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("Expected BinaryArray");
+
+        assert_eq!(output_array.len(), 3);
+        assert_eq!(output_array.is_valid(0), true);
+        assert_eq!(output_array.is_valid(1), false);
+        assert_eq!(output_array.is_valid(2), true);
+        assert_eq!(output_array.value(0), b"hello");
+        assert_eq!(output_array.value(2), b"!");
+
+        Ok(())
     }
 }
