@@ -4,7 +4,7 @@ use super::{
 };
 use crate::ffi::{
     duckdb_create_data_chunk, duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_size,
-    duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size, duckdb_destroy_data_chunk,
+    duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size, duckdb_destroy_data_chunk, duckdb_vector_get_column_type,
 };
 
 /// Handle to the DataChunk in DuckDB.
@@ -57,6 +57,15 @@ impl DataChunkHandle {
     /// Get struct vector at the column index: `idx`.
     pub fn struct_vector(&self, idx: usize) -> StructVector {
         StructVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
+    }
+
+    /// Get the logical type of the vector at the column index: `idx`.
+    pub fn logical_type(&self, idx: usize) -> LogicalTypeHandle {
+        unsafe {
+            LogicalTypeHandle::new(duckdb_vector_get_column_type(duckdb_data_chunk_get_vector(
+                self.ptr, idx as u64,
+            )))
+        }
     }
 
     /// Set the size of the data chunk

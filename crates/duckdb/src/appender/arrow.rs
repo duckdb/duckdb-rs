@@ -31,7 +31,7 @@ impl Appender<'_> {
         let schema = record_batch.schema();
         let mut logical_type: Vec<LogicalTypeHandle> = vec![];
         for field in schema.fields() {
-            let logical_t = to_duckdb_logical_type(field.data_type())
+            let logical_t = to_duckdb_logical_type(field.data_type(), field.metadata())
                 .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))?;
             logical_type.push(logical_t);
         }
