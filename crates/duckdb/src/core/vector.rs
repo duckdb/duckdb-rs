@@ -161,6 +161,11 @@ impl ListVector {
         FlatVector::with_capacity(unsafe { duckdb_list_vector_get_child(self.entries.ptr) }, capacity)
     }
 
+    /// Returns the struct vector child.
+    pub fn struct_vector_child(&self) -> StructVector {
+        StructVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    }
+
     /// Set primitive data to the child node.
     pub fn set_child<T: Copy>(&self, data: &[T]) {
         self.child(data.len()).copy(data);
@@ -225,6 +230,11 @@ impl ArrayVector {
     // TODO: not ideal interface. Where should we keep count.
     pub fn child(&self, capacity: usize) -> FlatVector {
         FlatVector::with_capacity(unsafe { duckdb_array_vector_get_child(self.ptr) }, capacity)
+    }
+
+    /// Returns the child vector.
+    pub fn struct_vector_child(&self) -> StructVector {
+        StructVector::from(unsafe { duckdb_array_vector_get_child(self.ptr) })
     }
 
     /// Set primitive data to the child node.
