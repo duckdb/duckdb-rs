@@ -17,7 +17,7 @@ pub use self::arrow::{
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
-pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
+pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
 pub use value::Value;
 
 use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
@@ -30,7 +30,7 @@ use std::mem::size_of;
 /// used for the bind_info and init_info
 /// # Safety
 /// This function is obviously unsafe
-unsafe fn malloc_data_c<T>() -> *mut T {
+pub unsafe fn malloc_data_c<T>() -> *mut T {
     duckdb_malloc(size_of::<T>()).cast()
 }
 
@@ -39,7 +39,7 @@ unsafe fn malloc_data_c<T>() -> *mut T {
 /// # Safety
 ///   This function is obviously unsafe
 /// TODO: maybe we should use a Free trait here
-unsafe extern "C" fn drop_data_c<T: Free>(v: *mut c_void) {
+pub unsafe extern "C" fn drop_data_c<T: Free>(v: *mut c_void) {
     let actual = v.cast::<T>();
     (*actual).free();
     duckdb_free(v);
@@ -100,7 +100,7 @@ pub trait VTab: Sized {
     /// - The `init_info` and `bind_info` data pointed to remains valid and is not freed until after this function completes.
     /// - No other threads are concurrently mutating the data pointed to by `init_info` and `bind_info` without proper synchronization.
     /// - The `output` parameter is correctly initialized and can safely be written to.
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
+    unsafe fn func(func: &TableFunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
     /// Does the table function support pushdown
     /// default is false
     fn supports_pushdown() -> bool {
@@ -122,7 +122,7 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    let info = FunctionInfo::from(info);
+    let info = TableFunctionInfo::from(info);
     let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
     let result = T::func(&info, &mut data_chunk_handle);
     if result.is_err() {
@@ -193,7 +193,7 @@ impl InnerConnection {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::core::Inserter;
+    use crate::{core::Inserter, types::DuckString};
     use std::{
         error::Error,
         ffi::{c_char, CString},
@@ -244,7 +244,10 @@ mod test {
             Ok(())
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe fn func(
+            func: &TableFunctionInfo,
+            output: &mut DataChunkHandle,
+        ) -> Result<(), Box<dyn std::error::Error>> {
             let init_info = func.get_init_data::<HelloInitData>();
             let bind_info = func.get_bind_data::<HelloBindData>();
 
@@ -289,7 +292,7 @@ mod test {
             HelloVTab::init(init_info, data)
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+        unsafe fn func(func: &TableFunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
             HelloVTab::func(func, output)
         }
 

@@ -1,3 +1,14 @@
+use libduckdb_sys::{
+    duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
+    duckdb_create_scalar_function_set, duckdb_destroy_scalar_function, duckdb_scalar_function,
+    duckdb_scalar_function_add_parameter, duckdb_scalar_function_get_extra_info, duckdb_scalar_function_set,
+    duckdb_scalar_function_set_error, duckdb_scalar_function_set_extra_info, duckdb_scalar_function_set_function,
+    duckdb_scalar_function_set_name, duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs,
+    duckdb_vector, DuckDBSuccess,
+};
+
+use crate::Error;
+
 use super::{
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
@@ -13,6 +24,7 @@ use super::{
 };
 use std::{
     ffi::{c_void, CString},
+    fmt::Debug,
     os::raw::c_char,
 };
 
@@ -334,9 +346,9 @@ use super::ffi::{
 
 /// An interface to store and retrieve data during the function execution stage
 #[derive(Debug)]
-pub struct FunctionInfo(duckdb_function_info);
+pub struct TableFunctionInfo(duckdb_function_info);
 
-impl FunctionInfo {
+impl TableFunctionInfo {
     /// Report that an error has occurred while executing the function.
     ///
     /// # Arguments
@@ -344,9 +356,10 @@ impl FunctionInfo {
     pub fn set_error(&self, error: &str) {
         let c_str = CString::new(error).unwrap();
         unsafe {
-            duckdb_function_set_error(self.0, c_str.as_ptr() as *const c_char);
+            duckdb_function_set_error(self.0, c_str.as_ptr());
         }
     }
+
     /// Gets the bind data set by [`BindInfo::set_bind_data`] during the bind.
     ///
     /// Note that the bind data should be considered as read-only.
@@ -380,7 +393,7 @@ impl FunctionInfo {
     }
 }
 
-impl From<duckdb_function_info> for FunctionInfo {
+impl From<duckdb_function_info> for TableFunctionInfo {
     fn from(ptr: duckdb_function_info) -> Self {
         Self(ptr)
     }

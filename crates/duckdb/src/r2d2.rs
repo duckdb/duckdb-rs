@@ -40,8 +40,9 @@
 //!         .unwrap()
 //! }
 //! ```
-use crate::{Config, Connection, Error, Result};
+use crate::{vscalar::VScalar, vtab::VTab, Config, Connection, Error, Result};
 use std::{
+    fmt::Debug,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -77,6 +78,21 @@ impl DuckdbConnectionManager {
         Ok(Self {
             connection: Arc::new(Mutex::new(Connection::open_in_memory_with_flags(config)?)),
         })
+    }
+
+    /// Register a table function.
+    pub fn register_table_function<T: VTab>(&self, name: &str) -> Result<()> {
+        let conn = self.connection.lock().unwrap();
+        conn.register_table_function::<T>(name)
+    }
+
+    /// Register a scalar function.
+    pub fn register_scalar<S: VScalar>(&self, name: &str) -> Result<()>
+    where
+        S::State: Debug,
+    {
+        let conn = self.connection.lock().unwrap();
+        conn.register_scalar_function::<S>(name)
     }
 }
 

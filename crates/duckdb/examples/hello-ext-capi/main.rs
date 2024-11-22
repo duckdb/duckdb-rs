@@ -4,7 +4,7 @@ extern crate libduckdb_sys;
 
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
-    vtab::{BindInfo, Free, FunctionInfo, InitInfo, VTab},
+    vtab::{BindInfo, Free, TableFunctionInfo, InitInfo, VTab},
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint_c_api;
@@ -59,7 +59,7 @@ impl VTab for HelloVTab {
         Ok(())
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &TableFunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<HelloInitData>();
         let bind_info = func.get_bind_data::<HelloBindData>();
 

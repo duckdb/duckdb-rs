@@ -1,4 +1,4 @@
-use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunkHandle, Free, TableFunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
 use crate::core::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
@@ -132,7 +132,7 @@ impl VTab for ExcelVTab {
         Ok(())
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &TableFunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ExcelInitData>();
         let bind_info = func.get_bind_data::<ExcelBindData>();
         unsafe {
