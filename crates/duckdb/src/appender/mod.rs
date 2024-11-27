@@ -287,22 +287,23 @@ mod test {
     }
 
     #[test]
-    fn test_appender_error() -> Result<(), crate::Error> {
+    fn test_appender_computed_columns() -> Result<(), crate::Error> {
         let conn = Connection::open_in_memory()?;
         conn.execute(
             r"CREATE TABLE foo (
             foobar TEXT,
-            foobar_split TEXT[] AS (split(trim(foobar), ','))
+            foobar_twice TEXT AS (foobar || foobar)
             );",
             [],
         )?;
         let mut appender = conn.appender("foo")?;
-        match appender.append_row(["foo"]) {
-            Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
-                assert_eq!(msg, "Call to EndRow before all columns have been appended to!")
-            }
-            _ => panic!("expected error"),
-        }
+        appender.append_row(["foo"])?;
+        appender.flush()?;
+        let val = conn.query_row("SELECT foobar, foobar_twice FROM foo", [], |row| {
+            <(String, String)>::try_from(row)
+        })?;
+        assert_eq!(val, ("foo".to_string(), "foofoo".to_string()));
+
         Ok(())
     }
 }
