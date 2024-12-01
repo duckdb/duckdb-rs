@@ -1,8 +1,7 @@
 use std::{any::Any, ffi::CString, slice};
 
 use libduckdb_sys::{
-    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid,
-    DuckDbString,
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, DuckDbString,
 };
 
 use super::LogicalTypeHandle;

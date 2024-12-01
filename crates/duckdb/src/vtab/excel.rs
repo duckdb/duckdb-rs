@@ -1,4 +1,4 @@
-use super::{BindInfo, DataChunkHandle, Free, TableFunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunkHandle, Free, InitInfo, LogicalTypeHandle, LogicalTypeId, TableFunctionInfo, VTab};
 use crate::core::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
