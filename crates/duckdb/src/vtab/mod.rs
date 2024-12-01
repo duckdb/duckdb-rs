@@ -30,7 +30,7 @@ use std::mem::size_of;
 /// used for the bind_info and init_info
 /// # Safety
 /// This function is obviously unsafe
-pub unsafe fn malloc_data_c<T>() -> *mut T {
+unsafe fn malloc_data_c<T>() -> *mut T {
     duckdb_malloc(size_of::<T>()).cast()
 }
 
@@ -39,7 +39,7 @@ pub unsafe fn malloc_data_c<T>() -> *mut T {
 /// # Safety
 ///   This function is obviously unsafe
 /// TODO: maybe we should use a Free trait here
-pub unsafe extern "C" fn drop_data_c<T: Free>(v: *mut c_void) {
+unsafe extern "C" fn drop_data_c<T: Free>(v: *mut c_void) {
     let actual = v.cast::<T>();
     (*actual).free();
     duckdb_free(v);
