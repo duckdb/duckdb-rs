@@ -6,7 +6,7 @@ use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatemen
 #[cfg(feature = "polars")]
 use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
-    arrow_batch::Arrow,
+    arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
     types::{TimeUnit, ToSql, ToSqlOutput},
 };
@@ -107,6 +107,30 @@ impl Statement<'_> {
     pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
         Ok(Arrow::new(self))
+    }
+
+    /// Execute the prepared statement, returning a handle to the resulting
+    /// vector of arrow RecordBatch in streaming way
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Result, Connection};
+    /// # use arrow::record_batch::RecordBatch;
+    /// # use arrow::datatypes::SchemaRef;
+    /// fn get_arrow_data(conn: &Connection, schema: SchemaRef) -> Result<Vec<RecordBatch>> {
+    ///     Ok(conn.prepare("SELECT * FROM test")?.stream_arrow([], schema)?.collect())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if binding parameters fails.
+    #[inline]
+    pub fn stream_arrow<P: Params>(&mut self, params: P, schema: SchemaRef) -> Result<ArrowStream<'_>> {
+        params.__bind_in(self)?;
+        self.stmt.execute_streaming()?;
+        Ok(ArrowStream::new(self, schema))
     }
 
     /// Execute the prepared statement, returning a handle to the resulting
@@ -335,6 +359,12 @@ impl Statement<'_> {
     #[inline]
     pub fn step(&self) -> Option<StructArray> {
         self.stmt.step()
+    }
+
+    /// Get next batch records in arrow-rs in a streaming way
+    #[inline]
+    pub fn stream_step(&self, schema: SchemaRef) -> Option<StructArray> {
+        self.stmt.streaming_step(schema)
     }
 
     #[cfg(feature = "polars")]

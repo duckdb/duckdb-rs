@@ -73,7 +73,7 @@ pub use crate::r2d2::DuckdbConnectionManager;
 pub use crate::{
     appender::Appender,
     appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter},
-    arrow_batch::Arrow,
+    arrow_batch::{Arrow, ArrowStream},
     cache::CachedStatement,
     column::Column,
     config::{AccessMode, Config, DefaultNullOrder, DefaultOrder},
@@ -298,6 +298,7 @@ impl Connection {
         }
 
         let c_path = path_to_cstring(path.as_ref())?;
+        let config = config.with("duckdb_api", "rust").unwrap();
         InnerConnection::open_with_flags(&c_path, config).map(|db| Connection {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),

@@ -1,8 +1,8 @@
 use std::{any::Any, ffi::CString, slice};
 
-use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child};
+use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child, DuckDbString};
 
-use super::LogicalType;
+use super::LogicalTypeHandle;
 use crate::ffi::{
     duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
     duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name,
@@ -71,8 +71,8 @@ impl FlatVector {
     }
 
     /// Returns the logical type of the vector
-    pub fn logical_type(&self) -> LogicalType {
-        LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
+    pub fn logical_type(&self) -> LogicalTypeHandle {
+        unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
     }
 
     /// Set row as null
@@ -173,6 +173,15 @@ impl ListVector {
         self.entries.as_mut_slice::<duckdb_list_entry>()[idx].length = length as u64;
     }
 
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.entries.ptr);
+            let idx = duckdb_vector_get_validity(self.entries.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
+    }
+
     /// Reserve the capacity for its child node.
     fn reserve(&self, capacity: usize) {
         unsafe {
@@ -190,7 +199,6 @@ impl ListVector {
 
 /// A array vector. (fixed-size list)
 pub struct ArrayVector {
-    /// ArrayVector does not own the vector pointer.
     ptr: duckdb_vector,
 }
 
@@ -202,8 +210,8 @@ impl From<duckdb_vector> for ArrayVector {
 
 impl ArrayVector {
     /// Get the logical type of this ArrayVector.
-    pub fn logical_type(&self) -> LogicalType {
-        LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
+    pub fn logical_type(&self) -> LogicalTypeHandle {
+        unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
     }
 
     /// Returns the size of the array type.
@@ -223,11 +231,19 @@ impl ArrayVector {
     pub fn set_child<T: Copy>(&self, data: &[T]) {
         self.child(data.len()).copy(data);
     }
+
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.ptr);
+            let idx = duckdb_vector_get_validity(self.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
+    }
 }
 
 /// A struct vector.
 pub struct StructVector {
-    /// ListVector does not own the vector pointer.
     ptr: duckdb_vector,
 }
 
@@ -259,19 +275,16 @@ impl StructVector {
     }
 
     /// Get the logical type of this struct vector.
-    pub fn logical_type(&self) -> LogicalType {
-        LogicalType::from(unsafe { duckdb_vector_get_column_type(self.ptr) })
+    pub fn logical_type(&self) -> LogicalTypeHandle {
+        unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
     }
 
     /// Get the name of the child by idx.
-    pub fn child_name(&self, idx: usize) -> String {
+    pub fn child_name(&self, idx: usize) -> DuckDbString {
         let logical_type = self.logical_type();
         unsafe {
             let child_name_ptr = duckdb_struct_type_child_name(logical_type.ptr, idx as u64);
-            let c_str = CString::from_raw(child_name_ptr);
-            let name = c_str.to_str().unwrap();
-            // duckdb_free(child_name_ptr.cast());
-            name.to_string()
+            DuckDbString::from_ptr(child_name_ptr)
         }
     }
 
@@ -279,5 +292,14 @@ impl StructVector {
     pub fn num_children(&self) -> usize {
         let logical_type = self.logical_type();
         unsafe { duckdb_struct_type_child_count(logical_type.ptr) as usize }
+    }
+
+    /// Set row as null
+    pub fn set_null(&mut self, row: usize) {
+        unsafe {
+            duckdb_vector_ensure_validity_writable(self.ptr);
+            let idx = duckdb_vector_get_validity(self.ptr);
+            duckdb_validity_set_row_invalid(idx, row as u64);
+        }
     }
 }

@@ -73,29 +73,3 @@ subprocess.check_call(
     shell=True,
     cwd=SCRIPT_DIR,
 )
-
-subprocess.check_call(
-    'find "' + SCRIPT_DIR + '/../../target" -type f -name bindgen.rs -exec rm {} \;',
-    shell=True,
-)
-
-subprocess.check_call(
-    'env LIBDUCKDB_SYS_BUNDLING=1 cargo test --features "bundled buildtime_bindgen"',
-    shell=True,
-)
-
-print(
-    'find "'
-    + SCRIPT_DIR
-    + '/../../target" -type f -name "bindgen.rs" -exec cp {} "'
-    + SRC_DIR
-    + '/bindgen_bundled_version.rs" \;'
-)
-subprocess.check_call(
-    'find "'
-    + SCRIPT_DIR
-    + '/../../target" -type f -name "bindgen.rs" -exec cp {} "'
-    + SRC_DIR
-    + '/bindgen_bundled_version.rs" \;',
-    shell=True,
-)

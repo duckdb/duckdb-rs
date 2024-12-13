@@ -110,11 +110,11 @@ impl From<u32> for LogicalTypeId {
 
 /// DuckDB Logical Type.
 /// <https://duckdb.org/docs/sql/data_types/overview>
-pub struct LogicalType {
+pub struct LogicalTypeHandle {
     pub(crate) ptr: duckdb_logical_type,
 }
 
-impl Debug for LogicalType {
+impl Debug for LogicalTypeHandle {
     /// Debug implementation for LogicalType
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let id = self.id();
@@ -134,7 +134,7 @@ impl Debug for LogicalType {
     }
 }
 
-impl Drop for LogicalType {
+impl Drop for LogicalTypeHandle {
     /// Drop implementation for LogicalType
     fn drop(&mut self) {
         if !self.ptr.is_null() {
@@ -147,25 +147,25 @@ impl Drop for LogicalType {
     }
 }
 
-impl From<duckdb_logical_type> for LogicalType {
-    /// Wrap a DuckDB logical type from C API
-    fn from(ptr: duckdb_logical_type) -> Self {
-        Self { ptr }
-    }
-}
-
-impl LogicalType {
-    /// Create a new [LogicalType] from [LogicalTypeId]
-    pub fn new(id: LogicalTypeId) -> Self {
+impl From<LogicalTypeId> for LogicalTypeHandle {
+    /// Create a new [LogicalTypeHandle] from [LogicalTypeId]
+    fn from(id: LogicalTypeId) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_logical_type(id as u32),
             }
         }
     }
+}
+
+impl LogicalTypeHandle {
+    /// Create a DuckDB logical type from C API
+    pub(crate) unsafe fn new(ptr: duckdb_logical_type) -> Self {
+        Self { ptr }
+    }
 
     /// Creates a map type from its child type.
-    pub fn map(key: &LogicalType, value: &LogicalType) -> Self {
+    pub fn map(key: &LogicalTypeHandle, value: &LogicalTypeHandle) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_map_type(key.ptr, value.ptr),
@@ -174,7 +174,7 @@ impl LogicalType {
     }
 
     /// Creates a list type from its child type.
-    pub fn list(child_type: &LogicalType) -> Self {
+    pub fn list(child_type: &LogicalTypeHandle) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_list_type(child_type.ptr),
@@ -183,7 +183,7 @@ impl LogicalType {
     }
 
     /// Creates an array type from its child type.
-    pub fn array(child_type: &LogicalType, array_size: u64) -> Self {
+    pub fn array(child_type: &LogicalTypeHandle, array_size: u64) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_array_type(child_type.ptr, array_size),
@@ -213,7 +213,7 @@ impl LogicalType {
     }
 
     /// Make a `LogicalType` for `struct`
-    pub fn struct_type(fields: &[(&str, LogicalType)]) -> Self {
+    pub fn struct_type(fields: &[(&str, LogicalTypeHandle)]) -> Self {
         let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
         let values: Vec<duckdb_logical_type> = fields.iter().map(|it| it.1.ptr).collect();
         let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();
@@ -230,7 +230,7 @@ impl LogicalType {
     }
 
     /// Make a `LogicalType` for `union`
-    pub fn union_type(fields: &[(&str, LogicalType)]) -> Self {
+    pub fn union_type(fields: &[(&str, LogicalTypeHandle)]) -> Self {
         let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
         let values: Vec<duckdb_logical_type> = fields.iter().map(|it| it.1.ptr).collect();
         let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();
@@ -287,18 +287,18 @@ impl LogicalType {
                 _ => panic!("not a struct or union"),
             }
         };
-        Self::from(c_logical_type)
+        unsafe { Self::new(c_logical_type) }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::core::{LogicalType, LogicalTypeId};
+    use crate::core::{LogicalTypeHandle, LogicalTypeId};
 
     #[test]
     fn test_struct() {
-        let fields = &[("hello", LogicalType::new(crate::core::LogicalTypeId::Boolean))];
-        let typ = LogicalType::struct_type(fields);
+        let fields = &[("hello", LogicalTypeHandle::from(crate::core::LogicalTypeId::Boolean))];
+        let typ = LogicalTypeHandle::struct_type(fields);
 
         assert_eq!(typ.num_children(), 1);
         assert_eq!(typ.child_name(0), "hello");
@@ -307,7 +307,7 @@ mod test {
 
     #[test]
     fn test_decimal() {
-        let typ = LogicalType::decimal(10, 2);
+        let typ = LogicalTypeHandle::decimal(10, 2);
 
         assert_eq!(typ.id(), crate::core::LogicalTypeId::Decimal);
         assert_eq!(typ.decimal_width(), 10);
@@ -316,7 +316,7 @@ mod test {
 
     #[test]
     fn test_decimal_methods() {
-        let typ = LogicalType::new(crate::core::LogicalTypeId::Varchar);
+        let typ = LogicalTypeHandle::from(crate::core::LogicalTypeId::Varchar);
 
         assert_eq!(typ.decimal_width(), 0);
         assert_eq!(typ.decimal_scale(), 0);
@@ -325,10 +325,10 @@ mod test {
     #[test]
     fn test_union_type() {
         let fields = &[
-            ("hello", LogicalType::new(LogicalTypeId::Boolean)),
-            ("world", LogicalType::new(LogicalTypeId::Integer)),
+            ("hello", LogicalTypeHandle::from(LogicalTypeId::Boolean)),
+            ("world", LogicalTypeHandle::from(LogicalTypeId::Integer)),
         ];
-        let typ = LogicalType::union_type(fields);
+        let typ = LogicalTypeHandle::union_type(fields);
 
         assert_eq!(typ.num_children(), 2);
 

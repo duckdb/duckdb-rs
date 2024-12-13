@@ -20,7 +20,7 @@ mod excel;
 pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
 pub use value::Value;
 
-use crate::core::{DataChunk, LogicalType, LogicalTypeId};
+use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
 use ffi::duckdb_malloc;
@@ -100,7 +100,7 @@ pub trait VTab: Sized {
     /// - The `init_info` and `bind_info` data pointed to remains valid and is not freed until after this function completes.
     /// - No other threads are concurrently mutating the data pointed to by `init_info` and `bind_info` without proper synchronization.
     /// - The `output` parameter is correctly initialized and can safely be written to.
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>>;
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
     /// Does the table function support pushdown
     /// default is false
     fn supports_pushdown() -> bool {
@@ -108,12 +108,12 @@ pub trait VTab: Sized {
     }
     /// The parameters of the table function
     /// default is None
-    fn parameters() -> Option<Vec<LogicalType>> {
+    fn parameters() -> Option<Vec<LogicalTypeHandle>> {
         None
     }
     /// The named parameters of the table function
     /// default is None
-    fn named_parameters() -> Option<Vec<(String, LogicalType)>> {
+    fn named_parameters() -> Option<Vec<(String, LogicalTypeHandle)>> {
         None
     }
 }
@@ -123,8 +123,8 @@ where
     T: VTab,
 {
     let info = FunctionInfo::from(info);
-    let mut output = DataChunk::from(output);
-    let result = T::func(&info, &mut output);
+    let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
+    let result = T::func(&info, &mut data_chunk_handle);
     if result.is_err() {
         info.set_error(&result.err().unwrap().to_string());
     }
@@ -229,7 +229,7 @@ mod test {
         type BindData = HelloBindData;
 
         unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
-            bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
+            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
             let param = bind.get_parameter(0).to_string();
             unsafe {
                 (*data).name = CString::new(param).unwrap().into_raw();
@@ -244,7 +244,7 @@ mod test {
             Ok(())
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
             let init_info = func.get_init_data::<HelloInitData>();
             let bind_info = func.get_bind_data::<HelloBindData>();
 
@@ -265,8 +265,8 @@ mod test {
             Ok(())
         }
 
-        fn parameters() -> Option<Vec<LogicalType>> {
-            Some(vec![LogicalType::new(LogicalTypeId::Varchar)])
+        fn parameters() -> Option<Vec<LogicalTypeHandle>> {
+            Some(vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)])
         }
     }
 
@@ -276,7 +276,7 @@ mod test {
         type BindData = HelloBindData;
 
         unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
-            bind.add_result_column("column0", LogicalType::new(LogicalTypeId::Varchar));
+            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
             let param = bind.get_named_parameter("name").unwrap().to_string();
             assert!(bind.get_named_parameter("unknown_name").is_none());
             unsafe {
@@ -289,12 +289,15 @@ mod test {
             HelloVTab::init(init_info, data)
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn Error>> {
+        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
             HelloVTab::func(func, output)
         }
 
-        fn named_parameters() -> Option<Vec<(String, LogicalType)>> {
-            Some(vec![("name".to_string(), LogicalType::new(LogicalTypeId::Varchar))])
+        fn named_parameters() -> Option<Vec<(String, LogicalTypeHandle)>> {
+            Some(vec![(
+                "name".to_string(),
+                LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            )])
         }
     }
 

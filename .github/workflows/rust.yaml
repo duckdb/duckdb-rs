@@ -33,12 +33,13 @@ jobs:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
           components: 'rustfmt, clippy'
+
       # download libduckdb
       - uses: robinraju/release-downloader@v1.4
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v1.0.0"
+          tag: "v1.1.1"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -49,15 +50,25 @@ jobs:
         with:
           file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
           extract_dir: libduckdb
+
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
-      - run: cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
+
+      # TODO: remove
+      - name: Workaround for https://github.com/pola-rs/polars/issues/19063
+        run: |
+          cargo update indexmap@2.6.0 --precise 2.5.0
+
+      - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
-        name: run cargo clippy
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+        run: |
+          cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
+          
+
       - name: Run cargo-tarpaulin
         if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/tarpaulin@v0.1
@@ -70,6 +81,7 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+
       - name: Upload to codecov.io
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v1
@@ -88,14 +100,23 @@ jobs:
         with:
           name: PATH
           value: $env:PATH;${{ github.workspace }}/libduckdb
+
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
         run: cargo test --features "modern-full vtab-full vtab-loadable"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+
       - name: Build loadable extension
         run: cargo build --example hello-ext --features="vtab-loadable"
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+
+      - name: Build loadable extension
+        run: cargo build --example hello-ext-capi --features="vtab-loadable loadable-extension"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
@@ -117,6 +138,7 @@ jobs:
         with:
           rust-version: stable
           targets: x86_64-pc-windows-msvc
+
       - run: cargo install cargo-examples
 
   Sanitizer:
@@ -140,7 +162,9 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
-        run: cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu
+        run: |
+          # TODO switch back to modern-full once polars is fixed
+          cargo -Z build-std test --features "chrono serde_json url r2d2 uuid extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
       - name: publish crates --dry-run
         uses: katyo/publish-crates@v2
         with:

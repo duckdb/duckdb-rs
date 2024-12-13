@@ -20,8 +20,8 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    // uhugeint, time_tz, and dec38_10 aren't supported in the duckdb arrow layer
-    let excluded = ["uhugeint", "time_tz", "dec38_10"];
+    // uhugeint, time_tz, varint, and dec38_10 aren't supported in the duckdb arrow layer
+    let excluded = ["uhugeint", "time_tz", "dec38_10", "varint"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
@@ -146,7 +146,7 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
             _ => assert_eq!(value, ValueRef::Null),
         },
         "timestamp_ns" => match idx {
-            0 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Nanosecond, -9223372036854775808)),
+            0 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Nanosecond, -9223286400000000000)),
             1 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Nanosecond, 9223372036854775806)),
             _ => assert_eq!(value, ValueRef::Null),
         },

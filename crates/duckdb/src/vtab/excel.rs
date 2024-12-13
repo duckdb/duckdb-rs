@@ -1,4 +1,4 @@
-use super::{BindInfo, DataChunk, Free, FunctionInfo, InitInfo, LogicalType, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
 use crate::core::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
@@ -74,7 +74,7 @@ impl VTab for ExcelVTab {
                             header[idx]
                                 .get_string()
                                 .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                            LogicalType::new(LogicalTypeId::Varchar),
+                            LogicalTypeHandle::from(LogicalTypeId::Varchar),
                         );
                     }
                     DataType::Float(_) => {
@@ -82,7 +82,7 @@ impl VTab for ExcelVTab {
                             header[idx]
                                 .get_string()
                                 .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                            LogicalType::new(LogicalTypeId::Double),
+                            LogicalTypeHandle::from(LogicalTypeId::Double),
                         );
                     }
                     DataType::Int(_) => {
@@ -90,7 +90,7 @@ impl VTab for ExcelVTab {
                             header[idx]
                                 .get_string()
                                 .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                            LogicalType::new(LogicalTypeId::Bigint),
+                            LogicalTypeHandle::from(LogicalTypeId::Bigint),
                         );
                     }
                     DataType::Bool(_) => {
@@ -98,7 +98,7 @@ impl VTab for ExcelVTab {
                             header[idx]
                                 .get_string()
                                 .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                            LogicalType::new(LogicalTypeId::Boolean),
+                            LogicalTypeHandle::from(LogicalTypeId::Boolean),
                         );
                     }
                     DataType::DateTime(_) => {
@@ -106,7 +106,7 @@ impl VTab for ExcelVTab {
                             header[idx]
                                 .get_string()
                                 .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
-                            LogicalType::new(LogicalTypeId::Date),
+                            LogicalTypeHandle::from(LogicalTypeId::Date),
                         );
                     }
                     _ => {
@@ -132,7 +132,7 @@ impl VTab for ExcelVTab {
         Ok(())
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunk) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data::<ExcelInitData>();
         let bind_info = func.get_bind_data::<ExcelBindData>();
         unsafe {
@@ -180,10 +180,10 @@ impl VTab for ExcelVTab {
         Ok(())
     }
 
-    fn parameters() -> Option<Vec<LogicalType>> {
+    fn parameters() -> Option<Vec<LogicalTypeHandle>> {
         Some(vec![
-            LogicalType::new(LogicalTypeId::Varchar), // file path
-            LogicalType::new(LogicalTypeId::Varchar), // sheet name
+            LogicalTypeHandle::from(LogicalTypeId::Varchar), // file path
+            LogicalTypeHandle::from(LogicalTypeId::Varchar), // sheet name
         ])
     }
 }

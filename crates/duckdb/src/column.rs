@@ -146,7 +146,7 @@ impl Statement<'_> {
     #[cfg(feature = "column_decltype")]
     pub fn columns(&self) -> Vec<Column> {
         let n = self.column_count();
-        let mut cols = Vec::with_capacity(n as usize);
+        let mut cols = Vec::with_capacity(n);
         for i in 0..n {
             let name = self.column_name_unwrap(i);
             let slice = self.stmt.column_decltype(i);
