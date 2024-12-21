@@ -20,7 +20,7 @@ mod excel;
 pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
 pub use value::Value;
 
-use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
+use crate::core::{DataChunkHandle, LogicalTypeHandle};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
 use ffi::duckdb_malloc;
@@ -194,6 +194,7 @@ impl InnerConnection {
 mod test {
     use super::*;
     use crate::core::Inserter;
+    use crate::core::LogicalTypeId;
     use std::{
         error::Error,
         ffi::{c_char, CString},
