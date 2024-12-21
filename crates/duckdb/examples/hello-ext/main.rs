@@ -14,7 +14,6 @@ use libduckdb_sys as ffi;
 use std::{
     error::Error,
     ffi::{c_char, c_void, CString},
-    ptr,
 };
 
 struct HelloBindData {
@@ -35,20 +34,14 @@ impl VTab for HelloVTab {
     type InitData = HelloInitData;
     type BindData = HelloBindData;
 
-    unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         let name = bind.get_parameter(0).to_string();
-        unsafe {
-            ptr::write(data, HelloBindData { name });
-        }
-        Ok(())
+        Ok(HelloBindData { name })
     }
 
-    unsafe fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            ptr::write(data, HelloInitData { done: false });
-        }
-        Ok(())
+    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        Ok(HelloInitData { done: false })
     }
 
     unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
