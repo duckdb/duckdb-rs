@@ -6,7 +6,7 @@ extern crate libduckdb_sys;
 
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
-    vtab::{BindInfo, Free, FunctionInfo, InitInfo, VTab},
+    vtab::{BindInfo, FunctionInfo, InitInfo, VTab},
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint;
@@ -20,15 +20,11 @@ struct HelloBindData {
     name: String,
 }
 
-impl Free for HelloBindData {}
-
 struct HelloInitData {
     done: bool,
 }
 
 struct HelloVTab;
-
-impl Free for HelloInitData {}
 
 impl VTab for HelloVTab {
     type InitData = HelloInitData;

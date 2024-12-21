@@ -34,23 +34,15 @@ unsafe extern "C" fn drop_boxed<T>(v: *mut c_void) {
     drop(unsafe { Box::from_raw(v.cast::<T>()) });
 }
 
-/// Free trait for the bind and init data
-pub trait Free {
-    /// Free the data
-    fn free(&mut self) {}
-}
-
 /// Duckdb table function trait
 ///
 /// See to the HelloVTab example for more details
 /// <https://duckdb.org/docs/api/c/table_functions>
 pub trait VTab: Sized {
     /// The data type of the bind data
-    type InitData: Sized + Free;
+    type InitData: Sized;
     /// The data type of the init data
-    type BindData: Sized + Free; // TODO: and maybe Send + Sync as this might be called from multiple threads?
-
-    // TODO: Get rid of Free, just use Drop?
+    type BindData: Sized; // TODO: and maybe Send + Sync as this might be called from multiple threads?
 
     /// Bind data to the table function
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>>;
@@ -186,15 +178,11 @@ mod test {
         name: String,
     }
 
-    impl Free for HelloBindData {}
-
     struct HelloInitData {
         done: bool,
     }
 
     struct HelloVTab;
-
-    impl Free for HelloInitData {}
 
     impl VTab for HelloVTab {
         type InitData = HelloInitData;
