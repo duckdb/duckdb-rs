@@ -139,7 +139,9 @@ impl From<duckdb_init_info> for InitInfo {
 impl InitInfo {
     /// # Safety
     pub unsafe fn set_init_data(&self, data: *mut c_void, freeer: Option<unsafe extern "C" fn(*mut c_void)>) {
-        duckdb_init_set_init_data(self.0, data, freeer);
+        unsafe {
+            duckdb_init_set_init_data(self.0, data, freeer);
+        }
     }
 
     /// Returns the column indices of the projected columns at the specified positions.
@@ -189,7 +191,7 @@ impl InitInfo {
     /// * `error`: The error message
     pub fn set_error(&self, error: &str) {
         let c_str = CString::new(error).unwrap();
-        unsafe { duckdb_init_set_error(self.0, c_str.as_ptr() as *const c_char) }
+        unsafe { duckdb_init_set_error(self.0, c_str.as_ptr()) }
     }
 }
 
@@ -310,7 +312,9 @@ impl TableFunction {
     ///
     /// # Safety
     pub unsafe fn set_extra_info(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        unsafe {
+            duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        }
     }
 
     /// Sets the thread-local init function of the table function
