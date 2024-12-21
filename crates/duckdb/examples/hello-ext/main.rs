@@ -1,4 +1,5 @@
 #![warn(unsafe_op_in_unsafe_fn)]
+#![warn(unsafe)] // extensions can be safe
 
 extern crate duckdb;
 extern crate duckdb_loadable_macros;
@@ -14,6 +15,7 @@ use libduckdb_sys as ffi;
 use std::{
     error::Error,
     ffi::{c_char, c_void, CString},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 struct HelloBindData {
@@ -21,7 +23,7 @@ struct HelloBindData {
 }
 
 struct HelloInitData {
-    done: bool,
+    done: AtomicBool,
 }
 
 struct HelloVTab;
@@ -37,19 +39,20 @@ impl VTab for HelloVTab {
     }
 
     fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-        Ok(HelloInitData { done: false })
+        Ok(HelloInitData {
+            done: AtomicBool::new(false),
+        })
     }
 
     fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
-        let bind_info = func.get_bind_data();
+        let init_data = func.get_init_data();
+        let bind_data = func.get_bind_data();
 
-        if init_info.done {
+        if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            init_info.done = true;
             let vector = output.flat_vector(0);
-            let result = CString::new(format!("Hello {}", bind_info.name))?;
+            let result = CString::new(format!("Hello {}", bind_data.name))?;
             vector.insert(0, result);
             output.set_len(1);
         }

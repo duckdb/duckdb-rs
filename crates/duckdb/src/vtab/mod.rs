@@ -170,6 +170,8 @@ mod test {
     use super::*;
     use crate::core::Inserter;
     use crate::core::LogicalTypeId;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
     use std::{
         error::Error,
         ffi::{c_char, CString},
@@ -180,7 +182,7 @@ mod test {
     }
 
     struct HelloInitData {
-        done: bool,
+        done: AtomicBool,
     }
 
     struct HelloVTab;
@@ -196,17 +198,18 @@ mod test {
         }
 
         fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-            Ok(HelloInitData { done: false })
+            Ok(HelloInitData {
+                done: AtomicBool::new(false),
+            })
         }
 
         fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-            let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
+            let init_data = func.get_init_data();
             let bind_data = func.get_bind_data();
 
-            if init_info.done {
+            if init_data.done.swap(true, Ordering::Relaxed) {
                 output.set_len(0);
             } else {
-                init_info.done = true;
                 let vector = output.flat_vector(0);
                 let result = CString::new(format!("Hello {}", bind_data.name))?;
                 vector.insert(0, result);
@@ -237,15 +240,14 @@ mod test {
         }
 
         fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
-            let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
-            let bind_info = func.get_bind_data();
+            let init_data = func.get_init_data();
+            let bind_data = func.get_bind_data();
 
-            if init_info.done {
+            if init_data.done.swap(true, Ordering::Relaxed) {
                 output.set_len(0);
             } else {
-                init_info.done = true;
                 let vector = output.flat_vector(0);
-                let result = CString::new(format!("Hello {}", bind_info.name))?;
+                let result = CString::new(format!("Hello {}", bind_data.name))?;
                 vector.insert(0, result);
                 output.set_len(1);
             }

@@ -337,7 +337,7 @@ use super::ffi::{
 #[derive(Debug)]
 pub struct FunctionInfo<V: VTab> {
     ptr: duckdb_function_info,
-    _vtab: std::marker::PhantomData<V>,
+    _vtab: PhantomData<V>,
 }
 
 impl<V: VTab> FunctionInfo<V> {
@@ -363,13 +363,21 @@ impl<V: VTab> FunctionInfo<V> {
         }
     }
 
-    /// Gets the init data set by [`InitInfo::set_init_data`] during the init.
+    /// Get a reference to the init data set by [`InitInfo::set_init_data`] during the init.
+    ///
+    /// This returns a shared reference because the init data is shared between multiple threads.
+    /// It may internally be mutable.
     ///
     /// # Arguments
     /// * `returns`: The init data object
-    pub fn get_init_data<T>(&self) -> *mut T {
-        unsafe { duckdb_function_get_init_data(self.ptr).cast() }
+    pub fn get_init_data(&self) -> &V::InitData {
+        // Safety: A pointer to a box of the init data is stored during vtab init.
+        unsafe {
+            let init_data: *const V::InitData = duckdb_function_get_init_data(self.ptr).cast();
+            init_data.as_ref().unwrap()
+        }
     }
+
     /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`]
     ///
     /// # Arguments
