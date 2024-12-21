@@ -40,9 +40,9 @@ impl VTab for HelloVTab {
         Ok(HelloInitData { done: false })
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
-        let bind_info = unsafe { func.get_bind_data::<HelloBindData>().as_mut().unwrap() };
+        let bind_info = func.get_bind_data();
 
         if init_info.done {
             output.set_len(0);

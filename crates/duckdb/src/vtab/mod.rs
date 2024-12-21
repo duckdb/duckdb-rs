@@ -59,21 +59,13 @@ pub trait VTab: Sized {
     /// Initialize the table function
     fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>>;
 
-    /// The actual function
+    /// Generate rows from the table function.
     ///
-    /// # Safety
+    /// The implementation should populate the `output` parameter with the rows to be returned.
     ///
-    /// This function is unsafe because it:
-    ///
-    /// - Dereferences multiple raw pointers (`func` to access `init_info` and `bind_info`).
-    ///
-    /// The caller must ensure that:
-    ///
-    /// - All pointers (`func`, `output`, internal `init_info`, and `bind_info`) are valid and point to the expected types of data structures.
-    /// - The `init_info` and `bind_info` data pointed to remains valid and is not freed until after this function completes.
-    /// - No other threads are concurrently mutating the data pointed to by `init_info` and `bind_info` without proper synchronization.
-    /// - The `output` parameter is correctly initialized and can safely be written to.
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
+    /// When the table function is done, the implementation should set the length of the output to 0.
+    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
+
     /// Does the table function support pushdown
     /// default is false
     fn supports_pushdown() -> bool {
@@ -95,7 +87,7 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    let info = FunctionInfo::from(info);
+    let info = FunctionInfo::<T>::from(info);
     let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
     let result = T::func(&info, &mut data_chunk_handle);
     if result.is_err() {
@@ -207,16 +199,16 @@ mod test {
             Ok(HelloInitData { done: false })
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
             let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
-            let bind_info = unsafe { func.get_bind_data::<HelloBindData>().as_ref().unwrap() };
+            let bind_data = func.get_bind_data();
 
             if init_info.done {
                 output.set_len(0);
             } else {
                 init_info.done = true;
                 let vector = output.flat_vector(0);
-                let result = CString::new(format!("Hello {}", bind_info.name))?;
+                let result = CString::new(format!("Hello {}", bind_data.name))?;
                 vector.insert(0, result);
                 output.set_len(1);
             }
@@ -244,8 +236,20 @@ mod test {
             HelloVTab::init(init_info)
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
-            HelloVTab::func(func, output)
+        fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
+            let bind_info = func.get_bind_data();
+
+            if init_info.done {
+                output.set_len(0);
+            } else {
+                init_info.done = true;
+                let vector = output.flat_vector(0);
+                let result = CString::new(format!("Hello {}", bind_info.name))?;
+                vector.insert(0, result);
+                output.set_len(1);
+            }
+            Ok(())
         }
 
         fn named_parameters() -> Option<Vec<(String, LogicalTypeHandle)>> {
