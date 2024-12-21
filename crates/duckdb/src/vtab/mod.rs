@@ -39,12 +39,21 @@ unsafe extern "C" fn drop_boxed<T>(v: *mut c_void) {
 /// See to the HelloVTab example for more details
 /// <https://duckdb.org/docs/api/c/table_functions>
 pub trait VTab: Sized {
-    /// The data type of the bind data
-    type InitData: Sized;
-    /// The data type of the init data
-    type BindData: Sized; // TODO: and maybe Send + Sync as this might be called from multiple threads?
+    /// The data type of the init data.
+    ///
+    /// The init data tracks the state of the table function and is global across threads.
+    ///
+    /// The init data is shared across threads so must be `Send + Sync`.
+    type InitData: Sized + Send + Sync;
+
+    /// The data type of the bind data.
+    ///
+    /// The bind data is shared across threads so must be `Send + Sync`.
+    type BindData: Sized + Send + Sync;
 
     /// Bind data to the table function
+    ///
+    /// This function is used for determining the return type of a table producing function and returning bind data
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>>;
 
     /// Initialize the table function
