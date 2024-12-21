@@ -12,6 +12,7 @@ use libduckdb_sys as ffi;
 use std::{
     error::Error,
     ffi::{c_char, c_void, CString},
+    ptr,
 };
 
 #[repr(C)]
@@ -47,14 +48,19 @@ impl VTab for HelloVTab {
         bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         let param = bind.get_parameter(0).to_string();
         unsafe {
-            (*data).name = CString::new(param).unwrap().into_raw();
+            ptr::write(
+                data,
+                HelloBindData {
+                    name: CString::new(param).unwrap().into_raw(),
+                },
+            );
         }
         Ok(())
     }
 
     unsafe fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
-            (*data).done = false;
+            ptr::write(data, HelloInitData { done: false });
         }
         Ok(())
     }
