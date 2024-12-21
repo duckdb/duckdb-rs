@@ -1,3 +1,5 @@
+#![warn(unsafe_op_in_unsafe_fn)]
+
 extern crate duckdb;
 extern crate duckdb_loadable_macros;
 extern crate libduckdb_sys;
@@ -66,22 +68,20 @@ impl VTab for HelloVTab {
     }
 
     unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let init_info = func.get_init_data::<HelloInitData>();
-        let bind_info = func.get_bind_data::<HelloBindData>();
+        let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
+        let bind_info = unsafe { func.get_bind_data::<HelloBindData>().as_mut().unwrap() };
 
-        unsafe {
-            if (*init_info).done {
-                output.set_len(0);
-            } else {
-                (*init_info).done = true;
-                let vector = output.flat_vector(0);
-                let name = CString::from_raw((*bind_info).name);
-                let result = CString::new(format!("Hello {}", name.to_str()?))?;
-                // Can't consume the CString
-                (*bind_info).name = CString::into_raw(name);
-                vector.insert(0, result);
-                output.set_len(1);
-            }
+        if init_info.done {
+            output.set_len(0);
+        } else {
+            init_info.done = true;
+            let vector = output.flat_vector(0);
+            let name = unsafe { CString::from_raw((*bind_info).name) };
+            let result = CString::new(format!("Hello {}", name.to_str()?))?;
+            // Can't consume the CString
+            bind_info.name = CString::into_raw(name);
+            vector.insert(0, result);
+            output.set_len(1);
         }
         Ok(())
     }
