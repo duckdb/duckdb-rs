@@ -65,27 +65,22 @@ pub trait VTab: Sized {
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it dereferences raw pointers (`data`) and manipulates the memory directly.
-    /// The caller must ensure that:
-    ///
-    /// - The `data` pointer is valid and points to a properly initialized `BindData` instance.
-    /// - The lifetime of `data` must outlive the execution of `bind` to avoid dangling pointers, especially since
-    ///   `bind` does not take ownership of `data`.
-    /// - Concurrent access to `data` (if applicable) must be properly synchronized.
-    /// - The `bind` object must be valid and correctly initialized.
+    /// `data` points to an *uninitialized* block of memory large enough to hold a `Self::BindData` value.
+    /// The implementation should initialize this memory with the appropriate data for the table function,
+    /// without reading the existing memory,
+    /// typically using [`std::ptr::write`] or similar.
     unsafe fn bind(bind: &BindInfo, data: *mut Self::BindData) -> Result<(), Box<dyn std::error::Error>>;
+
     /// Initialize the table function
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it performs raw pointer dereferencing on the `data` argument.
-    /// The caller is responsible for ensuring that:
-    ///
-    /// - The `data` pointer is non-null and points to a valid `InitData` instance.
-    /// - There is no data race when accessing `data`, meaning if `data` is accessed from multiple threads,
-    ///   proper synchronization is required.
-    /// - The lifetime of `data` extends beyond the scope of this call to avoid use-after-free errors.
+    /// `data` points to an *uninitialized* block of memory large enough to hold a `Self::InitData` value.
+    /// The implementation should initialize this memory with the appropriate data for the table function,
+    /// without reading the existing memory,
+    /// typically using [`std::ptr::write`] or similar.
     unsafe fn init(init: &InitInfo, data: *mut Self::InitData) -> Result<(), Box<dyn std::error::Error>>;
+
     /// The actual function
     ///
     /// # Safety
