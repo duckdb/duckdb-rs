@@ -365,12 +365,12 @@ mod bindings {
     fn generate_functions(output: &mut String) {
         // (1) parse sqlite3_api_routines fields from bindgen output
         let ast: syn::File = syn::parse_str(output).expect("could not parse bindgen output");
-        let duckdb_ext_api_v0: syn::ItemStruct = ast
+        let duckdb_ext_api_v1: syn::ItemStruct = ast
             .items
             .into_iter()
             .find_map(|i| {
                 if let syn::Item::Struct(s) = i {
-                    if s.ident == "duckdb_ext_api_v0" {
+                    if s.ident == "duckdb_ext_api_v1" {
                         Some(s)
                     } else {
                         None
@@ -379,12 +379,12 @@ mod bindings {
                     None
                 }
             })
-            .expect("could not find duckdb_ext_api_v0");
+            .expect("could not find duckdb_ext_api_v1");
 
         let p_api = quote::format_ident!("p_api");
         let mut stores = Vec::new();
 
-        for field in duckdb_ext_api_v0.fields {
+        for field in duckdb_ext_api_v1.fields {
             let ident = field.ident.expect("unnamed field");
             let span = ident.span();
             let function_name = ident.to_string();
@@ -433,7 +433,7 @@ mod bindings {
             /// Like DUCKDB_EXTENSION_API_INIT macro
             pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: *const duckdb_extension_access, version: &str) -> ::std::result::Result<bool, &'static str> {
                 let version_c_string = std::ffi::CString::new(version).unwrap();
-                let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v0;
+                let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v1;
                 if #p_api.is_null() {
                     // get_api can return a nullptr when the version is not matched. In this case, we don't need to set
                     // an error, but can instead just stop the initialization process and let duckdb handle things
