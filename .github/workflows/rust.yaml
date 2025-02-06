@@ -54,11 +54,6 @@ jobs:
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
 
-      # TODO: remove
-      - name: Workaround for https://github.com/pola-rs/polars/issues/19063
-        run: |
-          cargo update indexmap@2.6.0 --precise 2.5.0
-
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
         env:
