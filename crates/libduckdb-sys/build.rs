@@ -17,7 +17,7 @@ fn win_target() -> bool {
 /// See [`win_target`]
 #[allow(dead_code)]
 fn is_compiler(compiler_name: &str) -> bool {
-    std::env::var("CARGO_CFG_TARGET_ENV").map_or(false, |v| v == compiler_name)
+    std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == compiler_name)
 }
 
 fn main() {
