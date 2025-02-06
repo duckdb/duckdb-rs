@@ -1985,10 +1985,159 @@ pub struct duckdb_ext_api_v1 {
         ) -> duckdb_state,
     >,
     pub duckdb_append_null: ::std::option::Option<unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state>,
+    pub duckdb_row_count: ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t>,
+    pub duckdb_column_data: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut ::std::os::raw::c_void,
+    >,
+    pub duckdb_nullmask_data:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut bool>,
+    pub duckdb_result_get_chunk:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk>,
+    pub duckdb_result_is_streaming: ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> bool>,
+    pub duckdb_result_chunk_count: ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> idx_t>,
+    pub duckdb_value_boolean:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool>,
+    pub duckdb_value_int8:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i8>,
+    pub duckdb_value_int16:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i16>,
+    pub duckdb_value_int32:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i32>,
+    pub duckdb_value_int64:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i64>,
+    pub duckdb_value_hugeint: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_hugeint,
+    >,
+    pub duckdb_value_uhugeint: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_uhugeint,
+    >,
+    pub duckdb_value_decimal: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_decimal,
+    >,
+    pub duckdb_value_uint8:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u8>,
+    pub duckdb_value_uint16:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u16>,
+    pub duckdb_value_uint32:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u32>,
+    pub duckdb_value_uint64:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u64>,
+    pub duckdb_value_float:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f32>,
+    pub duckdb_value_double:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f64>,
+    pub duckdb_value_date:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_date>,
+    pub duckdb_value_time:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_time>,
+    pub duckdb_value_timestamp: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_timestamp,
+    >,
+    pub duckdb_value_interval: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_interval,
+    >,
+    pub duckdb_value_varchar: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char,
+    >,
+    pub duckdb_value_string: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string,
+    >,
+    pub duckdb_value_varchar_internal: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char,
+    >,
+    pub duckdb_value_string_internal: ::std::option::Option<
+        unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string,
+    >,
+    pub duckdb_value_blob:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_blob>,
+    pub duckdb_value_is_null:
+        ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool>,
+    pub duckdb_execute_prepared_streaming: ::std::option::Option<
+        unsafe extern "C" fn(
+            prepared_statement: duckdb_prepared_statement,
+            out_result: *mut duckdb_result,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_pending_prepared_streaming: ::std::option::Option<
+        unsafe extern "C" fn(
+            prepared_statement: duckdb_prepared_statement,
+            out_result: *mut duckdb_pending_result,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_query_arrow: ::std::option::Option<
+        unsafe extern "C" fn(
+            connection: duckdb_connection,
+            query: *const ::std::os::raw::c_char,
+            out_result: *mut duckdb_arrow,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_query_arrow_schema: ::std::option::Option<
+        unsafe extern "C" fn(result: duckdb_arrow, out_schema: *mut duckdb_arrow_schema) -> duckdb_state,
+    >,
+    pub duckdb_prepared_arrow_schema: ::std::option::Option<
+        unsafe extern "C" fn(prepared: duckdb_prepared_statement, out_schema: *mut duckdb_arrow_schema) -> duckdb_state,
+    >,
+    pub duckdb_result_arrow_array: ::std::option::Option<
+        unsafe extern "C" fn(result: duckdb_result, chunk: duckdb_data_chunk, out_array: *mut duckdb_arrow_array),
+    >,
+    pub duckdb_query_arrow_array: ::std::option::Option<
+        unsafe extern "C" fn(result: duckdb_arrow, out_array: *mut duckdb_arrow_array) -> duckdb_state,
+    >,
+    pub duckdb_arrow_column_count: ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> idx_t>,
+    pub duckdb_arrow_row_count: ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> idx_t>,
+    pub duckdb_arrow_rows_changed: ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> idx_t>,
+    pub duckdb_query_arrow_error:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_arrow) -> *const ::std::os::raw::c_char>,
+    pub duckdb_destroy_arrow: ::std::option::Option<unsafe extern "C" fn(result: *mut duckdb_arrow)>,
+    pub duckdb_destroy_arrow_stream: ::std::option::Option<unsafe extern "C" fn(stream_p: *mut duckdb_arrow_stream)>,
+    pub duckdb_execute_prepared_arrow: ::std::option::Option<
+        unsafe extern "C" fn(
+            prepared_statement: duckdb_prepared_statement,
+            out_result: *mut duckdb_arrow,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_arrow_scan: ::std::option::Option<
+        unsafe extern "C" fn(
+            connection: duckdb_connection,
+            table_name: *const ::std::os::raw::c_char,
+            arrow: duckdb_arrow_stream,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_arrow_array_scan: ::std::option::Option<
+        unsafe extern "C" fn(
+            connection: duckdb_connection,
+            table_name: *const ::std::os::raw::c_char,
+            arrow_schema: duckdb_arrow_schema,
+            arrow_array: duckdb_arrow_array,
+            out_stream: *mut duckdb_arrow_stream,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_stream_fetch_chunk:
+        ::std::option::Option<unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk>,
+    pub duckdb_create_instance_cache: ::std::option::Option<unsafe extern "C" fn() -> duckdb_instance_cache>,
+    pub duckdb_get_or_create_from_cache: ::std::option::Option<
+        unsafe extern "C" fn(
+            instance_cache: duckdb_instance_cache,
+            path: *const ::std::os::raw::c_char,
+            out_database: *mut duckdb_database,
+            config: duckdb_config,
+            out_error: *mut *mut ::std::os::raw::c_char,
+        ) -> duckdb_state,
+    >,
+    pub duckdb_destroy_instance_cache:
+        ::std::option::Option<unsafe extern "C" fn(instance_cache: *mut duckdb_instance_cache)>,
+    pub duckdb_append_default_to_chunk: ::std::option::Option<
+        unsafe extern "C" fn(
+            appender: duckdb_appender,
+            chunk: duckdb_data_chunk,
+            col: idx_t,
+            row: idx_t,
+        ) -> duckdb_state,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of duckdb_ext_api_v1"][::std::mem::size_of::<duckdb_ext_api_v1>() - 2856usize];
+    ["Size of duckdb_ext_api_v1"][::std::mem::size_of::<duckdb_ext_api_v1>() - 3264usize];
     ["Alignment of duckdb_ext_api_v1"][::std::mem::align_of::<duckdb_ext_api_v1>() - 8usize];
     ["Offset of field: duckdb_ext_api_v1::duckdb_open"]
         [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_open) - 0usize];
@@ -2704,6 +2853,108 @@ const _: () = {
         [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_blob) - 2840usize];
     ["Offset of field: duckdb_ext_api_v1::duckdb_append_null"]
         [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_null) - 2848usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_row_count"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_row_count) - 2856usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_column_data"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_data) - 2864usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_nullmask_data"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_nullmask_data) - 2872usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_result_get_chunk"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_get_chunk) - 2880usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_result_is_streaming"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_is_streaming) - 2888usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_result_chunk_count"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_chunk_count) - 2896usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_boolean"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_boolean) - 2904usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int8"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int8) - 2912usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int16"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int16) - 2920usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int32"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int32) - 2928usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int64"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int64) - 2936usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_hugeint"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_hugeint) - 2944usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uhugeint"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uhugeint) - 2952usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_decimal"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_decimal) - 2960usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint8"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint8) - 2968usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint16"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint16) - 2976usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint32"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint32) - 2984usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint64"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint64) - 2992usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_float"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_float) - 3000usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_double"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_double) - 3008usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_date"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_date) - 3016usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_time"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_time) - 3024usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_timestamp"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_timestamp) - 3032usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_interval"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_interval) - 3040usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_varchar"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_varchar) - 3048usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_string"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_string) - 3056usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_varchar_internal"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_varchar_internal) - 3064usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_string_internal"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_string_internal) - 3072usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_blob"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_blob) - 3080usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_value_is_null"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_is_null) - 3088usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_prepared_streaming"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_prepared_streaming) - 3096usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_prepared_streaming"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_prepared_streaming) - 3104usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow) - 3112usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow_schema"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow_schema) - 3120usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_prepared_arrow_schema"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_prepared_arrow_schema) - 3128usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_result_arrow_array"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_arrow_array) - 3136usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow_array"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow_array) - 3144usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_column_count"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_column_count) - 3152usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_row_count"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_row_count) - 3160usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_rows_changed"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_rows_changed) - 3168usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow_error"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow_error) - 3176usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_arrow"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_arrow) - 3184usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_arrow_stream"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_arrow_stream) - 3192usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_prepared_arrow"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_prepared_arrow) - 3200usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_scan"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_scan) - 3208usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_array_scan"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_array_scan) - 3216usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_stream_fetch_chunk"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_stream_fetch_chunk) - 3224usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_create_instance_cache"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_instance_cache) - 3232usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_get_or_create_from_cache"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_or_create_from_cache) - 3240usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_instance_cache"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_instance_cache) - 3248usize];
+    ["Offset of field: duckdb_ext_api_v1::duckdb_append_default_to_chunk"]
+        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_default_to_chunk) - 3256usize];
 };
 static __DUCKDB_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
@@ -8835,6 +9086,982 @@ pub unsafe fn duckdb_append_null(appender: duckdb_appender) -> duckdb_state {
     (fun)(appender)
 }
 
+static __DUCKDB_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_row_count(result: *mut duckdb_result) -> idx_t {
+    let function_ptr = __DUCKDB_ROW_COUNT.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_COLUMN_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_column_data(
+    result: *mut duckdb_result,
+    col: idx_t,
+) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_COLUMN_DATA.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    (fun)(result, col)
+}
+
+static __DUCKDB_NULLMASK_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_nullmask_data(result: *mut duckdb_result, col: idx_t) -> *mut bool {
+    let function_ptr = __DUCKDB_NULLMASK_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut bool = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result, col)
+}
+
+static __DUCKDB_RESULT_GET_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_get_chunk(
+    result: duckdb_result,
+    chunk_index: idx_t,
+) -> duckdb_data_chunk {
+    let function_ptr = __DUCKDB_RESULT_GET_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_result,
+        chunk_index: idx_t,
+    ) -> duckdb_data_chunk = ::std::mem::transmute(function_ptr);
+    (fun)(result, chunk_index)
+}
+
+static __DUCKDB_RESULT_IS_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_is_streaming(result: duckdb_result) -> bool {
+    let function_ptr = __DUCKDB_RESULT_IS_STREAMING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> bool = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_RESULT_CHUNK_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_chunk_count(result: duckdb_result) -> idx_t {
+    let function_ptr = __DUCKDB_RESULT_CHUNK_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_VALUE_BOOLEAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_boolean(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> bool {
+    let function_ptr = __DUCKDB_VALUE_BOOLEAN
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> bool = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int8(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i8 {
+    let function_ptr = __DUCKDB_VALUE_INT8.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i8 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int16(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i16 {
+    let function_ptr = __DUCKDB_VALUE_INT16.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i16 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int32(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i32 {
+    let function_ptr = __DUCKDB_VALUE_INT32.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i32 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_int64(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> i64 {
+    let function_ptr = __DUCKDB_VALUE_INT64.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> i64 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_hugeint(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_hugeint {
+    let function_ptr = __DUCKDB_VALUE_HUGEINT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_hugeint = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uhugeint(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_uhugeint {
+    let function_ptr = __DUCKDB_VALUE_UHUGEINT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_uhugeint = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_decimal(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_decimal {
+    let function_ptr = __DUCKDB_VALUE_DECIMAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_decimal = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint8(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u8 {
+    let function_ptr = __DUCKDB_VALUE_UINT8.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u8 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint16(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u16 {
+    let function_ptr = __DUCKDB_VALUE_UINT16
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u16 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint32(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u32 {
+    let function_ptr = __DUCKDB_VALUE_UINT32
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u32 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_uint64(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> u64 {
+    let function_ptr = __DUCKDB_VALUE_UINT64
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> u64 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_float(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> f32 {
+    let function_ptr = __DUCKDB_VALUE_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> f32 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_double(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> f64 {
+    let function_ptr = __DUCKDB_VALUE_DOUBLE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> f64 = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_date(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_date {
+    let function_ptr = __DUCKDB_VALUE_DATE.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_date = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_time(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_time {
+    let function_ptr = __DUCKDB_VALUE_TIME.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_time = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_timestamp(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_timestamp {
+    let function_ptr = __DUCKDB_VALUE_TIMESTAMP
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_timestamp = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_interval(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_interval {
+    let function_ptr = __DUCKDB_VALUE_INTERVAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_interval = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_varchar(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_VALUE_VARCHAR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_STRING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_string(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_string {
+    let function_ptr = __DUCKDB_VALUE_STRING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_string = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_VARCHAR_INTERNAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_varchar_internal(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_VALUE_VARCHAR_INTERNAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_STRING_INTERNAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_string_internal(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_string {
+    let function_ptr = __DUCKDB_VALUE_STRING_INTERNAL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_string = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_blob(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_blob {
+    let function_ptr = __DUCKDB_VALUE_BLOB.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_blob = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_VALUE_IS_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_value_is_null(
+    result: *mut duckdb_result,
+    col: idx_t,
+    row: idx_t,
+) -> bool {
+    let function_ptr = __DUCKDB_VALUE_IS_NULL
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: *mut duckdb_result,
+        col: idx_t,
+        row: idx_t,
+    ) -> bool = ::std::mem::transmute(function_ptr);
+    (fun)(result, col, row)
+}
+
+static __DUCKDB_EXECUTE_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_execute_prepared_streaming(
+    prepared_statement: duckdb_prepared_statement,
+    out_result: *mut duckdb_result,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED_STREAMING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_result,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared_statement, out_result)
+}
+
+static __DUCKDB_PENDING_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_pending_prepared_streaming(
+    prepared_statement: duckdb_prepared_statement,
+    out_result: *mut duckdb_pending_result,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_PENDING_PREPARED_STREAMING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_pending_result,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared_statement, out_result)
+}
+
+static __DUCKDB_QUERY_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow(
+    connection: duckdb_connection,
+    query: *const ::std::os::raw::c_char,
+    out_result: *mut duckdb_arrow,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        connection: duckdb_connection,
+        query: *const ::std::os::raw::c_char,
+        out_result: *mut duckdb_arrow,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(connection, query, out_result)
+}
+
+static __DUCKDB_QUERY_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow_schema(
+    result: duckdb_arrow,
+    out_schema: *mut duckdb_arrow_schema,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW_SCHEMA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_arrow,
+        out_schema: *mut duckdb_arrow_schema,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(result, out_schema)
+}
+
+static __DUCKDB_PREPARED_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_prepared_arrow_schema(
+    prepared: duckdb_prepared_statement,
+    out_schema: *mut duckdb_arrow_schema,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_PREPARED_ARROW_SCHEMA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared: duckdb_prepared_statement,
+        out_schema: *mut duckdb_arrow_schema,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared, out_schema)
+}
+
+static __DUCKDB_RESULT_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_result_arrow_array(
+    result: duckdb_result,
+    chunk: duckdb_data_chunk,
+    out_array: *mut duckdb_arrow_array,
+) {
+    let function_ptr = __DUCKDB_RESULT_ARROW_ARRAY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_result,
+        chunk: duckdb_data_chunk,
+        out_array: *mut duckdb_arrow_array,
+    ) = ::std::mem::transmute(function_ptr);
+    (fun)(result, chunk, out_array)
+}
+
+static __DUCKDB_QUERY_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow_array(
+    result: duckdb_arrow,
+    out_array: *mut duckdb_arrow_array,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW_ARRAY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_arrow,
+        out_array: *mut duckdb_arrow_array,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(result, out_array)
+}
+
+static __DUCKDB_ARROW_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_column_count(result: duckdb_arrow) -> idx_t {
+    let function_ptr = __DUCKDB_ARROW_COLUMN_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_ARROW_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_row_count(result: duckdb_arrow) -> idx_t {
+    let function_ptr = __DUCKDB_ARROW_ROW_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_ARROW_ROWS_CHANGED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_rows_changed(result: duckdb_arrow) -> idx_t {
+    let function_ptr = __DUCKDB_ARROW_ROWS_CHANGED
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_QUERY_ARROW_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_query_arrow_error(
+    result: duckdb_arrow,
+) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_QUERY_ARROW_ERROR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        result: duckdb_arrow,
+    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(result)
+}
+
+static __DUCKDB_DESTROY_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_arrow(result: *mut duckdb_arrow) {
+    let function_ptr = __DUCKDB_DESTROY_ARROW
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_arrow) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_DESTROY_ARROW_STREAM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_arrow_stream(stream_p: *mut duckdb_arrow_stream) {
+    let function_ptr = __DUCKDB_DESTROY_ARROW_STREAM
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(stream_p: *mut duckdb_arrow_stream) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(stream_p)
+}
+
+static __DUCKDB_EXECUTE_PREPARED_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_execute_prepared_arrow(
+    prepared_statement: duckdb_prepared_statement,
+    out_result: *mut duckdb_arrow,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED_ARROW
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        prepared_statement: duckdb_prepared_statement,
+        out_result: *mut duckdb_arrow,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(prepared_statement, out_result)
+}
+
+static __DUCKDB_ARROW_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_scan(
+    connection: duckdb_connection,
+    table_name: *const ::std::os::raw::c_char,
+    arrow: duckdb_arrow_stream,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_ARROW_SCAN.load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        connection: duckdb_connection,
+        table_name: *const ::std::os::raw::c_char,
+        arrow: duckdb_arrow_stream,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(connection, table_name, arrow)
+}
+
+static __DUCKDB_ARROW_ARRAY_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_arrow_array_scan(
+    connection: duckdb_connection,
+    table_name: *const ::std::os::raw::c_char,
+    arrow_schema: duckdb_arrow_schema,
+    arrow_array: duckdb_arrow_array,
+    out_stream: *mut duckdb_arrow_stream,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_ARROW_ARRAY_SCAN
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        connection: duckdb_connection,
+        table_name: *const ::std::os::raw::c_char,
+        arrow_schema: duckdb_arrow_schema,
+        arrow_array: duckdb_arrow_array,
+        out_stream: *mut duckdb_arrow_stream,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(connection, table_name, arrow_schema, arrow_array, out_stream)
+}
+
+static __DUCKDB_STREAM_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_stream_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk {
+    let function_ptr = __DUCKDB_STREAM_FETCH_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(result)
+}
+
+static __DUCKDB_CREATE_INSTANCE_CACHE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_create_instance_cache() -> duckdb_instance_cache {
+    let function_ptr = __DUCKDB_CREATE_INSTANCE_CACHE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn() -> duckdb_instance_cache = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)()
+}
+
+static __DUCKDB_GET_OR_CREATE_FROM_CACHE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_get_or_create_from_cache(
+    instance_cache: duckdb_instance_cache,
+    path: *const ::std::os::raw::c_char,
+    out_database: *mut duckdb_database,
+    config: duckdb_config,
+    out_error: *mut *mut ::std::os::raw::c_char,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_GET_OR_CREATE_FROM_CACHE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        instance_cache: duckdb_instance_cache,
+        path: *const ::std::os::raw::c_char,
+        out_database: *mut duckdb_database,
+        config: duckdb_config,
+        out_error: *mut *mut ::std::os::raw::c_char,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(instance_cache, path, out_database, config, out_error)
+}
+
+static __DUCKDB_DESTROY_INSTANCE_CACHE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_destroy_instance_cache(instance_cache: *mut duckdb_instance_cache) {
+    let function_ptr = __DUCKDB_DESTROY_INSTANCE_CACHE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(instance_cache: *mut duckdb_instance_cache) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(instance_cache)
+}
+
+static __DUCKDB_APPEND_DEFAULT_TO_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_append_default_to_chunk(
+    appender: duckdb_appender,
+    chunk: duckdb_data_chunk,
+    col: idx_t,
+    row: idx_t,
+) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_DEFAULT_TO_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        appender: duckdb_appender,
+        chunk: duckdb_data_chunk,
+        col: idx_t,
+        row: idx_t,
+    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    (fun)(appender, chunk, col, row)
+}
+
 /// Like DUCKDB_EXTENSION_API_INIT macro
 pub unsafe fn duckdb_rs_extension_api_init(
     info: duckdb_extension_info,
@@ -10273,6 +11500,210 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     if let Some(fun) = (*p_api).duckdb_append_null {
         __DUCKDB_APPEND_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_row_count {
+        __DUCKDB_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_column_data {
+        __DUCKDB_COLUMN_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_nullmask_data {
+        __DUCKDB_NULLMASK_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_get_chunk {
+        __DUCKDB_RESULT_GET_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_is_streaming {
+        __DUCKDB_RESULT_IS_STREAMING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_chunk_count {
+        __DUCKDB_RESULT_CHUNK_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_boolean {
+        __DUCKDB_VALUE_BOOLEAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int8 {
+        __DUCKDB_VALUE_INT8
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int16 {
+        __DUCKDB_VALUE_INT16
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int32 {
+        __DUCKDB_VALUE_INT32
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_int64 {
+        __DUCKDB_VALUE_INT64
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_hugeint {
+        __DUCKDB_VALUE_HUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uhugeint {
+        __DUCKDB_VALUE_UHUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_decimal {
+        __DUCKDB_VALUE_DECIMAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint8 {
+        __DUCKDB_VALUE_UINT8
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint16 {
+        __DUCKDB_VALUE_UINT16
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint32 {
+        __DUCKDB_VALUE_UINT32
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_uint64 {
+        __DUCKDB_VALUE_UINT64
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_float {
+        __DUCKDB_VALUE_FLOAT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_double {
+        __DUCKDB_VALUE_DOUBLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_date {
+        __DUCKDB_VALUE_DATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_time {
+        __DUCKDB_VALUE_TIME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_timestamp {
+        __DUCKDB_VALUE_TIMESTAMP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_interval {
+        __DUCKDB_VALUE_INTERVAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_varchar {
+        __DUCKDB_VALUE_VARCHAR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_string {
+        __DUCKDB_VALUE_STRING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_varchar_internal {
+        __DUCKDB_VALUE_VARCHAR_INTERNAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_string_internal {
+        __DUCKDB_VALUE_STRING_INTERNAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_blob {
+        __DUCKDB_VALUE_BLOB
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_value_is_null {
+        __DUCKDB_VALUE_IS_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_execute_prepared_streaming {
+        __DUCKDB_EXECUTE_PREPARED_STREAMING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_pending_prepared_streaming {
+        __DUCKDB_PENDING_PREPARED_STREAMING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow {
+        __DUCKDB_QUERY_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow_schema {
+        __DUCKDB_QUERY_ARROW_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_prepared_arrow_schema {
+        __DUCKDB_PREPARED_ARROW_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_result_arrow_array {
+        __DUCKDB_RESULT_ARROW_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow_array {
+        __DUCKDB_QUERY_ARROW_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_column_count {
+        __DUCKDB_ARROW_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_row_count {
+        __DUCKDB_ARROW_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_rows_changed {
+        __DUCKDB_ARROW_ROWS_CHANGED
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_query_arrow_error {
+        __DUCKDB_QUERY_ARROW_ERROR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_arrow {
+        __DUCKDB_DESTROY_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_arrow_stream {
+        __DUCKDB_DESTROY_ARROW_STREAM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_execute_prepared_arrow {
+        __DUCKDB_EXECUTE_PREPARED_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_scan {
+        __DUCKDB_ARROW_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_arrow_array_scan {
+        __DUCKDB_ARROW_ARRAY_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_stream_fetch_chunk {
+        __DUCKDB_STREAM_FETCH_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_create_instance_cache {
+        __DUCKDB_CREATE_INSTANCE_CACHE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_get_or_create_from_cache {
+        __DUCKDB_GET_OR_CREATE_FROM_CACHE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_destroy_instance_cache {
+        __DUCKDB_DESTROY_INSTANCE_CACHE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_append_default_to_chunk {
+        __DUCKDB_APPEND_DEFAULT_TO_CHUNK
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     Ok(true)

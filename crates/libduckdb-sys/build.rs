@@ -460,11 +460,14 @@ mod bindings {
 
         // ONLY generate bindings for symbols containing "duckdb" in their name
         // and for the type `idx_t`
+        // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now, 
+        // until we figure out how to feature gate the generated API
         builder
             .trust_clang_mangling(false)
             .header(header.clone())
             .allowlist_item(r#"(\w*duckdb\w*)"#)
             .allowlist_type("idx_t")
+            .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE") 
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
