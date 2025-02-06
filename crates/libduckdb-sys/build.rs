@@ -458,9 +458,13 @@ mod bindings {
             builder = builder.ignore_functions();
         }
 
+        // ONLY generate bindings for symbols containing "duckdb" in their name
+        // and for the type `idx_t`
         builder
             .trust_clang_mangling(false)
             .header(header.clone())
+            .allowlist_item(r#"(\w*duckdb\w*)"#)
+            .allowlist_type("idx_t")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
