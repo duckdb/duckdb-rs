@@ -566,7 +566,7 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     let value_array = array.values();
     let mut child = out.child(value_array.len());
     match value_array.data_type() {
-        dt if dt.is_primitive() => {
+        dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
             primitive_array_to_vector(value_array.as_ref(), &mut child)?;
         }
         DataType::Utf8 => {
@@ -617,7 +617,7 @@ fn fixed_size_list_array_to_vector(
     let value_array = array.values();
     let mut child = out.child(value_array.len());
     match value_array.data_type() {
-        dt if dt.is_primitive() => {
+        dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
             primitive_array_to_vector(value_array.as_ref(), &mut child)?;
         }
         DataType::Utf8 => {
@@ -763,7 +763,7 @@ mod test {
     use crate::{Connection, Result};
     use arrow::{
         array::{
-            Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, Date32Array, Date64Array, Decimal128Array,
+            Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Date64Array, Decimal128Array,
             Decimal256Array, DurationSecondArray, FixedSizeListArray, GenericByteArray, GenericListArray, Int32Array,
             IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray,
             OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, Time32SecondArray,
@@ -1032,6 +1032,24 @@ mod test {
                 Some("bar"),
                 Some("foo"),
                 Some("baz"),
+            ])),
+            None,
+        ))?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_boolean_array_roundtrip() -> Result<(), Box<dyn Error>> {
+        check_generic_array_roundtrip(ListArray::new(
+            Arc::new(Field::new("item", DataType::Boolean, true)),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 2, 4, 5])),
+            Arc::new(BooleanArray::from(vec![
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(true),
+                Some(false),
             ])),
             None,
         ))?;
