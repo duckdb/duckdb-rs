@@ -91,7 +91,9 @@ pub use polars_dataframe::Polars;
 // re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
 #[cfg(feature = "polars")]
-pub use polars::{self, export::arrow as arrow2};
+pub use polars;
+#[cfg(feature = "polars")]
+pub use polars_arrow as arrow2;
 
 /// The core module contains the main functionality of the DuckDB crate.
 pub mod core;
@@ -199,6 +201,7 @@ pub enum DatabaseName<'a> {
     Attached(&'a str),
 }
 
+#[allow(clippy::needless_lifetimes)]
 impl<'a> fmt::Display for DatabaseName<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {

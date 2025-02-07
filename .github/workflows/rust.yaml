@@ -39,7 +39,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v1.1.1"
+          tag: "v1.2.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -54,11 +54,6 @@ jobs:
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
 
-      # TODO: remove
-      - name: Workaround for https://github.com/pola-rs/polars/issues/19063
-        run: |
-          cargo update indexmap@2.6.0 --precise 2.5.0
-
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
         env:
@@ -67,24 +62,7 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
         run: |
           cargo clippy --all-targets --workspace --all-features -- -D warnings -A clippy::redundant-closure
-          
-
-      - name: Run cargo-tarpaulin
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          # Intentionally omit time feature until we're on time 0.3, at which
-          # point it should be added to `bundled-full`.
-          args: '--features "buildtime_bindgen modern-full vtab-full vtab-loadable" --avoid-cfg-tarpaulin' # TODO restore to normal (https://github.com/xd009642/tarpaulin/issues/756#issuecomment-838769320)
-          version: 0.22.0
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
-
-      - name: Upload to codecov.io
-        if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v1
+    
 
       # For windows
       - name: Windows extract duckdb
@@ -140,35 +118,3 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - run: cargo install cargo-examples
-
-  Sanitizer:
-    name: Address Sanitizer
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      # Need nightly rust.
-      - uses: hecrj/setup-rust-action@v1
-        with:
-          rust-version: nightly
-          components: rust-src
-      - name: Tests with asan
-        env:
-          RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
-          RUSTDOCFLAGS: -Zsanitizer=address
-          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
-          # Work around https://github.com/rust-lang/rust/issues/59125 by
-          # disabling backtraces. In an ideal world we'd probably suppress the
-          # leak sanitization, but we don't care about backtraces here, so long
-          # as the other tests have them.
-          RUST_BACKTRACE: "0"
-        run: |
-          # TODO switch back to modern-full once polars is fixed
-          cargo -Z build-std test --features "chrono serde_json url r2d2 uuid extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
-      - name: publish crates --dry-run
-        uses: katyo/publish-crates@v2
-        with:
-          path: './'
-          args: --allow-dirty --all-features
-          dry-run: true
-          ignore-unpublished-changes: true

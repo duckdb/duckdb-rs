@@ -21,6 +21,7 @@ impl<'stmt> Polars<'stmt> {
     }
 }
 
+#[allow(clippy::needless_lifetimes)]
 impl<'stmt> Iterator for Polars<'stmt> {
     type Item = DataFrame;
 

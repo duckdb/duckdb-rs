@@ -264,6 +264,7 @@ pub struct Row<'stmt> {
     current_row: usize,
 }
 
+#[allow(clippy::needless_lifetimes)]
 impl<'stmt> Row<'stmt> {
     /// Get the value of a particular column of the result row.
     ///

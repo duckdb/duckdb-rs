@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.1.1"
+version = "1.2.0"
 authors = ["wangfenjin <wangfenj@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/duckdb/duckdb-rs"
@@ -19,11 +19,11 @@ license = "MIT"
 categories = ["database"]
 
 [workspace.dependencies]
-duckdb = { version = "1.1.1", path = "crates/duckdb" }
-libduckdb-sys = { version = "1.1.1", path = "crates/libduckdb-sys" }
+duckdb = { version = "1.2.0", path = "crates/duckdb" }
+libduckdb-sys = { version = "1.2.0", path = "crates/libduckdb-sys" }
 duckdb-loadable-macros = { version = "0.1.3", path = "crates/duckdb-loadable-macros" }
 autocfg = "1.0"
-bindgen = { version = "0.69", default-features = false }
+bindgen = { version = "0.71.1", default-features = false }
 byteorder = "1.3"
 calamine = "0.22.0"
 cast = "0.3"
@@ -40,8 +40,9 @@ memchr = "2.3"
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
 pkg-config = "0.3.24"
-polars = "0.35.4"
-polars-core = "0.35.4"
+polars = "0.46"
+polars-core = "0.46"
+polars-arrow = "0.46"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.20"
 proc-macro2 = "1.0.56"
@@ -62,4 +63,4 @@ unicase = "2.6.0"
 url = "2.1"
 uuid = "1.0"
 vcpkg = "0.2"
-arrow = { version = "53", default-features = false }
+arrow = { version = "54", default-features = false }

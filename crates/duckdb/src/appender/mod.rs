@@ -288,20 +288,23 @@ mod test {
 
     #[test]
     fn test_appender_error() -> Result<(), crate::Error> {
+        use crate::params;
         let conn = Connection::open_in_memory()?;
         conn.execute(
             r"CREATE TABLE foo (
             foobar TEXT,
+            foobar_int INT,
             foobar_split TEXT[] AS (split(trim(foobar), ','))
             );",
             [],
         )?;
         let mut appender = conn.appender("foo")?;
-        match appender.append_row(["foo"]) {
+        match appender.append_row(params!["foo"]) {
             Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
                 assert_eq!(msg, "Call to EndRow before all columns have been appended to!")
             }
-            _ => panic!("expected error"),
+            Err(err) => panic!("unexpected error: {:?}", err),
+            Ok(_) => panic!("expected an error but got Ok"),
         }
         Ok(())
     }
