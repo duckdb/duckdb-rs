@@ -9,7 +9,7 @@ Most user should use `duckdb`, but our development may happen in both of these c
 ## Development
 
 ### duckdb-c-api
-Some features are still not implemented in the c api, so we may need pull request in the [duckdb repo]((https://github.com/duckdb/duckdb).
+Some features are still not implemented in the c api, so we may need pull request in the [duckdb repo](https://github.com/duckdb/duckdb).
 
 ```shell
 # build duckdb
