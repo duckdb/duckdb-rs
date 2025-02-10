@@ -1,6 +1,8 @@
 use std::{any::Any, ffi::CString, slice};
 
-use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child, DuckDbString};
+use libduckdb_sys::{
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, DuckDbString,
+};
 
 use super::LogicalTypeHandle;
 use crate::ffi::{
@@ -55,6 +57,24 @@ impl FlatVector {
         self.capacity
     }
 
+    /// Returns true if the row at the given index is null
+    pub fn row_is_null(&self, row: u64) -> bool {
+        // use idx_t entry_idx = row_idx / 64; idx_t idx_in_entry = row_idx % 64; bool is_valid = validity_mask[entry_idx] & (1 « idx_in_entry);
+        // as the row is valid function is slower
+        let valid = unsafe {
+            let validity = duckdb_vector_get_validity(self.ptr);
+
+            // validity can return a NULL pointer if the entire vector is valid
+            if validity.is_null() {
+                return false;
+            }
+
+            duckdb_validity_row_is_valid(validity, row)
+        };
+
+        !valid
+    }
+
     /// Returns an unsafe mutable pointer to the vector’s
     pub fn as_mut_ptr<T>(&self) -> *mut T {
         unsafe { duckdb_vector_get_data(self.ptr).cast() }
@@ -65,9 +85,19 @@ impl FlatVector {
         unsafe { slice::from_raw_parts(self.as_mut_ptr(), self.capacity()) }
     }
 
+    /// Returns a slice of the vector up to a certain length
+    pub fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
+        unsafe { slice::from_raw_parts(self.as_mut_ptr(), len) }
+    }
+
     /// Returns a mutable slice of the vector
     pub fn as_mut_slice<T>(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity()) }
+    }
+
+    /// Returns a mutable slice of the vector up to a certain length
+    pub fn as_mut_slice_with_len<T>(&mut self, len: usize) -> &mut [T] {
+        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 
     /// Returns the logical type of the vector

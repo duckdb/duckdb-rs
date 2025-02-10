@@ -1,6 +1,6 @@
 use std::sync::atomic::{self, AtomicUsize};
 
-use super::{BindInfo, DataChunkHandle, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, LogicalTypeId, TableFunctionInfo, VTab};
 use crate::core::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
@@ -115,7 +115,7 @@ impl VTab for ExcelVTab {
         Ok(ExcelInitData { start: 1.into() })
     }
 
-    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data();
         let bind_info = func.get_bind_data();
 
