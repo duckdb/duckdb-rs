@@ -539,6 +539,15 @@ pub fn write_arrow_array_to_vector(
                 &mut chunk.flat_vector(),
             );
         }
+        DataType::Utf8View => {
+            string_view_array_to_vector(
+                col.as_ref()
+                    .as_any()
+                    .downcast_ref::<StringViewArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
+                &mut chunk.flat_vector(),
+            );
+        }
         DataType::Binary => {
             binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector());
         }
@@ -551,6 +560,15 @@ pub fn write_arrow_array_to_vector(
                     .as_any()
                     .downcast_ref::<LargeBinaryArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeBinaryArray"))?,
+                &mut chunk.flat_vector(),
+            );
+        }
+        DataType::BinaryView => {
+            binary_view_array_to_vector(
+                col.as_ref()
+                    .as_any()
+                    .downcast_ref::<BinaryViewArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
                 &mut chunk.flat_vector(),
             );
         }
