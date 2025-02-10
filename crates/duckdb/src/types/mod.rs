@@ -5,6 +5,7 @@
 pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     ordered_map::OrderedMap,
+    string::DuckString,
     to_sql::{ToSql, ToSqlOutput},
     value::Value,
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
@@ -25,6 +26,7 @@ mod value;
 mod value_ref;
 
 mod ordered_map;
+mod string;
 
 /// Empty struct that can be used to fill in a query parameter as `NULL`.
 ///

@@ -13,6 +13,7 @@ use super::{
 };
 use std::{
     ffi::{c_void, CString},
+    fmt::Debug,
     marker::PhantomData,
     os::raw::c_char,
 };
@@ -339,12 +340,12 @@ use super::ffi::{
 
 /// An interface to store and retrieve data during the function execution stage
 #[derive(Debug)]
-pub struct FunctionInfo<V: VTab> {
+pub struct TableFunctionInfo<V: VTab> {
     ptr: duckdb_function_info,
     _vtab: PhantomData<V>,
 }
 
-impl<V: VTab> FunctionInfo<V> {
+impl<V: VTab> TableFunctionInfo<V> {
     /// Report that an error has occurred while executing the function.
     ///
     /// # Arguments
@@ -398,7 +399,7 @@ impl<V: VTab> FunctionInfo<V> {
     }
 }
 
-impl<V: VTab> From<duckdb_function_info> for FunctionInfo<V> {
+impl<V: VTab> From<duckdb_function_info> for TableFunctionInfo<V> {
     fn from(ptr: duckdb_function_info) -> Self {
         Self {
             ptr,

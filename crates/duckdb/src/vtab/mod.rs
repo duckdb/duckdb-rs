@@ -20,7 +20,7 @@ pub use self::arrow::{
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
-pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
+pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
 pub use value::Value;
 
 use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
@@ -64,7 +64,7 @@ pub trait VTab: Sized {
     /// The implementation should populate the `output` parameter with the rows to be returned.
     ///
     /// When the table function is done, the implementation should set the length of the output to 0.
-    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
 
     /// Does the table function support pushdown
     /// default is false
@@ -87,7 +87,7 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    let info = FunctionInfo::<T>::from(info);
+    let info = TableFunctionInfo::<T>::from(info);
     let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
     let result = T::func(&info, &mut data_chunk_handle);
     if result.is_err() {
@@ -168,8 +168,7 @@ impl InnerConnection {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::core::Inserter;
-    use crate::core::LogicalTypeId;
+    use crate::core::{Inserter, LogicalTypeId};
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering;
     use std::{
@@ -203,7 +202,10 @@ mod test {
             })
         }
 
-        fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        fn func(
+            func: &TableFunctionInfo<Self>,
+            output: &mut DataChunkHandle,
+        ) -> Result<(), Box<dyn std::error::Error>> {
             let init_data = func.get_init_data();
             let bind_data = func.get_bind_data();
 
@@ -239,7 +241,7 @@ mod test {
             HelloVTab::init(init_info)
         }
 
-        fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
             let init_data = func.get_init_data();
             let bind_data = func.get_bind_data();
 

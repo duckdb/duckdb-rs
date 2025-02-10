@@ -1,15 +1,20 @@
-use super::{BindInfo, DataChunkHandle, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
+use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, LogicalTypeId, TableFunctionInfo, VTab};
+use std::sync::Arc;
 use std::sync::{atomic::AtomicBool, Mutex};
 
-use crate::core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector};
+use crate::{
+    core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector},
+    types::DuckString,
+};
 use arrow::{
     array::{
         as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array,
         as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray,
-        Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericListArray, GenericStringArray,
-        IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray,
-        StringViewArray, StructArray,
+        Date32Array, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder, GenericListArray,
+        GenericStringArray, IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait,
+        PrimitiveArray, StringArray, StringViewArray, StructArray, TimestampMicrosecondArray, TimestampNanosecondArray,
     },
+    buffer::{BooleanBuffer, NullBuffer},
     compute::cast,
 };
 
@@ -19,6 +24,9 @@ use arrow::{
     record_batch::RecordBatch,
 };
 
+use libduckdb_sys::{
+    duckdb_date, duckdb_hugeint, duckdb_interval, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector,
+};
 use num::{cast::AsPrimitive, ToPrimitive};
 
 /// A pointer to the Arrow record batch for the table function.
@@ -90,7 +98,7 @@ impl VTab for ArrowVTab {
         })
     }
 
-    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data();
         let bind_info = func.get_bind_data();
 
@@ -148,9 +156,6 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::Struct(_) => Struct,
         DataType::Union(_, _) => Union,
         // DataType::Dictionary(_, _) => todo!(),
-        // duckdb/src/main/capi/helper-c.cpp does not support decimal
-        // DataType::Decimal128(_, _) => Decimal,
-        // DataType::Decimal256(_, _) => Decimal,
         DataType::Decimal128(_, _) => Decimal,
         DataType::Decimal256(_, _) => Double,
         DataType::Map(_, _) => Map,
@@ -159,6 +164,22 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         }
     };
     Ok(type_id)
+}
+
+impl TryFrom<&DataType> for LogicalTypeId {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(data_type: &DataType) -> Result<Self, Self::Error> {
+        to_duckdb_type_id(data_type)
+    }
+}
+
+impl TryFrom<DataType> for LogicalTypeId {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(data_type: DataType) -> Result<Self, Self::Error> {
+        to_duckdb_type_id(&data_type)
+    }
 }
 
 /// Convert arrow DataType to duckdb logical type
@@ -199,6 +220,402 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
     }
 }
 
+// FIXME: flat vectors don't have all of thsese types. I think they only
+/// Converts flat vector to an arrow array
+pub fn flat_vector_to_arrow_array(
+    vector: &mut FlatVector,
+    len: usize,
+) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+    let type_id = vector.logical_type().id();
+    match type_id {
+        LogicalTypeId::Integer => {
+            let data = vector.as_slice_with_len::<i32>(len);
+
+            Ok(Arc::new(PrimitiveArray::<Int32Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Timestamp
+        | LogicalTypeId::TimestampMs
+        | LogicalTypeId::TimestampS
+        | LogicalTypeId::TimestampTZ => {
+            let data = vector.as_slice_with_len::<duckdb_timestamp>(len);
+            let micros = data.iter().map(|duckdb_timestamp { micros }| *micros);
+            let structs = TimestampMicrosecondArray::from_iter_values_with_nulls(
+                micros,
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            );
+
+            Ok(Arc::new(structs))
+        }
+        LogicalTypeId::Varchar => {
+            let data = vector.as_slice_with_len::<duckdb_string_t>(len);
+
+            let duck_strings = data.iter().enumerate().map(|(i, s)| {
+                if vector.row_is_null(i as u64) {
+                    None
+                } else {
+                    let mut ptr = *s;
+                    Some(DuckString::new(&mut ptr).as_str().to_string())
+                }
+            });
+
+            let values = duck_strings.collect::<Vec<_>>();
+
+            Ok(Arc::new(StringArray::from(values)))
+        }
+        LogicalTypeId::Boolean => {
+            let data = vector.as_slice_with_len::<bool>(len);
+
+            Ok(Arc::new(BooleanArray::new(
+                BooleanBuffer::from_iter(data.iter().copied()),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Float => {
+            let data = vector.as_slice_with_len::<f32>(len);
+
+            Ok(Arc::new(PrimitiveArray::<Float32Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Double => {
+            let data = vector.as_slice_with_len::<f64>(len);
+
+            Ok(Arc::new(PrimitiveArray::<Float64Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Date => {
+            let data = vector.as_slice_with_len::<duckdb_date>(len);
+
+            Ok(Arc::new(Date32Array::from_iter_values_with_nulls(
+                data.iter().map(|duckdb_date { days }| *days),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Time => {
+            let data = vector.as_slice_with_len::<duckdb_time>(len);
+
+            Ok(Arc::new(
+                PrimitiveArray::<Time64MicrosecondType>::from_iter_values_with_nulls(
+                    data.iter().map(|duckdb_time { micros }| *micros),
+                    Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                        !vector.row_is_null(row as u64)
+                    }))),
+                ),
+            ))
+        }
+        LogicalTypeId::Smallint => {
+            let data = vector.as_slice_with_len::<i16>(len);
+
+            Ok(Arc::new(PrimitiveArray::<Int16Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::USmallint => {
+            let data = vector.as_slice_with_len::<u16>(len);
+
+            Ok(Arc::new(PrimitiveArray::<UInt16Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Blob => {
+            let mut data = vector.as_slice_with_len::<duckdb_string_t>(len).to_vec();
+
+            let duck_strings = data.iter_mut().enumerate().map(|(i, ptr)| {
+                if vector.row_is_null(i as u64) {
+                    None
+                } else {
+                    Some(DuckString::new(ptr))
+                }
+            });
+
+            let mut builder = GenericBinaryBuilder::<i32>::new();
+            for s in duck_strings {
+                if let Some(mut s) = s {
+                    builder.append_value(s.as_bytes());
+                } else {
+                    builder.append_null();
+                }
+            }
+
+            Ok(Arc::new(builder.finish()))
+        }
+        LogicalTypeId::Tinyint => {
+            let data = vector.as_slice_with_len::<i8>(len);
+
+            Ok(Arc::new(PrimitiveArray::<Int8Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::Bigint => {
+            let data = vector.as_slice_with_len::<i64>(len);
+
+            Ok(Arc::new(PrimitiveArray::<Int64Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::UBigint => {
+            let data = vector.as_slice_with_len::<u64>(len);
+
+            Ok(Arc::new(PrimitiveArray::<UInt64Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::UTinyint => {
+            let data = vector.as_slice_with_len::<u8>(len);
+
+            Ok(Arc::new(PrimitiveArray::<UInt8Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::UInteger => {
+            let data = vector.as_slice_with_len::<u32>(len);
+
+            Ok(Arc::new(PrimitiveArray::<UInt32Type>::from_iter_values_with_nulls(
+                data.iter().copied(),
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            )))
+        }
+        LogicalTypeId::TimestampNs => {
+            // even nano second precision is stored in micros when using the c api
+            let data = vector.as_slice_with_len::<duckdb_timestamp>(len);
+            let nanos = data.iter().map(|duckdb_timestamp { micros }| *micros * 1000);
+            let structs = TimestampNanosecondArray::from_iter_values_with_nulls(
+                nanos,
+                Some(NullBuffer::new(BooleanBuffer::collect_bool(data.len(), |row| {
+                    !vector.row_is_null(row as u64)
+                }))),
+            );
+
+            Ok(Arc::new(structs))
+        }
+        LogicalTypeId::Struct => {
+            todo!()
+        }
+        LogicalTypeId::Decimal => {
+            todo!()
+        }
+        LogicalTypeId::Map => {
+            todo!()
+        }
+        LogicalTypeId::List => {
+            todo!()
+        }
+        LogicalTypeId::Union => {
+            todo!()
+        }
+        LogicalTypeId::Interval => {
+            let _data = vector.as_slice_with_len::<duckdb_interval>(len);
+            todo!()
+        }
+        LogicalTypeId::Hugeint => {
+            let _data = vector.as_slice_with_len::<duckdb_hugeint>(len);
+            todo!()
+        }
+        LogicalTypeId::Enum => {
+            todo!()
+        }
+        LogicalTypeId::Uuid => {
+            todo!()
+        }
+    }
+}
+
+/// converts a `DataChunk` to arrow `RecordBatch`
+pub fn data_chunk_to_arrow(chunk: &DataChunkHandle) -> Result<RecordBatch, Box<dyn std::error::Error>> {
+    let len = chunk.len();
+
+    let columns = (0..chunk.num_columns())
+        .map(|i| {
+            let mut vector = chunk.flat_vector(i);
+            flat_vector_to_arrow_array(&mut vector, len).map(|array_data| {
+                assert_eq!(array_data.len(), chunk.len());
+                let array: Arc<dyn Array> = Arc::new(array_data);
+                (i.to_string(), array)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(RecordBatch::try_from_iter(columns.into_iter())?)
+}
+
+struct DataChunkHandleSlice<'a> {
+    chunk: &'a mut DataChunkHandle,
+    column_index: usize,
+}
+
+impl<'a> DataChunkHandleSlice<'a> {
+    fn new(chunk: &'a mut DataChunkHandle, column_index: usize) -> Self {
+        Self { chunk, column_index }
+    }
+}
+
+impl WritableVector for DataChunkHandleSlice<'_> {
+    fn array_vector(&mut self) -> ArrayVector {
+        self.chunk.array_vector(self.column_index)
+    }
+
+    fn flat_vector(&mut self) -> FlatVector {
+        self.chunk.flat_vector(self.column_index)
+    }
+
+    fn struct_vector(&mut self) -> StructVector {
+        self.chunk.struct_vector(self.column_index)
+    }
+
+    fn list_vector(&mut self) -> ListVector {
+        self.chunk.list_vector(self.column_index)
+    }
+}
+
+/// A WriteableVector is a trait that allows writing data to a DuckDB vector.
+/// To get the specific vector type, use the appropriate method.
+pub trait WritableVector {
+    /// Get the vector as a `FlatVector`.
+    fn flat_vector(&mut self) -> FlatVector;
+    /// Get the vector as a `ListVector`.
+    fn list_vector(&mut self) -> ListVector;
+    /// Get the vector as a `ArrayVector`.
+    fn array_vector(&mut self) -> ArrayVector;
+    /// Get the vector as a `StructVector`.
+    fn struct_vector(&mut self) -> StructVector;
+}
+
+/// Writes an Arrow array to a `WritableVector`.
+pub fn write_arrow_array_to_vector(
+    col: &Arc<dyn Array>,
+    chunk: &mut dyn WritableVector,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match col.data_type() {
+        dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
+            primitive_array_to_vector(col, &mut chunk.flat_vector())?;
+        }
+        DataType::Utf8 => {
+            string_array_to_vector(as_string_array(col.as_ref()), &mut chunk.flat_vector());
+        }
+        DataType::LargeUtf8 => {
+            string_array_to_vector(
+                col.as_ref()
+                    .as_any()
+                    .downcast_ref::<LargeStringArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeStringArray"))?,
+                &mut chunk.flat_vector(),
+            );
+        }
+        DataType::Utf8View => {
+            string_view_array_to_vector(
+                col.as_ref()
+                    .as_any()
+                    .downcast_ref::<StringViewArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
+                &mut chunk.flat_vector(),
+            );
+        }
+        DataType::Binary => {
+            binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector());
+        }
+        DataType::FixedSizeBinary(_) => {
+            fixed_size_binary_array_to_vector(col.as_ref().as_fixed_size_binary(), &mut chunk.flat_vector());
+        }
+        DataType::LargeBinary => {
+            large_binary_array_to_vector(
+                col.as_ref()
+                    .as_any()
+                    .downcast_ref::<LargeBinaryArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeBinaryArray"))?,
+                &mut chunk.flat_vector(),
+            );
+        }
+        DataType::BinaryView => {
+            binary_view_array_to_vector(
+                col.as_ref()
+                    .as_any()
+                    .downcast_ref::<BinaryViewArray>()
+                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
+                &mut chunk.flat_vector(),
+            );
+        }
+        DataType::List(_) => {
+            list_array_to_vector(as_list_array(col.as_ref()), &mut chunk.list_vector())?;
+        }
+        DataType::LargeList(_) => {
+            list_array_to_vector(as_large_list_array(col.as_ref()), &mut chunk.list_vector())?;
+        }
+        DataType::FixedSizeList(_, _) => {
+            fixed_size_list_array_to_vector(as_fixed_size_list_array(col.as_ref()), &mut chunk.array_vector())?;
+        }
+        DataType::Struct(_) => {
+            let struct_array = as_struct_array(col.as_ref());
+            let mut struct_vector = chunk.struct_vector();
+            struct_array_to_vector(struct_array, &mut struct_vector)?;
+        }
+        dt => {
+            return Err(format!(
+                "column with data_type {} is not supported yet, please file an issue https://github.com/wangfenjin/duckdb-rs",
+                dt
+            )
+            .into());
+        }
+    }
+
+    Ok(())
+}
+
+impl WritableVector for duckdb_vector {
+    fn array_vector(&mut self) -> ArrayVector {
+        ArrayVector::from(*self)
+    }
+
+    fn flat_vector(&mut self) -> FlatVector {
+        FlatVector::from(*self)
+    }
+
+    fn list_vector(&mut self) -> ListVector {
+        ListVector::from(*self)
+    }
+
+    fn struct_vector(&mut self) -> StructVector {
+        StructVector::from(*self)
+    }
+}
+
 /// Converts a `RecordBatch` to a `DataChunk` in the DuckDB format.
 ///
 /// # Arguments
@@ -213,77 +630,7 @@ pub fn record_batch_to_duckdb_data_chunk(
     assert_eq!(batch.num_columns(), chunk.num_columns());
     for i in 0..batch.num_columns() {
         let col = batch.column(i);
-        match col.data_type() {
-            dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
-                primitive_array_to_vector(col, &mut chunk.flat_vector(i))?;
-            }
-            DataType::Utf8 => {
-                string_array_to_vector(as_string_array(col.as_ref()), &mut chunk.flat_vector(i));
-            }
-            DataType::LargeUtf8 => {
-                string_array_to_vector(
-                    col.as_ref()
-                        .as_any()
-                        .downcast_ref::<LargeStringArray>()
-                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeStringArray"))?,
-                    &mut chunk.flat_vector(i),
-                );
-            }
-            DataType::Utf8View => {
-                string_view_array_to_vector(
-                    col.as_ref()
-                        .as_any()
-                        .downcast_ref::<StringViewArray>()
-                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
-                    &mut chunk.flat_vector(i),
-                );
-            }
-            DataType::Binary => {
-                binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector(i));
-            }
-            DataType::FixedSizeBinary(_) => {
-                fixed_size_binary_array_to_vector(col.as_ref().as_fixed_size_binary(), &mut chunk.flat_vector(i));
-            }
-            DataType::LargeBinary => {
-                large_binary_array_to_vector(
-                    col.as_ref()
-                        .as_any()
-                        .downcast_ref::<LargeBinaryArray>()
-                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeBinaryArray"))?,
-                    &mut chunk.flat_vector(i),
-                );
-            }
-            DataType::BinaryView => {
-                binary_view_array_to_vector(
-                    col.as_ref()
-                        .as_any()
-                        .downcast_ref::<BinaryViewArray>()
-                        .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
-                    &mut chunk.flat_vector(i),
-                );
-            }
-            DataType::List(_) => {
-                list_array_to_vector(as_list_array(col.as_ref()), &mut chunk.list_vector(i))?;
-            }
-            DataType::LargeList(_) => {
-                list_array_to_vector(as_large_list_array(col.as_ref()), &mut chunk.list_vector(i))?;
-            }
-            DataType::FixedSizeList(_, _) => {
-                fixed_size_list_array_to_vector(as_fixed_size_list_array(col.as_ref()), &mut chunk.array_vector(i))?;
-            }
-            DataType::Struct(_) => {
-                let struct_array = as_struct_array(col.as_ref());
-                let mut struct_vector = chunk.struct_vector(i);
-                struct_array_to_vector(struct_array, &mut struct_vector)?;
-            }
-            _ => {
-                return Err(format!(
-                    "column {} is not supported yet, please file an issue https://github.com/wangfenjin/duckdb-rs",
-                    batch.schema().field(i)
-                )
-                .into());
-            }
-        }
+        write_arrow_array_to_vector(col, &mut DataChunkHandleSlice::new(chunk, i))?;
     }
     chunk.set_len(batch.num_rows());
     Ok(())
