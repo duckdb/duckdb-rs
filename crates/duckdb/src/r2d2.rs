@@ -51,7 +51,6 @@ use crate::vscalar::VScalar;
 #[cfg(feature = "vscalar")]
 use std::fmt::Debug;
 
-
 #[cfg(feature = "vtab")]
 use crate::vtab::VTab;
 
