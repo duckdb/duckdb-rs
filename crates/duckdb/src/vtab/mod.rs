@@ -175,7 +175,6 @@ mod test {
     use std::{
         error::Error,
         ffi::{c_char, CString},
-        ptr,
     };
 
     struct HelloBindData {
