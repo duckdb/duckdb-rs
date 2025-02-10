@@ -9,10 +9,11 @@ use super::{
         duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
-    LogicalTypeHandle, Value,
+    LogicalTypeHandle, VTab, Value,
 };
 use std::{
     ffi::{c_void, CString},
+    marker::PhantomData,
     os::raw::c_char,
 };
 
@@ -138,7 +139,9 @@ impl From<duckdb_init_info> for InitInfo {
 impl InitInfo {
     /// # Safety
     pub unsafe fn set_init_data(&self, data: *mut c_void, freeer: Option<unsafe extern "C" fn(*mut c_void)>) {
-        duckdb_init_set_init_data(self.0, data, freeer);
+        unsafe {
+            duckdb_init_set_init_data(self.0, data, freeer);
+        }
     }
 
     /// Returns the column indices of the projected columns at the specified positions.
@@ -188,7 +191,7 @@ impl InitInfo {
     /// * `error`: The error message
     pub fn set_error(&self, error: &str) {
         let c_str = CString::new(error).unwrap();
-        unsafe { duckdb_init_set_error(self.0, c_str.as_ptr() as *const c_char) }
+        unsafe { duckdb_init_set_error(self.0, c_str.as_ptr()) }
     }
 }
 
@@ -309,7 +312,9 @@ impl TableFunction {
     ///
     /// # Safety
     pub unsafe fn set_extra_info(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        unsafe {
+            duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        }
     }
 
     /// Sets the thread-local init function of the table function
@@ -334,9 +339,12 @@ use super::ffi::{
 
 /// An interface to store and retrieve data during the function execution stage
 #[derive(Debug)]
-pub struct FunctionInfo(duckdb_function_info);
+pub struct FunctionInfo<V: VTab> {
+    ptr: duckdb_function_info,
+    _vtab: PhantomData<V>,
+}
 
-impl FunctionInfo {
+impl<V: VTab> FunctionInfo<V> {
     /// Report that an error has occurred while executing the function.
     ///
     /// # Arguments
@@ -344,44 +352,57 @@ impl FunctionInfo {
     pub fn set_error(&self, error: &str) {
         let c_str = CString::new(error).unwrap();
         unsafe {
-            duckdb_function_set_error(self.0, c_str.as_ptr() as *const c_char);
+            duckdb_function_set_error(self.ptr, c_str.as_ptr());
         }
     }
+
     /// Gets the bind data set by [`BindInfo::set_bind_data`] during the bind.
     ///
     /// Note that the bind data should be considered as read-only.
     /// For tracking state, use the init data instead.
-    ///
-    /// # Arguments
-    /// * `returns`: The bind data object
-    pub fn get_bind_data<T>(&self) -> *mut T {
-        unsafe { duckdb_function_get_bind_data(self.0).cast() }
+    pub fn get_bind_data(&self) -> &V::BindData {
+        unsafe {
+            let bind_data: *const V::BindData = duckdb_function_get_bind_data(self.ptr).cast();
+            bind_data.as_ref().unwrap()
+        }
     }
-    /// Gets the init data set by [`InitInfo::set_init_data`] during the init.
+
+    /// Get a reference to the init data set by [`InitInfo::set_init_data`] during the init.
+    ///
+    /// This returns a shared reference because the init data is shared between multiple threads.
+    /// It may internally be mutable.
     ///
     /// # Arguments
     /// * `returns`: The init data object
-    pub fn get_init_data<T>(&self) -> *mut T {
-        unsafe { duckdb_function_get_init_data(self.0).cast() }
+    pub fn get_init_data(&self) -> &V::InitData {
+        // Safety: A pointer to a box of the init data is stored during vtab init.
+        unsafe {
+            let init_data: *const V::InitData = duckdb_function_get_init_data(self.ptr).cast();
+            init_data.as_ref().unwrap()
+        }
     }
+
     /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`]
     ///
     /// # Arguments
     /// * `returns`: The extra info
     pub fn get_extra_info<T>(&self) -> *mut T {
-        unsafe { duckdb_function_get_extra_info(self.0).cast() }
+        unsafe { duckdb_function_get_extra_info(self.ptr).cast() }
     }
     /// Gets the thread-local init data set by [`InitInfo::set_init_data`] during the local_init.
     ///
     /// # Arguments
     /// * `returns`: The init data object
     pub fn get_local_init_data<T>(&self) -> *mut T {
-        unsafe { duckdb_function_get_local_init_data(self.0).cast() }
+        unsafe { duckdb_function_get_local_init_data(self.ptr).cast() }
     }
 }
 
-impl From<duckdb_function_info> for FunctionInfo {
+impl<V: VTab> From<duckdb_function_info> for FunctionInfo<V> {
     fn from(ptr: duckdb_function_info) -> Self {
-        Self(ptr)
+        Self {
+            ptr,
+            _vtab: PhantomData,
+        }
     }
 }
