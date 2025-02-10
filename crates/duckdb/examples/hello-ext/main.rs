@@ -6,7 +6,7 @@ extern crate libduckdb_sys;
 
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
-    vtab::{BindInfo, Free, FunctionInfo, InitInfo, VTab},
+    vtab::{BindInfo, FunctionInfo, InitInfo, VTab},
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint;
@@ -14,53 +14,43 @@ use libduckdb_sys as ffi;
 use std::{
     error::Error,
     ffi::{c_char, c_void, CString},
-    ptr,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 struct HelloBindData {
     name: String,
 }
 
-impl Free for HelloBindData {}
-
 struct HelloInitData {
-    done: bool,
+    done: AtomicBool,
 }
 
 struct HelloVTab;
-
-impl Free for HelloInitData {}
 
 impl VTab for HelloVTab {
     type InitData = HelloInitData;
     type BindData = HelloBindData;
 
-    unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         let name = bind.get_parameter(0).to_string();
-        unsafe {
-            ptr::write(data, HelloBindData { name });
-        }
-        Ok(())
+        Ok(HelloBindData { name })
     }
 
-    unsafe fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            ptr::write(data, HelloInitData { done: false });
-        }
-        Ok(())
+    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        Ok(HelloInitData {
+            done: AtomicBool::new(false),
+        })
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let init_info = unsafe { func.get_init_data::<HelloInitData>().as_mut().unwrap() };
-        let bind_info = unsafe { func.get_bind_data::<HelloBindData>().as_mut().unwrap() };
-
-        if init_info.done {
+    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        let init_data = func.get_init_data();
+        let bind_data = func.get_bind_data();
+        if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            init_info.done = true;
             let vector = output.flat_vector(0);
-            let result = CString::new(format!("Hello {}", bind_info.name))?;
+            let result = CString::new(format!("Hello {}", bind_data.name))?;
             vector.insert(0, result);
             output.set_len(1);
         }

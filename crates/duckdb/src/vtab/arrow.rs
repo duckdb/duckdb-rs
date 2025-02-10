@@ -1,5 +1,5 @@
-use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
-use std::ptr::null_mut;
+use super::{BindInfo, DataChunkHandle, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
+use std::sync::{atomic::AtomicBool, Mutex};
 
 use crate::core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector};
 use arrow::{
@@ -24,27 +24,14 @@ use num::{cast::AsPrimitive, ToPrimitive};
 /// A pointer to the Arrow record batch for the table function.
 #[repr(C)]
 pub struct ArrowBindData {
-    rb: *mut RecordBatch,
-}
-
-impl Free for ArrowBindData {
-    fn free(&mut self) {
-        unsafe {
-            if self.rb.is_null() {
-                return;
-            }
-            drop(Box::from_raw(self.rb));
-        }
-    }
+    rb: Mutex<RecordBatch>,
 }
 
 /// Keeps track of whether the Arrow record batch has been consumed.
 #[repr(C)]
 pub struct ArrowInitData {
-    done: bool,
+    done: AtomicBool,
 }
-
-impl Free for ArrowInitData {}
 
 /// The Arrow table function.
 pub struct ArrowVTab;
@@ -76,14 +63,14 @@ impl VTab for ArrowVTab {
     type BindData = ArrowBindData;
     type InitData = ArrowInitData;
 
-    unsafe fn bind(bind: &BindInfo, data: *mut ArrowBindData) -> Result<(), Box<dyn std::error::Error>> {
-        (*data).rb = null_mut();
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         let param_count = bind.get_parameter_count();
         if param_count != 2 {
             return Err(format!("Bad param count: {param_count}, expected 2").into());
         }
         let array = bind.get_parameter(0).to_int64();
         let schema = bind.get_parameter(1).to_int64();
+
         unsafe {
             let rb = address_to_arrow_record_batch(array as usize, schema as usize);
             for f in rb.schema().fields() {
@@ -92,32 +79,29 @@ impl VTab for ArrowVTab {
                 let logical_type = to_duckdb_logical_type(data_type)?;
                 bind.add_result_column(name, logical_type);
             }
-            (*data).rb = Box::into_raw(Box::new(rb));
+
+            Ok(ArrowBindData { rb: Mutex::new(rb) })
         }
-        Ok(())
     }
 
-    unsafe fn init(_: &InitInfo, data: *mut ArrowInitData) -> Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            (*data).done = false;
-        }
-        Ok(())
+    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        Ok(ArrowInitData {
+            done: AtomicBool::new(false),
+        })
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let init_info = func.get_init_data::<ArrowInitData>();
-        let bind_info = func.get_bind_data::<ArrowBindData>();
-        unsafe {
-            if (*init_info).done {
-                output.set_len(0);
-            } else {
-                let rb = Box::from_raw((*bind_info).rb);
-                (*bind_info).rb = null_mut(); // erase ref in case of failure in record_batch_to_duckdb_data_chunk
-                record_batch_to_duckdb_data_chunk(&rb, output)?;
-                (*bind_info).rb = Box::into_raw(rb);
-                (*init_info).done = true;
-            }
+    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        let init_info = func.get_init_data();
+        let bind_info = func.get_bind_data();
+
+        if init_info.done.load(std::sync::atomic::Ordering::Relaxed) {
+            output.set_len(0);
+        } else {
+            let rb = bind_info.rb.lock().unwrap();
+            record_batch_to_duckdb_data_chunk(&rb, output)?;
+            init_info.done.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+
         Ok(())
     }
 

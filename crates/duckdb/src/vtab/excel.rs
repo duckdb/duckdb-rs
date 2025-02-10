@@ -1,31 +1,20 @@
-use super::{BindInfo, DataChunkHandle, Free, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
+use std::sync::atomic::{self, AtomicUsize};
+
+use super::{BindInfo, DataChunkHandle, FunctionInfo, InitInfo, LogicalTypeHandle, LogicalTypeId, VTab};
 use crate::core::Inserter;
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
 #[repr(C)]
 struct ExcelBindData {
-    range: *mut Range<DataType>,
+    range: Range<DataType>,
     width: usize,
     height: usize,
 }
 
-impl Free for ExcelBindData {
-    fn free(&mut self) {
-        unsafe {
-            if self.range.is_null() {
-                return;
-            }
-            drop(Box::from_raw(self.range));
-        }
-    }
-}
-
 #[repr(C)]
 struct ExcelInitData {
-    start: usize,
+    start: AtomicUsize,
 }
-
-impl Free for ExcelInitData {}
 
 struct ExcelVTab;
 
@@ -33,7 +22,7 @@ impl VTab for ExcelVTab {
     type BindData = ExcelBindData;
     type InitData = ExcelInitData;
 
-    unsafe fn bind(bind: &BindInfo, data: *mut ExcelBindData) -> Result<(), Box<dyn std::error::Error>> {
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         let param_count = bind.get_parameter_count();
         assert!(param_count == 2);
         let path = bind.get_parameter(0).to_string();
@@ -117,65 +106,57 @@ impl VTab for ExcelVTab {
             break;
         }
 
-        unsafe {
-            (*data).width = range.get_size().1;
-            (*data).height = range.get_size().0;
-            (*data).range = Box::into_raw(Box::new(range));
-        }
-        Ok(())
+        let width = range.get_size().1;
+        let height = range.get_size().0;
+        Ok(ExcelBindData { range, width, height })
     }
 
-    unsafe fn init(_: &InitInfo, data: *mut ExcelInitData) -> Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            (*data).start = 1;
-        }
-        Ok(())
+    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        Ok(ExcelInitData { start: 1.into() })
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let init_info = func.get_init_data::<ExcelInitData>();
-        let bind_info = func.get_bind_data::<ExcelBindData>();
-        unsafe {
-            if (*init_info).start >= (*bind_info).height {
-                output.set_len(0);
-            } else {
-                let range = (*bind_info).range.as_ref().expect("range is null");
-                let height = std::cmp::min(
-                    output.flat_vector(0).capacity(),
-                    (*bind_info).height - (*init_info).start,
-                );
-                for i in 0..(*bind_info).width {
-                    let mut vector = output.flat_vector(i);
-                    for j in 0..height {
-                        let cell = range.get(((*init_info).start + j, i));
-                        if cell.is_none() {
-                            continue;
+    fn func(func: &FunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        let init_info = func.get_init_data();
+        let bind_info = func.get_bind_data();
+
+        let start = init_info.start.load(atomic::Ordering::Relaxed);
+        if start >= bind_info.height {
+            output.set_len(0);
+        } else {
+            let range = &bind_info.range;
+            let height = std::cmp::min(output.flat_vector(0).capacity(), bind_info.height - start);
+            for i in 0..bind_info.width {
+                let mut vector = output.flat_vector(i);
+                for j in 0..height {
+                    let cell = range.get((start + j, i));
+                    if cell.is_none() {
+                        continue;
+                    }
+                    match cell.unwrap() {
+                        DataType::String(s) => {
+                            vector.insert(j, s.as_str());
                         }
-                        match cell.unwrap() {
-                            DataType::String(s) => {
-                                vector.insert(j, s.as_str());
-                            }
-                            DataType::Float(f) => {
-                                vector.as_mut_slice::<f64>()[j] = *f;
-                            }
-                            DataType::Int(ii) => {
-                                vector.as_mut_slice::<i64>()[j] = *ii;
-                            }
-                            DataType::Bool(b) => {
-                                vector.as_mut_slice::<bool>()[j] = *b;
-                            }
-                            DataType::DateTime(d) => {
-                                vector.as_mut_slice::<i32>()[j] = d.round() as i32 - 25569;
-                            }
-                            _ => {
-                                vector.set_null(j);
-                            }
+                        DataType::Float(f) => {
+                            vector.as_mut_slice::<f64>()[j] = *f;
+                        }
+                        DataType::Int(ii) => {
+                            vector.as_mut_slice::<i64>()[j] = *ii;
+                        }
+                        DataType::Bool(b) => {
+                            vector.as_mut_slice::<bool>()[j] = *b;
+                        }
+                        DataType::DateTime(d) => {
+                            vector.as_mut_slice::<i32>()[j] = d.round() as i32 - 25569;
+                        }
+                        _ => {
+                            vector.set_null(j);
                         }
                     }
                 }
-                (*init_info).start += height;
-                output.set_len(height);
             }
+
+            init_info.start.fetch_add(height, atomic::Ordering::Relaxed);
+            output.set_len(height);
         }
         Ok(())
     }
