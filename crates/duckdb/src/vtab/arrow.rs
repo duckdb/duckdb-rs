@@ -895,13 +895,12 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     out: &mut ListVector,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
-    let mut child = out.child(value_array.len());
     match value_array.data_type() {
         dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
-            primitive_array_to_vector(value_array.as_ref(), &mut child)?;
+            primitive_array_to_vector(value_array.as_ref(), &mut out.child(value_array.len()))?;
         }
         DataType::Utf8 => {
-            string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
+            string_array_to_vector(as_string_array(value_array.as_ref()), &mut out.child(value_array.len()));
         }
         DataType::Utf8View => {
             string_view_array_to_vector(
@@ -910,11 +909,14 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
                     .as_any()
                     .downcast_ref::<StringViewArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
-                &mut child,
+                &mut out.child(value_array.len()),
             );
         }
         DataType::Binary => {
-            binary_array_to_vector(as_generic_binary_array(value_array.as_ref()), &mut child);
+            binary_array_to_vector(
+                as_generic_binary_array(value_array.as_ref()),
+                &mut out.child(value_array.len()),
+            );
         }
         DataType::BinaryView => {
             binary_view_array_to_vector(
@@ -923,11 +925,24 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
                     .as_any()
                     .downcast_ref::<BinaryViewArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
-                &mut child,
+                &mut out.child(value_array.len()),
             );
         }
+        DataType::List(_) => {
+            list_array_to_vector(as_list_array(value_array.as_ref()), &mut out.list_child())?;
+        }
+        DataType::FixedSizeList(_, _) => {
+            fixed_size_list_array_to_vector(as_fixed_size_list_array(value_array.as_ref()), &mut out.array_child())?;
+        }
+        DataType::Struct(_) => {
+            struct_array_to_vector(as_struct_array(value_array.as_ref()), &mut out.struct_child())?;
+        }
         _ => {
-            return Err("Nested list is not supported yet.".into());
+            return Err(format!(
+                "List with elements of type '{}' are not currently supported.",
+                value_array.data_type()
+            )
+            .into());
         }
     }
 
@@ -1095,11 +1110,12 @@ mod test {
     use arrow::{
         array::{
             Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Date64Array,
-            Decimal128Array, Decimal256Array, DurationSecondArray, FixedSizeListArray, GenericByteArray,
-            GenericListArray, Int32Array, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
-            LargeStringArray, ListArray, OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray,
-            Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
-            TimestampNanosecondArray, TimestampSecondArray,
+            Decimal128Array, Decimal256Array, DurationSecondArray, FixedSizeListArray, FixedSizeListBuilder,
+            GenericByteArray, GenericListArray, Int32Array, Int32Builder, IntervalDayTimeArray,
+            IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray, ListBuilder,
+            OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, Time32SecondArray,
+            Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+            TimestampSecondArray,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
@@ -1788,6 +1804,93 @@ mod test {
         assert!(output_array.is_valid(2));
         assert_eq!(output_array.value(0), b"hello");
         assert_eq!(output_array.value(2), b"!");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_of_fixed_size_lists_roundtrip() -> Result<(), Box<dyn Error>> {
+        // field name must be empty to match `query_arrow` behavior, otherwise record batches will not match
+        let field = Field::new("", DataType::Int32, true);
+        let mut list_builder = ListBuilder::new(FixedSizeListBuilder::new(Int32Builder::new(), 2).with_field(field));
+
+        // Append first list of FixedSizeList items
+        {
+            let fixed_size_list_builder = list_builder.values();
+            fixed_size_list_builder.values().append_value(1);
+            fixed_size_list_builder.values().append_value(2);
+            fixed_size_list_builder.append(true);
+
+            // Append NULL fixed-size list item
+            fixed_size_list_builder.values().append_null();
+            fixed_size_list_builder.values().append_null();
+            fixed_size_list_builder.append(false);
+
+            fixed_size_list_builder.values().append_value(3);
+            fixed_size_list_builder.values().append_value(4);
+            fixed_size_list_builder.append(true);
+
+            list_builder.append(true);
+        }
+
+        // Append NULL list
+        list_builder.append_null();
+
+        check_generic_array_roundtrip(list_builder.finish())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_of_lists_roundtrip() -> Result<(), Box<dyn Error>> {
+        // field name must be 'l' to match `query_arrow` behavior, otherwise record batches will not match
+        let field = Field::new("l", DataType::Int32, true);
+        let mut list_builder = ListBuilder::new(ListBuilder::new(Int32Builder::new()).with_field(field.clone()));
+
+        // Append first list of items
+        {
+            let list_item_builder = list_builder.values();
+            list_item_builder.append_value(vec![Some(1), Some(2)]);
+
+            // Append NULL list item
+            list_item_builder.append_null();
+
+            list_item_builder.append_value(vec![Some(3), None, Some(5)]);
+
+            list_builder.append(true);
+        }
+
+        // Append NULL list
+        list_builder.append_null();
+
+        check_generic_array_roundtrip(list_builder.finish())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_of_structs_roundtrip() -> Result<(), Box<dyn Error>> {
+        let field_i = Arc::new(Field::new("i", DataType::Int32, true));
+        let field_s = Arc::new(Field::new("s", DataType::Utf8, true));
+
+        let int32_array = Int32Array::from(vec![Some(1), Some(2), Some(3), Some(4), Some(5)]);
+        let string_array = StringArray::from(vec![Some("foo"), Some("baz"), Some("bar"), Some("foo"), Some("baz")]);
+
+        let struct_array = StructArray::from(vec![
+            (field_i.clone(), Arc::new(int32_array) as Arc<dyn Array>),
+            (field_s.clone(), Arc::new(string_array) as Arc<dyn Array>),
+        ]);
+
+        check_generic_array_roundtrip(ListArray::new(
+            Arc::new(Field::new(
+                "item",
+                DataType::Struct(vec![field_i, field_s].into()),
+                true,
+            )),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 3, 4, 5])),
+            Arc::new(struct_array),
+            Some(vec![true, false, true].into()),
+        ))?;
 
         Ok(())
     }
