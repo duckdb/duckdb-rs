@@ -260,7 +260,6 @@ impl RawStatement {
         unsafe {
             let mut out: ffi::duckdb_arrow = ptr::null_mut();
             let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
-            println!("error code: {}", rc);
             result_from_duckdb_arrow(rc, out)?;
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
