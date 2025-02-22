@@ -44,16 +44,13 @@ jobs:
           # cf. https://github.com/actions/deploy-pages/issues/188#issuecomment-1597651901
           rm -f ./target/doc/.lock
 
-          mkdir _docs
-          mv ./target/doc ./_docs/extension-api
-
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './_docs/'
+          path: './target/doc'
 
       - name: Deploy to GitHub Pages
         id: deployment
