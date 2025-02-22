@@ -32,7 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
 
       - name: Build API Reference
-        run: cargo doc --no-deps --features vtab-loadable,loadable-extension
+        run: cargo doc --no-deps --features vscalar,vtab-loadable,loadable-extension
         env:
           RUSTDOCFLAGS: "--enable-index-page -Zunstable-options"
 
