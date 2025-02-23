@@ -1969,6 +1969,7 @@ mod test {
 
     #[test]
     fn test_map_roundtrip() -> Result<(), Box<dyn Error>> {
+        // Test 1 - simple MapArray
         let keys = vec!["a", "b", "c", "d", "e", "f", "g", "h"];
         let values_data = UInt32Array::from(vec![
             Some(0u32),
@@ -1980,13 +1981,24 @@ mod test {
             Some(60),
             Some(70),
         ]);
-
         // Construct a buffer for value offsets, for the nested array:
         //  [[a, b, c], [d, e, f], [g, h]]
         let entry_offsets = [0, 3, 6, 8];
-
         let map_array = MapArray::new_from_strings(keys.clone().into_iter(), &values_data, &entry_offsets).unwrap();
+        check_map_array_roundtrip(map_array)?;
 
+        // Test 2 - large MapArray of 4000 elements to test buffers capacity adjustment
+        let keys: Vec<String> = (0..4000).map(|i| format!("key-{}", i)).collect();
+        let values_data = UInt32Array::from(
+            (0..4000)
+                .map(|i| if i % 5 == 0 { None } else { Some(i as u32) })
+                .collect::<Vec<_>>(),
+        );
+        let mut entry_offsets: Vec<u32> = (0..=4000).step_by(3).collect();
+        entry_offsets.push(4000);
+        let map_array =
+            MapArray::new_from_strings(keys.iter().map(String::as_str), &values_data, entry_offsets.as_slice())
+                .unwrap();
         check_map_array_roundtrip(map_array)?;
 
         Ok(())
