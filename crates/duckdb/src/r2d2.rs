@@ -115,7 +115,7 @@ impl r2d2::ManageConnection for DuckdbConnectionManager {
     }
 
     fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        conn.execute_batch("").map_err(Into::into)
+        conn.execute_batch("")
     }
 
     fn has_broken(&self, _: &mut Self::Connection) -> bool {
