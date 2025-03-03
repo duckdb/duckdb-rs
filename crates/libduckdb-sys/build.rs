@@ -37,6 +37,7 @@ fn main() {
 mod build_bundled {
     use std::{
         collections::{HashMap, HashSet},
+        env,
         path::Path,
     };
 
@@ -153,10 +154,19 @@ mod build_bundled {
         cfg.cpp(true)
             .flag_if_supported("-std=c++11")
             .flag_if_supported("-stdlib=libc++")
-            .flag_if_supported("-stdlib=libstdc++")
             .flag_if_supported("/bigobj")
             .warnings(false)
             .flag_if_supported("-w");
+
+        // The Android NDK doesn't build with this flag set.
+        if env::var("CARGO_CFG_TARGET_OS").unwrap() != "android" {
+            cfg.flag_if_supported("-stdlib=libstdc++");
+        }
+
+        #[cfg(feature = "bundled-android-static-libstdcpp")]
+        if env::var("CARGO_CFG_TARGET_OS").unwrap() == "android" {
+            cfg.flag_if_supported("-static-libstdc++");
+        }
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);

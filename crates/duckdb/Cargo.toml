@@ -20,6 +20,7 @@ name = "duckdb"
 [features]
 default = []
 bundled = ["libduckdb-sys/bundled"]
+bundled-android-static-libstdcpp = ["libduckdb-sys/bundled-android-static-libstdcpp"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
 vscalar = []
