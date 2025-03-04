@@ -651,7 +651,7 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
         },
         "medium_enum" => match idx {
             0 => assert_eq!(value.to_owned(), Value::Enum("enum_0".to_string())),
-            1 => assert_eq!(value.to_owned(), Value::Enum("enum_1".to_string())),
+            1 => assert_eq!(value.to_owned(), Value::Enum("enum_299".to_string())),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "large_enum" => match idx {
