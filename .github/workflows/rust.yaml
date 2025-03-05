@@ -32,7 +32,7 @@ jobs:
         with:
           rust-version: stable${{ matrix.host }}
           targets: ${{ matrix.target }}
-          components: 'rustfmt, clippy'
+          components: 'rustfmt,clippy'
 
       # download libduckdb
       - uses: robinraju/release-downloader@v1.4

@@ -6,8 +6,8 @@ use rust_decimal::prelude::*;
 
 use arrow::{
     array::{
-        Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StructArray,
-        UnionArray,
+        Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StringArray,
+        StructArray, UnionArray,
     },
     datatypes::{UInt16Type, UInt32Type, UInt8Type},
 };
@@ -239,22 +239,21 @@ impl From<ValueRef<'_>> for Value {
                 }
             },
             ValueRef::Enum(items, idx) => {
-                let value = Row::value_ref_internal(
-                    idx,
-                    0,
-                    match items {
-                        EnumType::UInt8(res) => res.values(),
-                        EnumType::UInt16(res) => res.values(),
-                        EnumType::UInt32(res) => res.values(),
-                    },
-                )
-                .to_owned();
-
-                if let Value::Text(s) = value {
-                    Value::Enum(s)
-                } else {
-                    panic!("Enum value is not a string")
+                let dict_values = match items {
+                    EnumType::UInt8(res) => res.values(),
+                    EnumType::UInt16(res) => res.values(),
+                    EnumType::UInt32(res) => res.values(),
                 }
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Enum value is not a string");
+                let dict_key = match items {
+                    EnumType::UInt8(res) => res.key(idx),
+                    EnumType::UInt16(res) => res.key(idx),
+                    EnumType::UInt32(res) => res.key(idx),
+                }
+                .unwrap();
+                Value::Enum(dict_values.value(dict_key).to_string())
             }
             ValueRef::Struct(items, idx) => {
                 let value: Vec<(String, Value)> = items
