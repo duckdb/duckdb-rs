@@ -201,8 +201,12 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
             &to_duckdb_logical_type(child.data_type())?,
             *array_size as u64,
         )),
-        DataType::Decimal128(width, scale) if *scale > 0 => {
-            // DuckDB does not support negative decimal scales
+        DataType::Decimal128(width, scale) => {
+            if *scale < 0 {
+                return Err(
+                    format!("Unsupported data type: {data_type}, negative decimal scale is not supported").into(),
+                );
+            }
             Ok(LogicalTypeHandle::decimal(*width, (*scale).try_into().unwrap()))
         }
         DataType::Map(field, _) => arrow_map_to_duckdb_logical_type(field),
@@ -1610,14 +1614,21 @@ mod test {
 
     #[test]
     fn test_decimal128_roundtrip() -> Result<(), Box<dyn Error>> {
+        // With default width and scale
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
             Decimal128Array::from(vec![i128::from(1), i128::from(2), i128::from(3)]);
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
-        // With width and scale
+        // With custom width and scale
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
             Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 2));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
+
+        // With width and zero scale
+        let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
+            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 0));
+        check_rust_primitive_array_roundtrip(array.clone(), array)?;
+
         Ok(())
     }
 
