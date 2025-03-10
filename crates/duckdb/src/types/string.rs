@@ -6,6 +6,7 @@ pub struct DuckString<'a> {
 }
 
 impl<'a> DuckString<'a> {
+    #[allow(dead_code)]
     pub(crate) fn new(ptr: &'a mut duckdb_string_t) -> Self {
         DuckString { ptr }
     }
