@@ -148,12 +148,6 @@ pub type duckdb_task_state = *mut ::std::os::raw::c_void;
 pub struct duckdb_date {
     pub days: i32,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_date"][::std::mem::size_of::<duckdb_date>() - 4usize];
-    ["Alignment of duckdb_date"][::std::mem::align_of::<duckdb_date>() - 4usize];
-    ["Offset of field: duckdb_date::days"][::std::mem::offset_of!(duckdb_date, days) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_date_struct {
@@ -161,26 +155,12 @@ pub struct duckdb_date_struct {
     pub month: i8,
     pub day: i8,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_date_struct"][::std::mem::size_of::<duckdb_date_struct>() - 8usize];
-    ["Alignment of duckdb_date_struct"][::std::mem::align_of::<duckdb_date_struct>() - 4usize];
-    ["Offset of field: duckdb_date_struct::year"][::std::mem::offset_of!(duckdb_date_struct, year) - 0usize];
-    ["Offset of field: duckdb_date_struct::month"][::std::mem::offset_of!(duckdb_date_struct, month) - 4usize];
-    ["Offset of field: duckdb_date_struct::day"][::std::mem::offset_of!(duckdb_date_struct, day) - 5usize];
-};
 #[doc = "! Time is stored as microseconds since 00:00:00\n! Use the duckdb_from_time/duckdb_to_time function to extract individual information"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time {
     pub micros: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time"][::std::mem::size_of::<duckdb_time>() - 8usize];
-    ["Alignment of duckdb_time"][::std::mem::align_of::<duckdb_time>() - 8usize];
-    ["Offset of field: duckdb_time::micros"][::std::mem::offset_of!(duckdb_time, micros) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time_struct {
@@ -189,101 +169,48 @@ pub struct duckdb_time_struct {
     pub sec: i8,
     pub micros: i32,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time_struct"][::std::mem::size_of::<duckdb_time_struct>() - 8usize];
-    ["Alignment of duckdb_time_struct"][::std::mem::align_of::<duckdb_time_struct>() - 4usize];
-    ["Offset of field: duckdb_time_struct::hour"][::std::mem::offset_of!(duckdb_time_struct, hour) - 0usize];
-    ["Offset of field: duckdb_time_struct::min"][::std::mem::offset_of!(duckdb_time_struct, min) - 1usize];
-    ["Offset of field: duckdb_time_struct::sec"][::std::mem::offset_of!(duckdb_time_struct, sec) - 2usize];
-    ["Offset of field: duckdb_time_struct::micros"][::std::mem::offset_of!(duckdb_time_struct, micros) - 4usize];
-};
 #[doc = "! TIME_TZ is stored as 40 bits for int64_t micros, and 24 bits for int32_t offset"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time_tz {
     pub bits: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time_tz"][::std::mem::size_of::<duckdb_time_tz>() - 8usize];
-    ["Alignment of duckdb_time_tz"][::std::mem::align_of::<duckdb_time_tz>() - 8usize];
-    ["Offset of field: duckdb_time_tz::bits"][::std::mem::offset_of!(duckdb_time_tz, bits) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time_tz_struct {
     pub time: duckdb_time_struct,
     pub offset: i32,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time_tz_struct"][::std::mem::size_of::<duckdb_time_tz_struct>() - 12usize];
-    ["Alignment of duckdb_time_tz_struct"][::std::mem::align_of::<duckdb_time_tz_struct>() - 4usize];
-    ["Offset of field: duckdb_time_tz_struct::time"][::std::mem::offset_of!(duckdb_time_tz_struct, time) - 0usize];
-    ["Offset of field: duckdb_time_tz_struct::offset"][::std::mem::offset_of!(duckdb_time_tz_struct, offset) - 8usize];
-};
 #[doc = "! TIMESTAMP values are stored as microseconds since 1970-01-01.\n! Use the duckdb_from_timestamp and duckdb_to_timestamp functions to extract individual information."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp {
     pub micros: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp"][::std::mem::size_of::<duckdb_timestamp>() - 8usize];
-    ["Alignment of duckdb_timestamp"][::std::mem::align_of::<duckdb_timestamp>() - 8usize];
-    ["Offset of field: duckdb_timestamp::micros"][::std::mem::offset_of!(duckdb_timestamp, micros) - 0usize];
-};
 #[doc = "! TIMESTAMP_S values are stored as seconds since 1970-01-01."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_s {
     pub seconds: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_s"][::std::mem::size_of::<duckdb_timestamp_s>() - 8usize];
-    ["Alignment of duckdb_timestamp_s"][::std::mem::align_of::<duckdb_timestamp_s>() - 8usize];
-    ["Offset of field: duckdb_timestamp_s::seconds"][::std::mem::offset_of!(duckdb_timestamp_s, seconds) - 0usize];
-};
 #[doc = "! TIMESTAMP_MS values are stored as milliseconds since 1970-01-01."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_ms {
     pub millis: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_ms"][::std::mem::size_of::<duckdb_timestamp_ms>() - 8usize];
-    ["Alignment of duckdb_timestamp_ms"][::std::mem::align_of::<duckdb_timestamp_ms>() - 8usize];
-    ["Offset of field: duckdb_timestamp_ms::millis"][::std::mem::offset_of!(duckdb_timestamp_ms, millis) - 0usize];
-};
 #[doc = "! TIMESTAMP_NS values are stored as nanoseconds since 1970-01-01."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_ns {
     pub nanos: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_ns"][::std::mem::size_of::<duckdb_timestamp_ns>() - 8usize];
-    ["Alignment of duckdb_timestamp_ns"][::std::mem::align_of::<duckdb_timestamp_ns>() - 8usize];
-    ["Offset of field: duckdb_timestamp_ns::nanos"][::std::mem::offset_of!(duckdb_timestamp_ns, nanos) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_struct {
     pub date: duckdb_date_struct,
     pub time: duckdb_time_struct,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_struct"][::std::mem::size_of::<duckdb_timestamp_struct>() - 16usize];
-    ["Alignment of duckdb_timestamp_struct"][::std::mem::align_of::<duckdb_timestamp_struct>() - 4usize];
-    ["Offset of field: duckdb_timestamp_struct::date"][::std::mem::offset_of!(duckdb_timestamp_struct, date) - 0usize];
-    ["Offset of field: duckdb_timestamp_struct::time"][::std::mem::offset_of!(duckdb_timestamp_struct, time) - 8usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_interval {
@@ -291,14 +218,6 @@ pub struct duckdb_interval {
     pub days: i32,
     pub micros: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_interval"][::std::mem::size_of::<duckdb_interval>() - 16usize];
-    ["Alignment of duckdb_interval"][::std::mem::align_of::<duckdb_interval>() - 8usize];
-    ["Offset of field: duckdb_interval::months"][::std::mem::offset_of!(duckdb_interval, months) - 0usize];
-    ["Offset of field: duckdb_interval::days"][::std::mem::offset_of!(duckdb_interval, days) - 4usize];
-    ["Offset of field: duckdb_interval::micros"][::std::mem::offset_of!(duckdb_interval, micros) - 8usize];
-};
 #[doc = "! Hugeints are composed of a (lower, upper) component\n! The value of the hugeint is upper * 2^64 + lower\n! For easy usage, the functions duckdb_hugeint_to_double/duckdb_double_to_hugeint are recommended"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -306,26 +225,12 @@ pub struct duckdb_hugeint {
     pub lower: u64,
     pub upper: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_hugeint"][::std::mem::size_of::<duckdb_hugeint>() - 16usize];
-    ["Alignment of duckdb_hugeint"][::std::mem::align_of::<duckdb_hugeint>() - 8usize];
-    ["Offset of field: duckdb_hugeint::lower"][::std::mem::offset_of!(duckdb_hugeint, lower) - 0usize];
-    ["Offset of field: duckdb_hugeint::upper"][::std::mem::offset_of!(duckdb_hugeint, upper) - 8usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_uhugeint {
     pub lower: u64,
     pub upper: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_uhugeint"][::std::mem::size_of::<duckdb_uhugeint>() - 16usize];
-    ["Alignment of duckdb_uhugeint"][::std::mem::align_of::<duckdb_uhugeint>() - 8usize];
-    ["Offset of field: duckdb_uhugeint::lower"][::std::mem::offset_of!(duckdb_uhugeint, lower) - 0usize];
-    ["Offset of field: duckdb_uhugeint::upper"][::std::mem::offset_of!(duckdb_uhugeint, upper) - 8usize];
-};
 #[doc = "! Decimals are composed of a width and a scale, and are stored in a hugeint"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -334,14 +239,6 @@ pub struct duckdb_decimal {
     pub scale: u8,
     pub value: duckdb_hugeint,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_decimal"][::std::mem::size_of::<duckdb_decimal>() - 24usize];
-    ["Alignment of duckdb_decimal"][::std::mem::align_of::<duckdb_decimal>() - 8usize];
-    ["Offset of field: duckdb_decimal::width"][::std::mem::offset_of!(duckdb_decimal, width) - 0usize];
-    ["Offset of field: duckdb_decimal::scale"][::std::mem::offset_of!(duckdb_decimal, scale) - 1usize];
-    ["Offset of field: duckdb_decimal::value"][::std::mem::offset_of!(duckdb_decimal, value) - 8usize];
-};
 #[doc = "! A type holding information about the query execution progress"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -350,17 +247,6 @@ pub struct duckdb_query_progress_type {
     pub rows_processed: u64,
     pub total_rows_to_process: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_query_progress_type"][::std::mem::size_of::<duckdb_query_progress_type>() - 24usize];
-    ["Alignment of duckdb_query_progress_type"][::std::mem::align_of::<duckdb_query_progress_type>() - 8usize];
-    ["Offset of field: duckdb_query_progress_type::percentage"]
-        [::std::mem::offset_of!(duckdb_query_progress_type, percentage) - 0usize];
-    ["Offset of field: duckdb_query_progress_type::rows_processed"]
-        [::std::mem::offset_of!(duckdb_query_progress_type, rows_processed) - 8usize];
-    ["Offset of field: duckdb_query_progress_type::total_rows_to_process"]
-        [::std::mem::offset_of!(duckdb_query_progress_type, total_rows_to_process) - 16usize];
-};
 #[doc = "! The internal representation of a VARCHAR (string_t). If the VARCHAR does not\n! exceed 12 characters, then we inline it. Otherwise, we inline a prefix for faster\n! string comparisons and store a pointer to the remaining characters. This is a non-\n! owning structure, i.e., it does not have to be freed."]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -380,51 +266,12 @@ pub struct duckdb_string_t__bindgen_ty_1__bindgen_ty_1 {
     pub prefix: [::std::os::raw::c_char; 4usize],
     pub ptr: *mut ::std::os::raw::c_char,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t__bindgen_ty_1__bindgen_ty_1"]
-        [::std::mem::size_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_1>() - 16usize];
-    ["Alignment of duckdb_string_t__bindgen_ty_1__bindgen_ty_1"]
-        [::std::mem::align_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_1>() - 8usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_1::length"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1, length) - 0usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_1::prefix"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1, prefix) - 4usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_1::ptr"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1, ptr) - 8usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_string_t__bindgen_ty_1__bindgen_ty_2 {
     pub length: u32,
     pub inlined: [::std::os::raw::c_char; 12usize],
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t__bindgen_ty_1__bindgen_ty_2"]
-        [::std::mem::size_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_2>() - 16usize];
-    ["Alignment of duckdb_string_t__bindgen_ty_1__bindgen_ty_2"]
-        [::std::mem::align_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_2>() - 4usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_2::length"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2, length) - 0usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_2::inlined"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2, inlined) - 4usize];
-};
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t__bindgen_ty_1"][::std::mem::size_of::<duckdb_string_t__bindgen_ty_1>() - 16usize];
-    ["Alignment of duckdb_string_t__bindgen_ty_1"][::std::mem::align_of::<duckdb_string_t__bindgen_ty_1>() - 8usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1::pointer"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1, pointer) - 0usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1::inlined"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1, inlined) - 0usize];
-};
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t"][::std::mem::size_of::<duckdb_string_t>() - 16usize];
-    ["Alignment of duckdb_string_t"][::std::mem::align_of::<duckdb_string_t>() - 8usize];
-    ["Offset of field: duckdb_string_t::value"][::std::mem::offset_of!(duckdb_string_t, value) - 0usize];
-};
 #[doc = "! The internal representation of a list metadata entry contains the list's offset in\n! the child vector, and its length. The parent vector holds these metadata entries,\n! whereas the child vector holds the data"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -432,13 +279,6 @@ pub struct duckdb_list_entry {
     pub offset: u64,
     pub length: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_list_entry"][::std::mem::size_of::<duckdb_list_entry>() - 16usize];
-    ["Alignment of duckdb_list_entry"][::std::mem::align_of::<duckdb_list_entry>() - 8usize];
-    ["Offset of field: duckdb_list_entry::offset"][::std::mem::offset_of!(duckdb_list_entry, offset) - 0usize];
-    ["Offset of field: duckdb_list_entry::length"][::std::mem::offset_of!(duckdb_list_entry, length) - 8usize];
-};
 #[doc = "! A column consists of a pointer to its internal data. Don't operate on this type directly.\n! Instead, use functions such as duckdb_column_data, duckdb_nullmask_data,\n! duckdb_column_type, and duckdb_column_name, which take the result and the column index\n! as their parameters"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -449,32 +289,12 @@ pub struct duckdb_column {
     pub deprecated_name: *mut ::std::os::raw::c_char,
     pub internal_data: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_column"][::std::mem::size_of::<duckdb_column>() - 40usize];
-    ["Alignment of duckdb_column"][::std::mem::align_of::<duckdb_column>() - 8usize];
-    ["Offset of field: duckdb_column::deprecated_data"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_data) - 0usize];
-    ["Offset of field: duckdb_column::deprecated_nullmask"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_nullmask) - 8usize];
-    ["Offset of field: duckdb_column::deprecated_type"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_type) - 16usize];
-    ["Offset of field: duckdb_column::deprecated_name"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_name) - 24usize];
-    ["Offset of field: duckdb_column::internal_data"][::std::mem::offset_of!(duckdb_column, internal_data) - 32usize];
-};
 #[doc = "! A vector to a specified column in a data chunk. Lives as long as the\n! data chunk lives, i.e., must not be destroyed."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_vector {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_vector"][::std::mem::size_of::<_duckdb_vector>() - 8usize];
-    ["Alignment of _duckdb_vector"][::std::mem::align_of::<_duckdb_vector>() - 8usize];
-    ["Offset of field: _duckdb_vector::internal_ptr"][::std::mem::offset_of!(_duckdb_vector, internal_ptr) - 0usize];
-};
 #[doc = "! A vector to a specified column in a data chunk. Lives as long as the\n! data chunk lives, i.e., must not be destroyed."]
 pub type duckdb_vector = *mut _duckdb_vector;
 #[doc = "! Strings are composed of a char pointer and a size. You must free string.data\n! with `duckdb_free`."]
@@ -484,13 +304,6 @@ pub struct duckdb_string {
     pub data: *mut ::std::os::raw::c_char,
     pub size: idx_t,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string"][::std::mem::size_of::<duckdb_string>() - 16usize];
-    ["Alignment of duckdb_string"][::std::mem::align_of::<duckdb_string>() - 8usize];
-    ["Offset of field: duckdb_string::data"][::std::mem::offset_of!(duckdb_string, data) - 0usize];
-    ["Offset of field: duckdb_string::size"][::std::mem::offset_of!(duckdb_string, size) - 8usize];
-};
 #[doc = "! BLOBs are composed of a byte pointer and a size. You must free blob.data\n! with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -498,13 +311,6 @@ pub struct duckdb_blob {
     pub data: *mut ::std::os::raw::c_void,
     pub size: idx_t,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_blob"][::std::mem::size_of::<duckdb_blob>() - 16usize];
-    ["Alignment of duckdb_blob"][::std::mem::align_of::<duckdb_blob>() - 8usize];
-    ["Offset of field: duckdb_blob::data"][::std::mem::offset_of!(duckdb_blob, data) - 0usize];
-    ["Offset of field: duckdb_blob::size"][::std::mem::offset_of!(duckdb_blob, size) - 8usize];
-};
 #[doc = "! BITs are composed of a byte pointer and a size.\n! BIT byte data has 0 to 7 bits of padding.\n! The first byte contains the number of padding bits.\n! This number of bits of the second byte are set to 1, starting from the MSB.\n! You must free `data` with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -512,13 +318,6 @@ pub struct duckdb_bit {
     pub data: *mut u8,
     pub size: idx_t,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_bit"][::std::mem::size_of::<duckdb_bit>() - 16usize];
-    ["Alignment of duckdb_bit"][::std::mem::align_of::<duckdb_bit>() - 8usize];
-    ["Offset of field: duckdb_bit::data"][::std::mem::offset_of!(duckdb_bit, data) - 0usize];
-    ["Offset of field: duckdb_bit::size"][::std::mem::offset_of!(duckdb_bit, size) - 8usize];
-};
 #[doc = "! VARINTs are composed of a byte pointer, a size, and an is_negative bool.\n! The absolute value of the number is stored in `data` in little endian format.\n! You must free `data` with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -527,14 +326,6 @@ pub struct duckdb_varint {
     pub size: idx_t,
     pub is_negative: bool,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_varint"][::std::mem::size_of::<duckdb_varint>() - 24usize];
-    ["Alignment of duckdb_varint"][::std::mem::align_of::<duckdb_varint>() - 8usize];
-    ["Offset of field: duckdb_varint::data"][::std::mem::offset_of!(duckdb_varint, data) - 0usize];
-    ["Offset of field: duckdb_varint::size"][::std::mem::offset_of!(duckdb_varint, size) - 8usize];
-    ["Offset of field: duckdb_varint::is_negative"][::std::mem::offset_of!(duckdb_varint, is_negative) - 16usize];
-};
 #[doc = "! A query result consists of a pointer to its internal data.\n! Must be freed with 'duckdb_destroy_result'."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -546,35 +337,12 @@ pub struct duckdb_result {
     pub deprecated_error_message: *mut ::std::os::raw::c_char,
     pub internal_data: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_result"][::std::mem::size_of::<duckdb_result>() - 48usize];
-    ["Alignment of duckdb_result"][::std::mem::align_of::<duckdb_result>() - 8usize];
-    ["Offset of field: duckdb_result::deprecated_column_count"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_column_count) - 0usize];
-    ["Offset of field: duckdb_result::deprecated_row_count"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_row_count) - 8usize];
-    ["Offset of field: duckdb_result::deprecated_rows_changed"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_rows_changed) - 16usize];
-    ["Offset of field: duckdb_result::deprecated_columns"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_columns) - 24usize];
-    ["Offset of field: duckdb_result::deprecated_error_message"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_error_message) - 32usize];
-    ["Offset of field: duckdb_result::internal_data"][::std::mem::offset_of!(duckdb_result, internal_data) - 40usize];
-};
 #[doc = "! A database instance cache object. Must be destroyed with `duckdb_destroy_instance_cache`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_instance_cache {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_instance_cache"][::std::mem::size_of::<_duckdb_instance_cache>() - 8usize];
-    ["Alignment of _duckdb_instance_cache"][::std::mem::align_of::<_duckdb_instance_cache>() - 8usize];
-    ["Offset of field: _duckdb_instance_cache::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_instance_cache, internal_ptr) - 0usize];
-};
 #[doc = "! A database instance cache object. Must be destroyed with `duckdb_destroy_instance_cache`."]
 pub type duckdb_instance_cache = *mut _duckdb_instance_cache;
 #[doc = "! A database object. Must be closed with `duckdb_close`."]
@@ -583,13 +351,6 @@ pub type duckdb_instance_cache = *mut _duckdb_instance_cache;
 pub struct _duckdb_database {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_database"][::std::mem::size_of::<_duckdb_database>() - 8usize];
-    ["Alignment of _duckdb_database"][::std::mem::align_of::<_duckdb_database>() - 8usize];
-    ["Offset of field: _duckdb_database::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_database, internal_ptr) - 0usize];
-};
 #[doc = "! A database object. Must be closed with `duckdb_close`."]
 pub type duckdb_database = *mut _duckdb_database;
 #[doc = "! A connection to a duckdb database. Must be closed with `duckdb_disconnect`."]
@@ -598,13 +359,6 @@ pub type duckdb_database = *mut _duckdb_database;
 pub struct _duckdb_connection {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_connection"][::std::mem::size_of::<_duckdb_connection>() - 8usize];
-    ["Alignment of _duckdb_connection"][::std::mem::align_of::<_duckdb_connection>() - 8usize];
-    ["Offset of field: _duckdb_connection::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_connection, internal_ptr) - 0usize];
-};
 #[doc = "! A connection to a duckdb database. Must be closed with `duckdb_disconnect`."]
 pub type duckdb_connection = *mut _duckdb_connection;
 #[doc = "! A prepared statement is a parameterized query that allows you to bind parameters to it.\n! Must be destroyed with `duckdb_destroy_prepare`."]
@@ -613,13 +367,6 @@ pub type duckdb_connection = *mut _duckdb_connection;
 pub struct _duckdb_prepared_statement {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_prepared_statement"][::std::mem::size_of::<_duckdb_prepared_statement>() - 8usize];
-    ["Alignment of _duckdb_prepared_statement"][::std::mem::align_of::<_duckdb_prepared_statement>() - 8usize];
-    ["Offset of field: _duckdb_prepared_statement::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_prepared_statement, internal_ptr) - 0usize];
-};
 #[doc = "! A prepared statement is a parameterized query that allows you to bind parameters to it.\n! Must be destroyed with `duckdb_destroy_prepare`."]
 pub type duckdb_prepared_statement = *mut _duckdb_prepared_statement;
 #[doc = "! Extracted statements. Must be destroyed with `duckdb_destroy_extracted`."]
@@ -628,13 +375,6 @@ pub type duckdb_prepared_statement = *mut _duckdb_prepared_statement;
 pub struct _duckdb_extracted_statements {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_extracted_statements"][::std::mem::size_of::<_duckdb_extracted_statements>() - 8usize];
-    ["Alignment of _duckdb_extracted_statements"][::std::mem::align_of::<_duckdb_extracted_statements>() - 8usize];
-    ["Offset of field: _duckdb_extracted_statements::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_extracted_statements, internal_ptr) - 0usize];
-};
 #[doc = "! Extracted statements. Must be destroyed with `duckdb_destroy_extracted`."]
 pub type duckdb_extracted_statements = *mut _duckdb_extracted_statements;
 #[doc = "! The pending result represents an intermediate structure for a query that is not yet fully executed.\n! Must be destroyed with `duckdb_destroy_pending`."]
@@ -643,13 +383,6 @@ pub type duckdb_extracted_statements = *mut _duckdb_extracted_statements;
 pub struct _duckdb_pending_result {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_pending_result"][::std::mem::size_of::<_duckdb_pending_result>() - 8usize];
-    ["Alignment of _duckdb_pending_result"][::std::mem::align_of::<_duckdb_pending_result>() - 8usize];
-    ["Offset of field: _duckdb_pending_result::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_pending_result, internal_ptr) - 0usize];
-};
 #[doc = "! The pending result represents an intermediate structure for a query that is not yet fully executed.\n! Must be destroyed with `duckdb_destroy_pending`."]
 pub type duckdb_pending_result = *mut _duckdb_pending_result;
 #[doc = "! The appender enables fast data loading into DuckDB.\n! Must be destroyed with `duckdb_appender_destroy`."]
@@ -658,13 +391,6 @@ pub type duckdb_pending_result = *mut _duckdb_pending_result;
 pub struct _duckdb_appender {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_appender"][::std::mem::size_of::<_duckdb_appender>() - 8usize];
-    ["Alignment of _duckdb_appender"][::std::mem::align_of::<_duckdb_appender>() - 8usize];
-    ["Offset of field: _duckdb_appender::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_appender, internal_ptr) - 0usize];
-};
 #[doc = "! The appender enables fast data loading into DuckDB.\n! Must be destroyed with `duckdb_appender_destroy`."]
 pub type duckdb_appender = *mut _duckdb_appender;
 #[doc = "! The table description allows querying info about the table.\n! Must be destroyed with `duckdb_table_description_destroy`."]
@@ -673,13 +399,6 @@ pub type duckdb_appender = *mut _duckdb_appender;
 pub struct _duckdb_table_description {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_table_description"][::std::mem::size_of::<_duckdb_table_description>() - 8usize];
-    ["Alignment of _duckdb_table_description"][::std::mem::align_of::<_duckdb_table_description>() - 8usize];
-    ["Offset of field: _duckdb_table_description::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_table_description, internal_ptr) - 0usize];
-};
 #[doc = "! The table description allows querying info about the table.\n! Must be destroyed with `duckdb_table_description_destroy`."]
 pub type duckdb_table_description = *mut _duckdb_table_description;
 #[doc = "! Can be used to provide start-up options for the DuckDB instance.\n! Must be destroyed with `duckdb_destroy_config`."]
@@ -688,12 +407,6 @@ pub type duckdb_table_description = *mut _duckdb_table_description;
 pub struct _duckdb_config {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_config"][::std::mem::size_of::<_duckdb_config>() - 8usize];
-    ["Alignment of _duckdb_config"][::std::mem::align_of::<_duckdb_config>() - 8usize];
-    ["Offset of field: _duckdb_config::internal_ptr"][::std::mem::offset_of!(_duckdb_config, internal_ptr) - 0usize];
-};
 #[doc = "! Can be used to provide start-up options for the DuckDB instance.\n! Must be destroyed with `duckdb_destroy_config`."]
 pub type duckdb_config = *mut _duckdb_config;
 #[doc = "! Holds an internal logical type.\n! Must be destroyed with `duckdb_destroy_logical_type`."]
@@ -702,13 +415,6 @@ pub type duckdb_config = *mut _duckdb_config;
 pub struct _duckdb_logical_type {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_logical_type"][::std::mem::size_of::<_duckdb_logical_type>() - 8usize];
-    ["Alignment of _duckdb_logical_type"][::std::mem::align_of::<_duckdb_logical_type>() - 8usize];
-    ["Offset of field: _duckdb_logical_type::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_logical_type, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an internal logical type.\n! Must be destroyed with `duckdb_destroy_logical_type`."]
 pub type duckdb_logical_type = *mut _duckdb_logical_type;
 #[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
@@ -717,13 +423,6 @@ pub type duckdb_logical_type = *mut _duckdb_logical_type;
 pub struct _duckdb_create_type_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_create_type_info"][::std::mem::size_of::<_duckdb_create_type_info>() - 8usize];
-    ["Alignment of _duckdb_create_type_info"][::std::mem::align_of::<_duckdb_create_type_info>() - 8usize];
-    ["Offset of field: _duckdb_create_type_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_create_type_info, internal_ptr) - 0usize];
-};
 #[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
 pub type duckdb_create_type_info = *mut _duckdb_create_type_info;
 #[doc = "! Contains a data chunk from a duckdb_result.\n! Must be destroyed with `duckdb_destroy_data_chunk`."]
@@ -732,13 +431,6 @@ pub type duckdb_create_type_info = *mut _duckdb_create_type_info;
 pub struct _duckdb_data_chunk {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_data_chunk"][::std::mem::size_of::<_duckdb_data_chunk>() - 8usize];
-    ["Alignment of _duckdb_data_chunk"][::std::mem::align_of::<_duckdb_data_chunk>() - 8usize];
-    ["Offset of field: _duckdb_data_chunk::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_data_chunk, internal_ptr) - 0usize];
-};
 #[doc = "! Contains a data chunk from a duckdb_result.\n! Must be destroyed with `duckdb_destroy_data_chunk`."]
 pub type duckdb_data_chunk = *mut _duckdb_data_chunk;
 #[doc = "! Holds a DuckDB value, which wraps a type.\n! Must be destroyed with `duckdb_destroy_value`."]
@@ -747,12 +439,6 @@ pub type duckdb_data_chunk = *mut _duckdb_data_chunk;
 pub struct _duckdb_value {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_value"][::std::mem::size_of::<_duckdb_value>() - 8usize];
-    ["Alignment of _duckdb_value"][::std::mem::align_of::<_duckdb_value>() - 8usize];
-    ["Offset of field: _duckdb_value::internal_ptr"][::std::mem::offset_of!(_duckdb_value, internal_ptr) - 0usize];
-};
 #[doc = "! Holds a DuckDB value, which wraps a type.\n! Must be destroyed with `duckdb_destroy_value`."]
 pub type duckdb_value = *mut _duckdb_value;
 #[doc = "! Holds a recursive tree that matches the query plan."]
@@ -761,13 +447,6 @@ pub type duckdb_value = *mut _duckdb_value;
 pub struct _duckdb_profiling_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_profiling_info"][::std::mem::size_of::<_duckdb_profiling_info>() - 8usize];
-    ["Alignment of _duckdb_profiling_info"][::std::mem::align_of::<_duckdb_profiling_info>() - 8usize];
-    ["Offset of field: _duckdb_profiling_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_profiling_info, internal_ptr) - 0usize];
-};
 #[doc = "! Holds a recursive tree that matches the query plan."]
 pub type duckdb_profiling_info = *mut _duckdb_profiling_info;
 #[doc = "! Holds state during the C API extension intialization process"]
@@ -776,13 +455,6 @@ pub type duckdb_profiling_info = *mut _duckdb_profiling_info;
 pub struct _duckdb_extension_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_extension_info"][::std::mem::size_of::<_duckdb_extension_info>() - 8usize];
-    ["Alignment of _duckdb_extension_info"][::std::mem::align_of::<_duckdb_extension_info>() - 8usize];
-    ["Offset of field: _duckdb_extension_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_extension_info, internal_ptr) - 0usize];
-};
 #[doc = "! Holds state during the C API extension intialization process"]
 pub type duckdb_extension_info = *mut _duckdb_extension_info;
 #[doc = "! Additional function info. When setting this info, it is necessary to pass a destroy-callback function."]
@@ -791,13 +463,6 @@ pub type duckdb_extension_info = *mut _duckdb_extension_info;
 pub struct _duckdb_function_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_function_info"][::std::mem::size_of::<_duckdb_function_info>() - 8usize];
-    ["Alignment of _duckdb_function_info"][::std::mem::align_of::<_duckdb_function_info>() - 8usize];
-    ["Offset of field: _duckdb_function_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_function_info, internal_ptr) - 0usize];
-};
 #[doc = "! Additional function info. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_function_info = *mut _duckdb_function_info;
 #[doc = "! A scalar function. Must be destroyed with `duckdb_destroy_scalar_function`."]
@@ -806,13 +471,6 @@ pub type duckdb_function_info = *mut _duckdb_function_info;
 pub struct _duckdb_scalar_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_scalar_function"][::std::mem::size_of::<_duckdb_scalar_function>() - 8usize];
-    ["Alignment of _duckdb_scalar_function"][::std::mem::align_of::<_duckdb_scalar_function>() - 8usize];
-    ["Offset of field: _duckdb_scalar_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_scalar_function, internal_ptr) - 0usize];
-};
 #[doc = "! A scalar function. Must be destroyed with `duckdb_destroy_scalar_function`."]
 pub type duckdb_scalar_function = *mut _duckdb_scalar_function;
 #[doc = "! A scalar function set. Must be destroyed with `duckdb_destroy_scalar_function_set`."]
@@ -821,13 +479,6 @@ pub type duckdb_scalar_function = *mut _duckdb_scalar_function;
 pub struct _duckdb_scalar_function_set {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_scalar_function_set"][::std::mem::size_of::<_duckdb_scalar_function_set>() - 8usize];
-    ["Alignment of _duckdb_scalar_function_set"][::std::mem::align_of::<_duckdb_scalar_function_set>() - 8usize];
-    ["Offset of field: _duckdb_scalar_function_set::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_scalar_function_set, internal_ptr) - 0usize];
-};
 #[doc = "! A scalar function set. Must be destroyed with `duckdb_destroy_scalar_function_set`."]
 pub type duckdb_scalar_function_set = *mut _duckdb_scalar_function_set;
 #[doc = "! The main function of the scalar function."]
@@ -840,13 +491,6 @@ pub type duckdb_scalar_function_t = ::std::option::Option<
 pub struct _duckdb_aggregate_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_aggregate_function"][::std::mem::size_of::<_duckdb_aggregate_function>() - 8usize];
-    ["Alignment of _duckdb_aggregate_function"][::std::mem::align_of::<_duckdb_aggregate_function>() - 8usize];
-    ["Offset of field: _duckdb_aggregate_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_aggregate_function, internal_ptr) - 0usize];
-};
 #[doc = "! An aggregate function. Must be destroyed with `duckdb_destroy_aggregate_function`."]
 pub type duckdb_aggregate_function = *mut _duckdb_aggregate_function;
 #[doc = "! A aggregate function set. Must be destroyed with `duckdb_destroy_aggregate_function_set`."]
@@ -855,13 +499,6 @@ pub type duckdb_aggregate_function = *mut _duckdb_aggregate_function;
 pub struct _duckdb_aggregate_function_set {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_aggregate_function_set"][::std::mem::size_of::<_duckdb_aggregate_function_set>() - 8usize];
-    ["Alignment of _duckdb_aggregate_function_set"][::std::mem::align_of::<_duckdb_aggregate_function_set>() - 8usize];
-    ["Offset of field: _duckdb_aggregate_function_set::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_aggregate_function_set, internal_ptr) - 0usize];
-};
 #[doc = "! A aggregate function set. Must be destroyed with `duckdb_destroy_aggregate_function_set`."]
 pub type duckdb_aggregate_function_set = *mut _duckdb_aggregate_function_set;
 #[doc = "! Aggregate state"]
@@ -870,13 +507,6 @@ pub type duckdb_aggregate_function_set = *mut _duckdb_aggregate_function_set;
 pub struct _duckdb_aggregate_state {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_aggregate_state"][::std::mem::size_of::<_duckdb_aggregate_state>() - 8usize];
-    ["Alignment of _duckdb_aggregate_state"][::std::mem::align_of::<_duckdb_aggregate_state>() - 8usize];
-    ["Offset of field: _duckdb_aggregate_state::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_aggregate_state, internal_ptr) - 0usize];
-};
 #[doc = "! Aggregate state"]
 pub type duckdb_aggregate_state = *mut _duckdb_aggregate_state;
 #[doc = "! Returns the aggregate state size"]
@@ -916,13 +546,6 @@ pub type duckdb_aggregate_finalize_t = ::std::option::Option<
 pub struct _duckdb_table_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_table_function"][::std::mem::size_of::<_duckdb_table_function>() - 8usize];
-    ["Alignment of _duckdb_table_function"][::std::mem::align_of::<_duckdb_table_function>() - 8usize];
-    ["Offset of field: _duckdb_table_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_table_function, internal_ptr) - 0usize];
-};
 #[doc = "! A table function. Must be destroyed with `duckdb_destroy_table_function`."]
 pub type duckdb_table_function = *mut _duckdb_table_function;
 #[doc = "! The bind info of the function. When setting this info, it is necessary to pass a destroy-callback function."]
@@ -931,13 +554,6 @@ pub type duckdb_table_function = *mut _duckdb_table_function;
 pub struct _duckdb_bind_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_bind_info"][::std::mem::size_of::<_duckdb_bind_info>() - 8usize];
-    ["Alignment of _duckdb_bind_info"][::std::mem::align_of::<_duckdb_bind_info>() - 8usize];
-    ["Offset of field: _duckdb_bind_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_bind_info, internal_ptr) - 0usize];
-};
 #[doc = "! The bind info of the function. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_bind_info = *mut _duckdb_bind_info;
 #[doc = "! Additional function init info. When setting this info, it is necessary to pass a destroy-callback function."]
@@ -946,13 +562,6 @@ pub type duckdb_bind_info = *mut _duckdb_bind_info;
 pub struct _duckdb_init_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_init_info"][::std::mem::size_of::<_duckdb_init_info>() - 8usize];
-    ["Alignment of _duckdb_init_info"][::std::mem::align_of::<_duckdb_init_info>() - 8usize];
-    ["Offset of field: _duckdb_init_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_init_info, internal_ptr) - 0usize];
-};
 #[doc = "! Additional function init info. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_init_info = *mut _duckdb_init_info;
 #[doc = "! The bind function of the table function."]
@@ -968,13 +577,6 @@ pub type duckdb_table_function_t =
 pub struct _duckdb_cast_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_cast_function"][::std::mem::size_of::<_duckdb_cast_function>() - 8usize];
-    ["Alignment of _duckdb_cast_function"][::std::mem::align_of::<_duckdb_cast_function>() - 8usize];
-    ["Offset of field: _duckdb_cast_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_cast_function, internal_ptr) - 0usize];
-};
 #[doc = "! A cast function. Must be destroyed with `duckdb_destroy_cast_function`."]
 pub type duckdb_cast_function = *mut _duckdb_cast_function;
 pub type duckdb_cast_function_t = ::std::option::Option<
@@ -986,13 +588,6 @@ pub type duckdb_cast_function_t = ::std::option::Option<
 pub struct _duckdb_replacement_scan_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_replacement_scan_info"][::std::mem::size_of::<_duckdb_replacement_scan_info>() - 8usize];
-    ["Alignment of _duckdb_replacement_scan_info"][::std::mem::align_of::<_duckdb_replacement_scan_info>() - 8usize];
-    ["Offset of field: _duckdb_replacement_scan_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_replacement_scan_info, internal_ptr) - 0usize];
-};
 #[doc = "! Additional replacement scan info. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_replacement_scan_info = *mut _duckdb_replacement_scan_info;
 #[doc = "! A replacement scan function that can be added to a database."]
@@ -1009,12 +604,6 @@ pub type duckdb_replacement_callback_t = ::std::option::Option<
 pub struct _duckdb_arrow {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow"][::std::mem::size_of::<_duckdb_arrow>() - 8usize];
-    ["Alignment of _duckdb_arrow"][::std::mem::align_of::<_duckdb_arrow>() - 8usize];
-    ["Offset of field: _duckdb_arrow::internal_ptr"][::std::mem::offset_of!(_duckdb_arrow, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow query result. Must be destroyed with `duckdb_destroy_arrow`."]
 pub type duckdb_arrow = *mut _duckdb_arrow;
 #[doc = "! Holds an arrow array stream. Must be destroyed with `duckdb_destroy_arrow_stream`."]
@@ -1023,13 +612,6 @@ pub type duckdb_arrow = *mut _duckdb_arrow;
 pub struct _duckdb_arrow_stream {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow_stream"][::std::mem::size_of::<_duckdb_arrow_stream>() - 8usize];
-    ["Alignment of _duckdb_arrow_stream"][::std::mem::align_of::<_duckdb_arrow_stream>() - 8usize];
-    ["Offset of field: _duckdb_arrow_stream::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_arrow_stream, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow array stream. Must be destroyed with `duckdb_destroy_arrow_stream`."]
 pub type duckdb_arrow_stream = *mut _duckdb_arrow_stream;
 #[doc = "! Holds an arrow schema. Remember to release the respective ArrowSchema object."]
@@ -1038,13 +620,6 @@ pub type duckdb_arrow_stream = *mut _duckdb_arrow_stream;
 pub struct _duckdb_arrow_schema {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow_schema"][::std::mem::size_of::<_duckdb_arrow_schema>() - 8usize];
-    ["Alignment of _duckdb_arrow_schema"][::std::mem::align_of::<_duckdb_arrow_schema>() - 8usize];
-    ["Offset of field: _duckdb_arrow_schema::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_arrow_schema, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow schema. Remember to release the respective ArrowSchema object."]
 pub type duckdb_arrow_schema = *mut _duckdb_arrow_schema;
 #[doc = "! Holds an arrow array. Remember to release the respective ArrowArray object."]
@@ -1053,13 +628,6 @@ pub type duckdb_arrow_schema = *mut _duckdb_arrow_schema;
 pub struct _duckdb_arrow_array {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow_array"][::std::mem::size_of::<_duckdb_arrow_array>() - 8usize];
-    ["Alignment of _duckdb_arrow_array"][::std::mem::align_of::<_duckdb_arrow_array>() - 8usize];
-    ["Offset of field: _duckdb_arrow_array::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_arrow_array, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow array. Remember to release the respective ArrowArray object."]
 pub type duckdb_arrow_array = *mut _duckdb_arrow_array;
 #[doc = "! Passed to C API extension as parameter to the entrypoint"]
@@ -1079,17 +647,6 @@ pub struct duckdb_extension_access {
         ) -> *const ::std::os::raw::c_void,
     >,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_extension_access"][::std::mem::size_of::<duckdb_extension_access>() - 24usize];
-    ["Alignment of duckdb_extension_access"][::std::mem::align_of::<duckdb_extension_access>() - 8usize];
-    ["Offset of field: duckdb_extension_access::set_error"]
-        [::std::mem::offset_of!(duckdb_extension_access, set_error) - 0usize];
-    ["Offset of field: duckdb_extension_access::get_database"]
-        [::std::mem::offset_of!(duckdb_extension_access, get_database) - 8usize];
-    ["Offset of field: duckdb_extension_access::get_api"]
-        [::std::mem::offset_of!(duckdb_extension_access, get_api) - 16usize];
-};
 unsafe extern "C" {
     #[doc = "Creates a new database instance cache.\nThe instance cache is necessary if a client/program (re)opens multiple databases to the same file within the same\nprocess. Must be destroyed with 'duckdb_destroy_instance_cache'.\n\n @return The database instance cache."]
     pub fn duckdb_create_instance_cache() -> duckdb_instance_cache;
