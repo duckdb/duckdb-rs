@@ -127,7 +127,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
-          components: 'rustfmt, clippy'
+          components: 'rust-src'
 
       - name: Tests with asan
         env:
