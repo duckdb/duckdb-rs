@@ -1,7 +1,7 @@
 use std::sync::atomic::{self, AtomicUsize};
 
-use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, LogicalTypeId, TableFunctionInfo, VTab};
-use crate::core::Inserter;
+use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
+use crate::core::{Inserter, LogicalTypeId};
 use calamine::{open_workbook_auto, DataType, Range, Reader};
 
 #[repr(C)]

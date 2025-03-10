@@ -1,11 +1,12 @@
-use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, LogicalTypeId, TableFunctionInfo, VTab};
+use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
 use std::sync::Arc;
 use std::sync::{atomic::AtomicBool, Mutex};
 
 use crate::{
-    core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector},
+    core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector, Vector},
     types::DuckString,
 };
+
 use arrow::array::as_map_array;
 use arrow::{
     array::{
