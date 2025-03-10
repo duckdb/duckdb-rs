@@ -26,12 +26,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
-      # This has a matcher for test panics, so we use it even though elsewhere
-      # we use actions-rs/toolchain.
-      - uses: hecrj/setup-rust-action@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          rust-version: stable${{ matrix.host }}
-          targets: ${{ matrix.target }}
+          toolchain: stable
+          target: ${{ matrix.target }}
           components: 'rustfmt, clippy'
 
       # download libduckdb
@@ -112,9 +110,9 @@ jobs:
           key: index-${{ runner.os }}-${{ github.run_number }}
           restore-keys: |
             index-${{ runner.os }}-
-      - uses: hecrj/setup-rust-action@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          rust-version: stable
-          targets: x86_64-pc-windows-msvc
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
 
       - run: cargo install cargo-examples
