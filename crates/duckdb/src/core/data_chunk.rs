@@ -60,10 +60,6 @@ impl DataChunkHandle {
         StructVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
     }
 
-    pub fn dictionary_vector(&self, idx: usize) -> DictionaryVector {
-        DictionaryVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
-    }
-
     /// Set the size of the data chunk
     pub fn set_len(&self, new_len: usize) {
         unsafe { duckdb_data_chunk_set_size(self.ptr, new_len as u64) };
