@@ -14,7 +14,7 @@ use crate::{
 };
 use libduckdb_sys::{
     duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_dictionary_vector,
-    duckdb_validity_row_is_valid, DuckDbString,
+    duckdb_validity_row_is_valid, idx_t, DuckDbString,
 };
 
 /// Vector trait.
@@ -356,8 +356,18 @@ impl StructVector {
     }
 }
 
-struct DictionaryVector {
+pub struct DictionaryVector {
     ptr: duckdb_vector,
+    capacity: usize,
+}
+
+impl From<duckdb_vector> for DictionaryVector {
+    fn from(ptr: duckdb_vector) -> Self {
+        Self {
+            ptr,
+            capacity: unsafe { duckdb_vector_size() as usize },
+        }
+    }
 }
 
 impl DictionaryVector {
