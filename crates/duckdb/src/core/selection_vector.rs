@@ -1,23 +1,23 @@
 use crate::ffi::{duckdb_create_selection_vector, duckdb_selection_vector, duckdb_selection_vector_get_data_ptr};
+use libduckdb_sys::idx_t;
 use std::ptr;
 
 pub struct SelectionVector {
     ptr: duckdb_selection_vector,
-    // u64 is an idx_t from duckdb.
-    len: u64,
+    len: idx_t,
 }
 
 impl SelectionVector {
     pub fn new_copy(vec: &[u32]) -> Self {
-        let sel = unsafe { duckdb_create_selection_vector(vec.len() as u64) };
+        let ptr = unsafe { duckdb_create_selection_vector(vec.len() as idx_t) };
 
-        let data = unsafe { duckdb_selection_vector_get_data_ptr(sel) };
+        let data = unsafe { duckdb_selection_vector_get_data_ptr(ptr) };
         unsafe {
             ptr::copy_nonoverlapping(vec.as_ptr(), data, vec.len());
         }
         Self {
             ptr,
-            len: vec.len() as u64,
+            len: vec.len() as idx_t,
         }
     }
 
