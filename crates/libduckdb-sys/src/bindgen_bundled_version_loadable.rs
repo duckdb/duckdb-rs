@@ -148,12 +148,6 @@ pub type duckdb_task_state = *mut ::std::os::raw::c_void;
 pub struct duckdb_date {
     pub days: i32,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_date"][::std::mem::size_of::<duckdb_date>() - 4usize];
-    ["Alignment of duckdb_date"][::std::mem::align_of::<duckdb_date>() - 4usize];
-    ["Offset of field: duckdb_date::days"][::std::mem::offset_of!(duckdb_date, days) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_date_struct {
@@ -161,26 +155,12 @@ pub struct duckdb_date_struct {
     pub month: i8,
     pub day: i8,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_date_struct"][::std::mem::size_of::<duckdb_date_struct>() - 8usize];
-    ["Alignment of duckdb_date_struct"][::std::mem::align_of::<duckdb_date_struct>() - 4usize];
-    ["Offset of field: duckdb_date_struct::year"][::std::mem::offset_of!(duckdb_date_struct, year) - 0usize];
-    ["Offset of field: duckdb_date_struct::month"][::std::mem::offset_of!(duckdb_date_struct, month) - 4usize];
-    ["Offset of field: duckdb_date_struct::day"][::std::mem::offset_of!(duckdb_date_struct, day) - 5usize];
-};
 #[doc = "! Time is stored as microseconds since 00:00:00\n! Use the duckdb_from_time/duckdb_to_time function to extract individual information"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time {
     pub micros: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time"][::std::mem::size_of::<duckdb_time>() - 8usize];
-    ["Alignment of duckdb_time"][::std::mem::align_of::<duckdb_time>() - 8usize];
-    ["Offset of field: duckdb_time::micros"][::std::mem::offset_of!(duckdb_time, micros) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time_struct {
@@ -189,101 +169,48 @@ pub struct duckdb_time_struct {
     pub sec: i8,
     pub micros: i32,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time_struct"][::std::mem::size_of::<duckdb_time_struct>() - 8usize];
-    ["Alignment of duckdb_time_struct"][::std::mem::align_of::<duckdb_time_struct>() - 4usize];
-    ["Offset of field: duckdb_time_struct::hour"][::std::mem::offset_of!(duckdb_time_struct, hour) - 0usize];
-    ["Offset of field: duckdb_time_struct::min"][::std::mem::offset_of!(duckdb_time_struct, min) - 1usize];
-    ["Offset of field: duckdb_time_struct::sec"][::std::mem::offset_of!(duckdb_time_struct, sec) - 2usize];
-    ["Offset of field: duckdb_time_struct::micros"][::std::mem::offset_of!(duckdb_time_struct, micros) - 4usize];
-};
 #[doc = "! TIME_TZ is stored as 40 bits for int64_t micros, and 24 bits for int32_t offset"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time_tz {
     pub bits: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time_tz"][::std::mem::size_of::<duckdb_time_tz>() - 8usize];
-    ["Alignment of duckdb_time_tz"][::std::mem::align_of::<duckdb_time_tz>() - 8usize];
-    ["Offset of field: duckdb_time_tz::bits"][::std::mem::offset_of!(duckdb_time_tz, bits) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_time_tz_struct {
     pub time: duckdb_time_struct,
     pub offset: i32,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_time_tz_struct"][::std::mem::size_of::<duckdb_time_tz_struct>() - 12usize];
-    ["Alignment of duckdb_time_tz_struct"][::std::mem::align_of::<duckdb_time_tz_struct>() - 4usize];
-    ["Offset of field: duckdb_time_tz_struct::time"][::std::mem::offset_of!(duckdb_time_tz_struct, time) - 0usize];
-    ["Offset of field: duckdb_time_tz_struct::offset"][::std::mem::offset_of!(duckdb_time_tz_struct, offset) - 8usize];
-};
 #[doc = "! TIMESTAMP values are stored as microseconds since 1970-01-01.\n! Use the duckdb_from_timestamp and duckdb_to_timestamp functions to extract individual information."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp {
     pub micros: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp"][::std::mem::size_of::<duckdb_timestamp>() - 8usize];
-    ["Alignment of duckdb_timestamp"][::std::mem::align_of::<duckdb_timestamp>() - 8usize];
-    ["Offset of field: duckdb_timestamp::micros"][::std::mem::offset_of!(duckdb_timestamp, micros) - 0usize];
-};
 #[doc = "! TIMESTAMP_S values are stored as seconds since 1970-01-01."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_s {
     pub seconds: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_s"][::std::mem::size_of::<duckdb_timestamp_s>() - 8usize];
-    ["Alignment of duckdb_timestamp_s"][::std::mem::align_of::<duckdb_timestamp_s>() - 8usize];
-    ["Offset of field: duckdb_timestamp_s::seconds"][::std::mem::offset_of!(duckdb_timestamp_s, seconds) - 0usize];
-};
 #[doc = "! TIMESTAMP_MS values are stored as milliseconds since 1970-01-01."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_ms {
     pub millis: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_ms"][::std::mem::size_of::<duckdb_timestamp_ms>() - 8usize];
-    ["Alignment of duckdb_timestamp_ms"][::std::mem::align_of::<duckdb_timestamp_ms>() - 8usize];
-    ["Offset of field: duckdb_timestamp_ms::millis"][::std::mem::offset_of!(duckdb_timestamp_ms, millis) - 0usize];
-};
 #[doc = "! TIMESTAMP_NS values are stored as nanoseconds since 1970-01-01."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_ns {
     pub nanos: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_ns"][::std::mem::size_of::<duckdb_timestamp_ns>() - 8usize];
-    ["Alignment of duckdb_timestamp_ns"][::std::mem::align_of::<duckdb_timestamp_ns>() - 8usize];
-    ["Offset of field: duckdb_timestamp_ns::nanos"][::std::mem::offset_of!(duckdb_timestamp_ns, nanos) - 0usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_timestamp_struct {
     pub date: duckdb_date_struct,
     pub time: duckdb_time_struct,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_timestamp_struct"][::std::mem::size_of::<duckdb_timestamp_struct>() - 16usize];
-    ["Alignment of duckdb_timestamp_struct"][::std::mem::align_of::<duckdb_timestamp_struct>() - 4usize];
-    ["Offset of field: duckdb_timestamp_struct::date"][::std::mem::offset_of!(duckdb_timestamp_struct, date) - 0usize];
-    ["Offset of field: duckdb_timestamp_struct::time"][::std::mem::offset_of!(duckdb_timestamp_struct, time) - 8usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_interval {
@@ -291,14 +218,6 @@ pub struct duckdb_interval {
     pub days: i32,
     pub micros: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_interval"][::std::mem::size_of::<duckdb_interval>() - 16usize];
-    ["Alignment of duckdb_interval"][::std::mem::align_of::<duckdb_interval>() - 8usize];
-    ["Offset of field: duckdb_interval::months"][::std::mem::offset_of!(duckdb_interval, months) - 0usize];
-    ["Offset of field: duckdb_interval::days"][::std::mem::offset_of!(duckdb_interval, days) - 4usize];
-    ["Offset of field: duckdb_interval::micros"][::std::mem::offset_of!(duckdb_interval, micros) - 8usize];
-};
 #[doc = "! Hugeints are composed of a (lower, upper) component\n! The value of the hugeint is upper * 2^64 + lower\n! For easy usage, the functions duckdb_hugeint_to_double/duckdb_double_to_hugeint are recommended"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -306,26 +225,12 @@ pub struct duckdb_hugeint {
     pub lower: u64,
     pub upper: i64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_hugeint"][::std::mem::size_of::<duckdb_hugeint>() - 16usize];
-    ["Alignment of duckdb_hugeint"][::std::mem::align_of::<duckdb_hugeint>() - 8usize];
-    ["Offset of field: duckdb_hugeint::lower"][::std::mem::offset_of!(duckdb_hugeint, lower) - 0usize];
-    ["Offset of field: duckdb_hugeint::upper"][::std::mem::offset_of!(duckdb_hugeint, upper) - 8usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_uhugeint {
     pub lower: u64,
     pub upper: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_uhugeint"][::std::mem::size_of::<duckdb_uhugeint>() - 16usize];
-    ["Alignment of duckdb_uhugeint"][::std::mem::align_of::<duckdb_uhugeint>() - 8usize];
-    ["Offset of field: duckdb_uhugeint::lower"][::std::mem::offset_of!(duckdb_uhugeint, lower) - 0usize];
-    ["Offset of field: duckdb_uhugeint::upper"][::std::mem::offset_of!(duckdb_uhugeint, upper) - 8usize];
-};
 #[doc = "! Decimals are composed of a width and a scale, and are stored in a hugeint"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -334,14 +239,6 @@ pub struct duckdb_decimal {
     pub scale: u8,
     pub value: duckdb_hugeint,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_decimal"][::std::mem::size_of::<duckdb_decimal>() - 24usize];
-    ["Alignment of duckdb_decimal"][::std::mem::align_of::<duckdb_decimal>() - 8usize];
-    ["Offset of field: duckdb_decimal::width"][::std::mem::offset_of!(duckdb_decimal, width) - 0usize];
-    ["Offset of field: duckdb_decimal::scale"][::std::mem::offset_of!(duckdb_decimal, scale) - 1usize];
-    ["Offset of field: duckdb_decimal::value"][::std::mem::offset_of!(duckdb_decimal, value) - 8usize];
-};
 #[doc = "! A type holding information about the query execution progress"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -350,17 +247,6 @@ pub struct duckdb_query_progress_type {
     pub rows_processed: u64,
     pub total_rows_to_process: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_query_progress_type"][::std::mem::size_of::<duckdb_query_progress_type>() - 24usize];
-    ["Alignment of duckdb_query_progress_type"][::std::mem::align_of::<duckdb_query_progress_type>() - 8usize];
-    ["Offset of field: duckdb_query_progress_type::percentage"]
-        [::std::mem::offset_of!(duckdb_query_progress_type, percentage) - 0usize];
-    ["Offset of field: duckdb_query_progress_type::rows_processed"]
-        [::std::mem::offset_of!(duckdb_query_progress_type, rows_processed) - 8usize];
-    ["Offset of field: duckdb_query_progress_type::total_rows_to_process"]
-        [::std::mem::offset_of!(duckdb_query_progress_type, total_rows_to_process) - 16usize];
-};
 #[doc = "! The internal representation of a VARCHAR (string_t). If the VARCHAR does not\n! exceed 12 characters, then we inline it. Otherwise, we inline a prefix for faster\n! string comparisons and store a pointer to the remaining characters. This is a non-\n! owning structure, i.e., it does not have to be freed."]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -380,51 +266,12 @@ pub struct duckdb_string_t__bindgen_ty_1__bindgen_ty_1 {
     pub prefix: [::std::os::raw::c_char; 4usize],
     pub ptr: *mut ::std::os::raw::c_char,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t__bindgen_ty_1__bindgen_ty_1"]
-        [::std::mem::size_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_1>() - 16usize];
-    ["Alignment of duckdb_string_t__bindgen_ty_1__bindgen_ty_1"]
-        [::std::mem::align_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_1>() - 8usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_1::length"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1, length) - 0usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_1::prefix"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1, prefix) - 4usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_1::ptr"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_1, ptr) - 8usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_string_t__bindgen_ty_1__bindgen_ty_2 {
     pub length: u32,
     pub inlined: [::std::os::raw::c_char; 12usize],
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t__bindgen_ty_1__bindgen_ty_2"]
-        [::std::mem::size_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_2>() - 16usize];
-    ["Alignment of duckdb_string_t__bindgen_ty_1__bindgen_ty_2"]
-        [::std::mem::align_of::<duckdb_string_t__bindgen_ty_1__bindgen_ty_2>() - 4usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_2::length"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2, length) - 0usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1__bindgen_ty_2::inlined"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1__bindgen_ty_2, inlined) - 4usize];
-};
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t__bindgen_ty_1"][::std::mem::size_of::<duckdb_string_t__bindgen_ty_1>() - 16usize];
-    ["Alignment of duckdb_string_t__bindgen_ty_1"][::std::mem::align_of::<duckdb_string_t__bindgen_ty_1>() - 8usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1::pointer"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1, pointer) - 0usize];
-    ["Offset of field: duckdb_string_t__bindgen_ty_1::inlined"]
-        [::std::mem::offset_of!(duckdb_string_t__bindgen_ty_1, inlined) - 0usize];
-};
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string_t"][::std::mem::size_of::<duckdb_string_t>() - 16usize];
-    ["Alignment of duckdb_string_t"][::std::mem::align_of::<duckdb_string_t>() - 8usize];
-    ["Offset of field: duckdb_string_t::value"][::std::mem::offset_of!(duckdb_string_t, value) - 0usize];
-};
 #[doc = "! The internal representation of a list metadata entry contains the list's offset in\n! the child vector, and its length. The parent vector holds these metadata entries,\n! whereas the child vector holds the data"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -432,13 +279,6 @@ pub struct duckdb_list_entry {
     pub offset: u64,
     pub length: u64,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_list_entry"][::std::mem::size_of::<duckdb_list_entry>() - 16usize];
-    ["Alignment of duckdb_list_entry"][::std::mem::align_of::<duckdb_list_entry>() - 8usize];
-    ["Offset of field: duckdb_list_entry::offset"][::std::mem::offset_of!(duckdb_list_entry, offset) - 0usize];
-    ["Offset of field: duckdb_list_entry::length"][::std::mem::offset_of!(duckdb_list_entry, length) - 8usize];
-};
 #[doc = "! A column consists of a pointer to its internal data. Don't operate on this type directly.\n! Instead, use functions such as duckdb_column_data, duckdb_nullmask_data,\n! duckdb_column_type, and duckdb_column_name, which take the result and the column index\n! as their parameters"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -449,32 +289,12 @@ pub struct duckdb_column {
     pub deprecated_name: *mut ::std::os::raw::c_char,
     pub internal_data: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_column"][::std::mem::size_of::<duckdb_column>() - 40usize];
-    ["Alignment of duckdb_column"][::std::mem::align_of::<duckdb_column>() - 8usize];
-    ["Offset of field: duckdb_column::deprecated_data"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_data) - 0usize];
-    ["Offset of field: duckdb_column::deprecated_nullmask"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_nullmask) - 8usize];
-    ["Offset of field: duckdb_column::deprecated_type"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_type) - 16usize];
-    ["Offset of field: duckdb_column::deprecated_name"]
-        [::std::mem::offset_of!(duckdb_column, deprecated_name) - 24usize];
-    ["Offset of field: duckdb_column::internal_data"][::std::mem::offset_of!(duckdb_column, internal_data) - 32usize];
-};
 #[doc = "! A vector to a specified column in a data chunk. Lives as long as the\n! data chunk lives, i.e., must not be destroyed."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_vector {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_vector"][::std::mem::size_of::<_duckdb_vector>() - 8usize];
-    ["Alignment of _duckdb_vector"][::std::mem::align_of::<_duckdb_vector>() - 8usize];
-    ["Offset of field: _duckdb_vector::internal_ptr"][::std::mem::offset_of!(_duckdb_vector, internal_ptr) - 0usize];
-};
 #[doc = "! A vector to a specified column in a data chunk. Lives as long as the\n! data chunk lives, i.e., must not be destroyed."]
 pub type duckdb_vector = *mut _duckdb_vector;
 #[doc = "! Strings are composed of a char pointer and a size. You must free string.data\n! with `duckdb_free`."]
@@ -484,13 +304,6 @@ pub struct duckdb_string {
     pub data: *mut ::std::os::raw::c_char,
     pub size: idx_t,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_string"][::std::mem::size_of::<duckdb_string>() - 16usize];
-    ["Alignment of duckdb_string"][::std::mem::align_of::<duckdb_string>() - 8usize];
-    ["Offset of field: duckdb_string::data"][::std::mem::offset_of!(duckdb_string, data) - 0usize];
-    ["Offset of field: duckdb_string::size"][::std::mem::offset_of!(duckdb_string, size) - 8usize];
-};
 #[doc = "! BLOBs are composed of a byte pointer and a size. You must free blob.data\n! with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -498,13 +311,6 @@ pub struct duckdb_blob {
     pub data: *mut ::std::os::raw::c_void,
     pub size: idx_t,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_blob"][::std::mem::size_of::<duckdb_blob>() - 16usize];
-    ["Alignment of duckdb_blob"][::std::mem::align_of::<duckdb_blob>() - 8usize];
-    ["Offset of field: duckdb_blob::data"][::std::mem::offset_of!(duckdb_blob, data) - 0usize];
-    ["Offset of field: duckdb_blob::size"][::std::mem::offset_of!(duckdb_blob, size) - 8usize];
-};
 #[doc = "! BITs are composed of a byte pointer and a size.\n! BIT byte data has 0 to 7 bits of padding.\n! The first byte contains the number of padding bits.\n! This number of bits of the second byte are set to 1, starting from the MSB.\n! You must free `data` with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -512,13 +318,6 @@ pub struct duckdb_bit {
     pub data: *mut u8,
     pub size: idx_t,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_bit"][::std::mem::size_of::<duckdb_bit>() - 16usize];
-    ["Alignment of duckdb_bit"][::std::mem::align_of::<duckdb_bit>() - 8usize];
-    ["Offset of field: duckdb_bit::data"][::std::mem::offset_of!(duckdb_bit, data) - 0usize];
-    ["Offset of field: duckdb_bit::size"][::std::mem::offset_of!(duckdb_bit, size) - 8usize];
-};
 #[doc = "! VARINTs are composed of a byte pointer, a size, and an is_negative bool.\n! The absolute value of the number is stored in `data` in little endian format.\n! You must free `data` with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -527,14 +326,6 @@ pub struct duckdb_varint {
     pub size: idx_t,
     pub is_negative: bool,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_varint"][::std::mem::size_of::<duckdb_varint>() - 24usize];
-    ["Alignment of duckdb_varint"][::std::mem::align_of::<duckdb_varint>() - 8usize];
-    ["Offset of field: duckdb_varint::data"][::std::mem::offset_of!(duckdb_varint, data) - 0usize];
-    ["Offset of field: duckdb_varint::size"][::std::mem::offset_of!(duckdb_varint, size) - 8usize];
-    ["Offset of field: duckdb_varint::is_negative"][::std::mem::offset_of!(duckdb_varint, is_negative) - 16usize];
-};
 #[doc = "! A query result consists of a pointer to its internal data.\n! Must be freed with 'duckdb_destroy_result'."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -546,35 +337,12 @@ pub struct duckdb_result {
     pub deprecated_error_message: *mut ::std::os::raw::c_char,
     pub internal_data: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_result"][::std::mem::size_of::<duckdb_result>() - 48usize];
-    ["Alignment of duckdb_result"][::std::mem::align_of::<duckdb_result>() - 8usize];
-    ["Offset of field: duckdb_result::deprecated_column_count"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_column_count) - 0usize];
-    ["Offset of field: duckdb_result::deprecated_row_count"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_row_count) - 8usize];
-    ["Offset of field: duckdb_result::deprecated_rows_changed"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_rows_changed) - 16usize];
-    ["Offset of field: duckdb_result::deprecated_columns"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_columns) - 24usize];
-    ["Offset of field: duckdb_result::deprecated_error_message"]
-        [::std::mem::offset_of!(duckdb_result, deprecated_error_message) - 32usize];
-    ["Offset of field: duckdb_result::internal_data"][::std::mem::offset_of!(duckdb_result, internal_data) - 40usize];
-};
 #[doc = "! A database instance cache object. Must be destroyed with `duckdb_destroy_instance_cache`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_instance_cache {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_instance_cache"][::std::mem::size_of::<_duckdb_instance_cache>() - 8usize];
-    ["Alignment of _duckdb_instance_cache"][::std::mem::align_of::<_duckdb_instance_cache>() - 8usize];
-    ["Offset of field: _duckdb_instance_cache::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_instance_cache, internal_ptr) - 0usize];
-};
 #[doc = "! A database instance cache object. Must be destroyed with `duckdb_destroy_instance_cache`."]
 pub type duckdb_instance_cache = *mut _duckdb_instance_cache;
 #[doc = "! A database object. Must be closed with `duckdb_close`."]
@@ -583,13 +351,6 @@ pub type duckdb_instance_cache = *mut _duckdb_instance_cache;
 pub struct _duckdb_database {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_database"][::std::mem::size_of::<_duckdb_database>() - 8usize];
-    ["Alignment of _duckdb_database"][::std::mem::align_of::<_duckdb_database>() - 8usize];
-    ["Offset of field: _duckdb_database::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_database, internal_ptr) - 0usize];
-};
 #[doc = "! A database object. Must be closed with `duckdb_close`."]
 pub type duckdb_database = *mut _duckdb_database;
 #[doc = "! A connection to a duckdb database. Must be closed with `duckdb_disconnect`."]
@@ -598,13 +359,6 @@ pub type duckdb_database = *mut _duckdb_database;
 pub struct _duckdb_connection {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_connection"][::std::mem::size_of::<_duckdb_connection>() - 8usize];
-    ["Alignment of _duckdb_connection"][::std::mem::align_of::<_duckdb_connection>() - 8usize];
-    ["Offset of field: _duckdb_connection::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_connection, internal_ptr) - 0usize];
-};
 #[doc = "! A connection to a duckdb database. Must be closed with `duckdb_disconnect`."]
 pub type duckdb_connection = *mut _duckdb_connection;
 #[doc = "! A prepared statement is a parameterized query that allows you to bind parameters to it.\n! Must be destroyed with `duckdb_destroy_prepare`."]
@@ -613,13 +367,6 @@ pub type duckdb_connection = *mut _duckdb_connection;
 pub struct _duckdb_prepared_statement {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_prepared_statement"][::std::mem::size_of::<_duckdb_prepared_statement>() - 8usize];
-    ["Alignment of _duckdb_prepared_statement"][::std::mem::align_of::<_duckdb_prepared_statement>() - 8usize];
-    ["Offset of field: _duckdb_prepared_statement::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_prepared_statement, internal_ptr) - 0usize];
-};
 #[doc = "! A prepared statement is a parameterized query that allows you to bind parameters to it.\n! Must be destroyed with `duckdb_destroy_prepare`."]
 pub type duckdb_prepared_statement = *mut _duckdb_prepared_statement;
 #[doc = "! Extracted statements. Must be destroyed with `duckdb_destroy_extracted`."]
@@ -628,13 +375,6 @@ pub type duckdb_prepared_statement = *mut _duckdb_prepared_statement;
 pub struct _duckdb_extracted_statements {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_extracted_statements"][::std::mem::size_of::<_duckdb_extracted_statements>() - 8usize];
-    ["Alignment of _duckdb_extracted_statements"][::std::mem::align_of::<_duckdb_extracted_statements>() - 8usize];
-    ["Offset of field: _duckdb_extracted_statements::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_extracted_statements, internal_ptr) - 0usize];
-};
 #[doc = "! Extracted statements. Must be destroyed with `duckdb_destroy_extracted`."]
 pub type duckdb_extracted_statements = *mut _duckdb_extracted_statements;
 #[doc = "! The pending result represents an intermediate structure for a query that is not yet fully executed.\n! Must be destroyed with `duckdb_destroy_pending`."]
@@ -643,13 +383,6 @@ pub type duckdb_extracted_statements = *mut _duckdb_extracted_statements;
 pub struct _duckdb_pending_result {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_pending_result"][::std::mem::size_of::<_duckdb_pending_result>() - 8usize];
-    ["Alignment of _duckdb_pending_result"][::std::mem::align_of::<_duckdb_pending_result>() - 8usize];
-    ["Offset of field: _duckdb_pending_result::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_pending_result, internal_ptr) - 0usize];
-};
 #[doc = "! The pending result represents an intermediate structure for a query that is not yet fully executed.\n! Must be destroyed with `duckdb_destroy_pending`."]
 pub type duckdb_pending_result = *mut _duckdb_pending_result;
 #[doc = "! The appender enables fast data loading into DuckDB.\n! Must be destroyed with `duckdb_appender_destroy`."]
@@ -658,13 +391,6 @@ pub type duckdb_pending_result = *mut _duckdb_pending_result;
 pub struct _duckdb_appender {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_appender"][::std::mem::size_of::<_duckdb_appender>() - 8usize];
-    ["Alignment of _duckdb_appender"][::std::mem::align_of::<_duckdb_appender>() - 8usize];
-    ["Offset of field: _duckdb_appender::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_appender, internal_ptr) - 0usize];
-};
 #[doc = "! The appender enables fast data loading into DuckDB.\n! Must be destroyed with `duckdb_appender_destroy`."]
 pub type duckdb_appender = *mut _duckdb_appender;
 #[doc = "! The table description allows querying info about the table.\n! Must be destroyed with `duckdb_table_description_destroy`."]
@@ -673,13 +399,6 @@ pub type duckdb_appender = *mut _duckdb_appender;
 pub struct _duckdb_table_description {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_table_description"][::std::mem::size_of::<_duckdb_table_description>() - 8usize];
-    ["Alignment of _duckdb_table_description"][::std::mem::align_of::<_duckdb_table_description>() - 8usize];
-    ["Offset of field: _duckdb_table_description::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_table_description, internal_ptr) - 0usize];
-};
 #[doc = "! The table description allows querying info about the table.\n! Must be destroyed with `duckdb_table_description_destroy`."]
 pub type duckdb_table_description = *mut _duckdb_table_description;
 #[doc = "! Can be used to provide start-up options for the DuckDB instance.\n! Must be destroyed with `duckdb_destroy_config`."]
@@ -688,12 +407,6 @@ pub type duckdb_table_description = *mut _duckdb_table_description;
 pub struct _duckdb_config {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_config"][::std::mem::size_of::<_duckdb_config>() - 8usize];
-    ["Alignment of _duckdb_config"][::std::mem::align_of::<_duckdb_config>() - 8usize];
-    ["Offset of field: _duckdb_config::internal_ptr"][::std::mem::offset_of!(_duckdb_config, internal_ptr) - 0usize];
-};
 #[doc = "! Can be used to provide start-up options for the DuckDB instance.\n! Must be destroyed with `duckdb_destroy_config`."]
 pub type duckdb_config = *mut _duckdb_config;
 #[doc = "! Holds an internal logical type.\n! Must be destroyed with `duckdb_destroy_logical_type`."]
@@ -702,13 +415,6 @@ pub type duckdb_config = *mut _duckdb_config;
 pub struct _duckdb_logical_type {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_logical_type"][::std::mem::size_of::<_duckdb_logical_type>() - 8usize];
-    ["Alignment of _duckdb_logical_type"][::std::mem::align_of::<_duckdb_logical_type>() - 8usize];
-    ["Offset of field: _duckdb_logical_type::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_logical_type, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an internal logical type.\n! Must be destroyed with `duckdb_destroy_logical_type`."]
 pub type duckdb_logical_type = *mut _duckdb_logical_type;
 #[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
@@ -717,13 +423,6 @@ pub type duckdb_logical_type = *mut _duckdb_logical_type;
 pub struct _duckdb_create_type_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_create_type_info"][::std::mem::size_of::<_duckdb_create_type_info>() - 8usize];
-    ["Alignment of _duckdb_create_type_info"][::std::mem::align_of::<_duckdb_create_type_info>() - 8usize];
-    ["Offset of field: _duckdb_create_type_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_create_type_info, internal_ptr) - 0usize];
-};
 #[doc = "! Holds extra information used when registering a custom logical type.\n! Reserved for future use."]
 pub type duckdb_create_type_info = *mut _duckdb_create_type_info;
 #[doc = "! Contains a data chunk from a duckdb_result.\n! Must be destroyed with `duckdb_destroy_data_chunk`."]
@@ -732,13 +431,6 @@ pub type duckdb_create_type_info = *mut _duckdb_create_type_info;
 pub struct _duckdb_data_chunk {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_data_chunk"][::std::mem::size_of::<_duckdb_data_chunk>() - 8usize];
-    ["Alignment of _duckdb_data_chunk"][::std::mem::align_of::<_duckdb_data_chunk>() - 8usize];
-    ["Offset of field: _duckdb_data_chunk::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_data_chunk, internal_ptr) - 0usize];
-};
 #[doc = "! Contains a data chunk from a duckdb_result.\n! Must be destroyed with `duckdb_destroy_data_chunk`."]
 pub type duckdb_data_chunk = *mut _duckdb_data_chunk;
 #[doc = "! Holds a DuckDB value, which wraps a type.\n! Must be destroyed with `duckdb_destroy_value`."]
@@ -747,12 +439,6 @@ pub type duckdb_data_chunk = *mut _duckdb_data_chunk;
 pub struct _duckdb_value {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_value"][::std::mem::size_of::<_duckdb_value>() - 8usize];
-    ["Alignment of _duckdb_value"][::std::mem::align_of::<_duckdb_value>() - 8usize];
-    ["Offset of field: _duckdb_value::internal_ptr"][::std::mem::offset_of!(_duckdb_value, internal_ptr) - 0usize];
-};
 #[doc = "! Holds a DuckDB value, which wraps a type.\n! Must be destroyed with `duckdb_destroy_value`."]
 pub type duckdb_value = *mut _duckdb_value;
 #[doc = "! Holds a recursive tree that matches the query plan."]
@@ -761,13 +447,6 @@ pub type duckdb_value = *mut _duckdb_value;
 pub struct _duckdb_profiling_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_profiling_info"][::std::mem::size_of::<_duckdb_profiling_info>() - 8usize];
-    ["Alignment of _duckdb_profiling_info"][::std::mem::align_of::<_duckdb_profiling_info>() - 8usize];
-    ["Offset of field: _duckdb_profiling_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_profiling_info, internal_ptr) - 0usize];
-};
 #[doc = "! Holds a recursive tree that matches the query plan."]
 pub type duckdb_profiling_info = *mut _duckdb_profiling_info;
 #[doc = "! Holds state during the C API extension intialization process"]
@@ -776,13 +455,6 @@ pub type duckdb_profiling_info = *mut _duckdb_profiling_info;
 pub struct _duckdb_extension_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_extension_info"][::std::mem::size_of::<_duckdb_extension_info>() - 8usize];
-    ["Alignment of _duckdb_extension_info"][::std::mem::align_of::<_duckdb_extension_info>() - 8usize];
-    ["Offset of field: _duckdb_extension_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_extension_info, internal_ptr) - 0usize];
-};
 #[doc = "! Holds state during the C API extension intialization process"]
 pub type duckdb_extension_info = *mut _duckdb_extension_info;
 #[doc = "! Additional function info. When setting this info, it is necessary to pass a destroy-callback function."]
@@ -791,13 +463,6 @@ pub type duckdb_extension_info = *mut _duckdb_extension_info;
 pub struct _duckdb_function_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_function_info"][::std::mem::size_of::<_duckdb_function_info>() - 8usize];
-    ["Alignment of _duckdb_function_info"][::std::mem::align_of::<_duckdb_function_info>() - 8usize];
-    ["Offset of field: _duckdb_function_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_function_info, internal_ptr) - 0usize];
-};
 #[doc = "! Additional function info. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_function_info = *mut _duckdb_function_info;
 #[doc = "! A scalar function. Must be destroyed with `duckdb_destroy_scalar_function`."]
@@ -806,13 +471,6 @@ pub type duckdb_function_info = *mut _duckdb_function_info;
 pub struct _duckdb_scalar_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_scalar_function"][::std::mem::size_of::<_duckdb_scalar_function>() - 8usize];
-    ["Alignment of _duckdb_scalar_function"][::std::mem::align_of::<_duckdb_scalar_function>() - 8usize];
-    ["Offset of field: _duckdb_scalar_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_scalar_function, internal_ptr) - 0usize];
-};
 #[doc = "! A scalar function. Must be destroyed with `duckdb_destroy_scalar_function`."]
 pub type duckdb_scalar_function = *mut _duckdb_scalar_function;
 #[doc = "! A scalar function set. Must be destroyed with `duckdb_destroy_scalar_function_set`."]
@@ -821,13 +479,6 @@ pub type duckdb_scalar_function = *mut _duckdb_scalar_function;
 pub struct _duckdb_scalar_function_set {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_scalar_function_set"][::std::mem::size_of::<_duckdb_scalar_function_set>() - 8usize];
-    ["Alignment of _duckdb_scalar_function_set"][::std::mem::align_of::<_duckdb_scalar_function_set>() - 8usize];
-    ["Offset of field: _duckdb_scalar_function_set::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_scalar_function_set, internal_ptr) - 0usize];
-};
 #[doc = "! A scalar function set. Must be destroyed with `duckdb_destroy_scalar_function_set`."]
 pub type duckdb_scalar_function_set = *mut _duckdb_scalar_function_set;
 #[doc = "! The main function of the scalar function."]
@@ -840,13 +491,6 @@ pub type duckdb_scalar_function_t = ::std::option::Option<
 pub struct _duckdb_aggregate_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_aggregate_function"][::std::mem::size_of::<_duckdb_aggregate_function>() - 8usize];
-    ["Alignment of _duckdb_aggregate_function"][::std::mem::align_of::<_duckdb_aggregate_function>() - 8usize];
-    ["Offset of field: _duckdb_aggregate_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_aggregate_function, internal_ptr) - 0usize];
-};
 #[doc = "! An aggregate function. Must be destroyed with `duckdb_destroy_aggregate_function`."]
 pub type duckdb_aggregate_function = *mut _duckdb_aggregate_function;
 #[doc = "! A aggregate function set. Must be destroyed with `duckdb_destroy_aggregate_function_set`."]
@@ -855,13 +499,6 @@ pub type duckdb_aggregate_function = *mut _duckdb_aggregate_function;
 pub struct _duckdb_aggregate_function_set {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_aggregate_function_set"][::std::mem::size_of::<_duckdb_aggregate_function_set>() - 8usize];
-    ["Alignment of _duckdb_aggregate_function_set"][::std::mem::align_of::<_duckdb_aggregate_function_set>() - 8usize];
-    ["Offset of field: _duckdb_aggregate_function_set::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_aggregate_function_set, internal_ptr) - 0usize];
-};
 #[doc = "! A aggregate function set. Must be destroyed with `duckdb_destroy_aggregate_function_set`."]
 pub type duckdb_aggregate_function_set = *mut _duckdb_aggregate_function_set;
 #[doc = "! Aggregate state"]
@@ -870,13 +507,6 @@ pub type duckdb_aggregate_function_set = *mut _duckdb_aggregate_function_set;
 pub struct _duckdb_aggregate_state {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_aggregate_state"][::std::mem::size_of::<_duckdb_aggregate_state>() - 8usize];
-    ["Alignment of _duckdb_aggregate_state"][::std::mem::align_of::<_duckdb_aggregate_state>() - 8usize];
-    ["Offset of field: _duckdb_aggregate_state::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_aggregate_state, internal_ptr) - 0usize];
-};
 #[doc = "! Aggregate state"]
 pub type duckdb_aggregate_state = *mut _duckdb_aggregate_state;
 #[doc = "! Returns the aggregate state size"]
@@ -916,13 +546,6 @@ pub type duckdb_aggregate_finalize_t = ::std::option::Option<
 pub struct _duckdb_table_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_table_function"][::std::mem::size_of::<_duckdb_table_function>() - 8usize];
-    ["Alignment of _duckdb_table_function"][::std::mem::align_of::<_duckdb_table_function>() - 8usize];
-    ["Offset of field: _duckdb_table_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_table_function, internal_ptr) - 0usize];
-};
 #[doc = "! A table function. Must be destroyed with `duckdb_destroy_table_function`."]
 pub type duckdb_table_function = *mut _duckdb_table_function;
 #[doc = "! The bind info of the function. When setting this info, it is necessary to pass a destroy-callback function."]
@@ -931,13 +554,6 @@ pub type duckdb_table_function = *mut _duckdb_table_function;
 pub struct _duckdb_bind_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_bind_info"][::std::mem::size_of::<_duckdb_bind_info>() - 8usize];
-    ["Alignment of _duckdb_bind_info"][::std::mem::align_of::<_duckdb_bind_info>() - 8usize];
-    ["Offset of field: _duckdb_bind_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_bind_info, internal_ptr) - 0usize];
-};
 #[doc = "! The bind info of the function. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_bind_info = *mut _duckdb_bind_info;
 #[doc = "! Additional function init info. When setting this info, it is necessary to pass a destroy-callback function."]
@@ -946,13 +562,6 @@ pub type duckdb_bind_info = *mut _duckdb_bind_info;
 pub struct _duckdb_init_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_init_info"][::std::mem::size_of::<_duckdb_init_info>() - 8usize];
-    ["Alignment of _duckdb_init_info"][::std::mem::align_of::<_duckdb_init_info>() - 8usize];
-    ["Offset of field: _duckdb_init_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_init_info, internal_ptr) - 0usize];
-};
 #[doc = "! Additional function init info. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_init_info = *mut _duckdb_init_info;
 #[doc = "! The bind function of the table function."]
@@ -968,13 +577,6 @@ pub type duckdb_table_function_t =
 pub struct _duckdb_cast_function {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_cast_function"][::std::mem::size_of::<_duckdb_cast_function>() - 8usize];
-    ["Alignment of _duckdb_cast_function"][::std::mem::align_of::<_duckdb_cast_function>() - 8usize];
-    ["Offset of field: _duckdb_cast_function::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_cast_function, internal_ptr) - 0usize];
-};
 #[doc = "! A cast function. Must be destroyed with `duckdb_destroy_cast_function`."]
 pub type duckdb_cast_function = *mut _duckdb_cast_function;
 pub type duckdb_cast_function_t = ::std::option::Option<
@@ -986,13 +588,6 @@ pub type duckdb_cast_function_t = ::std::option::Option<
 pub struct _duckdb_replacement_scan_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_replacement_scan_info"][::std::mem::size_of::<_duckdb_replacement_scan_info>() - 8usize];
-    ["Alignment of _duckdb_replacement_scan_info"][::std::mem::align_of::<_duckdb_replacement_scan_info>() - 8usize];
-    ["Offset of field: _duckdb_replacement_scan_info::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_replacement_scan_info, internal_ptr) - 0usize];
-};
 #[doc = "! Additional replacement scan info. When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_replacement_scan_info = *mut _duckdb_replacement_scan_info;
 #[doc = "! A replacement scan function that can be added to a database."]
@@ -1009,12 +604,6 @@ pub type duckdb_replacement_callback_t = ::std::option::Option<
 pub struct _duckdb_arrow {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow"][::std::mem::size_of::<_duckdb_arrow>() - 8usize];
-    ["Alignment of _duckdb_arrow"][::std::mem::align_of::<_duckdb_arrow>() - 8usize];
-    ["Offset of field: _duckdb_arrow::internal_ptr"][::std::mem::offset_of!(_duckdb_arrow, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow query result. Must be destroyed with `duckdb_destroy_arrow`."]
 pub type duckdb_arrow = *mut _duckdb_arrow;
 #[doc = "! Holds an arrow array stream. Must be destroyed with `duckdb_destroy_arrow_stream`."]
@@ -1023,13 +612,6 @@ pub type duckdb_arrow = *mut _duckdb_arrow;
 pub struct _duckdb_arrow_stream {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow_stream"][::std::mem::size_of::<_duckdb_arrow_stream>() - 8usize];
-    ["Alignment of _duckdb_arrow_stream"][::std::mem::align_of::<_duckdb_arrow_stream>() - 8usize];
-    ["Offset of field: _duckdb_arrow_stream::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_arrow_stream, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow array stream. Must be destroyed with `duckdb_destroy_arrow_stream`."]
 pub type duckdb_arrow_stream = *mut _duckdb_arrow_stream;
 #[doc = "! Holds an arrow schema. Remember to release the respective ArrowSchema object."]
@@ -1038,13 +620,6 @@ pub type duckdb_arrow_stream = *mut _duckdb_arrow_stream;
 pub struct _duckdb_arrow_schema {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow_schema"][::std::mem::size_of::<_duckdb_arrow_schema>() - 8usize];
-    ["Alignment of _duckdb_arrow_schema"][::std::mem::align_of::<_duckdb_arrow_schema>() - 8usize];
-    ["Offset of field: _duckdb_arrow_schema::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_arrow_schema, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow schema. Remember to release the respective ArrowSchema object."]
 pub type duckdb_arrow_schema = *mut _duckdb_arrow_schema;
 #[doc = "! Holds an arrow array. Remember to release the respective ArrowArray object."]
@@ -1053,13 +628,6 @@ pub type duckdb_arrow_schema = *mut _duckdb_arrow_schema;
 pub struct _duckdb_arrow_array {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of _duckdb_arrow_array"][::std::mem::size_of::<_duckdb_arrow_array>() - 8usize];
-    ["Alignment of _duckdb_arrow_array"][::std::mem::align_of::<_duckdb_arrow_array>() - 8usize];
-    ["Offset of field: _duckdb_arrow_array::internal_ptr"]
-        [::std::mem::offset_of!(_duckdb_arrow_array, internal_ptr) - 0usize];
-};
 #[doc = "! Holds an arrow array. Remember to release the respective ArrowArray object."]
 pub type duckdb_arrow_array = *mut _duckdb_arrow_array;
 #[doc = "! Passed to C API extension as parameter to the entrypoint"]
@@ -1079,17 +647,6 @@ pub struct duckdb_extension_access {
         ) -> *const ::std::os::raw::c_void,
     >,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_extension_access"][::std::mem::size_of::<duckdb_extension_access>() - 24usize];
-    ["Alignment of duckdb_extension_access"][::std::mem::align_of::<duckdb_extension_access>() - 8usize];
-    ["Offset of field: duckdb_extension_access::set_error"]
-        [::std::mem::offset_of!(duckdb_extension_access, set_error) - 0usize];
-    ["Offset of field: duckdb_extension_access::get_database"]
-        [::std::mem::offset_of!(duckdb_extension_access, get_database) - 8usize];
-    ["Offset of field: duckdb_extension_access::get_api"]
-        [::std::mem::offset_of!(duckdb_extension_access, get_api) - 16usize];
-};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_ext_api_v1 {
@@ -2135,827 +1692,6 @@ pub struct duckdb_ext_api_v1 {
         ) -> duckdb_state,
     >,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of duckdb_ext_api_v1"][::std::mem::size_of::<duckdb_ext_api_v1>() - 3264usize];
-    ["Alignment of duckdb_ext_api_v1"][::std::mem::align_of::<duckdb_ext_api_v1>() - 8usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_open"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_open) - 0usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_open_ext"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_open_ext) - 8usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_close"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_close) - 16usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_connect"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_connect) - 24usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_interrupt"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_interrupt) - 32usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_query_progress"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_progress) - 40usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_disconnect"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_disconnect) - 48usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_library_version"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_library_version) - 56usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_config"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_config) - 64usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_config_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_config_count) - 72usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_config_flag"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_config_flag) - 80usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_set_config"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_set_config) - 88usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_config"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_config) - 96usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_query"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query) - 104usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_result"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_result) - 112usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_column_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_name) - 120usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_column_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_type) - 128usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_statement_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_statement_type) - 136usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_column_logical_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_logical_type) - 144usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_column_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_count) - 152usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_rows_changed"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_rows_changed) - 160usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_error) - 168usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_error_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_error_type) - 176usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_return_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_return_type) - 184usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_malloc"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_malloc) - 192usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_free"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_free) - 200usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_size) - 208usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_string_is_inlined"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_string_is_inlined) - 216usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_string_t_length"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_string_t_length) - 224usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_string_t_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_string_t_data) - 232usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_from_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_from_date) - 240usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_to_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_to_date) - 248usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_is_finite_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_is_finite_date) - 256usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_from_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_from_time) - 264usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_time_tz"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_time_tz) - 272usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_from_time_tz"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_from_time_tz) - 280usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_to_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_to_time) - 288usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_from_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_from_timestamp) - 296usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_to_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_to_timestamp) - 304usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_is_finite_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_is_finite_timestamp) - 312usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_hugeint_to_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_hugeint_to_double) - 320usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_double_to_hugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_double_to_hugeint) - 328usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_uhugeint_to_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_uhugeint_to_double) - 336usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_double_to_uhugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_double_to_uhugeint) - 344usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_double_to_decimal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_double_to_decimal) - 352usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_decimal_to_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_decimal_to_double) - 360usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_prepare"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_prepare) - 368usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_prepare"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_prepare) - 376usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_prepare_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_prepare_error) - 384usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_nparams"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_nparams) - 392usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_parameter_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_parameter_name) - 400usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_param_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_param_type) - 408usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_param_logical_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_param_logical_type) - 416usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_clear_bindings"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_clear_bindings) - 424usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_prepared_statement_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_prepared_statement_type) - 432usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_value) - 440usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_parameter_index"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_parameter_index) - 448usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_boolean"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_boolean) - 456usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_int8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_int8) - 464usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_int16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_int16) - 472usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_int32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_int32) - 480usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_int64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_int64) - 488usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_hugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_hugeint) - 496usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_uhugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_uhugeint) - 504usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_decimal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_decimal) - 512usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_uint8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_uint8) - 520usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_uint16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_uint16) - 528usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_uint32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_uint32) - 536usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_uint64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_uint64) - 544usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_float"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_float) - 552usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_double) - 560usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_date) - 568usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_time) - 576usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_timestamp) - 584usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_timestamp_tz"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_timestamp_tz) - 592usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_interval"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_interval) - 600usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_varchar"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_varchar) - 608usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_varchar_length"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_varchar_length) - 616usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_blob"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_blob) - 624usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_null"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_null) - 632usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_prepared"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_prepared) - 640usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_extract_statements"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_extract_statements) - 648usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_prepare_extracted_statement"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_prepare_extracted_statement) - 656usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_extract_statements_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_extract_statements_error) - 664usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_extracted"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_extracted) - 672usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_prepared"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_prepared) - 680usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_pending"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_pending) - 688usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_error) - 696usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_execute_task"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_execute_task) - 704usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_execute_check_state"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_execute_check_state) - 712usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_pending"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_pending) - 720usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_execution_is_finished"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_execution_is_finished) - 728usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_value) - 736usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_varchar"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_varchar) - 744usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_varchar_length"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_varchar_length) - 752usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_bool"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_bool) - 760usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_int8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_int8) - 768usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_uint8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_uint8) - 776usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_int16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_int16) - 784usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_uint16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_uint16) - 792usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_int32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_int32) - 800usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_uint32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_uint32) - 808usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_uint64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_uint64) - 816usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_int64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_int64) - 824usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_hugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_hugeint) - 832usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_uhugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_uhugeint) - 840usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_float"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_float) - 848usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_double) - 856usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_date) - 864usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_time) - 872usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_time_tz_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_time_tz_value) - 880usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_timestamp) - 888usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_interval"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_interval) - 896usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_blob"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_blob) - 904usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_varint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_varint) - 912usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_decimal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_decimal) - 920usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_bit"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_bit) - 928usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_uuid"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_uuid) - 936usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_bool"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_bool) - 944usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_int8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_int8) - 952usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_uint8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_uint8) - 960usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_int16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_int16) - 968usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_uint16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_uint16) - 976usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_int32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_int32) - 984usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_uint32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_uint32) - 992usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_int64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_int64) - 1000usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_uint64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_uint64) - 1008usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_hugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_hugeint) - 1016usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_uhugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_uhugeint) - 1024usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_float"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_float) - 1032usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_double) - 1040usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_date) - 1048usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_time) - 1056usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_time_tz"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_time_tz) - 1064usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_timestamp) - 1072usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_interval"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_interval) - 1080usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_value_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_value_type) - 1088usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_blob"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_blob) - 1096usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_varint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_varint) - 1104usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_decimal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_decimal) - 1112usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_bit"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_bit) - 1120usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_uuid"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_uuid) - 1128usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_varchar"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_varchar) - 1136usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_struct_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_struct_value) - 1144usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_list_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_list_value) - 1152usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_array_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_array_value) - 1160usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_map_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_map_size) - 1168usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_map_key"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_map_key) - 1176usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_map_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_map_value) - 1184usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_is_null_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_is_null_value) - 1192usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_null_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_null_value) - 1200usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_list_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_list_size) - 1208usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_list_child"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_list_child) - 1216usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_enum_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_enum_value) - 1224usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_enum_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_enum_value) - 1232usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_struct_child"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_struct_child) - 1240usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_logical_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_logical_type) - 1248usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_logical_type_get_alias"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_logical_type_get_alias) - 1256usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_logical_type_set_alias"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_logical_type_set_alias) - 1264usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_list_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_list_type) - 1272usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_array_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_array_type) - 1280usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_map_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_map_type) - 1288usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_union_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_union_type) - 1296usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_struct_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_struct_type) - 1304usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_enum_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_enum_type) - 1312usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_decimal_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_decimal_type) - 1320usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_type_id"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_type_id) - 1328usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_decimal_width"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_decimal_width) - 1336usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_decimal_scale"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_decimal_scale) - 1344usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_decimal_internal_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_decimal_internal_type) - 1352usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_enum_internal_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_enum_internal_type) - 1360usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_enum_dictionary_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_enum_dictionary_size) - 1368usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_enum_dictionary_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_enum_dictionary_value) - 1376usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_list_type_child_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_list_type_child_type) - 1384usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_array_type_child_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_array_type_child_type) - 1392usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_array_type_array_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_array_type_array_size) - 1400usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_map_type_key_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_map_type_key_type) - 1408usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_map_type_value_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_map_type_value_type) - 1416usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_struct_type_child_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_struct_type_child_count) - 1424usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_struct_type_child_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_struct_type_child_name) - 1432usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_struct_type_child_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_struct_type_child_type) - 1440usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_union_type_member_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_union_type_member_count) - 1448usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_union_type_member_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_union_type_member_name) - 1456usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_union_type_member_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_union_type_member_type) - 1464usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_logical_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_logical_type) - 1472usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_logical_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_logical_type) - 1480usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_data_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_data_chunk) - 1488usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_data_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_data_chunk) - 1496usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_data_chunk_reset"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_data_chunk_reset) - 1504usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_data_chunk_get_column_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_data_chunk_get_column_count) - 1512usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_data_chunk_get_vector"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_data_chunk_get_vector) - 1520usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_data_chunk_get_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_data_chunk_get_size) - 1528usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_data_chunk_set_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_data_chunk_set_size) - 1536usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_get_column_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_get_column_type) - 1544usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_get_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_get_data) - 1552usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_get_validity"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_get_validity) - 1560usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_ensure_validity_writable"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_ensure_validity_writable) - 1568usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_assign_string_element"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_assign_string_element) - 1576usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_vector_assign_string_element_len"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_vector_assign_string_element_len) - 1584usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_list_vector_get_child"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_list_vector_get_child) - 1592usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_list_vector_get_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_list_vector_get_size) - 1600usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_list_vector_set_size"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_list_vector_set_size) - 1608usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_list_vector_reserve"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_list_vector_reserve) - 1616usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_struct_vector_get_child"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_struct_vector_get_child) - 1624usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_array_vector_get_child"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_array_vector_get_child) - 1632usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_validity_row_is_valid"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_validity_row_is_valid) - 1640usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_validity_set_row_validity"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_validity_set_row_validity) - 1648usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_validity_set_row_invalid"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_validity_set_row_invalid) - 1656usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_validity_set_row_valid"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_validity_set_row_valid) - 1664usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_scalar_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_scalar_function) - 1672usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_scalar_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_scalar_function) - 1680usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_name) - 1688usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_varargs"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_varargs) - 1696usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_special_handling"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_special_handling) - 1704usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_volatile"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_volatile) - 1712usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_add_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_add_parameter) - 1720usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_return_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_return_type) - 1728usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_extra_info) - 1736usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_function) - 1744usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_scalar_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_scalar_function) - 1752usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_get_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_get_extra_info) - 1760usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_scalar_function_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_scalar_function_set_error) - 1768usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_scalar_function_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_scalar_function_set) - 1776usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_scalar_function_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_scalar_function_set) - 1784usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_add_scalar_function_to_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_add_scalar_function_to_set) - 1792usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_scalar_function_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_scalar_function_set) - 1800usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_aggregate_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_aggregate_function) - 1808usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_aggregate_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_aggregate_function) - 1816usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_name) - 1824usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_add_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_add_parameter) - 1832usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_return_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_return_type) - 1840usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_functions"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_functions) - 1848usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_destructor"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_destructor) - 1856usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_aggregate_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_aggregate_function) - 1864usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_special_handling"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_special_handling) - 1872usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_extra_info) - 1880usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_get_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_get_extra_info) - 1888usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_aggregate_function_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_aggregate_function_set_error) - 1896usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_aggregate_function_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_aggregate_function_set) - 1904usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_aggregate_function_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_aggregate_function_set) - 1912usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_add_aggregate_function_to_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_add_aggregate_function_to_set) - 1920usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_aggregate_function_set"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_aggregate_function_set) - 1928usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_table_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_table_function) - 1936usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_table_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_table_function) - 1944usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_set_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_set_name) - 1952usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_add_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_add_parameter) - 1960usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_add_named_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_add_named_parameter) - 1968usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_set_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_set_extra_info) - 1976usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_set_bind"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_set_bind) - 1984usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_set_init"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_set_init) - 1992usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_set_local_init"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_set_local_init) - 2000usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_set_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_set_function) - 2008usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_function_supports_projection_pushdown"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_function_supports_projection_pushdown) - 2016usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_table_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_table_function) - 2024usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_get_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_get_extra_info) - 2032usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_add_result_column"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_add_result_column) - 2040usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_get_parameter_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_get_parameter_count) - 2048usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_get_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_get_parameter) - 2056usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_get_named_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_get_named_parameter) - 2064usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_set_bind_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_set_bind_data) - 2072usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_set_cardinality"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_set_cardinality) - 2080usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_bind_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_bind_set_error) - 2088usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_get_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_get_extra_info) - 2096usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_get_bind_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_get_bind_data) - 2104usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_set_init_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_set_init_data) - 2112usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_get_column_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_get_column_count) - 2120usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_get_column_index"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_get_column_index) - 2128usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_set_max_threads"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_set_max_threads) - 2136usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_init_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_init_set_error) - 2144usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_function_get_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_function_get_extra_info) - 2152usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_function_get_bind_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_function_get_bind_data) - 2160usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_function_get_init_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_function_get_init_data) - 2168usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_function_get_local_init_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_function_get_local_init_data) - 2176usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_function_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_function_set_error) - 2184usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_add_replacement_scan"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_add_replacement_scan) - 2192usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_replacement_scan_set_function_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_replacement_scan_set_function_name) - 2200usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_replacement_scan_add_parameter"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_replacement_scan_add_parameter) - 2208usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_replacement_scan_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_replacement_scan_set_error) - 2216usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_profiling_info_get_metrics"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_profiling_info_get_metrics) - 2224usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_profiling_info_get_child_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_profiling_info_get_child_count) - 2232usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_profiling_info_get_child"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_profiling_info_get_child) - 2240usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_create"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_create) - 2248usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_create_ext"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_create_ext) - 2256usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_column_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_column_count) - 2264usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_column_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_column_type) - 2272usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_error) - 2280usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_flush"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_flush) - 2288usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_close"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_close) - 2296usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_destroy"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_destroy) - 2304usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_add_column"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_add_column) - 2312usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_clear_columns"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_clear_columns) - 2320usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_data_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_data_chunk) - 2328usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_description_create"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_description_create) - 2336usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_description_create_ext"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_description_create_ext) - 2344usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_description_destroy"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_description_destroy) - 2352usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_description_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_description_error) - 2360usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_column_has_default"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_has_default) - 2368usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_table_description_get_column_name"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_table_description_get_column_name) - 2376usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_tasks"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_tasks) - 2384usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_task_state"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_task_state) - 2392usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_tasks_state"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_tasks_state) - 2400usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_n_tasks_state"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_n_tasks_state) - 2408usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_finish_execution"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_finish_execution) - 2416usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_task_state_is_finished"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_task_state_is_finished) - 2424usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_task_state"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_task_state) - 2432usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execution_is_finished"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execution_is_finished) - 2440usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_fetch_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_fetch_chunk) - 2448usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_cast_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_cast_function) - 2456usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_source_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_source_type) - 2464usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_target_type"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_target_type) - 2472usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_implicit_cast_cost"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_implicit_cast_cost) - 2480usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_function) - 2488usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_extra_info) - 2496usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_get_extra_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_get_extra_info) - 2504usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_get_cast_mode"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_get_cast_mode) - 2512usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_error) - 2520usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_cast_function_set_row_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_cast_function_set_row_error) - 2528usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_register_cast_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_register_cast_function) - 2536usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_cast_function"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_cast_function) - 2544usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_is_finite_timestamp_s"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_is_finite_timestamp_s) - 2552usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_is_finite_timestamp_ms"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_is_finite_timestamp_ms) - 2560usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_is_finite_timestamp_ns"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_is_finite_timestamp_ns) - 2568usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_timestamp_tz"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_timestamp_tz) - 2576usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_timestamp_s"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_timestamp_s) - 2584usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_timestamp_ms"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_timestamp_ms) - 2592usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_timestamp_ns"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_timestamp_ns) - 2600usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_timestamp_tz"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_timestamp_tz) - 2608usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_timestamp_s"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_timestamp_s) - 2616usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_timestamp_ms"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_timestamp_ms) - 2624usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_timestamp_ns"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_timestamp_ns) - 2632usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_value) - 2640usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_profiling_info"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_profiling_info) - 2648usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_profiling_info_get_value"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_profiling_info_get_value) - 2656usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_begin_row"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_begin_row) - 2664usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_appender_end_row"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_appender_end_row) - 2672usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_default"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_default) - 2680usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_bool"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_bool) - 2688usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_int8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_int8) - 2696usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_int16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_int16) - 2704usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_int32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_int32) - 2712usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_int64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_int64) - 2720usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_hugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_hugeint) - 2728usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_uint8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_uint8) - 2736usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_uint16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_uint16) - 2744usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_uint32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_uint32) - 2752usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_uint64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_uint64) - 2760usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_uhugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_uhugeint) - 2768usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_float"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_float) - 2776usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_double) - 2784usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_date) - 2792usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_time) - 2800usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_timestamp) - 2808usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_interval"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_interval) - 2816usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_varchar"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_varchar) - 2824usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_varchar_length"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_varchar_length) - 2832usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_blob"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_blob) - 2840usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_null"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_null) - 2848usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_row_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_row_count) - 2856usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_column_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_column_data) - 2864usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_nullmask_data"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_nullmask_data) - 2872usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_get_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_get_chunk) - 2880usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_is_streaming"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_is_streaming) - 2888usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_chunk_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_chunk_count) - 2896usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_boolean"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_boolean) - 2904usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int8) - 2912usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int16) - 2920usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int32) - 2928usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_int64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_int64) - 2936usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_hugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_hugeint) - 2944usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uhugeint"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uhugeint) - 2952usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_decimal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_decimal) - 2960usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint8"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint8) - 2968usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint16"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint16) - 2976usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint32"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint32) - 2984usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_uint64"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_uint64) - 2992usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_float"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_float) - 3000usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_double"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_double) - 3008usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_date"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_date) - 3016usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_time"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_time) - 3024usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_timestamp"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_timestamp) - 3032usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_interval"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_interval) - 3040usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_varchar"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_varchar) - 3048usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_string"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_string) - 3056usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_varchar_internal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_varchar_internal) - 3064usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_string_internal"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_string_internal) - 3072usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_blob"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_blob) - 3080usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_value_is_null"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_value_is_null) - 3088usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_prepared_streaming"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_prepared_streaming) - 3096usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_pending_prepared_streaming"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_pending_prepared_streaming) - 3104usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow) - 3112usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow_schema"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow_schema) - 3120usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_prepared_arrow_schema"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_prepared_arrow_schema) - 3128usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_result_arrow_array"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_result_arrow_array) - 3136usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow_array"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow_array) - 3144usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_column_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_column_count) - 3152usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_row_count"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_row_count) - 3160usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_rows_changed"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_rows_changed) - 3168usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_query_arrow_error"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_query_arrow_error) - 3176usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_arrow"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_arrow) - 3184usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_arrow_stream"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_arrow_stream) - 3192usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_execute_prepared_arrow"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_execute_prepared_arrow) - 3200usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_scan"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_scan) - 3208usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_arrow_array_scan"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_arrow_array_scan) - 3216usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_stream_fetch_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_stream_fetch_chunk) - 3224usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_create_instance_cache"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_create_instance_cache) - 3232usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_get_or_create_from_cache"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_get_or_create_from_cache) - 3240usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_destroy_instance_cache"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_destroy_instance_cache) - 3248usize];
-    ["Offset of field: duckdb_ext_api_v1::duckdb_append_default_to_chunk"]
-        [::std::mem::offset_of!(duckdb_ext_api_v1, duckdb_append_default_to_chunk) - 3256usize];
-};
 static __DUCKDB_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );

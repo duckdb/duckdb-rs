@@ -126,7 +126,7 @@ pub mod types;
 #[cfg(feature = "vtab")]
 pub mod vtab;
 
-/// The duckdb table function interface
+/// The duckdb scalar function interface
 #[cfg(feature = "vscalar")]
 pub mod vscalar;
 

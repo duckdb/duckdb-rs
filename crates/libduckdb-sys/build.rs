@@ -133,6 +133,9 @@ mod build_bundled {
         #[cfg(feature = "json")]
         add_extension(&mut cfg, &manifest, "json", &mut cpp_files, &mut include_dirs);
 
+        #[cfg(feature = "icu")]
+        add_extension(&mut cfg, &manifest, "icu", &mut cpp_files, &mut include_dirs);
+
         // duckdb/tools/pythonpkg/setup.py
         cfg.define("DUCKDB_EXTENSION_AUTOINSTALL_DEFAULT", "1");
         cfg.define("DUCKDB_EXTENSION_AUTOLOAD_DEFAULT", "1");
@@ -152,8 +155,6 @@ mod build_bundled {
 
         cfg.cpp(true)
             .flag_if_supported("-std=c++11")
-            .flag_if_supported("-stdlib=libc++")
-            .flag_if_supported("-stdlib=libstdc++")
             .flag_if_supported("/bigobj")
             .warnings(false)
             .flag_if_supported("-w");

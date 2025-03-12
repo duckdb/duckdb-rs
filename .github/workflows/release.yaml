@@ -11,12 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      # This has a matcher for test panics, so we use it even though elsewhere
-      # we use actions-rs/toolchain.
-      - uses: hecrj/setup-rust-action@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          rust-version: stable${{ matrix.host }}
-          targets: ${{ matrix.target }}
+          toolchain: stable
+          target: ${{ matrix.target }}
           components: 'rustfmt, clippy'
 
       # cargo publish

@@ -14,7 +14,7 @@ use crate::{
 };
 mod function;
 
-/// The duckdb Arrow table function interface
+/// The duckdb Arrow scalar function interface
 #[cfg(feature = "vscalar-arrow")]
 pub mod arrow;
 
@@ -32,7 +32,7 @@ pub trait VScalar: Sized {
     ///
     /// This function is unsafe because it:
     ///
-    /// - Dereferences multiple raw pointers (`func``).
+    /// - Dereferences multiple raw pointers (`func`).
     ///
     unsafe fn invoke(
         state: &Self::State,
