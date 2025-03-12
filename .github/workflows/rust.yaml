@@ -139,8 +139,10 @@ jobs:
           # leak sanitization, but we don't care about backtraces here, so long
           # as the other tests have them.
           RUST_BACKTRACE: "0"
+        # We cannot run "modern-full" with asan as the chrono feature will auto-load relase binaries of
+        # the ICU-extension, which are not built with ASAN and will cause a crash.
         run: |
-          cargo -Z build-std test --features "modern-full extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
+          cargo -Z build-std test --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
       - name: publish crates --dry-run
         uses: katyo/publish-crates@v2
         with:
