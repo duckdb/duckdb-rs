@@ -5,7 +5,6 @@ set -e
 SCRIPT=$(realpath "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT")
 
-echo "$SCRIPT_DIR"
 cd "$SCRIPT_DIR"
 cargo clean
 mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
