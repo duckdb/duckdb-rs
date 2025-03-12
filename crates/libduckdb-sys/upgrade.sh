@@ -11,12 +11,6 @@ cargo clean
 mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
 export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
-# Download and extract amalgamation
-DUCKDB_VERSION=v1.2.0
-git submodule update --init --checkout
-cd "$SCRIPT_DIR/duckdb-sources"
-git fetch
-git checkout "$DUCKDB_VERSION"
 cd "$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/update_sources.py"
 
