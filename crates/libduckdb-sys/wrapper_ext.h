@@ -3,4 +3,4 @@
 
 // We need to allow unstable API for now to get the deprecated arrow functions
 #define DUCKDB_EXTENSION_API_VERSION_UNSTABLE
-#include "duckdb/duckdb_extension.h"
+#include "../../../duckdb/src/include/duckdb_extension.h"
