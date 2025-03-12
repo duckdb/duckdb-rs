@@ -5,3 +5,4 @@ fn_call_width = 72
 # indent_style = "Block"
 # tab_spaces = 2
 # group_imports="StdExternalCrate"
+ignore = ["crates/duckdb"]
