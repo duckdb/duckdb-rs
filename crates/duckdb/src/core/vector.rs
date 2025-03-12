@@ -1,17 +1,19 @@
 use std::{any::Any, ffi::CString, slice};
 
-use libduckdb_sys::{
-    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, DuckDbString,
-};
-
 use super::LogicalTypeHandle;
-use crate::ffi::{
-    duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
-    duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name,
-    duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
-    duckdb_vector_assign_string_element, duckdb_vector_assign_string_element_len,
-    duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
-    duckdb_vector_get_validity, duckdb_vector_size,
+use crate::{
+    core::selection_vector::SelectionVector,
+    ffi::{
+        duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
+        duckdb_list_vector_set_size, duckdb_slice_vector, duckdb_struct_type_child_count,
+        duckdb_struct_type_child_name, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
+        duckdb_vector_assign_string_element, duckdb_vector_assign_string_element_len,
+        duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
+        duckdb_vector_get_validity, duckdb_vector_size,
+    },
+};
+use libduckdb_sys::{
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, idx_t, DuckDbString,
 };
 
 /// Vector trait.
@@ -112,6 +114,11 @@ impl FlatVector {
             let idx = duckdb_vector_get_validity(self.ptr);
             duckdb_validity_set_row_invalid(idx, row as u64);
         }
+    }
+
+    pub fn slice(&mut self, selection_vector: SelectionVector) -> DictionaryVector {
+        unsafe { duckdb_slice_vector(self.ptr, selection_vector.as_ptr(), selection_vector.len()) }
+        DictionaryVector::from(self.ptr)
     }
 
     /// Copy data to the vector.
@@ -350,5 +357,25 @@ impl StructVector {
             let idx = duckdb_vector_get_validity(self.ptr);
             duckdb_validity_set_row_invalid(idx, row as u64);
         }
+    }
+}
+
+pub struct DictionaryVector {
+    ptr: duckdb_vector,
+    capacity: usize,
+}
+
+impl From<duckdb_vector> for DictionaryVector {
+    fn from(ptr: duckdb_vector) -> Self {
+        Self {
+            ptr,
+            capacity: unsafe { duckdb_vector_size() as usize },
+        }
+    }
+}
+
+impl DictionaryVector {
+    pub fn logical_type(&self) -> LogicalTypeHandle {
+        unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
     }
 }

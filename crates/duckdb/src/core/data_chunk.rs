@@ -1,6 +1,7 @@
 use super::{
     logical_type::LogicalTypeHandle,
     vector::{ArrayVector, FlatVector, ListVector, StructVector},
+    DictionaryVector,
 };
 use crate::ffi::{
     duckdb_create_data_chunk, duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_size,

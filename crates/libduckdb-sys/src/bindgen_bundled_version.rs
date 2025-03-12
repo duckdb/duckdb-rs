@@ -132,7 +132,7 @@ pub const duckdb_error_type_DUCKDB_ERROR_MISSING_EXTENSION: duckdb_error_type = 
 pub const duckdb_error_type_DUCKDB_ERROR_AUTOLOAD: duckdb_error_type = 40;
 pub const duckdb_error_type_DUCKDB_ERROR_SEQUENCE: duckdb_error_type = 41;
 pub const duckdb_error_type_DUCKDB_INVALID_CONFIGURATION: duckdb_error_type = 42;
-#[doc = "! An enum over DuckDB's different result types."]
+#[doc = "! An enum over DuckDB's different error types."]
 pub type duckdb_error_type = ::std::os::raw::c_uint;
 pub const duckdb_cast_mode_DUCKDB_CAST_NORMAL: duckdb_cast_mode = 0;
 pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
@@ -140,9 +140,10 @@ pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
 pub type duckdb_cast_mode = ::std::os::raw::c_uint;
 #[doc = "! DuckDB's index type."]
 pub type idx_t = u64;
+pub type sel_t = u32;
 #[doc = "! The callback that will be called to destroy data, e.g.,\n! bind data (if any), init data (if any), extra data for replacement scans (if any)"]
 pub type duckdb_delete_callback_t = ::std::option::Option<unsafe extern "C" fn(data: *mut ::std::os::raw::c_void)>;
-#[doc = "! Used for threading, contains a task state. Must be destroyed with `duckdb_destroy_state`."]
+#[doc = "! Used for threading, contains a task state. Must be destroyed with `duckdb_destroy_task_state`."]
 pub type duckdb_task_state = *mut ::std::os::raw::c_void;
 #[doc = "! Days are stored as days since 1970-01-01\n! Use the duckdb_from_date/duckdb_to_date function to extract individual information"]
 #[repr(C)]
@@ -299,6 +300,12 @@ pub struct _duckdb_vector {
 }
 #[doc = "! A vector to a specified column in a data chunk. Lives as long as the\n! data chunk lives, i.e., must not be destroyed."]
 pub type duckdb_vector = *mut _duckdb_vector;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_selection_vector {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+pub type duckdb_selection_vector = *mut _duckdb_selection_vector;
 #[doc = "! Strings are composed of a char pointer and a size. You must free string.data\n! with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -741,7 +748,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Closes the result and de-allocates all memory allocated for that connection.\n\n @param result The result to destroy."]
+    #[doc = "Closes the result and de-allocates all memory allocated for that result.\n\n @param result The result to destroy."]
     pub fn duckdb_destroy_result(result: *mut duckdb_result);
 }
 unsafe extern "C" {
@@ -1830,6 +1837,22 @@ unsafe extern "C" {
     pub fn duckdb_array_vector_get_child(vector: duckdb_vector) -> duckdb_vector;
 }
 unsafe extern "C" {
+    #[doc = "todo...* @param vector The vector which is to become a dictionary\n @param selection The selection vector\n @param len The length of the selection vector"]
+    pub fn duckdb_slice_vector(vector: duckdb_vector, selection: duckdb_selection_vector, len: idx_t);
+}
+unsafe extern "C" {
+    #[doc = "todo"]
+    pub fn duckdb_create_selection_vector(size: idx_t) -> duckdb_selection_vector;
+}
+unsafe extern "C" {
+    #[doc = "todo"]
+    pub fn duckdb_destroy_selection_vector(vector: duckdb_selection_vector);
+}
+unsafe extern "C" {
+    #[doc = "todo"]
+    pub fn duckdb_selection_vector_get_data_ptr(vector: duckdb_selection_vector) -> *mut sel_t;
+}
+unsafe extern "C" {
     #[doc = "Returns whether or not a row is valid (i.e. not NULL) in the given validity mask.\n\n @param validity The validity mask, as obtained through `duckdb_vector_get_validity`\n @param row The row index\n @return true if the row is valid, false otherwise"]
     pub fn duckdb_validity_row_is_valid(validity: *mut u64, row: idx_t) -> bool;
 }
@@ -1865,7 +1888,7 @@ unsafe extern "C" {
     pub fn duckdb_scalar_function_set_varargs(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type);
 }
 unsafe extern "C" {
-    #[doc = "Sets the parameters of the given scalar function to varargs. Does not require adding parameters with\nduckdb_scalar_function_add_parameter.\n\n @param scalar_function The scalar function."]
+    #[doc = "Sets the scalar function's null-handling behavior to special.\n\n @param scalar_function The scalar function."]
     pub fn duckdb_scalar_function_set_special_handling(scalar_function: duckdb_scalar_function);
 }
 unsafe extern "C" {
@@ -1881,7 +1904,7 @@ unsafe extern "C" {
     pub fn duckdb_scalar_function_set_return_type(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type);
 }
 unsafe extern "C" {
-    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param scalar_function The scalar function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param scalar_function The scalar function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
     pub fn duckdb_scalar_function_set_extra_info(
         scalar_function: duckdb_scalar_function,
         extra_info: *mut ::std::os::raw::c_void,
@@ -1989,7 +2012,7 @@ unsafe extern "C" {
     pub fn duckdb_aggregate_function_set_special_handling(aggregate_function: duckdb_aggregate_function);
 }
 unsafe extern "C" {
-    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param aggregate_function The aggregate function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param aggregate_function The aggregate function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
     pub fn duckdb_aggregate_function_set_extra_info(
         aggregate_function: duckdb_aggregate_function,
         extra_info: *mut ::std::os::raw::c_void,
@@ -2051,7 +2074,7 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = "Assigns extra information to the table function that can be fetched during binding, etc.\n\n @param table_function The table function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Assigns extra information to the table function that can be fetched during binding, etc.\n\n @param table_function The table function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
     pub fn duckdb_table_function_set_extra_info(
         table_function: duckdb_table_function,
         extra_info: *mut ::std::os::raw::c_void,
