@@ -1,4 +1,5 @@
 use crate::ffi::{duckdb_destroy_value, duckdb_get_int64, duckdb_get_varchar, duckdb_value};
+use libduckdb_sys::{duckdb_create_int32, duckdb_create_int64, duckdb_create_uint64};
 use std::{ffi::CString, fmt};
 
 /// The Value object holds a single arbitrary value of any type that can be
@@ -11,6 +12,30 @@ pub struct Value {
 impl From<duckdb_value> for Value {
     fn from(ptr: duckdb_value) -> Self {
         Self { ptr }
+    }
+}
+
+impl From<i32> for Value {
+    fn from(t: i32) -> Self {
+        Self {
+            ptr: unsafe { duckdb_create_int32(t) },
+        }
+    }
+}
+
+impl From<i64> for Value {
+    fn from(t: i64) -> Self {
+        Self {
+            ptr: unsafe { duckdb_create_int64(t) },
+        }
+    }
+}
+
+impl From<u64> for Value {
+    fn from(t: u64) -> Self {
+        Self {
+            ptr: unsafe { duckdb_create_uint64(t) },
+        }
     }
 }
 
