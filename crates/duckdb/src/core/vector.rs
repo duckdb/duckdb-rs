@@ -123,7 +123,8 @@ impl FlatVector {
         DictionaryVector::from(self.ptr)
     }
 
-    pub fn constant(&mut self, value: Value) {
+    pub fn constant(&mut self, value: &Value) {
+        // Copies value internally
         unsafe { duckdb_assign_constant_vector(self.ptr, value.ptr) }
     }
 
