@@ -11,9 +11,11 @@ use crate::{
         duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
         duckdb_vector_get_validity, duckdb_vector_size,
     },
+    vtab::Value,
 };
 use libduckdb_sys::{
-    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, idx_t, DuckDbString,
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_assign_constant_vector,
+    duckdb_create_array_value, duckdb_create_scalar_function, duckdb_validity_row_is_valid, idx_t, DuckDbString,
 };
 
 /// Vector trait.
@@ -119,6 +121,10 @@ impl FlatVector {
     pub fn slice(&mut self, selection_vector: SelectionVector) -> DictionaryVector {
         unsafe { duckdb_slice_vector(self.ptr, selection_vector.as_ptr(), selection_vector.len()) }
         DictionaryVector::from(self.ptr)
+    }
+
+    pub fn constant(&mut self, value: Value) {
+        unsafe { duckdb_assign_constant_vector(self.ptr, value.ptr) }
     }
 
     /// Copy data to the vector.

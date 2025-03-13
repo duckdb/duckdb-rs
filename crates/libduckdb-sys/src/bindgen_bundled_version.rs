@@ -140,6 +140,7 @@ pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
 pub type duckdb_cast_mode = ::std::os::raw::c_uint;
 #[doc = "! DuckDB's index type."]
 pub type idx_t = u64;
+#[doc = "! Type used for the selection vector"]
 pub type sel_t = u32;
 #[doc = "! The callback that will be called to destroy data, e.g.,\n! bind data (if any), init data (if any), extra data for replacement scans (if any)"]
 pub type duckdb_delete_callback_t = ::std::option::Option<unsafe extern "C" fn(data: *mut ::std::os::raw::c_void)>;
@@ -1839,6 +1840,9 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = "todo...* @param vector The vector which is to become a dictionary\n @param selection The selection vector\n @param len The length of the selection vector"]
     pub fn duckdb_slice_vector(vector: duckdb_vector, selection: duckdb_selection_vector, len: idx_t);
+}
+unsafe extern "C" {
+    pub fn duckdb_assign_constant_vector(vector: duckdb_vector, value: duckdb_value);
 }
 unsafe extern "C" {
     #[doc = "todo"]
