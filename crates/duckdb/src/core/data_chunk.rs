@@ -6,6 +6,7 @@ use super::{
 use crate::ffi::{
     duckdb_create_data_chunk, duckdb_data_chunk, duckdb_data_chunk_get_column_count, duckdb_data_chunk_get_size,
     duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size, duckdb_destroy_data_chunk, duckdb_stringify_data_chunk,
+    duckdb_verify_data_chunk,
 };
 use std::{
     ffi::{c_char, CStr},
@@ -94,6 +95,13 @@ impl DataChunkHandle {
     /// Get the ptr of duckdb_data_chunk in this [DataChunkHandle].
     pub fn get_ptr(&self) -> duckdb_data_chunk {
         self.ptr
+    }
+
+    pub fn verify(&self) {
+        #[cfg(debug_assertions)]
+        {
+            unsafe { duckdb_verify_data_chunk(self.ptr) }
+        }
     }
 }
 

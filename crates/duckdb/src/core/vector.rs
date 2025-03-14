@@ -1,4 +1,4 @@
-use super::LogicalTypeHandle;
+use super::{LogicalTypeHandle, Value};
 use crate::{
     core::selection_vector::SelectionVector,
     ffi::{
@@ -9,7 +9,6 @@ use crate::{
         duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
         duckdb_vector_get_validity, duckdb_vector_size,
     },
-    vtab::Value,
 };
 use libduckdb_sys::{
     duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_assign_constant_vector,
@@ -131,14 +130,9 @@ impl FlatVector {
 
     pub fn constant(&mut self, value: &Value) {
         // Copies value internally
-        // if true {
-        //     panic!("{:p}", value.ptr);
-        // }
-        // println!("before c");
-        io::stdout().flush().unwrap();
         unsafe { duckdb_assign_constant_vector(self.ptr, value.ptr) }
-        // println!("after c");
-        io::stdout().flush().unwrap();
+        // Sets the internal duckdb buffer to be of size 1
+        self.capacity = 1;
     }
 
     /// Copy data to the vector.

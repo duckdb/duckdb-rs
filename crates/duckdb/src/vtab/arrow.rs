@@ -1,19 +1,18 @@
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, LogicalTypeId, TableFunctionInfo, VTab};
-use std::sync::Arc;
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
 use crate::{
     core::{ArrayVector, FlatVector, Inserter, ListVector, StructVector, Vector},
     types::DuckString,
 };
-use arrow::array::as_map_array;
 use arrow::{
     array::{
-        as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array,
-        as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray,
-        Date32Array, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder, GenericListArray,
-        GenericStringArray, IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait,
-        PrimitiveArray, StringArray, StringViewArray, StructArray, TimestampMicrosecondArray, TimestampNanosecondArray,
+        as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_map_array,
+        as_primitive_array, as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray,
+        BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder,
+        GenericListArray, GenericStringArray, IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray,
+        OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, TimestampMicrosecondArray,
+        TimestampNanosecondArray,
     },
     buffer::{BooleanBuffer, NullBuffer},
     compute::cast,
@@ -540,6 +539,7 @@ impl WritableVector for DataChunkHandleSlice<'_> {
 /// To get the specific vector type, use the appropriate method.
 pub trait WritableVector {
     /// Get the vector as a `FlatVector`.
+    /// Note: the capacity is not necessarly correct.
     fn flat_vector(&mut self) -> FlatVector;
     /// Get the vector as a `ListVector`.
     fn list_vector(&mut self) -> ListVector;
@@ -681,7 +681,7 @@ pub fn record_batch_to_duckdb_data_chunk(
 }
 
 fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<T>, out_vector: &mut FlatVector) {
-    // assert!(array.len() <= out_vector.capacity());
+    assert!(array.len() <= out_vector.capacity());
     out_vector.copy::<T::Native>(array.values());
     set_nulls_in_flat_vector(array, out_vector);
 }

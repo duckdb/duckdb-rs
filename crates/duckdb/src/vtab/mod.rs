@@ -7,7 +7,6 @@ use crate::{error::Error, inner_connection::InnerConnection, Connection, Result}
 use super::ffi;
 
 mod function;
-mod value;
 
 /// The duckdb Arrow table function interface
 #[cfg(feature = "vtab-arrow")]
@@ -20,8 +19,8 @@ pub use self::arrow::{
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
+pub use crate::core::value::Value;
 pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
-pub use value::Value;
 
 use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
@@ -169,11 +168,10 @@ impl InnerConnection {
 mod test {
     use super::*;
     use crate::core::{Inserter, LogicalTypeId};
-    use std::sync::atomic::AtomicBool;
-    use std::sync::atomic::Ordering;
     use std::{
         error::Error,
         ffi::{c_char, CString},
+        sync::atomic::{AtomicBool, Ordering},
     };
 
     struct HelloBindData {
