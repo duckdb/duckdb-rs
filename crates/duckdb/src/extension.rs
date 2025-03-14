@@ -31,4 +31,18 @@ mod test {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_extension_remote_parquet() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        assert_eq!(
+            9i64,
+            db.query_row::<i64, _, _>(
+                r#"SELECT count(*) FROM read_parquet('https://duckdb.org/data/prices.parquet');"#,
+                [],
+                |r| r.get(0)
+            )?
+        );
+        Ok(())
+    }
 }
