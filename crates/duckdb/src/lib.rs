@@ -53,7 +53,7 @@
 //!     Ok(())
 //! }
 //! ```
-#![warn(missing_docs)]
+#![allow(unused_imports, dead_code)]
 
 pub use libduckdb_sys as ffi;
 
