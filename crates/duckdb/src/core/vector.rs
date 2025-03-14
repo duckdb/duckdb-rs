@@ -1,6 +1,4 @@
-use std::{any::Any, ffi::CString, slice};
-
-use super::LogicalTypeHandle;
+use super::{LogicalTypeHandle, Value};
 use crate::{
     core::selection_vector::SelectionVector,
     ffi::{
@@ -13,7 +11,16 @@ use crate::{
     },
 };
 use libduckdb_sys::{
-    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, idx_t, DuckDbString,
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_assign_constant_vector,
+    duckdb_create_array_value, duckdb_create_scalar_function, duckdb_validity_row_is_valid, idx_t, DuckDbString,
+};
+use std::{
+    any::Any,
+    ffi::CString,
+    fmt::{Debug, Formatter},
+    io,
+    io::Write,
+    slice,
 };
 
 /// Vector trait.
@@ -119,6 +126,13 @@ impl FlatVector {
     pub fn slice(&mut self, selection_vector: SelectionVector) -> DictionaryVector {
         unsafe { duckdb_slice_vector(self.ptr, selection_vector.as_ptr(), selection_vector.len()) }
         DictionaryVector::from(self.ptr)
+    }
+
+    pub fn assign_to_constant(&mut self, value: &Value) {
+        // Copies value internally
+        unsafe { duckdb_assign_constant_vector(self.ptr, value.ptr) }
+        // Sets the internal duckdb buffer to be of size 1
+        self.capacity = 1;
     }
 
     /// Copy data to the vector.

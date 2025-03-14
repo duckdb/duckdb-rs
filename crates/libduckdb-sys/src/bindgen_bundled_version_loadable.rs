@@ -140,6 +140,7 @@ pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
 pub type duckdb_cast_mode = ::std::os::raw::c_uint;
 #[doc = "! DuckDB's index type."]
 pub type idx_t = u64;
+#[doc = "! Type used for the selection vector"]
 pub type sel_t = u32;
 #[doc = "! The callback that will be called to destroy data, e.g.,\n! bind data (if any), init data (if any), extra data for replacement scans (if any)"]
 pub type duckdb_delete_callback_t = ::std::option::Option<unsafe extern "C" fn(data: *mut ::std::os::raw::c_void)>;
@@ -1703,11 +1704,16 @@ pub struct duckdb_ext_api_v1 {
     pub duckdb_slice_vector: ::std::option::Option<
         unsafe extern "C" fn(vector: duckdb_vector, selection: duckdb_selection_vector, len: idx_t),
     >,
+    pub duckdb_assign_constant_vector:
+        ::std::option::Option<unsafe extern "C" fn(vector: duckdb_vector, value: duckdb_value)>,
     pub duckdb_create_selection_vector:
         ::std::option::Option<unsafe extern "C" fn(size: idx_t) -> duckdb_selection_vector>,
     pub duckdb_destroy_selection_vector: ::std::option::Option<unsafe extern "C" fn(vector: duckdb_selection_vector)>,
     pub duckdb_selection_vector_get_data_ptr:
         ::std::option::Option<unsafe extern "C" fn(vector: duckdb_selection_vector) -> *mut sel_t>,
+    pub duckdb_stringify_data_chunk:
+        ::std::option::Option<unsafe extern "C" fn(chunk: duckdb_data_chunk) -> *const ::std::os::raw::c_char>,
+    pub duckdb_verify_data_chunk: ::std::option::Option<unsafe extern "C" fn(chunk: duckdb_data_chunk)>,
 }
 static __DUCKDB_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
@@ -8836,6 +8842,21 @@ pub unsafe fn duckdb_slice_vector(
     (fun)(vector, selection, len)
 }
 
+static __DUCKDB_ASSIGN_CONSTANT_VECTOR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_assign_constant_vector(vector: duckdb_vector, value: duckdb_value) {
+    let function_ptr = __DUCKDB_ASSIGN_CONSTANT_VECTOR
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector, value: duckdb_value) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(vector, value)
+}
+
 static __DUCKDB_CREATE_SELECTION_VECTOR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
@@ -8881,6 +8902,38 @@ pub unsafe fn duckdb_selection_vector_get_data_ptr(
         function_ptr,
     );
     (fun)(vector)
+}
+
+static __DUCKDB_STRINGIFY_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_stringify_data_chunk(
+    chunk: duckdb_data_chunk,
+) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_STRINGIFY_DATA_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        chunk: duckdb_data_chunk,
+    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(chunk)
+}
+
+static __DUCKDB_VERIFY_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_verify_data_chunk(chunk: duckdb_data_chunk) {
+    let function_ptr = __DUCKDB_VERIFY_DATA_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(chunk)
 }
 
 /// Like DUCKDB_EXTENSION_API_INIT macro
@@ -10531,6 +10584,10 @@ pub unsafe fn duckdb_rs_extension_api_init(
         __DUCKDB_SLICE_VECTOR
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
+    if let Some(fun) = (*p_api).duckdb_assign_constant_vector {
+        __DUCKDB_ASSIGN_CONSTANT_VECTOR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
     if let Some(fun) = (*p_api).duckdb_create_selection_vector {
         __DUCKDB_CREATE_SELECTION_VECTOR
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
@@ -10541,6 +10598,14 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     if let Some(fun) = (*p_api).duckdb_selection_vector_get_data_ptr {
         __DUCKDB_SELECTION_VECTOR_GET_DATA_PTR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_stringify_data_chunk {
+        __DUCKDB_STRINGIFY_DATA_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_verify_data_chunk {
+        __DUCKDB_VERIFY_DATA_CHUNK
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     Ok(true)
