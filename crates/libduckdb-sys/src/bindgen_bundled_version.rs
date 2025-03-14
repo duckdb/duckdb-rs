@@ -1842,7 +1842,14 @@ unsafe extern "C" {
     pub fn duckdb_slice_vector(vector: duckdb_vector, selection: duckdb_selection_vector, len: idx_t);
 }
 unsafe extern "C" {
+    #[doc = "Copies the value from `value` to `vector`."]
     pub fn duckdb_assign_constant_vector(vector: duckdb_vector, value: duckdb_value);
+}
+unsafe extern "C" {
+    pub fn duckdb_stringify_data_chunk(chunk: duckdb_data_chunk) -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    pub fn duckdb_verify_data_chunk(chunk: duckdb_data_chunk);
 }
 unsafe extern "C" {
     #[doc = "todo"]

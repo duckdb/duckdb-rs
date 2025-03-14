@@ -1,5 +1,3 @@
-use std::{any::Any, ffi::CString, slice};
-
 use super::LogicalTypeHandle;
 use crate::{
     core::selection_vector::SelectionVector,
@@ -16,6 +14,14 @@ use crate::{
 use libduckdb_sys::{
     duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_assign_constant_vector,
     duckdb_create_array_value, duckdb_create_scalar_function, duckdb_validity_row_is_valid, idx_t, DuckDbString,
+};
+use std::{
+    any::Any,
+    ffi::CString,
+    fmt::{Debug, Formatter},
+    io,
+    io::Write,
+    slice,
 };
 
 /// Vector trait.
@@ -125,7 +131,14 @@ impl FlatVector {
 
     pub fn constant(&mut self, value: &Value) {
         // Copies value internally
+        // if true {
+        //     panic!("{:p}", value.ptr);
+        // }
+        // println!("before c");
+        io::stdout().flush().unwrap();
         unsafe { duckdb_assign_constant_vector(self.ptr, value.ptr) }
+        // println!("after c");
+        io::stdout().flush().unwrap();
     }
 
     /// Copy data to the vector.

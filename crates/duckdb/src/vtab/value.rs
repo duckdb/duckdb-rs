@@ -1,5 +1,7 @@
 use crate::ffi::{duckdb_destroy_value, duckdb_get_int64, duckdb_get_varchar, duckdb_value};
-use libduckdb_sys::{duckdb_create_int32, duckdb_create_int64, duckdb_create_uint64};
+use libduckdb_sys::{
+    duckdb_create_bool, duckdb_create_int32, duckdb_create_int64, duckdb_create_null_value, duckdb_create_uint64,
+};
 use std::{ffi::CString, fmt};
 
 /// The Value object holds a single arbitrary value of any type that can be
@@ -7,6 +9,34 @@ use std::{ffi::CString, fmt};
 #[derive(Debug)]
 pub struct Value {
     pub(crate) ptr: duckdb_value,
+}
+
+impl<T> From<Option<T>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(t: Option<T>) -> Self {
+        match t {
+            Some(t) => t.into(),
+            None => Value::null(),
+        }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Value {
+            ptr: unsafe { duckdb_create_bool(value) },
+        }
+    }
+}
+
+impl Value {
+    pub fn null() -> Value {
+        Value {
+            ptr: unsafe { duckdb_create_null_value() },
+        }
+    }
 }
 
 impl From<duckdb_value> for Value {

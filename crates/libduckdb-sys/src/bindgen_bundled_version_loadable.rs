@@ -1711,6 +1711,9 @@ pub struct duckdb_ext_api_v1 {
     pub duckdb_destroy_selection_vector: ::std::option::Option<unsafe extern "C" fn(vector: duckdb_selection_vector)>,
     pub duckdb_selection_vector_get_data_ptr:
         ::std::option::Option<unsafe extern "C" fn(vector: duckdb_selection_vector) -> *mut sel_t>,
+    pub duckdb_stringify_data_chunk:
+        ::std::option::Option<unsafe extern "C" fn(chunk: duckdb_data_chunk) -> *const ::std::os::raw::c_char>,
+    pub duckdb_verify_data_chunk: ::std::option::Option<unsafe extern "C" fn(chunk: duckdb_data_chunk)>,
 }
 static __DUCKDB_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
@@ -8901,6 +8904,38 @@ pub unsafe fn duckdb_selection_vector_get_data_ptr(
     (fun)(vector)
 }
 
+static __DUCKDB_STRINGIFY_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_stringify_data_chunk(
+    chunk: duckdb_data_chunk,
+) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_STRINGIFY_DATA_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        chunk: duckdb_data_chunk,
+    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(chunk)
+}
+
+static __DUCKDB_VERIFY_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_verify_data_chunk(chunk: duckdb_data_chunk) {
+    let function_ptr = __DUCKDB_VERIFY_DATA_CHUNK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) = ::std::mem::transmute(
+        function_ptr,
+    );
+    (fun)(chunk)
+}
+
 /// Like DUCKDB_EXTENSION_API_INIT macro
 pub unsafe fn duckdb_rs_extension_api_init(
     info: duckdb_extension_info,
@@ -10563,6 +10598,14 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     if let Some(fun) = (*p_api).duckdb_selection_vector_get_data_ptr {
         __DUCKDB_SELECTION_VECTOR_GET_DATA_PTR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_stringify_data_chunk {
+        __DUCKDB_STRINGIFY_DATA_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_verify_data_chunk {
+        __DUCKDB_VERIFY_DATA_CHUNK
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     Ok(true)
