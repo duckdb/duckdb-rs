@@ -9,8 +9,9 @@ use super::{
         duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
-    LogicalTypeHandle, VTab, Value,
+    LogicalTypeHandle, VTab,
 };
+use crate::core::Value;
 use std::{
     ffi::{c_void, CString},
     fmt::Debug,

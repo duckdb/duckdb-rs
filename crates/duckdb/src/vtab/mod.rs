@@ -19,7 +19,6 @@ pub use self::arrow::{
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
-pub use crate::core::value::Value;
 pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
 
 use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
