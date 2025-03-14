@@ -60,7 +60,7 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let c_string = unsafe { CString::from_raw(duckdb_get_varchar(self.ptr)) };
-        write!(f, "{}", c_string.to_str().unwrap())
+        write!(f, "{}", c_string.to_str().expect("cannot extract c_str"))
     }
 }
 
