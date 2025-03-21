@@ -290,8 +290,11 @@ impl LogicalTypeHandle {
         unsafe { Self::new(c_logical_type) }
     }
 
-    pub fn get_ptr(&self) -> duckdb_logical_type {
-        self.ptr
+    /// Return an owning ptr to a logical type
+    pub fn into_owning_ptr(self) -> duckdb_logical_type {
+        let ptr = self.ptr;
+        std::mem::forget(self);
+        ptr
     }
 }
 
