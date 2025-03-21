@@ -289,6 +289,10 @@ impl LogicalTypeHandle {
         };
         unsafe { Self::new(c_logical_type) }
     }
+
+    pub fn get_ptr(&self) -> duckdb_logical_type {
+        self.ptr
+    }
 }
 
 #[cfg(test)]
