@@ -112,6 +112,8 @@ impl From<u32> for LogicalTypeId {
 /// <https://duckdb.org/docs/sql/data_types/overview>
 pub struct LogicalTypeHandle {
     pub(crate) ptr: duckdb_logical_type,
+    /// Does the struct on the C ptr.
+    owned: bool,
 }
 
 impl Debug for LogicalTypeHandle {
@@ -137,6 +139,9 @@ impl Debug for LogicalTypeHandle {
 impl Drop for LogicalTypeHandle {
     /// Drop implementation for LogicalType
     fn drop(&mut self) {
+        if !self.owned {
+            return;
+        }
         if !self.ptr.is_null() {
             unsafe {
                 duckdb_destroy_logical_type(&mut self.ptr);
@@ -153,6 +158,7 @@ impl From<LogicalTypeId> for LogicalTypeHandle {
         unsafe {
             Self {
                 ptr: duckdb_create_logical_type(id as u32),
+                owned: true,
             }
         }
     }
@@ -160,8 +166,12 @@ impl From<LogicalTypeId> for LogicalTypeHandle {
 
 impl LogicalTypeHandle {
     /// Create a DuckDB logical type from C API
-    pub(crate) unsafe fn new(ptr: duckdb_logical_type) -> Self {
-        Self { ptr }
+    pub unsafe fn new_unowned(ptr: duckdb_logical_type) -> Self {
+        Self { ptr, owned: false }
+    }
+
+    pub unsafe fn new(ptr: duckdb_logical_type) -> Self {
+        Self { ptr, owned: true }
     }
 
     /// Creates a map type from its child type.
@@ -169,15 +179,27 @@ impl LogicalTypeHandle {
         unsafe {
             Self {
                 ptr: duckdb_create_map_type(key.ptr, value.ptr),
+                owned: true,
             }
         }
     }
 
     /// Creates a list type from its child type.
+    /// Creates a list type from its child type.
+    ///
+    /// This function creates a new `LogicalTypeHandle` representing a list type with the
+    /// specified child type. The child type is passed as a reference to another
+    /// `LogicalTypeHandle`.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked as `unsafe` because it directly calls the C API function
+    /// `duckdb_create_list_type`, which may perform unsafe operations.
     pub fn list(child_type: &LogicalTypeHandle) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_list_type(child_type.ptr),
+                owned: true,
             }
         }
     }
@@ -187,6 +209,7 @@ impl LogicalTypeHandle {
         unsafe {
             Self {
                 ptr: duckdb_create_array_type(child_type.ptr, array_size),
+                owned: true,
             }
         }
     }
@@ -196,6 +219,7 @@ impl LogicalTypeHandle {
         unsafe {
             Self {
                 ptr: duckdb_create_decimal_type(width, scale),
+                owned: true,
             }
         }
     }
@@ -225,6 +249,7 @@ impl LogicalTypeHandle {
                     name_ptrs.as_slice().as_ptr().cast_mut(),
                     fields.len() as idx_t,
                 ),
+                owned: true,
             }
         }
     }
@@ -242,6 +267,7 @@ impl LogicalTypeHandle {
                     name_ptrs.as_slice().as_ptr().cast_mut(),
                     fields.len() as idx_t,
                 ),
+                owned: true,
             }
         }
     }
