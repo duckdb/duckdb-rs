@@ -185,16 +185,6 @@ impl LogicalTypeHandle {
     }
 
     /// Creates a list type from its child type.
-    /// Creates a list type from its child type.
-    ///
-    /// This function creates a new `LogicalTypeHandle` representing a list type with the
-    /// specified child type. The child type is passed as a reference to another
-    /// `LogicalTypeHandle`.
-    ///
-    /// # Safety
-    ///
-    /// This function is marked as `unsafe` because it directly calls the C API function
-    /// `duckdb_create_list_type`, which may perform unsafe operations.
     pub fn list(child_type: &LogicalTypeHandle) -> Self {
         unsafe {
             Self {
