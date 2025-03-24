@@ -156,6 +156,15 @@ mod build_bundled {
             .warnings(false)
             .flag_if_supported("-w");
 
+        // Define NDEBUG if not in debug mode
+        let is_debug = match std::env::var("DEBUG") {
+            Ok(v) => v != "false" && v != "0",
+            Err(_) => false,
+        };
+        if !is_debug {
+            cfg.define("NDEBUG", None);
+        }
+
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
         }
