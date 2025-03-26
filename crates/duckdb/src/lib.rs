@@ -104,6 +104,7 @@ mod error;
 mod appender;
 mod appender_params;
 mod arrow_batch;
+mod arrow_scan;
 mod cache;
 mod column;
 mod config;

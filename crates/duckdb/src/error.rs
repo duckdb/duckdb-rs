@@ -219,7 +219,7 @@ impl error::Error for Error {
 // These are public but not re-exported by lib.rs, so only visible within crate.
 
 #[inline]
-fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> Result<()> {
+pub(crate) fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> Result<()> {
     Err(Error::DuckDBFailure(ffi::Error::new(code), message))
 }
 
