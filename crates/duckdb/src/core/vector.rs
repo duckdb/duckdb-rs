@@ -140,6 +140,10 @@ impl FlatVector {
         assert!(data.len() <= self.capacity());
         self.as_mut_slice::<T>()[0..data.len()].copy_from_slice(data);
     }
+
+    pub fn unowned_ptr(&self) -> duckdb_vector {
+        self.ptr
+    }
 }
 
 /// A trait for inserting data into a vector.
