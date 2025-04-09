@@ -1,20 +1,19 @@
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
-use std::sync::Arc;
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
 use crate::{
     core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector, Vector},
     types::DuckString,
 };
 
-use arrow::array::as_map_array;
 use arrow::{
     array::{
-        as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_primitive_array,
-        as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray,
-        Date32Array, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder, GenericListArray,
-        GenericStringArray, IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait,
-        PrimitiveArray, StringArray, StringViewArray, StructArray, TimestampMicrosecondArray, TimestampNanosecondArray,
+        as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_map_array,
+        as_primitive_array, as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray,
+        BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder,
+        GenericListArray, GenericStringArray, IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray,
+        OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, TimestampMicrosecondArray,
+        TimestampNanosecondArray,
     },
     buffer::{BooleanBuffer, NullBuffer},
     compute::cast,
@@ -1714,11 +1713,7 @@ mod test {
 
         let mut stmt = db.prepare("SELECT * FROM arrow(?, ?)").unwrap();
 
-        let res = match stmt.execute(arrow_recordbatch_to_query_params(batch)) {
-            Ok(..) => None,
-            Err(e) => Some(e),
-        }
-        .unwrap();
+        let res = stmt.execute(arrow_recordbatch_to_query_params(batch)).err().unwrap();
 
         assert_eq!(
             res,

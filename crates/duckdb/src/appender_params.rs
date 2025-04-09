@@ -44,15 +44,15 @@ use sealed::Sealed;
 ///     - a reference to an array of references, as in `thing.query(&["foo",
 ///       "bar", "baz"])` or `thing.query(&[&1i32, &2, &3])`.
 ///
-///         (Note: in this case we don't implement this for slices for coherence
-///         reasons, so it really is only for the "reference to array" types —
-///         hence why the number of parameters must be <= 32 or you need to
-///         reach for `duckdb::params!`)
+///       (Note: in this case we don't implement this for slices for coherence
+///       reasons, so it really is only for the "reference to array" types —
+///       hence why the number of parameters must be <= 32 or you need to
+///       reach for `duckdb::params!`)
 ///
-///     Unfortunately, in the current design it's not possible to allow this for
-///     references to arrays of non-references (e.g. `&[1i32, 2, 3]`). Code like
-///     this should instead either use `params!`, an array literal, a `&[&dyn
-///     ToSql]` or if none of those work, [`ParamsFromIter`].
+///   Unfortunately, in the current design it's not possible to allow this for
+///   references to arrays of non-references (e.g. `&[1i32, 2, 3]`). Code like
+///   this should instead either use `params!`, an array literal, a `&[&dyn
+///   ToSql]` or if none of those work, [`ParamsFromIter`].
 ///
 /// - As a slice of `ToSql` trait object references, e.g. `&[&dyn ToSql]`. This
 ///   is mostly useful for passing parameter lists around as arguments without
