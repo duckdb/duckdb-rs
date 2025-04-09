@@ -37,6 +37,8 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ: DUCKDB_TYPE = 31;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_ANY: DUCKDB_TYPE = 34;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_VARINT: DUCKDB_TYPE = 35;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL: DUCKDB_TYPE = 36;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL: DUCKDB_TYPE = 37;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL: DUCKDB_TYPE = 38;
 #[doc = "! An enum over DuckDB's internal types."]
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 #[doc = "! An enum over DuckDB's internal types."]
@@ -1692,16 +1694,12 @@ pub struct duckdb_ext_api_v1 {
         ) -> duckdb_state,
     >,
 }
-static __DUCKDB_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_open(
-    path: *const ::std::os::raw::c_char,
-    out_database: *mut duckdb_database,
-) -> duckdb_state {
+static __DUCKDB_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_open(path: *const ::std::os::raw::c_char, out_database: *mut duckdb_database) -> duckdb_state {
     let function_ptr = __DUCKDB_OPEN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         path: *const ::std::os::raw::c_char,
@@ -1710,9 +1708,8 @@ pub unsafe fn duckdb_open(
     (fun)(path, out_database)
 }
 
-static __DUCKDB_OPEN_EXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_OPEN_EXT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_open_ext(
     path: *const ::std::os::raw::c_char,
     out_database: *mut duckdb_database,
@@ -1721,7 +1718,8 @@ pub unsafe fn duckdb_open_ext(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_OPEN_EXT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         path: *const ::std::os::raw::c_char,
@@ -1732,138 +1730,114 @@ pub unsafe fn duckdb_open_ext(
     (fun)(path, out_database, config, out_error)
 }
 
-static __DUCKDB_CLOSE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CLOSE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_close(database: *mut duckdb_database) {
     let function_ptr = __DUCKDB_CLOSE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(database: *mut duckdb_database) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(database: *mut duckdb_database) = ::std::mem::transmute(function_ptr);
     (fun)(database)
 }
 
-static __DUCKDB_CONNECT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_connect(
-    database: duckdb_database,
-    out_connection: *mut duckdb_connection,
-) -> duckdb_state {
+static __DUCKDB_CONNECT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_connect(database: duckdb_database, out_connection: *mut duckdb_connection) -> duckdb_state {
     let function_ptr = __DUCKDB_CONNECT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        database: duckdb_database,
-        out_connection: *mut duckdb_connection,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(database: duckdb_database, out_connection: *mut duckdb_connection) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(database, out_connection)
 }
 
-static __DUCKDB_INTERRUPT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_INTERRUPT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_interrupt(connection: duckdb_connection) {
     let function_ptr = __DUCKDB_INTERRUPT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(connection: duckdb_connection) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(connection: duckdb_connection) = ::std::mem::transmute(function_ptr);
     (fun)(connection)
 }
 
-static __DUCKDB_QUERY_PROGRESS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_query_progress(
-    connection: duckdb_connection,
-) -> duckdb_query_progress_type {
-    let function_ptr = __DUCKDB_QUERY_PROGRESS
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_QUERY_PROGRESS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_query_progress(connection: duckdb_connection) -> duckdb_query_progress_type {
+    let function_ptr = __DUCKDB_QUERY_PROGRESS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        connection: duckdb_connection,
-    ) -> duckdb_query_progress_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(connection: duckdb_connection) -> duckdb_query_progress_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(connection)
 }
 
-static __DUCKDB_DISCONNECT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DISCONNECT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_disconnect(connection: *mut duckdb_connection) {
     let function_ptr = __DUCKDB_DISCONNECT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(connection: *mut duckdb_connection) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(connection: *mut duckdb_connection) = ::std::mem::transmute(function_ptr);
     (fun)(connection)
 }
 
-static __DUCKDB_LIBRARY_VERSION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_LIBRARY_VERSION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_library_version() -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_LIBRARY_VERSION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_LIBRARY_VERSION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> *const ::std::os::raw::c_char = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_CREATE_CONFIG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_CONFIG: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_config(out_config: *mut duckdb_config) -> duckdb_state {
-    let function_ptr = __DUCKDB_CREATE_CONFIG
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_CONFIG.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(out_config: *mut duckdb_config) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(out_config: *mut duckdb_config) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(out_config)
 }
 
-static __DUCKDB_CONFIG_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CONFIG_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_config_count() -> usize {
-    let function_ptr = __DUCKDB_CONFIG_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CONFIG_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn() -> usize = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_GET_CONFIG_FLAG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_CONFIG_FLAG: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_config_flag(
     index: usize,
     out_name: *mut *const ::std::os::raw::c_char,
     out_description: *mut *const ::std::os::raw::c_char,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_GET_CONFIG_FLAG
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_CONFIG_FLAG.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         index: usize,
@@ -1873,9 +1847,8 @@ pub unsafe fn duckdb_get_config_flag(
     (fun)(index, out_name, out_description)
 }
 
-static __DUCKDB_SET_CONFIG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_SET_CONFIG: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_set_config(
     config: duckdb_config,
     name: *const ::std::os::raw::c_char,
@@ -1883,7 +1856,8 @@ pub unsafe fn duckdb_set_config(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_SET_CONFIG.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         config: duckdb_config,
@@ -1893,24 +1867,19 @@ pub unsafe fn duckdb_set_config(
     (fun)(config, name, option)
 }
 
-static __DUCKDB_DESTROY_CONFIG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_CONFIG: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_config(config: *mut duckdb_config) {
-    let function_ptr = __DUCKDB_DESTROY_CONFIG
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_CONFIG.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(config: *mut duckdb_config) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(config: *mut duckdb_config) = ::std::mem::transmute(function_ptr);
     (fun)(config)
 }
 
-static __DUCKDB_QUERY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_QUERY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_query(
     connection: duckdb_connection,
     query: *const ::std::os::raw::c_char,
@@ -1918,7 +1887,8 @@ pub unsafe fn duckdb_query(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_QUERY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -1928,497 +1898,401 @@ pub unsafe fn duckdb_query(
     (fun)(connection, query, out_result)
 }
 
-static __DUCKDB_DESTROY_RESULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_RESULT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_result(result: *mut duckdb_result) {
-    let function_ptr = __DUCKDB_DESTROY_RESULT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_RESULT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_result) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_COLUMN_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_column_name(
-    result: *mut duckdb_result,
-    col: idx_t,
-) -> *const ::std::os::raw::c_char {
+static __DUCKDB_COLUMN_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_column_name(result: *mut duckdb_result, col: idx_t) -> *const ::std::os::raw::c_char {
     let function_ptr = __DUCKDB_COLUMN_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col)
 }
 
-static __DUCKDB_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_column_type(result: *mut duckdb_result, col: idx_t) -> duckdb_type {
     let function_ptr = __DUCKDB_COLUMN_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-    ) -> duckdb_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> duckdb_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col)
 }
 
-static __DUCKDB_RESULT_STATEMENT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_result_statement_type(
-    result: duckdb_result,
-) -> duckdb_statement_type {
-    let function_ptr = __DUCKDB_RESULT_STATEMENT_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_RESULT_STATEMENT_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_result_statement_type(result: duckdb_result) -> duckdb_statement_type {
+    let function_ptr = __DUCKDB_RESULT_STATEMENT_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_statement_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_statement_type = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_COLUMN_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_column_logical_type(
-    result: *mut duckdb_result,
-    col: idx_t,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_COLUMN_LOGICAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_COLUMN_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_column_logical_type(result: *mut duckdb_result, col: idx_t) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_COLUMN_LOGICAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-    ) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col)
 }
 
-static __DUCKDB_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_column_count(result: *mut duckdb_result) -> idx_t {
-    let function_ptr = __DUCKDB_COLUMN_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_COLUMN_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_ROWS_CHANGED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ROWS_CHANGED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_rows_changed(result: *mut duckdb_result) -> idx_t {
-    let function_ptr = __DUCKDB_ROWS_CHANGED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ROWS_CHANGED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_RESULT_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_result_error(
-    result: *mut duckdb_result,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_RESULT_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_RESULT_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_result_error(result: *mut duckdb_result) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_RESULT_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_RESULT_ERROR_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_RESULT_ERROR_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_result_error_type(result: *mut duckdb_result) -> duckdb_error_type {
-    let function_ptr = __DUCKDB_RESULT_ERROR_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_RESULT_ERROR_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> duckdb_error_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> duckdb_error_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_RESULT_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_RESULT_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_result_return_type(result: duckdb_result) -> duckdb_result_type {
-    let function_ptr = __DUCKDB_RESULT_RETURN_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_RESULT_RETURN_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_result_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_result_type = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_MALLOC: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_MALLOC: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_malloc(size: usize) -> *mut ::std::os::raw::c_void {
     let function_ptr = __DUCKDB_MALLOC.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(size: usize) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(size: usize) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
     (fun)(size)
 }
 
-static __DUCKDB_FREE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FREE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_free(ptr: *mut ::std::os::raw::c_void) {
     let function_ptr = __DUCKDB_FREE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ptr: *mut ::std::os::raw::c_void) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ptr: *mut ::std::os::raw::c_void) = ::std::mem::transmute(function_ptr);
     (fun)(ptr)
 }
 
-static __DUCKDB_VECTOR_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VECTOR_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_vector_size() -> idx_t {
     let function_ptr = __DUCKDB_VECTOR_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn() -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_STRING_IS_INLINED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_STRING_IS_INLINED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_string_is_inlined(string: duckdb_string_t) -> bool {
-    let function_ptr = __DUCKDB_STRING_IS_INLINED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_STRING_IS_INLINED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(string: duckdb_string_t) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(string: duckdb_string_t) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(string)
 }
 
-static __DUCKDB_STRING_T_LENGTH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_STRING_T_LENGTH: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_string_t_length(string: duckdb_string_t) -> u32 {
-    let function_ptr = __DUCKDB_STRING_T_LENGTH
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_STRING_T_LENGTH.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(string: duckdb_string_t) -> u32 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(string: duckdb_string_t) -> u32 = ::std::mem::transmute(function_ptr);
     (fun)(string)
 }
 
-static __DUCKDB_STRING_T_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_string_t_data(
-    string: *mut duckdb_string_t,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_STRING_T_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_STRING_T_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_string_t_data(string: *mut duckdb_string_t) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_STRING_T_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        string: *mut duckdb_string_t,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(string: *mut duckdb_string_t) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(string)
 }
 
-static __DUCKDB_FROM_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FROM_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_from_date(date: duckdb_date) -> duckdb_date_struct {
     let function_ptr = __DUCKDB_FROM_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(date: duckdb_date) -> duckdb_date_struct = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(date: duckdb_date) -> duckdb_date_struct = ::std::mem::transmute(function_ptr);
     (fun)(date)
 }
 
-static __DUCKDB_TO_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TO_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_to_date(date: duckdb_date_struct) -> duckdb_date {
     let function_ptr = __DUCKDB_TO_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(date: duckdb_date_struct) -> duckdb_date = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(date: duckdb_date_struct) -> duckdb_date = ::std::mem::transmute(function_ptr);
     (fun)(date)
 }
 
-static __DUCKDB_IS_FINITE_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_IS_FINITE_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_is_finite_date(date: duckdb_date) -> bool {
-    let function_ptr = __DUCKDB_IS_FINITE_DATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_IS_FINITE_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(date: duckdb_date) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(date: duckdb_date) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(date)
 }
 
-static __DUCKDB_FROM_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FROM_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_from_time(time: duckdb_time) -> duckdb_time_struct {
     let function_ptr = __DUCKDB_FROM_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(time: duckdb_time) -> duckdb_time_struct = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(time: duckdb_time) -> duckdb_time_struct = ::std::mem::transmute(function_ptr);
     (fun)(time)
 }
 
-static __DUCKDB_CREATE_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_time_tz(micros: i64, offset: i32) -> duckdb_time_tz {
-    let function_ptr = __DUCKDB_CREATE_TIME_TZ
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIME_TZ.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(micros: i64, offset: i32) -> duckdb_time_tz = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(micros: i64, offset: i32) -> duckdb_time_tz = ::std::mem::transmute(function_ptr);
     (fun)(micros, offset)
 }
 
-static __DUCKDB_FROM_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FROM_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_from_time_tz(micros: duckdb_time_tz) -> duckdb_time_tz_struct {
-    let function_ptr = __DUCKDB_FROM_TIME_TZ
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_FROM_TIME_TZ.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(micros: duckdb_time_tz) -> duckdb_time_tz_struct = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(micros: duckdb_time_tz) -> duckdb_time_tz_struct =
+        ::std::mem::transmute(function_ptr);
     (fun)(micros)
 }
 
-static __DUCKDB_TO_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TO_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_to_time(time: duckdb_time_struct) -> duckdb_time {
     let function_ptr = __DUCKDB_TO_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(time: duckdb_time_struct) -> duckdb_time = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(time: duckdb_time_struct) -> duckdb_time = ::std::mem::transmute(function_ptr);
     (fun)(time)
 }
 
-static __DUCKDB_FROM_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FROM_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_from_timestamp(ts: duckdb_timestamp) -> duckdb_timestamp_struct {
-    let function_ptr = __DUCKDB_FROM_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_FROM_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ts: duckdb_timestamp) -> duckdb_timestamp_struct = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ts: duckdb_timestamp) -> duckdb_timestamp_struct =
+        ::std::mem::transmute(function_ptr);
     (fun)(ts)
 }
 
-static __DUCKDB_TO_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TO_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_to_timestamp(ts: duckdb_timestamp_struct) -> duckdb_timestamp {
-    let function_ptr = __DUCKDB_TO_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TO_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_struct) -> duckdb_timestamp = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_struct) -> duckdb_timestamp =
+        ::std::mem::transmute(function_ptr);
     (fun)(ts)
 }
 
-static __DUCKDB_IS_FINITE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_IS_FINITE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_is_finite_timestamp(ts: duckdb_timestamp) -> bool {
-    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ts: duckdb_timestamp) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ts: duckdb_timestamp) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(ts)
 }
 
-static __DUCKDB_HUGEINT_TO_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_HUGEINT_TO_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_hugeint_to_double(val: duckdb_hugeint) -> f64 {
-    let function_ptr = __DUCKDB_HUGEINT_TO_DOUBLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_HUGEINT_TO_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_hugeint) -> f64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_hugeint) -> f64 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_DOUBLE_TO_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DOUBLE_TO_HUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_double_to_hugeint(val: f64) -> duckdb_hugeint {
-    let function_ptr = __DUCKDB_DOUBLE_TO_HUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DOUBLE_TO_HUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: f64) -> duckdb_hugeint = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: f64) -> duckdb_hugeint = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_UHUGEINT_TO_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_UHUGEINT_TO_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_uhugeint_to_double(val: duckdb_uhugeint) -> f64 {
-    let function_ptr = __DUCKDB_UHUGEINT_TO_DOUBLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_UHUGEINT_TO_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_uhugeint) -> f64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_uhugeint) -> f64 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_DOUBLE_TO_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DOUBLE_TO_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_double_to_uhugeint(val: f64) -> duckdb_uhugeint {
-    let function_ptr = __DUCKDB_DOUBLE_TO_UHUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DOUBLE_TO_UHUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: f64) -> duckdb_uhugeint = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: f64) -> duckdb_uhugeint = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_DOUBLE_TO_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_double_to_decimal(
-    val: f64,
-    width: u8,
-    scale: u8,
-) -> duckdb_decimal {
-    let function_ptr = __DUCKDB_DOUBLE_TO_DECIMAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DOUBLE_TO_DECIMAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_double_to_decimal(val: f64, width: u8, scale: u8) -> duckdb_decimal {
+    let function_ptr = __DUCKDB_DOUBLE_TO_DECIMAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: f64, width: u8, scale: u8) -> duckdb_decimal = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: f64, width: u8, scale: u8) -> duckdb_decimal =
+        ::std::mem::transmute(function_ptr);
     (fun)(val, width, scale)
 }
 
-static __DUCKDB_DECIMAL_TO_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DECIMAL_TO_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_decimal_to_double(val: duckdb_decimal) -> f64 {
-    let function_ptr = __DUCKDB_DECIMAL_TO_DOUBLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DECIMAL_TO_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_decimal) -> f64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_decimal) -> f64 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_PREPARE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PREPARE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_prepare(
     connection: duckdb_connection,
     query: *const ::std::os::raw::c_char,
@@ -2426,7 +2300,8 @@ pub unsafe fn duckdb_prepare(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_PREPARE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -2436,65 +2311,55 @@ pub unsafe fn duckdb_prepare(
     (fun)(connection, query, out_prepared_statement)
 }
 
-static __DUCKDB_DESTROY_PREPARE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_destroy_prepare(
-    prepared_statement: *mut duckdb_prepared_statement,
-) {
-    let function_ptr = __DUCKDB_DESTROY_PREPARE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DESTROY_PREPARE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_destroy_prepare(prepared_statement: *mut duckdb_prepared_statement) {
+    let function_ptr = __DUCKDB_DESTROY_PREPARE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(prepared_statement: *mut duckdb_prepared_statement) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(prepared_statement: *mut duckdb_prepared_statement) =
+        ::std::mem::transmute(function_ptr);
     (fun)(prepared_statement)
 }
 
-static __DUCKDB_PREPARE_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_prepare_error(
-    prepared_statement: duckdb_prepared_statement,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_PREPARE_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PREPARE_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_prepare_error(prepared_statement: duckdb_prepared_statement) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_PREPARE_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        prepared_statement: duckdb_prepared_statement,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(prepared_statement: duckdb_prepared_statement) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(prepared_statement)
 }
 
-static __DUCKDB_NPARAMS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_NPARAMS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_nparams(prepared_statement: duckdb_prepared_statement) -> idx_t {
     let function_ptr = __DUCKDB_NPARAMS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        prepared_statement: duckdb_prepared_statement,
-    ) -> idx_t = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(prepared_statement: duckdb_prepared_statement) -> idx_t =
+        ::std::mem::transmute(function_ptr);
     (fun)(prepared_statement)
 }
 
-static __DUCKDB_PARAMETER_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PARAMETER_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_parameter_name(
     prepared_statement: duckdb_prepared_statement,
     index: idx_t,
 ) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_PARAMETER_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PARAMETER_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2503,35 +2368,29 @@ pub unsafe fn duckdb_parameter_name(
     (fun)(prepared_statement, index)
 }
 
-static __DUCKDB_PARAM_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_param_type(
-    prepared_statement: duckdb_prepared_statement,
-    param_idx: idx_t,
-) -> duckdb_type {
+static __DUCKDB_PARAM_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_param_type(prepared_statement: duckdb_prepared_statement, param_idx: idx_t) -> duckdb_type {
     let function_ptr = __DUCKDB_PARAM_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        prepared_statement: duckdb_prepared_statement,
-        param_idx: idx_t,
-    ) -> duckdb_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(prepared_statement: duckdb_prepared_statement, param_idx: idx_t) -> duckdb_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(prepared_statement, param_idx)
 }
 
-static __DUCKDB_PARAM_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PARAM_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_param_logical_type(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
 ) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_PARAM_LOGICAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PARAM_LOGICAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2540,43 +2399,34 @@ pub unsafe fn duckdb_param_logical_type(
     (fun)(prepared_statement, param_idx)
 }
 
-static __DUCKDB_CLEAR_BINDINGS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_clear_bindings(
-    prepared_statement: duckdb_prepared_statement,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_CLEAR_BINDINGS
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CLEAR_BINDINGS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_clear_bindings(prepared_statement: duckdb_prepared_statement) -> duckdb_state {
+    let function_ptr = __DUCKDB_CLEAR_BINDINGS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        prepared_statement: duckdb_prepared_statement,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(prepared_statement: duckdb_prepared_statement) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(prepared_statement)
 }
 
-static __DUCKDB_PREPARED_STATEMENT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_prepared_statement_type(
-    statement: duckdb_prepared_statement,
-) -> duckdb_statement_type {
-    let function_ptr = __DUCKDB_PREPARED_STATEMENT_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PREPARED_STATEMENT_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_prepared_statement_type(statement: duckdb_prepared_statement) -> duckdb_statement_type {
+    let function_ptr = __DUCKDB_PREPARED_STATEMENT_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        statement: duckdb_prepared_statement,
-    ) -> duckdb_statement_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(statement: duckdb_prepared_statement) -> duckdb_statement_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(statement)
 }
 
-static __DUCKDB_BIND_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_value(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2584,7 +2434,8 @@ pub unsafe fn duckdb_bind_value(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2594,18 +2445,17 @@ pub unsafe fn duckdb_bind_value(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_PARAMETER_INDEX: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_PARAMETER_INDEX: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_parameter_index(
     prepared_statement: duckdb_prepared_statement,
     param_idx_out: *mut idx_t,
     name: *const ::std::os::raw::c_char,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_PARAMETER_INDEX
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_PARAMETER_INDEX.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2615,18 +2465,17 @@ pub unsafe fn duckdb_bind_parameter_index(
     (fun)(prepared_statement, param_idx_out, name)
 }
 
-static __DUCKDB_BIND_BOOLEAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_BOOLEAN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_boolean(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: bool,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_BOOLEAN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_BOOLEAN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2636,9 +2485,8 @@ pub unsafe fn duckdb_bind_boolean(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_INT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_int8(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2646,7 +2494,8 @@ pub unsafe fn duckdb_bind_int8(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_INT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2656,9 +2505,8 @@ pub unsafe fn duckdb_bind_int8(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_INT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_int16(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2666,7 +2514,8 @@ pub unsafe fn duckdb_bind_int16(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_INT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2676,9 +2525,8 @@ pub unsafe fn duckdb_bind_int16(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_INT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_int32(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2686,7 +2534,8 @@ pub unsafe fn duckdb_bind_int32(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_INT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2696,9 +2545,8 @@ pub unsafe fn duckdb_bind_int32(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_INT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_int64(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2706,7 +2554,8 @@ pub unsafe fn duckdb_bind_int64(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_INT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2716,18 +2565,17 @@ pub unsafe fn duckdb_bind_int64(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_HUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_hugeint(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: duckdb_hugeint,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_HUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_HUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2737,18 +2585,17 @@ pub unsafe fn duckdb_bind_hugeint(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_uhugeint(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: duckdb_uhugeint,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_UHUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_UHUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2758,18 +2605,17 @@ pub unsafe fn duckdb_bind_uhugeint(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_DECIMAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_decimal(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: duckdb_decimal,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_DECIMAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_DECIMAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2779,9 +2625,8 @@ pub unsafe fn duckdb_bind_decimal(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_UINT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_uint8(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2789,7 +2634,8 @@ pub unsafe fn duckdb_bind_uint8(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_UINT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2799,9 +2645,8 @@ pub unsafe fn duckdb_bind_uint8(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_UINT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_uint16(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2809,7 +2654,8 @@ pub unsafe fn duckdb_bind_uint16(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_UINT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2819,9 +2665,8 @@ pub unsafe fn duckdb_bind_uint16(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_UINT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_uint32(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2829,7 +2674,8 @@ pub unsafe fn duckdb_bind_uint32(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_UINT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2839,9 +2685,8 @@ pub unsafe fn duckdb_bind_uint32(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_UINT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_uint64(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2849,7 +2694,8 @@ pub unsafe fn duckdb_bind_uint64(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_UINT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2859,9 +2705,8 @@ pub unsafe fn duckdb_bind_uint64(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_FLOAT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_float(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2869,7 +2714,8 @@ pub unsafe fn duckdb_bind_float(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2879,9 +2725,8 @@ pub unsafe fn duckdb_bind_float(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_double(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2889,7 +2734,8 @@ pub unsafe fn duckdb_bind_double(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2899,9 +2745,8 @@ pub unsafe fn duckdb_bind_double(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_date(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2909,7 +2754,8 @@ pub unsafe fn duckdb_bind_date(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2919,9 +2765,8 @@ pub unsafe fn duckdb_bind_date(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_time(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -2929,7 +2774,8 @@ pub unsafe fn duckdb_bind_time(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2939,18 +2785,17 @@ pub unsafe fn duckdb_bind_time(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_timestamp(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: duckdb_timestamp,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2960,18 +2805,17 @@ pub unsafe fn duckdb_bind_timestamp(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_timestamp_tz(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: duckdb_timestamp,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_TIMESTAMP_TZ
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_TIMESTAMP_TZ.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -2981,18 +2825,17 @@ pub unsafe fn duckdb_bind_timestamp_tz(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_INTERVAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_interval(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: duckdb_interval,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_INTERVAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_INTERVAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -3002,18 +2845,17 @@ pub unsafe fn duckdb_bind_interval(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_VARCHAR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_varchar(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: *const ::std::os::raw::c_char,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_VARCHAR
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_VARCHAR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -3023,19 +2865,18 @@ pub unsafe fn duckdb_bind_varchar(
     (fun)(prepared_statement, param_idx, val)
 }
 
-static __DUCKDB_BIND_VARCHAR_LENGTH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_VARCHAR_LENGTH: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_varchar_length(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
     val: *const ::std::os::raw::c_char,
     length: idx_t,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_BIND_VARCHAR_LENGTH
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_VARCHAR_LENGTH.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -3046,9 +2887,8 @@ pub unsafe fn duckdb_bind_varchar_length(
     (fun)(prepared_statement, param_idx, val, length)
 }
 
-static __DUCKDB_BIND_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_BLOB: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_blob(
     prepared_statement: duckdb_prepared_statement,
     param_idx: idx_t,
@@ -3057,7 +2897,8 @@ pub unsafe fn duckdb_bind_blob(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_BLOB.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -3068,35 +2909,29 @@ pub unsafe fn duckdb_bind_blob(
     (fun)(prepared_statement, param_idx, data, length)
 }
 
-static __DUCKDB_BIND_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_bind_null(
-    prepared_statement: duckdb_prepared_statement,
-    param_idx: idx_t,
-) -> duckdb_state {
+static __DUCKDB_BIND_NULL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_bind_null(prepared_statement: duckdb_prepared_statement, param_idx: idx_t) -> duckdb_state {
     let function_ptr = __DUCKDB_BIND_NULL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        prepared_statement: duckdb_prepared_statement,
-        param_idx: idx_t,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(prepared_statement: duckdb_prepared_statement, param_idx: idx_t) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(prepared_statement, param_idx)
 }
 
-static __DUCKDB_EXECUTE_PREPARED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTE_PREPARED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execute_prepared(
     prepared_statement: duckdb_prepared_statement,
     out_result: *mut duckdb_result,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_EXECUTE_PREPARED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -3105,18 +2940,17 @@ pub unsafe fn duckdb_execute_prepared(
     (fun)(prepared_statement, out_result)
 }
 
-static __DUCKDB_EXTRACT_STATEMENTS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXTRACT_STATEMENTS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_extract_statements(
     connection: duckdb_connection,
     query: *const ::std::os::raw::c_char,
     out_extracted_statements: *mut duckdb_extracted_statements,
 ) -> idx_t {
-    let function_ptr = __DUCKDB_EXTRACT_STATEMENTS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXTRACT_STATEMENTS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -3126,19 +2960,18 @@ pub unsafe fn duckdb_extract_statements(
     (fun)(connection, query, out_extracted_statements)
 }
 
-static __DUCKDB_PREPARE_EXTRACTED_STATEMENT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PREPARE_EXTRACTED_STATEMENT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_prepare_extracted_statement(
     connection: duckdb_connection,
     extracted_statements: duckdb_extracted_statements,
     index: idx_t,
     out_prepared_statement: *mut duckdb_prepared_statement,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_PREPARE_EXTRACTED_STATEMENT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PREPARE_EXTRACTED_STATEMENT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -3149,51 +2982,44 @@ pub unsafe fn duckdb_prepare_extracted_statement(
     (fun)(connection, extracted_statements, index, out_prepared_statement)
 }
 
-static __DUCKDB_EXTRACT_STATEMENTS_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXTRACT_STATEMENTS_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_extract_statements_error(
     extracted_statements: duckdb_extracted_statements,
 ) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_EXTRACT_STATEMENTS_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXTRACT_STATEMENTS_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        extracted_statements: duckdb_extracted_statements,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(extracted_statements: duckdb_extracted_statements) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(extracted_statements)
 }
 
-static __DUCKDB_DESTROY_EXTRACTED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_destroy_extracted(
-    extracted_statements: *mut duckdb_extracted_statements,
-) {
-    let function_ptr = __DUCKDB_DESTROY_EXTRACTED
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DESTROY_EXTRACTED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_destroy_extracted(extracted_statements: *mut duckdb_extracted_statements) {
+    let function_ptr = __DUCKDB_DESTROY_EXTRACTED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        extracted_statements: *mut duckdb_extracted_statements,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(extracted_statements: *mut duckdb_extracted_statements) =
+        ::std::mem::transmute(function_ptr);
     (fun)(extracted_statements)
 }
 
-static __DUCKDB_PENDING_PREPARED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PENDING_PREPARED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_pending_prepared(
     prepared_statement: duckdb_prepared_statement,
     out_result: *mut duckdb_pending_result,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_PENDING_PREPARED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PENDING_PREPARED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -3202,83 +3028,67 @@ pub unsafe fn duckdb_pending_prepared(
     (fun)(prepared_statement, out_result)
 }
 
-static __DUCKDB_DESTROY_PENDING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_PENDING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_pending(pending_result: *mut duckdb_pending_result) {
-    let function_ptr = __DUCKDB_DESTROY_PENDING
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_PENDING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(pending_result: *mut duckdb_pending_result) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(pending_result: *mut duckdb_pending_result) = ::std::mem::transmute(function_ptr);
     (fun)(pending_result)
 }
 
-static __DUCKDB_PENDING_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_pending_error(
-    pending_result: duckdb_pending_result,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_PENDING_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PENDING_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_pending_error(pending_result: duckdb_pending_result) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_PENDING_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        pending_result: duckdb_pending_result,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(pending_result: duckdb_pending_result) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(pending_result)
 }
 
-static __DUCKDB_PENDING_EXECUTE_TASK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_pending_execute_task(
-    pending_result: duckdb_pending_result,
-) -> duckdb_pending_state {
-    let function_ptr = __DUCKDB_PENDING_EXECUTE_TASK
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PENDING_EXECUTE_TASK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_pending_execute_task(pending_result: duckdb_pending_result) -> duckdb_pending_state {
+    let function_ptr = __DUCKDB_PENDING_EXECUTE_TASK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        pending_result: duckdb_pending_result,
-    ) -> duckdb_pending_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(pending_result: duckdb_pending_result) -> duckdb_pending_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(pending_result)
 }
 
-static __DUCKDB_PENDING_EXECUTE_CHECK_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_pending_execute_check_state(
-    pending_result: duckdb_pending_result,
-) -> duckdb_pending_state {
-    let function_ptr = __DUCKDB_PENDING_EXECUTE_CHECK_STATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PENDING_EXECUTE_CHECK_STATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_pending_execute_check_state(pending_result: duckdb_pending_result) -> duckdb_pending_state {
+    let function_ptr = __DUCKDB_PENDING_EXECUTE_CHECK_STATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        pending_result: duckdb_pending_result,
-    ) -> duckdb_pending_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(pending_result: duckdb_pending_result) -> duckdb_pending_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(pending_result)
 }
 
-static __DUCKDB_EXECUTE_PENDING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTE_PENDING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execute_pending(
     pending_result: duckdb_pending_result,
     out_result: *mut duckdb_result,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_EXECUTE_PENDING
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTE_PENDING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         pending_result: duckdb_pending_result,
@@ -3287,797 +3097,657 @@ pub unsafe fn duckdb_execute_pending(
     (fun)(pending_result, out_result)
 }
 
-static __DUCKDB_PENDING_EXECUTION_IS_FINISHED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_pending_execution_is_finished(
-    pending_state: duckdb_pending_state,
-) -> bool {
-    let function_ptr = __DUCKDB_PENDING_EXECUTION_IS_FINISHED
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PENDING_EXECUTION_IS_FINISHED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_pending_execution_is_finished(pending_state: duckdb_pending_state) -> bool {
+    let function_ptr = __DUCKDB_PENDING_EXECUTION_IS_FINISHED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(pending_state: duckdb_pending_state) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(pending_state: duckdb_pending_state) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(pending_state)
 }
 
-static __DUCKDB_DESTROY_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_value(value: *mut duckdb_value) {
-    let function_ptr = __DUCKDB_DESTROY_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: *mut duckdb_value) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: *mut duckdb_value) = ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_CREATE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_varchar(
-    text: *const ::std::os::raw::c_char,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_VARCHAR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_varchar(text: *const ::std::os::raw::c_char) -> duckdb_value {
+    let function_ptr = __DUCKDB_CREATE_VARCHAR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(text: *const ::std::os::raw::c_char) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(text: *const ::std::os::raw::c_char) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(text)
 }
 
-static __DUCKDB_CREATE_VARCHAR_LENGTH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_varchar_length(
-    text: *const ::std::os::raw::c_char,
-    length: idx_t,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_VARCHAR_LENGTH
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_VARCHAR_LENGTH: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_varchar_length(text: *const ::std::os::raw::c_char, length: idx_t) -> duckdb_value {
+    let function_ptr = __DUCKDB_CREATE_VARCHAR_LENGTH.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        text: *const ::std::os::raw::c_char,
-        length: idx_t,
-    ) -> duckdb_value = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(text: *const ::std::os::raw::c_char, length: idx_t) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(text, length)
 }
 
-static __DUCKDB_CREATE_BOOL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_BOOL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_bool(input: bool) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_BOOL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: bool) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: bool) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_INT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_int8(input: i8) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_INT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: i8) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: i8) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UINT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_uint8(input: u8) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_UINT8
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_UINT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: u8) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: u8) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_INT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_int16(input: i16) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_INT16
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_INT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: i16) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: i16) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UINT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_uint16(input: u16) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_UINT16
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_UINT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: u16) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: u16) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_INT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_int32(input: i32) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_INT32
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_INT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: i32) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: i32) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UINT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_uint32(input: u32) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_UINT32
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_UINT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: u32) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: u32) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UINT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_uint64(input: u64) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_UINT64
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_UINT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: u64) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: u64) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_INT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_int64(val: i64) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_INT64
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_INT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: i64) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: i64) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_CREATE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_hugeint(input: duckdb_hugeint) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_HUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_HUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_hugeint) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_hugeint) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_uhugeint(input: duckdb_uhugeint) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_UHUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_UHUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_uhugeint) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_uhugeint) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_FLOAT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_float(input: f32) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_FLOAT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: f32) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: f32) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_double(input: f64) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_DOUBLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: f64) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: f64) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_date(input: duckdb_date) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_date) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_date) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_time(input: duckdb_time) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_time) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_time) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_TIME_TZ_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIME_TZ_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_time_tz_value(value: duckdb_time_tz) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_TIME_TZ_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIME_TZ_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_time_tz) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_time_tz) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_CREATE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_timestamp(input: duckdb_timestamp) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_timestamp) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_timestamp) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_interval(input: duckdb_interval) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_INTERVAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_INTERVAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_interval) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_interval) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_BLOB: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_blob(data: *const u8, length: idx_t) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_BLOB.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(data: *const u8, length: idx_t) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(data: *const u8, length: idx_t) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(data, length)
 }
 
-static __DUCKDB_CREATE_VARINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_VARINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_varint(input: duckdb_varint) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_VARINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_VARINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_varint) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_varint) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_decimal(input: duckdb_decimal) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_DECIMAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_DECIMAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_decimal) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_decimal) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_BIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_BIT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_bit(input: duckdb_bit) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_BIT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_bit) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_bit) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_UUID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UUID: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_uuid(input: duckdb_uhugeint) -> duckdb_value {
     let function_ptr = __DUCKDB_CREATE_UUID.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_uhugeint) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_uhugeint) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_GET_BOOL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_BOOL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_bool(val: duckdb_value) -> bool {
     let function_ptr = __DUCKDB_GET_BOOL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_INT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_int8(val: duckdb_value) -> i8 {
     let function_ptr = __DUCKDB_GET_INT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> i8 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> i8 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_UINT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_uint8(val: duckdb_value) -> u8 {
     let function_ptr = __DUCKDB_GET_UINT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> u8 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> u8 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_INT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_int16(val: duckdb_value) -> i16 {
     let function_ptr = __DUCKDB_GET_INT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> i16 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> i16 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_UINT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_uint16(val: duckdb_value) -> u16 {
     let function_ptr = __DUCKDB_GET_UINT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> u16 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> u16 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_INT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_int32(val: duckdb_value) -> i32 {
     let function_ptr = __DUCKDB_GET_INT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> i32 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> i32 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_UINT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_uint32(val: duckdb_value) -> u32 {
     let function_ptr = __DUCKDB_GET_UINT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> u32 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> u32 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_INT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_int64(val: duckdb_value) -> i64 {
     let function_ptr = __DUCKDB_GET_INT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> i64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> i64 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_UINT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_uint64(val: duckdb_value) -> u64 {
     let function_ptr = __DUCKDB_GET_UINT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> u64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> u64 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_HUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_hugeint(val: duckdb_value) -> duckdb_hugeint {
     let function_ptr = __DUCKDB_GET_HUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_hugeint = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_hugeint = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_uhugeint(val: duckdb_value) -> duckdb_uhugeint {
-    let function_ptr = __DUCKDB_GET_UHUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_UHUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_uhugeint = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_uhugeint = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_FLOAT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_float(val: duckdb_value) -> f32 {
     let function_ptr = __DUCKDB_GET_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> f32 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> f32 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_double(val: duckdb_value) -> f64 {
     let function_ptr = __DUCKDB_GET_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> f64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> f64 = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_date(val: duckdb_value) -> duckdb_date {
     let function_ptr = __DUCKDB_GET_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_date = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_date = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_time(val: duckdb_value) -> duckdb_time {
     let function_ptr = __DUCKDB_GET_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_time = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_time = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_time_tz(val: duckdb_value) -> duckdb_time_tz {
     let function_ptr = __DUCKDB_GET_TIME_TZ.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_time_tz = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_time_tz = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_timestamp(val: duckdb_value) -> duckdb_timestamp {
-    let function_ptr = __DUCKDB_GET_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_INTERVAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_interval(val: duckdb_value) -> duckdb_interval {
-    let function_ptr = __DUCKDB_GET_INTERVAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_INTERVAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_interval = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_interval = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_VALUE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_VALUE_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_value_type(val: duckdb_value) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_GET_VALUE_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_VALUE_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_BLOB: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_blob(val: duckdb_value) -> duckdb_blob {
     let function_ptr = __DUCKDB_GET_BLOB.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_blob = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_blob = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_VARINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_VARINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_varint(val: duckdb_value) -> duckdb_varint {
     let function_ptr = __DUCKDB_GET_VARINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_varint = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_varint = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_DECIMAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_decimal(val: duckdb_value) -> duckdb_decimal {
     let function_ptr = __DUCKDB_GET_DECIMAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_decimal = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_decimal = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_BIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_BIT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_bit(val: duckdb_value) -> duckdb_bit {
     let function_ptr = __DUCKDB_GET_BIT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_bit = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_bit = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_UUID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_UUID: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_uuid(val: duckdb_value) -> duckdb_uhugeint {
     let function_ptr = __DUCKDB_GET_UUID.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_uhugeint = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_uhugeint = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_VARCHAR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_varchar(value: duckdb_value) -> *mut ::std::os::raw::c_char {
     let function_ptr = __DUCKDB_GET_VARCHAR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_CREATE_STRUCT_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_struct_value(
-    type_: duckdb_logical_type,
-    values: *mut duckdb_value,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_STRUCT_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_STRUCT_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_struct_value(type_: duckdb_logical_type, values: *mut duckdb_value) -> duckdb_value {
+    let function_ptr = __DUCKDB_CREATE_STRUCT_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        values: *mut duckdb_value,
-    ) -> duckdb_value = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, values: *mut duckdb_value) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, values)
 }
 
-static __DUCKDB_CREATE_LIST_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_LIST_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_list_value(
     type_: duckdb_logical_type,
     values: *mut duckdb_value,
     value_count: idx_t,
 ) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_LIST_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_LIST_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         type_: duckdb_logical_type,
@@ -4087,18 +3757,17 @@ pub unsafe fn duckdb_create_list_value(
     (fun)(type_, values, value_count)
 }
 
-static __DUCKDB_CREATE_ARRAY_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_ARRAY_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_array_value(
     type_: duckdb_logical_type,
     values: *mut duckdb_value,
     value_count: idx_t,
 ) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_ARRAY_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_ARRAY_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         type_: duckdb_logical_type,
@@ -4108,260 +3777,205 @@ pub unsafe fn duckdb_create_array_value(
     (fun)(type_, values, value_count)
 }
 
-static __DUCKDB_GET_MAP_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_MAP_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_map_size(value: duckdb_value) -> idx_t {
-    let function_ptr = __DUCKDB_GET_MAP_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_MAP_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_GET_MAP_KEY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_MAP_KEY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_map_key(value: duckdb_value, index: idx_t) -> duckdb_value {
     let function_ptr = __DUCKDB_GET_MAP_KEY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(value, index)
 }
 
-static __DUCKDB_GET_MAP_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_MAP_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_map_value(value: duckdb_value, index: idx_t) -> duckdb_value {
-    let function_ptr = __DUCKDB_GET_MAP_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_MAP_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(value, index)
 }
 
-static __DUCKDB_IS_NULL_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_IS_NULL_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_is_null_value(value: duckdb_value) -> bool {
-    let function_ptr = __DUCKDB_IS_NULL_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_IS_NULL_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_CREATE_NULL_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_NULL_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_null_value() -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_NULL_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_NULL_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_GET_LIST_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_LIST_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_list_size(value: duckdb_value) -> idx_t {
-    let function_ptr = __DUCKDB_GET_LIST_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_LIST_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_GET_LIST_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_LIST_CHILD: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_list_child(value: duckdb_value, index: idx_t) -> duckdb_value {
-    let function_ptr = __DUCKDB_GET_LIST_CHILD
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_LIST_CHILD.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(value, index)
 }
 
-static __DUCKDB_CREATE_ENUM_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_enum_value(
-    type_: duckdb_logical_type,
-    value: u64,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_ENUM_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_ENUM_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_enum_value(type_: duckdb_logical_type, value: u64) -> duckdb_value {
+    let function_ptr = __DUCKDB_CREATE_ENUM_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        value: u64,
-    ) -> duckdb_value = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, value: u64) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, value)
 }
 
-static __DUCKDB_GET_ENUM_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_ENUM_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_enum_value(value: duckdb_value) -> u64 {
-    let function_ptr = __DUCKDB_GET_ENUM_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_ENUM_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value) -> u64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value) -> u64 = ::std::mem::transmute(function_ptr);
     (fun)(value)
 }
 
-static __DUCKDB_GET_STRUCT_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_get_struct_child(
-    value: duckdb_value,
-    index: idx_t,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_GET_STRUCT_CHILD
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_GET_STRUCT_CHILD: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_get_struct_child(value: duckdb_value, index: idx_t) -> duckdb_value {
+    let function_ptr = __DUCKDB_GET_STRUCT_CHILD.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(value: duckdb_value, index: idx_t) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(value, index)
 }
 
-static __DUCKDB_CREATE_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_logical_type(type_: duckdb_type) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_LOGICAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_LOGICAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_type) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_type) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_LOGICAL_TYPE_GET_ALIAS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_logical_type_get_alias(
-    type_: duckdb_logical_type,
-) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_LOGICAL_TYPE_GET_ALIAS
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_LOGICAL_TYPE_GET_ALIAS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_logical_type_get_alias(type_: duckdb_logical_type) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_LOGICAL_TYPE_GET_ALIAS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_LOGICAL_TYPE_SET_ALIAS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_logical_type_set_alias(
-    type_: duckdb_logical_type,
-    alias: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_LOGICAL_TYPE_SET_ALIAS
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_LOGICAL_TYPE_SET_ALIAS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_logical_type_set_alias(type_: duckdb_logical_type, alias: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_LOGICAL_TYPE_SET_ALIAS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        alias: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, alias: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, alias)
 }
 
-static __DUCKDB_CREATE_LIST_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_list_type(
-    type_: duckdb_logical_type,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_LIST_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_LIST_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_list_type(type_: duckdb_logical_type) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_CREATE_LIST_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_CREATE_ARRAY_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_array_type(
-    type_: duckdb_logical_type,
-    array_size: idx_t,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_ARRAY_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_ARRAY_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_array_type(type_: duckdb_logical_type, array_size: idx_t) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_CREATE_ARRAY_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        array_size: idx_t,
-    ) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, array_size: idx_t) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, array_size)
 }
 
-static __DUCKDB_CREATE_MAP_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_MAP_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_map_type(
     key_type: duckdb_logical_type,
     value_type: duckdb_logical_type,
 ) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_MAP_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_MAP_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         key_type: duckdb_logical_type,
@@ -4370,18 +3984,17 @@ pub unsafe fn duckdb_create_map_type(
     (fun)(key_type, value_type)
 }
 
-static __DUCKDB_CREATE_UNION_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_UNION_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_union_type(
     member_types: *mut duckdb_logical_type,
     member_names: *mut *const ::std::os::raw::c_char,
     member_count: idx_t,
 ) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_UNION_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_UNION_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         member_types: *mut duckdb_logical_type,
@@ -4391,18 +4004,17 @@ pub unsafe fn duckdb_create_union_type(
     (fun)(member_types, member_names, member_count)
 }
 
-static __DUCKDB_CREATE_STRUCT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_STRUCT_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_struct_type(
     member_types: *mut duckdb_logical_type,
     member_names: *mut *const ::std::os::raw::c_char,
     member_count: idx_t,
 ) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_STRUCT_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_STRUCT_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         member_types: *mut duckdb_logical_type,
@@ -4412,17 +4024,16 @@ pub unsafe fn duckdb_create_struct_type(
     (fun)(member_types, member_names, member_count)
 }
 
-static __DUCKDB_CREATE_ENUM_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_ENUM_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_enum_type(
     member_names: *mut *const ::std::os::raw::c_char,
     member_count: idx_t,
 ) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_ENUM_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_ENUM_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         member_names: *mut *const ::std::os::raw::c_char,
@@ -4431,345 +4042,266 @@ pub unsafe fn duckdb_create_enum_type(
     (fun)(member_names, member_count)
 }
 
-static __DUCKDB_CREATE_DECIMAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_DECIMAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_decimal_type(width: u8, scale: u8) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_CREATE_DECIMAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_DECIMAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(width: u8, scale: u8) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(width: u8, scale: u8) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
     (fun)(width, scale)
 }
 
-static __DUCKDB_GET_TYPE_ID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TYPE_ID: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_type_id(type_: duckdb_logical_type) -> duckdb_type {
     let function_ptr = __DUCKDB_GET_TYPE_ID.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_type = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_DECIMAL_WIDTH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DECIMAL_WIDTH: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_decimal_width(type_: duckdb_logical_type) -> u8 {
-    let function_ptr = __DUCKDB_DECIMAL_WIDTH
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DECIMAL_WIDTH.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> u8 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> u8 = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_DECIMAL_SCALE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DECIMAL_SCALE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_decimal_scale(type_: duckdb_logical_type) -> u8 {
-    let function_ptr = __DUCKDB_DECIMAL_SCALE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DECIMAL_SCALE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> u8 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> u8 = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_DECIMAL_INTERNAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DECIMAL_INTERNAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_decimal_internal_type(type_: duckdb_logical_type) -> duckdb_type {
-    let function_ptr = __DUCKDB_DECIMAL_INTERNAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DECIMAL_INTERNAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_type = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_ENUM_INTERNAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ENUM_INTERNAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_enum_internal_type(type_: duckdb_logical_type) -> duckdb_type {
-    let function_ptr = __DUCKDB_ENUM_INTERNAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ENUM_INTERNAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_type = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_ENUM_DICTIONARY_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ENUM_DICTIONARY_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_enum_dictionary_size(type_: duckdb_logical_type) -> u32 {
-    let function_ptr = __DUCKDB_ENUM_DICTIONARY_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ENUM_DICTIONARY_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> u32 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> u32 = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_ENUM_DICTIONARY_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_enum_dictionary_value(
-    type_: duckdb_logical_type,
-    index: idx_t,
-) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_ENUM_DICTIONARY_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_ENUM_DICTIONARY_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_enum_dictionary_value(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_ENUM_DICTIONARY_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        index: idx_t,
-    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, index)
 }
 
-static __DUCKDB_LIST_TYPE_CHILD_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_list_type_child_type(
-    type_: duckdb_logical_type,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_LIST_TYPE_CHILD_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_LIST_TYPE_CHILD_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_list_type_child_type(type_: duckdb_logical_type) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_LIST_TYPE_CHILD_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_ARRAY_TYPE_CHILD_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_array_type_child_type(
-    type_: duckdb_logical_type,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_ARRAY_TYPE_CHILD_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_ARRAY_TYPE_CHILD_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_array_type_child_type(type_: duckdb_logical_type) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_ARRAY_TYPE_CHILD_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_ARRAY_TYPE_ARRAY_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARRAY_TYPE_ARRAY_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_array_type_array_size(type_: duckdb_logical_type) -> idx_t {
-    let function_ptr = __DUCKDB_ARRAY_TYPE_ARRAY_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ARRAY_TYPE_ARRAY_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_MAP_TYPE_KEY_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_map_type_key_type(
-    type_: duckdb_logical_type,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_MAP_TYPE_KEY_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_MAP_TYPE_KEY_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_map_type_key_type(type_: duckdb_logical_type) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_MAP_TYPE_KEY_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_MAP_TYPE_VALUE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_map_type_value_type(
-    type_: duckdb_logical_type,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_MAP_TYPE_VALUE_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_MAP_TYPE_VALUE_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_map_type_value_type(type_: duckdb_logical_type) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_MAP_TYPE_VALUE_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_STRUCT_TYPE_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_STRUCT_TYPE_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_struct_type_child_count(type_: duckdb_logical_type) -> idx_t {
-    let function_ptr = __DUCKDB_STRUCT_TYPE_CHILD_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_STRUCT_TYPE_CHILD_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_STRUCT_TYPE_CHILD_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_struct_type_child_name(
-    type_: duckdb_logical_type,
-    index: idx_t,
-) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_STRUCT_TYPE_CHILD_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_STRUCT_TYPE_CHILD_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_struct_type_child_name(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_STRUCT_TYPE_CHILD_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        index: idx_t,
-    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, index)
 }
 
-static __DUCKDB_STRUCT_TYPE_CHILD_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_struct_type_child_type(
-    type_: duckdb_logical_type,
-    index: idx_t,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_STRUCT_TYPE_CHILD_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_STRUCT_TYPE_CHILD_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_struct_type_child_type(type_: duckdb_logical_type, index: idx_t) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_STRUCT_TYPE_CHILD_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        index: idx_t,
-    ) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, index: idx_t) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, index)
 }
 
-static __DUCKDB_UNION_TYPE_MEMBER_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_UNION_TYPE_MEMBER_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_union_type_member_count(type_: duckdb_logical_type) -> idx_t {
-    let function_ptr = __DUCKDB_UNION_TYPE_MEMBER_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_UNION_TYPE_MEMBER_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_UNION_TYPE_MEMBER_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_union_type_member_name(
-    type_: duckdb_logical_type,
-    index: idx_t,
-) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_UNION_TYPE_MEMBER_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_UNION_TYPE_MEMBER_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_union_type_member_name(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_UNION_TYPE_MEMBER_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        index: idx_t,
-    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, index: idx_t) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, index)
 }
 
-static __DUCKDB_UNION_TYPE_MEMBER_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_union_type_member_type(
-    type_: duckdb_logical_type,
-    index: idx_t,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_UNION_TYPE_MEMBER_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_UNION_TYPE_MEMBER_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_union_type_member_type(type_: duckdb_logical_type, index: idx_t) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_UNION_TYPE_MEMBER_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        type_: duckdb_logical_type,
-        index: idx_t,
-    ) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(type_: duckdb_logical_type, index: idx_t) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(type_, index)
 }
 
-static __DUCKDB_DESTROY_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_logical_type(type_: *mut duckdb_logical_type) {
-    let function_ptr = __DUCKDB_DESTROY_LOGICAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_LOGICAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(type_: *mut duckdb_logical_type) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(type_: *mut duckdb_logical_type) = ::std::mem::transmute(function_ptr);
     (fun)(type_)
 }
 
-static __DUCKDB_REGISTER_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REGISTER_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_register_logical_type(
     con: duckdb_connection,
     type_: duckdb_logical_type,
     info: duckdb_create_type_info,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_LOGICAL_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REGISTER_LOGICAL_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         con: duckdb_connection,
@@ -4779,217 +4311,170 @@ pub unsafe fn duckdb_register_logical_type(
     (fun)(con, type_, info)
 }
 
-static __DUCKDB_CREATE_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_data_chunk(
-    types: *mut duckdb_logical_type,
-    column_count: idx_t,
-) -> duckdb_data_chunk {
-    let function_ptr = __DUCKDB_CREATE_DATA_CHUNK
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_data_chunk(types: *mut duckdb_logical_type, column_count: idx_t) -> duckdb_data_chunk {
+    let function_ptr = __DUCKDB_CREATE_DATA_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        types: *mut duckdb_logical_type,
-        column_count: idx_t,
-    ) -> duckdb_data_chunk = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(types: *mut duckdb_logical_type, column_count: idx_t) -> duckdb_data_chunk =
+        ::std::mem::transmute(function_ptr);
     (fun)(types, column_count)
 }
 
-static __DUCKDB_DESTROY_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_data_chunk(chunk: *mut duckdb_data_chunk) {
-    let function_ptr = __DUCKDB_DESTROY_DATA_CHUNK
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_DATA_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(chunk: *mut duckdb_data_chunk) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(chunk: *mut duckdb_data_chunk) = ::std::mem::transmute(function_ptr);
     (fun)(chunk)
 }
 
-static __DUCKDB_DATA_CHUNK_RESET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DATA_CHUNK_RESET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_data_chunk_reset(chunk: duckdb_data_chunk) {
-    let function_ptr = __DUCKDB_DATA_CHUNK_RESET
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DATA_CHUNK_RESET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) = ::std::mem::transmute(function_ptr);
     (fun)(chunk)
 }
 
-static __DUCKDB_DATA_CHUNK_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DATA_CHUNK_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_data_chunk_get_column_count(chunk: duckdb_data_chunk) -> idx_t {
-    let function_ptr = __DUCKDB_DATA_CHUNK_GET_COLUMN_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DATA_CHUNK_GET_COLUMN_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(chunk)
 }
 
-static __DUCKDB_DATA_CHUNK_GET_VECTOR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_data_chunk_get_vector(
-    chunk: duckdb_data_chunk,
-    col_idx: idx_t,
-) -> duckdb_vector {
-    let function_ptr = __DUCKDB_DATA_CHUNK_GET_VECTOR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DATA_CHUNK_GET_VECTOR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_data_chunk_get_vector(chunk: duckdb_data_chunk, col_idx: idx_t) -> duckdb_vector {
+    let function_ptr = __DUCKDB_DATA_CHUNK_GET_VECTOR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        chunk: duckdb_data_chunk,
-        col_idx: idx_t,
-    ) -> duckdb_vector = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk, col_idx: idx_t) -> duckdb_vector =
+        ::std::mem::transmute(function_ptr);
     (fun)(chunk, col_idx)
 }
 
-static __DUCKDB_DATA_CHUNK_GET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DATA_CHUNK_GET_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_data_chunk_get_size(chunk: duckdb_data_chunk) -> idx_t {
-    let function_ptr = __DUCKDB_DATA_CHUNK_GET_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DATA_CHUNK_GET_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(chunk)
 }
 
-static __DUCKDB_DATA_CHUNK_SET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DATA_CHUNK_SET_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_data_chunk_set_size(chunk: duckdb_data_chunk, size: idx_t) {
-    let function_ptr = __DUCKDB_DATA_CHUNK_SET_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DATA_CHUNK_SET_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk, size: idx_t) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(chunk: duckdb_data_chunk, size: idx_t) = ::std::mem::transmute(function_ptr);
     (fun)(chunk, size)
 }
 
-static __DUCKDB_VECTOR_GET_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_vector_get_column_type(
-    vector: duckdb_vector,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_VECTOR_GET_COLUMN_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VECTOR_GET_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_vector_get_column_type(vector: duckdb_vector) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_VECTOR_GET_COLUMN_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> duckdb_logical_type = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_VECTOR_GET_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_vector_get_data(
-    vector: duckdb_vector,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_VECTOR_GET_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VECTOR_GET_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_vector_get_data(vector: duckdb_vector) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_VECTOR_GET_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        vector: duckdb_vector,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_VECTOR_GET_VALIDITY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VECTOR_GET_VALIDITY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_vector_get_validity(vector: duckdb_vector) -> *mut u64 {
-    let function_ptr = __DUCKDB_VECTOR_GET_VALIDITY
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VECTOR_GET_VALIDITY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> *mut u64 = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> *mut u64 = ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_VECTOR_ENSURE_VALIDITY_WRITABLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VECTOR_ENSURE_VALIDITY_WRITABLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_vector_ensure_validity_writable(vector: duckdb_vector) {
-    let function_ptr = __DUCKDB_VECTOR_ENSURE_VALIDITY_WRITABLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VECTOR_ENSURE_VALIDITY_WRITABLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) = ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_vector_assign_string_element(
     vector: duckdb_vector,
     index: idx_t,
     str_: *const ::std::os::raw::c_char,
 ) {
-    let function_ptr = __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        vector: duckdb_vector,
-        index: idx_t,
-        str_: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(vector: duckdb_vector, index: idx_t, str_: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(vector, index, str_)
 }
 
-static __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT_LEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT_LEN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_vector_assign_string_element_len(
     vector: duckdb_vector,
     index: idx_t,
     str_: *const ::std::os::raw::c_char,
     str_len: idx_t,
 ) {
-    let function_ptr = __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT_LEN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT_LEN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         vector: duckdb_vector,
@@ -5000,325 +4485,249 @@ pub unsafe fn duckdb_vector_assign_string_element_len(
     (fun)(vector, index, str_, str_len)
 }
 
-static __DUCKDB_LIST_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_LIST_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_list_vector_get_child(vector: duckdb_vector) -> duckdb_vector {
-    let function_ptr = __DUCKDB_LIST_VECTOR_GET_CHILD
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_LIST_VECTOR_GET_CHILD.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> duckdb_vector = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> duckdb_vector = ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_LIST_VECTOR_GET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_LIST_VECTOR_GET_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_list_vector_get_size(vector: duckdb_vector) -> idx_t {
-    let function_ptr = __DUCKDB_LIST_VECTOR_GET_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_LIST_VECTOR_GET_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_LIST_VECTOR_SET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_list_vector_set_size(
-    vector: duckdb_vector,
-    size: idx_t,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_LIST_VECTOR_SET_SIZE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_LIST_VECTOR_SET_SIZE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_list_vector_set_size(vector: duckdb_vector, size: idx_t) -> duckdb_state {
+    let function_ptr = __DUCKDB_LIST_VECTOR_SET_SIZE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector, size: idx_t) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector, size: idx_t) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(vector, size)
 }
 
-static __DUCKDB_LIST_VECTOR_RESERVE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_list_vector_reserve(
-    vector: duckdb_vector,
-    required_capacity: idx_t,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_LIST_VECTOR_RESERVE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_LIST_VECTOR_RESERVE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_list_vector_reserve(vector: duckdb_vector, required_capacity: idx_t) -> duckdb_state {
+    let function_ptr = __DUCKDB_LIST_VECTOR_RESERVE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        vector: duckdb_vector,
-        required_capacity: idx_t,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(vector: duckdb_vector, required_capacity: idx_t) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(vector, required_capacity)
 }
 
-static __DUCKDB_STRUCT_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_struct_vector_get_child(
-    vector: duckdb_vector,
-    index: idx_t,
-) -> duckdb_vector {
-    let function_ptr = __DUCKDB_STRUCT_VECTOR_GET_CHILD
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_STRUCT_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_struct_vector_get_child(vector: duckdb_vector, index: idx_t) -> duckdb_vector {
+    let function_ptr = __DUCKDB_STRUCT_VECTOR_GET_CHILD.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        vector: duckdb_vector,
-        index: idx_t,
-    ) -> duckdb_vector = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(vector: duckdb_vector, index: idx_t) -> duckdb_vector =
+        ::std::mem::transmute(function_ptr);
     (fun)(vector, index)
 }
 
-static __DUCKDB_ARRAY_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARRAY_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_array_vector_get_child(vector: duckdb_vector) -> duckdb_vector {
-    let function_ptr = __DUCKDB_ARRAY_VECTOR_GET_CHILD
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ARRAY_VECTOR_GET_CHILD.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> duckdb_vector = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(vector: duckdb_vector) -> duckdb_vector = ::std::mem::transmute(function_ptr);
     (fun)(vector)
 }
 
-static __DUCKDB_VALIDITY_ROW_IS_VALID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VALIDITY_ROW_IS_VALID: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_validity_row_is_valid(validity: *mut u64, row: idx_t) -> bool {
-    let function_ptr = __DUCKDB_VALIDITY_ROW_IS_VALID
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VALIDITY_ROW_IS_VALID.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(validity, row)
 }
 
-static __DUCKDB_VALIDITY_SET_ROW_VALIDITY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_validity_set_row_validity(
-    validity: *mut u64,
-    row: idx_t,
-    valid: bool,
-) {
-    let function_ptr = __DUCKDB_VALIDITY_SET_ROW_VALIDITY
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALIDITY_SET_ROW_VALIDITY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_validity_set_row_validity(validity: *mut u64, row: idx_t, valid: bool) {
+    let function_ptr = __DUCKDB_VALIDITY_SET_ROW_VALIDITY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t, valid: bool) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t, valid: bool) = ::std::mem::transmute(function_ptr);
     (fun)(validity, row, valid)
 }
 
-static __DUCKDB_VALIDITY_SET_ROW_INVALID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VALIDITY_SET_ROW_INVALID: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_validity_set_row_invalid(validity: *mut u64, row: idx_t) {
-    let function_ptr = __DUCKDB_VALIDITY_SET_ROW_INVALID
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VALIDITY_SET_ROW_INVALID.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t) = ::std::mem::transmute(function_ptr);
     (fun)(validity, row)
 }
 
-static __DUCKDB_VALIDITY_SET_ROW_VALID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VALIDITY_SET_ROW_VALID: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_validity_set_row_valid(validity: *mut u64, row: idx_t) {
-    let function_ptr = __DUCKDB_VALIDITY_SET_ROW_VALID
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VALIDITY_SET_ROW_VALID.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(validity: *mut u64, row: idx_t) = ::std::mem::transmute(function_ptr);
     (fun)(validity, row)
 }
 
-static __DUCKDB_CREATE_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_scalar_function() -> duckdb_scalar_function {
-    let function_ptr = __DUCKDB_CREATE_SCALAR_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_SCALAR_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> duckdb_scalar_function = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> duckdb_scalar_function = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_DESTROY_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_destroy_scalar_function(
-    scalar_function: *mut duckdb_scalar_function,
-) {
-    let function_ptr = __DUCKDB_DESTROY_SCALAR_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DESTROY_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_destroy_scalar_function(scalar_function: *mut duckdb_scalar_function) {
+    let function_ptr = __DUCKDB_DESTROY_SCALAR_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(scalar_function: *mut duckdb_scalar_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(scalar_function: *mut duckdb_scalar_function) = ::std::mem::transmute(function_ptr);
     (fun)(scalar_function)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_SCALAR_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_scalar_function_set_name(
     scalar_function: duckdb_scalar_function,
     name: *const ::std::os::raw::c_char,
 ) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        scalar_function: duckdb_scalar_function,
-        name: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function, name: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(scalar_function, name)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_VARARGS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_scalar_function_set_varargs(
-    scalar_function: duckdb_scalar_function,
-    type_: duckdb_logical_type,
-) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_VARARGS
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_SCALAR_FUNCTION_SET_VARARGS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_scalar_function_set_varargs(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type) {
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_VARARGS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        scalar_function: duckdb_scalar_function,
-        type_: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(scalar_function, type_)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_SPECIAL_HANDLING: ::std::sync::atomic::AtomicPtr<
-    (),
-> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_scalar_function_set_special_handling(
-    scalar_function: duckdb_scalar_function,
-) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_SPECIAL_HANDLING
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_SCALAR_FUNCTION_SET_SPECIAL_HANDLING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_scalar_function_set_special_handling(scalar_function: duckdb_scalar_function) {
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_SPECIAL_HANDLING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function) = ::std::mem::transmute(function_ptr);
     (fun)(scalar_function)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_VOLATILE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_scalar_function_set_volatile(
-    scalar_function: duckdb_scalar_function,
-) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_VOLATILE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_SCALAR_FUNCTION_SET_VOLATILE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_scalar_function_set_volatile(scalar_function: duckdb_scalar_function) {
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_VOLATILE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function) = ::std::mem::transmute(function_ptr);
     (fun)(scalar_function)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_SCALAR_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_scalar_function_add_parameter(
     scalar_function: duckdb_scalar_function,
     type_: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_ADD_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_ADD_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        scalar_function: duckdb_scalar_function,
-        type_: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(scalar_function, type_)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_SCALAR_FUNCTION_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_scalar_function_set_return_type(
     scalar_function: duckdb_scalar_function,
     type_: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_RETURN_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_RETURN_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        scalar_function: duckdb_scalar_function,
-        type_: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(scalar_function, type_)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_SCALAR_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_scalar_function_set_extra_info(
     scalar_function: duckdb_scalar_function,
     extra_info: *mut ::std::os::raw::c_void,
     destroy: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         scalar_function: duckdb_scalar_function,
@@ -5328,244 +4737,197 @@ pub unsafe fn duckdb_scalar_function_set_extra_info(
     (fun)(scalar_function, extra_info, destroy)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_SCALAR_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_scalar_function_set_function(
     scalar_function: duckdb_scalar_function,
     function: duckdb_scalar_function_t,
 ) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        scalar_function: duckdb_scalar_function,
-        function: duckdb_scalar_function_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(scalar_function: duckdb_scalar_function, function: duckdb_scalar_function_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(scalar_function, function)
 }
 
-static __DUCKDB_REGISTER_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REGISTER_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_register_scalar_function(
     con: duckdb_connection,
     scalar_function: duckdb_scalar_function,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_SCALAR_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REGISTER_SCALAR_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        con: duckdb_connection,
-        scalar_function: duckdb_scalar_function,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(con: duckdb_connection, scalar_function: duckdb_scalar_function) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(con, scalar_function)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_scalar_function_get_extra_info(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_GET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_SCALAR_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_scalar_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_GET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_SCALAR_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_scalar_function_set_error(
-    info: duckdb_function_info,
-    error: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_SCALAR_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_scalar_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_SCALAR_FUNCTION_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_CREATE_SCALAR_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_create_scalar_function_set(
-    name: *const ::std::os::raw::c_char,
-) -> duckdb_scalar_function_set {
-    let function_ptr = __DUCKDB_CREATE_SCALAR_FUNCTION_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CREATE_SCALAR_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_create_scalar_function_set(name: *const ::std::os::raw::c_char) -> duckdb_scalar_function_set {
+    let function_ptr = __DUCKDB_CREATE_SCALAR_FUNCTION_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        name: *const ::std::os::raw::c_char,
-    ) -> duckdb_scalar_function_set = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(name: *const ::std::os::raw::c_char) -> duckdb_scalar_function_set =
+        ::std::mem::transmute(function_ptr);
     (fun)(name)
 }
 
-static __DUCKDB_DESTROY_SCALAR_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_destroy_scalar_function_set(
-    scalar_function_set: *mut duckdb_scalar_function_set,
-) {
-    let function_ptr = __DUCKDB_DESTROY_SCALAR_FUNCTION_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DESTROY_SCALAR_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_destroy_scalar_function_set(scalar_function_set: *mut duckdb_scalar_function_set) {
+    let function_ptr = __DUCKDB_DESTROY_SCALAR_FUNCTION_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        scalar_function_set: *mut duckdb_scalar_function_set,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(scalar_function_set: *mut duckdb_scalar_function_set) =
+        ::std::mem::transmute(function_ptr);
     (fun)(scalar_function_set)
 }
 
-static __DUCKDB_ADD_SCALAR_FUNCTION_TO_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ADD_SCALAR_FUNCTION_TO_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_add_scalar_function_to_set(
     set: duckdb_scalar_function_set,
     function: duckdb_scalar_function,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_ADD_SCALAR_FUNCTION_TO_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ADD_SCALAR_FUNCTION_TO_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        set: duckdb_scalar_function_set,
-        function: duckdb_scalar_function,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(set: duckdb_scalar_function_set, function: duckdb_scalar_function) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(set, function)
 }
 
-static __DUCKDB_REGISTER_SCALAR_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REGISTER_SCALAR_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_register_scalar_function_set(
     con: duckdb_connection,
     set: duckdb_scalar_function_set,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_SCALAR_FUNCTION_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REGISTER_SCALAR_FUNCTION_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        con: duckdb_connection,
-        set: duckdb_scalar_function_set,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(con: duckdb_connection, set: duckdb_scalar_function_set) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(con, set)
 }
 
-static __DUCKDB_CREATE_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_aggregate_function() -> duckdb_aggregate_function {
-    let function_ptr = __DUCKDB_CREATE_AGGREGATE_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_AGGREGATE_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> duckdb_aggregate_function = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> duckdb_aggregate_function = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_DESTROY_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_destroy_aggregate_function(
-    aggregate_function: *mut duckdb_aggregate_function,
-) {
-    let function_ptr = __DUCKDB_DESTROY_AGGREGATE_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DESTROY_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_destroy_aggregate_function(aggregate_function: *mut duckdb_aggregate_function) {
+    let function_ptr = __DUCKDB_DESTROY_AGGREGATE_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(aggregate_function: *mut duckdb_aggregate_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(aggregate_function: *mut duckdb_aggregate_function) =
+        ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_aggregate_function_set_name(
     aggregate_function: duckdb_aggregate_function,
     name: *const ::std::os::raw::c_char,
 ) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        aggregate_function: duckdb_aggregate_function,
-        name: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, name: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function, name)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_aggregate_function_add_parameter(
     aggregate_function: duckdb_aggregate_function,
     type_: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        aggregate_function: duckdb_aggregate_function,
-        type_: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, type_: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function, type_)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_aggregate_function_set_return_type(
     aggregate_function: duckdb_aggregate_function,
     type_: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_RETURN_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        aggregate_function: duckdb_aggregate_function,
-        type_: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, type_: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function, type_)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_aggregate_function_set_functions(
     aggregate_function: duckdb_aggregate_function,
     state_size: duckdb_aggregate_state_size,
@@ -5574,10 +4936,10 @@ pub unsafe fn duckdb_aggregate_function_set_functions(
     combine: duckdb_aggregate_combine_t,
     finalize: duckdb_aggregate_finalize_t,
 ) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_FUNCTIONS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         aggregate_function: duckdb_aggregate_function,
@@ -5590,36 +4952,32 @@ pub unsafe fn duckdb_aggregate_function_set_functions(
     (fun)(aggregate_function, state_size, state_init, update, combine, finalize)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_aggregate_function_set_destructor(
     aggregate_function: duckdb_aggregate_function,
     destroy: duckdb_aggregate_destroy_t,
 ) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_DESTRUCTOR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        aggregate_function: duckdb_aggregate_function,
-        destroy: duckdb_aggregate_destroy_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function, destroy: duckdb_aggregate_destroy_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function, destroy)
 }
 
-static __DUCKDB_REGISTER_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REGISTER_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_register_aggregate_function(
     con: duckdb_connection,
     aggregate_function: duckdb_aggregate_function,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_AGGREGATE_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REGISTER_AGGREGATE_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         con: duckdb_connection,
@@ -5628,35 +4986,29 @@ pub unsafe fn duckdb_register_aggregate_function(
     (fun)(con, aggregate_function)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING: ::std::sync::atomic::AtomicPtr<
-    (),
-> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_aggregate_function_set_special_handling(
-    aggregate_function: duckdb_aggregate_function,
-) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_aggregate_function_set_special_handling(aggregate_function: duckdb_aggregate_function) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(aggregate_function: duckdb_aggregate_function) = ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_aggregate_function_set_extra_info(
     aggregate_function: duckdb_aggregate_function,
     extra_info: *mut ::std::os::raw::c_void,
     destroy: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         aggregate_function: duckdb_aggregate_function,
@@ -5666,87 +5018,70 @@ pub unsafe fn duckdb_aggregate_function_set_extra_info(
     (fun)(aggregate_function, extra_info, destroy)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_aggregate_function_get_extra_info(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_aggregate_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_GET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_aggregate_function_set_error(
-    info: duckdb_function_info,
-    error: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_aggregate_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_CREATE_AGGREGATE_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_AGGREGATE_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_aggregate_function_set(
     name: *const ::std::os::raw::c_char,
 ) -> duckdb_aggregate_function_set {
-    let function_ptr = __DUCKDB_CREATE_AGGREGATE_FUNCTION_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_AGGREGATE_FUNCTION_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        name: *const ::std::os::raw::c_char,
-    ) -> duckdb_aggregate_function_set = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(name: *const ::std::os::raw::c_char) -> duckdb_aggregate_function_set =
+        ::std::mem::transmute(function_ptr);
     (fun)(name)
 }
 
-static __DUCKDB_DESTROY_AGGREGATE_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_destroy_aggregate_function_set(
-    aggregate_function_set: *mut duckdb_aggregate_function_set,
-) {
-    let function_ptr = __DUCKDB_DESTROY_AGGREGATE_FUNCTION_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_DESTROY_AGGREGATE_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_destroy_aggregate_function_set(aggregate_function_set: *mut duckdb_aggregate_function_set) {
+    let function_ptr = __DUCKDB_DESTROY_AGGREGATE_FUNCTION_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        aggregate_function_set: *mut duckdb_aggregate_function_set,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(aggregate_function_set: *mut duckdb_aggregate_function_set) =
+        ::std::mem::transmute(function_ptr);
     (fun)(aggregate_function_set)
 }
 
-static __DUCKDB_ADD_AGGREGATE_FUNCTION_TO_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ADD_AGGREGATE_FUNCTION_TO_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_add_aggregate_function_to_set(
     set: duckdb_aggregate_function_set,
     function: duckdb_aggregate_function,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_ADD_AGGREGATE_FUNCTION_TO_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ADD_AGGREGATE_FUNCTION_TO_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         set: duckdb_aggregate_function_set,
@@ -5755,105 +5090,86 @@ pub unsafe fn duckdb_add_aggregate_function_to_set(
     (fun)(set, function)
 }
 
-static __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_register_aggregate_function_set(
     con: duckdb_connection,
     set: duckdb_aggregate_function_set,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        con: duckdb_connection,
-        set: duckdb_aggregate_function_set,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(con: duckdb_connection, set: duckdb_aggregate_function_set) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(con, set)
 }
 
-static __DUCKDB_CREATE_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_table_function() -> duckdb_table_function {
-    let function_ptr = __DUCKDB_CREATE_TABLE_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TABLE_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> duckdb_table_function = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> duckdb_table_function = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_DESTROY_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_table_function(table_function: *mut duckdb_table_function) {
-    let function_ptr = __DUCKDB_DESTROY_TABLE_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_TABLE_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(table_function: *mut duckdb_table_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(table_function: *mut duckdb_table_function) = ::std::mem::transmute(function_ptr);
     (fun)(table_function)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_set_name(
     table_function: duckdb_table_function,
     name: *const ::std::os::raw::c_char,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        name: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, name: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, name)
 }
 
-static __DUCKDB_TABLE_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_table_function_add_parameter(
-    table_function: duckdb_table_function,
-    type_: duckdb_logical_type,
-) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_ADD_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_TABLE_FUNCTION_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_table_function_add_parameter(table_function: duckdb_table_function, type_: duckdb_logical_type) {
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_ADD_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        type_: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, type_: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, type_)
 }
 
-static __DUCKDB_TABLE_FUNCTION_ADD_NAMED_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_ADD_NAMED_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_add_named_parameter(
     table_function: duckdb_table_function,
     name: *const ::std::os::raw::c_char,
     type_: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_ADD_NAMED_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_ADD_NAMED_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         table_function: duckdb_table_function,
@@ -5863,18 +5179,17 @@ pub unsafe fn duckdb_table_function_add_named_parameter(
     (fun)(table_function, name, type_)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_set_extra_info(
     table_function: duckdb_table_function,
     extra_info: *mut ::std::os::raw::c_void,
     destroy: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         table_function: duckdb_table_function,
@@ -5884,149 +5199,124 @@ pub unsafe fn duckdb_table_function_set_extra_info(
     (fun)(table_function, extra_info, destroy)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SET_BIND: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_SET_BIND: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_set_bind(
     table_function: duckdb_table_function,
     bind: duckdb_table_function_bind_t,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_BIND
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_BIND.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        bind: duckdb_table_function_bind_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, bind: duckdb_table_function_bind_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, bind)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SET_INIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_SET_INIT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_set_init(
     table_function: duckdb_table_function,
     init: duckdb_table_function_init_t,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_INIT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_INIT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        init: duckdb_table_function_init_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, init: duckdb_table_function_init_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, init)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SET_LOCAL_INIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_SET_LOCAL_INIT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_set_local_init(
     table_function: duckdb_table_function,
     init: duckdb_table_function_init_t,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_LOCAL_INIT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_LOCAL_INIT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        init: duckdb_table_function_init_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, init: duckdb_table_function_init_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, init)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_set_function(
     table_function: duckdb_table_function,
     function: duckdb_table_function_t,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_FUNCTION_SET_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        function: duckdb_table_function_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, function: duckdb_table_function_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, function)
 }
 
-static __DUCKDB_TABLE_FUNCTION_SUPPORTS_PROJECTION_PUSHDOWN: ::std::sync::atomic::AtomicPtr<
-    (),
-> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+static __DUCKDB_TABLE_FUNCTION_SUPPORTS_PROJECTION_PUSHDOWN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_function_supports_projection_pushdown(
     table_function: duckdb_table_function,
     pushdown: bool,
 ) {
-    let function_ptr = __DUCKDB_TABLE_FUNCTION_SUPPORTS_PROJECTION_PUSHDOWN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr =
+        __DUCKDB_TABLE_FUNCTION_SUPPORTS_PROJECTION_PUSHDOWN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_function: duckdb_table_function,
-        pushdown: bool,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_function: duckdb_table_function, pushdown: bool) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_function, pushdown)
 }
 
-static __DUCKDB_REGISTER_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_register_table_function(
-    con: duckdb_connection,
-    function: duckdb_table_function,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_TABLE_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_REGISTER_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_register_table_function(con: duckdb_connection, function: duckdb_table_function) -> duckdb_state {
+    let function_ptr = __DUCKDB_REGISTER_TABLE_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        con: duckdb_connection,
-        function: duckdb_table_function,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(con: duckdb_connection, function: duckdb_table_function) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(con, function)
 }
 
-static __DUCKDB_BIND_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_bind_get_extra_info(
-    info: duckdb_bind_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_BIND_GET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_BIND_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_bind_get_extra_info(info: duckdb_bind_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_BIND_GET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_bind_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_bind_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_BIND_ADD_RESULT_COLUMN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_ADD_RESULT_COLUMN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_add_result_column(
     info: duckdb_bind_info,
     name: *const ::std::os::raw::c_char,
     type_: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_BIND_ADD_RESULT_COLUMN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_ADD_RESULT_COLUMN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         info: duckdb_bind_info,
@@ -6036,71 +5326,58 @@ pub unsafe fn duckdb_bind_add_result_column(
     (fun)(info, name, type_)
 }
 
-static __DUCKDB_BIND_GET_PARAMETER_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_GET_PARAMETER_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_get_parameter_count(info: duckdb_bind_info) -> idx_t {
-    let function_ptr = __DUCKDB_BIND_GET_PARAMETER_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_GET_PARAMETER_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(info: duckdb_bind_info) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(info: duckdb_bind_info) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_BIND_GET_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_bind_get_parameter(
-    info: duckdb_bind_info,
-    index: idx_t,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_BIND_GET_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_BIND_GET_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_bind_get_parameter(info: duckdb_bind_info, index: idx_t) -> duckdb_value {
+    let function_ptr = __DUCKDB_BIND_GET_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_bind_info,
-        index: idx_t,
-    ) -> duckdb_value = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_bind_info, index: idx_t) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, index)
 }
 
-static __DUCKDB_BIND_GET_NAMED_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_GET_NAMED_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_get_named_parameter(
     info: duckdb_bind_info,
     name: *const ::std::os::raw::c_char,
 ) -> duckdb_value {
-    let function_ptr = __DUCKDB_BIND_GET_NAMED_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_GET_NAMED_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_bind_info,
-        name: *const ::std::os::raw::c_char,
-    ) -> duckdb_value = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_bind_info, name: *const ::std::os::raw::c_char) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, name)
 }
 
-static __DUCKDB_BIND_SET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_BIND_SET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_bind_set_bind_data(
     info: duckdb_bind_info,
     bind_data: *mut ::std::os::raw::c_void,
     destroy: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_BIND_SET_BIND_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_BIND_SET_BIND_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         info: duckdb_bind_info,
@@ -6110,92 +5387,69 @@ pub unsafe fn duckdb_bind_set_bind_data(
     (fun)(info, bind_data, destroy)
 }
 
-static __DUCKDB_BIND_SET_CARDINALITY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_bind_set_cardinality(
-    info: duckdb_bind_info,
-    cardinality: idx_t,
-    is_exact: bool,
-) {
-    let function_ptr = __DUCKDB_BIND_SET_CARDINALITY
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_BIND_SET_CARDINALITY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_bind_set_cardinality(info: duckdb_bind_info, cardinality: idx_t, is_exact: bool) {
+    let function_ptr = __DUCKDB_BIND_SET_CARDINALITY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_bind_info,
-        cardinality: idx_t,
-        is_exact: bool,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_bind_info, cardinality: idx_t, is_exact: bool) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, cardinality, is_exact)
 }
 
-static __DUCKDB_BIND_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_bind_set_error(
-    info: duckdb_bind_info,
-    error: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_BIND_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_BIND_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_bind_set_error(info: duckdb_bind_info, error: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_BIND_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_bind_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_bind_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_INIT_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_init_get_extra_info(
-    info: duckdb_init_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_INIT_GET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_INIT_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_init_get_extra_info(info: duckdb_init_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_INIT_GET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_init_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_init_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_INIT_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_init_get_bind_data(
-    info: duckdb_init_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_INIT_GET_BIND_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_INIT_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_init_get_bind_data(info: duckdb_init_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_INIT_GET_BIND_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_init_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_init_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_INIT_SET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_INIT_SET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_init_set_init_data(
     info: duckdb_init_info,
     init_data: *mut ::std::os::raw::c_void,
     destroy: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_INIT_SET_INIT_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_INIT_SET_INIT_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         info: duckdb_init_info,
@@ -6205,174 +5459,133 @@ pub unsafe fn duckdb_init_set_init_data(
     (fun)(info, init_data, destroy)
 }
 
-static __DUCKDB_INIT_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_INIT_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_init_get_column_count(info: duckdb_init_info) -> idx_t {
-    let function_ptr = __DUCKDB_INIT_GET_COLUMN_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_INIT_GET_COLUMN_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(info: duckdb_init_info) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(info: duckdb_init_info) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_INIT_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_init_get_column_index(
-    info: duckdb_init_info,
-    column_index: idx_t,
-) -> idx_t {
-    let function_ptr = __DUCKDB_INIT_GET_COLUMN_INDEX
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_INIT_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_init_get_column_index(info: duckdb_init_info, column_index: idx_t) -> idx_t {
+    let function_ptr = __DUCKDB_INIT_GET_COLUMN_INDEX.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_init_info,
-        column_index: idx_t,
-    ) -> idx_t = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_init_info, column_index: idx_t) -> idx_t =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, column_index)
 }
 
-static __DUCKDB_INIT_SET_MAX_THREADS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_INIT_SET_MAX_THREADS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_init_set_max_threads(info: duckdb_init_info, max_threads: idx_t) {
-    let function_ptr = __DUCKDB_INIT_SET_MAX_THREADS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_INIT_SET_MAX_THREADS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(info: duckdb_init_info, max_threads: idx_t) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(info: duckdb_init_info, max_threads: idx_t) = ::std::mem::transmute(function_ptr);
     (fun)(info, max_threads)
 }
 
-static __DUCKDB_INIT_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_init_set_error(
-    info: duckdb_init_info,
-    error: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_INIT_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_INIT_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_init_set_error(info: duckdb_init_info, error: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_INIT_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_init_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_init_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_function_get_extra_info(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_FUNCTION_GET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_FUNCTION_GET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_FUNCTION_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_function_get_bind_data(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_FUNCTION_GET_BIND_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_FUNCTION_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_function_get_bind_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_FUNCTION_GET_BIND_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_FUNCTION_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_function_get_init_data(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_FUNCTION_GET_INIT_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_FUNCTION_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_function_get_init_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_FUNCTION_GET_INIT_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_FUNCTION_GET_LOCAL_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_function_get_local_init_data(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_FUNCTION_GET_LOCAL_INIT_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_FUNCTION_GET_LOCAL_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_function_get_local_init_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_FUNCTION_GET_LOCAL_INIT_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_function_set_error(
-    info: duckdb_function_info,
-    error: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_FUNCTION_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_FUNCTION_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_ADD_REPLACEMENT_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ADD_REPLACEMENT_SCAN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_add_replacement_scan(
     db: duckdb_database,
     replacement: duckdb_replacement_callback_t,
     extra_data: *mut ::std::os::raw::c_void,
     delete_callback: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_ADD_REPLACEMENT_SCAN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ADD_REPLACEMENT_SCAN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         db: duckdb_database,
@@ -6383,129 +5596,100 @@ pub unsafe fn duckdb_add_replacement_scan(
     (fun)(db, replacement, extra_data, delete_callback)
 }
 
-static __DUCKDB_REPLACEMENT_SCAN_SET_FUNCTION_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REPLACEMENT_SCAN_SET_FUNCTION_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_replacement_scan_set_function_name(
     info: duckdb_replacement_scan_info,
     function_name: *const ::std::os::raw::c_char,
 ) {
-    let function_ptr = __DUCKDB_REPLACEMENT_SCAN_SET_FUNCTION_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REPLACEMENT_SCAN_SET_FUNCTION_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_replacement_scan_info,
-        function_name: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_replacement_scan_info, function_name: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, function_name)
 }
 
-static __DUCKDB_REPLACEMENT_SCAN_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_replacement_scan_add_parameter(
-    info: duckdb_replacement_scan_info,
-    parameter: duckdb_value,
-) {
-    let function_ptr = __DUCKDB_REPLACEMENT_SCAN_ADD_PARAMETER
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_REPLACEMENT_SCAN_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_replacement_scan_add_parameter(info: duckdb_replacement_scan_info, parameter: duckdb_value) {
+    let function_ptr = __DUCKDB_REPLACEMENT_SCAN_ADD_PARAMETER.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_replacement_scan_info,
-        parameter: duckdb_value,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_replacement_scan_info, parameter: duckdb_value) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, parameter)
 }
 
-static __DUCKDB_REPLACEMENT_SCAN_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REPLACEMENT_SCAN_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_replacement_scan_set_error(
     info: duckdb_replacement_scan_info,
     error: *const ::std::os::raw::c_char,
 ) {
-    let function_ptr = __DUCKDB_REPLACEMENT_SCAN_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REPLACEMENT_SCAN_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_replacement_scan_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_replacement_scan_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_PROFILING_INFO_GET_METRICS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_profiling_info_get_metrics(
-    info: duckdb_profiling_info,
-) -> duckdb_value {
-    let function_ptr = __DUCKDB_PROFILING_INFO_GET_METRICS
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PROFILING_INFO_GET_METRICS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_profiling_info_get_metrics(info: duckdb_profiling_info) -> duckdb_value {
+    let function_ptr = __DUCKDB_PROFILING_INFO_GET_METRICS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(info: duckdb_profiling_info) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(info: duckdb_profiling_info) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_PROFILING_INFO_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_profiling_info_get_child_count(
-    info: duckdb_profiling_info,
-) -> idx_t {
-    let function_ptr = __DUCKDB_PROFILING_INFO_GET_CHILD_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PROFILING_INFO_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_profiling_info_get_child_count(info: duckdb_profiling_info) -> idx_t {
+    let function_ptr = __DUCKDB_PROFILING_INFO_GET_CHILD_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(info: duckdb_profiling_info) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(info: duckdb_profiling_info) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_PROFILING_INFO_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_profiling_info_get_child(
-    info: duckdb_profiling_info,
-    index: idx_t,
-) -> duckdb_profiling_info {
-    let function_ptr = __DUCKDB_PROFILING_INFO_GET_CHILD
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_PROFILING_INFO_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_profiling_info_get_child(info: duckdb_profiling_info, index: idx_t) -> duckdb_profiling_info {
+    let function_ptr = __DUCKDB_PROFILING_INFO_GET_CHILD.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_profiling_info,
-        index: idx_t,
-    ) -> duckdb_profiling_info = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_profiling_info, index: idx_t) -> duckdb_profiling_info =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, index)
 }
 
-static __DUCKDB_APPENDER_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_CREATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_create(
     connection: duckdb_connection,
     schema: *const ::std::os::raw::c_char,
     table: *const ::std::os::raw::c_char,
     out_appender: *mut duckdb_appender,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_CREATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_CREATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -6516,9 +5700,8 @@ pub unsafe fn duckdb_appender_create(
     (fun)(connection, schema, table, out_appender)
 }
 
-static __DUCKDB_APPENDER_CREATE_EXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_CREATE_EXT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_create_ext(
     connection: duckdb_connection,
     catalog: *const ::std::os::raw::c_char,
@@ -6526,10 +5709,10 @@ pub unsafe fn duckdb_appender_create_ext(
     table: *const ::std::os::raw::c_char,
     out_appender: *mut duckdb_appender,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_CREATE_EXT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_CREATE_EXT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -6541,168 +5724,133 @@ pub unsafe fn duckdb_appender_create_ext(
     (fun)(connection, catalog, schema, table, out_appender)
 }
 
-static __DUCKDB_APPENDER_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_column_count(appender: duckdb_appender) -> idx_t {
-    let function_ptr = __DUCKDB_APPENDER_COLUMN_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_COLUMN_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPENDER_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_appender_column_type(
-    appender: duckdb_appender,
-    col_idx: idx_t,
-) -> duckdb_logical_type {
-    let function_ptr = __DUCKDB_APPENDER_COLUMN_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPENDER_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_appender_column_type(appender: duckdb_appender, col_idx: idx_t) -> duckdb_logical_type {
+    let function_ptr = __DUCKDB_APPENDER_COLUMN_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        col_idx: idx_t,
-    ) -> duckdb_logical_type = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, col_idx: idx_t) -> duckdb_logical_type =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, col_idx)
 }
 
-static __DUCKDB_APPENDER_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_appender_error(
-    appender: duckdb_appender,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_APPENDER_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPENDER_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_appender_error(appender: duckdb_appender) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_APPENDER_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPENDER_FLUSH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_FLUSH: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_flush(appender: duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_FLUSH
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_FLUSH.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPENDER_CLOSE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_CLOSE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_close(appender: duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_CLOSE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_CLOSE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPENDER_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_DESTROY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_destroy(appender: *mut duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_DESTROY
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_DESTROY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: *mut duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: *mut duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPENDER_ADD_COLUMN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_ADD_COLUMN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_add_column(
     appender: duckdb_appender,
     name: *const ::std::os::raw::c_char,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_ADD_COLUMN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_ADD_COLUMN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        name: *const ::std::os::raw::c_char,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, name: *const ::std::os::raw::c_char) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, name)
 }
 
-static __DUCKDB_APPENDER_CLEAR_COLUMNS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_CLEAR_COLUMNS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_clear_columns(appender: duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_CLEAR_COLUMNS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_CLEAR_COLUMNS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPEND_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_data_chunk(
-    appender: duckdb_appender,
-    chunk: duckdb_data_chunk,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_DATA_CHUNK
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_DATA_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_data_chunk(appender: duckdb_appender, chunk: duckdb_data_chunk) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_DATA_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        chunk: duckdb_data_chunk,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, chunk: duckdb_data_chunk) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, chunk)
 }
 
-static __DUCKDB_TABLE_DESCRIPTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_DESCRIPTION_CREATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_description_create(
     connection: duckdb_connection,
     schema: *const ::std::os::raw::c_char,
     table: *const ::std::os::raw::c_char,
     out: *mut duckdb_table_description,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_CREATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_CREATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -6713,9 +5861,8 @@ pub unsafe fn duckdb_table_description_create(
     (fun)(connection, schema, table, out)
 }
 
-static __DUCKDB_TABLE_DESCRIPTION_CREATE_EXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_DESCRIPTION_CREATE_EXT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_description_create_ext(
     connection: duckdb_connection,
     catalog: *const ::std::os::raw::c_char,
@@ -6723,10 +5870,10 @@ pub unsafe fn duckdb_table_description_create_ext(
     table: *const ::std::os::raw::c_char,
     out: *mut duckdb_table_description,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_CREATE_EXT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_CREATE_EXT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -6738,52 +5885,45 @@ pub unsafe fn duckdb_table_description_create_ext(
     (fun)(connection, catalog, schema, table, out)
 }
 
-static __DUCKDB_TABLE_DESCRIPTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_table_description_destroy(
-    table_description: *mut duckdb_table_description,
-) {
-    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_DESTROY
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_TABLE_DESCRIPTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_table_description_destroy(table_description: *mut duckdb_table_description) {
+    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_DESTROY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(table_description: *mut duckdb_table_description) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(table_description: *mut duckdb_table_description) =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_description)
 }
 
-static __DUCKDB_TABLE_DESCRIPTION_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_DESCRIPTION_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_description_error(
     table_description: duckdb_table_description,
 ) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        table_description: duckdb_table_description,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(table_description: duckdb_table_description) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(table_description)
 }
 
-static __DUCKDB_COLUMN_HAS_DEFAULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_COLUMN_HAS_DEFAULT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_column_has_default(
     table_description: duckdb_table_description,
     index: idx_t,
     out: *mut bool,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_COLUMN_HAS_DEFAULT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_COLUMN_HAS_DEFAULT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         table_description: duckdb_table_description,
@@ -6793,17 +5933,16 @@ pub unsafe fn duckdb_column_has_default(
     (fun)(table_description, index, out)
 }
 
-static __DUCKDB_TABLE_DESCRIPTION_GET_COLUMN_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TABLE_DESCRIPTION_GET_COLUMN_NAME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_table_description_get_column_name(
     table_description: duckdb_table_description,
     index: idx_t,
 ) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_GET_COLUMN_NAME
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TABLE_DESCRIPTION_GET_COLUMN_NAME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         table_description: duckdb_table_description,
@@ -6812,245 +5951,195 @@ pub unsafe fn duckdb_table_description_get_column_name(
     (fun)(table_description, index)
 }
 
-static __DUCKDB_EXECUTE_TASKS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTE_TASKS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execute_tasks(database: duckdb_database, max_tasks: idx_t) {
-    let function_ptr = __DUCKDB_EXECUTE_TASKS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTE_TASKS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(database: duckdb_database, max_tasks: idx_t) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(database: duckdb_database, max_tasks: idx_t) = ::std::mem::transmute(function_ptr);
     (fun)(database, max_tasks)
 }
 
-static __DUCKDB_CREATE_TASK_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TASK_STATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_task_state(database: duckdb_database) -> duckdb_task_state {
-    let function_ptr = __DUCKDB_CREATE_TASK_STATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TASK_STATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(database: duckdb_database) -> duckdb_task_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(database: duckdb_database) -> duckdb_task_state = ::std::mem::transmute(function_ptr);
     (fun)(database)
 }
 
-static __DUCKDB_EXECUTE_TASKS_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTE_TASKS_STATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execute_tasks_state(state: duckdb_task_state) {
-    let function_ptr = __DUCKDB_EXECUTE_TASKS_STATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTE_TASKS_STATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(state: duckdb_task_state) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(state: duckdb_task_state) = ::std::mem::transmute(function_ptr);
     (fun)(state)
 }
 
-static __DUCKDB_EXECUTE_N_TASKS_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_execute_n_tasks_state(
-    state: duckdb_task_state,
-    max_tasks: idx_t,
-) -> idx_t {
-    let function_ptr = __DUCKDB_EXECUTE_N_TASKS_STATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_EXECUTE_N_TASKS_STATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_execute_n_tasks_state(state: duckdb_task_state, max_tasks: idx_t) -> idx_t {
+    let function_ptr = __DUCKDB_EXECUTE_N_TASKS_STATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(state: duckdb_task_state, max_tasks: idx_t) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(state: duckdb_task_state, max_tasks: idx_t) -> idx_t =
+        ::std::mem::transmute(function_ptr);
     (fun)(state, max_tasks)
 }
 
-static __DUCKDB_FINISH_EXECUTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FINISH_EXECUTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_finish_execution(state: duckdb_task_state) {
-    let function_ptr = __DUCKDB_FINISH_EXECUTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_FINISH_EXECUTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(state: duckdb_task_state) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(state: duckdb_task_state) = ::std::mem::transmute(function_ptr);
     (fun)(state)
 }
 
-static __DUCKDB_TASK_STATE_IS_FINISHED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_TASK_STATE_IS_FINISHED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_task_state_is_finished(state: duckdb_task_state) -> bool {
-    let function_ptr = __DUCKDB_TASK_STATE_IS_FINISHED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_TASK_STATE_IS_FINISHED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(state: duckdb_task_state) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(state: duckdb_task_state) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(state)
 }
 
-static __DUCKDB_DESTROY_TASK_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_TASK_STATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_task_state(state: duckdb_task_state) {
-    let function_ptr = __DUCKDB_DESTROY_TASK_STATE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_TASK_STATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(state: duckdb_task_state) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(state: duckdb_task_state) = ::std::mem::transmute(function_ptr);
     (fun)(state)
 }
 
-static __DUCKDB_EXECUTION_IS_FINISHED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTION_IS_FINISHED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execution_is_finished(con: duckdb_connection) -> bool {
-    let function_ptr = __DUCKDB_EXECUTION_IS_FINISHED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTION_IS_FINISHED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(con: duckdb_connection) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(con: duckdb_connection) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(con)
 }
 
-static __DUCKDB_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk {
     let function_ptr = __DUCKDB_FETCH_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_CREATE_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_cast_function() -> duckdb_cast_function {
-    let function_ptr = __DUCKDB_CREATE_CAST_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_CAST_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> duckdb_cast_function = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> duckdb_cast_function = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_cast_function_set_source_type(
     cast_function: duckdb_cast_function,
     source_type: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        cast_function: duckdb_cast_function,
-        source_type: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(cast_function: duckdb_cast_function, source_type: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(cast_function, source_type)
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_cast_function_set_target_type(
     cast_function: duckdb_cast_function,
     target_type: duckdb_logical_type,
 ) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        cast_function: duckdb_cast_function,
-        target_type: duckdb_logical_type,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(cast_function: duckdb_cast_function, target_type: duckdb_logical_type) =
+        ::std::mem::transmute(function_ptr);
     (fun)(cast_function, target_type)
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST: ::std::sync::atomic::AtomicPtr<
-    (),
-> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_cast_function_set_implicit_cast_cost(
-    cast_function: duckdb_cast_function,
-    cost: i64,
-) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_cast_function_set_implicit_cast_cost(cast_function: duckdb_cast_function, cost: i64) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(cast_function: duckdb_cast_function, cost: i64) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(cast_function: duckdb_cast_function, cost: i64) = ::std::mem::transmute(function_ptr);
     (fun)(cast_function, cost)
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_cast_function_set_function(
-    cast_function: duckdb_cast_function,
-    function: duckdb_cast_function_t,
-) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CAST_FUNCTION_SET_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_cast_function_set_function(cast_function: duckdb_cast_function, function: duckdb_cast_function_t) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        cast_function: duckdb_cast_function,
-        function: duckdb_cast_function_t,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(cast_function: duckdb_cast_function, function: duckdb_cast_function_t) =
+        ::std::mem::transmute(function_ptr);
     (fun)(cast_function, function)
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_cast_function_set_extra_info(
     cast_function: duckdb_cast_function,
     extra_info: *mut ::std::os::raw::c_void,
     destroy: duckdb_delete_callback_t,
 ) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         cast_function: duckdb_cast_function,
@@ -7060,72 +6149,56 @@ pub unsafe fn duckdb_cast_function_set_extra_info(
     (fun)(cast_function, extra_info, destroy)
 }
 
-static __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_cast_function_get_extra_info(
-    info: duckdb_function_info,
-) -> *mut ::std::os::raw::c_void {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_cast_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_CAST_FUNCTION_GET_CAST_MODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_cast_function_get_cast_mode(
-    info: duckdb_function_info,
-) -> duckdb_cast_mode {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_GET_CAST_MODE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CAST_FUNCTION_GET_CAST_MODE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_cast_function_get_cast_mode(info: duckdb_function_info) -> duckdb_cast_mode {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_GET_CAST_MODE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> duckdb_cast_mode = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(info: duckdb_function_info) -> duckdb_cast_mode = ::std::mem::transmute(function_ptr);
     (fun)(info)
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_cast_function_set_error(
-    info: duckdb_function_info,
-    error: *const ::std::os::raw::c_char,
-) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_CAST_FUNCTION_SET_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_cast_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char) {
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_function_info,
-        error: *const ::std::os::raw::c_char,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_function_info, error: *const ::std::os::raw::c_char) =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, error)
 }
 
-static __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_cast_function_set_row_error(
     info: duckdb_function_info,
     error: *const ::std::os::raw::c_char,
     row: idx_t,
     output: duckdb_vector,
 ) {
-    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         info: duckdb_function_info,
@@ -7136,649 +6209,489 @@ pub unsafe fn duckdb_cast_function_set_row_error(
     (fun)(info, error, row, output)
 }
 
-static __DUCKDB_REGISTER_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_REGISTER_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_register_cast_function(
     con: duckdb_connection,
     cast_function: duckdb_cast_function,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_REGISTER_CAST_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_REGISTER_CAST_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        con: duckdb_connection,
-        cast_function: duckdb_cast_function,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(con: duckdb_connection, cast_function: duckdb_cast_function) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(con, cast_function)
 }
 
-static __DUCKDB_DESTROY_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_cast_function(cast_function: *mut duckdb_cast_function) {
-    let function_ptr = __DUCKDB_DESTROY_CAST_FUNCTION
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_CAST_FUNCTION.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(cast_function: *mut duckdb_cast_function) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(cast_function: *mut duckdb_cast_function) = ::std::mem::transmute(function_ptr);
     (fun)(cast_function)
 }
 
-static __DUCKDB_IS_FINITE_TIMESTAMP_S: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_IS_FINITE_TIMESTAMP_S: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_is_finite_timestamp_s(ts: duckdb_timestamp_s) -> bool {
-    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP_S
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP_S.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_s) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_s) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(ts)
 }
 
-static __DUCKDB_IS_FINITE_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_IS_FINITE_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_is_finite_timestamp_ms(ts: duckdb_timestamp_ms) -> bool {
-    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP_MS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP_MS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_ms) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_ms) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(ts)
 }
 
-static __DUCKDB_IS_FINITE_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_IS_FINITE_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_is_finite_timestamp_ns(ts: duckdb_timestamp_ns) -> bool {
-    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP_NS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_IS_FINITE_TIMESTAMP_NS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_ns) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(ts: duckdb_timestamp_ns) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(ts)
 }
 
-static __DUCKDB_CREATE_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_timestamp_tz(input: duckdb_timestamp) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_TZ
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_TZ.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_timestamp) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_timestamp) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_TIMESTAMP_S: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIMESTAMP_S: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_timestamp_s(input: duckdb_timestamp_s) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_S
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_S.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_timestamp_s) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_timestamp_s) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_timestamp_ms(input: duckdb_timestamp_ms) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_MS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_MS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_timestamp_ms) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_timestamp_ms) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_CREATE_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_timestamp_ns(input: duckdb_timestamp_ns) -> duckdb_value {
-    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_NS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_TIMESTAMP_NS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(input: duckdb_timestamp_ns) -> duckdb_value = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(input: duckdb_timestamp_ns) -> duckdb_value = ::std::mem::transmute(function_ptr);
     (fun)(input)
 }
 
-static __DUCKDB_GET_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_timestamp_tz(val: duckdb_value) -> duckdb_timestamp {
-    let function_ptr = __DUCKDB_GET_TIMESTAMP_TZ
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_TIMESTAMP_TZ.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_TIMESTAMP_S: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIMESTAMP_S: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_timestamp_s(val: duckdb_value) -> duckdb_timestamp_s {
-    let function_ptr = __DUCKDB_GET_TIMESTAMP_S
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_TIMESTAMP_S.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp_s = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp_s = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_timestamp_ms(val: duckdb_value) -> duckdb_timestamp_ms {
-    let function_ptr = __DUCKDB_GET_TIMESTAMP_MS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_TIMESTAMP_MS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp_ms = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp_ms = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_GET_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_timestamp_ns(val: duckdb_value) -> duckdb_timestamp_ns {
-    let function_ptr = __DUCKDB_GET_TIMESTAMP_NS
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_TIMESTAMP_NS.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp_ns = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(val: duckdb_value) -> duckdb_timestamp_ns = ::std::mem::transmute(function_ptr);
     (fun)(val)
 }
 
-static __DUCKDB_APPEND_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_value(
-    appender: duckdb_appender,
-    value: duckdb_value,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_value(appender: duckdb_appender, value: duckdb_value) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_value,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_value) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_GET_PROFILING_INFO: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_get_profiling_info(
-    connection: duckdb_connection,
-) -> duckdb_profiling_info {
-    let function_ptr = __DUCKDB_GET_PROFILING_INFO
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_GET_PROFILING_INFO: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_get_profiling_info(connection: duckdb_connection) -> duckdb_profiling_info {
+    let function_ptr = __DUCKDB_GET_PROFILING_INFO.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        connection: duckdb_connection,
-    ) -> duckdb_profiling_info = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(connection: duckdb_connection) -> duckdb_profiling_info =
+        ::std::mem::transmute(function_ptr);
     (fun)(connection)
 }
 
-static __DUCKDB_PROFILING_INFO_GET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PROFILING_INFO_GET_VALUE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_profiling_info_get_value(
     info: duckdb_profiling_info,
     key: *const ::std::os::raw::c_char,
 ) -> duckdb_value {
-    let function_ptr = __DUCKDB_PROFILING_INFO_GET_VALUE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PROFILING_INFO_GET_VALUE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        info: duckdb_profiling_info,
-        key: *const ::std::os::raw::c_char,
-    ) -> duckdb_value = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(info: duckdb_profiling_info, key: *const ::std::os::raw::c_char) -> duckdb_value =
+        ::std::mem::transmute(function_ptr);
     (fun)(info, key)
 }
 
-static __DUCKDB_APPENDER_BEGIN_ROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_BEGIN_ROW: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_begin_row(appender: duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_BEGIN_ROW
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_BEGIN_ROW.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPENDER_END_ROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPENDER_END_ROW: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_appender_end_row(appender: duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPENDER_END_ROW
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPENDER_END_ROW.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPEND_DEFAULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_DEFAULT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_default(appender: duckdb_appender) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_DEFAULT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPEND_DEFAULT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_APPEND_BOOL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_bool(
-    appender: duckdb_appender,
-    value: bool,
-) -> duckdb_state {
+static __DUCKDB_APPEND_BOOL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_bool(appender: duckdb_appender, value: bool) -> duckdb_state {
     let function_ptr = __DUCKDB_APPEND_BOOL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: bool,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: bool) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_INT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_int8(appender: duckdb_appender, value: i8) -> duckdb_state {
     let function_ptr = __DUCKDB_APPEND_INT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: i8,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: i8) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_int16(
-    appender: duckdb_appender,
-    value: i16,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_INT16
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_INT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_int16(appender: duckdb_appender, value: i16) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_INT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: i16,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: i16) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_int32(
-    appender: duckdb_appender,
-    value: i32,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_INT32
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_INT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_int32(appender: duckdb_appender, value: i32) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_INT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: i32,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: i32) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_int64(
-    appender: duckdb_appender,
-    value: i64,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_INT64
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_INT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_int64(appender: duckdb_appender, value: i64) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_INT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: i64,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: i64) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_hugeint(
-    appender: duckdb_appender,
-    value: duckdb_hugeint,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_HUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_HUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_hugeint(appender: duckdb_appender, value: duckdb_hugeint) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_HUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_hugeint,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_hugeint) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_UINT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_uint8(appender: duckdb_appender, value: u8) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_UINT8
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPEND_UINT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: u8,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: u8) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_uint16(
-    appender: duckdb_appender,
-    value: u16,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_UINT16
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_UINT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_uint16(appender: duckdb_appender, value: u16) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_UINT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: u16,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: u16) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_uint32(
-    appender: duckdb_appender,
-    value: u32,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_UINT32
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_UINT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_uint32(appender: duckdb_appender, value: u32) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_UINT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: u32,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: u32) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_uint64(
-    appender: duckdb_appender,
-    value: u64,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_UINT64
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_UINT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_uint64(appender: duckdb_appender, value: u64) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_UINT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: u64,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: u64) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_uhugeint(
-    appender: duckdb_appender,
-    value: duckdb_uhugeint,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_UHUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_uhugeint(appender: duckdb_appender, value: duckdb_uhugeint) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_UHUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_uhugeint,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_uhugeint) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_float(
-    appender: duckdb_appender,
-    value: f32,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_FLOAT
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_FLOAT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_float(appender: duckdb_appender, value: f32) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: f32,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: f32) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_double(
-    appender: duckdb_appender,
-    value: f64,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_DOUBLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_double(appender: duckdb_appender, value: f64) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: f64,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: f64) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_date(
-    appender: duckdb_appender,
-    value: duckdb_date,
-) -> duckdb_state {
+static __DUCKDB_APPEND_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_date(appender: duckdb_appender, value: duckdb_date) -> duckdb_state {
     let function_ptr = __DUCKDB_APPEND_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_date,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_date) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_time(
-    appender: duckdb_appender,
-    value: duckdb_time,
-) -> duckdb_state {
+static __DUCKDB_APPEND_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_time(appender: duckdb_appender, value: duckdb_time) -> duckdb_state {
     let function_ptr = __DUCKDB_APPEND_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_time,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_time) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_timestamp(
-    appender: duckdb_appender,
-    value: duckdb_timestamp,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_timestamp(appender: duckdb_appender, value: duckdb_timestamp) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_timestamp,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_timestamp) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_interval(
-    appender: duckdb_appender,
-    value: duckdb_interval,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_INTERVAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_INTERVAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_interval(appender: duckdb_appender, value: duckdb_interval) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_INTERVAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        value: duckdb_interval,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, value: duckdb_interval) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, value)
 }
 
-static __DUCKDB_APPEND_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_append_varchar(
-    appender: duckdb_appender,
-    val: *const ::std::os::raw::c_char,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_VARCHAR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_APPEND_VARCHAR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_append_varchar(appender: duckdb_appender, val: *const ::std::os::raw::c_char) -> duckdb_state {
+    let function_ptr = __DUCKDB_APPEND_VARCHAR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        appender: duckdb_appender,
-        val: *const ::std::os::raw::c_char,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(appender: duckdb_appender, val: *const ::std::os::raw::c_char) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(appender, val)
 }
 
-static __DUCKDB_APPEND_VARCHAR_LENGTH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_VARCHAR_LENGTH: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_varchar_length(
     appender: duckdb_appender,
     val: *const ::std::os::raw::c_char,
     length: idx_t,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_VARCHAR_LENGTH
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPEND_VARCHAR_LENGTH.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         appender: duckdb_appender,
@@ -7788,9 +6701,8 @@ pub unsafe fn duckdb_append_varchar_length(
     (fun)(appender, val, length)
 }
 
-static __DUCKDB_APPEND_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_BLOB: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_blob(
     appender: duckdb_appender,
     data: *const ::std::os::raw::c_void,
@@ -7798,7 +6710,8 @@ pub unsafe fn duckdb_append_blob(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_APPEND_BLOB.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         appender: duckdb_appender,
@@ -7808,622 +6721,419 @@ pub unsafe fn duckdb_append_blob(
     (fun)(appender, data, length)
 }
 
-static __DUCKDB_APPEND_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_NULL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_null(appender: duckdb_appender) -> duckdb_state {
     let function_ptr = __DUCKDB_APPEND_NULL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(appender: duckdb_appender) -> duckdb_state = ::std::mem::transmute(function_ptr);
     (fun)(appender)
 }
 
-static __DUCKDB_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_row_count(result: *mut duckdb_result) -> idx_t {
     let function_ptr = __DUCKDB_ROW_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_COLUMN_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_column_data(
-    result: *mut duckdb_result,
-    col: idx_t,
-) -> *mut ::std::os::raw::c_void {
+static __DUCKDB_COLUMN_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_column_data(result: *mut duckdb_result, col: idx_t) -> *mut ::std::os::raw::c_void {
     let function_ptr = __DUCKDB_COLUMN_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-    ) -> *mut ::std::os::raw::c_void = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut ::std::os::raw::c_void =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col)
 }
 
-static __DUCKDB_NULLMASK_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_NULLMASK_DATA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_nullmask_data(result: *mut duckdb_result, col: idx_t) -> *mut bool {
-    let function_ptr = __DUCKDB_NULLMASK_DATA
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_NULLMASK_DATA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t) -> *mut bool =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col)
 }
 
-static __DUCKDB_RESULT_GET_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_result_get_chunk(
-    result: duckdb_result,
-    chunk_index: idx_t,
-) -> duckdb_data_chunk {
-    let function_ptr = __DUCKDB_RESULT_GET_CHUNK
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_RESULT_GET_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_result_get_chunk(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk {
+    let function_ptr = __DUCKDB_RESULT_GET_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: duckdb_result,
-        chunk_index: idx_t,
-    ) -> duckdb_data_chunk = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: duckdb_result, chunk_index: idx_t) -> duckdb_data_chunk =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, chunk_index)
 }
 
-static __DUCKDB_RESULT_IS_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_RESULT_IS_STREAMING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_result_is_streaming(result: duckdb_result) -> bool {
-    let function_ptr = __DUCKDB_RESULT_IS_STREAMING
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_RESULT_IS_STREAMING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_result) -> bool = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> bool = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_RESULT_CHUNK_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_RESULT_CHUNK_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_result_chunk_count(result: duckdb_result) -> idx_t {
-    let function_ptr = __DUCKDB_RESULT_CHUNK_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_RESULT_CHUNK_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_result) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_VALUE_BOOLEAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_boolean(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> bool {
-    let function_ptr = __DUCKDB_VALUE_BOOLEAN
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_BOOLEAN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_boolean(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool {
+    let function_ptr = __DUCKDB_VALUE_BOOLEAN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> bool = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_INT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_int8(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> i8 {
+static __DUCKDB_VALUE_INT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_int8(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i8 {
     let function_ptr = __DUCKDB_VALUE_INT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> i8 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i8 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_INT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_int16(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> i16 {
+static __DUCKDB_VALUE_INT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_int16(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i16 {
     let function_ptr = __DUCKDB_VALUE_INT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> i16 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i16 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_INT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_int32(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> i32 {
+static __DUCKDB_VALUE_INT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_int32(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i32 {
     let function_ptr = __DUCKDB_VALUE_INT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> i32 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i32 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_INT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_int64(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> i64 {
+static __DUCKDB_VALUE_INT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_int64(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i64 {
     let function_ptr = __DUCKDB_VALUE_INT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> i64 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> i64 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_hugeint(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_hugeint {
-    let function_ptr = __DUCKDB_VALUE_HUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_hugeint(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_hugeint {
+    let function_ptr = __DUCKDB_VALUE_HUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_hugeint = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_hugeint =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_uhugeint(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_uhugeint {
-    let function_ptr = __DUCKDB_VALUE_UHUGEINT
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_uhugeint(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_uhugeint {
+    let function_ptr = __DUCKDB_VALUE_UHUGEINT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_uhugeint = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_uhugeint =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_decimal(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_decimal {
-    let function_ptr = __DUCKDB_VALUE_DECIMAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_decimal(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_decimal {
+    let function_ptr = __DUCKDB_VALUE_DECIMAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_decimal = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_decimal =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_UINT8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_uint8(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> u8 {
+static __DUCKDB_VALUE_UINT8: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_uint8(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u8 {
     let function_ptr = __DUCKDB_VALUE_UINT8.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> u8 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u8 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_UINT16: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_uint16(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> u16 {
-    let function_ptr = __DUCKDB_VALUE_UINT16
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_UINT16: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_uint16(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u16 {
+    let function_ptr = __DUCKDB_VALUE_UINT16.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> u16 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u16 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_UINT32: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_uint32(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> u32 {
-    let function_ptr = __DUCKDB_VALUE_UINT32
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_UINT32: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_uint32(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u32 {
+    let function_ptr = __DUCKDB_VALUE_UINT32.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> u32 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u32 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_UINT64: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_uint64(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> u64 {
-    let function_ptr = __DUCKDB_VALUE_UINT64
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_UINT64: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_uint64(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u64 {
+    let function_ptr = __DUCKDB_VALUE_UINT64.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> u64 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> u64 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_float(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> f32 {
+static __DUCKDB_VALUE_FLOAT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_float(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f32 {
     let function_ptr = __DUCKDB_VALUE_FLOAT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> f32 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f32 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_double(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> f64 {
-    let function_ptr = __DUCKDB_VALUE_DOUBLE
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_double(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f64 {
+    let function_ptr = __DUCKDB_VALUE_DOUBLE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> f64 = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> f64 =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_date(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_date {
+static __DUCKDB_VALUE_DATE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_date(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_date {
     let function_ptr = __DUCKDB_VALUE_DATE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_date = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_date =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_time(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_time {
+static __DUCKDB_VALUE_TIME: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_time(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_time {
     let function_ptr = __DUCKDB_VALUE_TIME.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_time = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_time =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_timestamp(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_timestamp {
-    let function_ptr = __DUCKDB_VALUE_TIMESTAMP
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_timestamp(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_timestamp {
+    let function_ptr = __DUCKDB_VALUE_TIMESTAMP.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_timestamp = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_timestamp =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_interval(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_interval {
-    let function_ptr = __DUCKDB_VALUE_INTERVAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_interval(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_interval {
+    let function_ptr = __DUCKDB_VALUE_INTERVAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_interval = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_interval =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_varchar(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_VALUE_VARCHAR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_varchar(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_VALUE_VARCHAR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_STRING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_string(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_string {
-    let function_ptr = __DUCKDB_VALUE_STRING
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_STRING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_string(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string {
+    let function_ptr = __DUCKDB_VALUE_STRING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_string = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_VARCHAR_INTERNAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_VALUE_VARCHAR_INTERNAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_value_varchar_internal(
     result: *mut duckdb_result,
     col: idx_t,
     row: idx_t,
 ) -> *mut ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_VALUE_VARCHAR_INTERNAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_VALUE_VARCHAR_INTERNAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> *mut ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_STRING_INTERNAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_string_internal(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_string {
-    let function_ptr = __DUCKDB_VALUE_STRING_INTERNAL
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_STRING_INTERNAL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_string_internal(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string {
+    let function_ptr = __DUCKDB_VALUE_STRING_INTERNAL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_string = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_string =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_blob(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> duckdb_blob {
+static __DUCKDB_VALUE_BLOB: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_blob(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_blob {
     let function_ptr = __DUCKDB_VALUE_BLOB.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> duckdb_blob = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> duckdb_blob =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_VALUE_IS_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_value_is_null(
-    result: *mut duckdb_result,
-    col: idx_t,
-    row: idx_t,
-) -> bool {
-    let function_ptr = __DUCKDB_VALUE_IS_NULL
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_VALUE_IS_NULL: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_value_is_null(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool {
+    let function_ptr = __DUCKDB_VALUE_IS_NULL.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: *mut duckdb_result,
-        col: idx_t,
-        row: idx_t,
-    ) -> bool = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: *mut duckdb_result, col: idx_t, row: idx_t) -> bool =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, col, row)
 }
 
-static __DUCKDB_EXECUTE_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTE_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execute_prepared_streaming(
     prepared_statement: duckdb_prepared_statement,
     out_result: *mut duckdb_result,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_EXECUTE_PREPARED_STREAMING
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED_STREAMING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -8432,17 +7142,16 @@ pub unsafe fn duckdb_execute_prepared_streaming(
     (fun)(prepared_statement, out_result)
 }
 
-static __DUCKDB_PENDING_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PENDING_PREPARED_STREAMING: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_pending_prepared_streaming(
     prepared_statement: duckdb_prepared_statement,
     out_result: *mut duckdb_pending_result,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_PENDING_PREPARED_STREAMING
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PENDING_PREPARED_STREAMING.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -8451,9 +7160,8 @@ pub unsafe fn duckdb_pending_prepared_streaming(
     (fun)(prepared_statement, out_result)
 }
 
-static __DUCKDB_QUERY_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_QUERY_ARROW: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_query_arrow(
     connection: duckdb_connection,
     query: *const ::std::os::raw::c_char,
@@ -8461,7 +7169,8 @@ pub unsafe fn duckdb_query_arrow(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_QUERY_ARROW.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -8471,36 +7180,29 @@ pub unsafe fn duckdb_query_arrow(
     (fun)(connection, query, out_result)
 }
 
-static __DUCKDB_QUERY_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_query_arrow_schema(
-    result: duckdb_arrow,
-    out_schema: *mut duckdb_arrow_schema,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_QUERY_ARROW_SCHEMA
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_QUERY_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_query_arrow_schema(result: duckdb_arrow, out_schema: *mut duckdb_arrow_schema) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW_SCHEMA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: duckdb_arrow,
-        out_schema: *mut duckdb_arrow_schema,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: duckdb_arrow, out_schema: *mut duckdb_arrow_schema) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, out_schema)
 }
 
-static __DUCKDB_PREPARED_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_PREPARED_ARROW_SCHEMA: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_prepared_arrow_schema(
     prepared: duckdb_prepared_statement,
     out_schema: *mut duckdb_arrow_schema,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_PREPARED_ARROW_SCHEMA
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_PREPARED_ARROW_SCHEMA.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared: duckdb_prepared_statement,
@@ -8509,149 +7211,119 @@ pub unsafe fn duckdb_prepared_arrow_schema(
     (fun)(prepared, out_schema)
 }
 
-static __DUCKDB_RESULT_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_RESULT_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_result_arrow_array(
     result: duckdb_result,
     chunk: duckdb_data_chunk,
     out_array: *mut duckdb_arrow_array,
 ) {
-    let function_ptr = __DUCKDB_RESULT_ARROW_ARRAY
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_RESULT_ARROW_ARRAY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: duckdb_result,
-        chunk: duckdb_data_chunk,
-        out_array: *mut duckdb_arrow_array,
-    ) = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: duckdb_result, chunk: duckdb_data_chunk, out_array: *mut duckdb_arrow_array) =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, chunk, out_array)
 }
 
-static __DUCKDB_QUERY_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_query_arrow_array(
-    result: duckdb_arrow,
-    out_array: *mut duckdb_arrow_array,
-) -> duckdb_state {
-    let function_ptr = __DUCKDB_QUERY_ARROW_ARRAY
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_QUERY_ARROW_ARRAY: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_query_arrow_array(result: duckdb_arrow, out_array: *mut duckdb_arrow_array) -> duckdb_state {
+    let function_ptr = __DUCKDB_QUERY_ARROW_ARRAY.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: duckdb_arrow,
-        out_array: *mut duckdb_arrow_array,
-    ) -> duckdb_state = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: duckdb_arrow, out_array: *mut duckdb_arrow_array) -> duckdb_state =
+        ::std::mem::transmute(function_ptr);
     (fun)(result, out_array)
 }
 
-static __DUCKDB_ARROW_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARROW_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_arrow_column_count(result: duckdb_arrow) -> idx_t {
-    let function_ptr = __DUCKDB_ARROW_COLUMN_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ARROW_COLUMN_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_ARROW_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARROW_ROW_COUNT: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_arrow_row_count(result: duckdb_arrow) -> idx_t {
-    let function_ptr = __DUCKDB_ARROW_ROW_COUNT
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ARROW_ROW_COUNT.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_ARROW_ROWS_CHANGED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARROW_ROWS_CHANGED: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_arrow_rows_changed(result: duckdb_arrow) -> idx_t {
-    let function_ptr = __DUCKDB_ARROW_ROWS_CHANGED
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ARROW_ROWS_CHANGED.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> idx_t = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_QUERY_ARROW_ERROR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
-pub unsafe fn duckdb_query_arrow_error(
-    result: duckdb_arrow,
-) -> *const ::std::os::raw::c_char {
-    let function_ptr = __DUCKDB_QUERY_ARROW_ERROR
-        .load(::std::sync::atomic::Ordering::Acquire);
+static __DUCKDB_QUERY_ARROW_ERROR: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_query_arrow_error(result: duckdb_arrow) -> *const ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_QUERY_ARROW_ERROR.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(
-        result: duckdb_arrow,
-    ) -> *const ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    let fun: unsafe extern "C" fn(result: duckdb_arrow) -> *const ::std::os::raw::c_char =
+        ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_DESTROY_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_ARROW: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_arrow(result: *mut duckdb_arrow) {
-    let function_ptr = __DUCKDB_DESTROY_ARROW
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_ARROW.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: *mut duckdb_arrow) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: *mut duckdb_arrow) = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_DESTROY_ARROW_STREAM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_ARROW_STREAM: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_arrow_stream(stream_p: *mut duckdb_arrow_stream) {
-    let function_ptr = __DUCKDB_DESTROY_ARROW_STREAM
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_ARROW_STREAM.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(stream_p: *mut duckdb_arrow_stream) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(stream_p: *mut duckdb_arrow_stream) = ::std::mem::transmute(function_ptr);
     (fun)(stream_p)
 }
 
-static __DUCKDB_EXECUTE_PREPARED_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_EXECUTE_PREPARED_ARROW: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_execute_prepared_arrow(
     prepared_statement: duckdb_prepared_statement,
     out_result: *mut duckdb_arrow,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_EXECUTE_PREPARED_ARROW
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_EXECUTE_PREPARED_ARROW.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         prepared_statement: duckdb_prepared_statement,
@@ -8660,9 +7332,8 @@ pub unsafe fn duckdb_execute_prepared_arrow(
     (fun)(prepared_statement, out_result)
 }
 
-static __DUCKDB_ARROW_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARROW_SCAN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_arrow_scan(
     connection: duckdb_connection,
     table_name: *const ::std::os::raw::c_char,
@@ -8670,7 +7341,8 @@ pub unsafe fn duckdb_arrow_scan(
 ) -> duckdb_state {
     let function_ptr = __DUCKDB_ARROW_SCAN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -8680,9 +7352,8 @@ pub unsafe fn duckdb_arrow_scan(
     (fun)(connection, table_name, arrow)
 }
 
-static __DUCKDB_ARROW_ARRAY_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_ARROW_ARRAY_SCAN: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_arrow_array_scan(
     connection: duckdb_connection,
     table_name: *const ::std::os::raw::c_char,
@@ -8690,10 +7361,10 @@ pub unsafe fn duckdb_arrow_array_scan(
     arrow_array: duckdb_arrow_array,
     out_stream: *mut duckdb_arrow_stream,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_ARROW_ARRAY_SCAN
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_ARROW_ARRAY_SCAN.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         connection: duckdb_connection,
@@ -8705,39 +7376,32 @@ pub unsafe fn duckdb_arrow_array_scan(
     (fun)(connection, table_name, arrow_schema, arrow_array, out_stream)
 }
 
-static __DUCKDB_STREAM_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_STREAM_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_stream_fetch_chunk(result: duckdb_result) -> duckdb_data_chunk {
-    let function_ptr = __DUCKDB_STREAM_FETCH_CHUNK
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_STREAM_FETCH_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(result: duckdb_result) -> duckdb_data_chunk = ::std::mem::transmute(function_ptr);
     (fun)(result)
 }
 
-static __DUCKDB_CREATE_INSTANCE_CACHE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_CREATE_INSTANCE_CACHE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_create_instance_cache() -> duckdb_instance_cache {
-    let function_ptr = __DUCKDB_CREATE_INSTANCE_CACHE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_CREATE_INSTANCE_CACHE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn() -> duckdb_instance_cache = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn() -> duckdb_instance_cache = ::std::mem::transmute(function_ptr);
     (fun)()
 }
 
-static __DUCKDB_GET_OR_CREATE_FROM_CACHE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_GET_OR_CREATE_FROM_CACHE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_get_or_create_from_cache(
     instance_cache: duckdb_instance_cache,
     path: *const ::std::os::raw::c_char,
@@ -8745,10 +7409,10 @@ pub unsafe fn duckdb_get_or_create_from_cache(
     config: duckdb_config,
     out_error: *mut *mut ::std::os::raw::c_char,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_GET_OR_CREATE_FROM_CACHE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_GET_OR_CREATE_FROM_CACHE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         instance_cache: duckdb_instance_cache,
@@ -8760,34 +7424,30 @@ pub unsafe fn duckdb_get_or_create_from_cache(
     (fun)(instance_cache, path, out_database, config, out_error)
 }
 
-static __DUCKDB_DESTROY_INSTANCE_CACHE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_DESTROY_INSTANCE_CACHE: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_destroy_instance_cache(instance_cache: *mut duckdb_instance_cache) {
-    let function_ptr = __DUCKDB_DESTROY_INSTANCE_CACHE
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_DESTROY_INSTANCE_CACHE.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
-    let fun: unsafe extern "C" fn(instance_cache: *mut duckdb_instance_cache) = ::std::mem::transmute(
-        function_ptr,
-    );
+    let fun: unsafe extern "C" fn(instance_cache: *mut duckdb_instance_cache) = ::std::mem::transmute(function_ptr);
     (fun)(instance_cache)
 }
 
-static __DUCKDB_APPEND_DEFAULT_TO_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
-    ::std::ptr::null_mut(),
-);
+static __DUCKDB_APPEND_DEFAULT_TO_CHUNK: ::std::sync::atomic::AtomicPtr<()> =
+    ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
 pub unsafe fn duckdb_append_default_to_chunk(
     appender: duckdb_appender,
     chunk: duckdb_data_chunk,
     col: idx_t,
     row: idx_t,
 ) -> duckdb_state {
-    let function_ptr = __DUCKDB_APPEND_DEFAULT_TO_CHUNK
-        .load(::std::sync::atomic::Ordering::Acquire);
+    let function_ptr = __DUCKDB_APPEND_DEFAULT_TO_CHUNK.load(::std::sync::atomic::Ordering::Acquire);
     assert!(
-        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+        !function_ptr.is_null(),
+        "DuckDB API not initialized or DuckDB feature omitted"
     );
     let fun: unsafe extern "C" fn(
         appender: duckdb_appender,
@@ -8805,926 +7465,698 @@ pub unsafe fn duckdb_rs_extension_api_init(
     version: &str,
 ) -> ::std::result::Result<bool, &'static str> {
     let version_c_string = std::ffi::CString::new(version).unwrap();
-    let p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr())
-        as *const duckdb_ext_api_v1;
+    let p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v1;
     if p_api.is_null() {
         return Ok(false);
     }
     if let Some(fun) = (*p_api).duckdb_open {
-        __DUCKDB_OPEN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_OPEN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_open_ext {
-        __DUCKDB_OPEN_EXT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_OPEN_EXT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_close {
-        __DUCKDB_CLOSE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CLOSE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_connect {
-        __DUCKDB_CONNECT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CONNECT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_interrupt {
-        __DUCKDB_INTERRUPT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INTERRUPT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_query_progress {
-        __DUCKDB_QUERY_PROGRESS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_QUERY_PROGRESS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_disconnect {
-        __DUCKDB_DISCONNECT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DISCONNECT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_library_version {
-        __DUCKDB_LIBRARY_VERSION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LIBRARY_VERSION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_config {
-        __DUCKDB_CREATE_CONFIG
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_CONFIG.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_config_count {
-        __DUCKDB_CONFIG_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CONFIG_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_config_flag {
-        __DUCKDB_GET_CONFIG_FLAG
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_CONFIG_FLAG.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_set_config {
-        __DUCKDB_SET_CONFIG
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SET_CONFIG.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_config {
-        __DUCKDB_DESTROY_CONFIG
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_CONFIG.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_query {
-        __DUCKDB_QUERY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_QUERY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_result {
-        __DUCKDB_DESTROY_RESULT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_RESULT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_column_name {
-        __DUCKDB_COLUMN_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_COLUMN_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_column_type {
-        __DUCKDB_COLUMN_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_COLUMN_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_statement_type {
-        __DUCKDB_RESULT_STATEMENT_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_STATEMENT_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_column_logical_type {
-        __DUCKDB_COLUMN_LOGICAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_COLUMN_LOGICAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_column_count {
-        __DUCKDB_COLUMN_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_COLUMN_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_rows_changed {
-        __DUCKDB_ROWS_CHANGED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ROWS_CHANGED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_error {
-        __DUCKDB_RESULT_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_error_type {
-        __DUCKDB_RESULT_ERROR_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_ERROR_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_return_type {
-        __DUCKDB_RESULT_RETURN_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_RETURN_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_malloc {
-        __DUCKDB_MALLOC
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_MALLOC.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_free {
-        __DUCKDB_FREE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FREE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_size {
-        __DUCKDB_VECTOR_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VECTOR_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_string_is_inlined {
-        __DUCKDB_STRING_IS_INLINED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRING_IS_INLINED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_string_t_length {
-        __DUCKDB_STRING_T_LENGTH
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRING_T_LENGTH.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_string_t_data {
-        __DUCKDB_STRING_T_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRING_T_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_from_date {
-        __DUCKDB_FROM_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FROM_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_to_date {
-        __DUCKDB_TO_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TO_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_is_finite_date {
-        __DUCKDB_IS_FINITE_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_IS_FINITE_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_from_time {
-        __DUCKDB_FROM_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FROM_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_time_tz {
-        __DUCKDB_CREATE_TIME_TZ
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIME_TZ.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_from_time_tz {
-        __DUCKDB_FROM_TIME_TZ
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FROM_TIME_TZ.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_to_time {
-        __DUCKDB_TO_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TO_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_from_timestamp {
-        __DUCKDB_FROM_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FROM_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_to_timestamp {
-        __DUCKDB_TO_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TO_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_is_finite_timestamp {
-        __DUCKDB_IS_FINITE_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_IS_FINITE_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_hugeint_to_double {
-        __DUCKDB_HUGEINT_TO_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_HUGEINT_TO_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_double_to_hugeint {
-        __DUCKDB_DOUBLE_TO_HUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DOUBLE_TO_HUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_uhugeint_to_double {
-        __DUCKDB_UHUGEINT_TO_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_UHUGEINT_TO_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_double_to_uhugeint {
-        __DUCKDB_DOUBLE_TO_UHUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DOUBLE_TO_UHUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_double_to_decimal {
-        __DUCKDB_DOUBLE_TO_DECIMAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DOUBLE_TO_DECIMAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_decimal_to_double {
-        __DUCKDB_DECIMAL_TO_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DECIMAL_TO_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_prepare {
-        __DUCKDB_PREPARE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PREPARE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_prepare {
-        __DUCKDB_DESTROY_PREPARE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_PREPARE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_prepare_error {
-        __DUCKDB_PREPARE_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PREPARE_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_nparams {
-        __DUCKDB_NPARAMS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_NPARAMS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_parameter_name {
-        __DUCKDB_PARAMETER_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PARAMETER_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_param_type {
-        __DUCKDB_PARAM_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PARAM_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_param_logical_type {
-        __DUCKDB_PARAM_LOGICAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PARAM_LOGICAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_clear_bindings {
-        __DUCKDB_CLEAR_BINDINGS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CLEAR_BINDINGS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_prepared_statement_type {
-        __DUCKDB_PREPARED_STATEMENT_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PREPARED_STATEMENT_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_value {
-        __DUCKDB_BIND_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_parameter_index {
-        __DUCKDB_BIND_PARAMETER_INDEX
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_PARAMETER_INDEX.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_boolean {
-        __DUCKDB_BIND_BOOLEAN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_BOOLEAN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_int8 {
-        __DUCKDB_BIND_INT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_INT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_int16 {
-        __DUCKDB_BIND_INT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_INT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_int32 {
-        __DUCKDB_BIND_INT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_INT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_int64 {
-        __DUCKDB_BIND_INT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_INT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_hugeint {
-        __DUCKDB_BIND_HUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_HUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_uhugeint {
-        __DUCKDB_BIND_UHUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_UHUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_decimal {
-        __DUCKDB_BIND_DECIMAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_DECIMAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_uint8 {
-        __DUCKDB_BIND_UINT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_UINT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_uint16 {
-        __DUCKDB_BIND_UINT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_UINT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_uint32 {
-        __DUCKDB_BIND_UINT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_UINT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_uint64 {
-        __DUCKDB_BIND_UINT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_UINT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_float {
-        __DUCKDB_BIND_FLOAT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_FLOAT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_double {
-        __DUCKDB_BIND_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_date {
-        __DUCKDB_BIND_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_time {
-        __DUCKDB_BIND_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_timestamp {
-        __DUCKDB_BIND_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_timestamp_tz {
-        __DUCKDB_BIND_TIMESTAMP_TZ
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_TIMESTAMP_TZ.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_interval {
-        __DUCKDB_BIND_INTERVAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_INTERVAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_varchar {
-        __DUCKDB_BIND_VARCHAR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_VARCHAR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_varchar_length {
-        __DUCKDB_BIND_VARCHAR_LENGTH
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_VARCHAR_LENGTH.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_blob {
-        __DUCKDB_BIND_BLOB
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_BLOB.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_null {
-        __DUCKDB_BIND_NULL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_NULL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_prepared {
-        __DUCKDB_EXECUTE_PREPARED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_PREPARED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_extract_statements {
-        __DUCKDB_EXTRACT_STATEMENTS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXTRACT_STATEMENTS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_prepare_extracted_statement {
-        __DUCKDB_PREPARE_EXTRACTED_STATEMENT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PREPARE_EXTRACTED_STATEMENT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_extract_statements_error {
-        __DUCKDB_EXTRACT_STATEMENTS_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXTRACT_STATEMENTS_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_extracted {
-        __DUCKDB_DESTROY_EXTRACTED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_EXTRACTED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_pending_prepared {
-        __DUCKDB_PENDING_PREPARED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PENDING_PREPARED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_pending {
-        __DUCKDB_DESTROY_PENDING
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_PENDING.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_pending_error {
-        __DUCKDB_PENDING_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PENDING_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_pending_execute_task {
-        __DUCKDB_PENDING_EXECUTE_TASK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PENDING_EXECUTE_TASK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_pending_execute_check_state {
-        __DUCKDB_PENDING_EXECUTE_CHECK_STATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PENDING_EXECUTE_CHECK_STATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_pending {
-        __DUCKDB_EXECUTE_PENDING
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_PENDING.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_pending_execution_is_finished {
-        __DUCKDB_PENDING_EXECUTION_IS_FINISHED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PENDING_EXECUTION_IS_FINISHED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_value {
-        __DUCKDB_DESTROY_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_varchar {
-        __DUCKDB_CREATE_VARCHAR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_VARCHAR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_varchar_length {
-        __DUCKDB_CREATE_VARCHAR_LENGTH
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_VARCHAR_LENGTH.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_bool {
-        __DUCKDB_CREATE_BOOL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_BOOL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_int8 {
-        __DUCKDB_CREATE_INT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_INT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_uint8 {
-        __DUCKDB_CREATE_UINT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UINT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_int16 {
-        __DUCKDB_CREATE_INT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_INT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_uint16 {
-        __DUCKDB_CREATE_UINT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UINT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_int32 {
-        __DUCKDB_CREATE_INT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_INT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_uint32 {
-        __DUCKDB_CREATE_UINT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UINT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_uint64 {
-        __DUCKDB_CREATE_UINT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UINT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_int64 {
-        __DUCKDB_CREATE_INT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_INT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_hugeint {
-        __DUCKDB_CREATE_HUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_HUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_uhugeint {
-        __DUCKDB_CREATE_UHUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UHUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_float {
-        __DUCKDB_CREATE_FLOAT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_FLOAT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_double {
-        __DUCKDB_CREATE_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_date {
-        __DUCKDB_CREATE_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_time {
-        __DUCKDB_CREATE_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_time_tz_value {
-        __DUCKDB_CREATE_TIME_TZ_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIME_TZ_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_timestamp {
-        __DUCKDB_CREATE_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_interval {
-        __DUCKDB_CREATE_INTERVAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_INTERVAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_blob {
-        __DUCKDB_CREATE_BLOB
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_BLOB.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_varint {
-        __DUCKDB_CREATE_VARINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_VARINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_decimal {
-        __DUCKDB_CREATE_DECIMAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_DECIMAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_bit {
-        __DUCKDB_CREATE_BIT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_BIT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_uuid {
-        __DUCKDB_CREATE_UUID
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UUID.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_bool {
-        __DUCKDB_GET_BOOL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_BOOL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_int8 {
-        __DUCKDB_GET_INT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_INT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_uint8 {
-        __DUCKDB_GET_UINT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_UINT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_int16 {
-        __DUCKDB_GET_INT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_INT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_uint16 {
-        __DUCKDB_GET_UINT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_UINT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_int32 {
-        __DUCKDB_GET_INT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_INT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_uint32 {
-        __DUCKDB_GET_UINT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_UINT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_int64 {
-        __DUCKDB_GET_INT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_INT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_uint64 {
-        __DUCKDB_GET_UINT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_UINT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_hugeint {
-        __DUCKDB_GET_HUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_HUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_uhugeint {
-        __DUCKDB_GET_UHUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_UHUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_float {
-        __DUCKDB_GET_FLOAT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_FLOAT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_double {
-        __DUCKDB_GET_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_date {
-        __DUCKDB_GET_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_time {
-        __DUCKDB_GET_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_time_tz {
-        __DUCKDB_GET_TIME_TZ
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIME_TZ.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_timestamp {
-        __DUCKDB_GET_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_interval {
-        __DUCKDB_GET_INTERVAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_INTERVAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_value_type {
-        __DUCKDB_GET_VALUE_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_VALUE_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_blob {
-        __DUCKDB_GET_BLOB
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_BLOB.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_varint {
-        __DUCKDB_GET_VARINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_VARINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_decimal {
-        __DUCKDB_GET_DECIMAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_DECIMAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_bit {
-        __DUCKDB_GET_BIT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_BIT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_uuid {
-        __DUCKDB_GET_UUID
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_UUID.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_varchar {
-        __DUCKDB_GET_VARCHAR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_VARCHAR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_struct_value {
-        __DUCKDB_CREATE_STRUCT_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_STRUCT_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_list_value {
-        __DUCKDB_CREATE_LIST_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_LIST_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_array_value {
-        __DUCKDB_CREATE_ARRAY_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_ARRAY_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_map_size {
-        __DUCKDB_GET_MAP_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_MAP_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_map_key {
-        __DUCKDB_GET_MAP_KEY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_MAP_KEY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_map_value {
-        __DUCKDB_GET_MAP_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_MAP_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_is_null_value {
-        __DUCKDB_IS_NULL_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_IS_NULL_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_null_value {
-        __DUCKDB_CREATE_NULL_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_NULL_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_list_size {
-        __DUCKDB_GET_LIST_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_LIST_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_list_child {
-        __DUCKDB_GET_LIST_CHILD
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_LIST_CHILD.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_enum_value {
-        __DUCKDB_CREATE_ENUM_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_ENUM_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_enum_value {
-        __DUCKDB_GET_ENUM_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_ENUM_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_struct_child {
-        __DUCKDB_GET_STRUCT_CHILD
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_STRUCT_CHILD.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_logical_type {
-        __DUCKDB_CREATE_LOGICAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_LOGICAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_logical_type_get_alias {
-        __DUCKDB_LOGICAL_TYPE_GET_ALIAS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LOGICAL_TYPE_GET_ALIAS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_logical_type_set_alias {
-        __DUCKDB_LOGICAL_TYPE_SET_ALIAS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LOGICAL_TYPE_SET_ALIAS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_list_type {
-        __DUCKDB_CREATE_LIST_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_LIST_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_array_type {
-        __DUCKDB_CREATE_ARRAY_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_ARRAY_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_map_type {
-        __DUCKDB_CREATE_MAP_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_MAP_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_union_type {
-        __DUCKDB_CREATE_UNION_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_UNION_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_struct_type {
-        __DUCKDB_CREATE_STRUCT_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_STRUCT_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_enum_type {
-        __DUCKDB_CREATE_ENUM_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_ENUM_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_decimal_type {
-        __DUCKDB_CREATE_DECIMAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_DECIMAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_type_id {
-        __DUCKDB_GET_TYPE_ID
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TYPE_ID.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_decimal_width {
-        __DUCKDB_DECIMAL_WIDTH
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DECIMAL_WIDTH.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_decimal_scale {
-        __DUCKDB_DECIMAL_SCALE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DECIMAL_SCALE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_decimal_internal_type {
-        __DUCKDB_DECIMAL_INTERNAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DECIMAL_INTERNAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_enum_internal_type {
-        __DUCKDB_ENUM_INTERNAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ENUM_INTERNAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_enum_dictionary_size {
-        __DUCKDB_ENUM_DICTIONARY_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ENUM_DICTIONARY_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_enum_dictionary_value {
-        __DUCKDB_ENUM_DICTIONARY_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ENUM_DICTIONARY_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_list_type_child_type {
-        __DUCKDB_LIST_TYPE_CHILD_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LIST_TYPE_CHILD_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_array_type_child_type {
-        __DUCKDB_ARRAY_TYPE_CHILD_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARRAY_TYPE_CHILD_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_array_type_array_size {
-        __DUCKDB_ARRAY_TYPE_ARRAY_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARRAY_TYPE_ARRAY_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_map_type_key_type {
-        __DUCKDB_MAP_TYPE_KEY_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_MAP_TYPE_KEY_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_map_type_value_type {
-        __DUCKDB_MAP_TYPE_VALUE_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_MAP_TYPE_VALUE_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_struct_type_child_count {
-        __DUCKDB_STRUCT_TYPE_CHILD_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRUCT_TYPE_CHILD_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_struct_type_child_name {
-        __DUCKDB_STRUCT_TYPE_CHILD_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRUCT_TYPE_CHILD_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_struct_type_child_type {
-        __DUCKDB_STRUCT_TYPE_CHILD_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRUCT_TYPE_CHILD_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_union_type_member_count {
-        __DUCKDB_UNION_TYPE_MEMBER_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_UNION_TYPE_MEMBER_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_union_type_member_name {
-        __DUCKDB_UNION_TYPE_MEMBER_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_UNION_TYPE_MEMBER_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_union_type_member_type {
-        __DUCKDB_UNION_TYPE_MEMBER_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_UNION_TYPE_MEMBER_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_logical_type {
-        __DUCKDB_DESTROY_LOGICAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_LOGICAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_logical_type {
-        __DUCKDB_REGISTER_LOGICAL_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_LOGICAL_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_data_chunk {
-        __DUCKDB_CREATE_DATA_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_DATA_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_data_chunk {
-        __DUCKDB_DESTROY_DATA_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_DATA_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_data_chunk_reset {
-        __DUCKDB_DATA_CHUNK_RESET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DATA_CHUNK_RESET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_data_chunk_get_column_count {
-        __DUCKDB_DATA_CHUNK_GET_COLUMN_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DATA_CHUNK_GET_COLUMN_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_data_chunk_get_vector {
-        __DUCKDB_DATA_CHUNK_GET_VECTOR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DATA_CHUNK_GET_VECTOR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_data_chunk_get_size {
-        __DUCKDB_DATA_CHUNK_GET_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DATA_CHUNK_GET_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_data_chunk_set_size {
-        __DUCKDB_DATA_CHUNK_SET_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DATA_CHUNK_SET_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_get_column_type {
-        __DUCKDB_VECTOR_GET_COLUMN_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VECTOR_GET_COLUMN_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_get_data {
-        __DUCKDB_VECTOR_GET_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VECTOR_GET_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_get_validity {
-        __DUCKDB_VECTOR_GET_VALIDITY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VECTOR_GET_VALIDITY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_ensure_validity_writable {
-        __DUCKDB_VECTOR_ENSURE_VALIDITY_WRITABLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VECTOR_ENSURE_VALIDITY_WRITABLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_assign_string_element {
-        __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_vector_assign_string_element_len {
         __DUCKDB_VECTOR_ASSIGN_STRING_ELEMENT_LEN
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_list_vector_get_child {
-        __DUCKDB_LIST_VECTOR_GET_CHILD
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LIST_VECTOR_GET_CHILD.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_list_vector_get_size {
-        __DUCKDB_LIST_VECTOR_GET_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LIST_VECTOR_GET_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_list_vector_set_size {
-        __DUCKDB_LIST_VECTOR_SET_SIZE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LIST_VECTOR_SET_SIZE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_list_vector_reserve {
-        __DUCKDB_LIST_VECTOR_RESERVE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_LIST_VECTOR_RESERVE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_struct_vector_get_child {
-        __DUCKDB_STRUCT_VECTOR_GET_CHILD
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STRUCT_VECTOR_GET_CHILD.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_array_vector_get_child {
-        __DUCKDB_ARRAY_VECTOR_GET_CHILD
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARRAY_VECTOR_GET_CHILD.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_validity_row_is_valid {
-        __DUCKDB_VALIDITY_ROW_IS_VALID
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALIDITY_ROW_IS_VALID.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_validity_set_row_validity {
-        __DUCKDB_VALIDITY_SET_ROW_VALIDITY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALIDITY_SET_ROW_VALIDITY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_validity_set_row_invalid {
-        __DUCKDB_VALIDITY_SET_ROW_INVALID
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALIDITY_SET_ROW_INVALID.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_validity_set_row_valid {
-        __DUCKDB_VALIDITY_SET_ROW_VALID
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALIDITY_SET_ROW_VALID.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_scalar_function {
-        __DUCKDB_CREATE_SCALAR_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_SCALAR_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_scalar_function {
-        __DUCKDB_DESTROY_SCALAR_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_SCALAR_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_name {
-        __DUCKDB_SCALAR_FUNCTION_SET_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_varargs {
-        __DUCKDB_SCALAR_FUNCTION_SET_VARARGS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_VARARGS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_special_handling {
         __DUCKDB_SCALAR_FUNCTION_SET_SPECIAL_HANDLING
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_volatile {
-        __DUCKDB_SCALAR_FUNCTION_SET_VOLATILE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_VOLATILE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_add_parameter {
-        __DUCKDB_SCALAR_FUNCTION_ADD_PARAMETER
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_ADD_PARAMETER.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_return_type {
-        __DUCKDB_SCALAR_FUNCTION_SET_RETURN_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_RETURN_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_extra_info {
-        __DUCKDB_SCALAR_FUNCTION_SET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_function {
-        __DUCKDB_SCALAR_FUNCTION_SET_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_scalar_function {
-        __DUCKDB_REGISTER_SCALAR_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_SCALAR_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_get_extra_info {
-        __DUCKDB_SCALAR_FUNCTION_GET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_GET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_scalar_function_set_error {
-        __DUCKDB_SCALAR_FUNCTION_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_SCALAR_FUNCTION_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_scalar_function_set {
-        __DUCKDB_CREATE_SCALAR_FUNCTION_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_SCALAR_FUNCTION_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_scalar_function_set {
-        __DUCKDB_DESTROY_SCALAR_FUNCTION_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_SCALAR_FUNCTION_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_add_scalar_function_to_set {
-        __DUCKDB_ADD_SCALAR_FUNCTION_TO_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ADD_SCALAR_FUNCTION_TO_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_scalar_function_set {
-        __DUCKDB_REGISTER_SCALAR_FUNCTION_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_SCALAR_FUNCTION_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_aggregate_function {
-        __DUCKDB_CREATE_AGGREGATE_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_AGGREGATE_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_aggregate_function {
-        __DUCKDB_DESTROY_AGGREGATE_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_AGGREGATE_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_aggregate_function_set_name {
-        __DUCKDB_AGGREGATE_FUNCTION_SET_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_AGGREGATE_FUNCTION_SET_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_aggregate_function_add_parameter {
         __DUCKDB_AGGREGATE_FUNCTION_ADD_PARAMETER
@@ -9743,8 +8175,7 @@ pub unsafe fn duckdb_rs_extension_api_init(
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_aggregate_function {
-        __DUCKDB_REGISTER_AGGREGATE_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_AGGREGATE_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_aggregate_function_set_special_handling {
         __DUCKDB_AGGREGATE_FUNCTION_SET_SPECIAL_HANDLING
@@ -9759,689 +8190,522 @@ pub unsafe fn duckdb_rs_extension_api_init(
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_aggregate_function_set_error {
-        __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_AGGREGATE_FUNCTION_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_aggregate_function_set {
-        __DUCKDB_CREATE_AGGREGATE_FUNCTION_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_AGGREGATE_FUNCTION_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_aggregate_function_set {
-        __DUCKDB_DESTROY_AGGREGATE_FUNCTION_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_AGGREGATE_FUNCTION_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_add_aggregate_function_to_set {
-        __DUCKDB_ADD_AGGREGATE_FUNCTION_TO_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ADD_AGGREGATE_FUNCTION_TO_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_aggregate_function_set {
-        __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_AGGREGATE_FUNCTION_SET.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_table_function {
-        __DUCKDB_CREATE_TABLE_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TABLE_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_table_function {
-        __DUCKDB_DESTROY_TABLE_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_TABLE_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_set_name {
-        __DUCKDB_TABLE_FUNCTION_SET_NAME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_SET_NAME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_add_parameter {
-        __DUCKDB_TABLE_FUNCTION_ADD_PARAMETER
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_ADD_PARAMETER.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_add_named_parameter {
         __DUCKDB_TABLE_FUNCTION_ADD_NAMED_PARAMETER
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_set_extra_info {
-        __DUCKDB_TABLE_FUNCTION_SET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_SET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_set_bind {
-        __DUCKDB_TABLE_FUNCTION_SET_BIND
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_SET_BIND.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_set_init {
-        __DUCKDB_TABLE_FUNCTION_SET_INIT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_SET_INIT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_set_local_init {
-        __DUCKDB_TABLE_FUNCTION_SET_LOCAL_INIT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_SET_LOCAL_INIT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_set_function {
-        __DUCKDB_TABLE_FUNCTION_SET_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_FUNCTION_SET_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_function_supports_projection_pushdown {
         __DUCKDB_TABLE_FUNCTION_SUPPORTS_PROJECTION_PUSHDOWN
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_table_function {
-        __DUCKDB_REGISTER_TABLE_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_TABLE_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_get_extra_info {
-        __DUCKDB_BIND_GET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_GET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_add_result_column {
-        __DUCKDB_BIND_ADD_RESULT_COLUMN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_ADD_RESULT_COLUMN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_get_parameter_count {
-        __DUCKDB_BIND_GET_PARAMETER_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_GET_PARAMETER_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_get_parameter {
-        __DUCKDB_BIND_GET_PARAMETER
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_GET_PARAMETER.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_get_named_parameter {
-        __DUCKDB_BIND_GET_NAMED_PARAMETER
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_GET_NAMED_PARAMETER.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_set_bind_data {
-        __DUCKDB_BIND_SET_BIND_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_SET_BIND_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_set_cardinality {
-        __DUCKDB_BIND_SET_CARDINALITY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_SET_CARDINALITY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_bind_set_error {
-        __DUCKDB_BIND_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_BIND_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_get_extra_info {
-        __DUCKDB_INIT_GET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_GET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_get_bind_data {
-        __DUCKDB_INIT_GET_BIND_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_GET_BIND_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_set_init_data {
-        __DUCKDB_INIT_SET_INIT_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_SET_INIT_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_get_column_count {
-        __DUCKDB_INIT_GET_COLUMN_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_GET_COLUMN_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_get_column_index {
-        __DUCKDB_INIT_GET_COLUMN_INDEX
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_GET_COLUMN_INDEX.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_set_max_threads {
-        __DUCKDB_INIT_SET_MAX_THREADS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_SET_MAX_THREADS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_init_set_error {
-        __DUCKDB_INIT_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_INIT_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_function_get_extra_info {
-        __DUCKDB_FUNCTION_GET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FUNCTION_GET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_function_get_bind_data {
-        __DUCKDB_FUNCTION_GET_BIND_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FUNCTION_GET_BIND_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_function_get_init_data {
-        __DUCKDB_FUNCTION_GET_INIT_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FUNCTION_GET_INIT_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_function_get_local_init_data {
-        __DUCKDB_FUNCTION_GET_LOCAL_INIT_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FUNCTION_GET_LOCAL_INIT_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_function_set_error {
-        __DUCKDB_FUNCTION_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FUNCTION_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_add_replacement_scan {
-        __DUCKDB_ADD_REPLACEMENT_SCAN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ADD_REPLACEMENT_SCAN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_replacement_scan_set_function_name {
         __DUCKDB_REPLACEMENT_SCAN_SET_FUNCTION_NAME
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_replacement_scan_add_parameter {
-        __DUCKDB_REPLACEMENT_SCAN_ADD_PARAMETER
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REPLACEMENT_SCAN_ADD_PARAMETER.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_replacement_scan_set_error {
-        __DUCKDB_REPLACEMENT_SCAN_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REPLACEMENT_SCAN_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_profiling_info_get_metrics {
-        __DUCKDB_PROFILING_INFO_GET_METRICS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PROFILING_INFO_GET_METRICS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_profiling_info_get_child_count {
-        __DUCKDB_PROFILING_INFO_GET_CHILD_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PROFILING_INFO_GET_CHILD_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_profiling_info_get_child {
-        __DUCKDB_PROFILING_INFO_GET_CHILD
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PROFILING_INFO_GET_CHILD.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_create {
-        __DUCKDB_APPENDER_CREATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_CREATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_create_ext {
-        __DUCKDB_APPENDER_CREATE_EXT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_CREATE_EXT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_column_count {
-        __DUCKDB_APPENDER_COLUMN_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_COLUMN_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_column_type {
-        __DUCKDB_APPENDER_COLUMN_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_COLUMN_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_error {
-        __DUCKDB_APPENDER_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_flush {
-        __DUCKDB_APPENDER_FLUSH
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_FLUSH.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_close {
-        __DUCKDB_APPENDER_CLOSE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_CLOSE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_destroy {
-        __DUCKDB_APPENDER_DESTROY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_DESTROY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_add_column {
-        __DUCKDB_APPENDER_ADD_COLUMN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_ADD_COLUMN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_clear_columns {
-        __DUCKDB_APPENDER_CLEAR_COLUMNS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_CLEAR_COLUMNS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_data_chunk {
-        __DUCKDB_APPEND_DATA_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_DATA_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_description_create {
-        __DUCKDB_TABLE_DESCRIPTION_CREATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_DESCRIPTION_CREATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_description_create_ext {
-        __DUCKDB_TABLE_DESCRIPTION_CREATE_EXT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_DESCRIPTION_CREATE_EXT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_description_destroy {
-        __DUCKDB_TABLE_DESCRIPTION_DESTROY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_DESCRIPTION_DESTROY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_description_error {
-        __DUCKDB_TABLE_DESCRIPTION_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TABLE_DESCRIPTION_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_column_has_default {
-        __DUCKDB_COLUMN_HAS_DEFAULT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_COLUMN_HAS_DEFAULT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_table_description_get_column_name {
         __DUCKDB_TABLE_DESCRIPTION_GET_COLUMN_NAME
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_tasks {
-        __DUCKDB_EXECUTE_TASKS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_TASKS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_task_state {
-        __DUCKDB_CREATE_TASK_STATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TASK_STATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_tasks_state {
-        __DUCKDB_EXECUTE_TASKS_STATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_TASKS_STATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_n_tasks_state {
-        __DUCKDB_EXECUTE_N_TASKS_STATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_N_TASKS_STATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_finish_execution {
-        __DUCKDB_FINISH_EXECUTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FINISH_EXECUTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_task_state_is_finished {
-        __DUCKDB_TASK_STATE_IS_FINISHED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_TASK_STATE_IS_FINISHED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_task_state {
-        __DUCKDB_DESTROY_TASK_STATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_TASK_STATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execution_is_finished {
-        __DUCKDB_EXECUTION_IS_FINISHED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTION_IS_FINISHED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_fetch_chunk {
-        __DUCKDB_FETCH_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_FETCH_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_cast_function {
-        __DUCKDB_CREATE_CAST_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_CAST_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_source_type {
-        __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_SET_SOURCE_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_target_type {
-        __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_SET_TARGET_TYPE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_implicit_cast_cost {
         __DUCKDB_CAST_FUNCTION_SET_IMPLICIT_CAST_COST
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_function {
-        __DUCKDB_CAST_FUNCTION_SET_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_SET_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_extra_info {
-        __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_SET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_get_extra_info {
-        __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_GET_EXTRA_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_get_cast_mode {
-        __DUCKDB_CAST_FUNCTION_GET_CAST_MODE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_GET_CAST_MODE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_error {
-        __DUCKDB_CAST_FUNCTION_SET_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_SET_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_cast_function_set_row_error {
-        __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CAST_FUNCTION_SET_ROW_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_register_cast_function {
-        __DUCKDB_REGISTER_CAST_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_REGISTER_CAST_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_cast_function {
-        __DUCKDB_DESTROY_CAST_FUNCTION
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_CAST_FUNCTION.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_is_finite_timestamp_s {
-        __DUCKDB_IS_FINITE_TIMESTAMP_S
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_IS_FINITE_TIMESTAMP_S.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_is_finite_timestamp_ms {
-        __DUCKDB_IS_FINITE_TIMESTAMP_MS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_IS_FINITE_TIMESTAMP_MS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_is_finite_timestamp_ns {
-        __DUCKDB_IS_FINITE_TIMESTAMP_NS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_IS_FINITE_TIMESTAMP_NS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_timestamp_tz {
-        __DUCKDB_CREATE_TIMESTAMP_TZ
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIMESTAMP_TZ.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_timestamp_s {
-        __DUCKDB_CREATE_TIMESTAMP_S
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIMESTAMP_S.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_timestamp_ms {
-        __DUCKDB_CREATE_TIMESTAMP_MS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIMESTAMP_MS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_timestamp_ns {
-        __DUCKDB_CREATE_TIMESTAMP_NS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_TIMESTAMP_NS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_timestamp_tz {
-        __DUCKDB_GET_TIMESTAMP_TZ
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIMESTAMP_TZ.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_timestamp_s {
-        __DUCKDB_GET_TIMESTAMP_S
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIMESTAMP_S.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_timestamp_ms {
-        __DUCKDB_GET_TIMESTAMP_MS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIMESTAMP_MS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_timestamp_ns {
-        __DUCKDB_GET_TIMESTAMP_NS
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_TIMESTAMP_NS.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_value {
-        __DUCKDB_APPEND_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_profiling_info {
-        __DUCKDB_GET_PROFILING_INFO
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_PROFILING_INFO.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_profiling_info_get_value {
-        __DUCKDB_PROFILING_INFO_GET_VALUE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PROFILING_INFO_GET_VALUE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_begin_row {
-        __DUCKDB_APPENDER_BEGIN_ROW
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_BEGIN_ROW.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_appender_end_row {
-        __DUCKDB_APPENDER_END_ROW
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPENDER_END_ROW.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_default {
-        __DUCKDB_APPEND_DEFAULT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_DEFAULT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_bool {
-        __DUCKDB_APPEND_BOOL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_BOOL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_int8 {
-        __DUCKDB_APPEND_INT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_INT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_int16 {
-        __DUCKDB_APPEND_INT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_INT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_int32 {
-        __DUCKDB_APPEND_INT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_INT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_int64 {
-        __DUCKDB_APPEND_INT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_INT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_hugeint {
-        __DUCKDB_APPEND_HUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_HUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_uint8 {
-        __DUCKDB_APPEND_UINT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_UINT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_uint16 {
-        __DUCKDB_APPEND_UINT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_UINT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_uint32 {
-        __DUCKDB_APPEND_UINT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_UINT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_uint64 {
-        __DUCKDB_APPEND_UINT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_UINT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_uhugeint {
-        __DUCKDB_APPEND_UHUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_UHUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_float {
-        __DUCKDB_APPEND_FLOAT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_FLOAT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_double {
-        __DUCKDB_APPEND_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_date {
-        __DUCKDB_APPEND_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_time {
-        __DUCKDB_APPEND_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_timestamp {
-        __DUCKDB_APPEND_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_interval {
-        __DUCKDB_APPEND_INTERVAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_INTERVAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_varchar {
-        __DUCKDB_APPEND_VARCHAR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_VARCHAR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_varchar_length {
-        __DUCKDB_APPEND_VARCHAR_LENGTH
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_VARCHAR_LENGTH.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_blob {
-        __DUCKDB_APPEND_BLOB
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_BLOB.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_null {
-        __DUCKDB_APPEND_NULL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_NULL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_row_count {
-        __DUCKDB_ROW_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ROW_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_column_data {
-        __DUCKDB_COLUMN_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_COLUMN_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_nullmask_data {
-        __DUCKDB_NULLMASK_DATA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_NULLMASK_DATA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_get_chunk {
-        __DUCKDB_RESULT_GET_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_GET_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_is_streaming {
-        __DUCKDB_RESULT_IS_STREAMING
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_IS_STREAMING.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_chunk_count {
-        __DUCKDB_RESULT_CHUNK_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_CHUNK_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_boolean {
-        __DUCKDB_VALUE_BOOLEAN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_BOOLEAN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_int8 {
-        __DUCKDB_VALUE_INT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_INT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_int16 {
-        __DUCKDB_VALUE_INT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_INT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_int32 {
-        __DUCKDB_VALUE_INT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_INT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_int64 {
-        __DUCKDB_VALUE_INT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_INT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_hugeint {
-        __DUCKDB_VALUE_HUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_HUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_uhugeint {
-        __DUCKDB_VALUE_UHUGEINT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_UHUGEINT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_decimal {
-        __DUCKDB_VALUE_DECIMAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_DECIMAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_uint8 {
-        __DUCKDB_VALUE_UINT8
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_UINT8.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_uint16 {
-        __DUCKDB_VALUE_UINT16
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_UINT16.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_uint32 {
-        __DUCKDB_VALUE_UINT32
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_UINT32.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_uint64 {
-        __DUCKDB_VALUE_UINT64
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_UINT64.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_float {
-        __DUCKDB_VALUE_FLOAT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_FLOAT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_double {
-        __DUCKDB_VALUE_DOUBLE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_DOUBLE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_date {
-        __DUCKDB_VALUE_DATE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_DATE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_time {
-        __DUCKDB_VALUE_TIME
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_TIME.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_timestamp {
-        __DUCKDB_VALUE_TIMESTAMP
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_TIMESTAMP.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_interval {
-        __DUCKDB_VALUE_INTERVAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_INTERVAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_varchar {
-        __DUCKDB_VALUE_VARCHAR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_VARCHAR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_string {
-        __DUCKDB_VALUE_STRING
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_STRING.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_varchar_internal {
-        __DUCKDB_VALUE_VARCHAR_INTERNAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_VARCHAR_INTERNAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_string_internal {
-        __DUCKDB_VALUE_STRING_INTERNAL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_STRING_INTERNAL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_blob {
-        __DUCKDB_VALUE_BLOB
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_BLOB.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_value_is_null {
-        __DUCKDB_VALUE_IS_NULL
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_VALUE_IS_NULL.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_prepared_streaming {
-        __DUCKDB_EXECUTE_PREPARED_STREAMING
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_PREPARED_STREAMING.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_pending_prepared_streaming {
-        __DUCKDB_PENDING_PREPARED_STREAMING
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PENDING_PREPARED_STREAMING.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_query_arrow {
-        __DUCKDB_QUERY_ARROW
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_QUERY_ARROW.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_query_arrow_schema {
-        __DUCKDB_QUERY_ARROW_SCHEMA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_QUERY_ARROW_SCHEMA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_prepared_arrow_schema {
-        __DUCKDB_PREPARED_ARROW_SCHEMA
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_PREPARED_ARROW_SCHEMA.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_result_arrow_array {
-        __DUCKDB_RESULT_ARROW_ARRAY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_RESULT_ARROW_ARRAY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_query_arrow_array {
-        __DUCKDB_QUERY_ARROW_ARRAY
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_QUERY_ARROW_ARRAY.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_arrow_column_count {
-        __DUCKDB_ARROW_COLUMN_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARROW_COLUMN_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_arrow_row_count {
-        __DUCKDB_ARROW_ROW_COUNT
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARROW_ROW_COUNT.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_arrow_rows_changed {
-        __DUCKDB_ARROW_ROWS_CHANGED
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARROW_ROWS_CHANGED.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_query_arrow_error {
-        __DUCKDB_QUERY_ARROW_ERROR
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_QUERY_ARROW_ERROR.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_arrow {
-        __DUCKDB_DESTROY_ARROW
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_ARROW.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_arrow_stream {
-        __DUCKDB_DESTROY_ARROW_STREAM
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_ARROW_STREAM.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_execute_prepared_arrow {
-        __DUCKDB_EXECUTE_PREPARED_ARROW
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_EXECUTE_PREPARED_ARROW.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_arrow_scan {
-        __DUCKDB_ARROW_SCAN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARROW_SCAN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_arrow_array_scan {
-        __DUCKDB_ARROW_ARRAY_SCAN
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_ARROW_ARRAY_SCAN.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_stream_fetch_chunk {
-        __DUCKDB_STREAM_FETCH_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_STREAM_FETCH_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_instance_cache {
-        __DUCKDB_CREATE_INSTANCE_CACHE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_CREATE_INSTANCE_CACHE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_get_or_create_from_cache {
-        __DUCKDB_GET_OR_CREATE_FROM_CACHE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_GET_OR_CREATE_FROM_CACHE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_destroy_instance_cache {
-        __DUCKDB_DESTROY_INSTANCE_CACHE
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_DESTROY_INSTANCE_CACHE.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_append_default_to_chunk {
-        __DUCKDB_APPEND_DEFAULT_TO_CHUNK
-            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+        __DUCKDB_APPEND_DEFAULT_TO_CHUNK.store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     Ok(true)
 }
-
