@@ -128,12 +128,14 @@ jobs:
         with:
           toolchain: nightly
           components: 'rust-src'
-
+      - name: Install LLVM
+        run: |
+          sudo apt-get install -y llvm
       - name: Tests with asan
         env:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
-          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
+          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
           # Work around https://github.com/rust-lang/rust/issues/59125 by
           # disabling backtraces. In an ideal world we'd probably suppress the
           # leak sanitization, but we don't care about backtraces here, so long
