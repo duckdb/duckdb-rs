@@ -45,9 +45,10 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
         None => env::var("DUCKDB_EXTENSION_MIN_DUCKDB_VERSION").expect("Please either set env var DUCKDB_EXTENSION_MIN_DUCKDB_VERSION or pass it as an argument to the proc macro").to_string()
     };
 
-    let extension_name = match args.ext_name {
-        Some(i) => i,
-        None => env::var("DUCKDB_EXTENSION_NAME").expect("Please either set env var DUCKDB_EXTENSION_MIN_DUCKDB_VERSION or pass it as an argument to the proc macro").to_string()
+    let extension_name = match (args.ext_name, env::var("DUCKDB_EXTENSION_NAME")) {
+        (Some(i), _) => i,
+        (None, Ok(i)) => i.to_string(),
+        _ => env::var("CARGO_PKG_NAME").unwrap().to_string(),
     };
 
     let ast = parse_macro_input!(item as syn::Item);
