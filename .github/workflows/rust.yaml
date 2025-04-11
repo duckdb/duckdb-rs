@@ -37,7 +37,7 @@ jobs:
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
-          tag: "v1.2.1"
+          tag: "v1.2.2"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
@@ -128,12 +128,15 @@ jobs:
         with:
           toolchain: nightly
           components: 'rust-src'
-
+      # Install LLVM tools
+      - name: Install LLVM
+        run: |
+          sudo apt-get install -y llvm
       - name: Tests with asan
         env:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
-          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1"
+          ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
           # Work around https://github.com/rust-lang/rust/issues/59125 by
           # disabling backtraces. In an ideal world we'd probably suppress the
           # leak sanitization, but we don't care about backtraces here, so long
@@ -142,6 +145,8 @@ jobs:
         # We cannot run "modern-full" with asan as the chrono feature will auto-load relase binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
         run: |
+          export ASAN_SYMBOLIZER_PATH=$(which llvm-symbolizer)
+          echo $ASAN_SYMBOLIZER_PATH
           cargo -Z build-std test --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
       - name: publish crates --dry-run
         uses: katyo/publish-crates@v2
