@@ -13,7 +13,7 @@ use duckdb_loadable_macros::duckdb_entrypoint;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
-    ffi::{c_char, c_void, CString},
+    ffi::CString,
     sync::atomic::{AtomicBool, Ordering},
 };
 
