@@ -51,7 +51,6 @@ lazy_static = { workspace = true, optional = true }
 byteorder = { workspace = true, features = ["i128"], optional = true }
 fallible-iterator = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
-memchr = { workspace = true }
 uuid = { workspace = true, optional = true }
 smallvec = { workspace = true }
 cast = { workspace = true, features = ["std"] }
@@ -82,7 +81,6 @@ pretty_assertions = { workspace = true }
 # [[bench]]
 # name = "data_types"
 # harness = false
-
 
 [package.metadata.docs.rs]
 features = ["vtab", "vtab-arrow"]
