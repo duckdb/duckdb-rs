@@ -220,7 +220,7 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
         | DataType::FixedSizeBinary(_) => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         dtype if dtype.is_primitive() => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         _ => Err(format!(
-            "Unsupported data type: {data_type}, please file an issue https://github.com/wangfenjin/duckdb-rs"
+            "Unsupported data type: {data_type}, please file an issue https://github.com/duckdb/duckdb-rs"
         )
         .into()),
     }
@@ -636,7 +636,7 @@ pub fn write_arrow_array_to_vector(
         }
         dt => {
             return Err(format!(
-                "column with data_type {} is not supported yet, please file an issue https://github.com/wangfenjin/duckdb-rs",
+                "column with data_type {} is not supported yet, please file an issue https://github.com/duckdb/duckdb-rs",
                 dt
             )
             .into());
@@ -1071,7 +1071,7 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector) -> Result
             }
             _ => {
                 unimplemented!(
-                    "Unsupported data type: {}, please file an issue https://github.com/wangfenjin/duckdb-rs",
+                    "Unsupported data type: {}, please file an issue https://github.com/duckdb/duckdb-rs",
                     column.data_type()
                 );
             }

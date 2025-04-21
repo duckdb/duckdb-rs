@@ -1,7 +1,7 @@
 # duckdb-rs
 
 [![Downloads](https://img.shields.io/crates/d/duckdb)](https://img.shields.io/crates/d/duckdb)
-[![Build Status](https://github.com/wangfenjin/duckdb-rs/workflows/CI/badge.svg)](https://github.com/wangfenjin/duckdb-rs/actions)
+[![Build Status](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 [![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
 [![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/main/graph/badge.svg?token=0xV88q8KU0)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 [![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb)
@@ -15,7 +15,7 @@ forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
 use duckdb::{params, Connection, Result};
 
 // In your project, we need to keep the arrow version same as the version used in duckdb.
-// Refer to https://github.com/wangfenjin/duckdb-rs/issues/92
+// Refer to https://github.com/duckdb/duckdb-rs/issues/92
 // You can either:
 use duckdb::arrow::record_batch::RecordBatch;
 // Or in your Cargo.toml, use * as the version; features can be toggled according to your needs
@@ -85,7 +85,7 @@ declarations for DuckDB's C API. By default, `libduckdb-sys` attempts to find a 
 
 You can adjust this behavior in a number of ways:
 
-* If you use the `bundled` feature, `libduckdb-sys` will use the
+- If you use the `bundled` feature, `libduckdb-sys` will use the
   [cc](https://crates.io/crates/cc) crate to compile DuckDB from source and
   link against that. This source is embedded in the `libduckdb-sys` crate and
   as we are still in development, we will update it regularly. After we are more stable,
@@ -97,7 +97,7 @@ You can adjust this behavior in a number of ways:
   ```
 
   `Cargo.toml` will be updated.
-  
+
   ```toml
   [dependencies]
   # Assume that version DuckDB version 0.9.2 is used.
@@ -109,7 +109,6 @@ You can adjust this behavior in a number of ways:
   and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
   options. The default when using vcpkg is to dynamically link,
   which must be enabled by setting `VCPKGRS_DYNAMIC=1` environment variable before build.
-
 
 ### Binding generation
 
