@@ -152,6 +152,7 @@ mod build_bundled {
 
         cfg.cpp(true)
             .flag_if_supported("-std=c++11")
+            .flag_if_supported("/utf-8")
             .flag_if_supported("/bigobj")
             .warnings(false)
             .flag_if_supported("-w");
