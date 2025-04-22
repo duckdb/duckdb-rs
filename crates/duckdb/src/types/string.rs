@@ -6,8 +6,9 @@ pub struct DuckString<'a> {
 }
 
 impl<'a> DuckString<'a> {
+    /// Creates a DuckString from the underlying duck string type
     #[allow(dead_code)]
-    pub(crate) fn new(ptr: &'a mut duckdb_string_t) -> Self {
+    pub fn new(ptr: &'a mut duckdb_string_t) -> Self {
         DuckString { ptr }
     }
 }
