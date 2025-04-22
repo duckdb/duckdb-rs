@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/duckdb",
     "crates/libduckdb-sys",
-    "crates/duckdb-loadable-macros"
+    "crates/duckdb-loadable-macros",
 ]
 
 [workspace.package]
@@ -36,7 +36,6 @@ fallible-streaming-iterator = "0.1"
 flate2 = "1.0"
 hashlink = "0.9"
 lazy_static = "1.4"
-memchr = "2.3"
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
 pkg-config = "0.3.24"
@@ -63,4 +62,4 @@ unicase = "2.6.0"
 url = "2.1"
 uuid = "1.0"
 vcpkg = "0.2"
-arrow = { version = "54.2.1", default-features = false }
+arrow = { version = "55", default-features = false }
