@@ -4,7 +4,7 @@ pub struct OrderedMap<K, V>(Vec<(K, V)>);
 
 impl<K: PartialEq, V> From<Vec<(K, V)>> for OrderedMap<K, V> {
     fn from(value: Vec<(K, V)>) -> Self {
-        OrderedMap(value)
+        Self(value)
     }
 }
 
