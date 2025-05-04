@@ -203,8 +203,8 @@ impl ListVector {
     }
 
     /// Take the child as [ListVector].
-    pub fn list_child(&self) -> ListVector {
-        ListVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    pub fn list_child(&self) -> Self {
+        Self::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
     }
 
     /// Set primitive data to the child node.
@@ -309,7 +309,7 @@ impl StructVector {
     }
 
     /// Take the child as [StructVector].
-    pub fn struct_vector_child(&self, idx: usize) -> StructVector {
+    pub fn struct_vector_child(&self, idx: usize) -> Self {
         Self::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
     }
 
