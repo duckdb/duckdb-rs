@@ -142,7 +142,7 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 /// # Safety
                 ///
                 /// Will be called by duckdb
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #c_entrypoint(db: *mut std::ffi::c_void) {
                     unsafe {
                         let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
@@ -153,7 +153,7 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 /// # Safety
                 ///
                 /// Predefined function, don't need to change unless you are sure
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub unsafe extern "C" fn #c_entrypoint_version() -> *const std::ffi::c_char {
                     unsafe {
                         ffi::duckdb_library_version()
