@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "1.2.2"
+version = "1.3.0"
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
@@ -18,7 +18,7 @@ description = "Ergonomic wrapper for DuckDB"
 name = "duckdb"
 
 [features]
-default = []
+default = [ "vtab-arrow" ]
 bundled = ["libduckdb-sys/bundled"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
