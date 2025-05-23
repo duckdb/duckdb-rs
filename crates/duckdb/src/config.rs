@@ -53,69 +53,69 @@ impl Config {
     }
 
     /// enable autoload extensions
-    pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Config> {
+    pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Self> {
         self.set("autoinstall_known_extensions", &(enabled as i32).to_string())?;
         self.set("autoload_known_extensions", &(enabled as i32).to_string())?;
         Ok(self)
     }
 
     /// Access mode of the database ([AUTOMATIC], READ_ONLY or READ_WRITE)
-    pub fn access_mode(mut self, mode: AccessMode) -> Result<Config> {
+    pub fn access_mode(mut self, mode: AccessMode) -> Result<Self> {
         self.set("access_mode", &mode.to_string())?;
         Ok(self)
     }
 
     /// Metadata from DuckDB callers
-    pub fn custom_user_agent(mut self, custom_user_agent: &str) -> Result<Config> {
+    pub fn custom_user_agent(mut self, custom_user_agent: &str) -> Result<Self> {
         self.set("custom_user_agent", custom_user_agent)?;
         Ok(self)
     }
 
     /// The order type used when none is specified ([ASC] or DESC)
-    pub fn default_order(mut self, order: DefaultOrder) -> Result<Config> {
+    pub fn default_order(mut self, order: DefaultOrder) -> Result<Self> {
         self.set("default_order", &order.to_string())?;
         Ok(self)
     }
 
     /// Null ordering used when none is specified ([NULLS_FIRST] or NULLS_LAST)
-    pub fn default_null_order(mut self, null_order: DefaultNullOrder) -> Result<Config> {
+    pub fn default_null_order(mut self, null_order: DefaultNullOrder) -> Result<Self> {
         self.set("default_null_order", &null_order.to_string())?;
         Ok(self)
     }
 
     /// Allow the database to access external state (through e.g. COPY TO/FROM, CSV readers, pandas replacement scans, etc)
-    pub fn enable_external_access(mut self, enabled: bool) -> Result<Config> {
+    pub fn enable_external_access(mut self, enabled: bool) -> Result<Self> {
         self.set("enable_external_access", &enabled.to_string())?;
         Ok(self)
     }
 
     /// Whether or not object cache is used to cache e.g. Parquet metadata
-    pub fn enable_object_cache(mut self, enabled: bool) -> Result<Config> {
+    pub fn enable_object_cache(mut self, enabled: bool) -> Result<Self> {
         self.set("enable_object_cache", &enabled.to_string())?;
         Ok(self)
     }
 
     /// Allow to load third-party duckdb extensions.
-    pub fn allow_unsigned_extensions(mut self) -> Result<Config> {
+    pub fn allow_unsigned_extensions(mut self) -> Result<Self> {
         self.set("allow_unsigned_extensions", "true")?;
         Ok(self)
     }
 
     /// The maximum memory of the system (e.g. 1GB)
-    pub fn max_memory(mut self, memory: &str) -> Result<Config> {
+    pub fn max_memory(mut self, memory: &str) -> Result<Self> {
         self.set("max_memory", memory)?;
         Ok(self)
     }
 
     /// The number of total threads used by the system
-    pub fn threads(mut self, thread_num: i64) -> Result<Config> {
+    pub fn threads(mut self, thread_num: i64) -> Result<Self> {
         self.set("threads", &thread_num.to_string())?;
         Ok(self)
     }
 
     /// Add any setting to the config. DuckDB will return an error if the setting is unknown or
     /// otherwise invalid.
-    pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<Config> {
+    pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<Self> {
         self.set(key.as_ref(), value.as_ref())?;
         Ok(self)
     }

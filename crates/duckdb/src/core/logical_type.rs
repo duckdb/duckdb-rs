@@ -165,7 +165,7 @@ impl LogicalTypeHandle {
     }
 
     /// Creates a map type from its child type.
-    pub fn map(key: &LogicalTypeHandle, value: &LogicalTypeHandle) -> Self {
+    pub fn map(key: &Self, value: &Self) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_map_type(key.ptr, value.ptr),
@@ -174,7 +174,7 @@ impl LogicalTypeHandle {
     }
 
     /// Creates a list type from its child type.
-    pub fn list(child_type: &LogicalTypeHandle) -> Self {
+    pub fn list(child_type: &Self) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_list_type(child_type.ptr),
@@ -183,7 +183,7 @@ impl LogicalTypeHandle {
     }
 
     /// Creates an array type from its child type.
-    pub fn array(child_type: &LogicalTypeHandle, array_size: u64) -> Self {
+    pub fn array(child_type: &Self, array_size: u64) -> Self {
         unsafe {
             Self {
                 ptr: duckdb_create_array_type(child_type.ptr, array_size),
@@ -213,7 +213,7 @@ impl LogicalTypeHandle {
     }
 
     /// Make a `LogicalType` for `struct`
-    pub fn struct_type(fields: &[(&str, LogicalTypeHandle)]) -> Self {
+    pub fn struct_type(fields: &[(&str, Self)]) -> Self {
         let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
         let values: Vec<duckdb_logical_type> = fields.iter().map(|it| it.1.ptr).collect();
         let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();
@@ -230,7 +230,7 @@ impl LogicalTypeHandle {
     }
 
     /// Make a `LogicalType` for `union`
-    pub fn union_type(fields: &[(&str, LogicalTypeHandle)]) -> Self {
+    pub fn union_type(fields: &[(&str, Self)]) -> Self {
         let keys: Vec<CString> = fields.iter().map(|f| CString::new(f.0).unwrap()).collect();
         let values: Vec<duckdb_logical_type> = fields.iter().map(|it| it.1.ptr).collect();
         let name_ptrs = keys.iter().map(|it| it.as_ptr()).collect::<Vec<*const c_char>>();

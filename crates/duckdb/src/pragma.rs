@@ -14,8 +14,8 @@ pub struct Sql {
 }
 
 impl Sql {
-    pub fn new() -> Sql {
-        Sql { buf: String::new() }
+    pub fn new() -> Self {
+        Self { buf: String::new() }
     }
 
     pub fn push_pragma(&mut self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str) -> Result<()> {

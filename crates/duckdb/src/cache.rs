@@ -120,8 +120,8 @@ impl CachedStatement<'_> {
 impl StatementCache {
     /// Create a statement cache.
     #[inline]
-    pub fn with_capacity(capacity: usize) -> StatementCache {
-        StatementCache(RefCell::new(LruCache::new(capacity)))
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(RefCell::new(LruCache::new(capacity)))
     }
 
     #[inline]
