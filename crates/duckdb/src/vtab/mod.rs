@@ -169,11 +169,10 @@ impl InnerConnection {
 mod test {
     use super::*;
     use crate::core::{Inserter, LogicalTypeId};
-    use std::sync::atomic::AtomicBool;
-    use std::sync::atomic::Ordering;
     use std::{
         error::Error,
-        ffi::{c_char, CString},
+        ffi::CString,
+        sync::atomic::{AtomicBool, Ordering},
     };
 
     struct HelloBindData {
