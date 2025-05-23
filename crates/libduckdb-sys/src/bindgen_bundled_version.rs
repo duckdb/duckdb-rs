@@ -132,7 +132,7 @@ pub const duckdb_error_type_DUCKDB_ERROR_MISSING_EXTENSION: duckdb_error_type = 
 pub const duckdb_error_type_DUCKDB_ERROR_AUTOLOAD: duckdb_error_type = 40;
 pub const duckdb_error_type_DUCKDB_ERROR_SEQUENCE: duckdb_error_type = 41;
 pub const duckdb_error_type_DUCKDB_INVALID_CONFIGURATION: duckdb_error_type = 42;
-#[doc = "! An enum over DuckDB's different result types."]
+#[doc = "! An enum over DuckDB's different error types."]
 pub type duckdb_error_type = ::std::os::raw::c_uint;
 pub const duckdb_cast_mode_DUCKDB_CAST_NORMAL: duckdb_cast_mode = 0;
 pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
@@ -140,9 +140,11 @@ pub const duckdb_cast_mode_DUCKDB_CAST_TRY: duckdb_cast_mode = 1;
 pub type duckdb_cast_mode = ::std::os::raw::c_uint;
 #[doc = "! DuckDB's index type."]
 pub type idx_t = u64;
+#[doc = "! Type used for the selection vector"]
+pub type sel_t = u32;
 #[doc = "! The callback that will be called to destroy data, e.g.,\n! bind data (if any), init data (if any), extra data for replacement scans (if any)"]
 pub type duckdb_delete_callback_t = ::std::option::Option<unsafe extern "C" fn(data: *mut ::std::os::raw::c_void)>;
-#[doc = "! Used for threading, contains a task state. Must be destroyed with `duckdb_destroy_state`."]
+#[doc = "! Used for threading, contains a task state. Must be destroyed with `duckdb_destroy_task_state`."]
 pub type duckdb_task_state = *mut ::std::os::raw::c_void;
 #[doc = "! Days are stored as days since 1970-01-01\n! Use the duckdb_from_date/duckdb_to_date function to extract individual information"]
 #[repr(C)]
@@ -299,6 +301,14 @@ pub struct _duckdb_vector {
 }
 #[doc = "! A vector to a specified column in a data chunk. Lives as long as the\n! data chunk lives, i.e., must not be destroyed."]
 pub type duckdb_vector = *mut _duckdb_vector;
+#[doc = "! A selection vector is a possibly duplicative vector of indices, which refer to values in a vector.\n! The resulting vector is make up of the values at each index in the selection vector."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_selection_vector {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = "! A selection vector is a possibly duplicative vector of indices, which refer to values in a vector.\n! The resulting vector is make up of the values at each index in the selection vector."]
+pub type duckdb_selection_vector = *mut _duckdb_selection_vector;
 #[doc = "! Strings are composed of a char pointer and a size. You must free string.data\n! with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -363,6 +373,14 @@ pub struct _duckdb_connection {
 }
 #[doc = "! A connection to a duckdb database. Must be closed with `duckdb_disconnect`."]
 pub type duckdb_connection = *mut _duckdb_connection;
+#[doc = "! A client context of a duckdb connection. Must be destroyed with `duckdb_destroy_context`."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_client_context {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = "! A client context of a duckdb connection. Must be destroyed with `duckdb_destroy_context`."]
+pub type duckdb_client_context = *mut _duckdb_client_context;
 #[doc = "! A prepared statement is a parameterized query that allows you to bind parameters to it.\n! Must be destroyed with `duckdb_destroy_prepare`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -459,14 +477,22 @@ pub struct _duckdb_extension_info {
 }
 #[doc = "! Holds state during the C API extension intialization process"]
 pub type duckdb_extension_info = *mut _duckdb_extension_info;
-#[doc = "! Additional function info. When setting this info, it is necessary to pass a destroy-callback function."]
+#[doc = "! Additional function info.\n! When setting this info, it is necessary to pass a destroy-callback function."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_function_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[doc = "! Additional function info. When setting this info, it is necessary to pass a destroy-callback function."]
+#[doc = "! Additional function info.\n! When setting this info, it is necessary to pass a destroy-callback function."]
 pub type duckdb_function_info = *mut _duckdb_function_info;
+#[doc = "! The bind info of a function.\n! When setting this info, it is necessary to pass a destroy-callback function."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_bind_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = "! The bind info of a function.\n! When setting this info, it is necessary to pass a destroy-callback function."]
+pub type duckdb_bind_info = *mut _duckdb_bind_info;
 #[doc = "! A scalar function. Must be destroyed with `duckdb_destroy_scalar_function`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -483,6 +509,8 @@ pub struct _duckdb_scalar_function_set {
 }
 #[doc = "! A scalar function set. Must be destroyed with `duckdb_destroy_scalar_function_set`."]
 pub type duckdb_scalar_function_set = *mut _duckdb_scalar_function_set;
+#[doc = "! The bind function of the scalar function."]
+pub type duckdb_scalar_function_bind_t = ::std::option::Option<unsafe extern "C" fn(info: duckdb_bind_info)>;
 #[doc = "! The main function of the scalar function."]
 pub type duckdb_scalar_function_t = ::std::option::Option<
     unsafe extern "C" fn(info: duckdb_function_info, input: duckdb_data_chunk, output: duckdb_vector),
@@ -550,14 +578,6 @@ pub struct _duckdb_table_function {
 }
 #[doc = "! A table function. Must be destroyed with `duckdb_destroy_table_function`."]
 pub type duckdb_table_function = *mut _duckdb_table_function;
-#[doc = "! The bind info of the function. When setting this info, it is necessary to pass a destroy-callback function."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _duckdb_bind_info {
-    pub internal_ptr: *mut ::std::os::raw::c_void,
-}
-#[doc = "! The bind info of the function. When setting this info, it is necessary to pass a destroy-callback function."]
-pub type duckdb_bind_info = *mut _duckdb_bind_info;
 #[doc = "! Additional function init info. When setting this info, it is necessary to pass a destroy-callback function."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -701,8 +721,28 @@ unsafe extern "C" {
     pub fn duckdb_disconnect(connection: *mut duckdb_connection);
 }
 unsafe extern "C" {
+    #[doc = "Retrieves the client context of the connection.\n\n @param connection The connection.\n @param out_context The client context of the connection. Must be destroyed with `duckdb_destroy_client_context`."]
+    pub fn duckdb_connection_get_client_context(connection: duckdb_connection, out_context: *mut duckdb_client_context);
+}
+unsafe extern "C" {
+    #[doc = "Returns the connection id of the client context.\n\n @param context The client context.\n @return The connection id of the client context."]
+    pub fn duckdb_client_context_get_connection_id(context: duckdb_client_context) -> idx_t;
+}
+unsafe extern "C" {
+    #[doc = "Destroys the client context and deallocates its memory.\n\n @param context The client context to destroy."]
+    pub fn duckdb_destroy_client_context(context: *mut duckdb_client_context);
+}
+unsafe extern "C" {
     #[doc = "Returns the version of the linked DuckDB, with a version postfix for dev versions\n\nUsually used for developing C extensions that must return this for a compatibility check."]
     pub fn duckdb_library_version() -> *const ::std::os::raw::c_char;
+}
+unsafe extern "C" {
+    #[doc = "Get the list of (fully qualified) table names of the query.\n\n @param connection The connection for which to get the table names.\n @param query The query for which to get the table names.\n @param qualified Returns fully qualified table names (catalog.schema.table), if set to true, else only the (not\nescaped) table names.\n @return A duckdb_value of type VARCHAR[] containing the (fully qualified) table names of the query. Must be destroyed\nwith duckdb_destroy_value."]
+    pub fn duckdb_get_table_names(
+        connection: duckdb_connection,
+        query: *const ::std::os::raw::c_char,
+        qualified: bool,
+    ) -> duckdb_value;
 }
 unsafe extern "C" {
     #[doc = "Initializes an empty configuration object that can be used to provide start-up options for the DuckDB instance\nthrough `duckdb_open_ext`.\nThe duckdb_config must be destroyed using 'duckdb_destroy_config'\n\nThis will always succeed unless there is a malloc failure.\n\nNote that `duckdb_destroy_config` should always be called on the resulting config, even if the function returns\n`DuckDBError`.\n\n @param out_config The result configuration object.\n @return `DuckDBSuccess` on success or `DuckDBError` on failure."]
@@ -741,7 +781,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Closes the result and de-allocates all memory allocated for that connection.\n\n @param result The result to destroy."]
+    #[doc = "Closes the result and de-allocates all memory allocated for that result.\n\n @param result The result to destroy."]
     pub fn duckdb_destroy_result(result: *mut duckdb_result);
 }
 unsafe extern "C" {
@@ -1102,7 +1142,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Binds an duckdb_uhugeint value to the prepared statement at the specified index."]
+    #[doc = "Binds a duckdb_uhugeint value to the prepared statement at the specified index."]
     pub fn duckdb_bind_uhugeint(
         prepared_statement: duckdb_prepared_statement,
         param_idx: idx_t,
@@ -1118,11 +1158,11 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Binds an uint8_t value to the prepared statement at the specified index."]
+    #[doc = "Binds a uint8_t value to the prepared statement at the specified index."]
     pub fn duckdb_bind_uint8(prepared_statement: duckdb_prepared_statement, param_idx: idx_t, val: u8) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Binds an uint16_t value to the prepared statement at the specified index."]
+    #[doc = "Binds a uint16_t value to the prepared statement at the specified index."]
     pub fn duckdb_bind_uint16(
         prepared_statement: duckdb_prepared_statement,
         param_idx: idx_t,
@@ -1130,7 +1170,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Binds an uint32_t value to the prepared statement at the specified index."]
+    #[doc = "Binds a uint32_t value to the prepared statement at the specified index."]
     pub fn duckdb_bind_uint32(
         prepared_statement: duckdb_prepared_statement,
         param_idx: idx_t,
@@ -1138,7 +1178,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = "Binds an uint64_t value to the prepared statement at the specified index."]
+    #[doc = "Binds a uint64_t value to the prepared statement at the specified index."]
     pub fn duckdb_bind_uint64(
         prepared_statement: duckdb_prepared_statement,
         param_idx: idx_t,
@@ -1327,7 +1367,7 @@ unsafe extern "C" {
     pub fn duckdb_create_bool(input: bool) -> duckdb_value;
 }
 unsafe extern "C" {
-    #[doc = "Creates a value from a int8_t (a tinyint)\n\n @param input The tinyint value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
+    #[doc = "Creates a value from an int8_t (a tinyint)\n\n @param input The tinyint value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
     pub fn duckdb_create_int8(input: i8) -> duckdb_value;
 }
 unsafe extern "C" {
@@ -1335,7 +1375,7 @@ unsafe extern "C" {
     pub fn duckdb_create_uint8(input: u8) -> duckdb_value;
 }
 unsafe extern "C" {
-    #[doc = "Creates a value from a int16_t (a smallint)\n\n @param input The smallint value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
+    #[doc = "Creates a value from an int16_t (a smallint)\n\n @param input The smallint value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
     pub fn duckdb_create_int16(input: i16) -> duckdb_value;
 }
 unsafe extern "C" {
@@ -1343,7 +1383,7 @@ unsafe extern "C" {
     pub fn duckdb_create_uint16(input: u16) -> duckdb_value;
 }
 unsafe extern "C" {
-    #[doc = "Creates a value from a int32_t (an integer)\n\n @param input The integer value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
+    #[doc = "Creates a value from an int32_t (an integer)\n\n @param input The integer value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
     pub fn duckdb_create_int32(input: i32) -> duckdb_value;
 }
 unsafe extern "C" {
@@ -1451,7 +1491,7 @@ unsafe extern "C" {
     pub fn duckdb_get_uint16(val: duckdb_value) -> u16;
 }
 unsafe extern "C" {
-    #[doc = "Returns the int32_t value of the given value.\n\n @param val A duckdb_value containing a integer\n @return A int32_t, or MinValue<int32> if the value cannot be converted"]
+    #[doc = "Returns the int32_t value of the given value.\n\n @param val A duckdb_value containing an integer\n @return A int32_t, or MinValue<int32> if the value cannot be converted"]
     pub fn duckdb_get_int32(val: duckdb_value) -> i32;
 }
 unsafe extern "C" {
@@ -1567,6 +1607,23 @@ unsafe extern "C" {
     ) -> duckdb_value;
 }
 unsafe extern "C" {
+    #[doc = "Creates a map value from a map type and two arrays, one for the keys and one for the values, each of length\n`entry_count`. Must be destroyed with `duckdb_destroy_value`.\n\n @param map_type The map type\n @param keys The keys of the map\n @param values The values of the map\n @param entry_count The number of entrys (key-value pairs) in the map\n @return The map value, or nullptr, if the parameters are invalid."]
+    pub fn duckdb_create_map_value(
+        map_type: duckdb_logical_type,
+        keys: *mut duckdb_value,
+        values: *mut duckdb_value,
+        entry_count: idx_t,
+    ) -> duckdb_value;
+}
+unsafe extern "C" {
+    #[doc = "Creates a union value from a union type, a tag index, and a value.\nMust be destroyed with `duckdb_destroy_value`.\n\n @param union_type The union type\n @param tag_index The index of the tag of the union\n @param value The value of the union\n @return The union value, or nullptr, if the parameters are invalid."]
+    pub fn duckdb_create_union_value(
+        union_type: duckdb_logical_type,
+        tag_index: idx_t,
+        value: duckdb_value,
+    ) -> duckdb_value;
+}
+unsafe extern "C" {
     #[doc = "Returns the number of elements in a MAP value.\n\n @param value The MAP value.\n @return The number of elements in the map."]
     pub fn duckdb_get_map_size(value: duckdb_value) -> idx_t;
 }
@@ -1605,6 +1662,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = "Returns the STRUCT child at index as a duckdb_value.\n\n @param value The STRUCT value.\n @param index The index of the child.\n @return The child as a duckdb_value."]
     pub fn duckdb_get_struct_child(value: duckdb_value, index: idx_t) -> duckdb_value;
+}
+unsafe extern "C" {
+    #[doc = "Returns the SQL string representation of the given value.\n\n @param value A duckdb_value.\n @return The SQL string representation as a null-terminated string. The result must be freed with `duckdb_free`."]
+    pub fn duckdb_value_to_string(value: duckdb_value) -> *mut ::std::os::raw::c_char;
 }
 unsafe extern "C" {
     #[doc = "Creates a `duckdb_logical_type` from a primitive type.\nThe resulting logical type must be destroyed with `duckdb_destroy_logical_type`.\n\nReturns an invalid logical type, if type is: `DUCKDB_TYPE_INVALID`, `DUCKDB_TYPE_DECIMAL`, `DUCKDB_TYPE_ENUM`,\n`DUCKDB_TYPE_LIST`, `DUCKDB_TYPE_STRUCT`, `DUCKDB_TYPE_MAP`, `DUCKDB_TYPE_ARRAY`, or `DUCKDB_TYPE_UNION`.\n\n @param type The primitive type to create.\n @return The logical type."]
@@ -1773,6 +1834,14 @@ unsafe extern "C" {
     pub fn duckdb_data_chunk_set_size(chunk: duckdb_data_chunk, size: idx_t);
 }
 unsafe extern "C" {
+    #[doc = "Creates a flat vector."]
+    pub fn duckdb_create_vector(type_: duckdb_logical_type, capacity: idx_t) -> duckdb_vector;
+}
+unsafe extern "C" {
+    #[doc = "Destroys the vector and de-allocates all memory allocated for that vector, if unused else where."]
+    pub fn duckdb_destroy_vector(vector: *mut duckdb_vector);
+}
+unsafe extern "C" {
     #[doc = "Retrieves the column type of the specified vector.\n\nThe result must be destroyed with `duckdb_destroy_logical_type`.\n\n @param vector The vector get the data from\n @return The type of the vector"]
     pub fn duckdb_vector_get_column_type(vector: duckdb_vector) -> duckdb_logical_type;
 }
@@ -1826,8 +1895,20 @@ unsafe extern "C" {
     pub fn duckdb_struct_vector_get_child(vector: duckdb_vector, index: idx_t) -> duckdb_vector;
 }
 unsafe extern "C" {
-    #[doc = "Retrieves the child vector of a array vector.\n\nThe resulting vector is valid as long as the parent vector is valid.\nThe resulting vector has the size of the parent vector multiplied by the array size.\n\n @param vector The vector\n @return The child vector"]
+    #[doc = "Retrieves the child vector of an array vector.\n\nThe resulting vector is valid as long as the parent vector is valid.\nThe resulting vector has the size of the parent vector multiplied by the array size.\n\n @param vector The vector\n @return The child vector"]
     pub fn duckdb_array_vector_get_child(vector: duckdb_vector) -> duckdb_vector;
+}
+unsafe extern "C" {
+    #[doc = "Slice a vector with a selection vector.\n\nThe max value in the selection vector must be less than the length of the vector\n\nThe resulting vector happens to be a dictionary vector.\n\n @param vector The vector which is to become a dictionary\n @param selection The selection vector\n @param len The length of the selection vector"]
+    pub fn duckdb_slice_vector(vector: duckdb_vector, selection: duckdb_selection_vector, len: idx_t);
+}
+unsafe extern "C" {
+    #[doc = "Copies the value from `value` to `vector`."]
+    pub fn duckdb_vector_reference_value(vector: duckdb_vector, value: duckdb_value);
+}
+unsafe extern "C" {
+    #[doc = "References the `from` vector in the `to` vector, this makes take shared ownership of the values buffer"]
+    pub fn duckdb_vector_reference_vector(to_vector: duckdb_vector, from_vector: duckdb_vector);
 }
 unsafe extern "C" {
     #[doc = "Returns whether or not a row is valid (i.e. not NULL) in the given validity mask.\n\n @param validity The validity mask, as obtained through `duckdb_vector_get_validity`\n @param row The row index\n @return true if the row is valid, false otherwise"]
@@ -1846,7 +1927,7 @@ unsafe extern "C" {
     pub fn duckdb_validity_set_row_valid(validity: *mut u64, row: idx_t);
 }
 unsafe extern "C" {
-    #[doc = "Creates a new empty scalar function.\n\nThe return value should be destroyed with `duckdb_destroy_scalar_function`.\n\n @return The scalar function object."]
+    #[doc = "Creates a new empty scalar function.\n\nThe return value must be destroyed with `duckdb_destroy_scalar_function`.\n\n @return The scalar function object."]
     pub fn duckdb_create_scalar_function() -> duckdb_scalar_function;
 }
 unsafe extern "C" {
@@ -1865,7 +1946,7 @@ unsafe extern "C" {
     pub fn duckdb_scalar_function_set_varargs(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type);
 }
 unsafe extern "C" {
-    #[doc = "Sets the parameters of the given scalar function to varargs. Does not require adding parameters with\nduckdb_scalar_function_add_parameter.\n\n @param scalar_function The scalar function."]
+    #[doc = "Sets the scalar function's null-handling behavior to special.\n\n @param scalar_function The scalar function."]
     pub fn duckdb_scalar_function_set_special_handling(scalar_function: duckdb_scalar_function);
 }
 unsafe extern "C" {
@@ -1881,12 +1962,31 @@ unsafe extern "C" {
     pub fn duckdb_scalar_function_set_return_type(scalar_function: duckdb_scalar_function, type_: duckdb_logical_type);
 }
 unsafe extern "C" {
-    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param scalar_function The scalar function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param scalar_function The scalar function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
     pub fn duckdb_scalar_function_set_extra_info(
         scalar_function: duckdb_scalar_function,
         extra_info: *mut ::std::os::raw::c_void,
         destroy: duckdb_delete_callback_t,
     );
+}
+unsafe extern "C" {
+    #[doc = "Sets the (optional) bind function of the scalar function.\n\n @param scalar_function The scalar function\n @param bind The bind function"]
+    pub fn duckdb_scalar_function_set_bind(
+        scalar_function: duckdb_scalar_function,
+        bind: duckdb_scalar_function_bind_t,
+    );
+}
+unsafe extern "C" {
+    #[doc = "Sets the user-provided bind data in the bind object of the scalar function.\nThis object can be retrieved again during execution.\n\n @param info The bind info of the scalar function.\n @param bind_data The bind data object.\n @param destroy The callback to destroy the bind data (if any)."]
+    pub fn duckdb_scalar_function_set_bind_data(
+        info: duckdb_bind_info,
+        bind_data: *mut ::std::os::raw::c_void,
+        destroy: duckdb_delete_callback_t,
+    );
+}
+unsafe extern "C" {
+    #[doc = "Report that an error has occurred while calling bind on a scalar function.\n\n @param info The bind info object\n @param error The error message"]
+    pub fn duckdb_scalar_function_bind_set_error(info: duckdb_bind_info, error: *const ::std::os::raw::c_char);
 }
 unsafe extern "C" {
     #[doc = "Sets the main function of the scalar function.\n\n @param scalar_function The scalar function\n @param function The function"]
@@ -1907,11 +2007,19 @@ unsafe extern "C" {
     pub fn duckdb_scalar_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
 }
 unsafe extern "C" {
+    #[doc = "Gets the scalar function's bind data set by `duckdb_scalar_function_set_bind_data`.\n\nNote that the bind data is read-only.\n\n @param info The function info.\n @return The bind data object."]
+    pub fn duckdb_scalar_function_get_bind_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
+}
+unsafe extern "C" {
+    #[doc = "Retrieves the client context of the bind info of a scalar function.\n\n @param info The bind info object of the scalar function.\n @param out_context The client context of the bind info. Must be destroyed with `duckdb_destroy_client_context`."]
+    pub fn duckdb_scalar_function_get_client_context(info: duckdb_bind_info, out_context: *mut duckdb_client_context);
+}
+unsafe extern "C" {
     #[doc = "Report that an error has occurred while executing the scalar function.\n\n @param info The info object.\n @param error The error message"]
     pub fn duckdb_scalar_function_set_error(info: duckdb_function_info, error: *const ::std::os::raw::c_char);
 }
 unsafe extern "C" {
-    #[doc = "Creates a new empty scalar function set.\n\nThe return value should be destroyed with `duckdb_destroy_scalar_function_set`.\n\n @return The scalar function set object."]
+    #[doc = "Creates a new empty scalar function set.\n\nThe return value must be destroyed with `duckdb_destroy_scalar_function_set`.\n\n @return The scalar function set object."]
     pub fn duckdb_create_scalar_function_set(name: *const ::std::os::raw::c_char) -> duckdb_scalar_function_set;
 }
 unsafe extern "C" {
@@ -1929,6 +2037,18 @@ unsafe extern "C" {
     #[doc = "Register the scalar function set within the given connection.\n\nThe set requires at least a single valid overload.\n\nIf the set is incomplete or a function with this name already exists DuckDBError is returned.\n\n @param con The connection to register it in.\n @param set The function set to register\n @return Whether or not the registration was successful."]
     pub fn duckdb_register_scalar_function_set(con: duckdb_connection, set: duckdb_scalar_function_set)
         -> duckdb_state;
+}
+unsafe extern "C" {
+    #[doc = "Creates a new selection vector of size `size`."]
+    pub fn duckdb_create_selection_vector(size: idx_t) -> duckdb_selection_vector;
+}
+unsafe extern "C" {
+    #[doc = "Destroys a selection vector."]
+    pub fn duckdb_destroy_selection_vector(vector: duckdb_selection_vector);
+}
+unsafe extern "C" {
+    #[doc = "Access the data pointer of a selection vector."]
+    pub fn duckdb_selection_vector_get_data_ptr(vector: duckdb_selection_vector) -> *mut sel_t;
 }
 unsafe extern "C" {
     #[doc = "Creates a new empty aggregate function.\n\nThe return value should be destroyed with `duckdb_destroy_aggregate_function`.\n\n @return The aggregate function object."]
@@ -1989,7 +2109,7 @@ unsafe extern "C" {
     pub fn duckdb_aggregate_function_set_special_handling(aggregate_function: duckdb_aggregate_function);
 }
 unsafe extern "C" {
-    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param aggregate_function The aggregate function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Assigns extra information to the scalar function that can be fetched during binding, etc.\n\n @param aggregate_function The aggregate function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
     pub fn duckdb_aggregate_function_set_extra_info(
         aggregate_function: duckdb_aggregate_function,
         extra_info: *mut ::std::os::raw::c_void,
@@ -2051,7 +2171,7 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = "Assigns extra information to the table function that can be fetched during binding, etc.\n\n @param table_function The table function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Assigns extra information to the table function that can be fetched during binding, etc.\n\n @param table_function The table function\n @param extra_info The extra information\n @param destroy The callback that will be called to destroy the extra information (if any)"]
     pub fn duckdb_table_function_set_extra_info(
         table_function: duckdb_table_function,
         extra_info: *mut ::std::os::raw::c_void,
@@ -2111,7 +2231,7 @@ unsafe extern "C" {
         -> duckdb_value;
 }
 unsafe extern "C" {
-    #[doc = "Sets the user-provided bind data in the bind object. This object can be retrieved again during execution.\n\n @param info The info object\n @param bind_data The bind data object.\n @param destroy The callback that will be called to destroy the bind data (if any)"]
+    #[doc = "Sets the user-provided bind data in the bind object of the table function.\nThis object can be retrieved again during execution.\n\n @param info The bind info of the table function.\n @param bind_data The bind data object.\n @param destroy The callback to destroy the bind data (if any)."]
     pub fn duckdb_bind_set_bind_data(
         info: duckdb_bind_info,
         bind_data: *mut ::std::os::raw::c_void,
@@ -2123,7 +2243,7 @@ unsafe extern "C" {
     pub fn duckdb_bind_set_cardinality(info: duckdb_bind_info, cardinality: idx_t, is_exact: bool);
 }
 unsafe extern "C" {
-    #[doc = "Report that an error has occurred while calling bind.\n\n @param info The info object\n @param error The error message"]
+    #[doc = "Report that an error has occurred while calling bind on a table function.\n\n @param info The info object\n @param error The error message"]
     pub fn duckdb_bind_set_error(info: duckdb_bind_info, error: *const ::std::os::raw::c_char);
 }
 unsafe extern "C" {
@@ -2163,7 +2283,7 @@ unsafe extern "C" {
     pub fn duckdb_function_get_extra_info(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
 }
 unsafe extern "C" {
-    #[doc = "Gets the bind data set by `duckdb_bind_set_bind_data` during the bind.\n\nNote that the bind data should be considered as read-only.\nFor tracking state, use the init data instead.\n\n @param info The info object\n @return The bind data object"]
+    #[doc = "Gets the table function's bind data set by `duckdb_bind_set_bind_data`.\n\nNote that the bind data is read-only.\nFor tracking state, use the init data instead.\n\n @param info The function info object.\n @return The bind data object."]
     pub fn duckdb_function_get_bind_data(info: duckdb_function_info) -> *mut ::std::os::raw::c_void;
 }
 unsafe extern "C" {
