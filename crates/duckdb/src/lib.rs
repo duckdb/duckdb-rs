@@ -79,6 +79,7 @@ pub use crate::{
     config::{AccessMode, Config, DefaultNullOrder, DefaultOrder},
     error::Error,
     ffi::ErrorCode,
+    inner_connection::InterruptHandle,
     params::{params_from_iter, Params, ParamsFromIter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
@@ -530,6 +531,30 @@ impl Connection {
     /// Will return `Err` if `table` not exists
     pub fn appender_to_db(&self, table: &str, schema: &str) -> Result<Appender<'_>> {
         self.db.borrow_mut().appender(self, table, schema)
+    }
+
+    /// Get a handle to interrupt long-running queries.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result};
+    /// fn run_query(conn: Connection) -> Result<()> {
+    ///   let interrupt_handle = conn.interrupt_handle();
+    ///   let join_handle = std::thread::spawn(move || { conn.execute("expensive query", []) });
+    ///
+    ///   // Arbitrary wait for query to start
+    ///   std::thread::sleep(std::time::Duration::from_millis(100));
+    ///
+    ///   interrupt_handle.interrupt();
+    ///
+    ///   let query_result = join_handle.join().unwrap();
+    ///   assert!(query_result.is_err());
+    ///
+    ///   Ok(())
+    /// }
+    pub fn interrupt_handle(&self) -> std::sync::Arc<InterruptHandle> {
+        self.db.borrow().get_interrupt_handle()
     }
 
     /// Close the DuckDB connection.
@@ -1335,6 +1360,36 @@ mod test {
         assert_eq!(DatabaseName::Temp.to_string(), "temp");
         assert_eq!(DatabaseName::Attached("abc").to_string(), "abc");
         Ok(())
+    }
+
+    #[test]
+    fn test_interrupt() -> Result<()> {
+        let db = checked_memory_handle();
+        let db_interrupt = db.interrupt_handle();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut stmt = db
+                .prepare("select count(*) from range(10000000) t1, range(1000000) t2")
+                .unwrap();
+            tx.send(stmt.execute([])).unwrap();
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        db_interrupt.interrupt();
+
+        let result = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        assert!(result.is_err_and(|err| err.to_string().contains("INTERRUPT")));
+        Ok(())
+    }
+
+    #[test]
+    fn test_interrupt_on_dropped_db() {
+        let db = checked_memory_handle();
+        let db_interrupt = db.interrupt_handle();
+
+        drop(db);
+        db_interrupt.interrupt();
     }
 
     #[cfg(feature = "bundled")]
