@@ -18,7 +18,7 @@ description = "Ergonomic wrapper for DuckDB"
 name = "duckdb"
 
 [features]
-default = [ "vtab-arrow" ]
+default = [ ]
 bundled = ["libduckdb-sys/bundled"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
