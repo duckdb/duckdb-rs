@@ -144,8 +144,32 @@ impl Inserter<&str> for FlatVector {
     }
 }
 
+impl Inserter<&String> for FlatVector {
+    fn insert(&self, index: usize, value: &String) {
+        let cstr = CString::new(value.as_bytes()).unwrap();
+        unsafe {
+            duckdb_vector_assign_string_element(self.ptr, index as u64, cstr.as_ptr());
+        }
+    }
+}
+
 impl Inserter<&[u8]> for FlatVector {
     fn insert(&self, index: usize, value: &[u8]) {
+        let value_size = value.len();
+        unsafe {
+            // This function also works for binary data. https://duckdb.org/docs/api/c/api#duckdb_vector_assign_string_element_len
+            duckdb_vector_assign_string_element_len(
+                self.ptr,
+                index as u64,
+                value.as_ptr() as *const ::std::os::raw::c_char,
+                value_size as u64,
+            );
+        }
+    }
+}
+
+impl Inserter<&Vec<u8>> for FlatVector {
+    fn insert(&self, index: usize, value: &Vec<u8>) {
         let value_size = value.len();
         unsafe {
             // This function also works for binary data. https://duckdb.org/docs/api/c/api#duckdb_vector_assign_string_element_len
