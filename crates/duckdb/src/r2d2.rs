@@ -130,7 +130,7 @@ mod test {
     use crate::types::Value;
     use std::{sync::mpsc, thread};
 
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     #[test]
     fn test_basic() -> Result<()> {
@@ -210,7 +210,7 @@ mod test {
     #[test]
     fn test_error_handling() -> Result<()> {
         //! We specify a directory as a database. This is bound to fail.
-        let dir = TempDir::new("r2d2-duckdb").expect("Could not create temporary directory");
+        let dir = TempDir::with_prefix("r2d2-duckdb").expect("Could not create temporary directory");
         let dirpath = dir.path().to_str().unwrap();
         assert!(DuckdbConnectionManager::file(dirpath).is_err());
         Ok(())

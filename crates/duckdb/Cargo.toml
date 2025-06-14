@@ -71,7 +71,6 @@ regex = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 unicase = { workspace = true }
 rand = { workspace = true }
-tempdir = { workspace = true }
 polars-core = { workspace = true }
 pretty_assertions = { workspace = true }
 # criterion = "0.3"
