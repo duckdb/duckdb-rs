@@ -67,7 +67,6 @@ num-integer = { workspace = true }
 [dev-dependencies]
 doc-comment = { workspace = true }
 tempfile = { workspace = true }
-regex = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 unicase = { workspace = true }
 rand = { workspace = true }
