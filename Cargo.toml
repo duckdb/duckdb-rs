@@ -35,7 +35,6 @@ fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
 flate2 = "1.0"
 hashlink = "0.9"
-lazy_static = "1.4"
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
 pkg-config = "0.3.24"

@@ -47,7 +47,6 @@ chrono = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
-lazy_static = { workspace = true, optional = true }
 byteorder = { workspace = true, features = ["i128"], optional = true }
 fallible-iterator = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
@@ -68,7 +67,6 @@ num-integer = { workspace = true }
 [dev-dependencies]
 doc-comment = { workspace = true }
 tempfile = { workspace = true }
-lazy_static = { workspace = true }
 regex = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 unicase = { workspace = true }
