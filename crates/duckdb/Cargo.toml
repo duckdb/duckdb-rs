@@ -68,7 +68,6 @@ num-integer = { workspace = true }
 doc-comment = { workspace = true }
 tempfile = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
-unicase = { workspace = true }
 rand = { workspace = true }
 polars-core = { workspace = true }
 pretty_assertions = { workspace = true }
