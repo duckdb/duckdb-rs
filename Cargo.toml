@@ -26,7 +26,7 @@ bindgen = { version = "0.71.1", default-features = false }
 calamine = "0.22.0"
 cast = "0.3"
 cc = "1.0"
-chrono = "0.4.22"
+chrono = { version = "0.4.22", default-features = false, features = ["std", "clock"] }
 doc-comment = "0.3"
 fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
