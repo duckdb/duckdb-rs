@@ -45,7 +45,6 @@ libduckdb-sys = { workspace = true }
 hashlink = { workspace = true }
 chrono = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-csv = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 fallible-iterator = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
