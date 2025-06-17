@@ -32,6 +32,7 @@ echo "Start to upgrade from $duckdb_rs_version to $duckdb_version"
 
 $SED_INPLACE "s/$duckdb_rs_version/$duckdb_version/g" \
     Cargo.toml \
+    crates/duckdb/Cargo.toml \
     crates/libduckdb-sys/upgrade.sh \
     crates/libduckdb-sys/Cargo.toml \
     .github/workflows/rust.yaml
