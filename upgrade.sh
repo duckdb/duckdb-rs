@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 if sed --version 2>/dev/null | grep -q GNU; then
   SED_INPLACE="sed -i"
 else
@@ -13,7 +15,7 @@ fi
 # Usage
 # $ get_latest_release "duckdb/duckdb"
 get_latest_release() {
-    curl --silent "https://api.github.com/repos/$1/releases/latest" | # Get latest release from GitHub api
+    curl -fSs "https://api.github.com/repos/$1/releases/latest" | # Get latest release from GitHub api
       grep '"tag_name":' |                                            # Get tag line
       sed -E 's/.*"v([^"]+)".*/\1/'                                   # Pluck JSON value
 }
