@@ -125,7 +125,6 @@ impl r2d2::ManageConnection for DuckdbConnectionManager {
 
 #[cfg(test)]
 mod test {
-    extern crate r2d2;
     use super::*;
     use crate::types::Value;
     use std::{sync::mpsc, thread};
