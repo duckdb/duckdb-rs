@@ -30,7 +30,7 @@ fn test_with_database(database: &Connection) -> crate::Result<()> {
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
         excluded
             .iter()
-            .map(|s| format!("'{}'", s))
+            .map(|s| format!("'{s}'"))
             .collect::<Vec<String>>()
             .join(",")
     ))?;

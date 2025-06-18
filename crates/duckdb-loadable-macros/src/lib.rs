@@ -58,10 +58,10 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
 
     match ast {
         Item::Fn(func) => {
-            let c_entrypoint = Ident::new(format!("{}_init_c_api", extension_name).as_str(), Span::call_site());
+            let c_entrypoint = Ident::new(format!("{extension_name}_init_c_api").as_str(), Span::call_site());
             let prefixed_original_function = func.sig.ident.clone();
             let c_entrypoint_internal = Ident::new(
-                format!("{}_init_c_api_internal", extension_name).as_str(),
+                format!("{extension_name}_init_c_api_internal").as_str(),
                 Span::call_site(),
             );
 
@@ -132,7 +132,7 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
             );
 
             let original_funcname = func.sig.ident.to_string();
-            func.sig.ident = Ident::new(format!("_{}", original_funcname).as_str(), func.sig.ident.span());
+            func.sig.ident = Ident::new(format!("_{original_funcname}").as_str(), func.sig.ident.span());
 
             let prefixed_original_function = func.sig.ident.clone();
 
