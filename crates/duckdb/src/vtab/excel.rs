@@ -35,7 +35,7 @@ impl VTab for ExcelVTab {
         let mut workbook = open_workbook_auto(path)?;
         let range = workbook
             .worksheet_range(&sheet)
-            .unwrap_or_else(|| panic!("Can't find sheet: {} ?", sheet))?;
+            .unwrap_or_else(|| panic!("Can't find sheet: {sheet} ?"))?;
         let _column_count = range.get_size().1;
         let mut rows = range.rows();
         let header = rows.next().unwrap();
@@ -62,7 +62,7 @@ impl VTab for ExcelVTab {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Varchar),
                         );
                     }
@@ -70,7 +70,7 @@ impl VTab for ExcelVTab {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Double),
                         );
                     }
@@ -78,7 +78,7 @@ impl VTab for ExcelVTab {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Bigint),
                         );
                     }
@@ -86,7 +86,7 @@ impl VTab for ExcelVTab {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Boolean),
                         );
                     }
@@ -94,7 +94,7 @@ impl VTab for ExcelVTab {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Date),
                         );
                     }
