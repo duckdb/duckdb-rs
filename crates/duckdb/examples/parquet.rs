@@ -1,4 +1,3 @@
-extern crate duckdb;
 use duckdb::{
     arrow::{record_batch::RecordBatch, util::pretty::print_batches},
     Connection, Result,

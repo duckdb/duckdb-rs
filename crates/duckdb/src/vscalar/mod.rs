@@ -182,7 +182,7 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let mut msg = input.flat_vector(0).as_slice_with_len::<duckdb_string_t>(input.len())[0];
             let string = DuckString::new(&mut msg).as_str();
-            Err(format!("Error: {}", string).into())
+            Err(format!("Error: {string}").into())
         }
 
         fn signatures() -> Vec<ScalarFunctionSignature> {

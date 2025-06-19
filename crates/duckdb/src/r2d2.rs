@@ -8,37 +8,31 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! extern crate r2d2;
-//! extern crate duckdb;
-//!
-//!
 //! use std::thread;
 //! use duckdb::{DuckdbConnectionManager, params};
+//! use r2d2;
 //!
+//! let manager = DuckdbConnectionManager::file("file.db").unwrap();
+//! let pool = r2d2::Pool::new(manager).unwrap();
+//! pool.get()
+//!     .unwrap()
+//!     .execute("CREATE TABLE IF NOT EXISTS foo (bar INTEGER)", params![])
+//!     .unwrap();
 //!
-//! fn main() {
-//!     let manager = DuckdbConnectionManager::file("file.db").unwrap();
-//!     let pool = r2d2::Pool::new(manager).unwrap();
-//!     pool.get()
-//!         .unwrap()
-//!         .execute("CREATE TABLE IF NOT EXISTS foo (bar INTEGER)", params![])
-//!         .unwrap();
-//!
-//!     (0..10)
-//!         .map(|i| {
-//!             let pool = pool.clone();
-//!             thread::spawn(move || {
-//!                 let conn = pool.get().unwrap();
-//!                 conn.execute("INSERT INTO foo (bar) VALUES (?)", &[&i])
-//!                     .unwrap();
-//!             })
+//! (0..10)
+//!     .map(|i| {
+//!         let pool = pool.clone();
+//!         thread::spawn(move || {
+//!             let conn = pool.get().unwrap();
+//!             conn.execute("INSERT INTO foo (bar) VALUES (?)", &[&i])
+//!                 .unwrap();
 //!         })
-//!         .collect::<Vec<_>>()
-//!         .into_iter()
-//!         .map(thread::JoinHandle::join)
-//!         .collect::<Result<_, _>>()
-//!         .unwrap()
-//! }
+//!     })
+//!     .collect::<Vec<_>>()
+//!     .into_iter()
+//!     .map(thread::JoinHandle::join)
+//!     .collect::<Result<_, _>>()
+//!     .unwrap()
 //! ```
 use crate::{Config, Connection, Error, Result};
 use std::{
@@ -125,7 +119,6 @@ impl r2d2::ManageConnection for DuckdbConnectionManager {
 
 #[cfg(test)]
 mod test {
-    extern crate r2d2;
     use super::*;
     use crate::types::Value;
     use std::{sync::mpsc, thread};

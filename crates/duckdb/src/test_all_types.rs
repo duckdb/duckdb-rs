@@ -30,7 +30,7 @@ fn test_with_database(database: &Connection) -> crate::Result<()> {
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
         excluded
             .iter()
-            .map(|s| format!("'{}'", s))
+            .map(|s| format!("'{s}'"))
             .collect::<Vec<String>>()
             .join(",")
     ))?;
@@ -51,7 +51,7 @@ fn test_with_database(database: &Connection) -> crate::Result<()> {
     Ok(())
 }
 
-fn test_single(idx: &mut i32, column: String, value: ValueRef) {
+fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
     match column.as_str() {
         "bool" => match idx {
             0 => assert_eq!(value, ValueRef::Boolean(false)),
