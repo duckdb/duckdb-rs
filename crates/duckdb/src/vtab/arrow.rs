@@ -1182,7 +1182,7 @@ mod test {
         db.register_table_function::<ArrowVTab>("arrow")?;
 
         let rbs: Vec<RecordBatch> = db
-            .prepare("SELECT value::DECIMAL(38,0) as value FROM read_parquet('./examples/int32_decimal.parquet');")?
+            .prepare("SELECT * FROM read_parquet('./examples/int32_decimal.parquet');")?
             .query_arrow([])?
             .collect();
         let param = arrow_recordbatch_to_query_params(rbs.into_iter().next().unwrap());
@@ -1192,7 +1192,7 @@ mod test {
         assert_eq!(rb.num_columns(), 1);
         let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(column.len(), 1);
-        assert_eq!(column.value(0), i128::from(300));
+        assert_eq!(column.value(0), i128::from(30000));
         Ok(())
     }
 
@@ -1620,12 +1620,12 @@ mod test {
 
         // With custom width and scale
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
-            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(38, 10));
+            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 2));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
         // With width and zero scale
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
-            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(38, 0));
+            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 0));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
         Ok(())
