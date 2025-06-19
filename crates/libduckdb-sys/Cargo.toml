@@ -29,7 +29,6 @@ loadable-extension = ["prettyplease", "quote", "syn"]
 [dependencies]
 
 [build-dependencies]
-autocfg = { workspace = true }
 bindgen = { workspace = true, features = ["runtime"], optional = true }
 flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
