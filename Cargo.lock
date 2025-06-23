@@ -867,7 +867,7 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "duckdb"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "arrow",
  "calamine",
@@ -1682,7 +1682,7 @@ checksum = "1171693293099992e19cddea4e8b849964e9846f4acee11b3948bcc337be8776"
 
 [[package]]
 name = "libduckdb-sys"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "arrow",
  "bindgen",
