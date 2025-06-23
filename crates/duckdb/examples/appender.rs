@@ -1,5 +1,3 @@
-extern crate duckdb;
-
 use duckdb::{params, Connection, DropBehavior, Result};
 
 fn main() -> Result<()> {

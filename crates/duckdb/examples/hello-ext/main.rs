@@ -1,9 +1,5 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
-extern crate duckdb;
-extern crate duckdb_loadable_macros;
-extern crate libduckdb_sys;
-
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},

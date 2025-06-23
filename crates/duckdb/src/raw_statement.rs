@@ -183,7 +183,7 @@ impl RawStatement {
                 // Therefore, we return None when encountering this error.
                 match err {
                     polars::error::PolarsError::ComputeError(_) => return None,
-                    _ => panic!("Failed to import arrow2 Array from C: {}", err),
+                    _ => panic!("Failed to import arrow2 Array from C: {err}"),
                 }
             }
 

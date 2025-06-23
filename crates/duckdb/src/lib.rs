@@ -207,7 +207,7 @@ pub enum DatabaseName<'a> {
 
 #[allow(clippy::needless_lifetimes)]
 impl<'a> fmt::Display for DatabaseName<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             DatabaseName::Main => write!(f, "main"),
             DatabaseName::Temp => write!(f, "temp"),
