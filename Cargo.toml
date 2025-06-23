@@ -21,7 +21,7 @@ categories = ["database"]
 [workspace.dependencies]
 arrow = { version = "55", default-features = false }
 bindgen = { version = "0.71.1", default-features = false }
-calamine = "0.22.0"
+calamine = "0.28.0"
 cast = "0.3"
 cc = "1.0"
 chrono = { version = "0.4.22", default-features = false, features = [
