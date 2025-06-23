@@ -19,25 +19,29 @@ license = "MIT"
 categories = ["database"]
 
 [workspace.dependencies]
-duckdb = { version = "=1.3.0", path = "crates/duckdb" }
-libduckdb-sys = { version = "=1.3.0", path = "crates/libduckdb-sys" }
-duckdb-loadable-macros = { version = "=0.1.7", path = "crates/duckdb-loadable-macros" }
+arrow = { version = "55", default-features = false }
 bindgen = { version = "0.71.1", default-features = false }
 calamine = "0.22.0"
 cast = "0.3"
 cc = "1.0"
-chrono = { version = "0.4.22", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4.22", default-features = false, features = [
+    "std",
+    "clock",
+] }
 doc-comment = "0.3"
+duckdb = { version = "=1.3.0", path = "crates/duckdb" }
+duckdb-loadable-macros = { version = "=0.1.7", path = "crates/duckdb-loadable-macros" }
 fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
 flate2 = "1.0"
 hashlink = "0.10"
+libduckdb-sys = { version = "=1.3.0", path = "crates/libduckdb-sys" }
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
 pkg-config = "0.3.24"
 polars = "0.46"
-polars-core = "0.46"
 polars-arrow = "0.46"
+polars-core = "0.46"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.20"
 proc-macro2 = "1.0.56"
@@ -55,4 +59,3 @@ tempfile = "3.1.0"
 url = "2.1"
 uuid = "1.0"
 vcpkg = "0.2"
-arrow = { version = "55", default-features = false }
