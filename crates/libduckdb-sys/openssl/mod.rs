@@ -18,7 +18,6 @@
     clippy::unusual_byte_groupings
 )]
 
-extern crate autocfg;
 #[cfg(feature = "openssl_bindgen")]
 extern crate bindgen;
 extern crate cc;
@@ -107,8 +106,6 @@ pub fn get_openssl_v2() -> Result<(Vec<PathBuf>, PathBuf), ()> {
 }
 
 fn get_openssl() -> Result<(Vec<PathBuf>, PathBuf), ()> {
-    check_rustc_versions();
-
     check_ssl_kind()?;
 
     let target = env::var("TARGET").unwrap();
@@ -164,14 +161,6 @@ fn get_openssl() -> Result<(Vec<PathBuf>, PathBuf), ()> {
     }
 
     Ok((lib_dirs, include_dir))
-}
-
-fn check_rustc_versions() {
-    let cfg = autocfg::new();
-
-    if cfg.probe_rustc_version(1, 31) {
-        println!("cargo:rustc-cfg=const_fn");
-    }
 }
 
 #[allow(clippy::let_and_return)]
