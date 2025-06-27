@@ -3,6 +3,7 @@ use std::{
     mem,
     os::raw::c_char,
     ptr, str,
+    sync::{Arc, Mutex},
 };
 
 use super::{ffi, Appender, Config, Connection, Result};
@@ -15,6 +16,7 @@ use crate::{
 pub struct InnerConnection {
     pub db: ffi::duckdb_database,
     pub con: ffi::duckdb_connection,
+    interrupt: Arc<InterruptHandle>,
     owned: bool,
 }
 
@@ -30,7 +32,14 @@ impl InnerConnection {
                 Some("connect error".to_owned()),
             ));
         }
-        Ok(InnerConnection { db, con, owned })
+        let interrupt = Arc::new(InterruptHandle::new(con));
+
+        Ok(InnerConnection {
+            db,
+            con,
+            interrupt,
+            owned,
+        })
     }
 
     pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<InnerConnection> {
@@ -57,6 +66,7 @@ impl InnerConnection {
         unsafe {
             ffi::duckdb_disconnect(&mut self.con);
             self.con = ptr::null_mut();
+            self.interrupt.clear();
 
             if self.owned {
                 ffi::duckdb_close(&mut self.db);
@@ -106,6 +116,10 @@ impl InnerConnection {
         Ok(Appender::new(conn, c_app))
     }
 
+    pub fn get_interrupt_handle(&self) -> Arc<InterruptHandle> {
+        self.interrupt.clone()
+    }
+
     #[inline]
     pub fn is_autocommit(&self) -> bool {
         true
@@ -122,6 +136,40 @@ impl Drop for InnerConnection {
                 eprintln!("Error while closing DuckDB connection: {e:?}");
             } else {
                 panic!("Error while closing DuckDB connection: {e:?}");
+            }
+        }
+    }
+}
+
+/// A handle that allows interrupting long-running queries.
+pub struct InterruptHandle {
+    conn: Mutex<ffi::duckdb_connection>,
+}
+
+unsafe impl Send for InterruptHandle {}
+unsafe impl Sync for InterruptHandle {}
+
+impl InterruptHandle {
+    fn new(conn: ffi::duckdb_connection) -> Self {
+        Self { conn: Mutex::new(conn) }
+    }
+
+    fn clear(&self) {
+        *(self.conn.lock().unwrap()) = ptr::null_mut();
+    }
+
+    /// Interrupt the query currently running on the connection this handle was
+    /// obtained from. The interrupt will cause that query to fail with
+    /// `Error::DuckDBFailure`. If the connection was dropped after obtaining
+    /// this interrupt handle, calling this method results in a noop.
+    ///
+    /// See [`crate::Connection::interrupt_handle`] for an example.
+    pub fn interrupt(&self) {
+        let db_handle = self.conn.lock().unwrap();
+
+        if !db_handle.is_null() {
+            unsafe {
+                ffi::duckdb_interrupt(*db_handle);
             }
         }
     }
