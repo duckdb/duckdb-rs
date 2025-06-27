@@ -144,6 +144,12 @@ impl Inserter<&str> for FlatVector {
     }
 }
 
+impl Inserter<&String> for FlatVector {
+    fn insert(&self, index: usize, value: &String) {
+        self.insert(index, value.as_str());
+    }
+}
+
 impl Inserter<&[u8]> for FlatVector {
     fn insert(&self, index: usize, value: &[u8]) {
         let value_size = value.len();
@@ -156,6 +162,12 @@ impl Inserter<&[u8]> for FlatVector {
                 value_size as u64,
             );
         }
+    }
+}
+
+impl Inserter<&Vec<u8>> for FlatVector {
+    fn insert(&self, index: usize, value: &Vec<u8>) {
+        self.insert(index, value.as_slice());
     }
 }
 
