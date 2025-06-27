@@ -30,10 +30,10 @@ impl TimeUnit {
     /// Convert a number of `TimeUnit` to microseconds.
     pub fn to_micros(&self, value: i64) -> i64 {
         match self {
-            TimeUnit::Second => value * 1_000_000,
-            TimeUnit::Millisecond => value * 1000,
-            TimeUnit::Microsecond => value,
-            TimeUnit::Nanosecond => value / 1000,
+            Self::Second => value * 1_000_000,
+            Self::Millisecond => value * 1000,
+            Self::Microsecond => value,
+            Self::Nanosecond => value / 1000,
         }
     }
 }
@@ -193,31 +193,31 @@ impl<'a> ValueRef<'a> {
 
 impl From<ValueRef<'_>> for Value {
     #[inline]
-    fn from(borrowed: ValueRef<'_>) -> Value {
+    fn from(borrowed: ValueRef<'_>) -> Self {
         match borrowed {
-            ValueRef::Null => Value::Null,
-            ValueRef::Boolean(i) => Value::Boolean(i),
-            ValueRef::TinyInt(i) => Value::TinyInt(i),
-            ValueRef::SmallInt(i) => Value::SmallInt(i),
-            ValueRef::Int(i) => Value::Int(i),
-            ValueRef::BigInt(i) => Value::BigInt(i),
-            ValueRef::HugeInt(i) => Value::HugeInt(i),
-            ValueRef::UTinyInt(i) => Value::UTinyInt(i),
-            ValueRef::USmallInt(i) => Value::USmallInt(i),
-            ValueRef::UInt(i) => Value::UInt(i),
-            ValueRef::UBigInt(i) => Value::UBigInt(i),
-            ValueRef::Float(i) => Value::Float(i),
-            ValueRef::Double(i) => Value::Double(i),
-            ValueRef::Decimal(i) => Value::Decimal(i),
-            ValueRef::Timestamp(tu, t) => Value::Timestamp(tu, t),
+            ValueRef::Null => Self::Null,
+            ValueRef::Boolean(i) => Self::Boolean(i),
+            ValueRef::TinyInt(i) => Self::TinyInt(i),
+            ValueRef::SmallInt(i) => Self::SmallInt(i),
+            ValueRef::Int(i) => Self::Int(i),
+            ValueRef::BigInt(i) => Self::BigInt(i),
+            ValueRef::HugeInt(i) => Self::HugeInt(i),
+            ValueRef::UTinyInt(i) => Self::UTinyInt(i),
+            ValueRef::USmallInt(i) => Self::USmallInt(i),
+            ValueRef::UInt(i) => Self::UInt(i),
+            ValueRef::UBigInt(i) => Self::UBigInt(i),
+            ValueRef::Float(i) => Self::Float(i),
+            ValueRef::Double(i) => Self::Double(i),
+            ValueRef::Decimal(i) => Self::Decimal(i),
+            ValueRef::Timestamp(tu, t) => Self::Timestamp(tu, t),
             ValueRef::Text(s) => {
                 let s = std::str::from_utf8(s).expect("invalid UTF-8");
-                Value::Text(s.to_string())
+                Self::Text(s.to_string())
             }
-            ValueRef::Blob(b) => Value::Blob(b.to_vec()),
-            ValueRef::Date32(d) => Value::Date32(d),
-            ValueRef::Time64(t, d) => Value::Time64(t, d),
-            ValueRef::Interval { months, days, nanos } => Value::Interval { months, days, nanos },
+            ValueRef::Blob(b) => Self::Blob(b.to_vec()),
+            ValueRef::Date32(d) => Self::Date32(d),
+            ValueRef::Time64(t, d) => Self::Time64(t, d),
+            ValueRef::Interval { months, days, nanos } => Self::Interval { months, days, nanos },
             ValueRef::List(items, idx) => match items {
                 ListType::Regular(items) => {
                     let offsets = items.offsets();
@@ -253,25 +253,25 @@ impl From<ValueRef<'_>> for Value {
                     EnumType::UInt32(res) => res.key(idx),
                 }
                 .unwrap();
-                Value::Enum(dict_values.value(dict_key).to_string())
+                Self::Enum(dict_values.value(dict_key).to_string())
             }
             ValueRef::Struct(items, idx) => {
-                let value: Vec<(String, Value)> = items
+                let value: Vec<(String, Self)> = items
                     .columns()
                     .iter()
                     .zip(items.fields().iter().map(|f| f.name().to_owned()))
-                    .map(|(column, name)| -> (String, Value) {
+                    .map(|(column, name)| -> (String, Self) {
                         (name, Row::value_ref_internal(idx, 0, column).to_owned())
                     })
                     .collect();
-                Value::Struct(OrderedMap::from(value))
+                Self::Struct(OrderedMap::from(value))
             }
             ValueRef::Map(arr, idx) => {
                 let keys = arr.keys();
                 let values = arr.values();
                 let offsets = arr.offsets();
                 let range = offsets[idx]..offsets[idx + 1];
-                Value::Map(OrderedMap::from(
+                Self::Map(OrderedMap::from(
                     range
                         .map(|row| {
                             let row = row.try_into().unwrap();
@@ -285,7 +285,7 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Array(items, idx) => {
                 let value_length = usize::try_from(items.value_length()).unwrap();
                 let range = (idx * value_length)..((idx + 1) * value_length);
-                Value::Array(
+                Self::Array(
                     range
                         .map(|row| Row::value_ref_internal(row, idx, items.values()).to_owned())
                         .collect(),
@@ -297,7 +297,7 @@ impl From<ValueRef<'_>> for Value {
                 let value_offset = column.value_offset(idx);
 
                 let tag = Row::value_ref_internal(idx, value_offset, column.child(type_id));
-                Value::Union(Box::new(tag.to_owned()))
+                Self::Union(Box::new(tag.to_owned()))
             }
         }
     }
@@ -327,7 +327,7 @@ impl<'a> From<&'a [u8]> for ValueRef<'a> {
 
 impl<'a> From<&'a Value> for ValueRef<'a> {
     #[inline]
-    fn from(value: &'a Value) -> ValueRef<'a> {
+    fn from(value: &'a Value) -> Self {
         match *value {
             Value::Null => ValueRef::Null,
             Value::Boolean(i) => ValueRef::Boolean(i),
@@ -359,10 +359,10 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
 
 impl<'a, T> From<Option<T>> for ValueRef<'a>
 where
-    T: Into<ValueRef<'a>>,
+    T: Into<Self>,
 {
     #[inline]
-    fn from(s: Option<T>) -> ValueRef<'a> {
+    fn from(s: Option<T>) -> Self {
         match s {
             Some(x) => x.into(),
             None => ValueRef::Null,

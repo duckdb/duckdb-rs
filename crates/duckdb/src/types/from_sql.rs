@@ -26,10 +26,10 @@ pub enum FromSqlError {
 }
 
 impl PartialEq for FromSqlError {
-    fn eq(&self, other: &FromSqlError) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (FromSqlError::InvalidType, FromSqlError::InvalidType) => true,
-            (FromSqlError::OutOfRange(n1), FromSqlError::OutOfRange(n2)) => n1 == n2,
+            (Self::InvalidType, Self::InvalidType) => true,
+            (Self::OutOfRange(n1), Self::OutOfRange(n2)) => n1 == n2,
             #[cfg(feature = "uuid")]
             (FromSqlError::InvalidUuidSize(s1), FromSqlError::InvalidUuidSize(s2)) => s1 == s2,
             (..) => false,
@@ -40,20 +40,20 @@ impl PartialEq for FromSqlError {
 impl fmt::Display for FromSqlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            FromSqlError::InvalidType => write!(f, "Invalid type"),
-            FromSqlError::OutOfRange(i) => write!(f, "Value {i} out of range"),
+            Self::InvalidType => write!(f, "Invalid type"),
+            Self::OutOfRange(i) => write!(f, "Value {i} out of range"),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(s) => {
                 write!(f, "Cannot read UUID value out of {s} byte blob")
             }
-            FromSqlError::Other(ref err) => err.fmt(f),
+            Self::Other(ref err) => err.fmt(f),
         }
     }
 }
 
 impl Error for FromSqlError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        if let FromSqlError::Other(ref err) = self {
+        if let Self::Other(ref err) = self {
             Some(&**err)
         } else {
             None

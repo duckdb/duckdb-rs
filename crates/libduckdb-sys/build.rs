@@ -190,7 +190,7 @@ pub enum HeaderLocation {
 }
 
 impl From<HeaderLocation> for String {
-    fn from(header: HeaderLocation) -> String {
+    fn from(header: HeaderLocation) -> Self {
         match header {
             HeaderLocation::FromEnvironment => {
                 let prefix = env_prefix();
