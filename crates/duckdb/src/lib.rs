@@ -543,7 +543,7 @@ impl Connection {
     /// Will return `Err` if the underlying DuckDB call fails.
     #[inline]
     #[allow(clippy::result_large_err)]
-    pub fn close(self) -> Result<(), (Connection, Error)> {
+    pub fn close(self) -> Result<(), (Self, Error)> {
         let r = self.db.borrow_mut().close();
         r.map_err(move |err| (self, err))
     }
