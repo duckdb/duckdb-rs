@@ -58,10 +58,10 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
 
     match ast {
         Item::Fn(func) => {
-            let c_entrypoint = Ident::new(format!("{}_init_c_api", extension_name).as_str(), Span::call_site());
+            let c_entrypoint = Ident::new(format!("{extension_name}_init_c_api").as_str(), Span::call_site());
             let prefixed_original_function = func.sig.ident.clone();
             let c_entrypoint_internal = Ident::new(
-                format!("{}_init_c_api_internal", extension_name).as_str(),
+                format!("{extension_name}_init_c_api_internal").as_str(),
                 Span::call_site(),
             );
 
@@ -132,7 +132,7 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
             );
 
             let original_funcname = func.sig.ident.to_string();
-            func.sig.ident = Ident::new(format!("_{}", original_funcname).as_str(), func.sig.ident.span());
+            func.sig.ident = Ident::new(format!("_{original_funcname}").as_str(), func.sig.ident.span());
 
             let prefixed_original_function = func.sig.ident.clone();
 
@@ -142,8 +142,8 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 /// # Safety
                 ///
                 /// Will be called by duckdb
-                #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint(db: *mut c_void) {
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #c_entrypoint(db: *mut std::ffi::c_void) {
                     unsafe {
                         let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
                         #prefixed_original_function(connection).expect("init failed");
@@ -153,8 +153,8 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 /// # Safety
                 ///
                 /// Predefined function, don't need to change unless you are sure
-                #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint_version() -> *const c_char {
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #c_entrypoint_version() -> *const std::ffi::c_char {
                     unsafe {
                         ffi::duckdb_library_version()
                     }

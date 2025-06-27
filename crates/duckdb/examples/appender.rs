@@ -1,5 +1,3 @@
-extern crate duckdb;
-
 use duckdb::{params, Connection, DropBehavior, Result};
 
 fn main() -> Result<()> {
@@ -67,12 +65,12 @@ fn firstn(n: i32) -> impl std::iter::Iterator<Item = User> {
 }
 
 // Modified from https://github.com/avinassh/fast-sqlite3-inserts/blob/master/src/bin/common.rs
-use rand::{prelude::SliceRandom, Rng};
+use rand::{prelude::IndexedRandom, Rng};
 
 #[inline]
 fn get_random_age() -> i8 {
     let vs: Vec<i8> = vec![5, 10, 15];
-    *vs.choose(&mut rand::thread_rng()).unwrap()
+    *vs.choose(&mut rand::rng()).unwrap()
 }
 
 #[inline]
@@ -93,6 +91,6 @@ fn get_random_area_code() -> Option<String> {
     if !get_random_bool() {
         return None;
     }
-    let mut rng = rand::thread_rng();
-    Some(format!("{:06}", rng.gen_range(0..999999)))
+    let mut rng = rand::rng();
+    Some(format!("{:06}", rng.random_range(0..999999)))
 }

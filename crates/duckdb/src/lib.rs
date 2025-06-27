@@ -207,7 +207,7 @@ pub enum DatabaseName<'a> {
 
 #[allow(clippy::needless_lifetimes)]
 impl<'a> fmt::Display for DatabaseName<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             DatabaseName::Main => write!(f, "main"),
             DatabaseName::Temp => write!(f, "temp"),
@@ -542,7 +542,8 @@ impl Connection {
     ///
     /// Will return `Err` if the underlying DuckDB call fails.
     #[inline]
-    pub fn close(self) -> Result<(), (Self, Error)> {
+    #[allow(clippy::result_large_err)]
+    pub fn close(self) -> Result<(), (Connection, Error)> {
         let r = self.db.borrow_mut().close();
         r.map_err(move |err| (self, err))
     }

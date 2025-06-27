@@ -1,7 +1,8 @@
-extern crate cast;
+use std::{error::Error, fmt};
+
+use cast;
 
 use super::{TimeUnit, Value, ValueRef};
-use std::{error::Error, fmt};
 
 /// Enum listing possible errors from [`FromSql`] trait.
 #[derive(Debug)]

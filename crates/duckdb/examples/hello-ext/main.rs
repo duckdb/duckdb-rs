@@ -1,9 +1,5 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
-extern crate duckdb;
-extern crate duckdb_loadable_macros;
-extern crate libduckdb_sys;
-
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
@@ -13,7 +9,7 @@ use duckdb_loadable_macros::duckdb_entrypoint;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
-    ffi::{c_char, c_void, CString},
+    ffi::CString,
     sync::atomic::{AtomicBool, Ordering},
 };
 
