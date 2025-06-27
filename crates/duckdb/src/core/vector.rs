@@ -364,3 +364,35 @@ impl StructVector {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{DataChunkHandle, LogicalTypeId};
+    use std::ffi::CString;
+
+    #[test]
+    fn test_insert_string_values() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Varchar.into()]);
+        let vector = chunk.flat_vector(0);
+        chunk.set_len(3);
+
+        vector.insert(0, "first");
+        vector.insert(1, &String::from("second"));
+        let cstring = CString::new("third").unwrap();
+        vector.insert(2, cstring);
+    }
+
+    #[test]
+    fn test_insert_byte_values() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Blob.into()]);
+        let vector = chunk.flat_vector(0);
+        chunk.set_len(2);
+
+        vector.insert(0, b"hello world".as_slice());
+        vector.insert(
+            1,
+            &vec![0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64],
+        );
+    }
+}
