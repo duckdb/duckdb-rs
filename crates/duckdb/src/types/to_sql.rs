@@ -232,10 +232,10 @@ mod test {
     fn test_cow_str() {
         use std::borrow::Cow;
         let s = "str";
-        let cow: Cow<str> = Cow::Borrowed(s);
+        let cow: Cow<'_, str> = Cow::Borrowed(s);
         let r = cow.to_sql();
         assert!(r.is_ok());
-        let cow: Cow<str> = Cow::Owned::<str>(String::from(s));
+        let cow: Cow<'_, str> = Cow::Owned(String::from(s));
         let r = cow.to_sql();
         assert!(r.is_ok());
         // Ensure this compiles.

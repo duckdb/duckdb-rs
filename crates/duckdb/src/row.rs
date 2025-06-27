@@ -343,7 +343,7 @@ impl<'stmt> Row<'stmt> {
         Self::value_ref_internal(row, col, column)
     }
 
-    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
+    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef<'_> {
         if column.is_null(row) {
             return ValueRef::Null;
         }
