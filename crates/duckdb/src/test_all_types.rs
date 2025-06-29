@@ -20,9 +20,8 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    // uhugeint, time_tz, and dec38_10 aren't supported in the duckdb arrow layer
-    // union is currently blocked by https://github.com/duckdb/duckdb/pull/11326
-    let excluded = ["uhugeint", "time_tz", "dec38_10", "union", "varint"];
+    // uhugeint, time_tz, varint, and dec38_10 aren't supported in the duckdb arrow layer
+    let excluded = ["uhugeint", "time_tz", "dec38_10", "varint"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
