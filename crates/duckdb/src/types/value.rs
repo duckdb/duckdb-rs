@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use super::{Null, OrderedMap, TimeUnit, Type};
 use rust_decimal::prelude::*;
 
@@ -35,6 +37,8 @@ pub enum Value {
     /// The value is a f64.
     Double(f64),
     /// The value is a Decimal.
+    ///
+    /// rust_decimal crate.
     Decimal(Decimal),
     /// The value is a timestamp.
     Timestamp(TimeUnit, i64),
@@ -237,5 +241,100 @@ impl Value {
             Value::Union(..) | Value::Struct(..) | Value::List(..) | Value::Array(..) | Value::Map(..) => todo!(),
             Value::Enum(..) => Type::Enum,
         }
+    }
+
+    /// Consumes the Value and returns its inner data as a boxed Any trait object.
+    ///
+    /// Returns None if the Value is Null, otherwise returns Some containing the boxed inner value.
+    /// The returned value can be downcast to a concrete type using `downcast()`.
+    ///
+    /// # Returns
+    /// Some containing the boxed inner value if the Value is not Null, otherwise None.
+    ///
+    /// # Example
+    /// ```
+    /// use duckdb::types::Value;
+    ///
+    /// let value = Value::Int(42);
+    /// let inner = value.into_inner().unwrap();
+    /// let int_value: i32 = *inner.downcast::<i32>().unwrap();
+    /// assert_eq!(int_value, 42);
+    /// ```
+    ///
+    /// # Panics
+    /// This method panics if the inner value cannot be downcast to the specified type.
+    ///
+    /// # Safety
+    /// This method is unsafe because it can panic if the inner value cannot be downcast to the specified type.
+    /// It is the caller's responsibility to ensure that the inner value is of the correct type.
+    ///
+    /// # See Also
+    /// - [`into_inner_as()`](Self::into_inner_as)
+    pub fn into_inner(self) -> Option<Box<dyn Any>> {
+        match self {
+            Value::Null => None,
+            Value::Boolean(v) => Some(Box::new(v)),
+            Value::TinyInt(v) => Some(Box::new(v)),
+            Value::SmallInt(v) => Some(Box::new(v)),
+            Value::Int(v) => Some(Box::new(v)),
+            Value::BigInt(v) => Some(Box::new(v)),
+            Value::HugeInt(v) => Some(Box::new(v)),
+            Value::UTinyInt(v) => Some(Box::new(v)),
+            Value::USmallInt(v) => Some(Box::new(v)),
+            Value::UInt(v) => Some(Box::new(v)),
+            Value::UBigInt(v) => Some(Box::new(v)),
+            Value::Float(v) => Some(Box::new(v)),
+            Value::Double(v) => Some(Box::new(v)),
+            Value::Text(v) => Some(Box::new(v)),
+            Value::Blob(v) => Some(Box::new(v)),
+            Value::Date32(v) => Some(Box::new(v)),
+            Value::Enum(v) => Some(Box::new(v)),
+            Value::Interval { months, days, nanos } => Some(Box::new((months, days, nanos))),
+            // rust_decimal crate
+            Value::Decimal(v) => Some(Box::new(v)),
+            Value::Timestamp(unit, v) => Some(Box::new((unit, v))),
+            Value::Time64(unit, v) => Some(Box::new((unit, v))),
+            Value::Struct(v) => Some(Box::new(v)),
+            Value::Map(v) => Some(Box::new(v)),
+            Value::List(v) => Some(Box::new(v)),
+            Value::Array(v) => Some(Box::new(v)),
+            Value::Union(v) => Some(Box::new(v)),
+        }
+    }
+
+    /// Consumes the Value and attempts to convert its inner data into the specified type T.
+    ///
+    /// This is a convenience method that combines `into_inner()` with a type-specific downcast.
+    ///
+    /// # Type Parameters
+    /// * `T` - The target type to convert the inner value to. Must implement 'static.
+    ///
+    /// # Returns
+    /// * `Some(T)` - If the Value contains data that can be converted to type T
+    /// * `None` - If the Value is Null or if the inner data cannot be converted to type T
+    ///
+    /// # Example
+    /// ```
+    /// use duckdb::types::Value;
+    ///
+    /// let value = Value::Int(42);
+    /// let int_value: Option<i32> = value.into_inner_as();
+    /// assert_eq!(int_value, Some(42));
+    /// ```
+    ///
+    /// # Panics
+    /// This method panics if the inner value cannot be downcast to the specified type.
+    ///
+    /// # Safety
+    /// This method is unsafe because it can panic if the inner value cannot be downcast to the specified type.
+    /// It is the caller's responsibility to ensure that the inner value is of the correct type.
+    ///
+    /// # Returns
+    /// Some containing the boxed inner value if the Value is not Null, otherwise None.
+    ///
+    /// # See Also
+    /// - [`into_inner()`](Self::into_inner)
+    pub fn into_inner_as<T: 'static>(self) -> Option<T> {
+        self.into_inner()?.downcast::<T>().ok().map(|b| *b)
     }
 }
