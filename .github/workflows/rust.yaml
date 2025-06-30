@@ -59,6 +59,15 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
+      - name: Dry-run release of crates
+        if: matrix.os == 'ubuntu-latest'
+        uses: katyo/publish-crates@v2
+        with:
+          path: "./"
+          args: --allow-dirty --all-features
+          dry-run: true
+          ignore-unpublished-changes: true
+
       # For windows
       - name: Windows extract duckdb
         if: matrix.os == 'windows-latest'
@@ -139,10 +148,3 @@ jobs:
           export ASAN_SYMBOLIZER_PATH=$(which llvm-symbolizer)
           echo $ASAN_SYMBOLIZER_PATH
           cargo -Z build-std test --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
-      - name: publish crates --dry-run
-        uses: katyo/publish-crates@v2
-        with:
-          path: "./"
-          args: --allow-dirty --all-features
-          dry-run: true
-          ignore-unpublished-changes: true
