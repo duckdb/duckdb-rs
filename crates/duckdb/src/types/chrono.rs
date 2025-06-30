@@ -325,9 +325,10 @@ mod test {
     #[test]
     fn test_naive_date_time_param() -> Result<()> {
         let db = checked_memory_handle()?;
+        let fixed_time = NaiveDateTime::parse_from_str("2023-01-01 12:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let result: Result<bool> = db.query_row(
-            "SELECT 1 WHERE ?::TIMESTAMP BETWEEN (now() AT TIME ZONE 'UTC' - INTERVAL '1 minute') AND (now() AT TIME ZONE 'UTC' + INTERVAL '1 minute')",
-            [Utc::now().naive_utc()],
+            "SELECT 1 WHERE ?::TIMESTAMP BETWEEN (TIMESTAMP '2023-01-01 11:59:00') AND (TIMESTAMP '2023-01-01 12:01:00')",
+            [fixed_time],
             |r| r.get(0),
         );
         assert!(result.is_ok());
@@ -337,13 +338,12 @@ mod test {
     #[test]
     fn test_date_time_param() -> Result<()> {
         let db = checked_memory_handle()?;
-        // TODO(wangfenjin): why need 2 params?
+        let fixed_time = Utc.with_ymd_and_hms(2023, 1, 1, 12, 0, 0).unwrap();
         let result: Result<bool> = db.query_row(
-            "SELECT 1 WHERE ?::TIMESTAMP BETWEEN (now() AT TIME ZONE 'UTC' - INTERVAL '1 minute') AND (now() AT TIME ZONE 'UTC' + INTERVAL '1 minute')",
-            [Utc::now()],
+            "SELECT 1 WHERE ?::TIMESTAMPTZ BETWEEN (TIMESTAMPTZ '2023-01-01 11:59:00+00:00') AND (TIMESTAMPTZ '2023-01-01 12:01:00+00:00')",
+            [fixed_time],
             |r| r.get(0),
         );
-        println!("{result:?}");
         assert!(result.is_ok());
         Ok(())
     }
