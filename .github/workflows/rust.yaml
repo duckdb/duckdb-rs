@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 env:
   RUST_BACKTRACE: 1
 jobs:
@@ -14,15 +14,16 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { target: x86_64-pc-windows-msvc, os: windows-latest, duckdb: libduckdb-windows-amd64.zip }
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, duckdb: libduckdb-linux-amd64.zip }
-          #- { target: x86_64-apple-darwin, os: macos-latest }
-          #- {
-              #target: x86_64-pc-windows-gnu,
-              #os: windows-latest,
-              #host: -x86_64-pc-windows-gnu,
-            #}
-
+          - {
+              target: x86_64-pc-windows-msvc,
+              os: windows-latest,
+              duckdb: libduckdb-windows-amd64.zip,
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              os: ubuntu-latest,
+              duckdb: libduckdb-linux-amd64.zip,
+            }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -122,7 +123,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
-          components: 'rust-src'
+          components: "rust-src"
       # Install LLVM tools
       - name: Install LLVM
         run: |
@@ -146,7 +147,7 @@ jobs:
       - name: publish crates --dry-run
         uses: katyo/publish-crates@v2
         with:
-          path: './'
+          path: "./"
           args: --allow-dirty --all-features
           dry-run: true
           ignore-unpublished-changes: true
