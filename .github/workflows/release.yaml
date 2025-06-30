@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    tags: [ '*' ]
+    tags: ["*"]
 env:
   RUST_BACKTRACE: 1
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - name: publish crates
         uses: katyo/publish-crates@v2
         with:
-          path: './'
+          path: "./"
           args: --no-verify --allow-dirty --all-features
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           ignore-unpublished-changes: true
