@@ -12,7 +12,7 @@ pub struct Arrow<'stmt> {
 #[allow(clippy::needless_lifetimes)]
 impl<'stmt> Arrow<'stmt> {
     #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Arrow<'stmt> {
+    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
         Arrow { stmt: Some(stmt) }
     }
 
@@ -43,7 +43,7 @@ pub struct ArrowStream<'stmt> {
 #[allow(clippy::needless_lifetimes)]
 impl<'stmt> ArrowStream<'stmt> {
     #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>, schema: SchemaRef) -> ArrowStream<'stmt> {
+    pub(crate) fn new(stmt: &'stmt Statement<'stmt>, schema: SchemaRef) -> Self {
         ArrowStream {
             stmt: Some(stmt),
             schema,

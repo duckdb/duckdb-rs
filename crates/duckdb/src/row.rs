@@ -104,7 +104,7 @@ impl<'stmt> Rows<'stmt> {
 
 impl<'stmt> Rows<'stmt> {
     #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Rows<'stmt> {
+    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
         Rows {
             stmt: Some(stmt),
             arr: Arc::new(None),
