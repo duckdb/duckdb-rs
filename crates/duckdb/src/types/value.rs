@@ -100,8 +100,8 @@ impl From<isize> for Value {
 #[cfg(feature = "uuid")]
 impl From<uuid::Uuid> for Value {
     #[inline]
-    fn from(id: uuid::Uuid) -> Value {
-        Value::Text(id.to_string())
+    fn from(id: uuid::Uuid) -> Self {
+        Self::Text(id.to_string())
     }
 }
 

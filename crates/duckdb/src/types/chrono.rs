@@ -96,7 +96,7 @@ impl FromSql for NaiveDateTime {
                         "%F"
                     }
                 };
-                NaiveDateTime::parse_from_str(s, format).map_err(|err| FromSqlError::Other(Box::new(err)))
+                Self::parse_from_str(s, format).map_err(|err| FromSqlError::Other(Box::new(err)))
             }
             _ => Err(FromSqlError::InvalidType),
         }
@@ -139,7 +139,7 @@ impl FromSql for Duration {
 
                 match nanos.try_into() {
                     Ok(nanos) => {
-                        if let Some(duration) = Duration::new(seconds, nanos) {
+                        if let Some(duration) = Self::new(seconds, nanos) {
                             Ok(duration)
                         } else {
                             Err(FromSqlError::Other("Invalid duration".into()))
