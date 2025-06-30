@@ -31,7 +31,7 @@ impl PartialEq for FromSqlError {
             (Self::InvalidType, Self::InvalidType) => true,
             (Self::OutOfRange(n1), Self::OutOfRange(n2)) => n1 == n2,
             #[cfg(feature = "uuid")]
-            (FromSqlError::InvalidUuidSize(s1), FromSqlError::InvalidUuidSize(s2)) => s1 == s2,
+            (Self::InvalidUuidSize(s1), Self::InvalidUuidSize(s2)) => s1 == s2,
             (..) => false,
         }
     }
@@ -43,7 +43,7 @@ impl fmt::Display for FromSqlError {
             Self::InvalidType => write!(f, "Invalid type"),
             Self::OutOfRange(i) => write!(f, "Value {i} out of range"),
             #[cfg(feature = "uuid")]
-            FromSqlError::InvalidUuidSize(s) => {
+            Self::InvalidUuidSize(s) => {
                 write!(f, "Cannot read UUID value out of {s} byte blob")
             }
             Self::Other(ref err) => err.fmt(f),
@@ -240,7 +240,7 @@ impl FromSql for uuid::Uuid {
         match value {
             ValueRef::Text(..) => value
                 .as_str()
-                .and_then(|s| uuid::Uuid::parse_str(s).map_err(|_| FromSqlError::InvalidUuidSize(s.len()))),
+                .and_then(|s| Self::parse_str(s).map_err(|_| FromSqlError::InvalidUuidSize(s.len()))),
             ValueRef::Blob(..) => value
                 .as_blob()
                 .and_then(|bytes| {
