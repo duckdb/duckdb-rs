@@ -27,7 +27,7 @@ fn test_with_database(database: &Connection) -> crate::Result<()> {
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
         excluded
             .iter()
-            .map(|s| format!("'{}'", s))
+            .map(|s| format!("'{s}'"))
             .collect::<Vec<String>>()
             .join(",")
     ))?;
@@ -48,7 +48,7 @@ fn test_with_database(database: &Connection) -> crate::Result<()> {
     Ok(())
 }
 
-fn test_single(idx: &mut i32, column: String, value: ValueRef) {
+fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
     match column.as_str() {
         "bool" => match idx {
             0 => assert_eq!(value, ValueRef::Boolean(false)),
@@ -650,7 +650,7 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef) {
         },
         "medium_enum" => match idx {
             0 => assert_eq!(value.to_owned(), Value::Enum("enum_0".to_string())),
-            1 => assert_eq!(value.to_owned(), Value::Enum("enum_1".to_string())),
+            1 => assert_eq!(value.to_owned(), Value::Enum("enum_299".to_string())),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "large_enum" => match idx {

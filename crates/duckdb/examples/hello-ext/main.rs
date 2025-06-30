@@ -1,81 +1,54 @@
-extern crate duckdb;
-extern crate duckdb_loadable_macros;
-extern crate libduckdb_sys;
+#![warn(unsafe_op_in_unsafe_fn)]
 
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
-    vtab::{BindInfo, Free, FunctionInfo, InitInfo, VTab},
+    vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
-    ffi::{c_char, c_void, CString},
+    ffi::CString,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
-#[repr(C)]
 struct HelloBindData {
-    name: *mut c_char,
+    name: String,
 }
 
-impl Free for HelloBindData {
-    fn free(&mut self) {
-        unsafe {
-            if self.name.is_null() {
-                return;
-            }
-            drop(CString::from_raw(self.name));
-        }
-    }
-}
-
-#[repr(C)]
 struct HelloInitData {
-    done: bool,
+    done: AtomicBool,
 }
 
 struct HelloVTab;
-
-impl Free for HelloInitData {}
 
 impl VTab for HelloVTab {
     type InitData = HelloInitData;
     type BindData = HelloBindData;
 
-    unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-        let param = bind.get_parameter(0).to_string();
-        unsafe {
-            (*data).name = CString::new(param).unwrap().into_raw();
-        }
-        Ok(())
+        let name = bind.get_parameter(0).to_string();
+        Ok(HelloBindData { name })
     }
 
-    unsafe fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            (*data).done = false;
-        }
-        Ok(())
+    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        Ok(HelloInitData {
+            done: AtomicBool::new(false),
+        })
     }
 
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        let init_info = func.get_init_data::<HelloInitData>();
-        let bind_info = func.get_bind_data::<HelloBindData>();
-
-        unsafe {
-            if (*init_info).done {
-                output.set_len(0);
-            } else {
-                (*init_info).done = true;
-                let vector = output.flat_vector(0);
-                let name = CString::from_raw((*bind_info).name);
-                let result = CString::new(format!("Hello {}", name.to_str()?))?;
-                // Can't consume the CString
-                (*bind_info).name = CString::into_raw(name);
-                vector.insert(0, result);
-                output.set_len(1);
-            }
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        let init_data = func.get_init_data();
+        let bind_data = func.get_bind_data();
+        if init_data.done.swap(true, Ordering::Relaxed) {
+            output.set_len(0);
+        } else {
+            let vector = output.flat_vector(0);
+            let result = CString::new(format!("Hello {}", bind_data.name))?;
+            vector.insert(0, result);
+            output.set_len(1);
         }
         Ok(())
     }

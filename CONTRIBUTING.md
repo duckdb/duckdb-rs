@@ -9,7 +9,7 @@ Most user should use `duckdb`, but our development may happen in both of these c
 ## Development
 
 ### duckdb-c-api
-Some features are still not implemented in the c api, so we may need pull request in the [duckdb repo]((https://github.com/duckdb/duckdb).
+Some features are still not implemented in the c api, so we may need pull request in the [duckdb repo](https://github.com/duckdb/duckdb).
 
 ```shell
 # build duckdb
@@ -53,7 +53,7 @@ cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features bundled
 ```
 
-Currently in [github actions](https://github.com/wangfenjin/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [bundled-file](https://github.com/wangfenjin/duckdb-rs/tree/main/crates/libduckdb-sys/duckdb).
+Currently in [github actions](https://github.com/duckdb/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [bundled-file](https://github.com/duckdb/duckdb-rs/tree/main/crates/libduckdb-sys/duckdb).
 You can generated the amalgamated file by:
 
 ```shell

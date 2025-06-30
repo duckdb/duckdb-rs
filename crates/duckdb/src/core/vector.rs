@@ -1,6 +1,8 @@
 use std::{any::Any, ffi::CString, slice};
 
-use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child, DuckDbString};
+use libduckdb_sys::{
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, DuckDbString,
+};
 
 use super::LogicalTypeHandle;
 use crate::ffi::{
@@ -55,6 +57,24 @@ impl FlatVector {
         self.capacity
     }
 
+    /// Returns true if the row at the given index is null
+    pub fn row_is_null(&self, row: u64) -> bool {
+        // use idx_t entry_idx = row_idx / 64; idx_t idx_in_entry = row_idx % 64; bool is_valid = validity_mask[entry_idx] & (1 « idx_in_entry);
+        // as the row is valid function is slower
+        let valid = unsafe {
+            let validity = duckdb_vector_get_validity(self.ptr);
+
+            // validity can return a NULL pointer if the entire vector is valid
+            if validity.is_null() {
+                return false;
+            }
+
+            duckdb_validity_row_is_valid(validity, row)
+        };
+
+        !valid
+    }
+
     /// Returns an unsafe mutable pointer to the vector’s
     pub fn as_mut_ptr<T>(&self) -> *mut T {
         unsafe { duckdb_vector_get_data(self.ptr).cast() }
@@ -65,9 +85,19 @@ impl FlatVector {
         unsafe { slice::from_raw_parts(self.as_mut_ptr(), self.capacity()) }
     }
 
+    /// Returns a slice of the vector up to a certain length
+    pub fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
+        unsafe { slice::from_raw_parts(self.as_mut_ptr(), len) }
+    }
+
     /// Returns a mutable slice of the vector
     pub fn as_mut_slice<T>(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity()) }
+    }
+
+    /// Returns a mutable slice of the vector up to a certain length
+    pub fn as_mut_slice_with_len<T>(&mut self, len: usize) -> &mut [T] {
+        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 
     /// Returns the logical type of the vector
@@ -114,6 +144,12 @@ impl Inserter<&str> for FlatVector {
     }
 }
 
+impl Inserter<&String> for FlatVector {
+    fn insert(&self, index: usize, value: &String) {
+        self.insert(index, value.as_str());
+    }
+}
+
 impl Inserter<&[u8]> for FlatVector {
     fn insert(&self, index: usize, value: &[u8]) {
         let value_size = value.len();
@@ -126,6 +162,12 @@ impl Inserter<&[u8]> for FlatVector {
                 value_size as u64,
             );
         }
+    }
+}
+
+impl Inserter<&Vec<u8>> for FlatVector {
+    fn insert(&self, index: usize, value: &Vec<u8>) {
+        self.insert(index, value.as_slice());
     }
 }
 
@@ -159,6 +201,22 @@ impl ListVector {
     pub fn child(&self, capacity: usize) -> FlatVector {
         self.reserve(capacity);
         FlatVector::with_capacity(unsafe { duckdb_list_vector_get_child(self.entries.ptr) }, capacity)
+    }
+
+    /// Take the child as [StructVector].
+    pub fn struct_child(&self, capacity: usize) -> StructVector {
+        self.reserve(capacity);
+        StructVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    }
+
+    /// Take the child as [ArrayVector].
+    pub fn array_child(&self) -> ArrayVector {
+        ArrayVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    }
+
+    /// Take the child as [ListVector].
+    pub fn list_child(&self) -> Self {
+        Self::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
     }
 
     /// Set primitive data to the child node.
@@ -255,12 +313,15 @@ impl From<duckdb_vector> for StructVector {
 
 impl StructVector {
     /// Returns the child by idx in the list vector.
-    pub fn child(&self, idx: usize) -> FlatVector {
-        FlatVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
+    pub fn child(&self, idx: usize, capacity: usize) -> FlatVector {
+        FlatVector::with_capacity(
+            unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) },
+            capacity,
+        )
     }
 
     /// Take the child as [StructVector].
-    pub fn struct_vector_child(&self, idx: usize) -> StructVector {
+    pub fn struct_vector_child(&self, idx: usize) -> Self {
         Self::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
     }
 
@@ -301,5 +362,37 @@ impl StructVector {
             let idx = duckdb_vector_get_validity(self.ptr);
             duckdb_validity_set_row_invalid(idx, row as u64);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{DataChunkHandle, LogicalTypeId};
+    use std::ffi::CString;
+
+    #[test]
+    fn test_insert_string_values() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Varchar.into()]);
+        let vector = chunk.flat_vector(0);
+        chunk.set_len(3);
+
+        vector.insert(0, "first");
+        vector.insert(1, &String::from("second"));
+        let cstring = CString::new("third").unwrap();
+        vector.insert(2, cstring);
+    }
+
+    #[test]
+    fn test_insert_byte_values() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Blob.into()]);
+        let vector = chunk.flat_vector(0);
+        chunk.set_len(2);
+
+        vector.insert(0, b"hello world".as_slice());
+        vector.insert(
+            1,
+            &vec![0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64],
+        );
     }
 }

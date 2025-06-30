@@ -5,6 +5,7 @@
 pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     ordered_map::OrderedMap,
+    string::DuckString,
     to_sql::{ToSql, ToSqlOutput},
     value::Value,
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
@@ -25,6 +26,7 @@ mod value;
 mod value_ref;
 
 mod ordered_map;
+mod string;
 
 /// Empty struct that can be used to fill in a query parameter as `NULL`.
 ///
@@ -128,28 +130,27 @@ impl From<&DataType> for Type {
             // DataType::FixedSizeBinary(_) => Self::FixedSizeBinary,
             // DataType::LargeBinary => Self::LargeBinary,
             DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
-            DataType::List(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
+            DataType::List(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
             DataType::FixedSizeList(field, size) => {
-                Self::Array(Box::new(Type::from(field.data_type())), (*size).try_into().unwrap())
+                Self::Array(Box::new(Self::from(field.data_type())), (*size).try_into().unwrap())
             }
             // DataType::LargeList(_) => Self::LargeList,
             DataType::Struct(inner) => Self::Struct(
                 inner
                     .iter()
-                    .map(|f| (f.name().to_owned(), Type::from(f.data_type())))
+                    .map(|f| (f.name().to_owned(), Self::from(f.data_type())))
                     .collect(),
             ),
-            DataType::LargeList(inner) => Self::List(Box::new(Type::from(inner.data_type()))),
+            DataType::LargeList(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
             DataType::Union(_, _) => Self::Union,
-            DataType::Dictionary(_, _) => Self::Enum,
             DataType::Decimal128(..) => Self::Decimal,
             DataType::Decimal256(..) => Self::Decimal,
             DataType::Map(field, ..) => {
                 let data_type = field.data_type();
                 match data_type {
                     DataType::Struct(fields) => Self::Map(
-                        Box::new(Type::from(fields[0].data_type())),
-                        Box::new(Type::from(fields[1].data_type())),
+                        Box::new(Self::from(fields[0].data_type())),
+                        Box::new(Self::from(fields[1].data_type())),
                     ),
                     _ => unreachable!(),
                 }
@@ -162,33 +163,33 @@ impl From<&DataType> for Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Type::Null => f.pad("Null"),
-            Type::Boolean => f.pad("Boolean"),
-            Type::TinyInt => f.pad("TinyInt"),
-            Type::SmallInt => f.pad("SmallInt"),
-            Type::Int => f.pad("Int"),
-            Type::BigInt => f.pad("BigInt"),
-            Type::HugeInt => f.pad("HugeInt"),
-            Type::UTinyInt => f.pad("UTinyInt"),
-            Type::USmallInt => f.pad("USmallInt"),
-            Type::UInt => f.pad("UInt"),
-            Type::UBigInt => f.pad("UBigInt"),
-            Type::Float => f.pad("Float"),
-            Type::Double => f.pad("Double"),
-            Type::Decimal => f.pad("Decimal"),
-            Type::Timestamp => f.pad("Timestamp"),
-            Type::Text => f.pad("Text"),
-            Type::Blob => f.pad("Blob"),
-            Type::Date32 => f.pad("Date32"),
-            Type::Time64 => f.pad("Time64"),
-            Type::Interval => f.pad("Interval"),
-            Type::Struct(..) => f.pad("Struct"),
-            Type::List(..) => f.pad("List"),
-            Type::Enum => f.pad("Enum"),
-            Type::Map(..) => f.pad("Map"),
-            Type::Array(..) => f.pad("Array"),
-            Type::Union => f.pad("Union"),
-            Type::Any => f.pad("Any"),
+            Self::Null => f.pad("Null"),
+            Self::Boolean => f.pad("Boolean"),
+            Self::TinyInt => f.pad("TinyInt"),
+            Self::SmallInt => f.pad("SmallInt"),
+            Self::Int => f.pad("Int"),
+            Self::BigInt => f.pad("BigInt"),
+            Self::HugeInt => f.pad("HugeInt"),
+            Self::UTinyInt => f.pad("UTinyInt"),
+            Self::USmallInt => f.pad("USmallInt"),
+            Self::UInt => f.pad("UInt"),
+            Self::UBigInt => f.pad("UBigInt"),
+            Self::Float => f.pad("Float"),
+            Self::Double => f.pad("Double"),
+            Self::Decimal => f.pad("Decimal"),
+            Self::Timestamp => f.pad("Timestamp"),
+            Self::Text => f.pad("Text"),
+            Self::Blob => f.pad("Blob"),
+            Self::Date32 => f.pad("Date32"),
+            Self::Time64 => f.pad("Time64"),
+            Self::Interval => f.pad("Interval"),
+            Self::Struct(..) => f.pad("Struct"),
+            Self::List(..) => f.pad("List"),
+            Self::Enum => f.pad("Enum"),
+            Self::Map(..) => f.pad("Map"),
+            Self::Array(..) => f.pad("Array"),
+            Self::Union => f.pad("Union"),
+            Self::Any => f.pad("Any"),
         }
     }
 }

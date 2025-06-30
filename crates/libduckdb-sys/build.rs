@@ -17,7 +17,7 @@ fn win_target() -> bool {
 /// See [`win_target`]
 #[allow(dead_code)]
 fn is_compiler(compiler_name: &str) -> bool {
-    std::env::var("CARGO_CFG_TARGET_ENV").map_or(false, |v| v == compiler_name)
+    std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == compiler_name)
 }
 
 fn main() {
@@ -125,6 +125,8 @@ mod build_bundled {
 
         let mut cfg = cc::Build::new();
 
+        add_extension(&mut cfg, &manifest, "core_functions", &mut cpp_files, &mut include_dirs);
+
         #[cfg(feature = "parquet")]
         add_extension(&mut cfg, &manifest, "parquet", &mut cpp_files, &mut include_dirs);
 
@@ -150,11 +152,19 @@ mod build_bundled {
 
         cfg.cpp(true)
             .flag_if_supported("-std=c++11")
-            .flag_if_supported("-stdlib=libc++")
-            .flag_if_supported("-stdlib=libstdc++")
+            .flag_if_supported("/utf-8")
             .flag_if_supported("/bigobj")
             .warnings(false)
             .flag_if_supported("-w");
+
+        // Define NDEBUG if not in debug mode
+        let is_debug = match std::env::var("DEBUG") {
+            Ok(v) => v != "false" && v != "0",
+            Err(_) => false,
+        };
+        if !is_debug {
+            cfg.define("NDEBUG", None);
+        }
 
         if win_target() {
             cfg.define("DUCKDB_BUILD_LIBRARY", None);
@@ -180,7 +190,7 @@ pub enum HeaderLocation {
 }
 
 impl From<HeaderLocation> for String {
-    fn from(header: HeaderLocation) -> String {
+    fn from(header: HeaderLocation) -> Self {
         match header {
             HeaderLocation::FromEnvironment => {
                 let prefix = env_prefix();
@@ -365,12 +375,12 @@ mod bindings {
     fn generate_functions(output: &mut String) {
         // (1) parse sqlite3_api_routines fields from bindgen output
         let ast: syn::File = syn::parse_str(output).expect("could not parse bindgen output");
-        let duckdb_ext_api_v0: syn::ItemStruct = ast
+        let duckdb_ext_api_v1: syn::ItemStruct = ast
             .items
             .into_iter()
             .find_map(|i| {
                 if let syn::Item::Struct(s) = i {
-                    if s.ident == "duckdb_ext_api_v0" {
+                    if s.ident == "duckdb_ext_api_v1" {
                         Some(s)
                     } else {
                         None
@@ -379,12 +389,12 @@ mod bindings {
                     None
                 }
             })
-            .expect("could not find duckdb_ext_api_v0");
+            .expect("could not find duckdb_ext_api_v1");
 
         let p_api = quote::format_ident!("p_api");
         let mut stores = Vec::new();
 
-        for field in duckdb_ext_api_v0.fields {
+        for field in duckdb_ext_api_v1.fields {
             let ident = field.ident.expect("unnamed field");
             let span = ident.span();
             let function_name = ident.to_string();
@@ -433,7 +443,7 @@ mod bindings {
             /// Like DUCKDB_EXTENSION_API_INIT macro
             pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: *const duckdb_extension_access, version: &str) -> ::std::result::Result<bool, &'static str> {
                 let version_c_string = std::ffi::CString::new(version).unwrap();
-                let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v0;
+                let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v1;
                 if #p_api.is_null() {
                     // get_api can return a nullptr when the version is not matched. In this case, we don't need to set
                     // an error, but can instead just stop the initialization process and let duckdb handle things
@@ -458,9 +468,17 @@ mod bindings {
             builder = builder.ignore_functions();
         }
 
+        // ONLY generate bindings for symbols containing "duckdb" in their name
+        // and for the type `idx_t`
+        // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
+        // until we figure out how to feature gate the generated API
         builder
             .trust_clang_mangling(false)
             .header(header.clone())
+            .allowlist_item(r#"(\w*duckdb\w*)"#)
+            .allowlist_type("idx_t")
+            .layout_tests(false) // causes problems on WASM builds
+            .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))

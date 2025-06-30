@@ -144,7 +144,7 @@ impl Statement<'_> {
     /// sure that current statement has already been stepped once before
     /// calling this method.
     #[cfg(feature = "column_decltype")]
-    pub fn columns(&self) -> Vec<Column> {
+    pub fn columns(&self) -> Vec<Column<'_>> {
         let n = self.column_count();
         let mut cols = Vec::with_capacity(n);
         for i in 0..n {

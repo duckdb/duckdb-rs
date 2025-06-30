@@ -86,23 +86,23 @@ pub enum Error {
 }
 
 impl PartialEq for Error {
-    fn eq(&self, other: &Error) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Error::DuckDBFailure(e1, s1), Error::DuckDBFailure(e2, s2)) => e1 == e2 && s1 == s2,
-            (Error::IntegralValueOutOfRange(i1, n1), Error::IntegralValueOutOfRange(i2, n2)) => i1 == i2 && n1 == n2,
-            (Error::Utf8Error(e1), Error::Utf8Error(e2)) => e1 == e2,
-            (Error::NulError(e1), Error::NulError(e2)) => e1 == e2,
-            (Error::InvalidParameterName(n1), Error::InvalidParameterName(n2)) => n1 == n2,
-            (Error::InvalidPath(p1), Error::InvalidPath(p2)) => p1 == p2,
-            (Error::ExecuteReturnedResults, Error::ExecuteReturnedResults) => true,
-            (Error::QueryReturnedNoRows, Error::QueryReturnedNoRows) => true,
-            (Error::InvalidColumnIndex(i1), Error::InvalidColumnIndex(i2)) => i1 == i2,
-            (Error::InvalidColumnName(n1), Error::InvalidColumnName(n2)) => n1 == n2,
-            (Error::InvalidColumnType(i1, n1, t1), Error::InvalidColumnType(i2, n2, t2)) => {
+            (Self::DuckDBFailure(e1, s1), Self::DuckDBFailure(e2, s2)) => e1 == e2 && s1 == s2,
+            (Self::IntegralValueOutOfRange(i1, n1), Self::IntegralValueOutOfRange(i2, n2)) => i1 == i2 && n1 == n2,
+            (Self::Utf8Error(e1), Self::Utf8Error(e2)) => e1 == e2,
+            (Self::NulError(e1), Self::NulError(e2)) => e1 == e2,
+            (Self::InvalidParameterName(n1), Self::InvalidParameterName(n2)) => n1 == n2,
+            (Self::InvalidPath(p1), Self::InvalidPath(p2)) => p1 == p2,
+            (Self::ExecuteReturnedResults, Self::ExecuteReturnedResults) => true,
+            (Self::QueryReturnedNoRows, Self::QueryReturnedNoRows) => true,
+            (Self::InvalidColumnIndex(i1), Self::InvalidColumnIndex(i2)) => i1 == i2,
+            (Self::InvalidColumnName(n1), Self::InvalidColumnName(n2)) => n1 == n2,
+            (Self::InvalidColumnType(i1, n1, t1), Self::InvalidColumnType(i2, n2, t2)) => {
                 i1 == i2 && t1 == t2 && n1 == n2
             }
-            (Error::StatementChangedRows(n1), Error::StatementChangedRows(n2)) => n1 == n2,
-            (Error::InvalidParameterCount(i1, n1), Error::InvalidParameterCount(i2, n2)) => i1 == i2 && n1 == n2,
+            (Self::StatementChangedRows(n1), Self::StatementChangedRows(n2)) => n1 == n2,
+            (Self::InvalidParameterCount(i1, n1), Self::InvalidParameterCount(i2, n2)) => i1 == i2 && n1 == n2,
             (..) => false,
         }
     }
@@ -110,15 +110,15 @@ impl PartialEq for Error {
 
 impl From<str::Utf8Error> for Error {
     #[cold]
-    fn from(err: str::Utf8Error) -> Error {
-        Error::Utf8Error(err)
+    fn from(err: str::Utf8Error) -> Self {
+        Self::Utf8Error(err)
     }
 }
 
 impl From<::std::ffi::NulError> for Error {
     #[cold]
-    fn from(err: ::std::ffi::NulError) -> Error {
-        Error::NulError(err)
+    fn from(err: ::std::ffi::NulError) -> Self {
+        Self::NulError(err)
     }
 }
 
@@ -128,17 +128,17 @@ const UNKNOWN_COLUMN: usize = usize::MAX;
 /// to allow use of `get_raw(…).as_…()?` in callbacks that take `Error`.
 impl From<FromSqlError> for Error {
     #[cold]
-    fn from(err: FromSqlError) -> Error {
+    fn from(err: FromSqlError) -> Self {
         // The error type requires index and type fields, but they aren't known in this
         // context.
         match err {
-            FromSqlError::OutOfRange(val) => Error::IntegralValueOutOfRange(UNKNOWN_COLUMN, val),
+            FromSqlError::OutOfRange(val) => Self::IntegralValueOutOfRange(UNKNOWN_COLUMN, val),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(_) => {
-                Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Blob, Box::new(err))
+                Self::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Blob, Box::new(err))
             }
-            FromSqlError::Other(source) => Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, source),
-            _ => Error::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, Box::new(err)),
+            FromSqlError::Other(source) => Self::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, source),
+            _ => Self::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Null, Box::new(err)),
         }
     }
 }
@@ -146,46 +146,46 @@ impl From<FromSqlError> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Error::DuckDBFailure(ref err, None) => err.fmt(f),
-            Error::DuckDBFailure(_, Some(ref s)) => write!(f, "{s}"),
-            Error::FromSqlConversionFailure(i, ref t, ref err) => {
+            Self::DuckDBFailure(ref err, None) => err.fmt(f),
+            Self::DuckDBFailure(_, Some(ref s)) => write!(f, "{s}"),
+            Self::FromSqlConversionFailure(i, ref t, ref err) => {
                 if i != UNKNOWN_COLUMN {
                     write!(f, "Conversion error from type {t} at index: {i}, {err}")
                 } else {
                     err.fmt(f)
                 }
             }
-            Error::IntegralValueOutOfRange(col, val) => {
+            Self::IntegralValueOutOfRange(col, val) => {
                 if col != UNKNOWN_COLUMN {
                     write!(f, "Integer {val} out of range at index {col}")
                 } else {
                     write!(f, "Integer {val} out of range")
                 }
             }
-            Error::Utf8Error(ref err) => err.fmt(f),
-            Error::NulError(ref err) => err.fmt(f),
-            Error::InvalidParameterName(ref name) => write!(f, "Invalid parameter name: {name}"),
-            Error::InvalidPath(ref p) => write!(f, "Invalid path: {}", p.to_string_lossy()),
-            Error::ExecuteReturnedResults => {
+            Self::Utf8Error(ref err) => err.fmt(f),
+            Self::NulError(ref err) => err.fmt(f),
+            Self::InvalidParameterName(ref name) => write!(f, "Invalid parameter name: {name}"),
+            Self::InvalidPath(ref p) => write!(f, "Invalid path: {}", p.to_string_lossy()),
+            Self::ExecuteReturnedResults => {
                 write!(f, "Execute returned results - did you mean to call query?")
             }
-            Error::QueryReturnedNoRows => write!(f, "Query returned no rows"),
-            Error::InvalidColumnIndex(i) => write!(f, "Invalid column index: {i}"),
-            Error::InvalidColumnName(ref name) => write!(f, "Invalid column name: {name}"),
-            Error::InvalidColumnType(i, ref name, ref t) => {
+            Self::QueryReturnedNoRows => write!(f, "Query returned no rows"),
+            Self::InvalidColumnIndex(i) => write!(f, "Invalid column index: {i}"),
+            Self::InvalidColumnName(ref name) => write!(f, "Invalid column name: {name}"),
+            Self::InvalidColumnType(i, ref name, ref t) => {
                 write!(f, "Invalid column type {t} at index: {i}, name: {name}")
             }
-            Error::ArrowTypeToDuckdbType(ref name, ref t) => {
+            Self::ArrowTypeToDuckdbType(ref name, ref t) => {
                 write!(f, "Invalid column type {t} , name: {name}")
             }
-            Error::InvalidParameterCount(i1, n1) => {
+            Self::InvalidParameterCount(i1, n1) => {
                 write!(f, "Wrong number of parameters passed to query. Got {i1}, needed {n1}")
             }
-            Error::StatementChangedRows(i) => write!(f, "Query changed {i} rows"),
-            Error::ToSqlConversionFailure(ref err) => err.fmt(f),
-            Error::InvalidQuery => write!(f, "Query is not read-only"),
-            Error::MultipleStatement => write!(f, "Multiple statements provided"),
-            Error::AppendError => write!(f, "Append error"),
+            Self::StatementChangedRows(i) => write!(f, "Query changed {i} rows"),
+            Self::ToSqlConversionFailure(ref err) => err.fmt(f),
+            Self::InvalidQuery => write!(f, "Query is not read-only"),
+            Self::MultipleStatement => write!(f, "Multiple statements provided"),
+            Self::AppendError => write!(f, "Append error"),
         }
     }
 }
@@ -193,25 +193,25 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
-            Error::DuckDBFailure(ref err, _) => Some(err),
-            Error::Utf8Error(ref err) => Some(err),
-            Error::NulError(ref err) => Some(err),
+            Self::DuckDBFailure(ref err, _) => Some(err),
+            Self::Utf8Error(ref err) => Some(err),
+            Self::NulError(ref err) => Some(err),
 
-            Error::IntegralValueOutOfRange(..)
-            | Error::InvalidParameterName(_)
-            | Error::ExecuteReturnedResults
-            | Error::QueryReturnedNoRows
-            | Error::InvalidColumnIndex(_)
-            | Error::InvalidColumnName(_)
-            | Error::InvalidColumnType(..)
-            | Error::InvalidPath(_)
-            | Error::InvalidParameterCount(..)
-            | Error::StatementChangedRows(_)
-            | Error::InvalidQuery
-            | Error::AppendError
-            | Error::ArrowTypeToDuckdbType(..)
-            | Error::MultipleStatement => None,
-            Error::FromSqlConversionFailure(_, _, ref err) | Error::ToSqlConversionFailure(ref err) => Some(&**err),
+            Self::IntegralValueOutOfRange(..)
+            | Self::InvalidParameterName(_)
+            | Self::ExecuteReturnedResults
+            | Self::QueryReturnedNoRows
+            | Self::InvalidColumnIndex(_)
+            | Self::InvalidColumnName(_)
+            | Self::InvalidColumnType(..)
+            | Self::InvalidPath(_)
+            | Self::InvalidParameterCount(..)
+            | Self::StatementChangedRows(_)
+            | Self::InvalidQuery
+            | Self::AppendError
+            | Self::ArrowTypeToDuckdbType(..)
+            | Self::MultipleStatement => None,
+            Self::FromSqlConversionFailure(_, _, ref err) | Self::ToSqlConversionFailure(ref err) => Some(&**err),
         }
     }
 }

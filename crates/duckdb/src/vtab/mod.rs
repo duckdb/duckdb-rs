@@ -1,7 +1,10 @@
+// #![warn(unsafe_op_in_unsafe_fn)]
+
+use std::ffi::c_void;
+
 use crate::{error::Error, inner_connection::InnerConnection, Connection, Result};
 
-use super::{ffi, ffi::duckdb_free};
-use std::ffi::c_void;
+use super::ffi;
 
 mod function;
 mod value;
@@ -17,38 +20,18 @@ pub use self::arrow::{
 #[cfg(feature = "vtab-excel")]
 mod excel;
 
-pub use function::{BindInfo, FunctionInfo, InitInfo, TableFunction};
+pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
 pub use value::Value;
 
-use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
+use crate::core::{DataChunkHandle, LogicalTypeHandle};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
-use ffi::duckdb_malloc;
-use std::mem::size_of;
-
-/// duckdb_malloc a struct of type T
-/// used for the bind_info and init_info
-/// # Safety
-/// This function is obviously unsafe
-unsafe fn malloc_data_c<T>() -> *mut T {
-    duckdb_malloc(size_of::<T>()).cast()
-}
-
-/// free bind or info data
+/// Given a raw pointer to a box, free the box and the data contained within it.
 ///
 /// # Safety
-///   This function is obviously unsafe
-/// TODO: maybe we should use a Free trait here
-unsafe extern "C" fn drop_data_c<T: Free>(v: *mut c_void) {
-    let actual = v.cast::<T>();
-    (*actual).free();
-    duckdb_free(v);
-}
-
-/// Free trait for the bind and init data
-pub trait Free {
-    /// Free the data
-    fn free(&mut self) {}
+/// The pointer must be a valid pointer to a `Box<T>` created by `Box::into_raw`.
+unsafe extern "C" fn drop_boxed<T>(v: *mut c_void) {
+    drop(unsafe { Box::from_raw(v.cast::<T>()) });
 }
 
 /// Duckdb table function trait
@@ -56,51 +39,33 @@ pub trait Free {
 /// See to the HelloVTab example for more details
 /// <https://duckdb.org/docs/api/c/table_functions>
 pub trait VTab: Sized {
-    /// The data type of the bind data
-    type InitData: Sized + Free;
-    /// The data type of the init data
-    type BindData: Sized + Free;
+    /// The data type of the init data.
+    ///
+    /// The init data tracks the state of the table function and is global across threads.
+    ///
+    /// The init data is shared across threads so must be `Send + Sync`.
+    type InitData: Sized + Send + Sync;
+
+    /// The data type of the bind data.
+    ///
+    /// The bind data is shared across threads so must be `Send + Sync`.
+    type BindData: Sized + Send + Sync;
 
     /// Bind data to the table function
     ///
-    /// # Safety
-    ///
-    /// This function is unsafe because it dereferences raw pointers (`data`) and manipulates the memory directly.
-    /// The caller must ensure that:
-    ///
-    /// - The `data` pointer is valid and points to a properly initialized `BindData` instance.
-    /// - The lifetime of `data` must outlive the execution of `bind` to avoid dangling pointers, especially since
-    ///   `bind` does not take ownership of `data`.
-    /// - Concurrent access to `data` (if applicable) must be properly synchronized.
-    /// - The `bind` object must be valid and correctly initialized.
-    unsafe fn bind(bind: &BindInfo, data: *mut Self::BindData) -> Result<(), Box<dyn std::error::Error>>;
+    /// This function is used for determining the return type of a table producing function and returning bind data
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>>;
+
     /// Initialize the table function
+    fn init(init: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>>;
+
+    /// Generate rows from the table function.
     ///
-    /// # Safety
+    /// The implementation should populate the `output` parameter with the rows to be returned.
     ///
-    /// This function is unsafe because it performs raw pointer dereferencing on the `data` argument.
-    /// The caller is responsible for ensuring that:
-    ///
-    /// - The `data` pointer is non-null and points to a valid `InitData` instance.
-    /// - There is no data race when accessing `data`, meaning if `data` is accessed from multiple threads,
-    ///   proper synchronization is required.
-    /// - The lifetime of `data` extends beyond the scope of this call to avoid use-after-free errors.
-    unsafe fn init(init: &InitInfo, data: *mut Self::InitData) -> Result<(), Box<dyn std::error::Error>>;
-    /// The actual function
-    ///
-    /// # Safety
-    ///
-    /// This function is unsafe because it:
-    ///
-    /// - Dereferences multiple raw pointers (`func` to access `init_info` and `bind_info`).
-    ///
-    /// The caller must ensure that:
-    ///
-    /// - All pointers (`func`, `output`, internal `init_info`, and `bind_info`) are valid and point to the expected types of data structures.
-    /// - The `init_info` and `bind_info` data pointed to remains valid and is not freed until after this function completes.
-    /// - No other threads are concurrently mutating the data pointed to by `init_info` and `bind_info` without proper synchronization.
-    /// - The `output` parameter is correctly initialized and can safely be written to.
-    unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
+    /// When the table function is done, the implementation should set the length of the output to 0.
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>>;
+
     /// Does the table function support pushdown
     /// default is false
     fn supports_pushdown() -> bool {
@@ -122,7 +87,7 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    let info = FunctionInfo::from(info);
+    let info = TableFunctionInfo::<T>::from(info);
     let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
     let result = T::func(&info, &mut data_chunk_handle);
     if result.is_err() {
@@ -135,11 +100,16 @@ where
     T: VTab,
 {
     let info = InitInfo::from(info);
-    let data = malloc_data_c::<T::InitData>();
-    let result = T::init(&info, data);
-    info.set_init_data(data.cast(), Some(drop_data_c::<T::InitData>));
-    if result.is_err() {
-        info.set_error(&result.err().unwrap().to_string());
+    match T::init(&info) {
+        Ok(init_data) => {
+            info.set_init_data(
+                Box::into_raw(Box::new(init_data)) as *mut c_void,
+                Some(drop_boxed::<T::InitData>),
+            );
+        }
+        Err(e) => {
+            info.set_error(&e.to_string());
+        }
     }
 }
 
@@ -148,11 +118,16 @@ where
     T: VTab,
 {
     let info = BindInfo::from(info);
-    let data = malloc_data_c::<T::BindData>();
-    let result = T::bind(&info, data);
-    info.set_bind_data(data.cast(), Some(drop_data_c::<T::BindData>));
-    if result.is_err() {
-        info.set_error(&result.err().unwrap().to_string());
+    match T::bind(&info) {
+        Ok(bind_data) => {
+            info.set_bind_data(
+                Box::into_raw(Box::new(bind_data)) as *mut c_void,
+                Some(drop_boxed::<T::BindData>),
+            );
+        }
+        Err(e) => {
+            info.set_error(&e.to_string());
+        }
     }
 }
 
@@ -193,74 +168,53 @@ impl InnerConnection {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::core::Inserter;
+    use crate::core::{Inserter, LogicalTypeId};
     use std::{
         error::Error,
-        ffi::{c_char, CString},
+        ffi::CString,
+        sync::atomic::{AtomicBool, Ordering},
     };
 
-    #[repr(C)]
     struct HelloBindData {
-        name: *mut c_char,
+        name: String,
     }
 
-    impl Free for HelloBindData {
-        fn free(&mut self) {
-            unsafe {
-                if self.name.is_null() {
-                    return;
-                }
-                drop(CString::from_raw(self.name));
-            }
-        }
-    }
-
-    #[repr(C)]
     struct HelloInitData {
-        done: bool,
+        done: AtomicBool,
     }
 
     struct HelloVTab;
-
-    impl Free for HelloInitData {}
 
     impl VTab for HelloVTab {
         type InitData = HelloInitData;
         type BindData = HelloBindData;
 
-        unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn std::error::Error>> {
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
             bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            let param = bind.get_parameter(0).to_string();
-            unsafe {
-                (*data).name = CString::new(param).unwrap().into_raw();
-            }
-            Ok(())
+            let name = bind.get_parameter(0).to_string();
+            Ok(HelloBindData { name })
         }
 
-        unsafe fn init(_: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn std::error::Error>> {
-            unsafe {
-                (*data).done = false;
-            }
-            Ok(())
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+            Ok(HelloInitData {
+                done: AtomicBool::new(false),
+            })
         }
 
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-            let init_info = func.get_init_data::<HelloInitData>();
-            let bind_info = func.get_bind_data::<HelloBindData>();
+        fn func(
+            func: &TableFunctionInfo<Self>,
+            output: &mut DataChunkHandle,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let init_data = func.get_init_data();
+            let bind_data = func.get_bind_data();
 
-            unsafe {
-                if (*init_info).done {
-                    output.set_len(0);
-                } else {
-                    (*init_info).done = true;
-                    let vector = output.flat_vector(0);
-                    let name = CString::from_raw((*bind_info).name);
-                    let result = CString::new(format!("Hello {}", name.to_str()?))?;
-                    // Can't consume the CString
-                    (*bind_info).name = CString::into_raw(name);
-                    vector.insert(0, result);
-                    output.set_len(1);
-                }
+            if init_data.done.swap(true, Ordering::Relaxed) {
+                output.set_len(0);
+            } else {
+                let vector = output.flat_vector(0);
+                let result = CString::new(format!("Hello {}", bind_data.name))?;
+                vector.insert(0, result);
+                output.set_len(1);
             }
             Ok(())
         }
@@ -275,22 +229,30 @@ mod test {
         type InitData = HelloInitData;
         type BindData = HelloBindData;
 
-        unsafe fn bind(bind: &BindInfo, data: *mut HelloBindData) -> Result<(), Box<dyn Error>> {
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
             bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            let param = bind.get_named_parameter("name").unwrap().to_string();
+            let name = bind.get_named_parameter("name").unwrap().to_string();
             assert!(bind.get_named_parameter("unknown_name").is_none());
-            unsafe {
-                (*data).name = CString::new(param).unwrap().into_raw();
+            Ok(HelloBindData { name })
+        }
+
+        fn init(init_info: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            HelloVTab::init(init_info)
+        }
+
+        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            let init_data = func.get_init_data();
+            let bind_data = func.get_bind_data();
+
+            if init_data.done.swap(true, Ordering::Relaxed) {
+                output.set_len(0);
+            } else {
+                let vector = output.flat_vector(0);
+                let result = CString::new(format!("Hello {}", bind_data.name))?;
+                vector.insert(0, result);
+                output.set_len(1);
             }
             Ok(())
-        }
-
-        unsafe fn init(init_info: &InitInfo, data: *mut HelloInitData) -> Result<(), Box<dyn Error>> {
-            HelloVTab::init(init_info, data)
-        }
-
-        unsafe fn func(func: &FunctionInfo, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
-            HelloVTab::func(func, output)
         }
 
         fn named_parameters() -> Option<Vec<(String, LogicalTypeHandle)>> {

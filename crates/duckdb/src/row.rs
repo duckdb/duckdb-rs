@@ -104,7 +104,7 @@ impl<'stmt> Rows<'stmt> {
 
 impl<'stmt> Rows<'stmt> {
     #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Rows<'stmt> {
+    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
         Rows {
             stmt: Some(stmt),
             arr: Arc::new(None),
@@ -264,6 +264,7 @@ pub struct Row<'stmt> {
     current_row: usize,
 }
 
+#[allow(clippy::needless_lifetimes)]
 impl<'stmt> Row<'stmt> {
     /// Get the value of a particular column of the result row.
     ///
@@ -342,7 +343,7 @@ impl<'stmt> Row<'stmt> {
         Self::value_ref_internal(row, col, column)
     }
 
-    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef {
+    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef<'_> {
         if column.is_null(row) {
             return ValueRef::Null;
         }

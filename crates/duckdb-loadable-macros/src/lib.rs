@@ -8,12 +8,16 @@ use quote::quote_spanned;
 
 use darling::{ast::NestedMeta, Error, FromMeta};
 
+use std::env;
+
+const DEFAULT_DUCKDB_VERSION: &str = "v1.2.0";
+
 /// For parsing the arguments to the duckdb_entrypoint_c_api macro
 #[derive(Debug, FromMeta)]
 struct CEntryPointMacroArgs {
     #[darling(default)]
     /// The name to be given to this extension. This name is used in the entrypoint function called by duckdb
-    ext_name: String,
+    ext_name: Option<String>,
     /// The minimum C API version this extension requires. It is recommended to set this to the lowest possible version
     /// at which your extension still compiles
     min_duckdb_version: Option<String>,
@@ -38,19 +42,26 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
     };
 
     // Set the minimum duckdb version (dev by default)
-    let minimum_duckdb_version = match args.min_duckdb_version {
-        Some(i) => i,
-        None => "dev".to_string(),
+    let minimum_duckdb_version = match (args.min_duckdb_version, env::var("DUCKDB_EXTENSION_MIN_DUCKDB_VERSION")) {
+        (Some(i), _) => i,
+        (None, Ok(i)) => i.to_string(),
+        _ => DEFAULT_DUCKDB_VERSION.to_string(),
+    };
+
+    let extension_name = match (args.ext_name, env::var("DUCKDB_EXTENSION_NAME")) {
+        (Some(i), _) => i,
+        (None, Ok(i)) => i.to_string(),
+        _ => env::var("CARGO_PKG_NAME").unwrap().to_string(),
     };
 
     let ast = parse_macro_input!(item as syn::Item);
 
     match ast {
         Item::Fn(func) => {
-            let c_entrypoint = Ident::new(format!("{}_init_c_api", args.ext_name).as_str(), Span::call_site());
+            let c_entrypoint = Ident::new(format!("{extension_name}_init_c_api").as_str(), Span::call_site());
             let prefixed_original_function = func.sig.ident.clone();
             let c_entrypoint_internal = Ident::new(
-                format!("{}_init_c_api_internal", args.ext_name).as_str(),
+                format!("{extension_name}_init_c_api_internal").as_str(),
                 Span::call_site(),
             );
 
@@ -121,7 +132,7 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
             );
 
             let original_funcname = func.sig.ident.to_string();
-            func.sig.ident = Ident::new(format!("_{}", original_funcname).as_str(), func.sig.ident.span());
+            func.sig.ident = Ident::new(format!("_{original_funcname}").as_str(), func.sig.ident.span());
 
             let prefixed_original_function = func.sig.ident.clone();
 
@@ -131,18 +142,22 @@ pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 /// # Safety
                 ///
                 /// Will be called by duckdb
-                #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint(db: *mut c_void) {
-                    let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
-                    #prefixed_original_function(connection).expect("init failed");
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #c_entrypoint(db: *mut std::ffi::c_void) {
+                    unsafe {
+                        let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
+                        #prefixed_original_function(connection).expect("init failed");
+                    }
                 }
 
                 /// # Safety
                 ///
                 /// Predefined function, don't need to change unless you are sure
-                #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint_version() -> *const c_char {
-                    ffi::duckdb_library_version()
+                #[unsafe(no_mangle)]
+                pub unsafe extern "C" fn #c_entrypoint_version() -> *const std::ffi::c_char {
+                    unsafe {
+                        ffi::duckdb_library_version()
+                    }
                 }
 
 

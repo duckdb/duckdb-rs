@@ -10,7 +10,7 @@ pub struct Polars<'stmt> {
 
 impl<'stmt> Polars<'stmt> {
     #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Polars<'stmt> {
+    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
         Polars { stmt: Some(stmt) }
     }
 
@@ -21,6 +21,7 @@ impl<'stmt> Polars<'stmt> {
     }
 }
 
+#[allow(clippy::needless_lifetimes)]
 impl<'stmt> Iterator for Polars<'stmt> {
     type Item = DataFrame;
 
