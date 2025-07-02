@@ -34,7 +34,12 @@ impl InnerConnection {
         }
         let interrupt = Arc::new(InterruptHandle::new(con));
 
-        Ok(Self { db, con, interrupt, owned })
+        Ok(Self {
+            db,
+            con,
+            interrupt,
+            owned,
+        })
     }
 
     pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<Self> {
