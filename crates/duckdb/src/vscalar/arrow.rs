@@ -23,8 +23,8 @@ pub enum ArrowScalarParams {
 impl AsRef<[DataType]> for ArrowScalarParams {
     fn as_ref(&self) -> &[DataType] {
         match self {
-            ArrowScalarParams::Exact(params) => params.as_ref(),
-            ArrowScalarParams::Variadic(param) => std::slice::from_ref(param),
+            Self::Exact(params) => params.as_ref(),
+            Self::Variadic(param) => std::slice::from_ref(param),
         }
     }
 }
@@ -32,13 +32,13 @@ impl AsRef<[DataType]> for ArrowScalarParams {
 impl From<ArrowScalarParams> for ScalarParams {
     fn from(params: ArrowScalarParams) -> Self {
         match params {
-            ArrowScalarParams::Exact(params) => ScalarParams::Exact(
+            ArrowScalarParams::Exact(params) => Self::Exact(
                 params
                     .into_iter()
                     .map(|v| LogicalTypeId::try_from(&v).expect("type should be converted").into())
                     .collect(),
             ),
-            ArrowScalarParams::Variadic(param) => ScalarParams::Variadic(
+            ArrowScalarParams::Variadic(param) => Self::Variadic(
                 LogicalTypeId::try_from(&param)
                     .expect("type should be converted")
                     .into(),
@@ -58,7 +58,7 @@ pub struct ArrowFunctionSignature {
 impl ArrowFunctionSignature {
     /// Create an exact function signature
     pub fn exact(params: Vec<DataType>, return_type: DataType) -> Self {
-        ArrowFunctionSignature {
+        Self {
             parameters: Some(ArrowScalarParams::Exact(params)),
             return_type,
         }
@@ -66,7 +66,7 @@ impl ArrowFunctionSignature {
 
     /// Create a variadic function signature
     pub fn variadic(param: DataType, return_type: DataType) -> Self {
-        ArrowFunctionSignature {
+        Self {
             parameters: Some(ArrowScalarParams::Variadic(param)),
             return_type,
         }
@@ -152,7 +152,7 @@ mod test {
 
     impl Default for MockState {
         fn default() -> Self {
-            MockState {
+            Self {
                 info: "some meta".to_string(),
             }
         }

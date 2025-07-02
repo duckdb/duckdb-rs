@@ -34,8 +34,8 @@ pub struct RawStatement {
 
 impl RawStatement {
     #[inline]
-    pub unsafe fn new(stmt: ffi::duckdb_prepared_statement) -> RawStatement {
-        RawStatement {
+    pub unsafe fn new(stmt: ffi::duckdb_prepared_statement) -> Self {
+        Self {
             ptr: stmt,
             result: None,
             schema: None,

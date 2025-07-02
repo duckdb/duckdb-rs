@@ -36,7 +36,7 @@ impl DataChunkHandle {
         let num_columns = logical_types.len();
         let mut c_types = logical_types.iter().map(|t| t.ptr).collect::<Vec<_>>();
         let ptr = unsafe { duckdb_create_data_chunk(c_types.as_mut_ptr(), num_columns as u64) };
-        DataChunkHandle { ptr, owned: true }
+        Self { ptr, owned: true }
     }
 
     /// Get the vector at the specific column index: `idx`.
