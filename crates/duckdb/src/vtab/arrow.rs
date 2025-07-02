@@ -161,7 +161,7 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::Decimal256(_, _) => Double,
         DataType::Map(_, _) => Map,
         _ => {
-            return Err(format!("Unsupported data type: {:?}", data_type).into());
+            return Err(format!("Unsupported data type: {data_type:?}").into());
         }
     };
     Ok(type_id)
@@ -220,7 +220,7 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
         | DataType::FixedSizeBinary(_) => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         dtype if dtype.is_primitive() => Ok(LogicalTypeHandle::from(to_duckdb_type_id(data_type)?)),
         _ => Err(format!(
-            "Unsupported data type: {data_type}, please file an issue https://github.com/wangfenjin/duckdb-rs"
+            "Unsupported data type: {data_type}, please file an issue https://github.com/duckdb/duckdb-rs"
         )
         .into()),
     }
@@ -636,8 +636,7 @@ pub fn write_arrow_array_to_vector(
         }
         dt => {
             return Err(format!(
-                "column with data_type {} is not supported yet, please file an issue https://github.com/wangfenjin/duckdb-rs",
-                dt
+                "column with data_type {dt} is not supported yet, please file an issue https://github.com/duckdb/duckdb-rs"
             )
             .into());
         }
@@ -858,7 +857,7 @@ fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector, width:
             }
         }
         // This should never happen, arrow only supports 1-38 decimal digits
-        _ => panic!("Invalid decimal width: {}", width),
+        _ => panic!("Invalid decimal width: {width}"),
     }
 
     // Set nulls
@@ -1071,7 +1070,7 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector) -> Result
             }
             _ => {
                 unimplemented!(
-                    "Unsupported data type: {}, please file an issue https://github.com/wangfenjin/duckdb-rs",
+                    "Unsupported data type: {}, please file an issue https://github.com/duckdb/duckdb-rs",
                     column.data_type()
                 );
             }
@@ -1995,7 +1994,7 @@ mod test {
         check_map_array_roundtrip(map_array)?;
 
         // Test 2 - large MapArray of 4000 elements to test buffers capacity adjustment
-        let keys: Vec<String> = (0..4000).map(|i| format!("key-{}", i)).collect();
+        let keys: Vec<String> = (0..4000).map(|i| format!("key-{i}")).collect();
         let values_data = UInt32Array::from(
             (0..4000)
                 .map(|i| if i % 5 == 0 { None } else { Some(i as u32) })

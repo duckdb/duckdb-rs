@@ -22,7 +22,7 @@ pub struct InnerConnection {
 
 impl InnerConnection {
     #[inline]
-    pub unsafe fn new(db: ffi::duckdb_database, owned: bool) -> Result<InnerConnection> {
+    pub unsafe fn new(db: ffi::duckdb_database, owned: bool) -> Result<Self> {
         let mut con: ffi::duckdb_connection = ptr::null_mut();
         let r = ffi::duckdb_connect(db, &mut con);
         if r != ffi::DuckDBSuccess {
@@ -34,15 +34,10 @@ impl InnerConnection {
         }
         let interrupt = Arc::new(InterruptHandle::new(con));
 
-        Ok(InnerConnection {
-            db,
-            con,
-            interrupt,
-            owned,
-        })
+        Ok(Self { db, con, interrupt, owned })
     }
 
-    pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<InnerConnection> {
+    pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<Self> {
         unsafe {
             let mut db: ffi::duckdb_database = ptr::null_mut();
             let mut c_err = std::ptr::null_mut();
@@ -52,7 +47,7 @@ impl InnerConnection {
                 ffi::duckdb_free(c_err as *mut c_void);
                 return Err(Error::DuckDBFailure(ffi::Error::new(r), msg));
             }
-            InnerConnection::new(db, true)
+            Self::new(db, true)
         }
     }
 
@@ -78,7 +73,7 @@ impl InnerConnection {
 
     /// Creates a new connection to the already-opened database.
     pub fn try_clone(&self) -> Result<Self> {
-        unsafe { InnerConnection::new(self.db, false) }
+        unsafe { Self::new(self.db, false) }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<()> {

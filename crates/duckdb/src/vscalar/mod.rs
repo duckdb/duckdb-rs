@@ -63,7 +63,7 @@ pub struct ScalarFunctionSignature {
 impl ScalarFunctionSignature {
     /// Create an exact function signature
     pub fn exact(params: Vec<LogicalTypeHandle>, return_type: LogicalTypeHandle) -> Self {
-        ScalarFunctionSignature {
+        Self {
             parameters: Some(ScalarParams::Exact(params)),
             return_type,
         }
@@ -71,7 +71,7 @@ impl ScalarFunctionSignature {
 
     /// Create a variadic function signature
     pub fn variadic(param: LogicalTypeHandle, return_type: LogicalTypeHandle) -> Self {
-        ScalarFunctionSignature {
+        Self {
             parameters: Some(ScalarParams::Variadic(param)),
             return_type,
         }
@@ -182,7 +182,7 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let mut msg = input.flat_vector(0).as_slice_with_len::<duckdb_string_t>(input.len())[0];
             let string = DuckString::new(&mut msg).as_str();
-            Err(format!("Error: {}", string).into())
+            Err(format!("Error: {string}").into())
         }
 
         fn signatures() -> Vec<ScalarFunctionSignature> {
@@ -201,7 +201,7 @@ mod test {
 
     impl Default for TestState {
         fn default() -> Self {
-            TestState { inner: 42 }
+            Self { inner: 42 }
         }
     }
 

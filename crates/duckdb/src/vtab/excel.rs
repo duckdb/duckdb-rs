@@ -2,11 +2,11 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
 use crate::core::{Inserter, LogicalTypeId};
-use calamine::{open_workbook_auto, DataType, Range, Reader};
+use calamine::{open_workbook_auto, Data, DataType, Range, Reader};
 
 #[repr(C)]
 struct ExcelBindData {
-    range: Range<DataType>,
+    range: Range<Data>,
     width: usize,
     height: usize,
 }
@@ -35,7 +35,7 @@ impl VTab for ExcelVTab {
         let mut workbook = open_workbook_auto(path)?;
         let range = workbook
             .worksheet_range(&sheet)
-            .unwrap_or_else(|| panic!("Can't find sheet: {} ?", sheet))?;
+            .unwrap_or_else(|_| panic!("Can't find sheet: {sheet} ?"));
         let _column_count = range.get_size().1;
         let mut rows = range.rows();
         let header = rows.next().unwrap();
@@ -44,7 +44,7 @@ impl VTab for ExcelVTab {
             let mut found = true;
             for cell in data.iter() {
                 match cell {
-                    DataType::Error(_) | DataType::Empty => {
+                    Data::Error(_) | Data::Empty => {
                         found = false;
                         break;
                     }
@@ -58,43 +58,43 @@ impl VTab for ExcelVTab {
             // use the first row as data type
             for (idx, cell) in data.iter().enumerate() {
                 match cell {
-                    DataType::String(_) => {
+                    Data::String(_) => {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Varchar),
                         );
                     }
-                    DataType::Float(_) => {
+                    Data::Float(_) => {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Double),
                         );
                     }
-                    DataType::Int(_) => {
+                    Data::Int(_) => {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Bigint),
                         );
                     }
-                    DataType::Bool(_) => {
+                    Data::Bool(_) => {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Boolean),
                         );
                     }
-                    DataType::DateTime(_) => {
+                    Data::DateTime(_) => {
                         bind.add_result_column(
                             header[idx]
                                 .get_string()
-                                .unwrap_or_else(|| panic!("idx {} header empty?", idx)),
+                                .unwrap_or_else(|| panic!("idx {idx} header empty?")),
                             LogicalTypeHandle::from(LogicalTypeId::Date),
                         );
                     }
@@ -133,20 +133,21 @@ impl VTab for ExcelVTab {
                         continue;
                     }
                     match cell.unwrap() {
-                        DataType::String(s) => {
+                        Data::String(s) => {
                             vector.insert(j, s.as_str());
                         }
-                        DataType::Float(f) => {
+                        Data::Float(f) => {
                             vector.as_mut_slice::<f64>()[j] = *f;
                         }
-                        DataType::Int(ii) => {
+                        Data::Int(ii) => {
                             vector.as_mut_slice::<i64>()[j] = *ii;
                         }
-                        DataType::Bool(b) => {
+                        Data::Bool(b) => {
                             vector.as_mut_slice::<bool>()[j] = *b;
                         }
-                        DataType::DateTime(d) => {
-                            vector.as_mut_slice::<i32>()[j] = d.round() as i32 - 25569;
+                        Data::DateTime(d) => {
+                            // 25569 = number of days between Unix and Excel epochs
+                            vector.as_mut_slice::<i32>()[j] = d.as_f64().round() as i32 - 25569;
                         }
                         _ => {
                             vector.set_null(j);

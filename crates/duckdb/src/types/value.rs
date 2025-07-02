@@ -71,140 +71,140 @@ pub enum Value {
 
 impl From<Null> for Value {
     #[inline]
-    fn from(_: Null) -> Value {
-        Value::Null
+    fn from(_: Null) -> Self {
+        Self::Null
     }
 }
 
 impl From<bool> for Value {
     #[inline]
-    fn from(i: bool) -> Value {
-        Value::Boolean(i)
+    fn from(i: bool) -> Self {
+        Self::Boolean(i)
     }
 }
 
 impl From<usize> for Value {
     #[inline]
-    fn from(i: usize) -> Value {
-        Value::UBigInt(i as u64)
+    fn from(i: usize) -> Self {
+        Self::UBigInt(i as u64)
     }
 }
 
 impl From<isize> for Value {
     #[inline]
-    fn from(i: isize) -> Value {
-        Value::BigInt(i as i64)
+    fn from(i: isize) -> Self {
+        Self::BigInt(i as i64)
     }
 }
 
 #[cfg(feature = "uuid")]
 impl From<uuid::Uuid> for Value {
     #[inline]
-    fn from(id: uuid::Uuid) -> Value {
-        Value::Text(id.to_string())
+    fn from(id: uuid::Uuid) -> Self {
+        Self::Text(id.to_string())
     }
 }
 
 impl From<i8> for Value {
     #[inline]
-    fn from(i: i8) -> Value {
-        Value::TinyInt(i)
+    fn from(i: i8) -> Self {
+        Self::TinyInt(i)
     }
 }
 
 impl From<i16> for Value {
     #[inline]
-    fn from(i: i16) -> Value {
-        Value::SmallInt(i)
+    fn from(i: i16) -> Self {
+        Self::SmallInt(i)
     }
 }
 
 impl From<i32> for Value {
     #[inline]
-    fn from(i: i32) -> Value {
-        Value::Int(i)
+    fn from(i: i32) -> Self {
+        Self::Int(i)
     }
 }
 
 impl From<i64> for Value {
     #[inline]
-    fn from(i: i64) -> Value {
-        Value::BigInt(i)
+    fn from(i: i64) -> Self {
+        Self::BigInt(i)
     }
 }
 
 impl From<u8> for Value {
     #[inline]
-    fn from(i: u8) -> Value {
-        Value::UTinyInt(i)
+    fn from(i: u8) -> Self {
+        Self::UTinyInt(i)
     }
 }
 
 impl From<u16> for Value {
     #[inline]
-    fn from(i: u16) -> Value {
-        Value::USmallInt(i)
+    fn from(i: u16) -> Self {
+        Self::USmallInt(i)
     }
 }
 
 impl From<u32> for Value {
     #[inline]
-    fn from(i: u32) -> Value {
-        Value::UInt(i)
+    fn from(i: u32) -> Self {
+        Self::UInt(i)
     }
 }
 
 impl From<u64> for Value {
     #[inline]
-    fn from(i: u64) -> Value {
-        Value::UBigInt(i)
+    fn from(i: u64) -> Self {
+        Self::UBigInt(i)
     }
 }
 
 impl From<i128> for Value {
     #[inline]
-    fn from(i: i128) -> Value {
-        Value::HugeInt(i)
+    fn from(i: i128) -> Self {
+        Self::HugeInt(i)
     }
 }
 
 impl From<f32> for Value {
     #[inline]
-    fn from(f: f32) -> Value {
-        Value::Float(f)
+    fn from(f: f32) -> Self {
+        Self::Float(f)
     }
 }
 
 impl From<f64> for Value {
     #[inline]
-    fn from(f: f64) -> Value {
-        Value::Double(f)
+    fn from(f: f64) -> Self {
+        Self::Double(f)
     }
 }
 
 impl From<String> for Value {
     #[inline]
-    fn from(s: String) -> Value {
-        Value::Text(s)
+    fn from(s: String) -> Self {
+        Self::Text(s)
     }
 }
 
 impl From<Vec<u8>> for Value {
     #[inline]
-    fn from(v: Vec<u8>) -> Value {
-        Value::Blob(v)
+    fn from(v: Vec<u8>) -> Self {
+        Self::Blob(v)
     }
 }
 
 impl<T> From<Option<T>> for Value
 where
-    T: Into<Value>,
+    T: Into<Self>,
 {
     #[inline]
-    fn from(v: Option<T>) -> Value {
+    fn from(v: Option<T>) -> Self {
         match v {
             Some(x) => x.into(),
-            None => Value::Null,
+            None => Self::Null,
         }
     }
 }
@@ -214,28 +214,28 @@ impl Value {
     #[inline]
     pub fn data_type(&self) -> Type {
         match *self {
-            Value::Null => Type::Null,
-            Value::Boolean(_) => Type::Boolean,
-            Value::TinyInt(_) => Type::TinyInt,
-            Value::SmallInt(_) => Type::SmallInt,
-            Value::Int(_) => Type::Int,
-            Value::BigInt(_) => Type::BigInt,
-            Value::HugeInt(_) => Type::HugeInt,
-            Value::UTinyInt(_) => Type::UTinyInt,
-            Value::USmallInt(_) => Type::USmallInt,
-            Value::UInt(_) => Type::UInt,
-            Value::UBigInt(_) => Type::UBigInt,
-            Value::Float(_) => Type::Float,
-            Value::Double(_) => Type::Double,
-            Value::Decimal(_) => Type::Decimal,
-            Value::Timestamp(_, _) => Type::Timestamp,
-            Value::Text(_) => Type::Text,
-            Value::Blob(_) => Type::Blob,
-            Value::Date32(_) => Type::Date32,
-            Value::Time64(..) => Type::Time64,
-            Value::Interval { .. } => Type::Interval,
-            Value::Union(..) | Value::Struct(..) | Value::List(..) | Value::Array(..) | Value::Map(..) => todo!(),
-            Value::Enum(..) => Type::Enum,
+            Self::Null => Type::Null,
+            Self::Boolean(_) => Type::Boolean,
+            Self::TinyInt(_) => Type::TinyInt,
+            Self::SmallInt(_) => Type::SmallInt,
+            Self::Int(_) => Type::Int,
+            Self::BigInt(_) => Type::BigInt,
+            Self::HugeInt(_) => Type::HugeInt,
+            Self::UTinyInt(_) => Type::UTinyInt,
+            Self::USmallInt(_) => Type::USmallInt,
+            Self::UInt(_) => Type::UInt,
+            Self::UBigInt(_) => Type::UBigInt,
+            Self::Float(_) => Type::Float,
+            Self::Double(_) => Type::Double,
+            Self::Decimal(_) => Type::Decimal,
+            Self::Timestamp(_, _) => Type::Timestamp,
+            Self::Text(_) => Type::Text,
+            Self::Blob(_) => Type::Blob,
+            Self::Date32(_) => Type::Date32,
+            Self::Time64(..) => Type::Time64,
+            Self::Interval { .. } => Type::Interval,
+            Self::Union(..) | Self::Struct(..) | Self::List(..) | Self::Array(..) | Self::Map(..) => todo!(),
+            Self::Enum(..) => Type::Enum,
         }
     }
 }
