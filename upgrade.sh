@@ -1,5 +1,13 @@
 #!/bin/bash
 
+set -e
+
+if sed --version 2>/dev/null | grep -q GNU; then
+  SED_INPLACE="sed -i"
+else
+  SED_INPLACE="sed -i ''"
+fi
+
 ## How to run
 ##   `./upgrade.sh`
 
@@ -7,7 +15,7 @@
 # Usage
 # $ get_latest_release "duckdb/duckdb"
 get_latest_release() {
-    curl --silent "https://api.github.com/repos/$1/releases/latest" | # Get latest release from GitHub api
+    curl -fSs "https://api.github.com/repos/$1/releases/latest" | # Get latest release from GitHub api
       grep '"tag_name":' |                                            # Get tag line
       sed -E 's/.*"v([^"]+)".*/\1/'                                   # Pluck JSON value
 }
@@ -22,5 +30,11 @@ fi
 
 echo "Start to upgrade from $duckdb_rs_version to $duckdb_version"
 
-sed -i '' "s/$duckdb_rs_version/$duckdb_version/g" Cargo.toml crates/libduckdb-sys/upgrade.sh crates/libduckdb-sys/Cargo.toml .github/workflows/rust.yaml
-./crates/libduckdb-sys/upgrade.sh
+$SED_INPLACE "s/$duckdb_rs_version/$duckdb_version/g" \
+    Cargo.toml \
+    crates/duckdb/Cargo.toml \
+    crates/libduckdb-sys/upgrade.sh \
+    crates/libduckdb-sys/Cargo.toml \
+    .github/workflows/rust.yaml
+
+exec ./crates/libduckdb-sys/upgrade.sh

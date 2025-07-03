@@ -161,7 +161,7 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::Decimal256(_, _) => Double,
         DataType::Map(_, _) => Map,
         _ => {
-            return Err(format!("Unsupported data type: {:?}", data_type).into());
+            return Err(format!("Unsupported data type: {data_type:?}").into());
         }
     };
     Ok(type_id)
@@ -636,8 +636,7 @@ pub fn write_arrow_array_to_vector(
         }
         dt => {
             return Err(format!(
-                "column with data_type {} is not supported yet, please file an issue https://github.com/duckdb/duckdb-rs",
-                dt
+                "column with data_type {dt} is not supported yet, please file an issue https://github.com/duckdb/duckdb-rs"
             )
             .into());
         }
@@ -858,7 +857,7 @@ fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector, width:
             }
         }
         // This should never happen, arrow only supports 1-38 decimal digits
-        _ => panic!("Invalid decimal width: {}", width),
+        _ => panic!("Invalid decimal width: {width}"),
     }
 
     // Set nulls
@@ -1183,7 +1182,7 @@ mod test {
         db.register_table_function::<ArrowVTab>("arrow")?;
 
         let rbs: Vec<RecordBatch> = db
-            .prepare("SELECT value::DECIMAL(38,0) as value FROM read_parquet('./examples/int32_decimal.parquet');")?
+            .prepare("SELECT * FROM read_parquet('./examples/int32_decimal.parquet');")?
             .query_arrow([])?
             .collect();
         let param = arrow_recordbatch_to_query_params(rbs.into_iter().next().unwrap());
@@ -1193,7 +1192,7 @@ mod test {
         assert_eq!(rb.num_columns(), 1);
         let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(column.len(), 1);
-        assert_eq!(column.value(0), i128::from(300));
+        assert_eq!(column.value(0), i128::from(30000));
         Ok(())
     }
 
@@ -1621,12 +1620,12 @@ mod test {
 
         // With custom width and scale
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
-            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(38, 10));
+            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 2));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
         // With width and zero scale
         let array: PrimitiveArray<arrow::datatypes::Decimal128Type> =
-            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(38, 0));
+            Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 0));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
         Ok(())
@@ -1995,7 +1994,7 @@ mod test {
         check_map_array_roundtrip(map_array)?;
 
         // Test 2 - large MapArray of 4000 elements to test buffers capacity adjustment
-        let keys: Vec<String> = (0..4000).map(|i| format!("key-{}", i)).collect();
+        let keys: Vec<String> = (0..4000).map(|i| format!("key-{i}")).collect();
         let values_data = UInt32Array::from(
             (0..4000)
                 .map(|i| if i % 5 == 0 { None } else { Some(i as u32) })

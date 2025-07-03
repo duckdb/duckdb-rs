@@ -62,8 +62,8 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new(result_code: duckdb_state) -> Error {
-        Error {
+    pub fn new(result_code: duckdb_state) -> Self {
+        Self {
             code: ErrorCode::Unknown,
             extended_code: result_code,
         }

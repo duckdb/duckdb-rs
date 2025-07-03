@@ -123,7 +123,7 @@ impl ScalarFunction {
         duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy);
     }
 
-    pub fn set_extra_info<T: Default>(&self) -> &ScalarFunction {
+    pub fn set_extra_info<T: Default>(&self) -> &Self {
         unsafe {
             let t = Box::new(T::default());
             let c_void = Box::into_raw(t) as *mut c_void;

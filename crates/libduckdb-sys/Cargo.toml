@@ -1,19 +1,17 @@
 [package]
 name = "libduckdb-sys"
-version = "1.3.0"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-readme.workspace = true
+version = "1.3.1"
+authors = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
 build = "build.rs"
 categories = ["external-ffi-bindings", "database"]
 description = "Native bindings to the libduckdb library, C API"
 exclude = ["duckdb-sources"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 default = ["vcpkg", "pkg-config"]
@@ -26,21 +24,18 @@ winduckdb = []
 # Warning: experimental feature
 loadable-extension = ["prettyplease", "quote", "syn"]
 
-[dependencies]
-
 [build-dependencies]
-autocfg = { workspace = true }
 bindgen = { workspace = true, features = ["runtime"], optional = true }
+cc = { workspace = true, features = ["parallel"], optional = true }
 flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
-cc = { workspace = true, features = ["parallel"], optional = true }
-vcpkg = { workspace = true, optional = true }
+prettyplease = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tar = { workspace = true }
 syn = { workspace = true, optional = true }
-quote = { workspace = true, optional = true }
-prettyplease = { workspace = true, optional = true }
+tar = { workspace = true }
+vcpkg = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }

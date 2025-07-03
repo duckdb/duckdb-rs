@@ -303,7 +303,7 @@ mod test {
             Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
                 assert_eq!(msg, "Call to EndRow before all columns have been appended to!")
             }
-            Err(err) => panic!("unexpected error: {:?}", err),
+            Err(err) => panic!("unexpected error: {err:?}"),
             Ok(_) => panic!("expected an error but got Ok"),
         }
         Ok(())

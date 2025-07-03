@@ -144,6 +144,12 @@ impl Inserter<&str> for FlatVector {
     }
 }
 
+impl Inserter<&String> for FlatVector {
+    fn insert(&self, index: usize, value: &String) {
+        self.insert(index, value.as_str());
+    }
+}
+
 impl Inserter<&[u8]> for FlatVector {
     fn insert(&self, index: usize, value: &[u8]) {
         let value_size = value.len();
@@ -156,6 +162,12 @@ impl Inserter<&[u8]> for FlatVector {
                 value_size as u64,
             );
         }
+    }
+}
+
+impl Inserter<&Vec<u8>> for FlatVector {
+    fn insert(&self, index: usize, value: &Vec<u8>) {
+        self.insert(index, value.as_slice());
     }
 }
 
@@ -203,8 +215,8 @@ impl ListVector {
     }
 
     /// Take the child as [ListVector].
-    pub fn list_child(&self) -> ListVector {
-        ListVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    pub fn list_child(&self) -> Self {
+        Self::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
     }
 
     /// Set primitive data to the child node.
@@ -309,7 +321,7 @@ impl StructVector {
     }
 
     /// Take the child as [StructVector].
-    pub fn struct_vector_child(&self, idx: usize) -> StructVector {
+    pub fn struct_vector_child(&self, idx: usize) -> Self {
         Self::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
     }
 
@@ -350,5 +362,37 @@ impl StructVector {
             let idx = duckdb_vector_get_validity(self.ptr);
             duckdb_validity_set_row_invalid(idx, row as u64);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{DataChunkHandle, LogicalTypeId};
+    use std::ffi::CString;
+
+    #[test]
+    fn test_insert_string_values() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Varchar.into()]);
+        let vector = chunk.flat_vector(0);
+        chunk.set_len(3);
+
+        vector.insert(0, "first");
+        vector.insert(1, &String::from("second"));
+        let cstring = CString::new("third").unwrap();
+        vector.insert(2, cstring);
+    }
+
+    #[test]
+    fn test_insert_byte_values() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Blob.into()]);
+        let vector = chunk.flat_vector(0);
+        chunk.set_len(2);
+
+        vector.insert(0, b"hello world".as_slice());
+        vector.insert(
+            1,
+            &vec![0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64],
+        );
     }
 }
