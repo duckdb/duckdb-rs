@@ -64,6 +64,7 @@ duckdb-loadable-macros = { workspace = true, optional = true }
 polars = { workspace = true, features = ["dtype-full"], optional = true }
 polars-arrow = { workspace = true, optional = true }
 num-integer = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 doc-comment = { workspace = true }
