@@ -888,6 +888,7 @@ dependencies = [
  "r2d2",
  "rand 0.9.1",
  "rust_decimal",
+ "serde",
  "serde_json",
  "smallvec",
  "strum",
