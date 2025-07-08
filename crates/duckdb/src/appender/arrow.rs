@@ -6,10 +6,10 @@ use crate::{
     Error,
 };
 use arrow::record_batch::RecordBatch;
-use ffi::duckdb_append_data_chunk;
+use ffi::{duckdb_append_data_chunk, duckdb_vector_size};
 
 impl Appender<'_> {
-    /// Append one record_batch
+    /// Append one record batch
     ///
     /// ## Example
     ///
@@ -28,19 +28,35 @@ impl Appender<'_> {
     /// Will return `Err` if append column count not the same with the table schema
     #[inline]
     pub fn append_record_batch(&mut self, record_batch: RecordBatch) -> Result<()> {
-        let schema = record_batch.schema();
-        let mut logical_type: Vec<LogicalTypeHandle> = vec![];
-        for field in schema.fields() {
-            let logical_t = to_duckdb_logical_type(field.data_type())
-                .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))?;
-            logical_type.push(logical_t);
+        let logical_types: Vec<LogicalTypeHandle> = record_batch
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| {
+                to_duckdb_logical_type(field.data_type())
+                    .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let vector_size = unsafe { duckdb_vector_size() } as usize;
+        let num_rows = record_batch.num_rows();
+
+        // Process record batch in chunks that fit within DuckDB's vector size
+        let mut offset = 0;
+        while offset < num_rows {
+            let slice_len = std::cmp::min(vector_size, num_rows - offset);
+            let slice = record_batch.slice(offset, slice_len);
+
+            let mut data_chunk = DataChunkHandle::new(&logical_types);
+            record_batch_to_duckdb_data_chunk(&slice, &mut data_chunk).map_err(|_op| Error::AppendError)?;
+
+            let rc = unsafe { duckdb_append_data_chunk(self.app, data_chunk.get_ptr()) };
+            result_from_duckdb_appender(rc, &mut self.app)?;
+
+            offset += slice_len;
         }
 
-        let mut data_chunk = DataChunkHandle::new(&logical_type);
-        record_batch_to_duckdb_data_chunk(&record_batch, &mut data_chunk).map_err(|_op| Error::AppendError)?;
-
-        let rc = unsafe { duckdb_append_data_chunk(self.app, data_chunk.get_ptr()) };
-        result_from_duckdb_appender(rc, &mut self.app)
+        Ok(())
     }
 }
 
