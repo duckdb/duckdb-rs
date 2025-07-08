@@ -117,7 +117,7 @@ impl From<&DataType> for Type {
             DataType::UInt32 => Self::UInt,
             DataType::UInt64 => Self::UBigInt,
             // DataType::Float16 => Self::Float16,
-            // DataType::Float32 => Self::Float32,
+            DataType::Float32 => Self::Float,  // Single precision (4 bytes)
             DataType::Float64 => Self::Double, // Double precision (8 bytes)
             DataType::Timestamp(_, _) => Self::Timestamp,
             DataType::Date32 => Self::Date32,
