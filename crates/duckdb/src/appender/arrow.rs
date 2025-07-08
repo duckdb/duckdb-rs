@@ -103,17 +103,20 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(id INT)")?;
         {
-            let id_array = Int32Array::from(vec![42; record_count]);
+            let id_array = Int32Array::from((0..record_count as i32).collect::<Vec<_>>());
             let schema = Schema::new(vec![Field::new("id", DataType::Int32, true)]);
             let record_batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(id_array)]).unwrap();
             let mut app = db.appender("foo")?;
             app.append_record_batch(record_batch)?;
         }
-        let count = db.query_row("SELECT COUNT(*) FROM foo", [], |row| {
-            let count: usize = row.get(0)?;
-            Ok(count)
-        })?;
+        let count: usize = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
         assert_eq!(count, record_count);
+
+        // Verify the data is correct
+        let sum: i64 = db.query_row("SELECT SUM(id) FROM foo", [], |row| row.get(0))?;
+        let expected_sum: i64 = (0..record_count as i64).sum();
+        assert_eq!(sum, expected_sum);
+
         Ok(())
     }
 }
