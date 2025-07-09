@@ -369,3 +369,46 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::types::Type;
+    use crate::{Connection, Result};
+
+    #[test]
+    fn test_list_types() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute(
+            "CREATE TABLE test_table (float_list FLOAT[], double_list DOUBLE[], int_list INT[])",
+            [],
+        )?;
+        conn.execute("INSERT INTO test_table VALUES ([1.5, 2.5], [3.5, 4.5], [1, 2])", [])?;
+
+        let mut stmt = conn.prepare("SELECT float_list, double_list, int_list FROM test_table")?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+
+        let float_list = row.get_ref_unwrap(0);
+        assert!(
+            matches!(float_list.data_type(), Type::List(ref inner_type) if **inner_type == Type::Float),
+            "Expected Type::List(Type::Float), got {:?}",
+            float_list.data_type()
+        );
+
+        let double_list = row.get_ref_unwrap(1);
+        assert!(
+            matches!(double_list.data_type(), Type::List(ref inner_type) if **inner_type == Type::Double),
+            "Expected Type::List(Type::Double), got {:?}",
+            double_list.data_type()
+        );
+
+        let int_list = row.get_ref_unwrap(2);
+        assert!(
+            matches!(int_list.data_type(), Type::List(ref inner_type) if **inner_type == Type::Int),
+            "Expected Type::List(Type::Int), got {:?}",
+            int_list.data_type()
+        );
+
+        Ok(())
+    }
+}
