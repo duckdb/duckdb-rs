@@ -5,7 +5,7 @@ use std::{default::Default, ffi::CString, os::raw::c_char, ptr};
 use strum::{Display, EnumString};
 
 /// duckdb access mode, default is Automatic
-#[derive(Debug, Eq, PartialEq, EnumString, Display)]
+#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display)]
 pub enum AccessMode {
     /// Access mode of the database AUTOMATIC
     #[strum(to_string = "AUTOMATIC")]
@@ -19,7 +19,7 @@ pub enum AccessMode {
 }
 
 /// duckdb default order, default is Asc
-#[derive(Debug, Eq, PartialEq, EnumString, Display)]
+#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display)]
 pub enum DefaultOrder {
     /// The order type, ASC
     #[strum(to_string = "ASC")]
@@ -30,7 +30,7 @@ pub enum DefaultOrder {
 }
 
 /// duckdb default null order, default is nulls first
-#[derive(Debug, Eq, PartialEq, EnumString, Display)]
+#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display)]
 pub enum DefaultNullOrder {
     /// Null ordering, NullsFirst
     #[strum(to_string = "NULLS_FIRST")]
