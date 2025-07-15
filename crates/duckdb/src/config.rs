@@ -2,10 +2,10 @@ use super::{ffi, Result};
 use crate::error::Error;
 use std::{default::Default, ffi::CString, os::raw::c_char, ptr};
 
-use strum::{Display, EnumString};
+use strum::{AsRefStr, Display, EnumString};
 
 /// duckdb access mode, default is Automatic
-#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display)]
+#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display, AsRefStr)]
 pub enum AccessMode {
     /// Access mode of the database AUTOMATIC
     #[strum(to_string = "AUTOMATIC")]
@@ -19,7 +19,7 @@ pub enum AccessMode {
 }
 
 /// duckdb default order, default is Asc
-#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display)]
+#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display, AsRefStr)]
 pub enum DefaultOrder {
     /// The order type, ASC
     #[strum(to_string = "ASC")]
@@ -30,7 +30,7 @@ pub enum DefaultOrder {
 }
 
 /// duckdb default null order, default is nulls first
-#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display)]
+#[derive(Debug, Eq, PartialEq, Clone, EnumString, Display, AsRefStr)]
 pub enum DefaultNullOrder {
     /// Null ordering, NullsFirst
     #[strum(to_string = "NULLS_FIRST")]
@@ -54,14 +54,15 @@ impl Config {
 
     /// enable autoload extensions
     pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Self> {
-        self.set("autoinstall_known_extensions", &(enabled as i32).to_string())?;
-        self.set("autoload_known_extensions", &(enabled as i32).to_string())?;
+        let value = (enabled as u8).to_string();
+        self.set("autoinstall_known_extensions", &value)?;
+        self.set("autoload_known_extensions", &value)?;
         Ok(self)
     }
 
     /// Access mode of the database ([AUTOMATIC], READ_ONLY or READ_WRITE)
     pub fn access_mode(mut self, mode: AccessMode) -> Result<Self> {
-        self.set("access_mode", &mode.to_string())?;
+        self.set("access_mode", mode)?;
         Ok(self)
     }
 
@@ -73,25 +74,25 @@ impl Config {
 
     /// The order type used when none is specified ([ASC] or DESC)
     pub fn default_order(mut self, order: DefaultOrder) -> Result<Self> {
-        self.set("default_order", &order.to_string())?;
+        self.set("default_order", order)?;
         Ok(self)
     }
 
     /// Null ordering used when none is specified ([NULLS_FIRST] or NULLS_LAST)
     pub fn default_null_order(mut self, null_order: DefaultNullOrder) -> Result<Self> {
-        self.set("default_null_order", &null_order.to_string())?;
+        self.set("default_null_order", null_order)?;
         Ok(self)
     }
 
     /// Allow the database to access external state (through e.g. COPY TO/FROM, CSV readers, pandas replacement scans, etc)
     pub fn enable_external_access(mut self, enabled: bool) -> Result<Self> {
-        self.set("enable_external_access", &enabled.to_string())?;
+        self.set("enable_external_access", enabled.to_string())?;
         Ok(self)
     }
 
     /// Whether or not object cache is used to cache e.g. Parquet metadata
     pub fn enable_object_cache(mut self, enabled: bool) -> Result<Self> {
-        self.set("enable_object_cache", &enabled.to_string())?;
+        self.set("enable_object_cache", enabled.to_string())?;
         Ok(self)
     }
 
@@ -109,18 +110,19 @@ impl Config {
 
     /// The number of total threads used by the system
     pub fn threads(mut self, thread_num: i64) -> Result<Self> {
-        self.set("threads", &thread_num.to_string())?;
+        self.set("threads", thread_num.to_string())?;
         Ok(self)
     }
 
-    /// Add any setting to the config. DuckDB will return an error if the setting is unknown or
-    /// otherwise invalid.
+    /// Add any setting to the config. DuckDB will return an error if the setting is unknown or otherwise invalid.
     pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<Self> {
-        self.set(key.as_ref(), value.as_ref())?;
+        self.set(key, value)?;
         Ok(self)
     }
 
-    fn set(&mut self, key: &str, value: &str) -> Result<()> {
+    fn set(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<()> {
+        let key = key.as_ref();
+        let value = value.as_ref();
         if self.config.is_none() {
             let mut config: ffi::duckdb_config = ptr::null_mut();
             let state = unsafe { ffi::duckdb_create_config(&mut config) };
