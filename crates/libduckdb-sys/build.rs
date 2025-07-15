@@ -25,6 +25,10 @@ fn main() {
     let out_path = Path::new(&out_dir).join("bindgen.rs");
     #[cfg(feature = "bundled")]
     {
+        assert!(
+            ! cfg!(feature = "loadable-extension"),
+            "Conflicting features 'bundled' and 'loadable-extension' are not meant to be used together"
+        );
         build_bundled::main(&out_dir, &out_path);
     }
     #[cfg(not(feature = "bundled"))]
