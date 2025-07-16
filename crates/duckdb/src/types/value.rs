@@ -43,6 +43,10 @@ pub enum Value {
     /// The value is a blob of data
     Blob(Vec<u8>),
     /// The value is a date32
+    ///
+    /// The `i32` represents the number of days since the Unix epoch (1970-01-01).
+    ///
+    /// Enable the `chrono` feature for easy conversion to proper date types like `NaiveDate`.
     Date32(i32),
     /// The value is a time64
     Time64(TimeUnit, i64),
