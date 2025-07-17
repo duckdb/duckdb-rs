@@ -1,3 +1,5 @@
+use serde::{Serialize, Serializer};
+
 /// An ordered map of key-value pairs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrderedMap<K, V>(Vec<(K, V)>);
@@ -26,3 +28,18 @@ impl<K: std::cmp::PartialEq, V> OrderedMap<K, V> {
         self.0.iter()
     }
 }
+
+impl<K: Serialize, V: Serialize> Serialize for OrderedMap<K, V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (k, v) in &self.0 {
+            map.serialize_entry(k, v)?;
+        }
+        map.end()
+    }
+}
+
