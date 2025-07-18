@@ -71,7 +71,7 @@ impl RawStatement {
 
     #[inline]
     pub fn result_unwrap(&self) -> ffi::duckdb_arrow {
-        self.result.unwrap()
+        self.result.expect("The statement was not executed yet")
     }
 
     #[inline]
