@@ -49,6 +49,9 @@ impl Statement<'_> {
     /// If associated DB schema can be altered concurrently, you should make
     /// sure that current statement has already been stepped once before
     /// calling this method.
+    ///
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     #[inline]
     pub fn column_count(&self) -> usize {
         self.stmt.column_count()
