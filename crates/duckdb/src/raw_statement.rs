@@ -71,7 +71,7 @@ impl RawStatement {
 
     #[inline]
     pub fn result_unwrap(&self) -> ffi::duckdb_arrow {
-        self.result.unwrap()
+        self.result.expect("The statement was not executed yet")
     }
 
     #[inline]
@@ -198,6 +198,8 @@ impl RawStatement {
         }
     }
 
+    // FIXME(mlafeldt): This currently panics if the query has not been executed yet.
+    // The C API doesn't have a function to get the column count without executing the query first.
     #[inline]
     pub fn column_count(&self) -> usize {
         unsafe { ffi::duckdb_arrow_column_count(self.result_unwrap()) as usize }
