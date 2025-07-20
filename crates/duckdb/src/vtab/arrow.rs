@@ -1169,7 +1169,7 @@ mod test {
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
-            i256, ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, Fields, IntervalDayTimeType,
+            i256, ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, IntervalDayTimeType,
             IntervalMonthDayNanoType, IntervalYearMonthType, Schema,
         },
         record_batch::RecordBatch,
@@ -1220,6 +1220,8 @@ mod test {
     #[test]
     #[cfg(feature = "appender-arrow")]
     fn test_append_struct() -> Result<(), Box<dyn Error>> {
+        use arrow::datatypes::Fields;
+
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE t1 (s STRUCT(v VARCHAR, i INTEGER))")?;
         {
@@ -1257,6 +1259,8 @@ mod test {
     #[test]
     #[cfg(feature = "appender-arrow")]
     fn test_append_struct_contains_null() -> Result<(), Box<dyn Error>> {
+        use arrow::datatypes::Fields;
+
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE t1 (s STRUCT(v VARCHAR, i INTEGER))")?;
         {
