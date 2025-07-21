@@ -889,7 +889,6 @@ dependencies = [
  "rand 0.9.1",
  "rust_decimal",
  "serde_json",
- "smallvec",
  "strum",
  "tempfile",
  "url",

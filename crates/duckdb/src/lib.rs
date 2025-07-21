@@ -134,8 +134,6 @@ pub mod vscalar;
 #[cfg(test)]
 mod test_all_types;
 
-pub(crate) mod util;
-
 // Number of cached prepared statements we'll hold on to.
 const STATEMENT_CACHE_DEFAULT_CAPACITY: usize = 16;
 
