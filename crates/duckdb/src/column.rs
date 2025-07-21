@@ -140,51 +140,11 @@ impl Statement<'_> {
     pub fn column_type(&self, idx: usize) -> DataType {
         self.stmt.column_type(idx)
     }
-
-    /// Returns a slice describing the columns of the result of the query.
-    ///
-    /// If associated DB schema can be altered concurrently, you should make
-    /// sure that current statement has already been stepped once before
-    /// calling this method.
-    #[cfg(feature = "column_decltype")]
-    pub fn columns(&self) -> Vec<Column<'_>> {
-        let n = self.column_count();
-        let mut cols = Vec::with_capacity(n);
-        for i in 0..n {
-            let name = self.column_name_unwrap(i);
-            let slice = self.stmt.column_decltype(i);
-            let decl_type =
-                slice.map(|s| str::from_utf8(s.to_bytes()).expect("Invalid UTF-8 sequence in column declaration"));
-            cols.push(Column { name, decl_type });
-        }
-        cols
-    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{Connection, Result};
-
-    #[test]
-    #[cfg(feature = "column_decltype")]
-    fn test_columns() -> Result<()> {
-        use super::Column;
-
-        let db = Connection::open_in_memory()?;
-        let query = db.prepare("SELECT * FROM sqlite_master")?;
-        let columns = query.columns();
-        let column_names: Vec<&str> = columns.iter().map(Column::name).collect();
-        assert_eq!(
-            column_names.as_slice(),
-            &["type", "name", "tbl_name", "rootpage", "sql"]
-        );
-        let column_types: Vec<Option<&str>> = columns.iter().map(Column::decl_type).collect();
-        assert_eq!(
-            &column_types[..3],
-            &[Some("VARCHAR"), Some("VARCHAR"), Some("VARCHAR"),]
-        );
-        Ok(())
-    }
 
     #[test]
     fn test_column_name_in_error() -> Result<()> {
