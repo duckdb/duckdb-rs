@@ -216,12 +216,6 @@ impl RawStatement {
     }
 
     #[inline]
-    #[allow(dead_code)]
-    pub fn column_decltype(&self, _idx: usize) -> Option<&CStr> {
-        panic!("not implemented")
-    }
-
-    #[inline]
     pub fn column_name(&self, idx: usize) -> Option<&String> {
         if idx >= self.column_count() {
             return None;
