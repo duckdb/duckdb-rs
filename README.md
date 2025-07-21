@@ -77,6 +77,38 @@ fn main() -> Result<()> {
 }
 ```
 
+## Feature flags
+
+The `duckdb` crate provides a number of Cargo features that can be enabled to add functionality:
+
+### Virtual tables and functions
+
+- `vtab` - Base support for creating custom table functions and virtual tables.
+- `vtab-arrow` - Apache Arrow integration for virtual tables. Enables conversion between Arrow RecordBatch and DuckDB data chunks.
+- `vtab-excel` - Read Excel (.xlsx) files directly in SQL queries with automatic schema detection.
+- `vtab-loadable` - Support for creating loadable DuckDB extensions. Includes procedural macros for extension development.
+- `vscalar` - Create custom scalar functions that operate on individual values or rows.
+- `vscalar-arrow` - Arrow-optimized scalar functions for vectorized operations.
+
+### Data integration
+
+- `json` - Enables reading and writing JSON files. Requires `bundled`.
+- `parquet` - Enables reading and writing Parquet files. Requires `bundled`.
+- `appender-arrow` - Efficient bulk insertion of Arrow data into DuckDB tables.
+- `polars` - Integration with Polars DataFrames.
+
+### Convenience features
+
+- `vtab-full` - Enables all virtual table features: `vtab-excel`, `vtab-arrow`, and `appender-arrow`.
+- `extensions-full` - Enables all major extensions: `json`, `parquet`, and `vtab-full`.
+- `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde_json`, `url`, `r2d2`, `uuid`, and `polars`.
+
+### Build configuration
+
+- `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
+- `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
+- `loadable-extension` - _Experimental_ support for building extensions that can be dynamically loaded into DuckDB.
+
 ## Notes on building duckdb and libduckdb-sys
 
 `libduckdb-sys` is a separate crate from `duckdb-rs` that provides the Rust
@@ -103,7 +135,8 @@ You can adjust this behavior in a number of ways:
   # Assume that version DuckDB version 0.9.2 is used.
   duckdb = { version = "0.9.2", features = ["bundled"] }
   ```
-* When linking against a DuckDB library already on the system (so *not* using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
+
+* When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
 * Installing the duckdb development packages will usually be all that is required, but
   the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
   and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
@@ -118,11 +151,11 @@ declarations from DuckDB's C header file. `bindgen`
 running this as part of the build process of libraries that used this. We tried
 this briefly (`duckdb` 0.10.0, specifically), but it had some annoyances:
 
-* The build time for `libduckdb-sys` (and therefore `duckdb`) increased
+- The build time for `libduckdb-sys` (and therefore `duckdb`) increased
   dramatically.
-* Running `bindgen` requires a relatively-recent version of Clang, which many
+- Running `bindgen` requires a relatively-recent version of Clang, which many
   systems do not have installed by default.
-* Running `bindgen` also requires the DuckDB header file to be present.
+- Running `bindgen` also requires the DuckDB header file to be present.
 
 So we try to avoid running `bindgen` at build-time by shipping
 pregenerated bindings for DuckDB.
