@@ -52,7 +52,6 @@ polars-arrow = { workspace = true, optional = true }
 r2d2 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 serde_json = { workspace = true, optional = true }
-smallvec = { workspace = true }
 strum = { workspace = true, features = ["derive"] }
 url = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
