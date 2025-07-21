@@ -296,11 +296,18 @@ mod build_linked {
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
             env::set_var("PKG_CONFIG_PATH", pkgconfig_path);
-            if pkg_config::Config::new().probe(link_lib).is_err() {
+
+            #[cfg(feature = "pkg-config")]
+            let lib_found = pkg_config::Config::new().probe(link_lib).is_ok();
+            #[cfg(not(feature = "pkg-config"))]
+            let lib_found = false;
+
+            if !lib_found {
                 // Otherwise just emit the bare minimum link commands.
                 println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
                 println!("cargo:rustc-link-search={dir}");
             }
+
             return HeaderLocation::FromEnvironment;
         }
 
@@ -309,39 +316,50 @@ mod build_linked {
         }
 
         // See if pkg-config can do everything for us.
-        match pkg_config::Config::new().print_system_libs(false).probe(link_lib) {
-            Ok(mut lib) => {
-                if let Some(header) = lib.include_paths.pop() {
-                    HeaderLocation::FromPath(header.to_string_lossy().into())
-                } else {
+        #[cfg(feature = "pkg-config")]
+        {
+            match pkg_config::Config::new().print_system_libs(false).probe(link_lib) {
+                Ok(mut lib) => {
+                    if let Some(header) = lib.include_paths.pop() {
+                        HeaderLocation::FromPath(header.to_string_lossy().into())
+                    } else {
+                        HeaderLocation::Wrapper
+                    }
+                }
+                Err(_) => {
+                    // No env var set and pkg-config couldn't help; just output the link-lib
+                    // request and hope that the library exists on the system paths. We used to
+                    // output /usr/lib explicitly, but that can introduce other linking problems;
+                    // see https://github.com/rusqlite/rusqlite/issues/207.
+                    if !cfg!(feature = "loadable-extension") {
+                        println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
+                    }
                     HeaderLocation::Wrapper
                 }
             }
-            Err(_) => {
-                // No env var set and pkg-config couldn't help; just output the link-lib
-                // request and hope that the library exists on the system paths. We used to
-                // output /usr/lib explicitly, but that can introduce other linking problems;
-                // see https://github.com/rusqlite/rusqlite/issues/207.
-                if !cfg!(feature = "loadable-extension") {
-                    println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
-                }
-                HeaderLocation::Wrapper
+        }
+        #[cfg(not(feature = "pkg-config"))]
+        {
+            // No pkg-config available; just output the link-lib request and hope
+            // that the library exists on the system paths.
+            if !cfg!(feature = "loadable-extension") {
+                println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
             }
+            HeaderLocation::Wrapper
         }
     }
 
     fn try_vcpkg() -> Option<HeaderLocation> {
-        if cfg!(feature = "vcpkg") && is_compiler("msvc") {
+        #[cfg(feature = "vcpkg")]
+        if is_compiler("msvc") {
             // See if vcpkg can find it.
             if let Ok(mut lib) = vcpkg::Config::new().probe(lib_name()) {
                 if let Some(header) = lib.include_paths.pop() {
                     return Some(HeaderLocation::FromPath(header.to_string_lossy().into()));
                 }
             }
-            None
-        } else {
-            None
         }
+        None
     }
 }
 
@@ -485,12 +503,11 @@ mod bindings {
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
 
+        #[allow(unused_mut)]
         let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
         #[cfg(feature = "loadable-extension")]
-        {
-            generate_functions(&mut output);
-        }
+        generate_functions(&mut output);
 
         let mut file = OpenOptions::new()
             .write(true)
