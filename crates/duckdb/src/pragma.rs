@@ -359,12 +359,6 @@ mod test {
     #[ignore]
     fn test_locking_mode() -> Result<()> {
         let db = Connection::open_in_memory()?;
-        let r = db.pragma_update(None, "locking_mode", &"exclusive");
-        if cfg!(feature = "extra_check") {
-            r.unwrap_err();
-        } else {
-            r?;
-        }
-        Ok(())
+        db.pragma_update(None, "locking_mode", &"exclusive")
     }
 }
