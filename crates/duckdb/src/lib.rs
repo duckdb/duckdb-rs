@@ -1400,4 +1400,34 @@ mod test {
         assert_eq!(expected, actual);
         Ok(())
     }
+
+    #[test]
+    fn test_arrow_string_view_setting() -> Result<()> {
+        // Test that only one setting doesn't work (missing arrow_output_version)
+        {
+            let config = Config::default().with("produce_arrow_string_view", "true")?;
+            let conn = Connection::open_in_memory_with_flags(config)?;
+
+            let mut query = conn.prepare("SELECT 'test'::varchar AS str")?;
+            let arrow = query.query_arrow([])?;
+
+            let batch = arrow.into_iter().next().expect("Expected at least one batch");
+            assert_eq!(batch.schema().field(0).data_type(), &DataType::Utf8);
+        }
+
+        {
+            let config = Config::default()
+                .with("produce_arrow_string_view", "true")?
+                .with("arrow_output_version", "1.4")?;
+            let conn = Connection::open_in_memory_with_flags(config)?;
+
+            let mut query = conn.prepare("SELECT 'test'::varchar AS str")?;
+            let arrow = query.query_arrow([])?;
+
+            let batch = arrow.into_iter().next().expect("Expected at least one batch");
+            assert_eq!(batch.schema().field(0).data_type(), &DataType::Utf8View);
+        }
+
+        Ok(())
+    }
 }
