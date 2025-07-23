@@ -2,10 +2,7 @@
 // cargo run --example repl
 // cargo run --example repl path/to/database.db
 
-use duckdb::{
-    arrow::{record_batch::RecordBatch, util::pretty::print_batches},
-    Connection, Result as DuckResult,
-};
+use duckdb::{arrow::record_batch::RecordBatch, Connection, Result as DuckResult};
 use rustyline::{error::ReadlineError, history::DefaultHistory, Config, Editor};
 
 const HISTORY_FILE: &str = ".duckdb_rs_history";
@@ -43,7 +40,7 @@ impl SqlRepl {
                         continue;
                     }
                     match line {
-                        ".quit" | ".exit" => break,
+                        ".quit" => break,
                         ".help" => self.show_help(),
                         ".schema" => {
                             if let Err(e) = self.show_schema() {
@@ -86,7 +83,6 @@ impl SqlRepl {
         println!("Available commands:");
         println!("  .help      - Show this help message");
         println!("  .quit      - Exit the REPL");
-        println!("  .exit      - Exit the REPL");
         println!("  .schema    - Show database schema");
         println!("  .tables    - Show all tables");
         println!();
@@ -112,7 +108,7 @@ impl SqlRepl {
         if rbs.is_empty() || rbs[0].num_rows() == 0 {
             println!("No tables found in database.");
         } else {
-            print_batches(&rbs).unwrap();
+            print_records(&rbs);
         }
 
         Ok(())
@@ -125,7 +121,7 @@ impl SqlRepl {
         if rbs.is_empty() || rbs[0].num_rows() == 0 {
             println!("No tables found in database.");
         } else {
-            print_batches(&rbs).unwrap();
+            print_records(&rbs);
         }
 
         Ok(())
@@ -149,7 +145,7 @@ impl SqlRepl {
             if rbs.is_empty() || rbs[0].num_rows() == 0 {
                 println!("No results returned.");
             } else {
-                print_batches(&rbs).unwrap();
+                print_records(&rbs);
             }
         } else {
             // Execute non-query statements
@@ -158,6 +154,14 @@ impl SqlRepl {
 
         Ok(())
     }
+}
+
+fn print_records(rbs: &[RecordBatch]) {
+    let options = arrow::util::display::FormatOptions::default()
+        .with_display_error(true)
+        .with_types_info(true);
+    let str = arrow::util::pretty::pretty_format_batches_with_options(rbs, &options).unwrap();
+    println!("{str}");
 }
 
 fn main() -> DuckResult<()> {
