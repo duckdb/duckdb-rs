@@ -10,6 +10,7 @@ const HISTORY_FILE: &str = ".duckdb_rs_history";
 struct SqlRepl {
     conn: Connection,
     editor: Editor<(), DefaultHistory>,
+    debug: bool,
 }
 
 impl SqlRepl {
@@ -22,10 +23,14 @@ impl SqlRepl {
         let editor = {
             let config = Config::builder().auto_add_history(true).build();
             let mut editor = Editor::with_config(config).expect("Failed to create editor");
-            let _ = editor.load_history(HISTORY_FILE); // Load history, might not exist yet
+            let _ = editor.load_history(HISTORY_FILE); // History might not exist yet
             editor
         };
-        Ok(SqlRepl { conn, editor })
+        Ok(SqlRepl {
+            conn,
+            editor,
+            debug: false,
+        })
     }
 
     fn run(&mut self) -> DuckResult<()> {
@@ -52,6 +57,7 @@ impl SqlRepl {
                                 eprintln!("Error showing tables: {e}");
                             }
                         }
+                        ".debug" => self.debug = !self.debug,
                         _ => {
                             if let Err(e) = self.execute_sql(line) {
                                 eprintln!("{e}");
@@ -85,6 +91,7 @@ impl SqlRepl {
         println!("  .quit      - Exit the REPL");
         println!("  .schema    - Show database schema");
         println!("  .tables    - Show all tables");
+        println!("  .debug     - Toggle debug output");
         println!();
         println!("Keyboard shortcuts:");
         println!("  Up/Down    - Navigate command history");
@@ -108,7 +115,7 @@ impl SqlRepl {
         if rbs.is_empty() || rbs[0].num_rows() == 0 {
             println!("No tables found in database.");
         } else {
-            print_records(&rbs);
+            self.print_records(&rbs);
         }
 
         Ok(())
@@ -121,7 +128,7 @@ impl SqlRepl {
         if rbs.is_empty() || rbs[0].num_rows() == 0 {
             println!("No tables found in database.");
         } else {
-            print_records(&rbs);
+            self.print_records(&rbs);
         }
 
         Ok(())
@@ -145,7 +152,7 @@ impl SqlRepl {
             if rbs.is_empty() || rbs[0].num_rows() == 0 {
                 println!("No results returned.");
             } else {
-                print_records(&rbs);
+                self.print_records(&rbs);
             }
         } else {
             // Execute non-query statements
@@ -154,14 +161,18 @@ impl SqlRepl {
 
         Ok(())
     }
-}
 
-fn print_records(rbs: &[RecordBatch]) {
-    let options = arrow::util::display::FormatOptions::default()
-        .with_display_error(true)
-        .with_types_info(true);
-    let str = arrow::util::pretty::pretty_format_batches_with_options(rbs, &options).unwrap();
-    println!("{str}");
+    fn print_records(&self, rbs: &[RecordBatch]) {
+        let options = arrow::util::display::FormatOptions::default()
+            .with_display_error(true)
+            .with_types_info(true);
+        let table = arrow::util::pretty::pretty_format_batches_with_options(rbs, &options).unwrap();
+        println!("{table}");
+
+        if self.debug {
+            dbg!(rbs);
+        }
+    }
 }
 
 fn main() -> DuckResult<()> {
