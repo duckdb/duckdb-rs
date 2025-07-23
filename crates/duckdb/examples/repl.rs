@@ -29,7 +29,7 @@ impl SqlRepl {
     }
 
     fn run(&mut self) -> DuckResult<()> {
-        println!("duckdb-rs REPL");
+        println!("duckdb-rs v{} 🦀", env!("CARGO_PKG_VERSION"));
         println!("Type '.help' for help.");
 
         loop {
