@@ -1,6 +1,7 @@
 // Usage:
 // cargo run --example repl
 // cargo run --example repl path/to/database.db
+// cat example.sql | cargo run --example repl
 
 use duckdb::{arrow::record_batch::RecordBatch, Connection, Result as DuckResult};
 use rustyline::{error::ReadlineError, history::DefaultHistory, Config, Editor};
@@ -14,12 +15,8 @@ struct SqlRepl {
 }
 
 impl SqlRepl {
-    fn new() -> DuckResult<Self> {
-        Self::new_with_file(":memory:")
-    }
-
-    fn new_with_file(path: &str) -> DuckResult<Self> {
-        let conn = Connection::open(path)?;
+    fn new(path: Option<&str>) -> DuckResult<Self> {
+        let conn = Connection::open(path.unwrap_or(":memory:"))?;
         let editor = {
             let config = Config::builder().auto_add_history(true).build();
             let mut editor = Editor::with_config(config).expect("Failed to create editor");
@@ -176,14 +173,6 @@ impl SqlRepl {
 }
 
 fn main() -> DuckResult<()> {
-    let args: Vec<String> = std::env::args().collect();
-
-    let mut repl = if args.len() > 1 {
-        let db_path = &args[1];
-        SqlRepl::new_with_file(db_path)?
-    } else {
-        SqlRepl::new()?
-    };
-
+    let mut repl = SqlRepl::new(std::env::args().nth(1).as_deref())?;
     repl.run()
 }
