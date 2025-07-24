@@ -61,6 +61,7 @@ doc-comment = { workspace = true }
 polars-core = { workspace = true }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }
+rustyline = { version = "15", features = ["case_insensitive_history_search"] }
 tempfile = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
