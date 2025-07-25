@@ -180,22 +180,6 @@ produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 See to [Contributing.md](CONTRIBUTING.md)
 
-### Checklist
-
-- Run `cargo +nightly fmt` to ensure your Rust code is correctly formatted.
-- Run `cargo clippy --fix --allow-dirty --all-targets --workspace --all-features -- -D warnings` to fix all clippy issues.
-- Ensure `cargo test --all-targets --workspace --features "modern-full extensions-full"` reports no failures.
-
-### TODOs
-
-- [x] Refactor the ErrorCode part, it's borrowed from rusqlite, we should have our own
-- [ ] Support more type
-- [x] Update duckdb.h
-- [x] Adjust the code examples and documentation
-- [x] Delete unused code / functions
-- [x] Add CI
-- [x] Publish to crate
-
 ## License
 
 DuckDB and libduckdb-sys are available under the MIT license. See the LICENSE file for more info.
