@@ -77,6 +77,19 @@ fn main() -> Result<()> {
 }
 ```
 
+## Examples
+
+The following [examples](crates/duckdb/examples) demonstrate various features and use cases of duckdb-rs:
+
+- **basic** - Basic usage including creating tables, inserting data, and querying with and without Arrow.
+- **appender** - Bulk data insertion using the appender API with transactions.
+- **parquet** - Reading Parquet files directly using DuckDB's Parquet extension.
+- **repl** - Interactive SQL REPL.
+- **hello-ext** - A loadable DuckDB extension using the legacy extension API.
+- **hello-ext-capi** - A loadable DuckDB extension using the modern extension API.
+
+Run any example with `cargo run --example <name>`.
+
 ## Feature flags
 
 The `duckdb` crate provides a number of Cargo features that can be enabled to add functionality:
