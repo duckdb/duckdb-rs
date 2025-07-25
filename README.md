@@ -6,9 +6,15 @@
 [![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
 [![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
-duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
-an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Actually the initial code and even this README is
-forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
+duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb).
+
+You can use it to:
+
+- Query DuckDB with type-safe bindings and an API inspired by [rusqlite](https://github.com/rusqlite/rusqlite).
+- Read and write Arrow, Parquet, JSON, and CSV formats natively.
+- Create DuckDB extensions in Rust with custom scalar and table functions.
+
+## Quick start
 
 ```rust
 use duckdb::{params, Connection, Result};
