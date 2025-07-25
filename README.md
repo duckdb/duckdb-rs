@@ -178,8 +178,12 @@ produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 ## Contributing
 
-See to [Contributing.md](CONTRIBUTING.md)
+We welcome contributions! Take a look at [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
+
+Join our [Discord](https://discord.gg/tcvwpjfnZx) to chat with the community in the #rust channel.
 
 ## License
 
-DuckDB and libduckdb-sys are available under the MIT license. See the LICENSE file for more info.
+Copyright 2021-2025 Stichting DuckDB Foundation
+
+Licensed under the [MIT license](LICENSE).
