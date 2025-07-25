@@ -1,15 +1,20 @@
 # duckdb-rs
 
-[![Downloads](https://img.shields.io/crates/d/duckdb)](https://img.shields.io/crates/d/duckdb)
-[![Build Status](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
-[![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
-[![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/main/graph/badge.svg?token=0xV88q8KU0)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 [![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb)
-[![Docs](https://img.shields.io/badge/docs.rs-duckdb-green)](https://docs.rs/duckdb)
+[![Documentation](https://img.shields.io/badge/docs.rs-duckdb-orange)](https://docs.rs/duckdb)
+[![MIT License](https://img.shields.io/crates/l/duckdb.svg)](LICENSE)
+[![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
+[![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
-duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
-an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Actually the initial code and even this README is
-forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
+duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb).
+
+You can use it to:
+
+- Query DuckDB with type-safe bindings and an API inspired by [rusqlite](https://github.com/rusqlite/rusqlite).
+- Read and write Arrow, Parquet, JSON, and CSV formats natively.
+- Create DuckDB extensions in Rust with custom scalar and table functions.
+
+## Quick start
 
 ```rust
 use duckdb::{params, Connection, Result};
@@ -179,24 +184,12 @@ produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 ## Contributing
 
-See to [Contributing.md](CONTRIBUTING.md)
+We welcome contributions! Take a look at [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
 
-### Checklist
-
-- Run `cargo +nightly fmt` to ensure your Rust code is correctly formatted.
-- Run `cargo clippy --fix --allow-dirty --all-targets --workspace --all-features -- -D warnings` to fix all clippy issues.
-- Ensure `cargo test --all-targets --workspace --features "modern-full extensions-full"` reports no failures.
-
-### TODOs
-
-- [x] Refactor the ErrorCode part, it's borrowed from rusqlite, we should have our own
-- [ ] Support more type
-- [x] Update duckdb.h
-- [x] Adjust the code examples and documentation
-- [x] Delete unused code / functions
-- [x] Add CI
-- [x] Publish to crate
+Join our [Discord](https://discord.gg/tcvwpjfnZx) to chat with the community in the #rust channel.
 
 ## License
 
-DuckDB and libduckdb-sys are available under the MIT license. See the LICENSE file for more info.
+Copyright 2021-2025 Stichting DuckDB Foundation
+
+Licensed under the [MIT license](LICENSE).
