@@ -1,11 +1,10 @@
 # duckdb-rs
 
-[![Downloads](https://img.shields.io/crates/d/duckdb)](https://img.shields.io/crates/d/duckdb)
-[![Build Status](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
-[![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
-[![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/main/graph/badge.svg?token=0xV88q8KU0)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 [![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb)
-[![Docs](https://img.shields.io/badge/docs.rs-duckdb-green)](https://docs.rs/duckdb)
+[![Documentation](https://img.shields.io/badge/docs.rs-duckdb-orange)](https://docs.rs/duckdb)
+[![MIT License](https://img.shields.io/crates/l/duckdb.svg)](LICENSE)
+[![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
+[![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
 duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
 an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Actually the initial code and even this README is
