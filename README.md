@@ -1,81 +1,78 @@
 # duckdb-rs
 
-[![Downloads](https://img.shields.io/crates/d/duckdb)](https://img.shields.io/crates/d/duckdb)
-[![Build Status](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
-[![dependency status](https://deps.rs/repo/github/wangfenjin/duckdb-rs/status.svg)](https://deps.rs/repo/github/wangfenjin/duckdb-rs)
-[![codecov](https://codecov.io/gh/wangfenjin/duckdb-rs/branch/main/graph/badge.svg?token=0xV88q8KU0)](https://codecov.io/gh/wangfenjin/duckdb-rs)
 [![Latest Version](https://img.shields.io/crates/v/duckdb.svg)](https://crates.io/crates/duckdb)
-[![Docs](https://img.shields.io/badge/docs.rs-duckdb-green)](https://docs.rs/duckdb)
+[![Documentation](https://img.shields.io/badge/docs.rs-duckdb-orange)](https://docs.rs/duckdb)
+[![MIT License](https://img.shields.io/crates/l/duckdb.svg)](LICENSE)
+[![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
+[![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
-duckdb-rs is an ergonomic wrapper for using [duckdb](https://github.com/duckdb/duckdb) from Rust. It attempts to expose
-an interface similar to [rusqlite](https://github.com/rusqlite/rusqlite). Actually the initial code and even this README is
-forked from rusqlite as duckdb also tries to expose a sqlite3 compatible API.
+duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb).
+
+You can use it to:
+
+- Query DuckDB with type-safe bindings and an API inspired by [rusqlite](https://github.com/rusqlite/rusqlite).
+- Read and write Arrow, Parquet, JSON, and CSV formats natively.
+- Create DuckDB extensions in Rust with custom scalar and table functions.
+
+## Quickstart
+
+Create a new project and add the `duckdb` crate:
+
+```shell
+cargo new quack-in-rust
+cd quack-in-rust
+cargo add duckdb -F bundled
+```
+
+Update `src/main.rs` with the following code:
 
 ```rust
 use duckdb::{params, Connection, Result};
 
-// In your project, we need to keep the arrow version same as the version used in duckdb.
-// Refer to https://github.com/duckdb/duckdb-rs/issues/92
-// You can either:
-use duckdb::arrow::record_batch::RecordBatch;
-// Or in your Cargo.toml, use * as the version; features can be toggled according to your needs
-// arrow = { version = "*", default-features = false, features = ["prettyprint"] }
-// Then you can:
-// use arrow::record_batch::RecordBatch;
-
-use duckdb::arrow::util::pretty::print_batches;
-
-#[derive(Debug)]
-struct Person {
+struct Duck {
     id: i32,
     name: String,
-    data: Option<Vec<u8>>,
 }
 
 fn main() -> Result<()> {
     let conn = Connection::open_in_memory()?;
 
-    conn.execute_batch(
-        r"CREATE SEQUENCE seq;
-          CREATE TABLE person (
-                  id              INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq'),
-                  name            TEXT NOT NULL,
-                  data            BLOB
-                  );
-        ")?;
-
-    let me = Person {
-        id: 0,
-        name: "Steven".to_string(),
-        data: None,
-    };
     conn.execute(
-        "INSERT INTO person (name, data) VALUES (?, ?)",
-        params![me.name, me.data],
+        "CREATE TABLE ducks (id INTEGER PRIMARY KEY, name TEXT)",
+        [], // empty list of parameters
     )?;
 
-    // query table by rows
-    let mut stmt = conn.prepare("SELECT id, name, data FROM person")?;
-    let person_iter = stmt.query_map([], |row| {
-        Ok(Person {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            data: row.get(2)?,
-        })
-    })?;
+    conn.execute_batch(
+        r#"
+        INSERT INTO ducks (id, name) VALUES (1, 'Donald Duck');
+        INSERT INTO ducks (id, name) VALUES (2, 'Scrooge McDuck');
+        "#,
+    )?;
 
-    for person in person_iter {
-        let p = person.unwrap();
-        println!("ID: {}", p.id);
-        println!("Found person {:?}", p);
+    conn.execute(
+        "INSERT INTO ducks (id, name) VALUES (?, ?)",
+        params![3, "Darkwing Duck"],
+    )?;
+
+    let ducks = conn
+        .prepare("FROM ducks")?
+        .query_map([], |row| {
+            Ok(Duck {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    for duck in ducks {
+        println!("{}) {}", duck.id, duck.name);
     }
 
-    // query table by arrow
-    let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
-    print_batches(&rbs).unwrap();
     Ok(())
 }
 ```
+
+Execute the program with `cargo run` and watch DuckDB in action!
 
 ## Examples
 
@@ -179,24 +176,12 @@ produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 ## Contributing
 
-See to [Contributing.md](CONTRIBUTING.md)
+We welcome contributions! Take a look at [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
 
-### Checklist
-
-- Run `cargo +nightly fmt` to ensure your Rust code is correctly formatted.
-- Run `cargo clippy --fix --allow-dirty --all-targets --workspace --all-features -- -D warnings` to fix all clippy issues.
-- Ensure `cargo test --all-targets --workspace --features "modern-full extensions-full"` reports no failures.
-
-### TODOs
-
-- [x] Refactor the ErrorCode part, it's borrowed from rusqlite, we should have our own
-- [ ] Support more type
-- [x] Update duckdb.h
-- [x] Adjust the code examples and documentation
-- [x] Delete unused code / functions
-- [x] Add CI
-- [x] Publish to crate
+Join our [Discord](https://discord.gg/tcvwpjfnZx) to chat with the community in the #rust channel.
 
 ## License
 
-DuckDB and libduckdb-sys are available under the MIT license. See the LICENSE file for more info.
+Copyright 2021-2025 Stichting DuckDB Foundation
+
+Licensed under the [MIT license](LICENSE).
