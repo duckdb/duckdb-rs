@@ -123,9 +123,12 @@ impl ScalarFunction {
         duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy);
     }
 
-    pub fn set_extra_info<T: Default>(&self) -> &Self {
+    pub fn set_extra_info<T>(&self, info: T) -> &Self
+    where
+        T: Send + Sync,
+    {
         unsafe {
-            let t = Box::new(T::default());
+            let t = Box::new(info);
             let c_void = Box::into_raw(t) as *mut c_void;
             self.set_extra_info_impl(c_void, Some(drop_ptr::<T>));
         }
