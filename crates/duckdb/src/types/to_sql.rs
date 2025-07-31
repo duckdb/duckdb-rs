@@ -316,10 +316,7 @@ mod test {
 
         db.execute("INSERT INTO foo (id) VALUES (gen_random_uuid())", [])?;
 
-        let mut stmt = db.prepare("SELECT id FROM foo")?;
-        let mut rows = stmt.query([])?;
-        let row = rows.next()?.unwrap();
-        let found_id: String = row.get_unwrap(0);
+        let found_id: String = db.prepare("SELECT id FROM foo")?.query_one([], |r| r.get(0))?;
         assert_eq!(found_id.len(), 36);
         Ok(())
     }
@@ -337,11 +334,9 @@ mod test {
         let id_vec = id.as_bytes().to_vec();
         db.execute("INSERT INTO foo (id, label) VALUES (?, ?)", params![id_vec, "target"])?;
 
-        let mut stmt = db.prepare("SELECT id, label FROM foo WHERE id = ?")?;
-        let mut rows = stmt.query(params![id_vec])?;
-        let row = rows.next()?.unwrap();
-        let found_id: Uuid = row.get_unwrap(0);
-        let found_label: String = row.get_unwrap(1);
+        let (found_id, found_label): (Uuid, String) = db
+            .prepare("SELECT id, label FROM foo WHERE id = ?")?
+            .query_one(params![id_vec], |r| Ok((r.get_unwrap(0), r.get_unwrap(1))))?;
         assert_eq!(found_id, id);
         assert_eq!(found_label, "target");
         Ok(())
@@ -359,11 +354,9 @@ mod test {
         let id = Uuid::new_v4();
         db.execute("INSERT INTO foo (id, label) VALUES (?, ?)", params![id, "target"])?;
 
-        let mut stmt = db.prepare("SELECT id, label FROM foo WHERE id = ?")?;
-        let mut rows = stmt.query(params![id])?;
-        let row = rows.next()?.unwrap();
-        let found_id: Uuid = row.get_unwrap(0);
-        let found_label: String = row.get_unwrap(1);
+        let (found_id, found_label): (Uuid, String) = db
+            .prepare("SELECT id, label FROM foo WHERE id = ?")?
+            .query_one(params![id], |r| Ok((r.get_unwrap(0), r.get_unwrap(1))))?;
         assert_eq!(found_id, id);
         assert_eq!(found_label, "target");
         Ok(())

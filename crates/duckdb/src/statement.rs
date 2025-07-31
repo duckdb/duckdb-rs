@@ -662,9 +662,8 @@ mod test {
 
         let mut stmt = db.prepare("SELECT id FROM test where name = ?")?;
         {
-            let mut rows = stmt.query([&"one"])?;
-            let id: Result<i32> = rows.next()?.unwrap().get(0);
-            assert_eq!(Ok(1), id);
+            let id: i32 = stmt.query_one([&"one"], |r| r.get(0))?;
+            assert_eq!(id, 1);
         }
         Ok(())
     }
