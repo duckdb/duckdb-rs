@@ -349,6 +349,33 @@ impl Statement<'_> {
         self.query(params)?.get_expected_row().and_then(f)
     }
 
+    /// Convenience method to execute a query that is expected to return exactly
+    /// one row.
+    ///
+    /// Returns `Err(QueryReturnedMoreThanOneRow)` if the query returns more than one row.
+    ///
+    /// Returns `Err(QueryReturnedNoRows)` if no results are returned. If the
+    /// query truly is optional, you can call
+    /// [`.optional()`](crate::OptionalExt::optional) on the result of
+    /// this to get a `Result<Option<T>>` (requires that the trait
+    /// `duckdb::OptionalExt` is imported).
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the underlying DuckDB call fails.
+    pub fn query_one<T, P, F>(&mut self, params: P, f: F) -> Result<T>
+    where
+        P: Params,
+        F: FnOnce(&Row<'_>) -> Result<T>,
+    {
+        let mut rows = self.query(params)?;
+        let row = rows.get_expected_row().and_then(f)?;
+        if rows.next()?.is_some() {
+            return Err(Error::QueryReturnedMoreThanOneRow);
+        }
+        Ok(row)
+    }
+
     /// Return the row count
     #[inline]
     pub fn row_count(&self) -> usize {
@@ -822,6 +849,35 @@ mod test {
         let mut stmt = db.prepare("SELECT y FROM foo WHERE x = ?")?;
         let y: Result<i32> = stmt.query_row([1i32], |r| r.get(0));
         assert_eq!(3i32, y?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_one() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE foo(x INTEGER, y INTEGER);
+                   INSERT INTO foo VALUES(1, 3);
+                   INSERT INTO foo VALUES(2, 4);
+                   END;";
+        db.execute_batch(sql)?;
+
+        // Exactly one row
+        let y: i32 = db
+            .prepare("SELECT y FROM foo WHERE x = ?")?
+            .query_one([1], |r| r.get(0))?;
+        assert_eq!(y, 3);
+
+        // No rows
+        let res: Result<i32> = db
+            .prepare("SELECT y FROM foo WHERE x = ?")?
+            .query_one([99], |r| r.get(0));
+        assert_eq!(res.unwrap_err(), Error::QueryReturnedNoRows);
+
+        // Multiple rows
+        let res: Result<i32> = db.prepare("SELECT y FROM foo")?.query_one([], |r| r.get(0));
+        assert_eq!(res.unwrap_err(), Error::QueryReturnedMoreThanOneRow);
+
         Ok(())
     }
 
