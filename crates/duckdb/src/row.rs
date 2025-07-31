@@ -58,6 +58,11 @@ impl<'stmt> Rows<'stmt> {
 
     /// Map over this `Rows`, converting it to a [`Map`], which
     /// implements `FallibleIterator`.
+    ///
+    /// **Note:** This method requires the closure to return `duckdb::Result<B>`.
+    /// If you need to use custom error types, consider using [`and_then`](Self::and_then)
+    /// instead, which allows any error type that implements `From<duckdb::Error>`.
+    ///
     /// ```rust,no_run
     /// use fallible_iterator::FallibleIterator;
     /// # use duckdb::{Result, Statement};

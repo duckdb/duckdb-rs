@@ -1238,6 +1238,32 @@ mod test {
             }
             Ok(())
         }
+
+        #[test]
+        fn test_rows_and_then_with_custom_error() -> Result<()> {
+            let db = checked_memory_handle();
+            db.execute_batch("CREATE TABLE test (value INTEGER)")?;
+            db.execute_batch("INSERT INTO test VALUES (1), (3), (5)")?;
+
+            let mut stmt = db.prepare("SELECT value FROM test ORDER BY value")?;
+            let rows = stmt.query([])?;
+
+            // Use and_then to apply custom validation with custom error type
+            let results: Vec<i32> = rows
+                .and_then(|row| -> CustomResult<i32> {
+                    let val: i32 = row.get(0)?; // duckdb::Error automatically converted via From trait
+                    if val > 10 {
+                        Err(CustomError::SomeError) // Custom application-specific error
+                    } else {
+                        Ok(val)
+                    }
+                })
+                .collect::<CustomResult<Vec<_>>>()
+                .unwrap();
+
+            assert_eq!(results, vec![1, 3, 5]);
+            Ok(())
+        }
     }
 
     #[test]
