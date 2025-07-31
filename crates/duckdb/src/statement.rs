@@ -882,6 +882,42 @@ mod test {
     }
 
     #[test]
+    fn test_query_one_optional() -> Result<()> {
+        use crate::OptionalExt;
+
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE foo(x INTEGER, y INTEGER);
+                   INSERT INTO foo VALUES(1, 3);
+                   INSERT INTO foo VALUES(2, 4);
+                   END;";
+        db.execute_batch(sql)?;
+
+        // Exactly one row
+        let y: Option<i32> = db
+            .prepare("SELECT y FROM foo WHERE x = ?")?
+            .query_one([1], |r| r.get(0))
+            .optional()?;
+        assert_eq!(y, Some(3));
+
+        // No rows
+        let y: Option<i32> = db
+            .prepare("SELECT y FROM foo WHERE x = ?")?
+            .query_one([99], |r| r.get(0))
+            .optional()?;
+        assert_eq!(y, None);
+
+        // Multiple rows - should still return error (not converted by optional)
+        let res = db
+            .prepare("SELECT y FROM foo")?
+            .query_one([], |r| r.get::<_, i32>(0))
+            .optional();
+        assert_eq!(res.unwrap_err(), Error::QueryReturnedMoreThanOneRow);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_query_by_column_name() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let sql = "BEGIN;
