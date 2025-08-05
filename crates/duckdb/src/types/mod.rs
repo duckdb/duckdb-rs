@@ -312,7 +312,6 @@ mod test {
 
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
-
         let row = rows.next()?.unwrap();
 
         // check the correct types come back as expected
@@ -371,7 +370,6 @@ mod test {
 
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
-
         let row = rows.next()?.unwrap();
         // NOTE: this is different from SQLite
         // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
