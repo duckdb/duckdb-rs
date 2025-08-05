@@ -25,7 +25,7 @@ pub use arrow::{ArrowFunctionSignature, ArrowScalarParams, VArrowScalar};
 pub trait VScalar: Sized {
     /// State that persists across invocations of the scalar function (the lifetime of the connection)
     /// The state can be accessed by multiple threads, so it must be `Send + Sync`.
-    type State: Default + Sized + Send + Sync;
+    type State: Sized + Send + Sync;
     /// The actual function
     ///
     /// # Safety
@@ -134,7 +134,10 @@ where
 impl Connection {
     /// Register the given ScalarFunction with default state
     #[inline]
-    pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()> {
+    pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
+    where
+        S::State: Default,
+    {
         let set = ScalarFunctionSet::new(name);
         for signature in S::signatures() {
             let scalar_function = ScalarFunction::new(name)?;
