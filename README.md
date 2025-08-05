@@ -127,31 +127,58 @@ declarations for DuckDB's C API. By default, `libduckdb-sys` attempts to find a 
 
 You can adjust this behavior in a number of ways:
 
-- If you use the `bundled` feature, `libduckdb-sys` will use the
-  [cc](https://crates.io/crates/cc) crate to compile DuckDB from source and
-  link against that. This source is embedded in the `libduckdb-sys` crate and
-  as we are still in development, we will update it regularly. After we are more stable,
-  we will use the stable released version from [duckdb](https://github.com/duckdb/duckdb/releases).
-  This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
+1. If you use the `bundled` feature, `libduckdb-sys` will use the
+   [cc](https://crates.io/crates/cc) crate to compile DuckDB from source and
+   link against that. This source is embedded in the `libduckdb-sys` crate and
+   as we are still in development, we will update it regularly. After we are more stable,
+   we will use the stable released version from [duckdb](https://github.com/duckdb/duckdb/releases).
+   This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
 
-  ```bash
-  cargo add duckdb --features bundled
-  ```
+   ```bash
+   cargo add duckdb --features bundled
+   ```
 
-  `Cargo.toml` will be updated.
+   `Cargo.toml` will be updated.
 
-  ```toml
-  [dependencies]
-  # Assume that version DuckDB version 0.9.2 is used.
-  duckdb = { version = "0.9.2", features = ["bundled"] }
-  ```
+   ```toml
+   [dependencies]
+   # Assume that version DuckDB version 0.9.2 is used.
+   duckdb = { version = "0.9.2", features = ["bundled"] }
+   ```
 
-* When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
-* Installing the duckdb development packages will usually be all that is required, but
-  the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
-  and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
-  options. The default when using vcpkg is to dynamically link,
-  which must be enabled by setting `VCPKGRS_DYNAMIC=1` environment variable before build.
+2. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
+
+   Linux example:
+
+   ```shell
+   wget https://github.com/duckdb/duckdb/releases/download/v1.3.2/libduckdb-linux-arm64.zip
+   unzip libduckdb-linux-arm64.zip -d libduckdb
+
+   export DUCKDB_LIB_DIR=$PWD/libduckdb
+   export DUCKDB_INCLUDE_DIR=$DUCKDB_LIB_DIR
+   export LD_LIBRARY_PATH=$DUCKDB_LIB_DIR
+
+   cargo build --examples
+   ```
+
+   macOS example:
+
+   ```shell
+   wget https://github.com/duckdb/duckdb/releases/download/v1.3.2/libduckdb-osx-universal.zip
+   unzip libduckdb-osx-universal.zip -d libduckdb
+
+   export DUCKDB_LIB_DIR=$PWD/libduckdb
+   export DUCKDB_INCLUDE_DIR=$DUCKDB_LIB_DIR
+   export DYLD_FALLBACK_LIBRARY_PATH=$DUCKDB_LIB_DIR
+
+   cargo build --examples
+   ```
+
+3. Installing the duckdb development packages will usually be all that is required, but
+   the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
+   and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
+   options. The default when using vcpkg is to dynamically link,
+   which must be enabled by setting `VCPKGRS_DYNAMIC=1` environment variable before build.
 
 ### Binding generation
 
