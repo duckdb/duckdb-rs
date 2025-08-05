@@ -161,9 +161,7 @@ impl Appender<'_> {
 impl Drop for Appender<'_> {
     fn drop(&mut self) {
         if !self.app.is_null() {
-            let _ = self.flush(); // can't safely handle failures here
             unsafe {
-                ffi::duckdb_appender_close(self.app);
                 ffi::duckdb_appender_destroy(&mut self.app);
             }
         }
