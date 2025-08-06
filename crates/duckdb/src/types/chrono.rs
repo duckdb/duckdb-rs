@@ -174,7 +174,7 @@ impl ToSql for Duration {
 #[cfg(test)]
 mod test {
     use crate::{
-        types::{FromSql, ToSql, ToSqlOutput, ValueRef},
+        types::{FromSql, FromSqlError, ToSql, ToSqlOutput, ValueRef},
         Connection, Result,
     };
     use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone, Utc};
@@ -349,9 +349,15 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_lenient_parse_timezone() {
-        assert!(DateTime::<Utc>::column_result(ValueRef::Text(b"1970-01-01T00:00:00Z")).is_ok());
-        assert!(DateTime::<Utc>::column_result(ValueRef::Text(b"1970-01-01T00:00:00+00")).is_ok());
+        // Not supported
+        assert!(matches!(
+            DateTime::<Utc>::column_result(ValueRef::Text(b"1970-01-01T00:00:00Z")),
+            Err(FromSqlError::Other(_))
+        ));
+        assert!(matches!(
+            DateTime::<Utc>::column_result(ValueRef::Text(b"1970-01-01T00:00:00+00")),
+            Err(FromSqlError::Other(_))
+        ));
     }
 }

@@ -980,7 +980,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_bind_parameters() -> Result<()> {
         let db = Connection::open_in_memory()?;
         // dynamic slice:
@@ -995,8 +994,8 @@ mod test {
         })?;
         db.query_row("SELECT ?1, ?2, ?3", params_from_iter(data), |row| row.get::<_, u8>(0))?;
 
-        use std::collections::BTreeSet;
-        let data: BTreeSet<String> = ["one", "two", "three"].iter().map(|s| (*s).to_string()).collect();
+        let data: std::collections::BTreeSet<String> =
+            ["one", "two", "three"].iter().map(|s| (*s).to_string()).collect();
         db.query_row("SELECT ?1, ?2, ?3", params_from_iter(&data), |row| {
             row.get::<_, String>(0)
         })?;
@@ -1035,22 +1034,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
-    fn test_utf16_conversion() -> Result<()> {
-        let db = Connection::open_in_memory()?;
-        db.pragma_update(None, "encoding", &"UTF-16le")?;
-        let encoding: String = db.pragma_query_value(None, "encoding", |row| row.get(0))?;
-        assert_eq!("UTF-16le", encoding);
-        db.execute_batch("CREATE TABLE foo(x TEXT)")?;
-        let expected = "テスト";
-        db.execute("INSERT INTO foo(x) VALUES (?)", [&expected])?;
-        let actual: String = db.query_row("SELECT x FROM foo", [], |row| row.get(0))?;
-        assert_eq!(expected, actual);
-        Ok(())
-    }
-
-    #[test]
-    #[ignore]
     fn test_nul_byte() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let expected = "a\x00b";

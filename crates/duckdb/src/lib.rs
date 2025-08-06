@@ -980,14 +980,13 @@ mod test {
     }
 
     #[test]
-    #[ignore = "not supported"]
-    fn test_statement_debugging() -> Result<()> {
+    #[should_panic(expected = "not supported")]
+    fn test_statement_debugging() {
         let db = checked_memory_handle();
         let query = "SELECT 12345";
-        let stmt = db.prepare(query)?;
+        let stmt = db.prepare(query).unwrap();
 
         assert!(format!("{stmt:?}").contains(query));
-        Ok(())
     }
 
     #[test]

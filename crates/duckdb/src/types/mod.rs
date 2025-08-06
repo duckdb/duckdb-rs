@@ -197,8 +197,7 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod test {
     use super::Value;
-    use crate::{params, Connection, Error, Result, Statement};
-    use std::os::raw::{c_double, c_int};
+    use crate::{Connection, Result};
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
@@ -299,69 +298,6 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::cognitive_complexity)]
-    #[ignore = "duckdb doesn't support this"]
-    fn test_mismatched_types() -> Result<()> {
-        fn is_invalid_column_type(err: Error) -> bool {
-            matches!(err, Error::InvalidColumnType(..))
-        }
-
-        let db = checked_memory_handle()?;
-
-        db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
-
-        let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
-        let mut rows = stmt.query([])?;
-        let row = rows.next()?.unwrap();
-
-        // check the correct types come back as expected
-        assert_eq!(vec![1, 2], row.get::<_, Vec<u8>>(0)?);
-        assert_eq!("text", row.get::<_, String>(1)?);
-        assert_eq!(1, row.get::<_, c_int>(2)?);
-        assert!((1.5 - row.get::<_, c_double>(3)?).abs() < f64::EPSILON);
-        assert_eq!(row.get::<_, Option<c_int>>(4)?, None);
-        assert_eq!(row.get::<_, Option<c_double>>(4)?, None);
-        assert_eq!(row.get::<_, Option<String>>(4)?, None);
-
-        // check some invalid types
-
-        // 0 is actually a blob (Vec<u8>)
-        assert!(is_invalid_column_type(row.get::<_, c_int>(0).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, c_int>(0).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, i64>(0).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, c_double>(0).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, String>(0).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(0).err().unwrap()));
-
-        // 1 is actually a text (String)
-        assert!(is_invalid_column_type(row.get::<_, c_int>(1).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, i64>(1).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, c_double>(1).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(1).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(1).err().unwrap()));
-
-        // 2 is actually an integer
-        assert!(is_invalid_column_type(row.get::<_, String>(2).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(2).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Option<String>>(2).err().unwrap()));
-
-        // 3 is actually a float (c_double)
-        assert!(is_invalid_column_type(row.get::<_, c_int>(3).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, i64>(3).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, String>(3).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(3).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Option<c_int>>(3).err().unwrap()));
-
-        // 4 is actually NULL
-        assert!(is_invalid_column_type(row.get::<_, c_int>(4).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, i64>(4).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, c_double>(4).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, String>(4).err().unwrap()));
-        assert!(is_invalid_column_type(row.get::<_, Vec<u8>>(4).err().unwrap()));
-        Ok(())
-    }
-
-    #[test]
     fn test_dynamic_type() -> Result<()> {
         use super::Value;
         let db = checked_memory_handle()?;
@@ -381,93 +317,6 @@ mod test {
             x => panic!("Invalid Value {x:?}"),
         }
         assert_eq!(Value::Null, row.get::<_, Value>(4)?);
-        Ok(())
-    }
-
-    macro_rules! test_conversion {
-        ($db_etc:ident, $insert_value:expr, $get_type:ty,expect $expected_value:expr) => {
-            $db_etc.insert_statement.execute(params![$insert_value])?;
-            let res = $db_etc
-                .query_statement
-                .query_row([], |row| row.get::<_, $get_type>(0));
-            assert_eq!(res?, $expected_value);
-            $db_etc.delete_statement.execute([])?;
-        };
-        ($db_etc:ident, $insert_value:expr, $get_type:ty,expect_from_sql_error) => {
-            $db_etc.insert_statement.execute(params![$insert_value])?;
-            let res = $db_etc
-                .query_statement
-                .query_row([], |row| row.get::<_, $get_type>(0));
-            res.unwrap_err();
-            $db_etc.delete_statement.execute([])?;
-        };
-        ($db_etc:ident, $insert_value:expr, $get_type:ty,expect_to_sql_error) => {
-            $db_etc
-                .insert_statement
-                .execute(params![$insert_value])
-                .unwrap_err();
-        };
-    }
-
-    #[test]
-    #[ignore = "duckdb doesn't support this"]
-    fn test_numeric_conversions() -> Result<()> {
-        #![allow(clippy::float_cmp)]
-
-        // Test what happens when we store an f32 and retrieve an i32 etc.
-        let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo (x)")?;
-
-        // DuckDB actually ignores the column types, so we just need to test
-        // different numeric values.
-
-        struct DbEtc<'conn> {
-            insert_statement: Statement<'conn>,
-            query_statement: Statement<'conn>,
-            delete_statement: Statement<'conn>,
-        }
-
-        let mut db_etc = DbEtc {
-            insert_statement: db.prepare("INSERT INTO foo VALUES (?1)")?,
-            query_statement: db.prepare("SELECT x FROM foo")?,
-            delete_statement: db.prepare("DELETE FROM foo")?,
-        };
-
-        // Basic non-converting test.
-        test_conversion!(db_etc, 0u8, u8, expect 0u8);
-
-        // In-range integral conversions.
-        test_conversion!(db_etc, 100u8, i8, expect 100i8);
-        test_conversion!(db_etc, 200u8, u8, expect 200u8);
-        test_conversion!(db_etc, 100u16, i8, expect 100i8);
-        test_conversion!(db_etc, 200u16, u8, expect 200u8);
-        test_conversion!(db_etc, u32::MAX, u64, expect u32::MAX as u64);
-        test_conversion!(db_etc, i64::MIN, i64, expect i64::MIN);
-        test_conversion!(db_etc, i64::MAX, i64, expect i64::MAX);
-        test_conversion!(db_etc, i64::MAX, u64, expect i64::MAX as u64);
-        test_conversion!(db_etc, 100usize, usize, expect 100usize);
-        test_conversion!(db_etc, 100u64, u64, expect 100u64);
-        test_conversion!(db_etc, i64::MAX as u64, u64, expect i64::MAX as u64);
-
-        // Out-of-range integral conversions.
-        test_conversion!(db_etc, 200u8, i8, expect_from_sql_error);
-        test_conversion!(db_etc, 400u16, i8, expect_from_sql_error);
-        test_conversion!(db_etc, 400u16, u8, expect_from_sql_error);
-        test_conversion!(db_etc, -1i8, u8, expect_from_sql_error);
-        test_conversion!(db_etc, i64::MIN, u64, expect_from_sql_error);
-        test_conversion!(db_etc, u64::MAX, i64, expect_to_sql_error);
-        test_conversion!(db_etc, u64::MAX, u64, expect_to_sql_error);
-        test_conversion!(db_etc, i64::MAX as u64 + 1, u64, expect_to_sql_error);
-
-        // FromSql integer to float, always works.
-        test_conversion!(db_etc, i64::MIN, f32, expect i64::MIN as f32);
-        test_conversion!(db_etc, i64::MAX, f32, expect i64::MAX as f32);
-        test_conversion!(db_etc, i64::MIN, f64, expect i64::MIN as f64);
-        test_conversion!(db_etc, i64::MAX, f64, expect i64::MAX as f64);
-
-        // FromSql float to int conversion, never works even if the actual value
-        // is an integer.
-        test_conversion!(db_etc, 0f64, i64, expect_from_sql_error);
         Ok(())
     }
 }

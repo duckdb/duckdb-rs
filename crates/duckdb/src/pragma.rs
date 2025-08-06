@@ -292,15 +292,13 @@ mod test {
     }
 
     #[test]
-    #[ignore = "not supported"]
     fn pragma_query_with_schema() -> Result<()> {
         let db = Connection::open_in_memory()?;
-        let mut version = "".to_string();
-        db.pragma_query(Some(DatabaseName::Main), "version", |row| {
-            version = row.get(0)?;
-            Ok(())
-        })?;
-        assert!(!version.is_empty());
+        let res = db.pragma_query(Some(DatabaseName::Main), "version", |_| Ok(()));
+        assert_eq!(
+            res.unwrap_err().to_string().lines().next().unwrap(),
+            "Parser Error: syntax error at or near \".\""
+        );
         Ok(())
     }
 
@@ -324,12 +322,10 @@ mod test {
     }
 
     #[test]
-    #[ignore = "don't support query pragma"]
     fn test_pragma_update_and_check() -> Result<()> {
         let db = Connection::open_in_memory()?;
-        let journal_mode: String =
-            db.pragma_update_and_check(None, "explain_output", &"OPTIMIZED_ONLY", |row| row.get(0))?;
-        assert_eq!("OPTIMIZED_ONLY", &journal_mode);
+        let res = db.pragma_update_and_check(None, "explain_output", &"OPTIMIZED_ONLY", |_| Ok(()));
+        assert_eq!(res.unwrap_err(), crate::Error::QueryReturnedNoRows);
         Ok(())
     }
 
@@ -353,12 +349,5 @@ mod test {
         let mut sql = Sql::new();
         sql.push_string_literal("value'; --");
         assert_eq!("'value''; --'", sql.as_str());
-    }
-
-    #[test]
-    #[ignore]
-    fn test_locking_mode() -> Result<()> {
-        let db = Connection::open_in_memory()?;
-        db.pragma_update(None, "locking_mode", &"exclusive")
     }
 }

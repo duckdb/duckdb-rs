@@ -208,10 +208,8 @@ mod test {
         Ok(())
     }
 
-    // Waiting https://github.com/duckdb/duckdb/pull/3405
     #[cfg(feature = "uuid")]
     #[test]
-    #[ignore = "not supported for now"]
     fn test_append_uuid() -> Result<()> {
         use uuid::Uuid;
 
