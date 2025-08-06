@@ -50,6 +50,26 @@ impl Statement<'_> {
     /// sure that current statement has already been stepped once before
     /// calling this method.
     ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result};
+    /// fn get_column_count(conn: &Connection) -> Result<usize> {
+    ///     let mut stmt = conn.prepare("SELECT id, name FROM people")?;
+    ///
+    ///     // Option 1: Execute first, then get column count
+    ///     stmt.execute([])?;
+    ///     let count = stmt.column_count();
+    ///
+    ///     // Option 2: Get column count from rows (avoids borrowing issues)
+    ///     let mut stmt2 = conn.prepare("SELECT id, name FROM people")?;
+    ///     let rows = stmt2.query([])?;
+    ///     let count2 = rows.as_ref().unwrap().column_count();
+    ///
+    ///     Ok(count)
+    /// }
+    /// ```
+    ///
     /// # Caveats
     /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     #[inline]
