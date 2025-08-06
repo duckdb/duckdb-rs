@@ -25,7 +25,7 @@ pub use arrow::{ArrowFunctionSignature, ArrowScalarParams, VArrowScalar};
 pub trait VScalar: Sized {
     /// State that persists across invocations of the scalar function (the lifetime of the connection)
     /// The state can be accessed by multiple threads, so it must be `Send + Sync`.
-    type State: Default + Sized + Send + Sync;
+    type State: Sized + Send + Sync;
     /// The actual function
     ///
     /// # Safety
@@ -132,15 +132,35 @@ where
 }
 
 impl Connection {
-    /// Register the given ScalarFunction with the current db
+    /// Register the given ScalarFunction with default state
     #[inline]
-    pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()> {
+    pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
+    where
+        S::State: Default,
+    {
         let set = ScalarFunctionSet::new(name);
         for signature in S::signatures() {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
-            scalar_function.set_extra_info::<S::State>();
+            scalar_function.set_extra_info(S::State::default());
+            set.add_function(scalar_function)?;
+        }
+        self.db.borrow_mut().register_scalar_function_set(set)
+    }
+
+    /// Register the given ScalarFunction with custom state
+    #[inline]
+    pub fn register_scalar_function_with_state<S: VScalar>(&self, name: &str, state: &S::State) -> crate::Result<()>
+    where
+        S::State: Clone,
+    {
+        let set = ScalarFunctionSet::new(name);
+        for signature in S::signatures() {
+            let scalar_function = ScalarFunction::new(name)?;
+            signature.register_with_scalar(&scalar_function);
+            scalar_function.set_function(Some(scalar_func::<S>));
+            scalar_function.set_extra_info(state.clone());
             set.add_function(scalar_function)?;
         }
         self.db.borrow_mut().register_scalar_function_set(set)
@@ -193,15 +213,18 @@ mod test {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct TestState {
-        #[allow(dead_code)]
-        inner: i32,
+        multiplier: usize,
+        prefix: String,
     }
 
     impl Default for TestState {
         fn default() -> Self {
-            Self { inner: 42 }
+            Self {
+                multiplier: 3,
+                prefix: "default".to_string(),
+            }
         }
     }
 
@@ -211,11 +234,10 @@ mod test {
         type State = TestState;
 
         unsafe fn invoke(
-            s: &Self::State,
+            state: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            assert_eq!(s.inner, 42);
             let values = input.flat_vector(0);
             let values = values.as_slice_with_len::<duckdb_string_t>(input.len());
             let strings = values
@@ -223,8 +245,10 @@ mod test {
                 .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string())
                 .take(input.len());
             let output = output.flat_vector();
+
             for s in strings {
-                output.insert(0, s.to_string().as_str());
+                let res = format!("{}: {}", state.prefix, s.repeat(state.multiplier));
+                output.insert(0, res.as_str());
             }
             Ok(())
         }
@@ -276,14 +300,37 @@ mod test {
     #[test]
     fn test_scalar() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
-        conn.register_scalar_function::<EchoScalar>("echo")?;
 
-        let mut stmt = conn.prepare("select echo('hi') as hello")?;
-        let mut rows = stmt.query([])?;
+        // Test with default state
+        {
+            conn.register_scalar_function::<EchoScalar>("echo")?;
 
-        while let Some(row) = rows.next()? {
-            let hello: String = row.get(0)?;
-            assert_eq!(hello, "hi");
+            let mut stmt = conn.prepare("select echo('x')")?;
+            let mut rows = stmt.query([])?;
+
+            while let Some(row) = rows.next()? {
+                let res: String = row.get(0)?;
+                assert_eq!(res, "default: xxx");
+            }
+        }
+
+        // Test with custom state
+        {
+            conn.register_scalar_function_with_state::<EchoScalar>(
+                "echo2",
+                &TestState {
+                    multiplier: 5,
+                    prefix: "custom".to_string(),
+                },
+            )?;
+
+            let mut stmt = conn.prepare("select echo2('y')")?;
+            let mut rows = stmt.query([])?;
+
+            while let Some(row) = rows.next()? {
+                let res: String = row.get(0)?;
+                assert_eq!(res, "custom: yyyyy");
+            }
         }
 
         Ok(())

@@ -92,7 +92,7 @@ impl DuckdbConnectionManager {
     #[cfg(feature = "vscalar")]
     pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> Result<()>
     where
-        S::State: Debug,
+        S::State: Debug + Default,
     {
         let conn = self.connection.lock().unwrap();
         conn.register_scalar_function::<S>(name)
