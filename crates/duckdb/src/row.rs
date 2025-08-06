@@ -101,7 +101,29 @@ impl<'stmt> Rows<'stmt> {
         AndThenRows { rows: self, map: f }
     }
 
-    /// Give access to the underlying statement
+    /// Access the underlying statement
+    ///
+    /// This method provides a way to access the `Statement` that created these `Rows`
+    /// without additional borrowing conflicts. This is particularly useful when you need
+    /// to access statement metadata (like column count or names) while iterating over results.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result};
+    /// fn process_results(conn: &Connection) -> Result<()> {
+    ///     let mut stmt = conn.prepare("SELECT id, name FROM people")?;
+    ///     let mut rows = stmt.query([])?;
+    ///
+    ///     let column_count = rows.as_ref().unwrap().column_count();
+    ///     println!("Processing {} columns", column_count);
+    ///
+    ///     while let Some(row) = rows.next()? {
+    ///         // Process row...
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn as_ref(&self) -> Option<&Statement<'stmt>> {
         self.stmt
     }
