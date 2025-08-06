@@ -7,6 +7,11 @@ on:
     branches: [main]
 env:
   RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test ${{ matrix.target }}
