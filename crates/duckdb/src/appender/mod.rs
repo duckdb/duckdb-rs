@@ -176,7 +176,7 @@ impl fmt::Debug for Appender<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{Connection, Result};
+    use crate::{params, Connection, Error, Result};
 
     #[test]
     fn test_append_one_row() -> Result<()> {
@@ -264,7 +264,6 @@ mod test {
     #[test]
     #[cfg(feature = "chrono")]
     fn test_append_datetime() -> Result<()> {
-        use crate::params;
         use chrono::{NaiveDate, NaiveDateTime};
 
         let db = Connection::open_in_memory()?;
@@ -285,8 +284,7 @@ mod test {
     }
 
     #[test]
-    fn test_appender_error() -> Result<(), crate::Error> {
-        use crate::params;
+    fn test_appender_error() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         conn.execute(
             r"CREATE TABLE foo (
@@ -298,7 +296,7 @@ mod test {
         )?;
         let mut appender = conn.appender("foo")?;
         match appender.append_row(params!["foo"]) {
-            Err(crate::Error::DuckDBFailure(.., Some(msg))) => {
+            Err(Error::DuckDBFailure(.., Some(msg))) => {
                 assert_eq!(msg, "Call to EndRow before all columns have been appended to!")
             }
             Err(err) => panic!("unexpected error: {err:?}"),
