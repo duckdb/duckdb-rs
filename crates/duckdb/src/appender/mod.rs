@@ -304,4 +304,36 @@ mod test {
         }
         Ok(())
     }
+
+    #[test]
+    fn test_appender_foreign_key_constraint() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r"
+            CREATE TABLE parent (id INTEGER PRIMARY KEY);
+            CREATE TABLE child (
+                id INTEGER,
+                parent_id INTEGER,
+                FOREIGN KEY (parent_id) REFERENCES parent(id)
+            );",
+        )?;
+        conn.execute("INSERT INTO parent VALUES (1)", [])?;
+
+        let mut appender = conn.appender("child")?;
+        appender.append_row(params![1, 999])?; // Invalid parent_id
+
+        // Foreign key constraint should be checked during flush
+        match appender.flush() {
+            Err(Error::DuckDBFailure(_, Some(msg))) => {
+                assert_eq!(
+                    msg,
+                    "Violates foreign key constraint because key \"id: 999\" does not exist in the referenced table"
+                );
+            }
+            Err(e) => panic!("Expected foreign key constraint error, got: {e:?}"),
+            Ok(_) => panic!("Expected foreign key constraint error, but flush succeeded"),
+        }
+
+        Ok(())
+    }
 }
