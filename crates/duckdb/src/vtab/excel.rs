@@ -16,6 +16,7 @@ struct ExcelInitData {
     start: AtomicUsize,
 }
 
+#[allow(dead_code)]
 struct ExcelVTab;
 
 impl VTab for ExcelVTab {
