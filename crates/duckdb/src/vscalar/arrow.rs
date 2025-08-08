@@ -7,7 +7,7 @@ use arrow::{
 
 use crate::{
     core::{DataChunkHandle, LogicalTypeId},
-    vtab::arrow::{data_chunk_to_arrow, write_arrow_array_to_vector, WritableVector},
+    vtab::arrow::{data_chunk_to_arrow, to_duckdb_logical_type, write_arrow_array_to_vector, WritableVector},
 };
 
 use super::{ScalarFunctionSignature, ScalarParams, VScalar};
@@ -35,14 +35,12 @@ impl From<ArrowScalarParams> for ScalarParams {
             ArrowScalarParams::Exact(params) => Self::Exact(
                 params
                     .into_iter()
-                    .map(|v| LogicalTypeId::try_from(&v).expect("type should be converted").into())
+                    .map(|v| to_duckdb_logical_type(&v).expect("type should be converted"))
                     .collect(),
             ),
-            ArrowScalarParams::Variadic(param) => Self::Variadic(
-                LogicalTypeId::try_from(&param)
-                    .expect("type should be converted")
-                    .into(),
-            ),
+            ArrowScalarParams::Variadic(param) => {
+                Self::Variadic(to_duckdb_logical_type(&param).expect("type should be converted"))
+            }
         }
     }
 }
@@ -107,7 +105,7 @@ where
             .into_iter()
             .map(|sig| ScalarFunctionSignature {
                 parameters: sig.parameters.map(Into::into),
-                return_type: LogicalTypeId::try_from(&sig.return_type)
+                return_type: to_duckdb_logical_type(&sig.return_type)
                     .expect("type should be converted")
                     .into(),
             })
