@@ -200,6 +200,10 @@ If you use the `bundled` features, you will get pregenerated bindings for the
 bundled version of DuckDB. If you want to run `bindgen` at buildtime to
 produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
+## Rust version compatibility
+
+duckdb-rs is built and tested with stable Rust, and will keep a rolling MSRV (minimum supported Rust version) that can only be updated in major and minor releases on a need by basis (e.g. project dependencies bump their MSRV or a particular Rust feature is useful for us etc.). The new MSRV will be at least 6 months old. Patch releases are guaranteed to have the same MSRV.
+
 ## Contributing
 
 We welcome contributions! Take a look at [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
