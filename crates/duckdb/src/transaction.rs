@@ -65,7 +65,7 @@ impl Transaction<'_> {
     /// compile-time guarantee that transactions are not nested.
     #[inline]
     fn new_unchecked(conn: &Connection) -> Result<Transaction<'_>> {
-        let query = "BEGIN Transaction";
+        let query = "BEGIN TRANSACTION";
         conn.execute_batch(query).map(move |_| Transaction {
             conn,
             drop_behavior: DropBehavior::Rollback,
