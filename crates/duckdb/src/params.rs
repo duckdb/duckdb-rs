@@ -10,16 +10,16 @@ use sealed::Sealed;
 /// Trait used for [sets of parameter][params] passed into SQL
 /// statements/queries.
 ///
-/// [params]: https://www.sqlite.org/c3ref/bind_blob.html
+/// [params]: https://duckdb.org/docs/stable/clients/c/prepared.html
 ///
 /// Note: Currently, this trait can only be implemented inside this crate.
-/// Additionally, it's methods (which are `doc(hidden)`) should currently not be
+/// Additionally, its methods (which are `doc(hidden)`) should currently not be
 /// considered part of the stable API, although it's possible they will
 /// stabilize in the future.
 ///
-/// # Passing parameters to SQLite
+/// # Passing parameters to DuckDB
 ///
-/// Many functions in this library let you pass parameters to SQLite. Doing this
+/// Many functions in this library let you pass parameters to DuckDB. Doing this
 /// lets you avoid any risk of SQL injection, and is simpler than escaping
 /// things manually. Aside from deprecated functions and a few helpers, this is
 /// indicated by the function taking a generic argument that implements `Params`

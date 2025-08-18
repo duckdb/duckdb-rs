@@ -146,9 +146,6 @@ impl Connection {
     ///
     /// Some pragmas will return multiple rows/values which cannot be retrieved
     /// with this method.
-    ///
-    /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
-    /// `SELECT user_version FROM pragma_user_version;`
     pub fn pragma_query_value<T, F>(&self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, f: F) -> Result<T>
     where
         F: FnOnce(&Row<'_>) -> Result<T>,
@@ -159,9 +156,6 @@ impl Connection {
     }
 
     /// Query the current rows/values of `pragma_name`.
-    ///
-    /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
-    /// `SELECT * FROM pragma_collation_list;`
     pub fn pragma_query<F>(&self, schema_name: Option<DatabaseName<'_>>, pragma_name: &str, mut f: F) -> Result<()>
     where
         F: FnMut(&Row<'_>) -> Result<()>,
@@ -176,15 +170,11 @@ impl Connection {
         Ok(())
     }
 
-    /// Query the current value(s) of `pragma_name` associated to
-    /// `pragma_value`.
+    /// Query the current value(s) of `pragma_name` associated to `pragma_value`.
     ///
     /// This method can be used with query-only pragmas which need an argument
     /// (e.g. `table_info('one_tbl')`) or pragmas which returns value(s)
     /// (e.g. `integrity_check`).
-    ///
-    /// Prefer [PRAGMA function](https://sqlite.org/pragma.html#pragfunc) introduced in DuckDB 3.20:
-    /// `SELECT * FROM pragma_table_info(?);`
     pub fn pragma<F>(
         &self,
         schema_name: Option<DatabaseName<'_>>,

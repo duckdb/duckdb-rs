@@ -1,4 +1,4 @@
-//! Convert most of the [Time Strings](http://sqlite.org/lang_datefunc.html) to chrono types.
+//! Convert most of the [Time Strings](https://duckdb.org/docs/stable/sql/functions/date) to chrono types.
 
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use num_integer::Integer;
