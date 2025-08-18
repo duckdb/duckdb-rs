@@ -10,7 +10,7 @@ use sealed::Sealed;
 /// Trait used for [sets of parameter][params] passed into SQL
 /// statements/queries.
 ///
-/// [params]: https://www.sqlite.org/c3ref/bind_blob.html
+/// [params]: https://duckdb.org/docs/stable/clients/c/prepared.html
 ///
 /// Note: Currently, this trait can only be implemented inside this crate.
 /// Additionally, it's methods (which are `doc(hidden)`) should currently not be

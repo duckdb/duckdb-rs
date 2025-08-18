@@ -1,8 +1,8 @@
 use super::{Null, OrderedMap, TimeUnit, Type};
 use rust_decimal::prelude::*;
 
-/// Owning [dynamic type value](http://sqlite.org/datatype3.html). Value's type is typically
-/// dictated by DuckDB (not by the caller).
+/// Owning [dynamic type value](https://duckdb.org/docs/stable/sql/data_types/overview.html).
+/// Value's type is typically dictated by DuckDB (not by the caller).
 ///
 /// See [`ValueRef`](crate::types::ValueRef) for a non-owning dynamic type
 /// value.
