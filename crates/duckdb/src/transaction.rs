@@ -64,7 +64,7 @@ impl Transaction<'_> {
     /// possible, [`Transaction::new`] should be preferred, as it provides a
     /// compile-time guarantee that transactions are not nested.
     #[inline]
-    fn new_unchecked(conn: &Connection) -> Result<Transaction<'_>> {
+    pub fn new_unchecked(conn: &Connection) -> Result<Transaction<'_>> {
         let query = "BEGIN TRANSACTION";
         conn.execute_batch(query).map(move |_| Transaction {
             conn,
