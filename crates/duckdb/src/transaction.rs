@@ -94,8 +94,7 @@ impl Transaction<'_> {
 
     #[inline]
     fn commit_(&mut self) -> Result<()> {
-        self.conn.execute_batch("COMMIT")?;
-        Ok(())
+        self.conn.execute_batch("COMMIT")
     }
 
     /// A convenience method which consumes and rolls back a transaction.
@@ -106,8 +105,7 @@ impl Transaction<'_> {
 
     #[inline]
     fn rollback_(&mut self) -> Result<()> {
-        self.conn.execute_batch("ROLLBACK")?;
-        Ok(())
+        self.conn.execute_batch("ROLLBACK")
     }
 
     /// Consumes the transaction, committing or rolling back according to the
