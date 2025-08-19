@@ -146,7 +146,10 @@ mod build_bundled {
         cfg.include(lib_name);
         cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/{lib_name}/{dir}")));
 
-        for f in cpp_files.into_iter().map(|file| format!("{out_dir}/{file}")) {
+        // Ensure deterministic builds
+        let mut cpp_files_vec: Vec<String> = cpp_files.into_iter().collect(); 
+        cpp_files_vec.sort();
+        for f in cpp_files_vec.into_iter().map(|file| format!("{out_dir}/{file}")) {
             cfg.file(f);
         }
 
