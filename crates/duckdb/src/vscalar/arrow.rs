@@ -105,9 +105,7 @@ where
             .into_iter()
             .map(|sig| ScalarFunctionSignature {
                 parameters: sig.parameters.map(Into::into),
-                return_type: to_duckdb_logical_type(&sig.return_type)
-                    .expect("type should be converted")
-                    .into(),
+                return_type: to_duckdb_logical_type(&sig.return_type).expect("type should be converted"),
             })
             .collect()
     }
