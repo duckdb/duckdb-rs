@@ -114,15 +114,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      # Need nightly rust.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly
-          components: "rust-src"
-      # Install LLVM tools
+          toolchain: nightly-2025-08-15
+          components: rust-src
       - name: Install LLVM
-        run: |
-          sudo apt-get install -y llvm
+        run: sudo apt-get install -y llvm
       - name: Tests with asan
         env:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
