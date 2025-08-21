@@ -1,22 +1,6 @@
 use crate::{Connection, Result};
 use std::ops::Deref;
 
-/// Options for transaction behavior. See [BEGIN
-/// TRANSACTION](http://www.sqlite.org/lang_transaction.html) for details.
-#[derive(Copy, Clone)]
-#[non_exhaustive]
-pub enum TransactionBehavior {
-    /// DEFERRED means that the transaction does not actually start until the
-    /// database is first accessed.
-    Deferred,
-    /// IMMEDIATE cause the database connection to start a new write
-    /// immediately, without waiting for a writes statement.
-    Immediate,
-    /// EXCLUSIVE prevents other database connections from reading the database
-    /// while the transaction is underway.
-    Exclusive,
-}
-
 /// Options for how a Transaction should behave when it is dropped.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -71,7 +55,7 @@ impl Transaction<'_> {
     /// where this is unacceptable, [`Transaction::new_unchecked`] is available.
     #[inline]
     pub fn new(conn: &mut Connection) -> Result<Transaction<'_>> {
-        Self::new_unchecked(conn, TransactionBehavior::Deferred)
+        Self::new_unchecked(conn)
     }
 
     /// Begin a new transaction, failing if a transaction is open.
@@ -80,14 +64,8 @@ impl Transaction<'_> {
     /// possible, [`Transaction::new`] should be preferred, as it provides a
     /// compile-time guarantee that transactions are not nested.
     #[inline]
-    fn new_unchecked(conn: &Connection, _: TransactionBehavior) -> Result<Transaction<'_>> {
-        // TODO(wangfenjin): not supported
-        // let query = match behavior {
-        //     TransactionBehavior::Deferred => "BEGIN DEFERRED",
-        //     TransactionBehavior::Immediate => "BEGIN IMMEDIATE",
-        //     TransactionBehavior::Exclusive => "BEGIN EXCLUSIVE",
-        // };
-        let query = "BEGIN Transaction";
+    pub fn new_unchecked(conn: &Connection) -> Result<Transaction<'_>> {
+        let query = "BEGIN TRANSACTION";
         conn.execute_batch(query).map(move |_| Transaction {
             conn,
             drop_behavior: DropBehavior::Rollback,
@@ -116,8 +94,7 @@ impl Transaction<'_> {
 
     #[inline]
     fn commit_(&mut self) -> Result<()> {
-        self.conn.execute_batch("COMMIT")?;
-        Ok(())
+        self.conn.execute_batch("COMMIT")
     }
 
     /// A convenience method which consumes and rolls back a transaction.
@@ -128,8 +105,7 @@ impl Transaction<'_> {
 
     #[inline]
     fn rollback_(&mut self) -> Result<()> {
-        self.conn.execute_batch("ROLLBACK")?;
-        Ok(())
+        self.conn.execute_batch("ROLLBACK")
     }
 
     /// Consumes the transaction, committing or rolling back according to the
@@ -206,19 +182,6 @@ impl Connection {
         Transaction::new(self)
     }
 
-    /// Begin a new transaction with a specified behavior.
-    ///
-    /// See [`transaction`](Connection::transaction).
-    ///
-    /// # Failure
-    ///
-    /// Will return `Err` if the underlying DuckDB call fails.
-    #[inline]
-    #[allow(dead_code)]
-    fn transaction_with_behavior(&mut self, behavior: TransactionBehavior) -> Result<Transaction<'_>> {
-        Transaction::new_unchecked(self, behavior)
-    }
-
     /// Begin a new transaction with the default behavior (DEFERRED).
     ///
     /// Attempt to open a nested transaction will result in a DuckDB error.
@@ -251,7 +214,7 @@ impl Connection {
     /// Will return `Err` if the underlying DuckDB call fails. The specific
     /// error returned if transactions are nested is currently unspecified.
     pub fn unchecked_transaction(&self) -> Result<Transaction<'_>> {
-        Transaction::new_unchecked(self, TransactionBehavior::Deferred)
+        Transaction::new_unchecked(self)
     }
 }
 

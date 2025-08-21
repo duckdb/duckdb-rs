@@ -83,7 +83,7 @@ pub use crate::{
     params::{params_from_iter, Params, ParamsFromIter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
-    transaction::{DropBehavior, Transaction, TransactionBehavior},
+    transaction::{DropBehavior, Transaction},
     types::ToSql,
 };
 #[cfg(feature = "polars")]
