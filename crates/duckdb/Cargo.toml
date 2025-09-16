@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "1.3.2"
+version = "1.4.0"
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }

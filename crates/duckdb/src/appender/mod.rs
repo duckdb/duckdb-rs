@@ -325,7 +325,7 @@ mod test {
             Err(Error::DuckDBFailure(_, Some(msg))) => {
                 assert_eq!(
                     msg,
-                    "Violates foreign key constraint because key \"id: 999\" does not exist in the referenced table"
+                    "Failed to append: Violates foreign key constraint because key \"id: 999\" does not exist in the referenced table"
                 );
             }
             Err(e) => panic!("Expected foreign key constraint error, got: {e:?}"),
