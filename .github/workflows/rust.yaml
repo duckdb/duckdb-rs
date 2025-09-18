@@ -66,12 +66,7 @@ jobs:
 
       - name: Dry-run release of crates
         if: matrix.os == 'ubuntu-latest'
-        uses: katyo/publish-crates@v2
-        with:
-          path: "./"
-          args: --allow-dirty --all-features
-          dry-run: true
-          ignore-unpublished-changes: true
+        run: cargo publish --workspace --dry-run
 
       # For windows
       - name: Windows extract duckdb
