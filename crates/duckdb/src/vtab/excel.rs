@@ -4,6 +4,7 @@ use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctio
 use crate::core::{Inserter, LogicalTypeId};
 use calamine::{open_workbook_auto, Data, DataType, Range, Reader};
 
+#[allow(dead_code)]
 #[repr(C)]
 struct ExcelBindData {
     range: Range<Data>,
@@ -11,6 +12,7 @@ struct ExcelBindData {
     height: usize,
 }
 
+#[allow(dead_code)]
 #[repr(C)]
 struct ExcelInitData {
     start: AtomicUsize,
