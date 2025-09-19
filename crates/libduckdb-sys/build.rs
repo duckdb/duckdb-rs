@@ -126,6 +126,7 @@ mod build_bundled {
         let mut cfg = cc::Build::new();
 
         add_extension(&mut cfg, &manifest, "core_functions", &mut cpp_files, &mut include_dirs);
+        add_extension(&mut cfg, &manifest, "icu", &mut cpp_files, &mut include_dirs);
 
         #[cfg(feature = "parquet")]
         add_extension(&mut cfg, &manifest, "parquet", &mut cpp_files, &mut include_dirs);
