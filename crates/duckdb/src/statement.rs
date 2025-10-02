@@ -820,6 +820,77 @@ mod test {
         Ok(())
     }
 
+    // When using RETURNING clauses, DuckDB core treats the statement as a query result instead of a modification
+    // statement. This causes execute() to return 0 changed rows and insert() to fail with an error.
+    // This test demonstrates current behavior and proper usage patterns for RETURNING clauses.
+    #[test]
+    fn test_insert_with_returning_clause() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE SEQUENCE location_id_seq START WITH 1 INCREMENT BY 1;
+             CREATE TABLE location (
+                 id INTEGER PRIMARY KEY DEFAULT nextval('location_id_seq'),
+                 name TEXT NOT NULL
+             )",
+        )?;
+
+        // INSERT without RETURNING using execute
+        let changes = db.execute("INSERT INTO location (name) VALUES (?)", ["test1"])?;
+        assert_eq!(changes, 1);
+
+        // INSERT with RETURNING using execute - returns 0 (known limitation)
+        let changes = db.execute("INSERT INTO location (name) VALUES (?) RETURNING id", ["test2"])?;
+        assert_eq!(changes, 0);
+
+        // Verify the row was actually inserted despite returning 0
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM location", [], |r| r.get(0))?;
+        assert_eq!(count, 2);
+
+        // INSERT without RETURNING using insert
+        let mut stmt = db.prepare("INSERT INTO location (name) VALUES (?)")?;
+        stmt.insert(["test3"])?;
+
+        // INSERT with RETURNING using insert - fails (known limitation)
+        let mut stmt = db.prepare("INSERT INTO location (name) VALUES (?) RETURNING id")?;
+        let result = stmt.insert(["test4"]);
+        assert!(matches!(result, Err(Error::StatementChangedRows(0))));
+
+        // Verify the row was still inserted despite the error
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM location", [], |r| r.get(0))?;
+        assert_eq!(count, 4);
+
+        // Proper way to use RETURNING - with query_row
+        let id: i64 = db.query_row("INSERT INTO location (name) VALUES (?) RETURNING id", ["test5"], |r| {
+            r.get(0)
+        })?;
+        assert_eq!(id, 5);
+
+        // Proper way to use RETURNING - with query_map
+        let mut stmt = db.prepare("INSERT INTO location (name) VALUES (?) RETURNING id")?;
+        let ids: Vec<i64> = stmt
+            .query_map(["test6"], |row| row.get(0))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(ids.len(), 1);
+        assert_eq!(ids[0], 6);
+
+        // Proper way to use RETURNING - with query_one
+        let id: i64 = db
+            .prepare("INSERT INTO location (name) VALUES (?) RETURNING id")?
+            .query_one(["test7"], |r| r.get(0))?;
+        assert_eq!(id, 7);
+
+        // Multiple RETURNING columns
+        let (id, name): (i64, String) = db.query_row(
+            "INSERT INTO location (name) VALUES (?) RETURNING id, name",
+            ["test8"],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        assert_eq!(id, 8);
+        assert_eq!(name, "test8");
+
+        Ok(())
+    }
+
     #[test]
     fn test_exists() -> Result<()> {
         let db = Connection::open_in_memory()?;
