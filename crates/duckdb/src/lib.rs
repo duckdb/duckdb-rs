@@ -1455,4 +1455,56 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_prepare_multi_statement() -> Result<()> {
+        let db = checked_memory_handle();
+
+        {
+            let mut stmt =
+                db.prepare("CREATE TABLE test(x INTEGER); INSERT INTO test VALUES (42); SELECT x FROM test;")?;
+            let result: i32 = stmt.query_row([], |row| row.get(0))?;
+            assert_eq!(result, 42);
+        }
+
+        {
+            let mut stmt = db.prepare(
+                "CREATE TEMP TABLE temp_data(id INTEGER, value TEXT);
+                INSERT INTO temp_data VALUES (1, 'first'), (2, 'second');
+                SELECT COUNT(*) FROM temp_data;",
+            )?;
+            let count: i32 = stmt.query_row([], |row| row.get(0))?;
+            assert_eq!(count, 2);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pivot_query() -> Result<()> {
+        let db = checked_memory_handle();
+
+        db.execute_batch(
+            "CREATE TABLE cities(city VARCHAR, year INTEGER, population INTEGER);
+             INSERT INTO cities VALUES
+               ('Amsterdam', 2000, 1005),
+               ('Amsterdam', 2010, 1065),
+               ('Amsterdam', 2020, 1158),
+               ('Berlin', 2000, 3382),
+               ('Berlin', 2010, 3460),
+               ('Berlin', 2020, 3576);",
+        )?;
+
+        // PIVOT queries internally expand to multiple statements
+        let mut stmt = db.prepare("PIVOT cities ON year USING sum(population);")?;
+        let mut rows = stmt.query([])?;
+
+        let mut row_count = 0;
+        while let Some(_row) = rows.next()? {
+            row_count += 1;
+        }
+        assert_eq!(row_count, 2);
+
+        Ok(())
+    }
 }
