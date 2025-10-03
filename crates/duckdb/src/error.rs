@@ -286,3 +286,29 @@ pub fn result_from_duckdb_arrow(code: ffi::duckdb_state, mut out: ffi::duckdb_ar
         error_from_duckdb_code(code, message)
     }
 }
+
+#[cold]
+#[inline]
+pub fn result_from_duckdb_extract(
+    num_statements: ffi::idx_t,
+    mut extracted: ffi::duckdb_extracted_statements,
+) -> Result<()> {
+    if num_statements > 0 {
+        return Ok(());
+    }
+    unsafe {
+        let message = if extracted.is_null() {
+            Some("extracted statements are null".to_string())
+        } else {
+            let c_err = ffi::duckdb_extract_statements_error(extracted);
+            let message = if c_err.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+            };
+            ffi::duckdb_destroy_extracted(&mut extracted);
+            message
+        };
+        error_from_duckdb_code(ffi::DuckDBError, message)
+    }
+}
