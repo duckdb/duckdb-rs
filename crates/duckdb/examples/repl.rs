@@ -132,28 +132,14 @@ impl SqlRepl {
     }
 
     fn execute_sql(&self, sql: &str) -> DuckResult<()> {
-        // Check if it's a statement that returns results
-        let sql_upper = sql.trim().to_uppercase();
-        let is_query = sql_upper.starts_with("SELECT")
-            || sql_upper.starts_with("FROM")
-            || sql_upper.starts_with("SHOW")
-            || sql_upper.starts_with("DESCRIBE")
-            || sql_upper.starts_with("EXPLAIN")
-            || sql_upper.starts_with("PRAGMA")
-            || sql_upper.starts_with("WITH");
+        let mut stmt = self.conn.prepare(sql)?;
+        let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
 
-        if is_query {
-            let mut stmt = self.conn.prepare(sql)?;
-            let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
-
-            if rbs.is_empty() || rbs[0].num_rows() == 0 {
-                println!("No results returned.");
-            } else {
-                self.print_records(&rbs);
-            }
-        } else {
-            // Execute non-query statements
-            self.conn.execute_batch(sql)?;
+        // NOTE: When executing multi-statement queries (e.g., "SELECT 1; SELECT 2;"),
+        // only the result from the final statement will be displayed. This differs from
+        // the DuckDB CLI which shows results from all statements.
+        if !rbs.is_empty() && rbs[0].num_rows() > 0 {
+            self.print_records(&rbs);
         }
 
         Ok(())

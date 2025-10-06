@@ -8,7 +8,10 @@ use std::{
 
 use super::{ffi, Appender, Config, Connection, Result};
 use crate::{
-    error::{result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_prepare, Error},
+    error::{
+        result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract, result_from_duckdb_prepare,
+        Error,
+    },
     raw_statement::RawStatement,
     statement::Statement,
 };
@@ -93,11 +96,68 @@ impl InnerConnection {
     }
 
     pub fn prepare<'a>(&mut self, conn: &'a Connection, sql: &str) -> Result<Statement<'a>> {
-        let mut c_stmt: ffi::duckdb_prepared_statement = ptr::null_mut();
         let c_str = CString::new(sql).unwrap();
-        let r = unsafe { ffi::duckdb_prepare(self.con, c_str.as_ptr() as *const c_char, &mut c_stmt) };
-        result_from_duckdb_prepare(r, c_stmt)?;
-        Ok(Statement::new(conn, unsafe { RawStatement::new(c_stmt) }))
+
+        // Extract statements (handles both single and multi-statement queries)
+        let mut extracted = ptr::null_mut();
+        let num_stmts =
+            unsafe { ffi::duckdb_extract_statements(self.con, c_str.as_ptr() as *const c_char, &mut extracted) };
+        result_from_duckdb_extract(num_stmts, extracted)?;
+
+        // Auto-cleanup on drop
+        let _guard = ExtractedStatementsGuard(extracted);
+
+        // Execute all intermediate statements
+        for i in 0..num_stmts - 1 {
+            self.execute_extracted_statement(extracted, i)?;
+        }
+
+        // Prepare and return final statement
+        let final_stmt = self.prepare_extracted_statement(extracted, num_stmts - 1)?;
+        Ok(Statement::new(conn, unsafe { RawStatement::new(final_stmt) }))
+    }
+
+    fn prepare_extracted_statement(
+        &self,
+        extracted: ffi::duckdb_extracted_statements,
+        index: ffi::idx_t,
+    ) -> Result<ffi::duckdb_prepared_statement> {
+        let mut stmt = ptr::null_mut();
+        let res = unsafe { ffi::duckdb_prepare_extracted_statement(self.con, extracted, index, &mut stmt) };
+        result_from_duckdb_prepare(res, stmt)?;
+        Ok(stmt)
+    }
+
+    fn execute_extracted_statement(
+        &self,
+        extracted: ffi::duckdb_extracted_statements,
+        index: ffi::idx_t,
+    ) -> Result<()> {
+        let mut stmt = self.prepare_extracted_statement(extracted, index)?;
+
+        let mut result = unsafe { mem::zeroed() };
+        let rc = unsafe { ffi::duckdb_execute_prepared(stmt, &mut result) };
+
+        let error = if rc != ffi::DuckDBSuccess {
+            unsafe {
+                let c_err = ffi::duckdb_result_error(&mut result as *mut _);
+                let msg = if c_err.is_null() {
+                    None
+                } else {
+                    Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+                };
+                Some(Error::DuckDBFailure(ffi::Error::new(rc), msg))
+            }
+        } else {
+            None
+        };
+
+        unsafe {
+            ffi::duckdb_destroy_prepare(&mut stmt);
+            ffi::duckdb_destroy_result(&mut result);
+        }
+
+        error.map_or(Ok(()), Err)
     }
 
     pub fn appender<'a>(&mut self, conn: &'a Connection, table: &str, schema: &str) -> Result<Appender<'a>> {
@@ -123,6 +183,14 @@ impl InnerConnection {
     #[inline]
     pub fn is_autocommit(&self) -> bool {
         true
+    }
+}
+
+struct ExtractedStatementsGuard(ffi::duckdb_extracted_statements);
+
+impl Drop for ExtractedStatementsGuard {
+    fn drop(&mut self) {
+        unsafe { ffi::duckdb_destroy_extracted(&mut self.0) }
     }
 }
 
