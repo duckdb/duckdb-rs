@@ -872,7 +872,7 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "duckdb"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "arrow",
  "calamine",
@@ -903,7 +903,7 @@ dependencies = [
 
 [[package]]
 name = "duckdb-loadable-macros"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1729,7 +1729,7 @@ checksum = "58f929b4d672ea937a23a1ab494143d968337a5f47e56d0815df1e0890ddf174"
 
 [[package]]
 name = "libduckdb-sys"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "arrow",
  "bindgen",
