@@ -1,6 +1,6 @@
 [package]
 name = "libduckdb-sys"
-version = "1.4.0"
+version = "1.4.1"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
