@@ -1507,4 +1507,47 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_multiple_memory_databases() -> Result<()> {
+        // Unnamed :memory: connections are isolated
+        {
+            let mem1 = Connection::open_in_memory()?;
+            let mem2 = Connection::open_in_memory()?;
+
+            mem1.execute_batch("CREATE TABLE test (id INTEGER)")?;
+            mem1.execute("INSERT INTO test VALUES (1)", [])?;
+
+            mem2.execute_batch("CREATE TABLE test (id INTEGER)")?;
+            mem2.execute("INSERT INTO test VALUES (2)", [])?;
+
+            let value1: i32 = mem1.query_row("SELECT id FROM test", [], |r| r.get(0))?;
+            assert_eq!(value1, 1);
+
+            let value2: i32 = mem2.query_row("SELECT id FROM test", [], |r| r.get(0))?;
+            assert_eq!(value2, 2);
+        }
+
+        // try_clone() shares the same database
+        {
+            let shared = Connection::open_in_memory()?;
+
+            shared.execute_batch("CREATE TABLE shared_table (id INTEGER)")?;
+            shared.execute("INSERT INTO shared_table VALUES (123)", [])?;
+
+            let cloned = shared.try_clone()?;
+
+            // Cloned connection can see the original's tables
+            let value: i32 = cloned.query_row("SELECT id FROM shared_table", [], |r| r.get(0))?;
+            assert_eq!(value, 123);
+
+            cloned.execute("INSERT INTO shared_table VALUES (456)", [])?;
+
+            // Original connection can see cloned's insert
+            let count: i64 = shared.query_row("SELECT COUNT(*) FROM shared_table", [], |r| r.get(0))?;
+            assert_eq!(count, 2);
+        }
+
+        Ok(())
+    }
 }
