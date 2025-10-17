@@ -282,6 +282,48 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "chrono")]
+    fn test_append_struct_with_params() -> Result<()> {
+        use chrono::NaiveDate;
+
+        struct Person {
+            first_name: String,
+            last_name: String,
+            dob: NaiveDate,
+        }
+
+        let db = Connection::open_in_memory()?;
+
+        db.execute_batch("CREATE TABLE foo(first_name VARCHAR, last_name VARCHAR, dob DATE);")?;
+
+        let person1 = Person {
+            first_name: String::from("John"),
+            last_name: String::from("Smith"),
+            dob: NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
+        };
+
+        let person2 = Person {
+            first_name: String::from("Jane"),
+            last_name: String::from("Smith"),
+            dob: NaiveDate::from_ymd_opt(1975, 1, 1).unwrap(),
+        };
+
+        // Use params! to extract struct fields
+        {
+            let persons = vec![&person1, &person2];
+            let mut app = db.appender("foo")?;
+            for p in &persons {
+                app.append_row(params![&p.first_name, &p.last_name, p.dob])?;
+            }
+        }
+
+        let count: i64 = db.query_row("SELECT count(*) FROM foo", [], |row| row.get(0))?;
+        assert_eq!(count, 2);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_appender_error() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         conn.execute(
