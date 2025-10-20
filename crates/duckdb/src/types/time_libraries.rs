@@ -4,7 +4,6 @@
 use chrono::{Local, TimeZone, Utc};
 #[cfg(feature = "jiff")]
 use jiff::SpanRelativeTo;
-#[cfg(feature = "chrono")]
 use num_integer::Integer;
 
 use crate::{
@@ -262,13 +261,30 @@ impl FromSql for chrono::TimeDelta {
     }
 }
 
-/// Interval => `jiff::Span::new().months(months).days(days).nanoseconds(nanos)`
+/// Interval => Balanced `jiff::Span`
 #[cfg(feature = "jiff")]
 impl FromSql for jiff::Span {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
             ValueRef::Interval { months, days, nanos } => {
-                Ok(jiff::Span::new().months(months).days(days).nanoseconds(nanos))
+                let (years, months) = months.div_mod_floor(&12);
+                let (weeks, days) = days.div_mod_floor(&7);
+                let (hours, nanos) = nanos.div_mod_floor(&3_600_000_000_000);
+                let (minutes, nanos) = nanos.div_mod_floor(&60_000_000_000);
+                let (seconds, nanos) = nanos.div_mod_floor(&1_000_000_000);
+                let (milliseconds, nanos) = nanos.div_mod_floor(&1_000_000);
+                let (microseconds, nanos) = nanos.div_mod_floor(&1_000);
+                Ok(jiff::Span::new()
+                    .years(years)
+                    .months(months)
+                    .weeks(weeks)
+                    .days(days)
+                    .hours(hours)
+                    .minutes(minutes)
+                    .seconds(seconds)
+                    .milliseconds(milliseconds)
+                    .microseconds(microseconds)
+                    .nanoseconds(nanos))
             }
             _ => Err(FromSqlError::InvalidType),
         }
@@ -308,8 +324,6 @@ impl ToSql for chrono::Duration {
     }
 }
 
-/// The span is compressed into units of months, days, and nanoseconds.
-/// The span you get back may not be exactly the same.
 #[cfg(feature = "jiff")]
 impl ToSql for jiff::Span {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
@@ -328,7 +342,7 @@ impl ToSql for jiff::Span {
 /// Will store the duration in nanoseconds as an interval. Not using the
 /// month or day units. This function doesn't work with durations longer
 /// than i64::MAX nanoseconds (292 years). To store durations larger than
-/// this, use a `jiff::Span`
+/// that, use a `jiff::Span`
 #[cfg(feature = "jiff")]
 impl ToSql for jiff::SignedDuration {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
