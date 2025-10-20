@@ -2,16 +2,51 @@
 
 #[cfg(feature = "chrono")]
 use chrono::{Local, TimeZone, Utc};
-#[cfg(feature = "jiff")]
-use jiff::SpanRelativeTo;
 use num_integer::Integer;
 
 use crate::{
-    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef},
+    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, Value, ValueRef},
     Result,
 };
 
-use super::Value;
+macro_rules! iso_8601_datetime_format {
+    ($s:expr) => {{
+        match $s.len() {
+            //2016-02-23 23:56:04
+            19 => ($s, "%F %T"),
+            //2016-02-23 23:56:04.789
+            23 => ($s, "%F %T%.f"),
+            //2016-02-23 23:56:04.789+00:00
+            _ => ($s, "%F %T%.f%:z"),
+        }
+    }};
+}
+
+macro_rules! iso_8601_date_format {
+    ($s:expr) => {{
+        match $s.len() {
+            //2016-02-23
+            10 => ($s, "%F"),
+            _ => {
+                //2016-02-23
+                (&$s[..10], "%F")
+            }
+        }
+    }};
+}
+
+macro_rules! iso_8601_time_format {
+    ($s:expr) => {{
+        match $s.len() {
+            //23:56
+            5 => ($s, "%H:%M"),
+            //23:56:04
+            8 => ($s, "%T"),
+            //13:38:47.144
+            _ => ($s, "%T%.f"),
+        }
+    }};
+}
 
 /// ISO 8601 calendar date without timezone => "YYYY-MM-DD"
 #[cfg(feature = "chrono")]
@@ -38,7 +73,16 @@ impl ToSql for jiff::civil::Date {
 impl FromSql for chrono::NaiveDate {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        Ok(chrono::NaiveDateTime::column_result(value)?.date())
+        if value.as_timestamp().is_ok() {
+            return Ok(chrono::NaiveDateTime::column_result(value)?.date());
+        }
+
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_date_format!(s);
+            return chrono::NaiveDate::parse_from_str(s, format).map_err(|e| FromSqlError::Other(e.into()));
+        }
+
+        Err(FromSqlError::InvalidType)
     }
 }
 
@@ -47,9 +91,16 @@ impl FromSql for chrono::NaiveDate {
 impl FromSql for jiff::civil::Date {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        Ok(jiff::Timestamp::column_result(value)?
-            .to_zoned(jiff::tz::TimeZone::UTC)
-            .date())
+        if value.as_timestamp().is_ok() {
+            return Ok(jiff::Zoned::column_result(value)?.date());
+        }
+
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_date_format!(s);
+            return jiff::civil::Date::strptime(format, s).map_err(|e| FromSqlError::Other(e.into()));
+        }
+
+        Err(FromSqlError::InvalidType)
     }
 }
 
@@ -78,7 +129,16 @@ impl ToSql for jiff::civil::Time {
 impl FromSql for chrono::NaiveTime {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        Ok(chrono::NaiveDateTime::column_result(value)?.time())
+        if value.as_timestamp().is_ok() {
+            return Ok(chrono::NaiveDateTime::column_result(value)?.time());
+        }
+
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_time_format!(s);
+            return chrono::NaiveTime::parse_from_str(s, format).map_err(|e| FromSqlError::Other(e.into()));
+        }
+
+        Err(FromSqlError::InvalidType)
     }
 }
 
@@ -87,9 +147,16 @@ impl FromSql for chrono::NaiveTime {
 impl FromSql for jiff::civil::Time {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        Ok(jiff::Timestamp::column_result(value)?
-            .to_zoned(jiff::tz::TimeZone::UTC)
-            .time())
+        if value.as_timestamp().is_ok() {
+            return Ok(jiff::Zoned::column_result(value)?.time());
+        }
+
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_time_format!(s);
+            return jiff::civil::Time::strptime(format, s).map_err(|e| FromSqlError::Other(e.into()));
+        }
+
+        Err(FromSqlError::InvalidType)
     }
 }
 
@@ -115,30 +182,6 @@ impl ToSql for jiff::civil::DateTime {
     }
 }
 
-macro_rules! iso_8601_format {
-    ($s:expr) => {{
-        let s = std::str::from_utf8($s).unwrap();
-        match s.len() {
-            //23:56:04
-            8 => (s, "%T"),
-            //2016-02-23
-            10 => (s, "%F"),
-            //13:38:47.144
-            12 => (s, "%T%.f"),
-            //2016-02-23 23:56:04
-            19 => (s, "%F %T"),
-            //2016-02-23 23:56:04.789
-            23 => (s, "%F %T%.f"),
-            //2016-02-23 23:56:04.789+00:00
-            29 => (s, "%F %T%.f%:z"),
-            _ => {
-                //2016-02-23
-                (&s[..10], "%F")
-            }
-        }
-    }};
-}
-
 /// "YYYY-MM-DD HH:MM:SS"/"YYYY-MM-DD HH:MM:SS.SSS" => ISO 8601 combined date
 /// and time without timezone. ("YYYY-MM-DDTHH:MM:SS"/"YYYY-MM-DDTHH:MM:SS.SSS"
 /// also supported)
@@ -151,8 +194,8 @@ impl FromSql for chrono::NaiveDateTime {
             return Ok(DateTime::from_timestamp(secs, nsecs as u32).unwrap().naive_utc());
         }
 
-        if let ValueRef::Text(s) = value {
-            let (s, format) = iso_8601_format!(s);
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_datetime_format!(s);
             return Self::parse_from_str(s, format).map_err(|err| FromSqlError::Other(Box::new(err)));
         }
 
@@ -161,18 +204,31 @@ impl FromSql for chrono::NaiveDateTime {
 }
 
 /// "YYYY-MM-DD HH:MM:SS"/"YYYY-MM-DD HH:MM:SS.SSS" => ISO 8601 combined date
-/// and time without timezone. ("YYYY-MM-DDTHH:MM:SS"/"YYYY-MM-DDTHH:MM:SS.SSS"
-/// also supported)
+/// and time with or without timezone.
 #[cfg(feature = "jiff")]
-impl FromSql for jiff::Timestamp {
+impl FromSql for jiff::Zoned {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        use jiff::civil;
+
         if let Ok((secs, nsecs)) = value.as_timestamp() {
-            return Ok(Self::new(secs, nsecs as i32).unwrap());
+            return Ok(jiff::Timestamp::new(secs, nsecs as i32)
+                .unwrap()
+                .to_zoned(jiff::tz::TimeZone::UTC));
         }
 
-        if let ValueRef::Text(s) = value {
-            let (s, format) = iso_8601_format!(s);
-            return Self::strptime(s, format).map_err(|err| FromSqlError::Other(Box::new(err)));
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_datetime_format!(s);
+            match s.len() {
+                //2016-02-23 23:56:04
+                //2016-02-23 23:56:04.789
+                19 | 23 => {
+                    return civil::DateTime::strptime(format, s)
+                        .and_then(|dt| dt.to_zoned(jiff::tz::TimeZone::UTC))
+                        .map_err(|err| FromSqlError::Other(Box::new(err)))
+                }
+                //2016-02-23 23:56:04.789+00:00
+                _ => return Self::strptime(format, s).map_err(|err| FromSqlError::Other(Box::new(err))),
+            }
         }
 
         return Err(FromSqlError::InvalidType);
@@ -180,15 +236,27 @@ impl FromSql for jiff::Timestamp {
 }
 
 /// "YYYY-MM-DD HH:MM:SS"/"YYYY-MM-DD HH:MM:SS.SSS" => ISO 8601 combined date
-/// and time without timezone. ("YYYY-MM-DDTHH:MM:SS"/"YYYY-MM-DDTHH:MM:SS.SSS"
-/// also supported)
+/// and time without timezone.
 #[cfg(feature = "jiff")]
 impl FromSql for jiff::civil::DateTime {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        Ok(jiff::Timestamp::column_result(value)?
-            .to_zoned(jiff::tz::TimeZone::UTC)
-            .datetime())
+        if value.as_timestamp().is_ok() {
+            return Ok(jiff::Zoned::column_result(value)?.datetime());
+        }
+
+        if let Ok(s) = value.as_str() {
+            let (s, format) = iso_8601_datetime_format!(s);
+            match s.len() {
+                //2016-02-23 23:56:04
+                //2016-02-23 23:56:04.789
+                19 | 23 => return Self::strptime(format, s).map_err(|err| FromSqlError::Other(Box::new(err))),
+                //2016-02-23 23:56:04.789+00:00
+                _ => return Ok(jiff::Zoned::column_result(value)?.datetime()),
+            }
+        }
+
+        return Err(FromSqlError::InvalidType);
     }
 }
 
@@ -209,10 +277,7 @@ impl<Tz: TimeZone> ToSql for chrono::DateTime<Tz> {
 impl ToSql for jiff::Zoned {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        let date_time_str = self
-            .with_time_zone(jiff::tz::TimeZone::UTC)
-            .strftime("%F %T%.f%:z")
-            .to_string();
+        let date_time_str = self.strftime("%F %T%.f%:z").to_string();
         Ok(ToSqlOutput::from(date_time_str))
     }
 }
@@ -223,6 +288,19 @@ impl FromSql for chrono::DateTime<Utc> {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         chrono::NaiveDateTime::column_result(value).map(|dt| Utc.from_utc_datetime(&dt))
+    }
+}
+
+/// ISO 8601 ("YYYY-MM-DD HH:MM:SS.SSS[+-]HH:MM") into `Timestamp`.
+#[cfg(feature = "jiff")]
+impl FromSql for jiff::Timestamp {
+    #[inline]
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        if let Ok((secs, nsecs)) = value.as_timestamp() {
+            Ok(jiff::Timestamp::new(secs, nsecs as i32).unwrap())
+        } else {
+            Ok(jiff::Zoned::column_result(value)?.timestamp())
+        }
     }
 }
 
@@ -296,17 +374,19 @@ const SECONDS_PER_DAY: i64 = 24 * 3600;
 const NANOS_PER_SECOND: i64 = 1_000_000_000;
 const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * NANOS_PER_SECOND;
 
-/// Loads the interval as a `jiff::Span` and converts to a duration assuming
-/// that there are 30 days in a month, and 24 hours in a day. Use `jiff::Span`
-/// for more accurate conversions
+/// Loads the interval and converts to a duration assuming
+/// that there are 30 days in a month, and 24 hours in a day.
+/// Use `jiff::Span` for more accurate conversions
 #[cfg(feature = "jiff")]
 impl FromSql for jiff::SignedDuration {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        let span = jiff::Span::column_result(value)?;
-        Ok(
-            jiff::SignedDuration::from_nanos(span.get_months() as i64 * DAYS_PER_MONTH * NANOS_PER_DAY)
-                + span.months(0).to_duration(SpanRelativeTo::days_are_24_hours()).unwrap(),
-        )
+        match value {
+            ValueRef::Interval { months, days, nanos } => {
+                let days = months as i64 * DAYS_PER_MONTH + days as i64;
+                Ok(jiff::SignedDuration::from_nanos(days * NANOS_PER_DAY + nanos))
+            }
+            _ => Err(FromSqlError::InvalidType),
+        }
     }
 }
 
@@ -373,7 +453,7 @@ mod test {
     #[test]
     #[cfg(feature = "chrono")]
     fn test_chrono_naive_time() -> Result<()> {
-        use chrono::NaiveTime;
+        use chrono::{Duration, NaiveTime};
 
         let db = checked_memory_handle()?;
         let time = NaiveTime::from_hms_micro_opt(23, 56, 4, 12_345).unwrap();
@@ -383,13 +463,17 @@ mod test {
         assert_eq!("23:56:04.012345", s);
         let t: NaiveTime = db.query_row("SELECT tt FROM foo", [], |r| r.get(0))?;
         assert_eq!(time, t);
+        let t: NaiveTime = db.query_row("SELECT '23:56:04.012345'", [], |r| r.get(0))?;
+        assert_eq!(time, t);
+        let t: NaiveTime = db.query_row("SELECT '23:56:04'", [], |r| r.get(0))?;
+        assert_eq!(time - Duration::microseconds(12345), t);
         Ok(())
     }
 
     #[test]
     #[cfg(feature = "jiff")]
     fn test_jiff_civil_time() -> Result<()> {
-        use jiff::civil::Time;
+        use jiff::{civil::Time, ToSpan};
 
         let db = checked_memory_handle()?;
         let time = Time::new(23, 56, 4, 12_345_000).unwrap();
@@ -399,6 +483,10 @@ mod test {
         assert_eq!("23:56:04.012345", s);
         let t: Time = db.query_row("SELECT tt FROM foo", [], |r| r.get(0))?;
         assert_eq!(time, t);
+        let t: Time = db.query_row("SELECT '23:56:04.012345'", [], |r| r.get(0))?;
+        assert_eq!(time, t);
+        let t: Time = db.query_row("SELECT '23:56:04'", [], |r| r.get(0))?;
+        assert_eq!(time.saturating_sub(12345.microseconds()), t);
         Ok(())
     }
 
@@ -415,6 +503,8 @@ mod test {
         assert_eq!("2016-02-23", s);
         let t: NaiveDate = db.query_row("SELECT d FROM foo", [], |r| r.get(0))?;
         assert_eq!(date, t);
+        let t: NaiveDate = db.query_row("SELECT '2016-02-23'", [], |r| r.get(0))?;
+        assert_eq!(date, t);
         Ok(())
     }
 
@@ -430,6 +520,8 @@ mod test {
         let s: String = db.query_row("SELECT d FROM foo", [], |r| r.get(0))?;
         assert_eq!("2016-02-23", s);
         let t: Date = db.query_row("SELECT d FROM foo", [], |r| r.get(0))?;
+        assert_eq!(date, t);
+        let t: Date = db.query_row("SELECT '2016-02-23'", [], |r| r.get(0))?;
         assert_eq!(date, t);
         Ok(())
     }
@@ -510,6 +602,36 @@ mod test {
         assert_eq!(utc - Duration::try_milliseconds(789).unwrap(), v3);
 
         let v4: DateTime<Utc> = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
+        assert_eq!(utc, v4);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "jiff")]
+    fn test_jiff_zoned() -> Result<()> {
+        use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
+
+        let db = checked_memory_handle()?;
+        let utc = DateTime::new(2016, 2, 23, 23, 56, 4, 789_000_000)
+            .unwrap()
+            .to_zoned(TimeZone::UTC)
+            .unwrap();
+
+        db.execute("INSERT INTO foo (b) VALUES (?)", [&utc])?;
+
+        let s: String = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!("2016-02-23 23:56:04.789", s);
+
+        let v1: Zoned = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!(utc, v1);
+
+        let v2: Zoned = db.query_row("SELECT '2016-02-23 23:56:04.789'", [], |r| r.get(0))?;
+        assert_eq!(utc, v2);
+
+        let v3: Zoned = db.query_row("SELECT '2016-02-23 23:56:04'", [], |r| r.get(0))?;
+        assert_eq!(utc.saturating_sub(789.milliseconds()), v3);
+
+        let v4: Zoned = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
         assert_eq!(utc, v4);
         Ok(())
     }
