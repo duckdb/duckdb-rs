@@ -5,7 +5,7 @@ use chrono::{Local, TimeZone, Utc};
 use num_integer::Integer;
 
 use crate::{
-    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, Value, ValueRef},
+    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef},
     Result,
 };
 
@@ -292,6 +292,21 @@ impl ToSql for jiff::Zoned {
     }
 }
 
+/// Date and time without time zone => UTC ISO 8601 timestamp
+/// ("YYYY-MM-DD HH:MM:SS.SSS").
+#[cfg(feature = "jiff")]
+impl ToSql for jiff::Timestamp {
+    #[inline]
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::Borrowed(ValueRef::Timestamp(
+            super::TimeUnit::Nanosecond,
+            self.as_nanosecond()
+                .try_into()
+                .map_err(|_| FromSqlError::OutOfRange(self.as_nanosecond()))?,
+        )))
+    }
+}
+
 /// ISO 8601 ("YYYY-MM-DD HH:MM:SS.SSS[+-]HH:MM") into `DateTime<Utc>`.
 #[cfg(feature = "chrono")]
 impl FromSql for chrono::DateTime<Utc> {
@@ -406,7 +421,7 @@ impl ToSql for chrono::Duration {
         let nanos = self.num_nanoseconds().unwrap();
         let (days, nanos) = nanos.div_mod_floor(&NANOS_PER_DAY);
         let (months, days) = days.div_mod_floor(&DAYS_PER_MONTH);
-        Ok(ToSqlOutput::Owned(Value::Interval {
+        Ok(ToSqlOutput::Borrowed(ValueRef::Interval {
             months: months.try_into().unwrap(),
             days: days.try_into().unwrap(),
             nanos,
@@ -425,7 +440,7 @@ impl ToSql for jiff::Span {
             + self.get_milliseconds() * 1_000_000
             + self.get_microseconds() * 1_000
             + self.get_nanoseconds();
-        Ok(ToSqlOutput::Owned(Value::Interval { months, days, nanos }))
+        Ok(ToSqlOutput::Borrowed(ValueRef::Interval { months, days, nanos }))
     }
 }
 
@@ -436,7 +451,7 @@ impl ToSql for jiff::Span {
 #[cfg(feature = "jiff")]
 impl ToSql for jiff::SignedDuration {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Owned(Value::Interval {
+        Ok(ToSqlOutput::Borrowed(ValueRef::Interval {
             months: 0,
             days: 0,
             nanos: self
@@ -618,6 +633,171 @@ mod test {
 
     #[test]
     #[cfg(feature = "jiff")]
+    fn test_jiff_timestamp() -> Result<()> {
+        use jiff::{Timestamp, ToSpan};
+
+        let db = checked_memory_handle()?;
+        let timestamp = Timestamp::new(1760996605, 789_000_000).unwrap();
+
+        db.execute("INSERT INTO foo (b) VALUES (?)", [&timestamp])?;
+
+        let s: String = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!("2025-10-20 21:43:25.789", s);
+
+        let v1: Timestamp = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!(timestamp, v1);
+
+        let v2: Timestamp = db.query_row("SELECT '2025-10-20 21:43:25.789'", [], |r| r.get(0))?;
+        assert_eq!(timestamp, v2);
+
+        let v3: Timestamp = db.query_row("SELECT '2025-10-20 21:43:25'", [], |r| r.get(0))?;
+        assert_eq!(timestamp.saturating_sub(789.milliseconds()).unwrap(), v3);
+
+        let v4: Timestamp = db.query_row("SELECT '2025-10-20 21:43:25.789+00:00'", [], |r| r.get(0))?;
+        assert_eq!(timestamp, v4);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "chrono")]
+    fn test_chrono_time_delta_roundtrip() {
+        use chrono::TimeDelta;
+
+        roundtrip_type(TimeDelta::new(3600, 0).unwrap());
+        roundtrip_type(TimeDelta::new(3600, 1000).unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "jiff")]
+    fn test_jiff_signed_duration_roundtrip() {
+        use jiff::SignedDuration;
+
+        roundtrip_type(SignedDuration::new(3600, 0));
+        roundtrip_type(SignedDuration::new(3600, 1000));
+    }
+
+    #[test]
+    #[cfg(feature = "chrono")]
+    fn test_chrono_time_delta() -> Result<()> {
+        use chrono::TimeDelta;
+
+        let db = checked_memory_handle()?;
+        let td = TimeDelta::new(3600, 0).unwrap();
+
+        let row: Result<TimeDelta> = db.query_row("SELECT ?", [td], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td);
+
+        let row: Result<TimeDelta> = db.query_row("SELECT INTERVAL 1 HOUR", [], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "jiff")]
+    fn test_jiff_signed_duration() -> Result<()> {
+        use jiff::SignedDuration;
+
+        let db = checked_memory_handle()?;
+        let td = SignedDuration::new(3600, 0);
+
+        let row: Result<SignedDuration> = db.query_row("SELECT ?", [td], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td);
+
+        let row: Result<SignedDuration> = db.query_row("SELECT INTERVAL 1 HOUR", [], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "jiff")]
+    fn test_jiff_span() -> Result<()> {
+        use jiff::Span;
+
+        let db = checked_memory_handle()?;
+        let td = Span::new()
+            .years(1)
+            .months(2)
+            .weeks(3)
+            .days(4)
+            .hours(5)
+            .minutes(6)
+            .seconds(7)
+            .milliseconds(8)
+            .microseconds(9);
+
+        let row: Result<Span> = db.query_row("SELECT ?", [td], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), td.fieldwise());
+
+        let row: Result<Span> = db.query_row("SELECT INTERVAL 3 YEARS", [], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), Span::new().years(3).fieldwise());
+
+        let row: Result<Span> = db.query_row("SELECT INTERVAL 5 WEEKS", [], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), Span::new().weeks(5).fieldwise());
+
+        let row: Result<Span> = db.query_row("SELECT INTERVAL 9 DAYS", [], |row| Ok(row.get(0)))?;
+
+        assert_eq!(row.unwrap(), Span::new().weeks(1).days(2).fieldwise());
+
+        let row: Result<Span> = db.query_row("SELECT INTERVAL 18367008 MILLISECONDS", [], |row| Ok(row.get(0)))?;
+
+        assert_eq!(
+            row.unwrap(),
+            Span::new()
+                .hours(5)
+                .minutes(6)
+                .seconds(7)
+                .milliseconds(8)
+                .microseconds(0)
+                .nanoseconds(0)
+                .fieldwise()
+        );
+
+        Ok(())
+    }
+
+    fn roundtrip_type<T: FromSql + ToSql + Eq + std::fmt::Debug>(td: T) {
+        let sqled = td.to_sql().unwrap();
+        let value = match sqled {
+            ToSqlOutput::Borrowed(v) => v,
+            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+        };
+        let reversed = FromSql::column_result(value).unwrap();
+
+        assert_eq!(td, reversed);
+    }
+
+    #[test]
+    #[cfg(feature = "chrono")]
+    fn test_chrono_date_time_local() -> Result<()> {
+        use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+
+        let db = checked_memory_handle()?;
+        let date = NaiveDate::from_ymd_opt(2016, 2, 23).unwrap();
+        let time = NaiveTime::from_hms_milli_opt(23, 56, 4, 789).unwrap();
+        let dt = NaiveDateTime::new(date, time);
+        let local = Local.from_local_datetime(&dt).single().unwrap();
+
+        db.execute("INSERT INTO foo (b) VALUES (?)", [local])?;
+
+        let s: String = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!(DateTime::<Utc>::from(local).format("%F %T%.f").to_string(), s);
+
+        let v: DateTime<Local> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
+        assert_eq!(local, v);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "jiff")]
     fn test_jiff_zoned() -> Result<()> {
         use jiff::{civil::DateTime, tz::TimeZone, ToSpan, Zoned};
 
@@ -643,71 +823,6 @@ mod test {
 
         let v4: Zoned = db.query_row("SELECT '2016-02-23 23:56:04.789+00:00'", [], |r| r.get(0))?;
         assert_eq!(utc, v4);
-        Ok(())
-    }
-
-    #[test]
-    #[cfg(feature = "chrono")]
-    fn test_time_delta_roundtrip() {
-        use chrono::TimeDelta;
-
-        roundtrip_type(TimeDelta::new(3600, 0).unwrap());
-        roundtrip_type(TimeDelta::new(3600, 1000).unwrap());
-    }
-
-    #[test]
-    #[cfg(feature = "jiff")]
-    fn test_signed_duration_roundtrip() {
-        use jiff::SignedDuration;
-
-        roundtrip_type(SignedDuration::new(3600, 0));
-        roundtrip_type(SignedDuration::new(3600, 1000));
-    }
-
-    #[test]
-    #[cfg(feature = "chrono")]
-    fn test_time_delta() -> Result<()> {
-        use chrono::TimeDelta;
-
-        let db = checked_memory_handle()?;
-        let td = TimeDelta::new(3600, 0).unwrap();
-
-        let row: Result<TimeDelta> = db.query_row("SELECT ?", [td], |row| Ok(row.get(0)))?;
-
-        assert_eq!(row.unwrap(), td);
-
-        Ok(())
-    }
-
-    fn roundtrip_type<T: FromSql + ToSql + Eq + std::fmt::Debug>(td: T) {
-        let sqled = td.to_sql().unwrap();
-        let value = match sqled {
-            ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
-        };
-        let reversed = FromSql::column_result(value).unwrap();
-
-        assert_eq!(td, reversed);
-    }
-
-    #[test]
-    #[cfg(feature = "chrono")]
-    fn test_date_time_local() -> Result<()> {
-        use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-
-        let db = checked_memory_handle()?;
-        let date = NaiveDate::from_ymd_opt(2016, 2, 23).unwrap();
-        let time = NaiveTime::from_hms_milli_opt(23, 56, 4, 789).unwrap();
-        let dt = NaiveDateTime::new(date, time);
-        let local = Local.from_local_datetime(&dt).single().unwrap();
-
-        db.execute("INSERT INTO foo (b) VALUES (?)", [local])?;
-
-        let s: String = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
-        assert_eq!(DateTime::<Utc>::from(local).format("%F %T%.f").to_string(), s);
-
-        let v: DateTime<Local> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
-        assert_eq!(local, v);
         Ok(())
     }
 

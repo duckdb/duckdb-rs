@@ -204,6 +204,9 @@ impl<'a> ValueRef<'a> {
                 };
                 Ok((secs, nsecs))
             }
+            // Correct because UTC does not have DST, thus all days are
+            // 24 hours
+            ValueRef::Date32(d) => Ok((24 * 3600 * (d as i64), 0)),
             _ => Err(FromSqlError::InvalidType),
         }
     }
