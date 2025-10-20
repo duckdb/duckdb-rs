@@ -204,7 +204,6 @@ impl<'a> ValueRef<'a> {
                 };
                 Ok((secs, nsecs))
             }
-            ValueRef::Date32(d) => Ok((24 * 3600 * (d as i64), 0)),
             _ => Err(FromSqlError::InvalidType),
         }
     }

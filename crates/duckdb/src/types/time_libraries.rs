@@ -73,8 +73,12 @@ impl ToSql for jiff::civil::Date {
 impl FromSql for chrono::NaiveDate {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        if let ValueRef::Date32(days) = value {
+            return Ok(Self::from_epoch_days(days).unwrap());
+        }
+
         if value.as_timestamp().is_ok() {
-            return Ok(chrono::NaiveDateTime::column_result(value)?.date());
+            return chrono::NaiveDateTime::column_result(value).map(|dt| dt.date());
         }
 
         if let Ok(s) = value.as_str() {
@@ -91,6 +95,12 @@ impl FromSql for chrono::NaiveDate {
 impl FromSql for jiff::civil::Date {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        if let ValueRef::Date32(days) = value {
+            return jiff::civil::date(1970, 1, 1)
+                .checked_add(jiff::Span::new().days(days))
+                .map_err(|e| FromSqlError::Other(e.into()));
+        }
+
         if value.as_timestamp().is_ok() {
             return Ok(jiff::Zoned::column_result(value)?.date());
         }
