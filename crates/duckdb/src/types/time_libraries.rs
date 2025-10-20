@@ -275,25 +275,24 @@ impl FromSql for jiff::Span {
     }
 }
 
-/// Loads the interval as a `jiff::Span` and converts to a duration with
-/// [`jiff::SpanRelativeTo::days_are_24_hours`]
+const DAYS_PER_MONTH: i64 = 30;
+const SECONDS_PER_DAY: i64 = 24 * 3600;
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * NANOS_PER_SECOND;
+
+/// Loads the interval as a `jiff::Span` and converts to a duration assuming
+/// that there are 30 days in a month, and 24 hours in a day. Use `jiff::Span`
+/// for more accurate conversions
 #[cfg(feature = "jiff")]
 impl FromSql for jiff::SignedDuration {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        Ok(jiff::Span::column_result(value)?
-            .to_duration(SpanRelativeTo::days_are_24_hours())
-            .unwrap())
+        let span = jiff::Span::column_result(value)?;
+        Ok(
+            jiff::SignedDuration::from_nanos(span.get_months() as i64 * DAYS_PER_MONTH * NANOS_PER_DAY)
+                + span.months(0).to_duration(SpanRelativeTo::days_are_24_hours()).unwrap(),
+        )
     }
 }
-
-#[cfg(feature = "chrono")]
-const DAYS_PER_MONTH: i64 = 30;
-#[cfg(feature = "chrono")]
-const SECONDS_PER_DAY: i64 = 24 * 3600;
-#[cfg(feature = "chrono")]
-const NANOS_PER_SECOND: i64 = 1_000_000_000;
-#[cfg(feature = "chrono")]
-const NANOS_PER_DAY: i64 = SECONDS_PER_DAY * NANOS_PER_SECOND;
 
 #[cfg(feature = "chrono")]
 impl ToSql for chrono::Duration {
