@@ -12,6 +12,14 @@ use crate::{
 };
 
 /// A prepared statement.
+///
+/// # Thread Safety
+///
+/// `Statement` is neither `Send` nor `Sync`:
+/// - Not `Send` because it holds a reference to `Connection`, which is `!Sync`
+/// - Not `Sync` because DuckDB prepared statements don't support concurrent access
+///
+/// See the [DuckDB concurrency documentation](https://duckdb.org/docs/stable/connect/concurrency.html) for more details.
 pub struct Statement<'conn> {
     conn: &'conn Connection,
     pub(crate) stmt: RawStatement,
