@@ -11,8 +11,13 @@ use super::{ffi, Result};
 use crate::arrow2;
 use crate::{error::result_from_duckdb_arrow, Error};
 
-// Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
-// TODO: destroy statement and result
+/// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
+///
+/// # Thread Safety
+///
+/// `RawStatement` is `Send` but not `Sync`:
+/// - `Send` because it owns all its data and can be safely moved between threads
+/// - Not `Sync` because DuckDB prepared statements don't support concurrent access
 #[derive(Debug)]
 pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
@@ -325,3 +330,5 @@ impl Drop for RawStatement {
         }
     }
 }
+
+unsafe impl Send for RawStatement {}
