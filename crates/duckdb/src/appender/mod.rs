@@ -8,6 +8,19 @@ use crate::{
 };
 
 /// Appender for fast import data
+///
+/// # Thread Safety
+///
+/// `Appender` is neither `Send` nor `Sync`:
+/// - Not `Send` because it holds a reference to `Connection`, which is `!Sync`
+/// - Not `Sync` because DuckDB appenders don't support concurrent access
+///
+/// To use an appender in another thread, move the `Connection` to that thread
+/// and create the appender there.
+///
+/// If you need to share an `Appender` across threads, wrap it in a `Mutex`.
+///
+/// See [DuckDB concurrency documentation](https://duckdb.org/docs/stable/connect/concurrency.html) for more details.
 pub struct Appender<'conn> {
     conn: &'conn Connection,
     app: ffi::duckdb_appender,
