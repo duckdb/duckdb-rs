@@ -2,6 +2,31 @@ use super::{Null, TimeUnit, Value, ValueRef};
 use crate::Result;
 use std::borrow::Cow;
 
+/// Marker type that can be used in Appender params to indicate DEFAULT value.
+///
+/// This is useful when you want to append a row with some columns using their
+/// default values (as defined in the table schema). Unlike `Null` which explicitly
+/// sets a column to NULL, `AppendDefault` uses the column's DEFAULT expression.
+///
+/// ## Example
+///
+/// ```rust,no_run
+/// # use duckdb::{Connection, Result, params};
+/// # use duckdb::types::AppendDefault;
+///
+/// fn append_with_default(conn: &Connection) -> Result<()> {
+///     conn.execute_batch(
+///         "CREATE TABLE people (id INTEGER, name VARCHAR, status VARCHAR DEFAULT 'active')"
+///     )?;
+///
+///     let mut app = conn.appender("people")?;
+///     app.append_row(params![1, "Alice", AppendDefault])?;
+///     Ok(())
+/// }
+/// ```
+#[derive(Copy, Clone, Debug)]
+pub struct AppendDefault;
+
 /// `ToSqlOutput` represents the possible output types for implementers of the
 /// [`ToSql`] trait.
 #[derive(Clone, Debug, PartialEq)]
@@ -12,6 +37,10 @@ pub enum ToSqlOutput<'a> {
 
     /// An owned SQLite-representable value.
     Owned(Value),
+
+    /// A marker indicating to use the column's DEFAULT value.
+    /// This is only valid for Appender operations.
+    AppendDefault,
 }
 
 // Generically allow any type that can be converted into a ValueRef
@@ -66,6 +95,7 @@ impl ToSql for ToSqlOutput<'_> {
         Ok(match *self {
             ToSqlOutput::Borrowed(v) => ToSqlOutput::Borrowed(v),
             ToSqlOutput::Owned(ref v) => ToSqlOutput::Borrowed(ValueRef::from(v)),
+            ToSqlOutput::AppendDefault => ToSqlOutput::AppendDefault,
         })
     }
 }
@@ -208,6 +238,13 @@ impl ToSql for std::time::Duration {
             TimeUnit::Microsecond,
             self.as_micros() as i64,
         )))
+    }
+}
+
+impl ToSql for AppendDefault {
+    #[inline]
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::AppendDefault)
     }
 }
 
