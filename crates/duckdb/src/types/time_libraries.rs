@@ -209,7 +209,7 @@ impl FromSql for chrono::NaiveDateTime {
             return Self::parse_from_str(s, format).map_err(|err| FromSqlError::Other(Box::new(err)));
         }
 
-        return Err(FromSqlError::InvalidType);
+        Err(FromSqlError::InvalidType)
     }
 }
 
@@ -241,7 +241,7 @@ impl FromSql for jiff::Zoned {
             }
         }
 
-        return Err(FromSqlError::InvalidType);
+        Err(FromSqlError::InvalidType)
     }
 }
 
@@ -266,7 +266,7 @@ impl FromSql for jiff::civil::DateTime {
             }
         }
 
-        return Err(FromSqlError::InvalidType);
+        Err(FromSqlError::InvalidType)
     }
 }
 
