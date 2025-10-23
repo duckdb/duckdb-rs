@@ -14,11 +14,11 @@ pub use self::{
 use arrow::datatypes::DataType;
 use std::fmt;
 
-#[cfg(feature = "chrono")]
-mod chrono;
 mod from_sql;
 #[cfg(feature = "serde_json")]
 mod serde_json;
+#[cfg(any(feature = "chrono", feature = "jiff"))]
+mod time_libraries;
 mod to_sql;
 #[cfg(feature = "url")]
 mod url;

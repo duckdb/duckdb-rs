@@ -45,6 +45,7 @@ duckdb-loadable-macros = { workspace = true, optional = true }
 fallible-iterator = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
 hashlink = { workspace = true }
+jiff = { workspace = true, optional = true }
 libduckdb-sys = { workspace = true }
 num = { workspace = true, features = ["std"], optional = true }
 num-integer = { workspace = true }

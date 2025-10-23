@@ -194,11 +194,19 @@ impl FromSql for String {
         match value {
             #[cfg(feature = "chrono")]
             ValueRef::Date32(_) => Ok(chrono::NaiveDate::column_result(value)?.format("%F").to_string()),
+            #[cfg(all(not(feature = "chrono"), feature = "jiff"))]
+            ValueRef::Date32(_) => Ok(jiff::civil::Date::column_result(value)?.strftime("%F").to_string()),
             #[cfg(feature = "chrono")]
             ValueRef::Time64(..) => Ok(chrono::NaiveTime::column_result(value)?.format("%T%.f").to_string()),
+            #[cfg(all(not(feature = "chrono"), feature = "jiff"))]
+            ValueRef::Time64(..) => Ok(jiff::civil::Time::column_result(value)?.strftime("%T%.f").to_string()),
             #[cfg(feature = "chrono")]
             ValueRef::Timestamp(..) => Ok(chrono::NaiveDateTime::column_result(value)?
                 .format("%F %T%.f")
+                .to_string()),
+            #[cfg(all(not(feature = "chrono"), feature = "jiff"))]
+            ValueRef::Timestamp(..) => Ok(jiff::civil::DateTime::column_result(value)?
+                .strftime("%F %T%.f")
                 .to_string()),
             _ => value.as_str().map(ToString::to_string),
         }
