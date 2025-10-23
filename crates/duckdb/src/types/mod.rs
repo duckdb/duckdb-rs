@@ -6,7 +6,7 @@ pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     ordered_map::OrderedMap,
     string::DuckString,
-    to_sql::{ToSql, ToSqlOutput},
+    to_sql::{AppendDefault, ToSql, ToSqlOutput},
     value::Value,
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
 };

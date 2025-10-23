@@ -319,6 +319,7 @@ mod test {
         let value = match sqled {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::AppendDefault => unreachable!(),
         };
         let reversed = FromSql::column_result(value).unwrap();
 
