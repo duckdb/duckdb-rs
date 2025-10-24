@@ -8,6 +8,12 @@ use std::borrow::Cow;
 /// default values (as defined in the table schema). Unlike `Null` which explicitly
 /// sets a column to NULL, `AppendDefault` uses the column's DEFAULT expression.
 ///
+/// ## Limitations
+///
+/// `AppendDefault` only works with **constant** default values. Non-deterministic
+/// defaults like `random()` or `nextval()` are not supported. Explicitly provide
+/// values for those columns as a workaround.
+///
 /// ## Example
 ///
 /// ```rust,no_run
@@ -20,7 +26,7 @@ use std::borrow::Cow;
 ///     )?;
 ///
 ///     let mut app = conn.appender("people")?;
-///     app.append_row(params![1, "Alice", AppendDefault])?;
+///     app.append_row(params![1, "Alice", AppendDefault])?;  // status will be 'active'
 ///     Ok(())
 /// }
 /// ```
