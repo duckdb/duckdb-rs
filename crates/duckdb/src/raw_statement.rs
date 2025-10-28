@@ -328,19 +328,15 @@ impl RawStatement {
             if name_ptr.is_null() {
                 return Err(Error::DuckDBFailure(
                     ffi::Error::new(ffi::DuckDBError),
-                    Some(format!("Could not retrieve parameter name for index {}", idx)),
+                    Some(format!("Could not retrieve parameter name for index {idx}")),
                 ));
             }
 
-            let c_str = CStr::from_ptr(name_ptr);
-            let result = c_str
-                .to_str()
-                .map(|s| s.to_string())
-                .map_err(|e| Error::FromSqlConversionFailure(0, crate::types::Type::Text, Box::new(e)));
+            let name = CStr::from_ptr(name_ptr).to_string_lossy().to_string();
 
             ffi::duckdb_free(name_ptr as *mut std::ffi::c_void);
 
-            result
+            Ok(name)
         }
     }
 
