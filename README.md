@@ -119,6 +119,37 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
 - `loadable-extension` - _Experimental_ support for building extensions that can be dynamically loaded into DuckDB.
 
+## Installation
+
+### Using stable releases from crates.io
+
+The recommended way to use duckdb-rs is to add it from crates.io:
+
+```shell
+cargo add duckdb -F bundled
+```
+
+Or manually add it to your `Cargo.toml`:
+
+```toml
+[dependencies]
+duckdb = { version = "1.4.1", features = ["bundled"] }
+```
+
+### Using the development version from git
+
+To use the latest development version from the main branch, you can specify a git dependency in your `Cargo.toml`:
+
+```toml
+# Use a specific branch
+duckdb = { git = "https://github.com/duckdb/duckdb-rs", branch = "main", features = ["bundled"] }
+
+# Use a specific commit
+duckdb = { git = "https://github.com/duckdb/duckdb-rs", rev = "abc123def", features = ["bundled"] }
+```
+
+Note: Using the main branch of duckdb-rs means you'll get the latest Rust bindings and features, but you'll still be using whatever version of DuckDB core is bundled with that commit (when using the `bundled` feature).
+
 ## Notes on building duckdb and libduckdb-sys
 
 `libduckdb-sys` is a separate crate from `duckdb-rs` that provides the Rust
@@ -142,7 +173,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "1.3.2", features = ["bundled"] }
+   duckdb = { version = "1.4.1", features = ["bundled"] }
    ```
 
 2. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
@@ -150,7 +181,7 @@ You can adjust this behavior in a number of ways:
    Linux example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.3.2/libduckdb-linux-arm64.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.4.1/libduckdb-linux-arm64.zip
    unzip libduckdb-linux-arm64.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -163,7 +194,7 @@ You can adjust this behavior in a number of ways:
    macOS example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.3.2/libduckdb-osx-universal.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.4.1/libduckdb-osx-universal.zip
    unzip libduckdb-osx-universal.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
