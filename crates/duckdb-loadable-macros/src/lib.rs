@@ -78,7 +78,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                     }
 
                     // TODO: handle error here?
-                    let db : ffi::duckdb_database = *(*access).get_database.unwrap()(info);
+                    let db : ffi::duckdb_database = (*access).get_database.unwrap()(info);
                     let connection = Connection::open_from_raw(db.cast())?;
 
                     #prefixed_original_function(connection)?;
