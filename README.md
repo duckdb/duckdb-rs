@@ -210,6 +210,16 @@ You can adjust this behavior in a number of ways:
    options. The default when using vcpkg is to dynamically link,
    which must be enabled by setting `VCPKGRS_DYNAMIC=1` environment variable before build.
 
+### ICU extension and the bundled feature
+
+When using the `bundled` feature, the ICU extension is not included due to crates.io's 10MB package size limit. This means some date/time operations (like `now() - interval '1 day'` or `ts::date` casts) will fail. You can load ICU at runtime:
+
+```rust
+conn.execute_batch("INSTALL icu; LOAD icu;")?;
+```
+
+Alternatively, link against libduckdb without the `bundled` feature (see build instructions above). The ICU extension will be built-in and pre-loaded in that case.
+
 ### Binding generation
 
 We use [bindgen](https://crates.io/crates/bindgen) to generate the Rust
