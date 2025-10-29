@@ -214,7 +214,7 @@ You can adjust this behavior in a number of ways:
 
 When using the `bundled` feature, the ICU extension is not included due to crates.io's 10MB package size limit. This means some date/time operations (like `now() - interval '1 day'` or `ts::date` casts) will fail. You can load ICU at runtime:
 
-```rust
+```rust,ignore
 conn.execute_batch("INSTALL icu; LOAD icu;")?;
 ```
 
