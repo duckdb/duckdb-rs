@@ -316,6 +316,30 @@ impl RawStatement {
         unsafe { ffi::duckdb_nparams(self.ptr) as usize }
     }
 
+    pub fn parameter_name(&self, idx: usize) -> Result<String> {
+        let count = self.bind_parameter_count();
+        if idx == 0 || idx > count {
+            return Err(Error::InvalidParameterIndex(idx));
+        }
+
+        unsafe {
+            let name_ptr = ffi::duckdb_parameter_name(self.ptr, idx as u64);
+            // Range check above ensures this shouldn't be null, but check defensively
+            if name_ptr.is_null() {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(ffi::DuckDBError),
+                    Some(format!("Could not retrieve parameter name for index {idx}")),
+                ));
+            }
+
+            let name = CStr::from_ptr(name_ptr).to_string_lossy().to_string();
+
+            ffi::duckdb_free(name_ptr as *mut std::ffi::c_void);
+
+            Ok(name)
+        }
+    }
+
     #[inline]
     pub fn sql(&self) -> Option<&CStr> {
         panic!("not supported")
