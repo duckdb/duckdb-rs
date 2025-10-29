@@ -21,6 +21,41 @@ use crate::{
 /// If you need to share an `Appender` across threads, wrap it in a `Mutex`.
 ///
 /// See [DuckDB concurrency documentation](https://duckdb.org/docs/stable/connect/concurrency.html) for more details.
+///
+/// # Wide Tables (Many Columns)
+///
+/// Array literals `[value; N]` are supported for tables with up to 32 columns.
+///
+/// ```rust,ignore
+/// appender.append_row([0; 32])?;
+/// appender.append_row([1, 2, 3, 4, 5])?;
+/// ```
+///
+/// For tables with more than 32 columns, use one of these alternatives:
+///
+/// ## 1. Slice approach - convert values to `&dyn ToSql`
+///
+/// ```rust,ignore
+/// let values: Vec<i32> = vec![0; 100];
+/// let params: Vec<&dyn ToSql> = values.iter().map(|v| v as &dyn ToSql).collect();
+/// appender.append_row(params.as_slice())?;
+/// ```
+///
+/// ## 2. `params!` macro - write values explicitly
+///
+/// ```rust,ignore
+/// appender.append_row(params![v1, v2, v3, ..., v50])?;
+/// ```
+///
+/// ## 3. `appender_params_from_iter` - pass an iterator directly
+///
+/// ```rust,ignore
+/// use duckdb::appender_params_from_iter;
+/// let values: Vec<i32> = vec![0; 100];
+/// appender.append_row(appender_params_from_iter(values))?;
+/// ```
+///
+/// All three methods can be used interchangeably and mixed in the same appender.
 pub struct Appender<'conn> {
     conn: &'conn Connection,
     app: ffi::duckdb_appender,
