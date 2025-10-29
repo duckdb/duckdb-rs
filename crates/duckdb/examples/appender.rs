@@ -1,4 +1,4 @@
-use duckdb::{params, Connection, DropBehavior, Result};
+use duckdb::{params, types::AppendDefault, Connection, DropBehavior, Result};
 
 fn main() -> Result<()> {
     //let mut db = Connection::open("10m.db")?;
@@ -10,7 +10,7 @@ fn main() -> Result<()> {
             id INTEGER not null, -- primary key,
             area CHAR(6),
             age TINYINT not null,
-            active TINYINT not null
+            active TINYINT DEFAULT 1,
         );";
     db.execute_batch(create_table_sql)?;
 
@@ -25,12 +25,7 @@ fn main() -> Result<()> {
         // }
 
         for i in 0..row_count {
-            app.append_row(params![
-                i,
-                get_random_area_code(),
-                get_random_age(),
-                get_random_active(),
-            ])?;
+            app.append_row(params![i, get_random_area_code(), get_random_age(), AppendDefault])?;
         }
     }
 
