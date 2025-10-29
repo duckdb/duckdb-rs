@@ -189,6 +189,27 @@ impl<'a> ValueRef<'a> {
             _ => Err(FromSqlError::InvalidType),
         }
     }
+
+    /// If `self` is case `Timestamp`, returns the timestamp as (secs, nsecs).
+    /// Otherwise, returns [`Err(Error::InvalidColumnType)`](crate::Error::InvalidColumnType).
+    #[inline]
+    pub fn as_timestamp(&self) -> FromSqlResult<(i64, i64)> {
+        match *self {
+            ValueRef::Timestamp(tu, t) | ValueRef::Time64(tu, t) => {
+                let (secs, nsecs) = match tu {
+                    TimeUnit::Second => (t, 0),
+                    TimeUnit::Millisecond => (t / 1000, (t % 1000) * 1_000_000),
+                    TimeUnit::Microsecond => (t / 1_000_000, (t % 1_000_000) * 1000),
+                    TimeUnit::Nanosecond => (t / 1_000_000_000, t % 1_000_000_000),
+                };
+                Ok((secs, nsecs))
+            }
+            // Correct because UTC does not have DST, thus all days are
+            // 24 hours
+            ValueRef::Date32(d) => Ok((24 * 3600 * (d as i64), 0)),
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
 }
 
 impl From<ValueRef<'_>> for Value {
