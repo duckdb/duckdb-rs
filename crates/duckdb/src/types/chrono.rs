@@ -1,7 +1,8 @@
 //! Convert most of the [Time Strings](https://duckdb.org/docs/stable/sql/functions/date) to chrono types.
 
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use num_integer::Integer;
+use std::fmt::Write;
 
 use crate::{
     types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
@@ -14,8 +15,9 @@ use super::Value;
 impl ToSql for NaiveDate {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        let date_str = self.format("%F").to_string();
-        Ok(ToSqlOutput::from(date_str))
+        let mut buffer = String::with_capacity(10);
+        write!(buffer, "{:04}-{:02}-{:02}", self.year(), self.month(), self.day()).unwrap();
+        Ok(ToSqlOutput::from(buffer))
     }
 }
 
@@ -31,8 +33,17 @@ impl FromSql for NaiveDate {
 impl ToSql for NaiveTime {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        let date_str = self.format("%T%.f").to_string();
-        Ok(ToSqlOutput::from(date_str))
+        let mut buffer = String::with_capacity(12);
+        write!(
+            buffer,
+            "{:02}:{:02}:{:02}.{:06}",
+            self.hour(),
+            self.minute(),
+            self.second(),
+            self.nanosecond() / 1_000
+        )
+        .unwrap();
+        Ok(ToSqlOutput::from(buffer))
     }
 }
 
@@ -48,8 +59,20 @@ impl FromSql for NaiveTime {
 impl ToSql for NaiveDateTime {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        let date_str = self.format("%F %T%.f").to_string();
-        Ok(ToSqlOutput::from(date_str))
+        let mut buffer = String::with_capacity(26);
+        write!(
+            buffer,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
+            self.year(),
+            self.month(),
+            self.day(),
+            self.hour(),
+            self.minute(),
+            self.second(),
+            self.nanosecond() / 1_000
+        )
+        .unwrap();
+        Ok(ToSqlOutput::from(buffer))
     }
 }
 
@@ -108,8 +131,20 @@ impl FromSql for NaiveDateTime {
 impl<Tz: TimeZone> ToSql for DateTime<Tz> {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        let date_str = self.with_timezone(&Utc).format("%F %T%.f%:z").to_string();
-        Ok(ToSqlOutput::from(date_str))
+        let mut buffer = String::with_capacity(29);
+        write!(
+            buffer,
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}+00:00",
+            self.year(),
+            self.month(),
+            self.day(),
+            self.hour(),
+            self.minute(),
+            self.second(),
+            self.nanosecond() / 1_000
+        )
+        .unwrap();
+        Ok(ToSqlOutput::from(buffer))
     }
 }
 
