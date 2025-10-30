@@ -76,34 +76,26 @@ macro_rules! from_sql_integral(
             #[inline]
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
                 match value {
-                    // TODO: Update all cast operation same to HugeInt
-                    ValueRef::TinyInt(i) => Ok(<$t as cast::From<i8>>::cast(i).unwrap()),
-                    ValueRef::SmallInt(i) => Ok(<$t as cast::From<i16>>::cast(i).unwrap()),
-                    ValueRef::Int(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
-                    ValueRef::BigInt(i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
-                    ValueRef::HugeInt(i) => {
-                        let v = <$t as cast::From<i128>>::cast(i);
-                        if v.is_ok() {
-                            Ok(v.unwrap())
-                        } else {
-                            Err(FromSqlError::OutOfRange(i))
-                        }
-                    },
+                    ValueRef::TinyInt(i) => <$t as cast::From<i8>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::SmallInt(i) => <$t as cast::From<i16>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::Int(i) => <$t as cast::From<i32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::BigInt(i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::HugeInt(i) => <$t as cast::From<i128>>::cast(i).into_result(FromSqlError::OutOfRange(i)),
 
-                    ValueRef::UTinyInt(i) => Ok(<$t as cast::From<u8>>::cast(i).unwrap()),
-                    ValueRef::USmallInt(i) => Ok(<$t as cast::From<u16>>::cast(i).unwrap()),
-                    ValueRef::UInt(i) => Ok(<$t as cast::From<u32>>::cast(i).unwrap()),
-                    ValueRef::UBigInt(i) => Ok(<$t as cast::From<u64>>::cast(i).unwrap()),
+                    ValueRef::UTinyInt(i) => <$t as cast::From<u8>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::USmallInt(i) => <$t as cast::From<u16>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::UInt(i) => <$t as cast::From<u32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::UBigInt(i) => <$t as cast::From<u64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
 
-                    ValueRef::Float(i) => Ok(<$t as cast::From<f32>>::cast(i).unwrap()),
-                    ValueRef::Double(i) => Ok(<$t as cast::From<f64>>::cast(i).unwrap()),
+                    ValueRef::Float(i) => <$t as cast::From<f32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::Double(i) => <$t as cast::From<f64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
 
                     // TODO: more efficient way?
                     ValueRef::Decimal(i) => Ok(i.to_string().parse::<$t>().unwrap()),
 
-                    ValueRef::Timestamp(_, i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
-                    ValueRef::Date32(i) => Ok(<$t as cast::From<i32>>::cast(i).unwrap()),
-                    ValueRef::Time64(TimeUnit::Microsecond, i) => Ok(<$t as cast::From<i64>>::cast(i).unwrap()),
+                    ValueRef::Timestamp(_, i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::Date32(i) => <$t as cast::From<i32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
+                    ValueRef::Time64(TimeUnit::Microsecond, i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Text(_) => {
                         let v = value.as_str()?.parse::<$t>();
                         match v {
@@ -124,45 +116,49 @@ macro_rules! from_sql_integral(
     )
 );
 
-/// A trait for to implement unwrap method for primitive types
-/// cast::From trait returns Result or the primitive, and for
-/// Result we need to unwrap() for the column_result function
-/// We implement unwrap() for all the primitive types so
-/// We can always call unwrap() for the cast() function.
-trait Unwrap {
-    fn unwrap(self) -> Self;
-    fn is_ok(&self) -> bool;
+/// A trait to provide ok_or method for both Result and primitive types
+/// cast::From trait returns Result or the primitive, depending on the types
+trait IntoResult {
+    type Value;
+    fn into_result<E>(self, err: E) -> Result<Self::Value, E>;
 }
 
-macro_rules! unwrap_integral(
-    ($t:ident) => (
-        impl Unwrap for $t {
-            #[inline]
-            fn unwrap(self) -> Self {
-                self
-            }
+/// A macro to implement the IntoResult trait for all integral types
+macro_rules! into_result_integral(
+    ($type_name:ident) => (
+        impl IntoResult for $type_name {
+            type Value = $type_name;
 
             #[inline]
-            fn is_ok(&self) -> bool {
-                true
+            fn into_result<E>(self, _err: E) -> Result<Self::Value, E> {
+                Ok(self)
             }
         }
     )
 );
 
-unwrap_integral!(i8);
-unwrap_integral!(i16);
-unwrap_integral!(i32);
-unwrap_integral!(i64);
-unwrap_integral!(i128);
-unwrap_integral!(isize);
-unwrap_integral!(u8);
-unwrap_integral!(u16);
-unwrap_integral!(u32);
-unwrap_integral!(u64);
-unwrap_integral!(usize);
-unwrap_integral!(f32);
-unwrap_integral!(f64);
+into_result_integral!(i8);
+into_result_integral!(i16);
+into_result_integral!(i32);
+into_result_integral!(i64);
+into_result_integral!(i128);
+into_result_integral!(isize);
+into_result_integral!(u8);
+into_result_integral!(u16);
+into_result_integral!(u32);
+into_result_integral!(u64);
+into_result_integral!(usize);
+into_result_integral!(f32);
+into_result_integral!(f64);
+
+impl<T, E> IntoResult for Result<T, E> {
+    type Value = T;
+
+    #[inline]
+    fn into_result<E2>(self, err: E2) -> Result<Self::Value, E2> {
+        self.map_err(|_| err)
+    }
+}
 
 from_sql_integral!(i8);
 from_sql_integral!(i16);
