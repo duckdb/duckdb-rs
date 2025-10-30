@@ -101,17 +101,12 @@ macro_rules! from_sql_integral(
                     ValueRef::Date32(i) => <$t as cast::From<i32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Time64(TimeUnit::Microsecond, i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Text(_) => {
-                        let v = value.as_str()?.parse::<$t>();
-                        match v {
-                            Ok(i) => Ok(i),
-                            Err(_) => {
-                                let v = value.as_str()?.parse::<i128>();
-                                match v {
-                                    Ok(i) => Err(FromSqlError::OutOfRange(i)),
-                                    _ => Err(FromSqlError::InvalidType),
-                                }
-                            },
-                        }
+                        let s = value.as_str()?;
+                        s.parse::<$t>().or_else(|_| {
+                            s.parse::<i128>()
+                                .map_err(|_| FromSqlError::InvalidType)
+                                .and_then(|i| Err(FromSqlError::OutOfRange(i)))
+                        })
                     }
                     _ => Err(FromSqlError::InvalidType),
                 }
