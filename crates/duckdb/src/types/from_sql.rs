@@ -1,6 +1,7 @@
 use std::{error::Error, fmt};
 
 use cast;
+use rust_decimal::RoundingStrategy::MidpointAwayFromZero;
 
 use super::{TimeUnit, Value, ValueRef};
 
@@ -90,8 +91,11 @@ macro_rules! from_sql_integral(
                     ValueRef::Float(i) => <$t as cast::From<f32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Double(i) => <$t as cast::From<f64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
 
-                    // TODO: more efficient way?
-                    ValueRef::Decimal(i) => Ok(i.to_string().parse::<$t>().unwrap()),
+                    ValueRef::Decimal(d) => {
+                         // DuckDB rounds DECIMAL to INTEGER (following PostgreSQL behavior)
+                        let rounded = d.round_dp_with_strategy(0, MidpointAwayFromZero);
+                        <$t as cast::From<i128>>::cast(rounded.mantissa()).into_result(FromSqlError::OutOfRange(d.mantissa()))
+                    }
 
                     ValueRef::Timestamp(_, i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Date32(i) => <$t as cast::From<i32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
@@ -412,6 +416,169 @@ mod test {
             <(uuid::Uuid,)>::try_from(row)
         })?;
         assert_eq!(v.0.to_string(), "47183823-2574-4bfd-b411-99ed177d3e43");
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal_to_integer() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        assert_eq!(
+            db.query_row("SELECT 0.1::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.4::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.6::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.9::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1
+        );
+
+        assert_eq!(
+            db.query_row("SELECT 1.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            2
+        );
+        assert_eq!(
+            db.query_row("SELECT 2.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            3
+        );
+        assert_eq!(
+            db.query_row("SELECT 3.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            4
+        );
+        assert_eq!(
+            db.query_row("SELECT 4.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            5
+        );
+        assert_eq!(
+            db.query_row("SELECT 5.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            6
+        );
+        assert_eq!(
+            db.query_row("SELECT 10.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            11
+        );
+        assert_eq!(
+            db.query_row("SELECT 99.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            100
+        );
+
+        assert_eq!(
+            db.query_row("SELECT -0.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+        assert_eq!(
+            db.query_row("SELECT -1.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -2
+        );
+        assert_eq!(
+            db.query_row("SELECT -2.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -3
+        );
+        assert_eq!(
+            db.query_row("SELECT -3.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -4
+        );
+        assert_eq!(
+            db.query_row("SELECT -4.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -5
+        );
+
+        assert_eq!(
+            db.query_row("SELECT -0.1::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.4::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.6::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.9::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+
+        assert_eq!(
+            db.query_row("SELECT 999.4::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            999
+        );
+        assert_eq!(
+            db.query_row("SELECT 999.5::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1000
+        );
+        assert_eq!(
+            db.query_row("SELECT 999.6::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1000
+        );
+
+        assert_eq!(
+            db.query_row("SELECT 123456.49::DECIMAL(18,3)", [], |row| row.get::<_, i64>(0))?,
+            123456
+        );
+        assert_eq!(
+            db.query_row("SELECT 123456.50::DECIMAL(18,3)", [], |row| row.get::<_, i64>(0))?,
+            123457
+        );
+        assert_eq!(
+            db.query_row("SELECT 123456.51::DECIMAL(18,3)", [], |row| row.get::<_, i64>(0))?,
+            123457
+        );
+
+        assert_eq!(
+            db.query_row("SELECT 0.49::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.50::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.51::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.49::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            0
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.50::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.51::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+
+        assert_eq!(
+            db.query_row("SELECT 126.4::DECIMAL(5,1)", [], |row| row.get::<_, i8>(0))?,
+            126
+        );
+        assert_eq!(
+            db.query_row("SELECT 126.6::DECIMAL(5,1)", [], |row| row.get::<_, i8>(0))?,
+            127
+        );
+
+        let err = db
+            .query_row("SELECT 999::DECIMAL(10,0)", [], |row| row.get::<_, i8>(0))
+            .unwrap_err();
+        match err {
+            Error::IntegralValueOutOfRange(_, _) => {} // Expected
+            _ => panic!("Expected IntegralValueOutOfRange error, got: {err}"),
+        }
+
         Ok(())
     }
 }
