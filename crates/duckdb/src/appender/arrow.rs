@@ -28,15 +28,15 @@ impl Appender<'_> {
     /// Will return `Err` if append column count not the same with the table schema
     #[inline]
     pub fn append_record_batch(&mut self, record_batch: RecordBatch) -> Result<()> {
-        let logical_types: Vec<LogicalTypeHandle> = record_batch
-            .schema()
-            .fields()
-            .iter()
-            .map(|field| {
+        let fields = record_batch.schema().fields();
+        let capacity = fields.len();
+        let mut logical_types = Vec::with_capacity(capacity);
+        for field in fields.iter() {
+            logical_types.push(
                 to_duckdb_logical_type(field.data_type())
-                    .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                    .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))?,
+            );
+        }
 
         let vector_size = unsafe { duckdb_vector_size() } as usize;
         let num_rows = record_batch.num_rows();
