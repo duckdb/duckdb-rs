@@ -34,7 +34,8 @@ impl DataChunkHandle {
     /// Create a new [DataChunkHandle] with the given [LogicalTypeHandle]s.
     pub fn new(logical_types: &[LogicalTypeHandle]) -> Self {
         let num_columns = logical_types.len();
-        let mut c_types = logical_types.iter().map(|t| t.ptr).collect::<Vec<_>>();
+        let mut c_types = Vec::with_capacity(num_columns);
+        c_types.extend(logical_types.iter().map(|t| t.ptr));
         let ptr = unsafe { duckdb_create_data_chunk(c_types.as_mut_ptr(), num_columns as u64) };
         Self { ptr, owned: true }
     }
