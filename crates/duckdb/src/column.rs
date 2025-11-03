@@ -2,7 +2,7 @@ use std::str;
 
 use arrow::datatypes::DataType;
 
-use crate::{Error, Result, Statement};
+use crate::{core::LogicalTypeHandle, Error, Result, Statement};
 
 /// Information about a column of a DuckDB query.
 #[derive(Debug)]
@@ -159,6 +159,14 @@ impl Statement<'_> {
     #[inline]
     pub fn column_type(&self, idx: usize) -> DataType {
         self.stmt.column_type(idx)
+    }
+
+    /// Returns the declared logical data type of the column.
+    ///
+    /// # Caveats
+    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
+    pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
+        self.stmt.column_logical_type(idx)
     }
 }
 

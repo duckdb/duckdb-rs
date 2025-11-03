@@ -9,7 +9,7 @@ use arrow::{
 use super::{ffi, Result};
 #[cfg(feature = "polars")]
 use crate::arrow2;
-use crate::{error::result_from_duckdb_arrow, Error};
+use crate::{core::LogicalTypeHandle, error::result_from_duckdb_arrow, Error};
 
 /// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
 ///
@@ -213,6 +213,12 @@ impl RawStatement {
     #[inline]
     pub fn column_type(&self, idx: usize) -> DataType {
         self.schema().field(idx).data_type().to_owned()
+    }
+
+    #[inline]
+    pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
+        let ptr = unsafe { ffi::duckdb_column_logical_type(&mut self.duckdb_result.unwrap() as *mut _, idx as u64) };
+        LogicalTypeHandle { ptr }
     }
 
     #[inline]
