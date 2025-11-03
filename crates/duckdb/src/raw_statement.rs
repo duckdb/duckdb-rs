@@ -217,8 +217,10 @@ impl RawStatement {
 
     #[inline]
     pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
-        let ptr = unsafe { ffi::duckdb_column_logical_type(&mut self.duckdb_result.unwrap() as *mut _, idx as u64) };
-        LogicalTypeHandle { ptr }
+        unsafe {
+            let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
+            LogicalTypeHandle::new(ptr)
+        }
     }
 
     #[inline]
