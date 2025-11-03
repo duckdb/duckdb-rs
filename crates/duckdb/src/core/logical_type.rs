@@ -289,6 +289,28 @@ impl LogicalTypeHandle {
         };
         unsafe { Self::new(c_logical_type) }
     }
+
+    /// Alias of the logical type.
+    pub fn get_alias(&self) -> Option<String> {
+        unsafe {
+            let alias_ptr = duckdb_logical_type_get_alias(self.ptr);
+            if alias_ptr.is_null() {
+                None
+            } else {
+                let c_str = CString::from_raw(alias_ptr);
+                let alias = c_str.to_str().unwrap();
+                Some(alias.to_string())
+            }
+        }
+    }
+
+    /// Set the alias of the logical type.
+    pub fn set_alias(&self, alias: &str) -> () {
+        unsafe {
+            let alias = CString::new(alias).unwrap();
+            duckdb_logical_type_set_alias(self.ptr, alias.as_ptr());
+        }
+    }
 }
 
 #[cfg(test)]
