@@ -162,9 +162,6 @@ impl Statement<'_> {
     }
 
     /// Returns the declared logical data type of the column.
-    ///
-    /// # Caveats
-    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
         self.stmt.column_logical_type(idx)
     }
