@@ -531,6 +531,28 @@ impl Connection {
         self.db.borrow_mut().appender(self, table, schema)
     }
 
+    /// Create an Appender for fast import data with provided catalog, schema and table
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result, params, DatabaseName};
+    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    ///     let mut app = conn.appender_to_catalog_and_db("catalog", &DatabaseName::Main.to_string(), "foo")?;
+    ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `catalog` or `schema` not exists
+    pub fn appender_to_catalog_and_db(&self, table: &str, catalog: &str, schema: &str) -> Result<Appender<'_>> {
+        self.db
+            .borrow_mut()
+            .appender_to_catalog_and_db(self, table, catalog, schema)
+    }
+
     /// Get a handle to interrupt long-running queries.
     ///
     /// ## Example
@@ -1547,6 +1569,169 @@ mod test {
             let count: i64 = shared.query_row("SELECT COUNT(*) FROM shared_table", [], |r| r.get(0))?;
             assert_eq!(count, 2);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach a new database to use as a catalog
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("attached.db");
+        db.execute_batch(&format!("ATTACH '{}' AS attached_db", attached_path.display()))?;
+
+        // Create a table in the attached database
+        db.execute_batch("CREATE TABLE attached_db.main.test_table (id INTEGER, name TEXT)")?;
+
+        // Use appender with catalog
+        {
+            let mut app = db.appender_to_catalog_and_db("test_table", "attached_db", "main")?;
+            app.append_row(params![1, "Alice"])?;
+            app.append_row(params![2, "Bob"])?;
+            app.append_row(params![3, "Charlie"])?;
+        }
+
+        // Verify data was inserted into the correct table
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM attached_db.main.test_table", [], |r| r.get(0))?;
+        assert_eq!(count, 3);
+
+        let name: String = db.query_row("SELECT name FROM attached_db.main.test_table WHERE id = ?", [2], |r| {
+            r.get(0)
+        })?;
+        assert_eq!(name, "Bob");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_multiple_schemas() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach a new database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("multi_schema.db");
+        db.execute_batch(&format!("ATTACH '{}' AS my_catalog", attached_path.display()))?;
+
+        // Create multiple schemas and tables
+        db.execute_batch("CREATE SCHEMA my_catalog.schema1")?;
+        db.execute_batch("CREATE SCHEMA my_catalog.schema2")?;
+        db.execute_batch("CREATE TABLE my_catalog.schema1.data (value INTEGER)")?;
+        db.execute_batch("CREATE TABLE my_catalog.schema2.data (value INTEGER)")?;
+
+        // Append to schema1
+        {
+            let mut app = db.appender_to_catalog_and_db("data", "my_catalog", "schema1")?;
+            app.append_rows([[10], [20], [30]])?;
+        }
+
+        // Append to schema2
+        {
+            let mut app = db.appender_to_catalog_and_db("data", "my_catalog", "schema2")?;
+            app.append_rows([[100], [200]])?;
+        }
+
+        // Verify data in schema1
+        let sum1: i64 = db.query_row("SELECT SUM(value) FROM my_catalog.schema1.data", [], |r| r.get(0))?;
+        assert_eq!(sum1, 60);
+
+        // Verify data in schema2
+        let sum2: i64 = db.query_row("SELECT SUM(value) FROM my_catalog.schema2.data", [], |r| r.get(0))?;
+        assert_eq!(sum2, 300);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_main_vs_attached() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Create table in main database
+        db.execute_batch("CREATE TABLE test (id INTEGER)")?;
+
+        // Attach another database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("other.db");
+        db.execute_batch(&format!("ATTACH '{}' AS other_db", attached_path.display()))?;
+        db.execute_batch("CREATE TABLE other_db.main.test (id INTEGER)")?;
+
+        // Append to main catalog (memory)
+        {
+            let mut app = db.appender_to_catalog_and_db("test", "memory", "main")?;
+            app.append_rows([[1], [2]])?;
+        }
+
+        // Append to attached catalog
+        {
+            let mut app = db.appender_to_catalog_and_db("test", "other_db", "main")?;
+            app.append_rows([[100], [200]])?;
+        }
+
+        // Verify main database
+        let count_main: i64 = db.query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))?;
+        assert_eq!(count_main, 2);
+
+        // Verify attached database
+        let count_attached: i64 = db.query_row("SELECT COUNT(*) FROM other_db.main.test", [], |r| r.get(0))?;
+        assert_eq!(count_attached, 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_error_invalid_catalog() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Try to create appender with non-existent catalog
+        let result = db.appender_to_catalog_and_db("test", "nonexistent_catalog", "main");
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_error_invalid_schema() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach a database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("test.db");
+        db.execute_batch(&format!("ATTACH '{}' AS my_db", attached_path.display()))?;
+
+        db.execute_batch("CREATE TABLE my_db.main.test (id INTEGER)")?;
+
+        // Try to create appender with non-existent schema
+        let result = db.appender_to_catalog_and_db("test", "my_db", "nonexistent_schema");
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_flush() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("flush_test.db");
+        db.execute_batch(&format!("ATTACH '{}' AS flush_db", attached_path.display()))?;
+
+        db.execute_batch("CREATE TABLE flush_db.main.test (id INTEGER)")?;
+
+        // Use appender with explicit flush
+        {
+            let mut app = db.appender_to_catalog_and_db("test", "flush_db", "main")?;
+            app.append_row([1])?;
+            app.append_row([2])?;
+            app.flush()?;
+            app.append_row([3])?;
+            app.flush()?;
+        }
+
+        // Verify all rows were flushed
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM flush_db.main.test", [], |r| r.get(0))?;
+        assert_eq!(count, 3);
 
         Ok(())
     }
