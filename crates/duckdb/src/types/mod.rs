@@ -127,7 +127,7 @@ impl From<&DataType> for Type {
             // DataType::Duration(_) => Self::Duration,
             // DataType::Interval(_) => Self::Interval,
             DataType::Binary => Self::Blob,
-            // DataType::FixedSizeBinary(_) => Self::FixedSizeBinary,
+            DataType::FixedSizeBinary(_) => Self::Blob,
             // DataType::LargeBinary => Self::LargeBinary,
             DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
             DataType::List(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
