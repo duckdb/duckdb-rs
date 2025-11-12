@@ -168,6 +168,73 @@ impl Connection {
         }
         self.db.borrow_mut().register_scalar_function_set(set)
     }
+
+    /// Register the given ScalarFunction with default state, marked as volatile.
+    ///
+    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
+    /// This is useful for functions that generate random or unique values per row, such as:
+    /// - Random number generators
+    /// - UUID generators
+    /// - Fake data generators
+    /// - Current timestamp functions
+    ///
+    /// By default, DuckDB optimizes zero-argument scalar functions as constants.
+    /// Use this method when you need the function to be evaluated independently for each row.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use duckdb::Connection;
+    /// // Assume RandomUUID implements VScalar
+    /// let conn = Connection::open_in_memory()?;
+    /// conn.register_volatile_scalar_function::<RandomUUID>("random_uuid")?;
+    ///
+    /// // Each row gets a unique UUID
+    /// let mut stmt = conn.prepare("SELECT random_uuid() FROM generate_series(1, 10)")?;
+    /// # Ok::<(), duckdb::Error>(())
+    /// ```
+    #[inline]
+    pub fn register_volatile_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
+    where
+        S::State: Default,
+    {
+        let set = ScalarFunctionSet::new(name);
+        for signature in S::signatures() {
+            let scalar_function = ScalarFunction::new(name)?;
+            signature.register_with_scalar(&scalar_function);
+            scalar_function.set_function(Some(scalar_func::<S>));
+            scalar_function.set_volatile(); // Mark as volatile
+            scalar_function.set_extra_info(S::State::default());
+            set.add_function(scalar_function)?;
+        }
+        self.db.borrow_mut().register_scalar_function_set(set)
+    }
+
+    /// Register the given ScalarFunction with custom state, marked as volatile.
+    ///
+    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
+    /// This is the volatile variant of `register_scalar_function_with_state`.
+    ///
+    /// See [`register_volatile_scalar_function`](Self::register_volatile_scalar_function) for more details on volatile functions.
+    #[inline]
+    pub fn register_volatile_scalar_function_with_state<S: VScalar>(
+        &self,
+        name: &str,
+        state: &S::State,
+    ) -> crate::Result<()>
+    where
+        S::State: Clone,
+    {
+        let set = ScalarFunctionSet::new(name);
+        for signature in S::signatures() {
+            let scalar_function = ScalarFunction::new(name)?;
+            signature.register_with_scalar(&scalar_function);
+            scalar_function.set_function(Some(scalar_func::<S>));
+            scalar_function.set_volatile(); // Mark as volatile
+            scalar_function.set_extra_info(state.clone());
+            set.add_function(scalar_function)?;
+        }
+        self.db.borrow_mut().register_scalar_function_set(set)
+    }
 }
 
 impl InnerConnection {
@@ -370,6 +437,98 @@ mod test {
             for i in 0..array.len() {
                 assert_eq!(array.value(i), "Ho ho ho 🎅🎄Ho ho ho 🎅🎄Ho ho ho 🎅🎄");
             }
+        }
+
+        Ok(())
+    }
+
+    // Counter for testing volatile functions
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct CounterScalar {}
+
+    impl VScalar for CounterScalar {
+        type State = ();
+
+        unsafe fn invoke(
+            _: &Self::State,
+            input: &mut DataChunkHandle,
+            output: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let len = input.len();
+            let mut output_vec = output.flat_vector();
+            let data = output_vec.as_mut_slice::<i64>();
+
+            for i in 0..len {
+                let count = COUNTER.fetch_add(1, Ordering::SeqCst);
+                data[i] = count as i64;
+            }
+            Ok(())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![],
+                LogicalTypeHandle::from(LogicalTypeId::Bigint),
+            )]
+        }
+    }
+
+    #[test]
+    fn test_volatile_scalar() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+
+        // Reset counter
+        COUNTER.store(0, Ordering::SeqCst);
+
+        // Register as volatile
+        conn.register_volatile_scalar_function::<CounterScalar>("volatile_counter")?;
+
+        // Query should get different values for each row
+        let mut stmt = conn.prepare("SELECT volatile_counter() FROM generate_series(1, 5)")?;
+        let mut rows = stmt.query([])?;
+
+        let mut values = Vec::new();
+        while let Some(row) = rows.next()? {
+            let val: i64 = row.get(0)?;
+            values.push(val);
+        }
+
+        // Each value should be unique (counter increments)
+        assert_eq!(values.len(), 5);
+        for (i, val) in values.iter().enumerate() {
+            assert_eq!(*val, i as i64, "Row {} should have counter value {}", i, i);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_non_volatile_scalar() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+
+        // Reset counter
+        COUNTER.store(100, Ordering::SeqCst);
+
+        // Register WITHOUT volatile flag
+        conn.register_scalar_function::<CounterScalar>("non_volatile_counter")?;
+
+        // Query should get the SAME value for all rows (optimized as constant)
+        let mut stmt = conn.prepare("SELECT non_volatile_counter() FROM generate_series(1, 5)")?;
+        let mut rows = stmt.query([])?;
+
+        let mut values = Vec::new();
+        while let Some(row) = rows.next()? {
+            let val: i64 = row.get(0)?;
+            values.push(val);
+        }
+
+        // All values should be the same (function was only called once)
+        assert_eq!(values.len(), 5);
+        let first_val = values[0];
+        for val in values.iter() {
+            assert_eq!(*val, first_val, "All rows should have the same value when not volatile");
         }
 
         Ok(())

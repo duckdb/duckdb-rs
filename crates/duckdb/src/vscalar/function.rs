@@ -53,7 +53,8 @@ use libduckdb_sys::{
     duckdb_create_scalar_function_set, duckdb_data_chunk, duckdb_delete_callback_t, duckdb_destroy_scalar_function,
     duckdb_function_info, duckdb_scalar_function, duckdb_scalar_function_add_parameter, duckdb_scalar_function_set,
     duckdb_scalar_function_set_extra_info, duckdb_scalar_function_set_function, duckdb_scalar_function_set_name,
-    duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs, duckdb_vector, DuckDBSuccess,
+    duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs, duckdb_scalar_function_set_volatile,
+    duckdb_vector, DuckDBSuccess,
 };
 
 use crate::{core::LogicalTypeHandle, Error};
@@ -108,6 +109,33 @@ impl ScalarFunction {
     ) -> &Self {
         unsafe {
             duckdb_scalar_function_set_function(self.ptr, func);
+        }
+        self
+    }
+
+    /// Marks the scalar function as volatile.
+    ///
+    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
+    /// This is useful for functions that generate random or unique values, such as random
+    /// number generators, UUID generators, or fake data generators.
+    ///
+    /// By default, DuckDB optimizes zero-argument scalar functions as constants, evaluating
+    /// them only once. Setting a function as volatile prevents this optimization.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use duckdb::vscalar::ScalarFunction;
+    /// use duckdb::core::LogicalTypeHandle;
+    /// use libduckdb_sys::LogicalTypeId;
+    ///
+    /// let func = ScalarFunction::new("my_random_func").unwrap();
+    /// func.set_return_type(&LogicalTypeHandle::from(LogicalTypeId::Varchar))
+    ///     .set_volatile()  // Mark as volatile so it's evaluated per row
+    ///     .set_function(Some(my_random_impl));
+    /// ```
+    pub fn set_volatile(&self) -> &Self {
+        unsafe {
+            duckdb_scalar_function_set_volatile(self.ptr);
         }
         self
     }
