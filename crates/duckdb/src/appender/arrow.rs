@@ -1,6 +1,6 @@
 use super::{ffi, Appender, Result};
 use crate::{
-    core::{DataChunkHandle, LogicalTypeHandle},
+    core::DataChunkHandle,
     error::result_from_duckdb_appender,
     vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type},
     Error,
@@ -28,7 +28,8 @@ impl Appender<'_> {
     /// Will return `Err` if append column count not the same with the table schema
     #[inline]
     pub fn append_record_batch(&mut self, record_batch: RecordBatch) -> Result<()> {
-        let fields = record_batch.schema().fields();
+        let schema = record_batch.schema();
+        let fields = schema.fields();
         let capacity = fields.len();
         let mut logical_types = Vec::with_capacity(capacity);
         for field in fields.iter() {
