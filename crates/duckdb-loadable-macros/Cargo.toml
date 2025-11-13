@@ -1,6 +1,6 @@
 [package]
 name = "duckdb-loadable-macros"
-version = "0.1.11"
+version = "0.1.12"
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
