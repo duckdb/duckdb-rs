@@ -305,7 +305,7 @@ impl LogicalTypeHandle {
     }
 
     /// Set the alias of the logical type.
-    pub fn set_alias(&self, alias: &str) -> () {
+    pub fn set_alias(&self, alias: &str) {
         unsafe {
             let alias = CString::new(alias).unwrap();
             duckdb_logical_type_set_alias(self.ptr, alias.as_ptr());
