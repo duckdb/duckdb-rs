@@ -127,7 +127,7 @@ impl From<&DataType> for Type {
             // DataType::Duration(_) => Self::Duration,
             // DataType::Interval(_) => Self::Interval,
             DataType::Binary => Self::Blob,
-            // DataType::FixedSizeBinary(_) => Self::FixedSizeBinary,
+            DataType::FixedSizeBinary(_) => Self::Blob,
             // DataType::LargeBinary => Self::LargeBinary,
             DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
             DataType::List(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
@@ -135,12 +135,12 @@ impl From<&DataType> for Type {
                 Self::Array(Box::new(Self::from(field.data_type())), (*size).try_into().unwrap())
             }
             // DataType::LargeList(_) => Self::LargeList,
-            DataType::Struct(inner) => Self::Struct(
-                inner
-                    .iter()
-                    .map(|f| (f.name().to_owned(), Self::from(f.data_type())))
-                    .collect(),
-            ),
+            DataType::Struct(inner) => {
+                let capacity = inner.len();
+                let mut struct_vec = Vec::with_capacity(capacity);
+                struct_vec.extend(inner.iter().map(|f| (f.name().to_owned(), Self::from(f.data_type()))));
+                Self::Struct(struct_vec)
+            }
             DataType::LargeList(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
             DataType::Union(_, _) => Self::Union,
             DataType::Decimal128(..) => Self::Decimal,

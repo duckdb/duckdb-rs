@@ -176,6 +176,31 @@ impl InnerConnection {
         Ok(Appender::new(conn, c_app))
     }
 
+    pub fn appender_to_catalog_and_db<'a>(
+        &mut self,
+        conn: &'a Connection,
+        table: &str,
+        catalog: &str,
+        schema: &str,
+    ) -> Result<Appender<'a>> {
+        let mut c_app: ffi::duckdb_appender = ptr::null_mut();
+        let c_table = CString::new(table).unwrap();
+        let c_catalog = CString::new(catalog).unwrap();
+        let c_schema = CString::new(schema).unwrap();
+
+        let r = unsafe {
+            ffi::duckdb_appender_create_ext(
+                self.con,
+                c_catalog.as_ptr() as *const c_char,
+                c_schema.as_ptr() as *const c_char,
+                c_table.as_ptr() as *const c_char,
+                &mut c_app,
+            )
+        };
+        result_from_duckdb_appender(r, &mut c_app)?;
+        Ok(Appender::new(conn, c_app))
+    }
+
     pub fn get_interrupt_handle(&self) -> Arc<InterruptHandle> {
         self.interrupt.clone()
     }
