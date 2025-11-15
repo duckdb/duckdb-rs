@@ -70,40 +70,41 @@ pub enum LogicalTypeId {
     TimestampTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ,
 }
 
-impl From<u32> for LogicalTypeId {
-    /// Convert from u32 to LogicalTypeId
-    fn from(value: u32) -> Self {
+impl TryFrom<u32> for LogicalTypeId {
+    type Error = String;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
-            DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => Self::Boolean,
-            DUCKDB_TYPE_DUCKDB_TYPE_TINYINT => Self::Tinyint,
-            DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT => Self::Smallint,
-            DUCKDB_TYPE_DUCKDB_TYPE_INTEGER => Self::Integer,
-            DUCKDB_TYPE_DUCKDB_TYPE_BIGINT => Self::Bigint,
-            DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT => Self::UTinyint,
-            DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT => Self::USmallint,
-            DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER => Self::UInteger,
-            DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT => Self::UBigint,
-            DUCKDB_TYPE_DUCKDB_TYPE_FLOAT => Self::Float,
-            DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE => Self::Double,
-            DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => Self::Varchar,
-            DUCKDB_TYPE_DUCKDB_TYPE_BLOB => Self::Blob,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP => Self::Timestamp,
-            DUCKDB_TYPE_DUCKDB_TYPE_DATE => Self::Date,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIME => Self::Time,
-            DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL => Self::Interval,
-            DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT => Self::Hugeint,
-            DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL => Self::Decimal,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S => Self::TimestampS,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS => Self::TimestampMs,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS => Self::TimestampNs,
-            DUCKDB_TYPE_DUCKDB_TYPE_ENUM => Self::Enum,
-            DUCKDB_TYPE_DUCKDB_TYPE_LIST => Self::List,
-            DUCKDB_TYPE_DUCKDB_TYPE_STRUCT => Self::Struct,
-            DUCKDB_TYPE_DUCKDB_TYPE_MAP => Self::Map,
-            DUCKDB_TYPE_DUCKDB_TYPE_UUID => Self::Uuid,
-            DUCKDB_TYPE_DUCKDB_TYPE_UNION => Self::Union,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ => Self::TimestampTZ,
-            _ => panic!("invalid logical type id: {}", value),
+            DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => Ok(LogicalTypeId::Boolean),
+            DUCKDB_TYPE_DUCKDB_TYPE_TINYINT => Ok(LogicalTypeId::Tinyint),
+            DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT => Ok(LogicalTypeId::Smallint),
+            DUCKDB_TYPE_DUCKDB_TYPE_INTEGER => Ok(LogicalTypeId::Integer),
+            DUCKDB_TYPE_DUCKDB_TYPE_BIGINT => Ok(LogicalTypeId::Bigint),
+            DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT => Ok(LogicalTypeId::UTinyint),
+            DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT => Ok(LogicalTypeId::USmallint),
+            DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER => Ok(LogicalTypeId::UInteger),
+            DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT => Ok(LogicalTypeId::UBigint),
+            DUCKDB_TYPE_DUCKDB_TYPE_FLOAT => Ok(LogicalTypeId::Float),
+            DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE => Ok(LogicalTypeId::Double),
+            DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => Ok(LogicalTypeId::Varchar),
+            DUCKDB_TYPE_DUCKDB_TYPE_BLOB => Ok(LogicalTypeId::Blob),
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP => Ok(LogicalTypeId::Timestamp),
+            DUCKDB_TYPE_DUCKDB_TYPE_DATE => Ok(LogicalTypeId::Date),
+            DUCKDB_TYPE_DUCKDB_TYPE_TIME => Ok(LogicalTypeId::Time),
+            DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL => Ok(LogicalTypeId::Interval),
+            DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT => Ok(LogicalTypeId::Hugeint),
+            DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL => Ok(LogicalTypeId::Decimal),
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S => Ok(LogicalTypeId::TimestampS),
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS => Ok(LogicalTypeId::TimestampMs),
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS => Ok(LogicalTypeId::TimestampNs),
+            DUCKDB_TYPE_DUCKDB_TYPE_ENUM => Ok(LogicalTypeId::Enum),
+            DUCKDB_TYPE_DUCKDB_TYPE_LIST => Ok(LogicalTypeId::List),
+            DUCKDB_TYPE_DUCKDB_TYPE_STRUCT => Ok(LogicalTypeId::Struct),
+            DUCKDB_TYPE_DUCKDB_TYPE_MAP => Ok(LogicalTypeId::Map),
+            DUCKDB_TYPE_DUCKDB_TYPE_UUID => Ok(LogicalTypeId::Uuid),
+            DUCKDB_TYPE_DUCKDB_TYPE_UNION => Ok(LogicalTypeId::Union),
+            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ => Ok(LogicalTypeId::TimestampTZ),
+            _ => Err(format!("invalid logical type id: {}", value).into()),
         }
     }
 }
@@ -249,13 +250,15 @@ impl LogicalTypeHandle {
     /// is invalid
     pub fn is_invalid(&self) -> bool {
         let duckdb_type_id = unsafe { duckdb_get_type_id(self.ptr) };
-        duckdb_type_id == 0
+        TryInto::<LogicalTypeId>::try_into(duckdb_type_id).is_err()
     }
 
     /// Logical type ID
     pub fn id(&self) -> LogicalTypeId {
         let duckdb_type_id = unsafe { duckdb_get_type_id(self.ptr) };
-        duckdb_type_id.into()
+        duckdb_type_id
+            .try_into()
+            .unwrap_or_else(|_| panic!("invalid logical type id: {duckdb_type_id}"))
     }
 
     /// Logical type children num
