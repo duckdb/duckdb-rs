@@ -247,6 +247,12 @@ impl LogicalTypeHandle {
     }
 
     /// Logical type ID
+    pub fn is_invalid(&self) -> bool {
+        let duckdb_type_id = unsafe { duckdb_get_type_id(self.ptr) };
+        duckdb_type_id == 0
+    }
+
+    /// Logical type ID
     pub fn id(&self) -> LogicalTypeId {
         let duckdb_type_id = unsafe { duckdb_get_type_id(self.ptr) };
         duckdb_type_id.into()
