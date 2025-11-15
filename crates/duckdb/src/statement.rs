@@ -567,6 +567,12 @@ impl Statement<'_> {
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::AppendDefault => {
+                return Err(Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "AppendDefault is only valid for Appender operations, not for prepared statements",
+                ))));
+            }
         };
         // TODO: bind more
         let rc = match value {

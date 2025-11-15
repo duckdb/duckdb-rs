@@ -118,6 +118,16 @@ impl Appender<'_> {
         result_from_duckdb_appender(rc, &mut self.app)
     }
 
+    /// Append a DEFAULT value to the current row
+    #[inline]
+    fn append_default(&mut self) -> Result<()> {
+        let rc = unsafe { ffi::duckdb_append_default(self.app) };
+        if rc != 0 {
+            return Err(Error::AppendError);
+        }
+        Ok(())
+    }
+
     #[inline]
     pub(crate) fn bind_parameters<P>(&mut self, params: P) -> Result<()>
     where
@@ -130,13 +140,14 @@ impl Appender<'_> {
         Ok(())
     }
 
-    fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P) -> Result<()> {
+    fn bind_parameter<P: ?Sized + ToSql>(&mut self, param: &P) -> Result<()> {
         let value = param.to_sql()?;
 
         let ptr = self.app;
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::AppendDefault => return self.append_default(),
         };
         // NOTE: we ignore the return value here
         //       because if anything failed, end_row will fail
@@ -224,7 +235,7 @@ impl fmt::Debug for Appender<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{params, Connection, Error, Result};
+    use crate::{params, types::AppendDefault, Connection, Error, Result};
 
     #[test]
     fn test_append_one_row() -> Result<()> {
@@ -421,6 +432,52 @@ mod test {
             Err(e) => panic!("Expected foreign key constraint error, got: {e:?}"),
             Ok(_) => panic!("Expected foreign key constraint error, but flush succeeded"),
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_default() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE TABLE test (
+                id INTEGER,
+                name VARCHAR,
+                status VARCHAR DEFAULT 'active'
+            )",
+        )?;
+
+        {
+            let mut app = db.appender("test")?;
+            app.append_row(params![1, "Alice", AppendDefault])?;
+            app.append_row(params![2, "Bob", AppendDefault])?;
+            app.append_row(params![3, AppendDefault, AppendDefault])?;
+            app.append_row(params![4, None::<String>, "inactive"])?;
+        }
+
+        let rows: Vec<(i32, Option<String>, String)> = db
+            .prepare("SELECT id, name, status FROM test ORDER BY id")?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0], (1, Some("Alice".to_string()), "active".to_string()));
+        assert_eq!(rows[1], (2, Some("Bob".to_string()), "active".to_string()));
+        assert_eq!(rows[2], (3, None, "active".to_string()));
+        assert_eq!(rows[3], (4, None, "inactive".to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_default_in_prepared_statement_fails() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name VARCHAR DEFAULT 'test')")?;
+
+        let mut stmt = db.prepare("INSERT INTO test VALUES (?, ?)")?;
+        let result = stmt.execute(params![1, AppendDefault]);
+
+        assert!(matches!(result, Err(Error::ToSqlConversionFailure(_))));
 
         Ok(())
     }
