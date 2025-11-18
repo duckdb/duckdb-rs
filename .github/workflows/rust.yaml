@@ -14,6 +14,9 @@ concurrency:
 
 jobs:
   test:
+    # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
+    # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
+    # - bundled feature tested by --all-features
     name: Test ${{ matrix.target }}
     strategy:
       fail-fast: true
@@ -30,38 +33,28 @@ jobs:
               duckdb: libduckdb-linux-amd64.zip,
             }
     runs-on: ${{ matrix.os }}
+    env:
+      DUCKDB_DOWNLOAD_LIB: "1"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.target }}
 
-      # download libduckdb
       - uses: robinraju/release-downloader@v1.4
         name: Download duckdb
+        if: matrix.os == 'windows-latest'
         with:
           repository: "duckdb/duckdb"
           tag: "v1.4.2"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 
-      # For Linux
-      - name: Linux extract duckdb
-        if: matrix.os == 'ubuntu-latest'
-        uses: ihiroky/extract-action@v1
-        with:
-          file_path: ${{ github.workspace }}/${{ matrix.duckdb }}
-          extract_dir: libduckdb
-
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
 
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
       - name: Dry-run release of crates
@@ -91,13 +84,23 @@ jobs:
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
 
       - name: Build loadable extension
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo build --example hello-ext --features="vtab-loadable"
+
+      - name: Build loadable extension (C API)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo build --example hello-ext-capi --features="vtab-loadable loadable-extension"
+
+      - name: Build loadable extension (windows)
+        if: matrix.os == 'windows-latest'
         run: cargo build --example hello-ext --features="vtab-loadable"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
 
-      - name: Build loadable extension
+      - name: Build loadable extension C API (windows)
+        if: matrix.os == 'windows-latest'
         run: cargo build --example hello-ext-capi --features="vtab-loadable loadable-extension"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
