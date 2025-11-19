@@ -10,6 +10,8 @@ use crate::ffi::*;
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum LogicalTypeId {
+    /// Invalid
+    Invalid = DUCKDB_TYPE_DUCKDB_TYPE_INVALID,
     /// Boolean
     Boolean = DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN,
     /// Tinyint
@@ -66,14 +68,35 @@ pub enum LogicalTypeId {
     Uuid = DUCKDB_TYPE_DUCKDB_TYPE_UUID,
     /// Union
     Union = DUCKDB_TYPE_DUCKDB_TYPE_UNION,
+    /// Bit
+    Bit = DUCKDB_TYPE_DUCKDB_TYPE_BIT,
+    /// Time TZ
+    TimeTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ,
     /// Timestamp TZ
     TimestampTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ,
+    /// Unsigned Hugeint
+    UHugeint = DUCKDB_TYPE_DUCKDB_TYPE_UHUGEINT,
+    /// Array
+    Array = DUCKDB_TYPE_DUCKDB_TYPE_ARRAY,
+    /// Any
+    Any = DUCKDB_TYPE_DUCKDB_TYPE_ANY,
+    /// Bignum
+    Bignum = DUCKDB_TYPE_DUCKDB_TYPE_BIGNUM,
+    /// SqlNull
+    SqlNull = DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL,
+    /// String Literal
+    StringLiteral = DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL,
+    /// Integer Literal
+    IntegerLiteral = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL,
+    /// Time NS
+    TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS,
 }
 
 impl From<u32> for LogicalTypeId {
     /// Convert from u32 to LogicalTypeId
     fn from(value: u32) -> Self {
         match value {
+            DUCKDB_TYPE_DUCKDB_TYPE_INVALID => Self::Invalid,
             DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => Self::Boolean,
             DUCKDB_TYPE_DUCKDB_TYPE_TINYINT => Self::Tinyint,
             DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT => Self::Smallint,
@@ -102,7 +125,17 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_MAP => Self::Map,
             DUCKDB_TYPE_DUCKDB_TYPE_UUID => Self::Uuid,
             DUCKDB_TYPE_DUCKDB_TYPE_UNION => Self::Union,
+            DUCKDB_TYPE_DUCKDB_TYPE_BIT => Self::Bit,
+            DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ => Self::TimeTZ,
             DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ => Self::TimestampTZ,
+            DUCKDB_TYPE_DUCKDB_TYPE_UHUGEINT => Self::UHugeint,
+            DUCKDB_TYPE_DUCKDB_TYPE_ARRAY => Self::Array,
+            DUCKDB_TYPE_DUCKDB_TYPE_ANY => Self::Any,
+            DUCKDB_TYPE_DUCKDB_TYPE_BIGNUM => Self::Bignum,
+            DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL => Self::SqlNull,
+            DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL => Self::StringLiteral,
+            DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL => Self::IntegerLiteral,
+            DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS => Self::TimeNs,
             _ => panic!(),
         }
     }
@@ -258,6 +291,7 @@ impl LogicalTypeHandle {
             LogicalTypeId::Struct => unsafe { duckdb_struct_type_child_count(self.ptr) as usize },
             LogicalTypeId::Union => unsafe { duckdb_union_type_member_count(self.ptr) as usize },
             LogicalTypeId::List => 1,
+            LogicalTypeId::Array => 1,
             _ => 0,
         }
     }
