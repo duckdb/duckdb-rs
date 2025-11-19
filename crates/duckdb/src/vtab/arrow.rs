@@ -263,6 +263,7 @@ pub fn flat_vector_to_arrow_array(
 ) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
     let type_id = vector.logical_type().id();
     match type_id {
+        LogicalTypeId::Invalid => Err("Cannot convert invalid logical type to arrow array".into()),
         LogicalTypeId::Integer => {
             let data = vector.as_slice_with_len::<i32>(len);
 

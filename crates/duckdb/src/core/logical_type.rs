@@ -10,6 +10,8 @@ use crate::ffi::*;
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum LogicalTypeId {
+    /// Invalid
+    Invalid = DUCKDB_TYPE_DUCKDB_TYPE_INVALID,
     /// Boolean
     Boolean = DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN,
     /// Tinyint
@@ -74,6 +76,7 @@ impl From<u32> for LogicalTypeId {
     /// Convert from u32 to LogicalTypeId
     fn from(value: u32) -> Self {
         match value {
+            DUCKDB_TYPE_DUCKDB_TYPE_INVALID => Self::Invalid,
             DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => Self::Boolean,
             DUCKDB_TYPE_DUCKDB_TYPE_TINYINT => Self::Tinyint,
             DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT => Self::Smallint,
@@ -119,6 +122,7 @@ impl Debug for LogicalTypeHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let id = self.id();
         match id {
+            LogicalTypeId::Invalid => write!(f, "Invalid"),
             LogicalTypeId::Struct => {
                 write!(f, "struct<")?;
                 for i in 0..self.num_children() {
@@ -129,7 +133,7 @@ impl Debug for LogicalTypeHandle {
                 }
                 write!(f, ">")
             }
-            _ => write!(f, "{:?}", self.id()),
+            _ => write!(f, "{:?}", id),
         }
     }
 }
@@ -359,5 +363,19 @@ mod test {
 
         assert_eq!(typ.child_name(1), "world");
         assert_eq!(typ.child(1).id(), LogicalTypeId::Integer);
+    }
+
+    #[test]
+    fn test_invalid_type() {
+        use crate::ffi::{duckdb_create_logical_type, DUCKDB_TYPE_DUCKDB_TYPE_INVALID};
+
+        // Create an invalid logical type (what DuckDB returns in certain error cases)
+        let invalid_type =
+            unsafe { LogicalTypeHandle::new(duckdb_create_logical_type(DUCKDB_TYPE_DUCKDB_TYPE_INVALID)) };
+
+        assert_eq!(invalid_type.id(), LogicalTypeId::Invalid);
+
+        let debug_str = format!("{invalid_type:?}");
+        assert_eq!(debug_str, "Invalid");
     }
 }
