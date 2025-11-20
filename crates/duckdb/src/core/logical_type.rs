@@ -327,7 +327,8 @@ impl LogicalTypeHandle {
             match self.id() {
                 LogicalTypeId::Struct => duckdb_struct_type_child_type(self.ptr, idx as u64),
                 LogicalTypeId::Union => duckdb_union_type_member_type(self.ptr, idx as u64),
-                _ => panic!("not a struct or union"),
+                LogicalTypeId::Array => duckdb_array_type_child_type(self.ptr),
+                _ => panic!("not a struct, union, or array"),
             }
         };
         unsafe { Self::new(c_logical_type) }
@@ -362,26 +363,36 @@ mod test {
 
     #[test]
     fn test_struct() {
-        let fields = &[("hello", LogicalTypeHandle::from(crate::core::LogicalTypeId::Boolean))];
+        let fields = &[("hello", LogicalTypeHandle::from(LogicalTypeId::Boolean))];
         let typ = LogicalTypeHandle::struct_type(fields);
 
         assert_eq!(typ.num_children(), 1);
         assert_eq!(typ.child_name(0), "hello");
-        assert_eq!(typ.child(0).id(), crate::core::LogicalTypeId::Boolean);
+        assert_eq!(typ.child(0).id(), LogicalTypeId::Boolean);
+    }
+
+    #[test]
+    fn test_array() {
+        let child = LogicalTypeHandle::from(LogicalTypeId::Integer);
+        let array = LogicalTypeHandle::array(&child, 4);
+
+        assert_eq!(array.id(), LogicalTypeId::Array);
+        assert_eq!(array.num_children(), 1);
+        assert_eq!(array.child(0).id(), LogicalTypeId::Integer);
     }
 
     #[test]
     fn test_decimal() {
         let typ = LogicalTypeHandle::decimal(10, 2);
 
-        assert_eq!(typ.id(), crate::core::LogicalTypeId::Decimal);
+        assert_eq!(typ.id(), LogicalTypeId::Decimal);
         assert_eq!(typ.decimal_width(), 10);
         assert_eq!(typ.decimal_scale(), 2);
     }
 
     #[test]
     fn test_decimal_methods() {
-        let typ = LogicalTypeHandle::from(crate::core::LogicalTypeId::Varchar);
+        let typ = LogicalTypeHandle::from(LogicalTypeId::Varchar);
 
         assert_eq!(typ.decimal_width(), 0);
         assert_eq!(typ.decimal_scale(), 0);
