@@ -235,12 +235,15 @@ mod build_linked {
     use super::bindings;
 
     use super::{env_prefix, is_compiler, lib_name, win_target, HeaderLocation};
-    use std::{env, path::Path};
+    use std::{
+        env, fs, io,
+        path::{Path, PathBuf},
+    };
 
-    pub fn main(_out_dir: &str, out_path: &Path) {
+    pub fn main(out_dir: &str, out_path: &Path) {
         // We need this to config the LD_LIBRARY_PATH
         #[allow(unused_variables)]
-        let header = find_duckdb();
+        let header = find_duckdb(out_dir);
 
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
@@ -269,9 +272,10 @@ mod build_linked {
         }
     }
     // Prints the necessary cargo link commands and returns the path to the header.
-    fn find_duckdb() -> HeaderLocation {
+    fn find_duckdb(out_dir: &str) -> HeaderLocation {
         let link_lib = lib_name();
 
+        println!("cargo:rerun-if-env-changed={}_DOWNLOAD_LIB", env_prefix());
         if !cfg!(feature = "loadable-extension") {
             println!("cargo:rerun-if-env-changed={}_INCLUDE_DIR", env_prefix());
             println!("cargo:rerun-if-env-changed={}_LIB_DIR", env_prefix());
@@ -312,6 +316,10 @@ mod build_linked {
             }
 
             return HeaderLocation::FromEnvironment;
+        }
+
+        if should_download_libduckdb() {
+            return download_libduckdb(out_dir).unwrap_or_else(|err| panic!("Failed to download libduckdb: {err}"));
         }
 
         if let Some(header) = try_vcpkg() {
@@ -363,6 +371,206 @@ mod build_linked {
             }
         }
         None
+    }
+
+    fn should_download_libduckdb() -> bool {
+        env::var(format!("{}_DOWNLOAD_LIB", env_prefix()))
+            .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true"))
+            .unwrap_or(false)
+    }
+
+    fn download_libduckdb(out_dir: &str) -> Result<HeaderLocation, Box<dyn std::error::Error>> {
+        let target = env::var("TARGET")?;
+        let archive = LibduckdbArchive::for_target(&target)
+            .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
+
+        let version = env!("CARGO_PKG_VERSION").to_string();
+
+        // Cache downloads in target/duckdb-download/<target>/<version> so successive builds reuse them
+        let download_dir = workspace_download_dir(out_dir)?.join(&target).join(&version);
+        fs::create_dir_all(&download_dir)?;
+
+        let archive_path = download_dir.join(archive.archive_name);
+        let lib_marker = download_dir.join(archive.dynamic_lib);
+
+        if lib_marker.exists() {
+            println!("cargo:warning=Reusing libduckdb from {}", download_dir.display());
+        } else {
+            let client = http_client()?;
+            let url = archive.download_url(&version);
+            ensure_libduckdb(&client, &url, &archive_path)?;
+            extract_libduckdb(&archive_path, &download_dir)?;
+            if !lib_marker.exists() {
+                return Err(format!(
+                    "Downloaded archive did not contain expected library '{}'",
+                    archive.dynamic_lib
+                )
+                .into());
+            }
+        }
+
+        configure_link_search(&download_dir);
+
+        copy_libduckdb(&download_dir, archive.dynamic_lib, out_dir)?;
+
+        Ok(HeaderLocation::FromPath(download_dir.to_string_lossy().into_owned()))
+    }
+
+    fn configure_link_search(lib_dir: &Path) {
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        if !cfg!(feature = "loadable-extension") {
+            println!("cargo:rustc-link-lib={}={}", find_link_mode(), lib_name());
+        }
+        if !win_target() {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+        }
+    }
+
+    // Ensures the libduckdb archive exists: reuses an existing zip or
+    // downloads it into a temp file and atomically renames it into place.
+    fn ensure_libduckdb(
+        client: &reqwest::blocking::Client,
+        url: &str,
+        archive_path: &Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if archive_path.exists() {
+            println!("cargo:warning=libduckdb already present at {}", archive_path.display());
+            return Ok(());
+        }
+        let tmp_path = archive_path.with_extension("download");
+        if let Some(parent) = archive_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut response = client.get(url).send()?.error_for_status()?;
+        let mut tmp_file = fs::File::create(&tmp_path)?;
+        io::copy(&mut response, &mut tmp_file)?;
+        fs::rename(&tmp_path, archive_path)?;
+        println!("cargo:warning=Downloaded libduckdb from {url}");
+        Ok(())
+    }
+
+    fn extract_libduckdb(archive_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let file = fs::File::open(archive_path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+        archive.extract(destination)?;
+        println!("cargo:warning=Extracted libduckdb to {}", destination.display());
+        Ok(())
+    }
+
+    // Copy libduckdb into target/<profile>/deps so executables/tests can load it via
+    // the default Cargo rpath, just like when DUCKDB_LIB_DIR is set.
+    fn copy_libduckdb(
+        download_dir: &Path,
+        lib_filename: &str,
+        out_dir: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(deps_dir) = profile_deps_dir(out_dir) else {
+            println!("cargo:warning=Could not determine target/deps directory, skipping runtime copy");
+            return Ok(());
+        };
+        fs::create_dir_all(&deps_dir)?;
+        let source = download_dir.join(lib_filename);
+        let dest = deps_dir.join(lib_filename);
+        if dest.exists() {
+            fs::remove_file(&dest)?;
+        }
+        fs::copy(&source, &dest)?;
+        println!("cargo:warning=Copied libduckdb to {}", dest.display());
+        Ok(())
+    }
+
+    // Finds target/ so downloads survive rebuilds. Respects CARGO_TARGET_DIR if set.
+    fn workspace_download_dir(out_dir: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        if let Ok(dir) = env::var("CARGO_TARGET_DIR") {
+            return Ok(PathBuf::from(dir).join("duckdb-download"));
+        }
+        let target_root = Path::new(out_dir)
+            .ancestors()
+            .find(|ancestor| {
+                ancestor
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name == "target")
+            })
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("target"));
+        Ok(target_root.join("duckdb-download"))
+    }
+
+    // Mirrors Cargo's target/<profile>/deps layout (optionally with CARGO_TARGET_DIR / target triple).
+    fn profile_deps_dir(out_dir: &str) -> Option<PathBuf> {
+        let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+        let mut target_root = env::var("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|_| {
+            Path::new(out_dir)
+                .ancestors()
+                .find(|ancestor| {
+                    ancestor
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name == "target")
+                })
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("target"))
+        });
+        if env::var("HOST").ok() != env::var("TARGET").ok() {
+            if let Ok(target) = env::var("TARGET") {
+                target_root.push(target);
+            }
+        }
+        target_root.push(profile);
+        target_root.push("deps");
+        Some(target_root)
+    }
+
+    struct LibduckdbArchive {
+        archive_name: &'static str,
+        dynamic_lib: &'static str,
+    }
+
+    impl LibduckdbArchive {
+        fn for_target(target: &str) -> Option<Self> {
+            match target {
+                t if t.ends_with("apple-darwin") => Some(Self {
+                    archive_name: "libduckdb-osx-universal.zip",
+                    dynamic_lib: "libduckdb.dylib",
+                }),
+                "x86_64-unknown-linux-gnu" => Some(Self {
+                    archive_name: "libduckdb-linux-amd64.zip",
+                    dynamic_lib: "libduckdb.so",
+                }),
+                "aarch64-unknown-linux-gnu" => Some(Self {
+                    archive_name: "libduckdb-linux-arm64.zip",
+                    dynamic_lib: "libduckdb.so",
+                }),
+                "x86_64-pc-windows-msvc" => Some(Self {
+                    archive_name: "libduckdb-windows-amd64.zip",
+                    dynamic_lib: "duckdb.dll",
+                }),
+                "aarch64-pc-windows-msvc" => Some(Self {
+                    archive_name: "libduckdb-windows-arm64.zip",
+                    dynamic_lib: "duckdb.dll",
+                }),
+                _ => None,
+            }
+        }
+
+        fn download_url(&self, version: &str) -> String {
+            format!(
+                "https://github.com/duckdb/duckdb/releases/download/v{version}/{}",
+                self.archive_name
+            )
+        }
+    }
+
+    fn http_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
+        let timeout = env::var("CARGO_HTTP_TIMEOUT")
+            .or_else(|_| env::var("HTTP_TIMEOUT"))
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(90);
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout))
+            .build()
     }
 }
 
