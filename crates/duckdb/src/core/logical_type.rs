@@ -157,6 +157,7 @@ impl Debug for LogicalTypeHandle {
         let id = self.id();
         match id {
             LogicalTypeId::Invalid => write!(f, "Invalid"),
+            LogicalTypeId::Unsupported => write!(f, "Unsupported({})", self.raw_id()),
             LogicalTypeId::Struct => {
                 write!(f, "struct<")?;
                 for i in 0..self.num_children() {
@@ -289,6 +290,19 @@ impl LogicalTypeHandle {
         self.raw_id().into()
     }
 
+    /// Logical type ID, with forward-compatibility awareness.
+    ///
+    /// Returns `Ok(LogicalTypeId)` for all known ids (including `Invalid`), and
+    /// `Err(raw_id)` when DuckDB returns an id this wrapper does not yet
+    /// recognize.
+    pub fn try_id(&self) -> Result<LogicalTypeId, u32> {
+        let raw = self.raw_id();
+        match LogicalTypeId::from(raw) {
+            LogicalTypeId::Unsupported => Err(raw),
+            id => Ok(id),
+        }
+    }
+
     /// Raw logical type id returned by DuckDB C API
     pub fn raw_id(&self) -> u32 {
         unsafe { duckdb_get_type_id(self.ptr) }
@@ -313,6 +327,7 @@ impl LogicalTypeHandle {
             let child_name_ptr = match self.id() {
                 LogicalTypeId::Struct => duckdb_struct_type_child_name(self.ptr, idx as u64),
                 LogicalTypeId::Union => duckdb_union_type_member_name(self.ptr, idx as u64),
+                LogicalTypeId::Unsupported => panic!("unsupported logical type {}", self.raw_id()),
                 _ => panic!("not a struct or union"),
             };
             let c_str = CString::from_raw(child_name_ptr);
@@ -328,6 +343,7 @@ impl LogicalTypeHandle {
                 LogicalTypeId::Struct => duckdb_struct_type_child_type(self.ptr, idx as u64),
                 LogicalTypeId::Union => duckdb_union_type_member_type(self.ptr, idx as u64),
                 LogicalTypeId::Array => duckdb_array_type_child_type(self.ptr),
+                LogicalTypeId::Unsupported => panic!("unsupported logical type {}", self.raw_id()),
                 _ => panic!("not a struct, union, or array"),
             }
         };
@@ -424,6 +440,8 @@ mod test {
             unsafe { LogicalTypeHandle::new(duckdb_create_logical_type(DUCKDB_TYPE_DUCKDB_TYPE_INVALID)) };
 
         assert_eq!(invalid_type.id(), LogicalTypeId::Invalid);
+        assert_eq!(invalid_type.try_id().unwrap(), LogicalTypeId::Invalid);
+        assert_eq!(invalid_type.raw_id(), DUCKDB_TYPE_DUCKDB_TYPE_INVALID);
 
         let debug_str = format!("{invalid_type:?}");
         assert_eq!(debug_str, "Invalid");
