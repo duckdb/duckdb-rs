@@ -9,6 +9,7 @@ use crate::ffi::*;
 /// <https://duckdb.org/docs/api/c/types>
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LogicalTypeId {
     /// Invalid
     Invalid = DUCKDB_TYPE_DUCKDB_TYPE_INVALID,
@@ -136,7 +137,9 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL => Self::StringLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL => Self::IntegerLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS => Self::TimeNs,
-            _ => panic!(),
+            // Return Invalid for unknown types to handle forward compatibility
+            // when DuckDB adds new types in future versions
+            _ => Self::Invalid,
         }
     }
 }
