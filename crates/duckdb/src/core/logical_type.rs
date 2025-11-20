@@ -91,6 +91,8 @@ pub enum LogicalTypeId {
     IntegerLiteral = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL,
     /// Time NS
     TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS,
+    /// DuckDB returned a type that this wrapper does not yet recognize
+    Unsupported = u32::MAX,
 }
 
 impl From<u32> for LogicalTypeId {
@@ -137,9 +139,8 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL => Self::StringLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL => Self::IntegerLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS => Self::TimeNs,
-            // Return Invalid for unknown types to handle forward compatibility
-            // when DuckDB adds new types in future versions
-            _ => Self::Invalid,
+            // Unknown / forward compatible types
+            _ => Self::Unsupported,
         }
     }
 }
@@ -285,8 +286,12 @@ impl LogicalTypeHandle {
 
     /// Logical type ID
     pub fn id(&self) -> LogicalTypeId {
-        let duckdb_type_id = unsafe { duckdb_get_type_id(self.ptr) };
-        duckdb_type_id.into()
+        self.raw_id().into()
+    }
+
+    /// Raw logical type id returned by DuckDB C API
+    pub fn raw_id(&self) -> u32 {
+        unsafe { duckdb_get_type_id(self.ptr) }
     }
 
     /// Logical type children num
@@ -411,5 +416,10 @@ mod test {
 
         let debug_str = format!("{invalid_type:?}");
         assert_eq!(debug_str, "Invalid");
+    }
+
+    #[test]
+    fn test_unknown_type() {
+        assert_eq!(LogicalTypeId::from(999_999), LogicalTypeId::Unsupported);
     }
 }

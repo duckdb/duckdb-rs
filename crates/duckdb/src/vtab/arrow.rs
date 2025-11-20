@@ -259,9 +259,11 @@ pub fn flat_vector_to_arrow_array(
     vector: &mut FlatVector,
     len: usize,
 ) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
-    let type_id = vector.logical_type().id();
+    let raw_type_id = vector.logical_type().raw_id();
+    let type_id = LogicalTypeId::from(raw_type_id);
     match type_id {
-        LogicalTypeId::Invalid => Err("Cannot convert invalid logical type to arrow array".into()),
+        LogicalTypeId::Invalid => Err("Cannot convert invalid logical type returned by DuckDB".into()),
+        LogicalTypeId::Unsupported => Err(format!("Unsupported DuckDB logical type ID {raw_type_id}").into()),
         LogicalTypeId::Integer => {
             let data = vector.as_slice_with_len::<i32>(len);
 
