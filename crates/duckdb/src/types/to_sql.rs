@@ -211,12 +211,6 @@ impl ToSql for std::time::Duration {
     }
 }
 
-impl ToSql for rust_decimal::Decimal {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Owned(Value::Decimal(*self)))
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::ToSql;

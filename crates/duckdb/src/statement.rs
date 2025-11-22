@@ -607,21 +607,7 @@ impl Statement<'_> {
                 ffi::duckdb_bind_time(ptr, col as u64, ffi::duckdb_time { micros: u.to_micros(i) })
 },
             ValueRef::Decimal(d) => unsafe {
-                // The max size of rust_decimal's scale is 28.
-                let d_scale = d.scale() as u8;
-                let d_width = decimal_width(d);
-                let d_value = {
-                    let mantissa = d.mantissa();
-                    let lo = mantissa as u64;
-                    let hi = (mantissa >> 64) as i64;
-                    ffi::duckdb_hugeint { lower: lo, upper: hi }
-                };
-
-                let decimal = ffi::duckdb_decimal {
-                    width: d_width,
-                    scale: d_scale,
-                    value: d_value,
-                };
+                let decimal = to_duckdb_decimal(d);
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
             _ => unreachable!("not supported: {}", value.data_type()),
@@ -665,24 +651,6 @@ impl Statement<'_> {
     pub(super) fn new(conn: &Connection, stmt: RawStatement) -> Statement<'_> {
         Statement { conn, stmt }
     }
-}
-
-fn decimal_width(d: rust_decimal::Decimal) -> u8 {
-    let mut num = d.mantissa();
-
-    if num == 0 {
-        return 1;
-    }
-
-    let mut len = 0;
-    num = num.abs();
-
-    while num > 0 {
-        len += 1;
-        num /= 10;
-    }
-
-    len
 }
 
 #[cfg(test)]
