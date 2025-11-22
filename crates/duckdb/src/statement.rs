@@ -7,6 +7,7 @@ use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatemen
 use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
+    core::LogicalTypeHandle,
     error::result_from_duckdb_prepare,
     types::{TimeUnit, ToSql, ToSqlOutput},
 };
@@ -607,6 +608,28 @@ impl Statement<'_> {
             ValueRef::Interval { months, days, nanos } => unsafe {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
+            },
+            ValueRef::Decimal(d) => unsafe {
+                // get param's logical type from prepared statement
+                let logical_type = LogicalTypeHandle::new(ffi::duckdb_param_logical_type(ptr, col as u64));
+                let expected_width = logical_type.decimal_width();
+                let expected_scale = logical_type.decimal_scale();
+
+                // the max size of rust_decimal's scale is 28
+                let rust_scale = d.scale() as u8;
+                if rust_scale > expected_scale {
+                    return Err(Error::ToSqlConversionFailure(
+                        format!("Decimal scale {} exceeds expected scale {}", rust_scale, expected_scale).into(),
+                    ));
+                }
+
+                // 绑定 Decimal，使用从 schema 获取的 width 和 scale
+                let decimal = ffi::duckdb_decimal {
+                    width: expected_width,
+                    scale: expected_scale,
+                    value: todo!("convert rust_decimal::Decimal to duckdb_decimal"),
+                };
+                ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
