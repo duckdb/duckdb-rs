@@ -7,9 +7,8 @@ use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatemen
 use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
-    core::LogicalTypeHandle,
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{TimeUnit, ToSql, ToSqlOutput, Value},
 };
 
 /// A prepared statement.
@@ -610,24 +609,20 @@ impl Statement<'_> {
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
             },
             ValueRef::Decimal(d) => unsafe {
-                // get param's logical type from prepared statement
-                let logical_type = LogicalTypeHandle::new(ffi::duckdb_param_logical_type(ptr, col as u64));
-                let expected_width = logical_type.decimal_width();
-                let expected_scale = logical_type.decimal_scale();
+                // The max size of rust_decimal's scale is 28.
+                let d_scale = d.scale() as u8;
+                let d_width = decimal_width(d);
+                let d_value = {
+                    let mantissa = d.mantissa();
+                    let lo = mantissa as u64;
+                    let hi = (mantissa >> 64) as i64;
+                    ffi::duckdb_hugeint { lower: lo, upper: hi }
+                };
 
-                // the max size of rust_decimal's scale is 28
-                let rust_scale = d.scale() as u8;
-                if rust_scale > expected_scale {
-                    return Err(Error::ToSqlConversionFailure(
-                        format!("Decimal scale {} exceeds expected scale {}", rust_scale, expected_scale).into(),
-                    ));
-                }
-
-                // 绑定 Decimal，使用从 schema 获取的 width 和 scale
                 let decimal = ffi::duckdb_decimal {
-                    width: expected_width,
-                    scale: expected_scale,
-                    value: todo!("convert rust_decimal::Decimal to duckdb_decimal"),
+                    width: d_width,
+                    scale: d_scale,
+                    value: d_value,
                 };
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
@@ -672,6 +667,24 @@ impl Statement<'_> {
     pub(super) fn new(conn: &Connection, stmt: RawStatement) -> Statement<'_> {
         Statement { conn, stmt }
     }
+}
+
+fn decimal_width(d: rust_decimal::Decimal) -> u8 {
+    let mut num = d.mantissa();
+
+    if num == 0 {
+        return 1;
+    }
+
+    let mut len = 0;
+    num = num.abs();
+
+    while num > 0 {
+        len += 1;
+        num /= 10;
+    }
+
+    len
 }
 
 #[cfg(test)]
@@ -1238,6 +1251,34 @@ mod test {
         let row = rows.next()?.unwrap();
         let result: bool = row.get(0)?;
         assert!(result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_decimal() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "BEGIN; \
+            CREATE TABLE foo(x DECIMAL(18, 4)); \
+            CREATE TABLE bar(y DECIMAL(18, 2)); \
+            COMMIT;",
+        )?;
+
+        // If duckdb's scale is larger than rust_decimal's scale, value should not be truncated.
+        let value = rust_decimal::Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO foo(x) VALUES (?)", [&value])?;
+        let row: rust_decimal::Decimal =
+            db.query_row("SELECT x FROM foo", [], |r| r.get::<_, rust_decimal::Decimal>(0))?;
+        assert_eq!(row, value);
+
+        // If duckdb's scale is smaller than rust_decimal's scale, value should be truncated (1.2345 -> 1.23).
+        let value = rust_decimal::Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO bar(y) VALUES (?)", [&value])?;
+        let row: rust_decimal::Decimal =
+            db.query_row("SELECT y FROM bar", [], |r| r.get::<_, rust_decimal::Decimal>(0))?;
+        let value_from_duckdb = rust_decimal::Decimal::from_i128_with_scale(123, 2);
+        assert_eq!(row, value_from_duckdb);
 
         Ok(())
     }
