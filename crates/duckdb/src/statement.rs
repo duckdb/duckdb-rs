@@ -8,7 +8,7 @@ use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput, Value},
+    types::{TimeUnit, ToSql, ToSqlOutput},
 };
 
 /// A prepared statement.
