@@ -6,6 +6,38 @@ This repo has two crates: `duckdb` and `libduckdb-sys`, which `libduckdb-sys` is
 
 Most user should use `duckdb`, but our development may happen in both of these components.
 
+## Prerequisites
+
+### Required for `buildtime_bindgen` feature
+
+When using the `buildtime_bindgen` feature, you need to have `libclang` installed on your system, as it's required by the `bindgen` crate to generate Rust bindings from C headers.
+
+**Linux (Debian/Ubuntu):**
+```shell
+sudo apt-get update
+sudo apt-get install -y libclang-dev
+```
+
+**macOS:**
+```shell
+brew install llvm
+```
+
+**Windows:**
+Install LLVM from [llvm.org](https://releases.llvm.org/) or use the installer, and ensure the binaries are in your PATH.
+
+### DuckDB Library and Header Setup
+
+When using `DUCKDB_LIB_DIR` and `DUCKDB_INCLUDE_DIR` environment variables, ensure the following folder structure:
+
+```
+~/duckdb-lib/
+├── duckdb.h          # Header file (must be directly in the directory, not in a subdirectory)
+└── libduckdb.so      # Library file (or .dylib on macOS, .dll on Windows)
+```
+
+**Important:** The header file `duckdb.h` must be placed directly in the directory specified by `DUCKDB_INCLUDE_DIR`, not in a `duckdb/` subdirectory. The build system expects the header at `{DUCKDB_INCLUDE_DIR}/duckdb.h`.
+
 ## Development
 
 ### duckdb-c-api
@@ -27,14 +59,26 @@ Related logics:
 
 After make the change, we can build the repo and use it in `duckdb-rs` by:
 ```shell
-# assume in macOS, you may need to change the file in other OS
 # export library and header file
 cd ~/github/duckdb
 mkdir ~/duckdb-lib
+
+# Copy header and library to the same directory
+# Note: duckdb.h must be directly in ~/duckdb-lib/, not in a subdirectory
+
+# macOS:
 cp src/include/duckdb.h build/debug/src/libduckdb.dylib ~/duckdb-lib/
+
+# Linux:
+cp src/include/duckdb.h build/debug/src/libduckdb.so ~/duckdb-lib/
+
+# Windows:
+cp src/include/duckdb.h build/debug/src/duckdb.dll ~/duckdb-lib/
+
 # set lib dir
 export DUCKDB_LIB_DIR=~/duckdb-lib
-# set header dir
+
+# set header dir (can be the same as LIB_DIR)
 export DUCKDB_INCLUDE_DIR=~/duckdb-lib
 ```
 
@@ -43,9 +87,15 @@ export DUCKDB_INCLUDE_DIR=~/duckdb-lib
 Use the exported library and header:
 
 ```shell
+# Ensure environment variables are set
+export DUCKDB_LIB_DIR=~/duckdb-lib
+export DUCKDB_INCLUDE_DIR=~/duckdb-lib
+
 cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features buildtime_bindgen
 ```
+
+**Note:** Make sure `libclang` is installed (see Prerequisites section above) when using the `buildtime_bindgen` feature.
 
 Use the bundled header file:
 ```shell
@@ -68,9 +118,15 @@ cp src/amalgamation/duckdb.cpp src/include/duckdb.h src/amalgamation/duckdb.hpp 
 Use the exported library and header:
 
 ```shell
+# Ensure environment variables are set
+export DUCKDB_LIB_DIR=~/duckdb-lib
+export DUCKDB_INCLUDE_DIR=~/duckdb-lib
+
 cd ~/github/duckdb-rs/
 cargo test --features buildtime_bindgen -- --nocapture
 ```
+
+**Note:** Make sure `libclang` is installed (see Prerequisites section above) when using the `buildtime_bindgen` feature.
 
 Use the bundled header file:
 
