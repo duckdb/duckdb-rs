@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use cast;
-use rust_decimal::{prelude::FromPrimitive, RoundingStrategy::MidpointAwayFromZero};
+use rust_decimal::RoundingStrategy::MidpointAwayFromZero;
 
 use super::{TimeUnit, Value, ValueRef};
 
@@ -225,39 +225,6 @@ impl FromSql for Vec<u8> {
     #[inline]
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         value.as_blob().map(|b| b.to_vec())
-    }
-}
-
-impl FromSql for rust_decimal::Decimal {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        match value {
-            ValueRef::TinyInt(i) => rust_decimal::Decimal::from_i8(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::SmallInt(i) => rust_decimal::Decimal::from_i16(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::Int(i) => rust_decimal::Decimal::from_i32(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::BigInt(i) => rust_decimal::Decimal::from_i64(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::HugeInt(i) => rust_decimal::Decimal::from_i128(i).ok_or(FromSqlError::OutOfRange(i)),
-            ValueRef::UTinyInt(i) => rust_decimal::Decimal::from_u8(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::USmallInt(i) => rust_decimal::Decimal::from_u16(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::UInt(i) => rust_decimal::Decimal::from_u32(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::UBigInt(i) => rust_decimal::Decimal::from_u64(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::Float(f) => rust_decimal::Decimal::from_f32(f).ok_or(FromSqlError::OutOfRange(f as i128)),
-            ValueRef::Double(d) => rust_decimal::Decimal::from_f64(d).ok_or(FromSqlError::OutOfRange(d as i128)),
-            ValueRef::Decimal(decimal) => Ok(decimal),
-            ValueRef::Timestamp(_, i) => rust_decimal::Decimal::from_i64(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::Date32(i) => rust_decimal::Decimal::from_i32(i).ok_or(FromSqlError::OutOfRange(i as i128)),
-            ValueRef::Time64(TimeUnit::Microsecond, i) => {
-                rust_decimal::Decimal::from_i64(i).ok_or(FromSqlError::OutOfRange(i as i128))
-            }
-            ValueRef::Text(_) => {
-                let s = value.as_str()?;
-                s.parse::<rust_decimal::Decimal>().or_else(|_| {
-                    s.parse::<i128>()
-                        .map_err(|_| FromSqlError::InvalidType)
-                        .and_then(|i| Err(FromSqlError::OutOfRange(i as i128)))
-                })
-            }
-            _ => Err(FromSqlError::InvalidType),
-        }
     }
 }
 
