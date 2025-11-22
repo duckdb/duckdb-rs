@@ -243,6 +243,19 @@ impl FromSql for rust_decimal::Decimal {
             ValueRef::Float(f) => rust_decimal::Decimal::from_f32(f).ok_or(FromSqlError::OutOfRange(f as i128)),
             ValueRef::Double(d) => rust_decimal::Decimal::from_f64(d).ok_or(FromSqlError::OutOfRange(d as i128)),
             ValueRef::Decimal(decimal) => Ok(decimal),
+            ValueRef::Timestamp(_, i) => rust_decimal::Decimal::from_i64(i).ok_or(FromSqlError::OutOfRange(i as i128)),
+            ValueRef::Date32(i) => rust_decimal::Decimal::from_i32(i).ok_or(FromSqlError::OutOfRange(i as i128)),
+            ValueRef::Time64(TimeUnit::Microsecond, i) => {
+                rust_decimal::Decimal::from_i64(i).ok_or(FromSqlError::OutOfRange(i as i128))
+            }
+            ValueRef::Text(_) => {
+                let s = value.as_str()?;
+                s.parse::<rust_decimal::Decimal>().or_else(|_| {
+                    s.parse::<i128>()
+                        .map_err(|_| FromSqlError::InvalidType)
+                        .and_then(|i| Err(FromSqlError::OutOfRange(i as i128)))
+                })
+            }
             _ => Err(FromSqlError::InvalidType),
         }
     }
