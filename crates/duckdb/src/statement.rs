@@ -8,7 +8,7 @@ use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{to_duckdb_decimal, TimeUnit, ToSql, ToSqlOutput},
 };
 
 /// A prepared statement.
@@ -607,6 +607,10 @@ impl Statement<'_> {
             ValueRef::Interval { months, days, nanos } => unsafe {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
+            },
+            ValueRef::Decimal(d) => unsafe {
+                let decimal = to_duckdb_decimal(d);
+                ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
@@ -1215,6 +1219,34 @@ mod test {
         let row = rows.next()?.unwrap();
         let result: bool = row.get(0)?;
         assert!(result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_decimal() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "BEGIN; \
+            CREATE TABLE foo(x DECIMAL(18, 4)); \
+            CREATE TABLE bar(y DECIMAL(18, 2)); \
+            COMMIT;",
+        )?;
+
+        // If duckdb's scale is larger than rust_decimal's scale, value should not be truncated.
+        let value = rust_decimal::Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO foo(x) VALUES (?)", [&value])?;
+        let row: rust_decimal::Decimal =
+            db.query_row("SELECT x FROM foo", [], |r| r.get::<_, rust_decimal::Decimal>(0))?;
+        assert_eq!(row, value);
+
+        // If duckdb's scale is smaller than rust_decimal's scale, value should be truncated (1.2345 -> 1.23).
+        let value = rust_decimal::Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO bar(y) VALUES (?)", [&value])?;
+        let row: rust_decimal::Decimal =
+            db.query_row("SELECT y FROM bar", [], |r| r.get::<_, rust_decimal::Decimal>(0))?;
+        let value_from_duckdb = rust_decimal::Decimal::from_i128_with_scale(123, 2);
+        assert_eq!(row, value_from_duckdb);
 
         Ok(())
     }

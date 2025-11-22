@@ -3,7 +3,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 
 use crate::{
     error::result_from_duckdb_appender,
-    types::{ToSql, ToSqlOutput},
+    types::{to_duckdb_decimal, ToSql, ToSqlOutput},
     Error,
 };
 
@@ -183,6 +183,14 @@ impl Appender<'_> {
                     },
                 )
             },
+            ValueRef::Decimal(d) => unsafe {
+                let decimal = to_duckdb_decimal(d);
+                let mut value = ffi::duckdb_create_decimal(decimal);
+                let res = ffi::duckdb_append_value(ptr, value);
+                // free value
+                ffi::duckdb_destroy_value(&mut value);
+                res
+            },
             _ => unreachable!("not supported"),
         };
         if rc != 0 {
@@ -224,6 +232,8 @@ impl fmt::Debug for Appender<'_> {
 
 #[cfg(test)]
 mod test {
+    use rust_decimal::Decimal;
+
     use crate::{params, Connection, Error, Result};
 
     #[test]
@@ -421,6 +431,31 @@ mod test {
             Err(e) => panic!("Expected foreign key constraint error, got: {e:?}"),
             Ok(_) => panic!("Expected foreign key constraint error, but flush succeeded"),
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_decimal() -> Result<()> {
+        let d1 = rust_decimal::Decimal::from_i128_with_scale(11344, 4);
+        let d2 = rust_decimal::Decimal::from_i128_with_scale(12312, 3);
+        let d3 = rust_decimal::Decimal::from_i128_with_scale(-98765, 5);
+
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE decimals (value DECIMAL(20, 10));")?;
+
+        let mut appender = conn.appender("decimals")?;
+        appender.append_row(params![d1])?;
+        appender.append_row(params![d2])?;
+        appender.append_row(params![d3])?;
+        appender.flush()?;
+
+        let results: Vec<Decimal> = conn
+            .prepare("SELECT value FROM decimals ORDER BY value ASC")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<Decimal>>>()?;
+
+        assert_eq!(results, vec![d3, d1, d2]);
 
         Ok(())
     }
