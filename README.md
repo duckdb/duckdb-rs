@@ -204,11 +204,19 @@ You can adjust this behavior in a number of ways:
    cargo build --examples
    ```
 
-3. Installing the duckdb development packages will usually be all that is required, but
+3. _Experimental:_ Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This always links against the dynamic library in the archive (setting `DUCKDB_STATIC` has no effect), and it effectively automates the manual steps above. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the `libduckdb-sys` crate version.
+
+   ```shell
+   DUCKDB_DOWNLOAD_LIB=1 cargo test
+   ```
+
+4. Installing the duckdb development packages will usually be all that is required, but
    the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
    and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
    options. The default when using vcpkg is to dynamically link,
    which must be enabled by setting `VCPKGRS_DYNAMIC=1` environment variable before build.
+
+When none of the options above are used, the build script falls back to this discovery path and will emit the appropriate `cargo:rustc-link-lib` directives if DuckDB is found on your system.
 
 ### ICU extension and the bundled feature
 

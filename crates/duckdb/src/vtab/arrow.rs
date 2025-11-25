@@ -25,9 +25,7 @@ use arrow::{
     record_batch::RecordBatch,
 };
 
-use libduckdb_sys::{
-    duckdb_date, duckdb_hugeint, duckdb_interval, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector,
-};
+use libduckdb_sys::{duckdb_date, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector};
 use num::{cast::AsPrimitive, ToPrimitive};
 
 /// A pointer to the Arrow record batch for the table function.
@@ -261,8 +259,11 @@ pub fn flat_vector_to_arrow_array(
     vector: &mut FlatVector,
     len: usize,
 ) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
-    let type_id = vector.logical_type().id();
+    let raw_type_id = vector.logical_type().raw_id();
+    let type_id = LogicalTypeId::from(raw_type_id);
     match type_id {
+        LogicalTypeId::Invalid => Err("Cannot convert invalid logical type returned by DuckDB".into()),
+        LogicalTypeId::Unsupported => Err(format!("Unsupported DuckDB logical type ID {raw_type_id}").into()),
         LogicalTypeId::Integer => {
             let data = vector.as_slice_with_len::<i32>(len);
 
@@ -461,35 +462,25 @@ pub fn flat_vector_to_arrow_array(
 
             Ok(Arc::new(structs))
         }
-        LogicalTypeId::Struct => {
-            todo!()
-        }
-        LogicalTypeId::Decimal => {
-            todo!()
-        }
-        LogicalTypeId::Map => {
-            todo!()
-        }
-        LogicalTypeId::List => {
-            todo!()
-        }
-        LogicalTypeId::Union => {
-            todo!()
-        }
-        LogicalTypeId::Interval => {
-            let _data = vector.as_slice_with_len::<duckdb_interval>(len);
-            todo!()
-        }
-        LogicalTypeId::Hugeint => {
-            let _data = vector.as_slice_with_len::<duckdb_hugeint>(len);
-            todo!()
-        }
-        LogicalTypeId::Enum => {
-            todo!()
-        }
-        LogicalTypeId::Uuid => {
-            todo!()
-        }
+        LogicalTypeId::Interval => todo!(),
+        LogicalTypeId::Hugeint => todo!(),
+        LogicalTypeId::Decimal => todo!(),
+        LogicalTypeId::Enum => todo!(),
+        LogicalTypeId::List => todo!(),
+        LogicalTypeId::Struct => todo!(),
+        LogicalTypeId::Map => todo!(),
+        LogicalTypeId::Array => todo!(),
+        LogicalTypeId::Uuid => todo!(),
+        LogicalTypeId::Union => todo!(),
+        LogicalTypeId::Bit => todo!(),
+        LogicalTypeId::TimeTZ => todo!(),
+        LogicalTypeId::UHugeint => todo!(),
+        LogicalTypeId::Any => todo!(),
+        LogicalTypeId::Bignum => todo!(),
+        LogicalTypeId::SqlNull => todo!(),
+        LogicalTypeId::StringLiteral => todo!(),
+        LogicalTypeId::IntegerLiteral => todo!(),
+        LogicalTypeId::TimeNs => todo!(),
     }
 }
 

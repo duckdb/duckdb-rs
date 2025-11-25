@@ -32,11 +32,16 @@ flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
 prettyplease = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "rustls-tls",
+] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 syn = { workspace = true, optional = true }
 tar = { workspace = true }
 vcpkg = { workspace = true, optional = true }
+zip = { version = "6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
