@@ -150,6 +150,32 @@ impl Connection {
         }
         self.db.borrow_mut().register_table_function(table_function)
     }
+
+    /// Register the given TableFunction with custom extra info.
+    ///
+    /// This allows you to pass extra info that can be accessed during bind, init, and execution
+    /// via `BindInfo::get_extra_info`, `InitInfo::get_extra_info`, or `TableFunctionInfo::get_extra_info`.
+    #[inline]
+    pub fn register_table_function_with_extra_info<T: VTab, E>(&self, name: &str, extra_info: &E) -> Result<()>
+    where
+        E: Clone + Send + Sync + 'static,
+    {
+        let table_function = TableFunction::default();
+        table_function
+            .set_name(name)
+            .supports_pushdown(T::supports_pushdown())
+            .set_bind(Some(bind::<T>))
+            .set_init(Some(init::<T>))
+            .set_function(Some(func::<T>))
+            .with_extra_info(extra_info.clone());
+        for ty in T::parameters().unwrap_or_default() {
+            table_function.add_parameter(&ty);
+        }
+        for (name, ty) in T::named_parameters().unwrap_or_default() {
+            table_function.add_named_parameter(&name, &ty);
+        }
+        self.db.borrow_mut().register_table_function(table_function)
+    }
 }
 
 impl InnerConnection {
@@ -283,6 +309,57 @@ mod test {
             <(String,)>::try_from(row)
         })?;
         assert_eq!(val, ("Hello duckdb".to_string(),));
+
+        Ok(())
+    }
+
+    // Test table function with extra info
+    struct PrefixVTab;
+
+    impl VTab for PrefixVTab {
+        type InitData = HelloInitData;
+        type BindData = HelloBindData;
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+            let name = bind.get_parameter(0).to_string();
+            Ok(HelloBindData { name })
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(HelloInitData {
+                done: AtomicBool::new(false),
+            })
+        }
+
+        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            let init_data = func.get_init_data();
+            let bind_data = func.get_bind_data();
+            let prefix = unsafe { &*func.get_extra_info::<String>() };
+
+            if init_data.done.swap(true, Ordering::Relaxed) {
+                output.set_len(0);
+            } else {
+                let vector = output.flat_vector(0);
+                let result = CString::new(format!("{prefix} {}", bind_data.name))?;
+                vector.insert(0, result);
+                output.set_len(1);
+            }
+            Ok(())
+        }
+
+        fn parameters() -> Option<Vec<LogicalTypeHandle>> {
+            Some(vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)])
+        }
+    }
+
+    #[test]
+    fn test_table_function_with_extra_info() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_table_function_with_extra_info::<PrefixVTab, _>("greet", &"Howdy".to_string())?;
+
+        let val = conn.query_row("select * from greet('partner')", [], |row| <(String,)>::try_from(row))?;
+        assert_eq!(val, ("Howdy partner".to_string(),));
 
         Ok(())
     }
