@@ -169,7 +169,7 @@ impl Connection {
             .set_bind(Some(bind::<T>))
             .set_init(Some(init::<T>))
             .set_function(Some(func::<T>))
-            .with_extra_info(extra_info.clone());
+            .set_extra_info(extra_info.clone());
         for ty in T::parameters().unwrap_or_default() {
             table_function.add_parameter(&ty);
         }
