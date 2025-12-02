@@ -23,6 +23,20 @@ mod excel;
 pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
 pub use value::Value;
 
+/// Options for registering a table function.
+pub struct TableFunctionOptions<E> {
+    /// Extra info passed to the function at runtime.
+    /// Accessible via `BindInfo::get_extra_info`, `InitInfo::get_extra_info`,
+    /// or `TableFunctionInfo::get_extra_info`.
+    pub extra_info: Option<E>,
+}
+
+impl<E> Default for TableFunctionOptions<E> {
+    fn default() -> Self {
+        Self { extra_info: None }
+    }
+}
+
 use crate::core::{DataChunkHandle, LogicalTypeHandle};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
@@ -151,14 +165,15 @@ impl Connection {
         self.db.borrow_mut().register_table_function(table_function)
     }
 
-    /// Register the given TableFunction with custom extra info.
-    ///
-    /// This allows you to pass extra info that can be accessed during bind, init, and execution
-    /// via `BindInfo::get_extra_info`, `InitInfo::get_extra_info`, or `TableFunctionInfo::get_extra_info`.
+    /// Register the given TableFunction with options.
     #[inline]
-    pub fn register_table_function_with_extra_info<T: VTab, E>(&self, name: &str, extra_info: &E) -> Result<()>
+    pub fn register_table_function_with_options<T: VTab, E>(
+        &self,
+        name: &str,
+        options: TableFunctionOptions<E>,
+    ) -> Result<()>
     where
-        E: Clone + Send + Sync + 'static,
+        E: Send + Sync + 'static,
     {
         let table_function = TableFunction::default();
         table_function
@@ -166,8 +181,10 @@ impl Connection {
             .supports_pushdown(T::supports_pushdown())
             .set_bind(Some(bind::<T>))
             .set_init(Some(init::<T>))
-            .set_function(Some(func::<T>))
-            .with_extra_info(extra_info.clone());
+            .set_function(Some(func::<T>));
+        if let Some(extra_info) = options.extra_info {
+            table_function.with_extra_info(extra_info);
+        }
         for ty in T::parameters().unwrap_or_default() {
             table_function.add_parameter(&ty);
         }
@@ -354,9 +371,14 @@ mod test {
     }
 
     #[test]
-    fn test_table_function_with_extra_info() -> Result<(), Box<dyn Error>> {
+    fn test_table_function_with_options() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
-        conn.register_table_function_with_extra_info::<PrefixVTab, _>("greet", &"Howdy".to_string())?;
+        conn.register_table_function_with_options::<PrefixVTab, _>(
+            "greet",
+            TableFunctionOptions {
+                extra_info: Some("Howdy".to_string()),
+            },
+        )?;
 
         let val = conn.query_row("select * from greet('partner')", [], |row| <(String,)>::try_from(row))?;
         assert_eq!(val, ("Howdy partner".to_string(),));
