@@ -155,6 +155,8 @@ impl Connection {
     ///
     /// This allows you to pass extra info that can be accessed during bind, init, and execution
     /// via `BindInfo::get_extra_info`, `InitInfo::get_extra_info`, or `TableFunctionInfo::get_extra_info`.
+    ///
+    /// The extra info is cloned once during registration and stored in DuckDB's catalog.
     #[inline]
     pub fn register_table_function_with_extra_info<T: VTab, E>(&self, name: &str, extra_info: &E) -> Result<()>
     where

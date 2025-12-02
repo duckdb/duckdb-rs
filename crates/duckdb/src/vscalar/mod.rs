@@ -151,6 +151,8 @@ impl Connection {
     }
 
     /// Register the given ScalarFunction with custom state.
+    ///
+    /// The state is cloned once per function signature (overload) and stored in DuckDB's catalog.
     #[inline]
     pub fn register_scalar_function_with_state<S: VScalar>(&self, name: &str, state: &S::State) -> crate::Result<()>
     where

@@ -131,7 +131,6 @@ impl ScalarFunction {
     ///
     /// # Arguments
     /// * `info`: The extra information to store
-    /// ```
     pub fn set_extra_info<T>(&self, info: T) -> &Self
     where
         T: Send + Sync + 'static,
