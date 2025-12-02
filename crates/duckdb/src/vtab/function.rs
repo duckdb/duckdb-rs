@@ -51,8 +51,11 @@ impl BindInfo {
     /// Sets the user-provided bind data in the bind object. This object can be retrieved again during execution.
     ///
     /// # Arguments
-    ///  * `extra_data`: The bind data object.
-    ///  * `destroy`: The callback that will be called to destroy the bind data (if any)
+    ///  * `data`: The bind data object.
+    ///  * `free_function`: The callback that will be called to destroy the bind data (if any)
+    ///
+    /// # Safety
+    /// `data` must be a valid pointer, and `free_function` must properly free it.
     pub unsafe fn set_bind_data(&self, data: *mut c_void, free_function: Option<unsafe extern "C" fn(*mut c_void)>) {
         duckdb_bind_set_bind_data(self.ptr, data, free_function);
     }
