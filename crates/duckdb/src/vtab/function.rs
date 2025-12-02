@@ -1,4 +1,5 @@
 use super::{
+    drop_boxed,
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
         duckdb_bind_get_parameter, duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data,
@@ -17,11 +18,6 @@ use std::{
     marker::PhantomData,
     os::raw::c_char,
 };
-
-/// Callback function to drop extra info of type T
-unsafe extern "C" fn drop_extra_info<T>(ptr: *mut c_void) {
-    drop(unsafe { Box::from_raw(ptr.cast::<T>()) });
-}
 
 /// An interface to store and retrieve data during the function bind stage
 #[derive(Debug)]
@@ -338,7 +334,7 @@ impl TableFunction {
         unsafe {
             let boxed = Box::new(info);
             let ptr = Box::into_raw(boxed) as *mut c_void;
-            self.set_extra_info(ptr, Some(drop_extra_info::<T>));
+            self.set_extra_info(ptr, Some(drop_boxed::<T>));
         }
         self
     }
