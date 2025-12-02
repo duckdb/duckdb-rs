@@ -112,25 +112,34 @@ impl ScalarFunction {
         self
     }
 
-    /// Assigns extra information to the scalar function that can be fetched during binding, etc.
+    /// Assigns extra information to the scalar function using raw pointers.
+    ///
+    /// For most use cases, prefer [`set_extra_info`](Self::set_extra_info) which handles memory management automatically.
     ///
     /// # Arguments
-    /// * `extra_info`: The extra information
-    /// * `destroy`: The callback that will be called to destroy the bind data (if any)
+    /// * `extra_info`: The extra information as a raw pointer
+    /// * `destroy`: The callback that will be called to destroy the data (if any)
     ///
     /// # Safety
-    unsafe fn set_extra_info_impl(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
+    /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
+    /// properly cleans up the data when called.
+    pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
         duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy);
     }
 
+    /// Assigns extra information to the scalar function that can be fetched during execution.
+    ///
+    /// # Arguments
+    /// * `info`: The extra information to store
+    /// ```
     pub fn set_extra_info<T>(&self, info: T) -> &Self
     where
-        T: Send + Sync,
+        T: Send + Sync + 'static,
     {
         unsafe {
             let t = Box::new(info);
             let c_void = Box::into_raw(t) as *mut c_void;
-            self.set_extra_info_impl(c_void, Some(drop_ptr::<T>));
+            self.set_extra_info_raw(c_void, Some(drop_ptr::<T>));
         }
         self
     }

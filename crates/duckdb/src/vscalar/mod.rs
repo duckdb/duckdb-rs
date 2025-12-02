@@ -23,9 +23,10 @@ pub use arrow::{ArrowFunctionSignature, ArrowScalarParams, VArrowScalar};
 
 /// Duckdb scalar function trait
 pub trait VScalar: Sized {
-    /// State that persists across invocations of the scalar function (the lifetime of the connection)
-    /// The state can be accessed by multiple threads, so it must be `Send + Sync`.
-    type State: Sized + Send + Sync;
+    /// State set at registration time. Persists for the lifetime of the catalog entry.
+    /// Shared across worker threads and invocations — must not be modified during execution.
+    /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
+    type State: Sized + Send + Sync + 'static;
     /// The actual function
     ///
     /// # Safety
@@ -132,7 +133,7 @@ where
 }
 
 impl Connection {
-    /// Register the given ScalarFunction with default state
+    /// Register the given ScalarFunction with default state.
     #[inline]
     pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
     where
@@ -149,7 +150,7 @@ impl Connection {
         self.db.borrow_mut().register_scalar_function_set(set)
     }
 
-    /// Register the given ScalarFunction with custom state
+    /// Register the given ScalarFunction with custom state.
     #[inline]
     pub fn register_scalar_function_with_state<S: VScalar>(&self, name: &str, state: &S::State) -> crate::Result<()>
     where
