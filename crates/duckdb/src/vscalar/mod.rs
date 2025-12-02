@@ -45,6 +45,21 @@ pub trait VScalar: Sized {
     /// These will result in DuckDB scalar function overloads.
     /// The invoke method should be able to handle all of these signatures.
     fn signatures() -> Vec<ScalarFunctionSignature>;
+
+    /// Whether the scalar function is volatile.
+    ///
+    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
+    /// This is useful for functions that generate random or unique values, such as random
+    /// number generators, UUID generators, or fake data generators.
+    ///
+    /// By default, DuckDB optimizes zero-argument scalar functions as constants, evaluating
+    /// them only once. Returning true from this method prevents this optimization.
+    ///
+    /// # Default
+    /// Returns `false` by default, meaning the function is not volatile.
+    fn volatile() -> bool {
+        false
+    }
 }
 
 /// Duckdb scalar function parameters
@@ -144,6 +159,9 @@ impl Connection {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
+            if S::volatile() {
+                scalar_function.set_volatile();
+            }
             scalar_function.set_extra_info(S::State::default());
             set.add_function(scalar_function)?;
         }
@@ -163,73 +181,9 @@ impl Connection {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
-            scalar_function.set_extra_info(state.clone());
-            set.add_function(scalar_function)?;
-        }
-        self.db.borrow_mut().register_scalar_function_set(set)
-    }
-
-    /// Register the given ScalarFunction with default state, marked as volatile.
-    ///
-    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
-    /// This is useful for functions that generate random or unique values per row, such as:
-    /// - Random number generators
-    /// - UUID generators
-    /// - Fake data generators
-    /// - Current timestamp functions
-    ///
-    /// By default, DuckDB optimizes zero-argument scalar functions as constants.
-    /// Use this method when you need the function to be evaluated independently for each row.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use duckdb::Connection;
-    /// // Assume RandomUUID implements VScalar
-    /// let conn = Connection::open_in_memory()?;
-    /// conn.register_volatile_scalar_function::<RandomUUID>("random_uuid")?;
-    ///
-    /// // Each row gets a unique UUID
-    /// let mut stmt = conn.prepare("SELECT random_uuid() FROM generate_series(1, 10)")?;
-    /// # Ok::<(), duckdb::Error>(())
-    /// ```
-    #[inline]
-    pub fn register_volatile_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
-    where
-        S::State: Default,
-    {
-        let set = ScalarFunctionSet::new(name);
-        for signature in S::signatures() {
-            let scalar_function = ScalarFunction::new(name)?;
-            signature.register_with_scalar(&scalar_function);
-            scalar_function.set_function(Some(scalar_func::<S>));
-            scalar_function.set_volatile(); // Mark as volatile
-            scalar_function.set_extra_info(S::State::default());
-            set.add_function(scalar_function)?;
-        }
-        self.db.borrow_mut().register_scalar_function_set(set)
-    }
-
-    /// Register the given ScalarFunction with custom state, marked as volatile.
-    ///
-    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
-    /// This is the volatile variant of `register_scalar_function_with_state`.
-    ///
-    /// See [`register_volatile_scalar_function`](Self::register_volatile_scalar_function) for more details on volatile functions.
-    #[inline]
-    pub fn register_volatile_scalar_function_with_state<S: VScalar>(
-        &self,
-        name: &str,
-        state: &S::State,
-    ) -> crate::Result<()>
-    where
-        S::State: Clone,
-    {
-        let set = ScalarFunctionSet::new(name);
-        for signature in S::signatures() {
-            let scalar_function = ScalarFunction::new(name)?;
-            signature.register_with_scalar(&scalar_function);
-            scalar_function.set_function(Some(scalar_func::<S>));
-            scalar_function.set_volatile(); // Mark as volatile
+            if S::volatile() {
+                scalar_function.set_volatile();
+            }
             scalar_function.set_extra_info(state.clone());
             set.add_function(scalar_function)?;
         }
@@ -442,9 +396,10 @@ mod test {
         Ok(())
     }
 
-    // Counter for testing volatile functions
+    // Counters for testing volatile functions
     use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    static VOLATILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+    static NON_VOLATILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     struct CounterScalar {}
 
@@ -461,7 +416,7 @@ mod test {
             let data = output_vec.as_mut_slice::<i64>();
 
             for i in 0..len {
-                let count = COUNTER.fetch_add(1, Ordering::SeqCst);
+                let count = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 data[i] = count as i64;
             }
             Ok(())
@@ -475,15 +430,48 @@ mod test {
         }
     }
 
+    struct VolatileCounterScalar {}
+
+    impl VScalar for VolatileCounterScalar {
+        type State = ();
+
+        unsafe fn invoke(
+            _: &Self::State,
+            input: &mut DataChunkHandle,
+            output: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let len = input.len();
+            let mut output_vec = output.flat_vector();
+            let data = output_vec.as_mut_slice::<i64>();
+
+            for i in 0..len {
+                let count = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                data[i] = count as i64;
+            }
+            Ok(())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![],
+                LogicalTypeHandle::from(LogicalTypeId::Bigint),
+            )]
+        }
+
+        fn volatile() -> bool {
+            true
+        }
+    }
+
     #[test]
     fn test_volatile_scalar() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
 
         // Reset counter
-        COUNTER.store(0, Ordering::SeqCst);
+        VOLATILE_COUNTER.store(0, Ordering::SeqCst);
 
-        // Register as volatile
-        conn.register_volatile_scalar_function::<CounterScalar>("volatile_counter")?;
+        // Register volatile counter
+        conn.register_scalar_function::<VolatileCounterScalar>("volatile_counter")?;
 
         // Query should get different values for each row
         let mut stmt = conn.prepare("SELECT volatile_counter() FROM generate_series(1, 5)")?;
@@ -509,9 +497,9 @@ mod test {
         let conn = Connection::open_in_memory()?;
 
         // Reset counter
-        COUNTER.store(100, Ordering::SeqCst);
+        NON_VOLATILE_COUNTER.store(0, Ordering::SeqCst);
 
-        // Register WITHOUT volatile flag
+        // Register non-volatile counter
         conn.register_scalar_function::<CounterScalar>("non_volatile_counter")?;
 
         // Query should get the SAME value for all rows (optimized as constant)

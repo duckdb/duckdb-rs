@@ -84,6 +84,21 @@ pub trait VArrowScalar: Sized {
     /// The possible signatures of the scalar function. These will result in DuckDB scalar function overloads.
     /// The invoke method should be able to handle all of these signatures.
     fn signatures() -> Vec<ArrowFunctionSignature>;
+
+    /// Whether the scalar function is volatile.
+    ///
+    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
+    /// This is useful for functions that generate random or unique values, such as random
+    /// number generators, UUID generators, or fake data generators.
+    ///
+    /// By default, DuckDB optimizes zero-argument scalar functions as constants, evaluating
+    /// them only once. Returning true from this method prevents this optimization.
+    ///
+    /// # Default
+    /// Returns `false` by default, meaning the function is not volatile.
+    fn volatile() -> bool {
+        false
+    }
 }
 
 impl<T> VScalar for T

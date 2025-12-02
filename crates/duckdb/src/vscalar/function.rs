@@ -121,18 +121,6 @@ impl ScalarFunction {
     ///
     /// By default, DuckDB optimizes zero-argument scalar functions as constants, evaluating
     /// them only once. Setting a function as volatile prevents this optimization.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use duckdb::vscalar::ScalarFunction;
-    /// use duckdb::core::LogicalTypeHandle;
-    /// use libduckdb_sys::LogicalTypeId;
-    ///
-    /// let func = ScalarFunction::new("my_random_func").unwrap();
-    /// func.set_return_type(&LogicalTypeHandle::from(LogicalTypeId::Varchar))
-    ///     .set_volatile()  // Mark as volatile so it's evaluated per row
-    ///     .set_function(Some(my_random_impl));
-    /// ```
     pub fn set_volatile(&self) -> &Self {
         unsafe {
             duckdb_scalar_function_set_volatile(self.ptr);
