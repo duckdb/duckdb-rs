@@ -73,13 +73,13 @@ impl ArrowFunctionSignature {
 
 /// A trait for scalar functions that accept and return arrow types that can be registered with DuckDB
 pub trait VArrowScalar: Sized {
-    /// Extra info set at registration time. Persists for the lifetime of the catalog entry.
+    /// State set at registration time. Persists for the lifetime of the catalog entry.
     /// Shared across worker threads and invocations — must not be modified during execution.
     /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
-    type ExtraInfo: Default + Sized + Send + Sync + 'static;
+    type State: Default + Sized + Send + Sync + 'static;
 
     /// The actual function that is called by DuckDB
-    fn invoke(extra_info: &Self::ExtraInfo, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>>;
+    fn invoke(state: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>>;
 
     /// The possible signatures of the scalar function. These will result in DuckDB scalar function overloads.
     /// The invoke method should be able to handle all of these signatures.
@@ -90,14 +90,14 @@ impl<T> VScalar for T
 where
     T: VArrowScalar,
 {
-    type ExtraInfo = T::ExtraInfo;
+    type State = T::State;
 
     unsafe fn invoke(
-        extra_info: &Self::ExtraInfo,
+        state: &Self::State,
         input: &mut DataChunkHandle,
         out: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let array = T::invoke(extra_info, data_chunk_to_arrow(input)?)?;
+        let array = T::invoke(state, data_chunk_to_arrow(input)?)?;
         write_arrow_array_to_vector(&array, out)
     }
 
@@ -129,9 +129,9 @@ mod test {
     struct HelloScalarArrow {}
 
     impl VArrowScalar for HelloScalarArrow {
-        type ExtraInfo = ();
+        type State = ();
 
-        fn invoke(_: &Self::ExtraInfo, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+        fn invoke(_: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
             let name = input.column(0).as_any().downcast_ref::<StringArray>().unwrap();
             let result = name.iter().map(|v| format!("Hello {}", v.unwrap())).collect::<Vec<_>>();
             Ok(Arc::new(StringArray::from(result)))
@@ -164,9 +164,9 @@ mod test {
     struct ArrowMultiplyScalar {}
 
     impl VArrowScalar for ArrowMultiplyScalar {
-        type ExtraInfo = MockState;
+        type State = MockState;
 
-        fn invoke(_: &Self::ExtraInfo, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+        fn invoke(_: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
             let a = input
                 .column(0)
                 .as_any()
@@ -199,13 +199,10 @@ mod test {
     struct ArrowOverloaded {}
 
     impl VArrowScalar for ArrowOverloaded {
-        type ExtraInfo = MockState;
+        type State = MockState;
 
-        fn invoke(
-            extra_info: &Self::ExtraInfo,
-            input: RecordBatch,
-        ) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
-            assert_eq!("some meta", extra_info.info);
+        fn invoke(state: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+            assert_eq!("some meta", state.info);
 
             let a = input.column(0);
             let b = input.column(1);
@@ -339,9 +336,9 @@ mod test {
         struct SplitFunction {}
 
         impl VArrowScalar for SplitFunction {
-            type ExtraInfo = ();
+            type State = ();
 
-            fn invoke(_: &Self::ExtraInfo, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+            fn invoke(_: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
                 let strings = input.column(0).as_any().downcast_ref::<StringArray>().unwrap();
 
                 let mut builder = arrow::array::ListBuilder::new(arrow::array::StringBuilder::with_capacity(

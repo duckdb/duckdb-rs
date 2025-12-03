@@ -23,10 +23,10 @@ pub use arrow::{ArrowFunctionSignature, ArrowScalarParams, VArrowScalar};
 
 /// Duckdb scalar function trait
 pub trait VScalar: Sized {
-    /// Extra info set at registration time. Persists for the lifetime of the catalog entry.
+    /// State set at registration time. Persists for the lifetime of the catalog entry.
     /// Shared across worker threads and invocations — must not be modified during execution.
     /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
-    type ExtraInfo: Sized + Send + Sync + 'static;
+    type State: Sized + Send + Sync + 'static;
     /// The actual function
     ///
     /// # Safety
@@ -36,7 +36,7 @@ pub trait VScalar: Sized {
     /// - Dereferences multiple raw pointers (`func`).
     ///
     unsafe fn invoke(
-        extra_info: &Self::ExtraInfo,
+        state: &Self::State,
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn std::error::Error>>;
@@ -133,41 +133,37 @@ where
 }
 
 impl Connection {
-    /// Register the given ScalarFunction with default extra info.
+    /// Register the given ScalarFunction with default state.
     #[inline]
     pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
     where
-        S::ExtraInfo: Default,
+        S::State: Default,
     {
         let set = ScalarFunctionSet::new(name);
         for signature in S::signatures() {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
-            scalar_function.set_extra_info(S::ExtraInfo::default());
+            scalar_function.set_extra_info(S::State::default());
             set.add_function(scalar_function)?;
         }
         self.db.borrow_mut().register_scalar_function_set(set)
     }
 
-    /// Register the given ScalarFunction with custom extra info.
+    /// Register the given ScalarFunction with custom state.
     ///
-    /// The extra info is cloned once per function signature (overload) and stored in DuckDB's catalog.
+    /// The state is cloned once per function signature (overload) and stored in DuckDB's catalog.
     #[inline]
-    pub fn register_scalar_function_with_extra_info<S: VScalar>(
-        &self,
-        name: &str,
-        extra_info: &S::ExtraInfo,
-    ) -> crate::Result<()>
+    pub fn register_scalar_function_with_state<S: VScalar>(&self, name: &str, state: &S::State) -> crate::Result<()>
     where
-        S::ExtraInfo: Clone,
+        S::State: Clone,
     {
         let set = ScalarFunctionSet::new(name);
         for signature in S::signatures() {
             let scalar_function = ScalarFunction::new(name)?;
             signature.register_with_scalar(&scalar_function);
             scalar_function.set_function(Some(scalar_func::<S>));
-            scalar_function.set_extra_info(extra_info.clone());
+            scalar_function.set_extra_info(state.clone());
             set.add_function(scalar_function)?;
         }
         self.db.borrow_mut().register_scalar_function_set(set)
@@ -200,10 +196,10 @@ mod test {
     struct ErrorScalar {}
 
     impl VScalar for ErrorScalar {
-        type ExtraInfo = ();
+        type State = ();
 
         unsafe fn invoke(
-            _: &Self::ExtraInfo,
+            _: &Self::State,
             input: &mut DataChunkHandle,
             _: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
@@ -238,10 +234,10 @@ mod test {
     struct EchoScalar {}
 
     impl VScalar for EchoScalar {
-        type ExtraInfo = TestState;
+        type State = TestState;
 
         unsafe fn invoke(
-            extra_info: &Self::ExtraInfo,
+            state: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
@@ -254,7 +250,7 @@ mod test {
             let output = output.flat_vector();
 
             for s in strings {
-                let res = format!("{}: {}", extra_info.prefix, s.repeat(extra_info.multiplier));
+                let res = format!("{}: {}", state.prefix, s.repeat(state.multiplier));
                 output.insert(0, res.as_str());
             }
             Ok(())
@@ -271,10 +267,10 @@ mod test {
     struct Repeat {}
 
     impl VScalar for Repeat {
-        type ExtraInfo = ();
+        type State = ();
 
         unsafe fn invoke(
-            _: &Self::ExtraInfo,
+            _: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
@@ -321,9 +317,9 @@ mod test {
             }
         }
 
-        // Test with custom extra info
+        // Test with custom state
         {
-            conn.register_scalar_function_with_extra_info::<EchoScalar>(
+            conn.register_scalar_function_with_state::<EchoScalar>(
                 "echo2",
                 &TestState {
                     multiplier: 5,
