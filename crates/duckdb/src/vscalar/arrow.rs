@@ -73,12 +73,13 @@ impl ArrowFunctionSignature {
 
 /// A trait for scalar functions that accept and return arrow types that can be registered with DuckDB
 pub trait VArrowScalar: Sized {
-    /// State that persists across invocations of the scalar function (the lifetime of the connection)
-    /// The state can be accessed by multiple threads, so it must be `Send + Sync`.
-    type State: Default + Sized + Send + Sync;
+    /// State set at registration time. Persists for the lifetime of the catalog entry.
+    /// Shared across worker threads and invocations — must not be modified during execution.
+    /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
+    type State: Default + Sized + Send + Sync + 'static;
 
     /// The actual function that is called by DuckDB
-    fn invoke(info: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>>;
+    fn invoke(state: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>>;
 
     /// The possible signatures of the scalar function. These will result in DuckDB scalar function overloads.
     /// The invoke method should be able to handle all of these signatures.
@@ -92,11 +93,11 @@ where
     type State = T::State;
 
     unsafe fn invoke(
-        info: &Self::State,
+        state: &Self::State,
         input: &mut DataChunkHandle,
         out: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let array = T::invoke(info, data_chunk_to_arrow(input)?)?;
+        let array = T::invoke(state, data_chunk_to_arrow(input)?)?;
         write_arrow_array_to_vector(&array, out)
     }
 
@@ -200,8 +201,8 @@ mod test {
     impl VArrowScalar for ArrowOverloaded {
         type State = MockState;
 
-        fn invoke(s: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
-            assert_eq!("some meta", s.info);
+        fn invoke(state: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+            assert_eq!("some meta", state.info);
 
             let a = input.column(0);
             let b = input.column(1);

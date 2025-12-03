@@ -111,7 +111,7 @@ impl BindInfo {
     pub fn set_cardinality(&self, cardinality: idx_t, is_exact: bool) {
         unsafe { duckdb_bind_set_cardinality(self.ptr, cardinality, is_exact) }
     }
-    /// Retrieves the extra info of the function as set in [`TableFunction::with_extra_info`].
+    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`].
     pub fn get_extra_info<T>(&self) -> *const T {
         unsafe { duckdb_bind_get_extra_info(self.ptr).cast() }
     }
@@ -163,7 +163,7 @@ impl InitInfo {
         indices
     }
 
-    /// Retrieves the extra info of the function as set in [`TableFunction::with_extra_info`].
+    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`].
     pub fn get_extra_info<T>(&self) -> *const T {
         unsafe { duckdb_init_get_extra_info(self.0).cast() }
     }
@@ -306,35 +306,33 @@ impl TableFunction {
         self
     }
 
-    /// Assigns extra information to the table function that can be fetched during binding, etc.
+    /// Assigns extra information to the table function using raw pointers.
     ///
-    /// For most use cases, prefer [`with_extra_info`](Self::with_extra_info) which handles memory management automatically.
+    /// For most use cases, prefer [`set_extra_info`](Self::set_extra_info) which handles memory management automatically.
     ///
     /// # Arguments
-    /// * `extra_info`: The extra information
-    /// * `destroy`: The callback that will be called to destroy the bind data (if any)
+    /// * `extra_info`: The extra information as a raw pointer
+    /// * `destroy`: The callback that will be called to destroy the data (if any)
     ///
     /// # Safety
     /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
     /// properly cleans up the data when called.
-    pub unsafe fn set_extra_info(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
+    pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
         duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
     }
 
     /// Assigns extra information to the table function that can be fetched during binding, init, and execution.
     ///
-    /// This is a safe wrapper around [`set_extra_info`](Self::set_extra_info) that handles memory management automatically.
-    ///
     /// # Arguments
     /// * `info`: The extra information to store
-    pub fn with_extra_info<T>(&self, info: T) -> &Self
+    pub fn set_extra_info<T>(&self, info: T) -> &Self
     where
         T: Send + Sync + 'static,
     {
         unsafe {
             let boxed = Box::new(info);
             let ptr = Box::into_raw(boxed) as *mut c_void;
-            self.set_extra_info(ptr, Some(drop_boxed::<T>));
+            self.set_extra_info_raw(ptr, Some(drop_boxed::<T>));
         }
         self
     }
@@ -404,7 +402,7 @@ impl<V: VTab> TableFunctionInfo<V> {
         }
     }
 
-    /// Retrieves the extra info of the function as set in [`TableFunction::with_extra_info`].
+    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`].
     pub fn get_extra_info<T>(&self) -> *mut T {
         unsafe { duckdb_function_get_extra_info(self.ptr).cast() }
     }

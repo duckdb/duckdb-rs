@@ -23,9 +23,10 @@ pub use arrow::{ArrowFunctionSignature, ArrowScalarParams, VArrowScalar};
 
 /// Duckdb scalar function trait
 pub trait VScalar: Sized {
-    /// State that persists across invocations of the scalar function (the lifetime of the connection)
-    /// The state can be accessed by multiple threads, so it must be `Send + Sync`.
-    type State: Sized + Send + Sync;
+    /// State set at registration time. Persists for the lifetime of the catalog entry.
+    /// Shared across worker threads and invocations — must not be modified during execution.
+    /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
+    type State: Sized + Send + Sync + 'static;
     /// The actual function
     ///
     /// # Safety
@@ -109,7 +110,7 @@ impl From<duckdb_function_info> for ScalarFunctionInfo {
 }
 
 impl ScalarFunctionInfo {
-    pub unsafe fn get_scalar_extra_info<T>(&self) -> &T {
+    pub unsafe fn get_extra_info<T>(&self) -> &T {
         &*(duckdb_scalar_function_get_extra_info(self.0).cast())
     }
 
@@ -125,14 +126,14 @@ where
 {
     let info = ScalarFunctionInfo::from(info);
     let mut input = DataChunkHandle::new_unowned(input);
-    let result = T::invoke(info.get_scalar_extra_info(), &mut input, &mut output);
+    let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
     if let Err(e) = result {
         info.set_error(&e.to_string());
     }
 }
 
 impl Connection {
-    /// Register the given ScalarFunction with default state
+    /// Register the given ScalarFunction with default state.
     #[inline]
     pub fn register_scalar_function<S: VScalar>(&self, name: &str) -> crate::Result<()>
     where
@@ -149,7 +150,9 @@ impl Connection {
         self.db.borrow_mut().register_scalar_function_set(set)
     }
 
-    /// Register the given ScalarFunction with custom state
+    /// Register the given ScalarFunction with custom state.
+    ///
+    /// The state is cloned once per function signature (overload) and stored in DuckDB's catalog.
     #[inline]
     pub fn register_scalar_function_with_state<S: VScalar>(&self, name: &str, state: &S::State) -> crate::Result<()>
     where
