@@ -20,9 +20,9 @@ GEN=ninja make debug
 ```
 
 Related logics:
-* header file: https://github.com/duckdb/duckdb/blob/master/src/include/duckdb.h
-* impl file: https://github.com/duckdb/duckdb/blob/master/src/main/duckdb-c.cpp
-* test file: https://github.com/duckdb/duckdb/blob/master/test/api/capi/test_capi.cpp
+* header file: https://github.com/duckdb/duckdb/blob/main/src/include/duckdb.h
+* impl file: https://github.com/duckdb/duckdb/blob/main/src/main/capi/duckdb-c.cpp
+* test file: https://github.com/duckdb/duckdb/blob/main/test/api/capi/test_capi.cpp
 * You can refer to one of my previous PR: https://github.com/duckdb/duckdb/pull/1923
 
 After make the change, we can build the repo and use it in `duckdb-rs` by:
@@ -53,14 +53,14 @@ cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features bundled
 ```
 
-Currently in [github actions](https://github.com/duckdb/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [bundled-file](https://github.com/duckdb/duckdb-rs/tree/main/crates/libduckdb-sys/duckdb).
+Currently in [github actions](https://github.com/duckdb/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [`duckdb-sources` submodule](https://github.com/duckdb/duckdb-rs/tree/main/crates/libduckdb-sys).
 You can generated the amalgamated file by:
 
 ```shell
 cd ~/github/duckdb
 mkdir -p build/amaldebug
 python scripts/amalgamation.py
-cp src/amalgamation/duckdb.cpp src/include/duckdb.h src/amalgamation/duckdb.hpp ../duckdb-rs/crates/libduckdb-sys/duckdb/
+cp src/amalgamation/duckdb.cpp src/include/duckdb.h src/amalgamation/duckdb.hpp ../duckdb-rs/crates/libduckdb-sys/duckdb-sources/
 ```
 
 ### duckdb-rs
