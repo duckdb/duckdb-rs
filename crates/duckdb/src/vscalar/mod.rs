@@ -415,9 +415,8 @@ mod test {
             let mut output_vec = output.flat_vector();
             let data = output_vec.as_mut_slice::<i64>();
 
-            for i in 0..len {
-                let count = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                data[i] = count as i64;
+            for item in data.iter_mut().take(len) {
+                *item = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
             }
             Ok(())
         }
@@ -444,9 +443,8 @@ mod test {
             let mut output_vec = output.flat_vector();
             let data = output_vec.as_mut_slice::<i64>();
 
-            for i in 0..len {
-                let count = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                data[i] = count as i64;
+            for item in data.iter_mut().take(len) {
+                *item = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
             }
             Ok(())
         }
@@ -467,27 +465,15 @@ mod test {
     fn test_volatile_scalar() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
 
-        // Reset counter
         VOLATILE_COUNTER.store(0, Ordering::SeqCst);
-
-        // Register volatile counter
         conn.register_scalar_function::<VolatileCounterScalar>("volatile_counter")?;
 
-        // Query should get different values for each row
-        let mut stmt = conn.prepare("SELECT volatile_counter() FROM generate_series(1, 5)")?;
-        let mut rows = stmt.query([])?;
+        let values: Vec<i64> = conn
+            .prepare("SELECT volatile_counter() FROM generate_series(1, 5)")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
 
-        let mut values = Vec::new();
-        while let Some(row) = rows.next()? {
-            let val: i64 = row.get(0)?;
-            values.push(val);
-        }
-
-        // Each value should be unique (counter increments)
-        assert_eq!(values.len(), 5);
-        for (i, val) in values.iter().enumerate() {
-            assert_eq!(*val, i as i64, "Row {} should have counter value {}", i, i);
-        }
+        assert_eq!(values, [0, 1, 2, 3, 4]);
 
         Ok(())
     }
@@ -496,28 +482,15 @@ mod test {
     fn test_non_volatile_scalar() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
 
-        // Reset counter
         NON_VOLATILE_COUNTER.store(0, Ordering::SeqCst);
-
-        // Register non-volatile counter
         conn.register_scalar_function::<CounterScalar>("non_volatile_counter")?;
 
-        // Query should get the SAME value for all rows (optimized as constant)
-        let mut stmt = conn.prepare("SELECT non_volatile_counter() FROM generate_series(1, 5)")?;
-        let mut rows = stmt.query([])?;
+        // Constant folding should make every row identical
+        let distinct_count: i64 = conn
+            .prepare("SELECT COUNT(DISTINCT non_volatile_counter()) FROM generate_series(1, 5)")?
+            .query_row([], |row| row.get(0))?;
 
-        let mut values = Vec::new();
-        while let Some(row) = rows.next()? {
-            let val: i64 = row.get(0)?;
-            values.push(val);
-        }
-
-        // All values should be the same (function was only called once)
-        assert_eq!(values.len(), 5);
-        let first_val = values[0];
-        for val in values.iter() {
-            assert_eq!(*val, first_val, "All rows should have the same value when not volatile");
-        }
+        assert_eq!(distinct_count, 1);
 
         Ok(())
     }
