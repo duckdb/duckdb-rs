@@ -518,4 +518,41 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_appender_with_columns_to_db_schema() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE SCHEMA s;
+             CREATE TABLE s.foo(a INTEGER DEFAULT 5, b INTEGER)",
+        )?;
+
+        {
+            let mut app = db.appender_with_columns_to_db("foo", "s", &["b"])?;
+            app.append_row([7])?;
+        }
+
+        let (a, b): (i32, i32) = db.query_row("SELECT a, b FROM s.foo", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        assert_eq!((a, b), (5, 7));
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_columns_to_catalog_and_db() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE SCHEMA s;
+             CREATE TABLE s.bar(a INTEGER DEFAULT 11, b INTEGER)",
+        )?;
+
+        {
+            // Default in-memory catalog is "memory"
+            let mut app = db.appender_with_columns_to_catalog_and_db("bar", "memory", "s", &["b"])?;
+            app.append_row([9])?;
+        }
+
+        let (a, b): (i32, i32) = db.query_row("SELECT a, b FROM s.bar", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        assert_eq!((a, b), (11, 9));
+        Ok(())
+    }
 }
