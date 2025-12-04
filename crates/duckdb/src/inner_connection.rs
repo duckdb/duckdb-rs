@@ -85,7 +85,7 @@ impl InnerConnection {
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<()> {
-        let c_str = CString::new(sql).unwrap();
+        let c_str = CString::new(sql)?;
         unsafe {
             let mut out = mem::zeroed();
             let r = ffi::duckdb_query_arrow(self.con, c_str.as_ptr() as *const c_char, &mut out);
@@ -96,7 +96,7 @@ impl InnerConnection {
     }
 
     pub fn prepare<'a>(&mut self, conn: &'a Connection, sql: &str) -> Result<Statement<'a>> {
-        let c_str = CString::new(sql).unwrap();
+        let c_str = CString::new(sql)?;
 
         // Extract statements (handles both single and multi-statement queries)
         let mut extracted = ptr::null_mut();
@@ -162,8 +162,8 @@ impl InnerConnection {
 
     pub fn appender<'a>(&mut self, conn: &'a Connection, table: &str, schema: &str) -> Result<Appender<'a>> {
         let mut c_app: ffi::duckdb_appender = ptr::null_mut();
-        let c_table = CString::new(table).unwrap();
-        let c_schema = CString::new(schema).unwrap();
+        let c_table = CString::new(table)?;
+        let c_schema = CString::new(schema)?;
         let r = unsafe {
             ffi::duckdb_appender_create(
                 self.con,
@@ -184,9 +184,9 @@ impl InnerConnection {
         schema: &str,
     ) -> Result<Appender<'a>> {
         let mut c_app: ffi::duckdb_appender = ptr::null_mut();
-        let c_table = CString::new(table).unwrap();
-        let c_catalog = CString::new(catalog).unwrap();
-        let c_schema = CString::new(schema).unwrap();
+        let c_table = CString::new(table)?;
+        let c_catalog = CString::new(catalog)?;
+        let c_schema = CString::new(schema)?;
 
         let r = unsafe {
             ffi::duckdb_appender_create_ext(
