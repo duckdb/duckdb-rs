@@ -553,6 +553,57 @@ impl Connection {
             .appender_to_catalog_and_db(self, table, catalog, schema)
     }
 
+    /// Create an Appender that only provides values for specific columns.
+    ///
+    /// Columns not in the list will use their DEFAULT value, or NULL if no default.
+    /// This supports all types of DEFAULT expressions including non-deterministic
+    /// ones like `random()`, `current_timestamp`, or sequences.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result};
+    /// fn insert_partial(conn: &Connection) -> Result<()> {
+    ///     // Table: CREATE TABLE foo(id INT DEFAULT nextval('seq'), name TEXT, created TIMESTAMP DEFAULT current_timestamp)
+    ///     let mut app = conn.appender_with_columns("foo", &["name"])?;
+    ///     // Only provide name; id and created use their defaults
+    ///     app.append_row(["Alice"])?;
+    ///     app.append_row(["Bob"])?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `table` does not exist or a column name is invalid.
+    pub fn appender_with_columns(&self, table: &str, columns: &[&str]) -> Result<Appender<'_>> {
+        self.appender_with_columns_to_db(table, &DatabaseName::Main.to_string(), columns)
+    }
+
+    /// Create an Appender that only provides values for specific columns, with schema.
+    ///
+    /// See [`appender_with_columns`](Connection::appender_with_columns) for details.
+    pub fn appender_with_columns_to_db(&self, table: &str, schema: &str, columns: &[&str]) -> Result<Appender<'_>> {
+        self.db
+            .borrow_mut()
+            .appender_with_columns(self, table, schema, None, columns)
+    }
+
+    /// Create an Appender that only provides values for specific columns, with catalog and schema.
+    ///
+    /// See [`appender_with_columns`](Connection::appender_with_columns) for details.
+    pub fn appender_with_columns_to_catalog_and_db(
+        &self,
+        table: &str,
+        catalog: &str,
+        schema: &str,
+        columns: &[&str],
+    ) -> Result<Appender<'_>> {
+        self.db
+            .borrow_mut()
+            .appender_with_columns(self, table, schema, Some(catalog), columns)
+    }
+
     /// Get a handle to interrupt long-running queries.
     ///
     /// ## Example

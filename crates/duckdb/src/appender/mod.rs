@@ -204,6 +204,31 @@ impl Appender<'_> {
             result_from_duckdb_appender(res, &mut self.app)
         }
     }
+
+    /// Add a column to the appender's active column list.
+    ///
+    /// When columns are added, only those columns need values during append.
+    /// Other columns will use their DEFAULT value (or NULL if no default).
+    ///
+    /// This flushes any pending data before modifying the column list.
+    #[inline]
+    pub fn add_column(&mut self, name: &str) -> Result<()> {
+        let c_name = std::ffi::CString::new(name)?;
+        let rc = unsafe { ffi::duckdb_appender_add_column(self.app, c_name.as_ptr() as *const c_char) };
+        result_from_duckdb_appender(rc, &mut self.app)
+    }
+
+    /// Clear the appender's active column list.
+    ///
+    /// After clearing, all columns become active again and values must be
+    /// provided for every column during append.
+    ///
+    /// This flushes any pending data before clearing.
+    #[inline]
+    pub fn clear_columns(&mut self) -> Result<()> {
+        let rc = unsafe { ffi::duckdb_appender_clear_columns(self.app) };
+        result_from_duckdb_appender(rc, &mut self.app)
+    }
 }
 
 impl Drop for Appender<'_> {
@@ -422,6 +447,112 @@ mod test {
             Ok(_) => panic!("Expected foreign key constraint error, but flush succeeded"),
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_defaults_and_column_switching() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(a INT DEFAULT 99, b INT, c INT DEFAULT 7)")?;
+
+        // Only provide column b; a and c should use their defaults
+        {
+            let mut app = db.appender_with_columns("foo", &["b"])?;
+            app.append_row([Some(1)])?;
+            app.append_row([Option::<i32>::None])?;
+        }
+
+        // Switch to a different active column set, then back to full width
+        {
+            let mut app = db.appender("foo")?;
+            app.add_column("c")?;
+            app.add_column("a")?;
+            app.append_row([10, 1])?; // set c and a; b gets NULL
+
+            app.clear_columns()?; // revert to all columns
+            app.append_row([2, 3, 4])?;
+        }
+
+        let rows: Vec<(i32, Option<i32>, i32)> = db
+            .prepare("SELECT a, b, c FROM foo ORDER BY a, b NULLS LAST")?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<_>>()?;
+
+        assert_eq!(
+            rows,
+            vec![
+                (1, None, 10),    // add_column path; b NULL, c set
+                (2, Some(3), 4),  // clear_columns path; all provided
+                (99, Some(1), 7), // defaults applied for a and c
+                (99, None, 7)     // default + NULL
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_columns_sequence_default() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE SEQUENCE seq START 1;
+             CREATE TABLE foo(id INTEGER DEFAULT nextval('seq'), name TEXT)",
+        )?;
+
+        {
+            let mut app = db.appender_with_columns("foo", &["name"])?;
+            app.append_row(["Alice"])?;
+            app.append_row(["Bob"])?;
+            app.append_row(["Charlie"])?;
+        }
+
+        let rows: Vec<(i32, String)> = db
+            .prepare("SELECT id, name FROM foo ORDER BY id")?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_>>()?;
+
+        assert_eq!(
+            rows,
+            vec![(1, "Alice".into()), (2, "Bob".into()), (3, "Charlie".into())]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_columns_to_db_schema() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE SCHEMA s;
+             CREATE TABLE s.foo(a INTEGER DEFAULT 5, b INTEGER)",
+        )?;
+
+        {
+            let mut app = db.appender_with_columns_to_db("foo", "s", &["b"])?;
+            app.append_row([7])?;
+        }
+
+        let (a, b): (i32, i32) = db.query_row("SELECT a, b FROM s.foo", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        assert_eq!((a, b), (5, 7));
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_columns_to_catalog_and_db() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE SCHEMA s;
+             CREATE TABLE s.bar(a INTEGER DEFAULT 11, b INTEGER)",
+        )?;
+
+        {
+            // Default in-memory catalog is "memory"
+            let mut app = db.appender_with_columns_to_catalog_and_db("bar", "memory", "s", &["b"])?;
+            app.append_row([9])?;
+        }
+
+        let (a, b): (i32, i32) = db.query_row("SELECT a, b FROM s.bar", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        assert_eq!((a, b), (11, 9));
         Ok(())
     }
 }
