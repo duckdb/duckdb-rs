@@ -209,27 +209,15 @@ impl InnerConnection {
         catalog: Option<&str>,
         columns: &[&str],
     ) -> Result<Appender<'a>> {
-        let mut c_app: ffi::duckdb_appender = ptr::null_mut();
-        let c_table = CString::new(table).unwrap();
-        let c_schema = CString::new(schema).unwrap();
-        let c_catalog = catalog.map(|c| CString::new(c).unwrap());
-
-        let r = unsafe {
-            ffi::duckdb_appender_create_ext(
-                self.con,
-                c_catalog.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
-                c_schema.as_ptr() as *const c_char,
-                c_table.as_ptr() as *const c_char,
-                &mut c_app,
-            )
+        // The C API only supports narrowing columns after the appender is created.
+        // Create the appender first, then activate the requested column subset.
+        let mut appender = match catalog {
+            Some(catalog) => self.appender_to_catalog_and_db(conn, table, catalog, schema)?,
+            None => self.appender(conn, table, schema)?,
         };
-        result_from_duckdb_appender(r, &mut c_app)?;
-
-        let mut appender = Appender::new(conn, c_app);
         for column in columns {
             appender.add_column(column)?;
         }
-
         Ok(appender)
     }
 
