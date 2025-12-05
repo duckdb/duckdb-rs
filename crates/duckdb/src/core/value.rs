@@ -44,6 +44,27 @@ impl<'a> From<ValueRef<'a>> for ValueHandle {
             ValueRef::Double(v) => unsafe { duckdb_create_double(v) },
             ValueRef::Text(v) => unsafe { duckdb_create_varchar_length(v.as_ptr() as *const i8, v.len() as u64) },
             ValueRef::Blob(v) => unsafe { duckdb_create_blob(v.as_ptr() as *const u8, v.len() as u64) },
+            ValueRef::List(ListType::Native(arr)) => {
+                let logical_type = value_ref
+                    .data_type()
+                    .inner_type()
+                    .expect("List type doesn't have an inner type")
+                    .logical_type_handle();
+                // Underlying DuckDB API isn't marked const unfortunately, so we have to use a mutable pointer.
+                let mut values = arr
+                    .iter()
+                    .map(ValueRef::from)
+                    .map(ValueHandle::from)
+                    .collect::<Vec<_>>();
+                let value_count = arr.len() as u64;
+                unsafe {
+                    duckdb_create_list_value(
+                        logical_type.ptr,
+                        values[..].as_mut_ptr() as *mut duckdb_value,
+                        value_count,
+                    )
+                }
+            }
             ValueRef::Timestamp(..)
             | ValueRef::List(..)
             | ValueRef::Date32(..)

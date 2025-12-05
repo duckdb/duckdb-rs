@@ -1,3 +1,5 @@
+use crate::types::{value_ref::ListType, ValueRef};
+
 use super::{Null, OrderedMap, TimeUnit, Type};
 use rust_decimal::prelude::*;
 
@@ -238,7 +240,8 @@ impl Value {
             Self::Date32(_) => Type::Date32,
             Self::Time64(..) => Type::Time64,
             Self::Interval { .. } => Type::Interval,
-            Self::Union(..) | Self::Struct(..) | Self::List(..) | Self::Array(..) | Self::Map(..) => todo!(),
+            Self::List(ref arr) => ValueRef::List(ListType::Native(arr)).data_type(),
+            Self::Union(..) | Self::Struct(..) | Self::Array(..) | Self::Map(..) => todo!(),
             Self::Enum(..) => Type::Enum,
         }
     }

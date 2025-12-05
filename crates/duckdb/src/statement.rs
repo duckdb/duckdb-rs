@@ -7,8 +7,9 @@ use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatemen
 use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
+    core::ValueHandle,
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{ListType, TimeUnit, ToSql, ToSqlOutput},
 };
 
 /// A prepared statement.
@@ -608,6 +609,10 @@ impl Statement<'_> {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
             },
+            ValueRef::List(ListType::Native(_)) => {
+                let value = ValueHandle::from(value);
+                unsafe { ffi::duckdb_bind_value(ptr, col as u64, value.ptr) }
+            }
             _ => unreachable!("not supported: {}", value.data_type()),
         };
         result_from_duckdb_prepare(rc, ptr)
