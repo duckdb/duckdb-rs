@@ -411,4 +411,33 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    #[should_panic = "Failed to create DuckDB value for List(Native([]))"]
+    fn test_empty_list() -> () {
+        use crate::{
+            params,
+            types::{ToSqlOutput, Value},
+            Connection,
+        };
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct MyList(Vec<i32>);
+
+        impl ToSql for MyList {
+            fn to_sql(&self) -> crate::Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Owned(Value::List(
+                    self.0.iter().map(|&x| Value::Int(x)).collect(),
+                )))
+            }
+        }
+
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE foo (numbers INT[]);").unwrap();
+
+        let list = MyList(vec![]);
+
+        // This should panic because the list is empty and DuckDB cannot determine the type of the list.
+        _ = db.execute("INSERT INTO foo (numbers) VALUES (?)", params![&list]);
+    }
 }
