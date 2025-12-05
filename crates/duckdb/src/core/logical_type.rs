@@ -168,6 +168,7 @@ impl Debug for LogicalTypeHandle {
                 }
                 write!(f, ">")
             }
+            LogicalTypeId::List => write!(f, "List<{:?}>", self.child(0)),
             _ => write!(f, "{:?}", id),
         }
     }
@@ -340,6 +341,7 @@ impl LogicalTypeHandle {
     pub fn child(&self, idx: usize) -> Self {
         let c_logical_type = unsafe {
             match self.id() {
+                LogicalTypeId::List => duckdb_list_type_child_type(self.ptr),
                 LogicalTypeId::Struct => duckdb_struct_type_child_type(self.ptr, idx as u64),
                 LogicalTypeId::Union => duckdb_union_type_member_type(self.ptr, idx as u64),
                 LogicalTypeId::Array => duckdb_array_type_child_type(self.ptr),

@@ -621,12 +621,12 @@ impl<'stmt> Row<'stmt> {
             DataType::LargeList(..) => {
                 let arr = column.as_any().downcast_ref::<array::LargeListArray>().unwrap();
 
-                ValueRef::List(ListType::Large(arr), row)
+                ValueRef::List(ListType::Large(arr, row))
             }
             DataType::List(..) => {
                 let arr = column.as_any().downcast_ref::<ListArray>().unwrap();
 
-                ValueRef::List(ListType::Regular(arr), row)
+                ValueRef::List(ListType::Regular(arr, row))
             }
             DataType::Dictionary(key_type, ..) => {
                 let column = column.as_any();
