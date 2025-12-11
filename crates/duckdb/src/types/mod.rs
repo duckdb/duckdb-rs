@@ -2,6 +2,8 @@
 //! implements [`ToSql`] or [`FromSql`] for the cases where you want to know if
 //! a value was NULL (which gets translated to `None`).
 
+use crate::core::{LogicalTypeHandle, LogicalTypeId};
+
 pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     ordered_map::OrderedMap,
@@ -190,6 +192,80 @@ impl fmt::Display for Type {
             Self::Array(..) => f.pad("Array"),
             Self::Union => f.pad("Union"),
             Self::Any => f.pad("Any"),
+        }
+    }
+}
+
+impl Type {
+    /// Returns the inner type of a list, if this type is a list.
+    pub fn inner_type(&self) -> Option<&Type> {
+        match self {
+            Type::List(inner_type) => Some(inner_type),
+            _ => None,
+        }
+    }
+
+    /// Returns the logical type ID for this type.
+    pub fn logical_type_id(&self) -> LogicalTypeId {
+        match self {
+            Type::Null => LogicalTypeId::SqlNull,
+            Type::Boolean => LogicalTypeId::Boolean,
+            Type::TinyInt => LogicalTypeId::Tinyint,
+            Type::SmallInt => LogicalTypeId::Smallint,
+            Type::Int => LogicalTypeId::Integer,
+            Type::BigInt => LogicalTypeId::Bigint,
+            Type::HugeInt => LogicalTypeId::Hugeint,
+            Type::UTinyInt => LogicalTypeId::UTinyint,
+            Type::USmallInt => LogicalTypeId::USmallint,
+            Type::UInt => LogicalTypeId::UInteger,
+            Type::UBigInt => LogicalTypeId::UBigint,
+            Type::Float => LogicalTypeId::Float,
+            Type::Double => LogicalTypeId::Double,
+            Type::Timestamp => LogicalTypeId::Timestamp,
+            Type::Text => LogicalTypeId::Varchar,
+            Type::Blob => LogicalTypeId::Blob,
+            Type::Date32 => LogicalTypeId::Date,
+            Type::Time64 => LogicalTypeId::Time,
+            Type::Interval => LogicalTypeId::Interval,
+            // Complex types
+            Type::Decimal => LogicalTypeId::Decimal,
+            Type::Enum => LogicalTypeId::Enum,
+            Type::List(_) => LogicalTypeId::List,
+            Type::Struct(_) => LogicalTypeId::Struct,
+            Type::Map(_, _) => LogicalTypeId::Map,
+            Type::Array(_, _) => LogicalTypeId::Array,
+            Type::Union => LogicalTypeId::Union,
+            Type::Any => LogicalTypeId::Any,
+        }
+    }
+
+    /// Returns the logical type handle for this type.
+    pub fn logical_type_handle(&self) -> LogicalTypeHandle {
+        match self {
+            Type::Null
+            | Type::Boolean
+            | Type::TinyInt
+            | Type::SmallInt
+            | Type::Int
+            | Type::BigInt
+            | Type::HugeInt
+            | Type::UTinyInt
+            | Type::USmallInt
+            | Type::UInt
+            | Type::UBigInt
+            | Type::Float
+            | Type::Double
+            | Type::Timestamp
+            | Type::Text
+            | Type::Blob
+            | Type::Date32
+            | Type::Time64
+            | Type::Interval
+            | Type::Any => self.logical_type_id().into(),
+            Type::List(inner_type) => LogicalTypeHandle::list(&inner_type.logical_type_handle()),
+            Type::Decimal | Type::Enum | Type::Struct(_) | Type::Map(_, _) | Type::Array(_, _) | Type::Union => {
+                unimplemented!("Logical type handle conversion not implemented for {:?}", self)
+            }
         }
     }
 }

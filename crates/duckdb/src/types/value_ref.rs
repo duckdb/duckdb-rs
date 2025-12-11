@@ -1,7 +1,8 @@
 use super::{Type, Value};
-use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
-
-use crate::Row;
+use crate::{
+    types::{FromSqlError, FromSqlResult, OrderedMap},
+    Row,
+};
 use rust_decimal::prelude::*;
 
 use arrow::{
@@ -92,7 +93,7 @@ pub enum ValueRef<'a> {
         nanos: i64,
     },
     /// The value is a list
-    List(ListType<'a>, usize),
+    List(ListType<'a>),
     /// The value is an enum
     Enum(EnumType<'a>, usize),
     /// The value is a struct
@@ -109,9 +110,11 @@ pub enum ValueRef<'a> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ListType<'a> {
     /// The underlying list is a `ListArray`
-    Regular(&'a ListArray),
+    Regular(&'a ListArray, usize),
     /// The underlying list is a `LargeListArray`
-    Large(&'a LargeListArray),
+    Large(&'a LargeListArray, usize),
+    /// The underlying list type is not backed by an array.
+    Native(&'a Vec<Value>),
 }
 
 /// Wrapper type for different enum sizes
@@ -153,9 +156,16 @@ impl ValueRef<'_> {
             ValueRef::Struct(arr, _) => arr.data_type().into(),
             ValueRef::Map(arr, _) => arr.data_type().into(),
             ValueRef::Array(arr, _) => arr.data_type().into(),
-            ValueRef::List(arr, _) => match arr {
-                ListType::Large(arr) => arr.data_type().into(),
-                ListType::Regular(arr) => arr.data_type().into(),
+            ValueRef::List(arr) => match arr {
+                ListType::Large(arr, _) => arr.data_type().into(),
+                ListType::Regular(arr, _) => arr.data_type().into(),
+                ListType::Native(arr) => {
+                    // This could be improved for nested lists like [[],[1]] by avoiding to rely only
+                    // to the first element. Let the caller handle Any resolution for now to keep
+                    // things simpler.
+                    let element_type = arr.get(0).map(|v| v.data_type()).unwrap_or(Type::Any);
+                    Type::List(Box::new(element_type))
+                }
             },
             ValueRef::Enum(..) => Type::Enum,
             ValueRef::Union(arr, _) => arr.data_type().into(),
@@ -218,8 +228,8 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Date32(d) => Self::Date32(d),
             ValueRef::Time64(t, d) => Self::Time64(t, d),
             ValueRef::Interval { months, days, nanos } => Self::Interval { months, days, nanos },
-            ValueRef::List(items, idx) => match items {
-                ListType::Regular(items) => {
+            ValueRef::List(items) => match items {
+                ListType::Regular(items, idx) => {
                     let offsets = items.offsets();
                     from_list(
                         offsets[idx].try_into().unwrap(),
@@ -228,7 +238,7 @@ impl From<ValueRef<'_>> for Value {
                         items.values(),
                     )
                 }
-                ListType::Large(items) => {
+                ListType::Large(items, idx) => {
                     let offsets = items.offsets();
                     from_list(
                         offsets[idx].try_into().unwrap(),
@@ -237,6 +247,7 @@ impl From<ValueRef<'_>> for Value {
                         items.values(),
                     )
                 }
+                ListType::Native(items) => Self::List(items.clone()),
             },
             ValueRef::Enum(items, idx) => {
                 let dict_values = match items {
@@ -349,8 +360,9 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
+            Value::List(ref items) => ValueRef::List(ListType::Native(items)),
             Value::Enum(..) => todo!(),
-            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
+            Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
                 unimplemented!()
             }
         }
