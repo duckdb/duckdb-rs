@@ -182,6 +182,37 @@ impl_for_array_ref!(
     18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
 );
 
+macro_rules! impl_appender_params_for_tuple {
+    ($($T:ident),+) => {
+        impl<$($T: ToSql),+> Sealed for ($($T,)+) {}
+        impl<$($T: ToSql),+> AppenderParams for ($($T,)+) {
+            fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = &self;
+                stmt.bind_parameters(&[$($T as &dyn ToSql),+])
+            }
+        }
+    };
+}
+
+// Implement AppenderParams for tuples, following the pattern from rusqlite's Params trait
+// (https://github.com/rusqlite/rusqlite/blob/master/src/params.rs).
+// This allows ergonomic row insertion without lifetime issues, e.g.:
+//   appender.append_rows(data.iter().map(|(id, name)| (id, name)))
+// Following stdlib convention, we support tuples up to arity 12.
+impl_appender_params_for_tuple!(T1);
+impl_appender_params_for_tuple!(T1, T2);
+impl_appender_params_for_tuple!(T1, T2, T3);
+impl_appender_params_for_tuple!(T1, T2, T3, T4);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+
 /// Adapter type which allows any iterator over [`ToSql`] values to implement
 /// [`Params`].
 ///
