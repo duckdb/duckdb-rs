@@ -1,11 +1,9 @@
-#![warn(unsafe_op_in_unsafe_fn)]
-
 use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
     Connection, Result,
 };
-use duckdb_loadable_macros::duckdb_entrypoint;
+use duckdb_loadable_macros::duckdb_entrypoint_c_api;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
@@ -13,10 +11,12 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+#[repr(C)]
 struct HelloBindData {
     name: String,
 }
 
+#[repr(C)]
 struct HelloInitData {
     done: AtomicBool,
 }
@@ -58,10 +58,9 @@ impl VTab for HelloVTab {
     }
 }
 
-// Exposes a extern C function named "libhello_ext_init" in the compiled dynamic library,
-// the "entrypoint" that duckdb will use to load the extension.
-#[duckdb_entrypoint]
-pub fn libhello_ext_init(conn: Connection) -> Result<(), Box<dyn Error>> {
-    conn.register_table_function::<HelloVTab>("hello")?;
+#[duckdb_entrypoint_c_api(ext_name = "rusty_quack", min_duckdb_version = "v0.0.1")]
+pub fn extension_entrypoint(con: Connection) -> Result<(), Box<dyn Error>> {
+    con.register_table_function::<HelloVTab>("hello")
+        .expect("Failed to register hello table function");
     Ok(())
 }
