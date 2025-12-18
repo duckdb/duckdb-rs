@@ -83,21 +83,9 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
 
-      - name: Build loadable extension
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo build --example hello-ext --features="vtab-loadable"
-
       - name: Build loadable extension (C API)
         if: matrix.os == 'ubuntu-latest'
         run: cargo build --example hello-ext-capi --features="vtab-loadable loadable-extension"
-
-      - name: Build loadable extension (windows)
-        if: matrix.os == 'windows-latest'
-        run: cargo build --example hello-ext --features="vtab-loadable"
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
 
       - name: Build loadable extension C API (windows)
         if: matrix.os == 'windows-latest'

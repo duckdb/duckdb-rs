@@ -82,8 +82,7 @@ The following [examples](crates/duckdb/examples) demonstrate various features an
 - **appender** - Bulk data insertion using the appender API with transactions.
 - **parquet** - Reading Parquet files directly using DuckDB's Parquet extension.
 - **repl** - Interactive SQL REPL.
-- **hello-ext** - A loadable DuckDB extension using the legacy extension API.
-- **hello-ext-capi** - A loadable DuckDB extension using the modern extension API.
+- **hello-ext-capi** - A loadable DuckDB extension.
 
 Run any example with `cargo run --example <name>`.
 

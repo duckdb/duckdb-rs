@@ -115,55 +115,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
             }
             .into()
         }
-        _ => panic!("Only function items are allowed on duckdb_entrypoint"),
+        _ => panic!("Only function items are allowed on duckdb_entrypoint_c_api"),
     }
 }
 
-/// Wraps an entrypoint function to expose an unsafe extern "C" function of the same name.
-#[proc_macro_attribute]
-pub fn duckdb_entrypoint(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(item as syn::Item);
-    match ast {
-        Item::Fn(mut func) => {
-            let c_entrypoint = func.sig.ident.clone();
-            let c_entrypoint_version = Ident::new(
-                c_entrypoint.to_string().replace("_init", "_version").as_str(),
-                Span::call_site(),
-            );
-
-            let original_funcname = func.sig.ident.to_string();
-            func.sig.ident = Ident::new(format!("_{original_funcname}").as_str(), func.sig.ident.span());
-
-            let prefixed_original_function = func.sig.ident.clone();
-
-            quote_spanned! {func.span()=>
-                #func
-
-                /// # Safety
-                ///
-                /// Will be called by duckdb
-                #[unsafe(no_mangle)]
-                pub unsafe extern "C" fn #c_entrypoint(db: *mut std::ffi::c_void) {
-                    unsafe {
-                        let connection = Connection::open_from_raw(db.cast()).expect("can't open db connection");
-                        #prefixed_original_function(connection).expect("init failed");
-                    }
-                }
-
-                /// # Safety
-                ///
-                /// Predefined function, don't need to change unless you are sure
-                #[unsafe(no_mangle)]
-                pub unsafe extern "C" fn #c_entrypoint_version() -> *const std::ffi::c_char {
-                    unsafe {
-                        ffi::duckdb_library_version()
-                    }
-                }
-
-
-            }
-            .into()
-        }
-        _ => panic!("Only function items are allowed on duckdb_entrypoint"),
-    }
-}
