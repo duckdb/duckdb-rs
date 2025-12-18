@@ -4,7 +4,6 @@ use duckdb::{
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint_c_api;
-use libduckdb_sys as ffi;
 use std::{
     error::Error,
     ffi::CString,

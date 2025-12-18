@@ -69,8 +69,8 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                 /// # Safety
                 ///
                 /// Internal Entrypoint for error handling
-                pub unsafe fn #c_entrypoint_internal(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) -> Result<bool, Box<dyn std::error::Error>> {
-                    let have_api_struct = ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version).unwrap();
+                pub unsafe fn #c_entrypoint_internal(info: ::libduckdb_sys::duckdb_extension_info, access: *const ::libduckdb_sys::duckdb_extension_access) -> ::std::result::Result<bool, Box<dyn ::std::error::Error>> {
+                    let have_api_struct = ::libduckdb_sys::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version).unwrap();
 
                     if !have_api_struct {
                         // initialization failed to return an api struct, likely due to an API version mismatch, we can simply return here
@@ -78,8 +78,8 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                     }
 
                     // TODO: handle error here?
-                    let db : ffi::duckdb_database = *(*access).get_database.unwrap()(info);
-                    let connection = Connection::open_from_raw(db.cast())?;
+                    let db: ::libduckdb_sys::duckdb_database = *(*access).get_database.unwrap()(info);
+                    let connection = ::duckdb::Connection::open_from_raw(db.cast())?;
 
                     #prefixed_original_function(connection)?;
 
@@ -90,11 +90,11 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                 ///
                 /// Entrypoint that will be called by DuckDB
                 #[no_mangle]
-                pub unsafe extern "C" fn #c_entrypoint(info: ffi::duckdb_extension_info, access: *const ffi::duckdb_extension_access) -> bool {
+                pub unsafe extern "C" fn #c_entrypoint(info: ::libduckdb_sys::duckdb_extension_info, access: *const ::libduckdb_sys::duckdb_extension_access) -> bool {
                     let init_result = #c_entrypoint_internal(info, access);
 
                     if let Err(x) = init_result {
-                        let error_c_string = std::ffi::CString::new(x.to_string());
+                        let error_c_string = ::std::ffi::CString::new(x.to_string());
 
                         match error_c_string {
                             Ok(e) => {
