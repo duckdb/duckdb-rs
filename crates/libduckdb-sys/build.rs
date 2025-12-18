@@ -178,10 +178,6 @@ mod build_bundled {
     }
 }
 
-fn env_prefix() -> &'static str {
-    "DUCKDB"
-}
-
 fn lib_name() -> &'static str {
     "duckdb"
 }
@@ -196,9 +192,7 @@ impl From<HeaderLocation> for String {
     fn from(header: HeaderLocation) -> Self {
         match header {
             HeaderLocation::FromEnvironment => {
-                let prefix = env_prefix();
-                let mut header = env::var(format!("{prefix}_INCLUDE_DIR"))
-                    .unwrap_or_else(|_| env::var(format!("{}_LIB_DIR", env_prefix())).unwrap());
+                let mut header = env::var("DUCKDB_INCLUDE_DIR").unwrap_or_else(|_| env::var("DUCKDB_LIB_DIR").unwrap());
                 header.push_str(if cfg!(feature = "loadable-extension") {
                     "/duckdb_extension.h"
                 } else {
@@ -234,7 +228,7 @@ mod build_linked {
     #[cfg(feature = "buildtime_bindgen")]
     use super::bindings;
 
-    use super::{env_prefix, is_compiler, lib_name, win_target, HeaderLocation};
+    use super::{is_compiler, lib_name, win_target, HeaderLocation};
     use std::{
         env, fs, io,
         path::{Path, PathBuf},
@@ -266,7 +260,7 @@ mod build_linked {
     fn find_link_mode() -> &'static str {
         // If the user specifies DUCKDB_STATIC, do static
         // linking, unless it's explicitly set to 0.
-        match &env::var(format!("{}_STATIC", env_prefix())) {
+        match &env::var("DUCKDB_STATIC") {
             Ok(v) if v != "0" => "static",
             _ => "dylib",
         }
@@ -275,11 +269,11 @@ mod build_linked {
     fn find_duckdb(out_dir: &str) -> HeaderLocation {
         let link_lib = lib_name();
 
-        println!("cargo:rerun-if-env-changed={}_DOWNLOAD_LIB", env_prefix());
+        println!("cargo:rerun-if-env-changed=DUCKDB_DOWNLOAD_LIB");
         if !cfg!(feature = "loadable-extension") {
-            println!("cargo:rerun-if-env-changed={}_INCLUDE_DIR", env_prefix());
-            println!("cargo:rerun-if-env-changed={}_LIB_DIR", env_prefix());
-            println!("cargo:rerun-if-env-changed={}_STATIC", env_prefix());
+            println!("cargo:rerun-if-env-changed=DUCKDB_INCLUDE_DIR");
+            println!("cargo:rerun-if-env-changed=DUCKDB_LIB_DIR");
+            println!("cargo:rerun-if-env-changed=DUCKDB_STATIC");
             if cfg!(feature = "vcpkg") && is_compiler("msvc") {
                 println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
             }
@@ -298,7 +292,7 @@ mod build_linked {
             return HeaderLocation::Wrapper;
         }
         // Allow users to specify where to find DuckDB.
-        if let Ok(dir) = env::var(format!("{}_LIB_DIR", env_prefix())) {
+        if let Ok(dir) = env::var("DUCKDB_LIB_DIR") {
             println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
@@ -374,7 +368,7 @@ mod build_linked {
     }
 
     fn should_download_libduckdb() -> bool {
-        env::var(format!("{}_DOWNLOAD_LIB", env_prefix()))
+        env::var("DUCKDB_DOWNLOAD_LIB")
             .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true"))
             .unwrap_or(false)
     }
