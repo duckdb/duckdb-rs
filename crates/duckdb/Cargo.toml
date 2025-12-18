@@ -77,6 +77,6 @@ features = []
 all-features = false
 
 [[example]]
-name = "hello-ext-capi"
+name = "hello-ext"
 crate-type = ["cdylib"]
 required-features = ["vtab-loadable", "loadable-extension"]

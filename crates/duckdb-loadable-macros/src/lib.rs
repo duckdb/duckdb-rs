@@ -118,4 +118,3 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
         _ => panic!("Only function items are allowed on duckdb_entrypoint_c_api"),
     }
 }
-
