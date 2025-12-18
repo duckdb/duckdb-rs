@@ -251,12 +251,12 @@ mod build_linked {
         }
     }
 
-    fn find_link_mode() -> &'static str {
+    fn link_directive() -> &'static str {
         // If the user specifies DUCKDB_STATIC, do static
         // linking, unless it's explicitly set to 0.
-        match &env::var("DUCKDB_STATIC") {
-            Ok(v) if v != "0" => "static",
-            _ => "dylib",
+        match env::var("DUCKDB_STATIC") {
+            Ok(v) if v != "0" => "static=duckdb_static",
+            _ => "dylib=duckdb",
         }
     }
     // Prints the necessary cargo link commands and returns the path to the header.
@@ -297,7 +297,7 @@ mod build_linked {
 
             if !lib_found {
                 // Otherwise just emit the bare minimum link commands.
-                println!("cargo:rustc-link-lib={}=duckdb", find_link_mode());
+                println!("cargo:rustc-link-lib={}", link_directive());
                 println!("cargo:rustc-link-search={dir}");
             }
 
@@ -329,7 +329,7 @@ mod build_linked {
                     // output /usr/lib explicitly, but that can introduce other linking problems;
                     // see https://github.com/rusqlite/rusqlite/issues/207.
                     if !cfg!(feature = "loadable-extension") {
-                        println!("cargo:rustc-link-lib={}=duckdb", find_link_mode());
+                        println!("cargo:rustc-link-lib={}", link_directive());
                     }
                     HeaderLocation::Wrapper
                 }
@@ -340,7 +340,7 @@ mod build_linked {
             // No pkg-config available; just output the link-lib request and hope
             // that the library exists on the system paths.
             if !cfg!(feature = "loadable-extension") {
-                println!("cargo:rustc-link-lib={}=duckdb", find_link_mode());
+                println!("cargo:rustc-link-lib={}", link_directive());
             }
             HeaderLocation::Wrapper
         }
@@ -405,7 +405,7 @@ mod build_linked {
     fn configure_link_search(lib_dir: &Path) {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         if !cfg!(feature = "loadable-extension") {
-            println!("cargo:rustc-link-lib={}=duckdb", find_link_mode());
+            println!("cargo:rustc-link-lib={}", link_directive());
         }
         if !win_target() {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
