@@ -91,6 +91,8 @@ pub use polars_dataframe::Polars;
 
 // re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
+#[cfg(feature = "vtab-loadable")]
+pub use duckdb_loadable_macros::duckdb_entrypoint_c_api;
 #[cfg(feature = "polars")]
 pub use polars;
 #[cfg(feature = "polars")]
