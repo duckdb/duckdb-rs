@@ -95,7 +95,6 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 - `vtab` - Base support for creating custom table functions and virtual tables.
 - `vtab-arrow` - Apache Arrow integration for virtual tables. Enables conversion between Arrow RecordBatch and DuckDB data chunks.
 - `vtab-excel` - Read Excel (.xlsx) files directly in SQL queries with automatic schema detection.
-- `vtab-loadable` - Support for creating loadable DuckDB extensions. Includes procedural macros for extension development.
 - `vscalar` - Create custom scalar functions that operate on individual values or rows.
 - `vscalar-arrow` - Arrow-optimized scalar functions for vectorized operations.
 
@@ -116,7 +115,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 
 - `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
-- `loadable-extension` - _Experimental_ support for building extensions that can be dynamically loaded into DuckDB.
+- `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development.
 
 ## Installation
 

@@ -24,7 +24,8 @@ parquet = ["libduckdb-sys/parquet", "bundled"]
 vscalar = ["vtab-arrow"]
 vscalar-arrow = []
 vtab = []
-vtab-loadable = ["vtab", "duckdb-loadable-macros"]
+# Deprecated: use loadable-extension instead
+vtab-loadable = ["loadable-extension"]
 vtab-excel = ["vtab", "calamine"]
 vtab-arrow = ["vtab", "num"]
 appender-arrow = ["vtab-arrow"]
@@ -34,7 +35,7 @@ buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
 polars = ["dep:polars", "dep:polars-arrow"]
 # Warning: experimental feature
-loadable-extension = ["libduckdb-sys/loadable-extension"]
+loadable-extension = ["vtab", "duckdb-loadable-macros", "libduckdb-sys/loadable-extension"]
 
 [dependencies]
 arrow = { workspace = true, features = ["prettyprint", "ffi"] }
@@ -79,4 +80,4 @@ all-features = false
 [[example]]
 name = "hello-ext"
 crate-type = ["cdylib"]
-required-features = ["vtab-loadable", "loadable-extension"]
+required-features = ["loadable-extension"]
