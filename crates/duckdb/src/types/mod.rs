@@ -247,8 +247,8 @@ mod test {
 
         let s = "hello, world!";
         let result = db.execute("INSERT INTO foo(t) VALUES (?)", [s.to_owned()]);
-        if result.is_err() {
-            panic!("exe error: {}", result.unwrap_err())
+        if let Err(e) = result {
+            panic!("exe error: {e}")
         }
 
         let from: String = db.query_row("SELECT t FROM foo", [], |r| r.get(0))?;
