@@ -778,8 +778,8 @@ mod test {
     #[test]
     fn test_open() {
         let con = Connection::open_in_memory();
-        if con.is_err() {
-            panic!("open error {}", con.unwrap_err());
+        if let Err(e) = con {
+            panic!("open error {e}");
         }
         assert!(Connection::open_in_memory().is_ok());
         let db = checked_memory_handle();
