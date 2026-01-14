@@ -78,18 +78,18 @@ jobs:
 
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
-        run: cargo test --features "modern-full vtab-full vtab-loadable"
+        run: cargo test --features "modern-full vtab-full"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
 
       - name: Build loadable extension
         if: matrix.os == 'ubuntu-latest'
-        run: cargo build --example hello-ext --features="vtab-loadable loadable-extension"
+        run: cargo build --example hello-ext --features="loadable-extension"
 
       - name: Build loadable extension (windows)
         if: matrix.os == 'windows-latest'
-        run: cargo build --example hello-ext --features="vtab-loadable loadable-extension"
+        run: cargo build --example hello-ext --features="loadable-extension"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb

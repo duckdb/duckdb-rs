@@ -90,8 +90,8 @@ where
     let info = TableFunctionInfo::<T>::from(info);
     let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
     let result = T::func(&info, &mut data_chunk_handle);
-    if result.is_err() {
-        info.set_error(&result.err().unwrap().to_string());
+    if let Err(e) = result {
+        info.set_error(&e.to_string());
     }
 }
 

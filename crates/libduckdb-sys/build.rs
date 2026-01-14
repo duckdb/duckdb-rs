@@ -135,10 +135,7 @@ mod build_bundled {
         cfg.define("DUCKDB_EXTENSION_AUTOINSTALL_DEFAULT", "1");
         cfg.define("DUCKDB_EXTENSION_AUTOLOAD_DEFAULT", "1");
 
-        // Since the manifest controls the set of files, we require it to be changed to know whether
-        // to rebuild the project
-        println!("cargo:rerun-if-changed={out_dir}/duckdb/manifest.json");
-        // Make sure to rebuild the project if tar file changed
+        // Rebuild if the source tarball changes
         println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
         cfg.include("duckdb");
