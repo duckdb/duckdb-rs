@@ -304,7 +304,16 @@ impl RawStatement {
 
             let rc = ffi::duckdb_execute_prepared_streaming(self.ptr, &mut out);
             if rc != ffi::DuckDBSuccess {
-                return Err(Error::DuckDBFailure(ffi::Error::new(rc), None));
+                let msg = {
+                    let c_err = ffi::duckdb_result_error(&mut out);
+                    if c_err.is_null() {
+                        None
+                    } else {
+                        Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+                    }
+                };
+                ffi::duckdb_destroy_result(&mut out);
+                return Err(Error::DuckDBFailure(ffi::Error::new(rc), msg));
             }
 
             // Check if the result is truly streaming or materialized
