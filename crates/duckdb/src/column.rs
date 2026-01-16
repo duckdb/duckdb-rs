@@ -141,15 +141,9 @@ impl Statement<'_> {
     /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     #[inline]
     pub fn column_index(&self, name: &str) -> Result<usize> {
-        let n = self.column_count();
-        for i in 0..n {
-            // Note: `column_name` is only fallible if `i` is out of bounds,
-            // which we've already checked.
-            if name.eq_ignore_ascii_case(self.stmt.column_name(i).unwrap()) {
-                return Ok(i);
-            }
-        }
-        Err(Error::InvalidColumnName(String::from(name)))
+        self.stmt
+            .column_index(name)
+            .ok_or_else(|| Error::InvalidColumnName(String::from(name)))
     }
 
     /// Returns the declared data type of the column.
@@ -205,5 +199,59 @@ mod test {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_column_index_duplicate_names() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT 1 as a, 2 as a, 3 as a")?;
+        stmt.execute([])?;
+
+        assert_eq!(stmt.column_index("a")?, 0);
+        assert_eq!(stmt.column_index("A")?, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_column_index_cache_invalidation() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT 1 as col_a, 2 as col_b")?;
+        stmt.execute([])?;
+
+        assert_eq!(stmt.column_index("col_a")?, 0);
+        assert_eq!(stmt.column_index("col_b")?, 1);
+
+        stmt.execute([])?;
+
+        assert_eq!(stmt.column_index("col_a")?, 0);
+        assert_eq!(stmt.column_index("col_b")?, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_column_index_nonexistent() -> Result<()> {
+        use crate::Error;
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT 1 as x, 2 as y")?;
+        stmt.execute([])?;
+
+        match stmt.column_index("nonexistent") {
+            Err(Error::InvalidColumnName(name)) => {
+                assert_eq!(name, "nonexistent");
+            }
+            other => panic!("Expected InvalidColumnName error, got: {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic(expected = "The statement was not executed yet")]
+    fn test_column_index_not_executed() {
+        let db = Connection::open_in_memory().unwrap();
+        let stmt = db.prepare("SELECT 1 as a").unwrap();
+        let _ = stmt.column_index("a");
     }
 }
