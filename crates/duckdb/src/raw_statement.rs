@@ -24,6 +24,10 @@ pub struct RawStatement {
     result: Option<ffi::duckdb_arrow>,
     duckdb_result: Option<ffi::duckdb_result>,
     schema: Option<SchemaRef>,
+    // Tracks whether the duckdb_result is truly streaming or materialized.
+    // This is needed because some statements (like CALL) return materialized
+    // results even when execute_streaming is called.
+    is_streaming: bool,
     // Cached SQL (trimmed) that we use as the key when we're in the statement
     // cache. This is None for statements which didn't come from the statement
     // cache.
@@ -45,6 +49,7 @@ impl RawStatement {
             result: None,
             schema: None,
             duckdb_result: None,
+            is_streaming: false,
             statement_cache_key: None,
         }
     }
@@ -121,7 +126,13 @@ impl RawStatement {
     pub fn streaming_step(&self, schema: SchemaRef) -> Option<StructArray> {
         if let Some(result) = self.duckdb_result {
             unsafe {
-                let mut out = ffi::duckdb_stream_fetch_chunk(result);
+                // Use duckdb_stream_fetch_chunk for truly streaming results,
+                // or duckdb_fetch_chunk for materialized results (e.g., from CALL statements)
+                let mut out = if self.is_streaming {
+                    ffi::duckdb_stream_fetch_chunk(result)
+                } else {
+                    ffi::duckdb_fetch_chunk(result)
+                };
 
                 if out.is_null() {
                     return None;
@@ -296,6 +307,9 @@ impl RawStatement {
                 return Err(Error::DuckDBFailure(ffi::Error::new(rc), None));
             }
 
+            // Check if the result is truly streaming or materialized
+            // Some statements (like CALL) return materialized results even when streaming is requested
+            self.is_streaming = ffi::duckdb_result_is_streaming(out);
             self.duckdb_result = Some(out);
 
             Ok(())
@@ -305,6 +319,7 @@ impl RawStatement {
     #[inline]
     pub fn reset_result(&mut self) {
         self.schema = None;
+        self.is_streaming = false;
         if self.result.is_some() {
             unsafe {
                 ffi::duckdb_destroy_arrow(&mut self.result_unwrap());

@@ -1434,6 +1434,39 @@ mod test {
     }
 
     #[test]
+    fn test_stream_arrow_with_call() -> Result<()> {
+        use arrow::datatypes::{DataType, Field, Schema};
+        use std::sync::Arc;
+
+        let db = checked_memory_handle();
+
+        db.execute_batch(
+            "CREATE TABLE test_data(id INTEGER, name VARCHAR);
+             INSERT INTO test_data VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie');",
+        )?;
+
+        db.execute_batch("CREATE MACRO test_func() AS TABLE SELECT * FROM test_data;")?;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("name", DataType::Utf8, true),
+        ]));
+
+        let mut stmt = db.prepare("CALL test_func()")?;
+        let rbs: Vec<RecordBatch> = stmt.stream_arrow([], schema)?.collect();
+
+        // Verify we got results
+        assert!(!rbs.is_empty(), "Expected at least one record batch");
+        let total_rows: usize = rbs.iter().map(|rb| rb.num_rows()).sum();
+        assert_eq!(total_rows, 3);
+
+        let id_column = rbs[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(id_column.value(0), 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn round_trip_interval() -> Result<()> {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo (t INTERVAL);")?;
