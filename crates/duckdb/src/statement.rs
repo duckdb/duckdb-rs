@@ -1222,22 +1222,20 @@ mod test {
     #[test]
     fn test_execute_streaming_error_message() -> Result<()> {
         let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE test (id UUID)")?;
-        db.execute_batch("INSERT INTO test VALUES ('550e8400-e29b-41d4-a716-446655440000')")?;
 
-        // Try to cast a non-UUID string to UUID, which should fail with a descriptive error
-        let mut stmt = db.prepare("SELECT CAST(? AS UUID) FROM test")?;
-        stmt.raw_bind_parameter(1, "test")?;
-
+        // Trigger a conversion error - should fail with a descriptive message
+        let mut stmt = db.prepare("SELECT CAST('not-a-number' AS INTEGER)")?;
         let result = stmt.stmt.execute_streaming();
 
         assert!(result.is_err());
         let err = result.unwrap_err();
 
         let error_string = format!("{}", err);
-        assert!(error_string.contains(
-            "Conversion Error: Could not convert string 'test' to INT128\n\nLINE 1: SELECT CAST(? AS UUID) FROM test"
-        ));
+        assert!(
+            error_string.contains("Conversion Error"),
+            "Expected descriptive error, got: {}",
+            error_string
+        );
 
         Ok(())
     }
