@@ -1218,4 +1218,25 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_execute_streaming_error_message() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        // Trigger a conversion error - should fail with a descriptive message
+        let mut stmt = db.prepare("SELECT CAST('not-a-number' AS INTEGER)")?;
+        let result = stmt.stmt.execute_streaming();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+
+        let error_string = format!("{}", err);
+        assert!(
+            error_string.contains("Conversion Error"),
+            "Expected descriptive error, got: {}",
+            error_string
+        );
+
+        Ok(())
+    }
 }
