@@ -1,6 +1,7 @@
 use super::{
     Statement,
     arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
+    Result,
 };
 
 /// A handle for the resulting RecordBatch of a query.
@@ -59,9 +60,18 @@ impl<'stmt> ArrowStream<'stmt> {
 
 #[allow(clippy::needless_lifetimes)]
 impl<'stmt> Iterator for ArrowStream<'stmt> {
-    type Item = RecordBatch;
+    type Item = Result<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(RecordBatch::from(&self.stmt?.stream_step(self.get_schema())?))
+        let stmt = self.stmt?;
+        match stmt.stream_step(self.get_schema()) {
+            Ok(Some(array)) => Some(Ok(RecordBatch::from(&array))),
+            Ok(None) => None,
+            Err(e) => {
+                // Clear the statement to prevent further iteration after error
+                self.stmt = None;
+                Some(Err(e))
+            }
+        }
     }
 }
