@@ -125,8 +125,8 @@ impl RawStatement {
     }
 
     #[inline]
-    pub fn streaming_step(&self, schema: SchemaRef) -> Option<StructArray> {
-        if let Some(result) = self.duckdb_result {
+    pub fn streaming_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
+        if let Some(mut result) = self.duckdb_result {
             unsafe {
                 // Use duckdb_stream_fetch_chunk for truly streaming results,
                 // or duckdb_fetch_chunk for materialized results (e.g., from CALL statements)
@@ -137,7 +137,14 @@ impl RawStatement {
                 };
 
                 if out.is_null() {
-                    return None;
+                    // Check if null chunk is due to an error or end of stream
+                    let c_err = ffi::duckdb_result_error(&mut result);
+                    if !c_err.is_null() {
+                        let msg = CStr::from_ptr(c_err).to_string_lossy().to_string();
+                        return Err(Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(msg)));
+                    }
+                    // No error, just end of stream
+                    return Ok(None);
                 }
 
                 let mut arrays = FFI_ArrowArray::empty();
@@ -150,17 +157,18 @@ impl RawStatement {
                 ffi::duckdb_destroy_data_chunk(&mut out);
 
                 if arrays.is_empty() {
-                    return None;
+                    return Ok(None);
                 }
 
-                let schema = FFI_ArrowSchema::try_from(schema.deref()).ok()?;
+                let schema = FFI_ArrowSchema::try_from(schema.deref())
+                    .map_err(|e| Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(e.to_string())))?;
                 let array_data = from_ffi(arrays, &schema).expect("ok");
                 let struct_array = StructArray::from(array_data);
-                return Some(struct_array);
+                return Ok(Some(struct_array));
             }
         }
 
-        None
+        Ok(None)
     }
 
     #[cfg(feature = "polars")]
