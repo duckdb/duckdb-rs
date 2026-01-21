@@ -137,10 +137,7 @@ impl Inserter<CString> for FlatVector {
 
 impl Inserter<&str> for FlatVector {
     fn insert(&self, index: usize, value: &str) {
-        let cstr = CString::new(value.as_bytes()).unwrap();
-        unsafe {
-            duckdb_vector_assign_string_element(self.ptr, index as u64, cstr.as_ptr());
-        }
+        self.insert(index, value.as_bytes());
     }
 }
 
