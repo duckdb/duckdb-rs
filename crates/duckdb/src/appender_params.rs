@@ -339,3 +339,43 @@ where
         stmt.bind_parameters(self.0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{Connection, Result};
+
+    #[test]
+    fn test_append_row_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT)")?;
+
+        let mut app = db.appender("test")?;
+        app.append_row((1i32, "alice"))?;
+        app.flush()?;
+
+        let mut stmt = db.prepare("SELECT id, name FROM test")?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get::<_, i32>(0)?, 1i32);
+        assert_eq!(row.get::<_, String>(1)?, "alice");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_rows_iterator_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT)")?;
+
+        #[allow(clippy::useless_vec)]
+        let data = vec![(1, "alice"), (2, "bob")];
+        let mut app = db.appender("test")?;
+        app.append_rows(data.iter().map(|(id, name)| (*id, *name)))?;
+        app.flush()?;
+
+        let count: i32 = db.query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))?;
+        assert_eq!(count, 2);
+
+        Ok(())
+    }
+}
