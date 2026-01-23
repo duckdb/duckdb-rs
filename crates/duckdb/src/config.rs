@@ -150,8 +150,8 @@ impl Config {
 
 impl Drop for Config {
     fn drop(&mut self) {
-        if self.config.is_some() {
-            unsafe { ffi::duckdb_destroy_config(&mut self.config.unwrap()) };
+        if let Some(ref mut config) = self.config {
+            unsafe { ffi::duckdb_destroy_config(config) };
         }
     }
 }
