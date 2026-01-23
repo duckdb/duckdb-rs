@@ -559,6 +559,33 @@ impl Statement<'_> {
         self.stmt.schema()
     }
 
+    /// Returns the schema of the prepared statement WITHOUT executing it.
+    ///
+    /// This is useful for streaming queries where you need the schema before
+    /// fetching results, avoiding the need to prepare the statement twice.
+    ///
+    /// Returns `Ok(None)` if the statement has no result columns (e.g., INSERT without RETURNING).
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result};
+    /// fn get_schema_before_execute(conn: &Connection) -> Result<()> {
+    ///     let stmt = conn.prepare("SELECT id, name FROM users")?;
+    ///     if let Some(schema) = stmt.prepared_schema()? {
+    ///         println!("Query will return {} columns", schema.fields().len());
+    ///         for field in schema.fields() {
+    ///             println!("  {}: {:?}", field.name(), field.data_type());
+    ///         }
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    #[inline]
+    pub fn prepared_schema(&self) -> Result<Option<SchemaRef>> {
+        self.conn.prepared_schema(unsafe { self.stmt.ptr() })
+    }
+
     // generic because many of these branches can constant fold away.
     fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P, col: usize) -> Result<()> {
         let value = param.to_sql()?;
@@ -1075,6 +1102,76 @@ mod test {
         db.execute_batch(sql).unwrap();
         let stmt = db.prepare("SELECT x, y FROM foo").unwrap();
         let _ = stmt.schema();
+    }
+
+    #[test]
+    fn test_prepared_schema_before_execute() -> Result<()> {
+        use arrow::datatypes::{DataType, Field, Schema};
+        let db = Connection::open_in_memory()?;
+        let sql = "BEGIN;
+                   CREATE TABLE foo(x STRING, y INTEGER);
+                   INSERT INTO foo VALUES('hello', 3);
+                   END;";
+        db.execute_batch(sql)?;
+
+        let stmt = db.prepare("SELECT x, y FROM foo")?;
+        let schema = stmt.prepared_schema()?.expect("should have schema");
+
+        assert_eq!(
+            *schema,
+            Schema::new(vec![
+                Field::new("x", DataType::Utf8, true),
+                Field::new("y", DataType::Int32, true)
+            ])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepared_schema_insert_returns_count() -> Result<()> {
+        use arrow::datatypes::DataType;
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x INTEGER)")?;
+
+        let stmt = db.prepare("INSERT INTO foo VALUES (1)")?;
+        let schema = stmt.prepared_schema()?.expect("INSERT has Count column");
+
+        assert_eq!(schema.fields().len(), 1);
+        assert_eq!(schema.field(0).name(), "Count");
+        assert_eq!(schema.field(0).data_type(), &DataType::Int64);
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepared_schema_with_expressions() -> Result<()> {
+        use arrow::datatypes::DataType;
+        let db = Connection::open_in_memory()?;
+
+        let stmt = db.prepare("SELECT 1 + 2 as sum_col, 'hello' || ' world' as concat_col")?;
+        let schema = stmt.prepared_schema()?.expect("should have schema");
+
+        assert_eq!(schema.fields().len(), 2);
+        assert_eq!(schema.field(0).name(), "sum_col");
+        assert_eq!(schema.field(0).data_type(), &DataType::Int32);
+        assert_eq!(schema.field(1).name(), "concat_col");
+        assert_eq!(schema.field(1).data_type(), &DataType::Utf8);
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepared_schema_matches_executed_schema() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE users (id INTEGER, name VARCHAR, balance DECIMAL(10, 2))")?;
+
+        let mut stmt = db.prepare("SELECT * FROM users")?;
+
+        let prepared_schema = stmt.prepared_schema()?.expect("should have schema");
+
+        stmt.execute([])?;
+        let executed_schema = stmt.schema();
+
+        assert_eq!(*prepared_schema, *executed_schema);
+        Ok(())
     }
 
     #[test]
