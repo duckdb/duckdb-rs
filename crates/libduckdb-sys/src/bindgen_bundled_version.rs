@@ -1985,7 +1985,7 @@ unsafe extern "C" {
     pub fn duckdb_vector_ensure_validity_writable(vector: duckdb_vector);
 }
 unsafe extern "C" {
-    #[doc = "Assigns a string element in the vector at the specified location.\n\n @param vector The vector to alter\n @param index The row position in the vector to assign the string to\n @param str The null-terminated string"]
+    #[doc = "Assigns a string element in the vector at the specified location. The vector type must be VARCHAR and the input must be\nvalid UTF-8. Otherwise, undefined behavior is expected at later stages.\n\n @param vector The vector to alter\n @param index The row position in the vector to assign the string to\n @param str The null-terminated string"]
     pub fn duckdb_vector_assign_string_element(
         vector: duckdb_vector,
         index: idx_t,
@@ -1993,7 +1993,7 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
-    #[doc = "Assigns a string element in the vector at the specified location. You may also use this function to assign BLOBs.\n\n @param vector The vector to alter\n @param index The row position in the vector to assign the string to\n @param str The string\n @param str_len The length of the string (in bytes)"]
+    #[doc = "Assigns a string element in the vector at the specified location. The vector type can be VARCHAR or BLOB. In the case of\nVARCHAR, you must pass valid UTF-8. Otherwise, undefined behavior is expected at later stages.\n\n @param vector The vector to alter\n @param index The row position in the vector to assign the string to\n @param str The string\n @param str_len The length of the string (in bytes)"]
     pub fn duckdb_vector_assign_string_element_len(
         vector: duckdb_vector,
         index: idx_t,
