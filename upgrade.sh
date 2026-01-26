@@ -35,6 +35,7 @@ $SED_INPLACE "s/$duckdb_rs_version/$duckdb_version/g" \
     crates/duckdb/Cargo.toml \
     crates/libduckdb-sys/upgrade.sh \
     crates/libduckdb-sys/Cargo.toml \
-    .github/workflows/rust.yaml
+    .github/workflows/rust.yaml \
+    README.md
 
 exec ./crates/libduckdb-sys/upgrade.sh
