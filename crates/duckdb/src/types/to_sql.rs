@@ -361,4 +361,83 @@ mod test {
         assert_eq!(found_label, "target");
         Ok(())
     }
+
+    #[test]
+    fn test_list() -> crate::Result<()> {
+        use crate::{
+            params,
+            types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef},
+            Connection,
+        };
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct MyList(Vec<i32>);
+
+        impl ToSql for MyList {
+            fn to_sql(&self) -> crate::Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Owned(Value::List(
+                    self.0.iter().map(|&x| Value::Int(x)).collect(),
+                )))
+            }
+        }
+
+        impl FromSql for MyList {
+            fn column_result(value_ref: ValueRef<'_>) -> FromSqlResult<Self> {
+                match value_ref.to_owned() {
+                    Value::List(values) => values
+                        .into_iter()
+                        .map(|v| {
+                            if let Value::Int(i) = v {
+                                Ok(i)
+                            } else {
+                                Err(FromSqlError::InvalidType)
+                            }
+                        })
+                        .collect::<Result<Vec<i32>, _>>()
+                        .map(MyList),
+                    _ => return FromSqlResult::Err(FromSqlError::InvalidType),
+                }
+            }
+        }
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo (numbers INT[]);")?;
+
+        let list = MyList(vec![1, 2, 3, 4, 5]);
+        db.execute("INSERT INTO foo (numbers) VALUES (?)", params![&list])?;
+
+        let found_numbers: MyList = db.prepare("SELECT numbers FROM foo")?.query_one([], |r| r.get(0))?;
+        assert_eq!(found_numbers, MyList(vec![1, 2, 3, 4, 5]));
+
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic = "Failed to create DuckDB value for List(Native([]))"]
+    fn test_empty_list() -> () {
+        use crate::{
+            params,
+            types::{ToSqlOutput, Value},
+            Connection,
+        };
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct MyList(Vec<i32>);
+
+        impl ToSql for MyList {
+            fn to_sql(&self) -> crate::Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Owned(Value::List(
+                    self.0.iter().map(|&x| Value::Int(x)).collect(),
+                )))
+            }
+        }
+
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE foo (numbers INT[]);").unwrap();
+
+        let list = MyList(vec![]);
+
+        // This should panic because the list is empty and DuckDB cannot determine the type of the list.
+        _ = db.execute("INSERT INTO foo (numbers) VALUES (?)", params![&list]);
+    }
 }
