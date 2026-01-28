@@ -1,4 +1,5 @@
-use crate::ffi::{duckdb_destroy_value, duckdb_free, duckdb_get_int64, duckdb_get_varchar, duckdb_value};
+use crate::core::LogicalTypeHandle;
+use crate::ffi::{duckdb_destroy_value, duckdb_free, duckdb_get_int64, duckdb_get_value_type, duckdb_get_varchar, duckdb_value};
 use std::{ffi::CStr, fmt, os::raw::c_void};
 
 /// The Value object holds a single arbitrary value of any type that can be
@@ -30,6 +31,15 @@ impl Value {
     pub fn to_int64(&self) -> i64 {
         unsafe { duckdb_get_int64(self.ptr) }
     }
+
+    /// Returns a LogicalTypeHandle representing the type of this value.
+    pub fn logical_type(&self) -> LogicalTypeHandle {
+        // SAFETY: The returned LogicalTypeHandle frees allocated memory when dropped. 
+        unsafe {
+            let lt_handle = duckdb_get_value_type(self.ptr);
+            LogicalTypeHandle { ptr: lt_handle }
+        }
+    }
 }
 
 impl fmt::Display for Value {
@@ -47,7 +57,7 @@ impl fmt::Display for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ffi::duckdb_create_varchar;
+    use crate::ffi::{duckdb_create_varchar, DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR};
     use std::ffi::CString;
 
     #[test]
@@ -56,5 +66,14 @@ mod tests {
         let duckdb_val = unsafe { duckdb_create_varchar(c_str.as_ptr()) };
         let val = Value::from(duckdb_val);
         assert_eq!(val.to_string(), "some value");
+    }
+
+    #[test]
+    fn test_logical_type() {
+        let c_str = CString::new("some value").unwrap();
+        let duckdb_val = unsafe { duckdb_create_varchar(c_str.as_ptr()) };
+        let val = Value::from(duckdb_val);
+        let logical_type = val.logical_type();
+        assert_eq!(logical_type.raw_id(), DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR);
     }
 }
