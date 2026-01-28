@@ -680,12 +680,12 @@ doc_comment::doctest!("../../../README.md");
 
 #[cfg(test)]
 mod test {
-    use crate::types::Value;
-
     use super::*;
-    use std::{error::Error as StdError, fmt};
+    use crate::types::Value;
+    use std::{error::Error as StdError, fmt, sync::Arc};
 
-    use arrow::{array::Int32Array, datatypes::DataType, record_batch::RecordBatch};
+    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::{array::Int32Array, record_batch::RecordBatch};
     use fallible_iterator::FallibleIterator;
 
     // this function is never called, but is still type checked; in
@@ -1435,9 +1435,6 @@ mod test {
 
     #[test]
     fn test_stream_arrow_with_call() -> Result<()> {
-        use arrow::datatypes::{DataType, Field, Schema};
-        use std::sync::Arc;
-
         let db = checked_memory_handle();
 
         db.execute_batch(
@@ -1453,7 +1450,7 @@ mod test {
         ]));
 
         let mut stmt = db.prepare("CALL test_func()")?;
-        let rbs: Vec<RecordBatch> = stmt.stream_arrow([], schema)?.collect();
+        let rbs: Vec<RecordBatch> = stmt.stream_arrow([], schema)?.collect::<Result<Vec<_>>>()?;
 
         // Verify we got results
         assert!(!rbs.is_empty(), "Expected at least one record batch");
@@ -1462,6 +1459,72 @@ mod test {
 
         let id_column = rbs[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();
         assert_eq!(id_column.value(0), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_arrow_error_during_streaming() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // We want to specifically test the case where streaming starts successfully,
+        // then an error occurs during a later fetch. A deterministic way to trigger
+        // this is to interrupt the connection mid-stream.
+        let db_interrupt = db.interrupt_handle();
+
+        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
+        let mut stmt = db.prepare("SELECT i FROM range(1000000000) t(i)")?;
+
+        let stream = stmt.stream_arrow([], schema)?;
+
+        let mut ok_batches = 0usize;
+        let mut stream = stream;
+
+        // Fetch at least one batch to ensure the stream has started.
+        let first = stream.next().expect("Expected at least one batch from stream");
+        assert!(first.is_ok(), "Expected first batch to be Ok, got: {first:?}");
+        ok_batches += 1;
+
+        // Interrupt the connection, then the next fetch should return an error (not end-of-stream).
+        db_interrupt.interrupt();
+
+        let second = stream.next().expect("Expected an error after interrupt");
+        match second {
+            Ok(_rb) => panic!("Expected streaming error after interrupt, got Ok batch"),
+            Err(e) => {
+                assert!(ok_batches > 0, "Expected at least one batch before error");
+                let msg = format!("{e}");
+                assert!(
+                    msg == "INTERRUPT Error: Interrupted!",
+                    "Expected interrupt error, got: {msg}"
+                );
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn test_stream_arrow_successful_completion() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Create a table with valid data
+        db.execute_batch(
+            "CREATE TABLE test_data(value INTEGER);
+             INSERT INTO test_data SELECT i FROM range(100) AS t(i);",
+        )?;
+
+        let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int32, true)]));
+
+        let mut stmt = db.prepare("SELECT value FROM test_data")?;
+        let stream = stmt.stream_arrow([], schema)?;
+
+        // Collect results - all should be successful
+        let results: Result<Vec<_>> = stream.collect();
+        let batches = results?;
+
+        // Verify we got all 100 rows
+        let total_rows: usize = batches.iter().map(|rb| rb.num_rows()).sum();
+        assert_eq!(total_rows, 100);
 
         Ok(())
     }
