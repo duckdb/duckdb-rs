@@ -8,7 +8,7 @@ members = [
 
 [workspace.package]
 version = "1.4.4"
-authors = ["wangfenjin <wangfenj@gmail.com>"]
+authors = ["DuckDB Labs and contributors", "wangfenjin <wangfenj@gmail.com>"]
 repository = "https://github.com/duckdb/duckdb-rs"
 homepage = "https://github.com/duckdb/duckdb-rs"
 documentation = "http://docs.rs/duckdb/"
