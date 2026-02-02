@@ -17,7 +17,7 @@ keywords = ["duckdb", "database", "ffi"]
 license = "MIT"
 categories = ["database"]
 edition = "2021"
-rust-version = "1.84.1"
+rust-version = "1.85.1"
 
 [workspace.dependencies]
 duckdb = { version = "=1.4.4", path = "crates/duckdb" }
