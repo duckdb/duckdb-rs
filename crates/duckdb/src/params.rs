@@ -1,4 +1,5 @@
-use crate::{Result, Statement, ToSql};
+use crate::{Error, Result, Statement, ToSql};
+use std::collections::HashMap;
 
 mod sealed {
     /// This trait exists just to ensure that the only impls of `trait Params`
@@ -83,6 +84,36 @@ use sealed::Sealed;
 ///     // However, this doesn't work (see above):
 ///     // stmt.execute(&[1i32, 2i32])?;
 ///     Ok(())
+/// }
+/// ```
+///
+/// ## Named parameters
+///
+/// If you need named parameters, they can be passed in one of two ways:
+///
+/// - As a `&HashMap<String, &dyn ToSql>`
+/// - If the `serde_json` feature is enabled, use `serde_json::Value`.
+///
+/// In both cases the keys should _not_ include the `$` prefix.
+///
+/// ### Example (named parameters)
+///
+/// ```rust,no_run
+/// #[cfg(feature = "serde_json")]
+/// {
+///     use fallible_iterator::FallibleIterator;
+///     use duckdb::{Connection, Result};
+///     use serde_json::json;
+///     fn execute_query(conn: Connection) -> Result<Vec<String>> {
+///         let params = json!({
+///             "min": 23,
+///             "max": 42,
+///         });
+///         conn
+///           .prepare("SELECT name FROM people WHERE age BETWEEN $min AND $max")?
+///           .query(params)?.map(|row| row.get(0))
+///           .collect()
+///     }
 /// }
 /// ```
 ///
@@ -301,5 +332,67 @@ where
     #[inline]
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         stmt.bind_parameters(self.0)
+    }
+}
+
+impl Sealed for &HashMap<String, &dyn ToSql> {}
+
+impl Params for &HashMap<String, &dyn ToSql> {
+    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+        let n = stmt.parameter_count();
+        let params: Vec<_> = (1..=n)
+            .map(|i| {
+                let name = stmt.parameter_name(i)?;
+                let val = *self.get(&name).ok_or(Error::InvalidParameterName(name))?;
+                Ok(val)
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        stmt.bind_parameters(&params)?;
+        Ok(())
+    }
+}
+
+impl Sealed for HashMap<String, &dyn ToSql> {}
+
+impl Params for HashMap<String, &dyn ToSql> {
+    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+        (&self).__bind_in(stmt)
+    }
+}
+
+#[cfg(feature = "serde_json")]
+mod serde_json_support {
+    use super::*;
+    use crate::{types::ToSql, Params, Statement};
+    use serde_json::Value;
+
+    impl Sealed for &Value {}
+
+    impl Params for &Value {
+        fn __bind_in(self, stmt: &mut Statement<'_>) -> crate::Result<()> {
+            match self {
+                Value::Object(ref map) => {
+                    let n = stmt.parameter_count();
+                    let params: Vec<&dyn ToSql> = (1..=n)
+                        .map(|i| {
+                            let name = stmt.parameter_name(i)?;
+                            let val = map.get(&name).ok_or(Error::InvalidParameterName(name))?;
+                            Ok(val as &dyn ToSql)
+                        })
+                        .collect::<Result<Vec<_>, Error>>()?;
+                    stmt.bind_parameters(&params)
+                }
+                Value::Array(ref array) => stmt.bind_parameters(&array[..]),
+                ref other => stmt.bind_parameters(&[other as &dyn ToSql]),
+            }
+        }
+    }
+
+    impl Sealed for Value {}
+
+    impl Params for Value {
+        fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+            (&self).__bind_in(stmt)
+        }
     }
 }

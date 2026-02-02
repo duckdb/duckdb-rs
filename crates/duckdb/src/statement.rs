@@ -1121,6 +1121,30 @@ mod test {
     }
 
     #[test]
+    fn test_named_parameters() -> Result<()> {
+        #[cfg(not(feature = "serde_json"))]
+        use std::collections::HashMap;
+
+        #[cfg(not(feature = "serde_json"))]
+        let named_params: &HashMap<String, &dyn ToSql> = &HashMap::from([
+            ("foo".to_string(), &42 as &dyn ToSql),
+            ("bar".to_string(), &23 as &dyn ToSql),
+        ]);
+
+        #[cfg(feature = "serde_json")]
+        let named_params: serde_json::Value = serde_json::json!({
+            "foo": 42,
+            "bar": 23
+        });
+
+        let db = Connection::open_in_memory()?;
+        let sql = r#"SELECT $foo > $bar"#;
+        let result: bool = db.query_row(sql, named_params, |row| row.get(0))?;
+        assert_eq!(result, true);
+        Ok(())
+    }
+
+    #[test]
     fn test_empty_stmt() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         let stmt = conn.prepare("");
