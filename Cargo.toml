@@ -17,14 +17,14 @@ keywords = ["duckdb", "database", "ffi"]
 license = "MIT"
 categories = ["database"]
 edition = "2021"
-rust-version = "1.84.1"
+rust-version = "1.85.1"
 
 [workspace.dependencies]
 duckdb = { version = "=1.4.4", path = "crates/duckdb" }
 duckdb-loadable-macros = { version = "=0.1.14", path = "crates/duckdb-loadable-macros" }
 libduckdb-sys = { version = "=1.4.4", path = "crates/libduckdb-sys" }
 
-arrow = { version = "56", default-features = false }
+arrow = { version = "57", default-features = false }
 bindgen = { version = "0.71.1", default-features = false }
 calamine = "0.28.0"
 cast = "0.3"

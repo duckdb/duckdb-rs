@@ -1466,7 +1466,14 @@ mod test {
         let array = FixedSizeListArray::new(
             Arc::new(Field::new("item", DataType::Int32, true)),
             2,
-            Arc::new(Int32Array::from(vec![Some(1), Some(2), Some(3), Some(4), Some(5)])),
+            Arc::new(Int32Array::from(vec![
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+            ])),
             None,
         );
 
