@@ -278,7 +278,7 @@ impl Connection {
     /// Need to pass in a valid db instance
     #[inline]
     pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Self> {
-        InnerConnection::new(raw, false).map(|db| Self {
+        InnerConnection::new_from_raw_db(raw, false).map(|db| Self {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
             path: None, // Can we know the path from connection?
@@ -790,11 +790,32 @@ mod test {
 
     #[test]
     fn test_open_from_raw() {
-        let con = Connection::open_in_memory();
-        assert!(con.is_ok());
-        let inner_con: InnerConnection = con.unwrap().db.into_inner();
         unsafe {
-            assert!(Connection::open_from_raw(inner_con.db).is_ok());
+            use std::{ffi::c_void, os::raw::c_char, ptr};
+
+            let mut db: ffi::duckdb_database = ptr::null_mut();
+            let mut c_err: *mut c_char = ptr::null_mut();
+            let r = ffi::duckdb_open_ext(
+                c":memory:".as_ptr(),
+                &mut db,
+                Config::default().duckdb_config(),
+                &mut c_err,
+            );
+            if r != ffi::DuckDBSuccess {
+                if !c_err.is_null() {
+                    ffi::duckdb_free(c_err as *mut c_void);
+                }
+                panic!("duckdb_open_ext failed: {r:?}");
+            }
+
+            let conn = Connection::open_from_raw(db).unwrap();
+            conn.execute_batch("SELECT 1").unwrap();
+            let cloned = conn.try_clone().unwrap();
+            drop(conn);
+            cloned.execute_batch("SELECT 2").unwrap();
+            cloned.close().unwrap();
+
+            ffi::duckdb_close(&mut db);
         }
     }
 
@@ -1108,6 +1129,22 @@ mod test {
             cloned_con.execute_batch("create table test2 (c1 bigint)")?;
             cloned_con.close().unwrap();
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_clone_after_owner_drop() -> Result<()> {
+        let clone1 = {
+            let owned = checked_memory_handle();
+            let clone1 = owned.try_clone()?;
+            drop(owned);
+            clone1
+        };
+
+        let clone2 = clone1.try_clone()?;
+        clone2.execute_batch("CREATE TABLE t312(i INTEGER); INSERT INTO t312 VALUES (1);")?;
+        let value: i32 = clone1.query_row("SELECT i FROM t312", [], |r| r.get(0))?;
+        assert_eq!(value, 1);
         Ok(())
     }
 
