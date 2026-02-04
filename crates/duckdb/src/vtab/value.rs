@@ -1,4 +1,4 @@
-use crate::ffi::{duckdb_destroy_value, duckdb_free, duckdb_get_int64, duckdb_get_varchar, duckdb_value};
+use crate::ffi::{duckdb_destroy_value, duckdb_free, duckdb_get_int64, duckdb_get_list_child, duckdb_get_list_size, duckdb_get_varchar, duckdb_value};
 use std::{ffi::CStr, fmt, os::raw::c_void};
 
 /// The Value object holds a single arbitrary value of any type that can be
@@ -30,6 +30,17 @@ impl Value {
     pub fn to_int64(&self) -> i64 {
         unsafe { duckdb_get_int64(self.ptr) }
     }
+
+    /// Returns the value as a Vec<Value>
+    pub fn to_vec(&self) -> Vec<Value> {
+        let size = unsafe { duckdb_get_list_size(self.ptr) };
+        let mut out = Vec::with_capacity(size.try_into().unwrap());
+        for i in 0..size {
+            let child = unsafe { duckdb_get_list_child(self.ptr, i as u64) };
+            out.push(Value::from(child));
+        }
+        out
+    }
 }
 
 impl fmt::Display for Value {
@@ -47,7 +58,7 @@ impl fmt::Display for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ffi::duckdb_create_varchar;
+    use crate::ffi::{duckdb_value, duckdb_create_int64, duckdb_create_list_value, duckdb_create_logical_type, duckdb_create_varchar, duckdb_destroy_logical_type, duckdb_destroy_value, DUCKDB_TYPE_DUCKDB_TYPE_BIGINT};
     use std::ffi::CString;
 
     #[test]
@@ -56,5 +67,33 @@ mod tests {
         let duckdb_val = unsafe { duckdb_create_varchar(c_str.as_ptr()) };
         let val = Value::from(duckdb_val);
         assert_eq!(val.to_string(), "some value");
+    }
+
+    #[test]
+    fn test_value_to_vec() {
+        let list_items: Vec<i64> = vec![1, -200,2381292];
+        let val = unsafe {
+            // Create a duckdb list value
+            let mut logical_type = duckdb_create_logical_type(DUCKDB_TYPE_DUCKDB_TYPE_BIGINT);
+            let values: Vec<duckdb_value> = list_items.iter().map(|v| duckdb_create_int64(*v)).collect();
+            let duckdb_val = duckdb_create_list_value(
+                logical_type,
+                values.as_ptr().cast_mut(),
+                values.len() as u64
+            );
+
+            // Clean up temporary resources
+            duckdb_destroy_logical_type(&mut logical_type);
+            for mut v in values {
+                duckdb_destroy_value(&mut v);
+            }
+
+            Value::from(duckdb_val)
+        };
+
+        let list = val.to_vec();
+        assert_eq!(list.len(), list_items.len());
+        assert_eq!(list.iter().map(|v| v.to_int64()).collect::<Vec<i64>>(), list_items);
+
     }
 }
