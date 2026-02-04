@@ -16,18 +16,58 @@ use crate::{
     statement::Statement,
 };
 
+#[derive(Debug)]
+struct DatabaseHandle {
+    db: ffi::duckdb_database,
+    close_on_drop: bool,
+}
+
+// `duckdb_database` is an opaque C pointer. We share it via `Arc` so the database
+// is closed exactly once when the last connection referencing it is dropped.
+// This means the handle may be dropped on any thread that owns a `Connection`.
+unsafe impl Send for DatabaseHandle {}
+
+impl DatabaseHandle {
+    #[inline]
+    pub fn new(db: ffi::duckdb_database, close_on_drop: bool) -> Self {
+        Self { db, close_on_drop }
+    }
+
+    #[inline]
+    pub fn raw(&self) -> ffi::duckdb_database {
+        self.db
+    }
+}
+
+impl Drop for DatabaseHandle {
+    fn drop(&mut self) {
+        if !self.close_on_drop {
+            return;
+        }
+        if self.db.is_null() {
+            return;
+        }
+        unsafe {
+            ffi::duckdb_close(&mut self.db);
+            self.db = ptr::null_mut();
+        }
+    }
+}
+
 pub struct InnerConnection {
-    pub db: ffi::duckdb_database,
+    // Mutex makes the Send-only handle `Sync` so the `Arc` can be shared across threads;
+    // it is not used for concurrent access to the database itself.
+    database: Arc<Mutex<DatabaseHandle>>,
     pub con: ffi::duckdb_connection,
     interrupt: Arc<InterruptHandle>,
-    owned: bool,
 }
 
 impl InnerConnection {
     #[inline]
-    pub unsafe fn new(db: ffi::duckdb_database, owned: bool) -> Result<Self> {
+    unsafe fn new(database: Arc<Mutex<DatabaseHandle>>) -> Result<Self> {
         let mut con: ffi::duckdb_connection = ptr::null_mut();
-        let r = ffi::duckdb_connect(db, &mut con);
+        let db_raw = database.lock().expect("database handle mutex poisoned").raw();
+        let r = ffi::duckdb_connect(db_raw, &mut con);
         if r != ffi::DuckDBSuccess {
             ffi::duckdb_disconnect(&mut con);
             return Err(Error::DuckDBFailure(
@@ -38,10 +78,9 @@ impl InnerConnection {
         let interrupt = Arc::new(InterruptHandle::new(con));
 
         Ok(Self {
-            db,
+            database,
             con,
             interrupt,
-            owned,
         })
     }
 
@@ -55,14 +94,16 @@ impl InnerConnection {
                 ffi::duckdb_free(c_err as *mut c_void);
                 return Err(Error::DuckDBFailure(ffi::Error::new(r), msg));
             }
-            Self::new(db, true)
+            Self::new_from_raw_db(db, true)
         }
     }
 
+    #[inline]
+    pub(crate) unsafe fn new_from_raw_db(raw: ffi::duckdb_database, close_on_drop: bool) -> Result<Self> {
+        Self::new(Arc::new(Mutex::new(DatabaseHandle::new(raw, close_on_drop))))
+    }
+
     pub fn close(&mut self) -> Result<()> {
-        if self.db.is_null() {
-            return Ok(());
-        }
         if self.con.is_null() {
             return Ok(());
         }
@@ -70,18 +111,13 @@ impl InnerConnection {
             ffi::duckdb_disconnect(&mut self.con);
             self.con = ptr::null_mut();
             self.interrupt.clear();
-
-            if self.owned {
-                ffi::duckdb_close(&mut self.db);
-                self.db = ptr::null_mut();
-            }
         }
         Ok(())
     }
 
     /// Creates a new connection to the already-opened database.
     pub fn try_clone(&self) -> Result<Self> {
-        unsafe { Self::new(self.db, false) }
+        unsafe { Self::new(self.database.clone()) }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<()> {
