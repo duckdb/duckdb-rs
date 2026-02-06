@@ -88,7 +88,7 @@ where
     T: VTab,
 {
     let info = TableFunctionInfo::<T>::from(info);
-    let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
+    let mut data_chunk_handle = unsafe { DataChunkHandle::new_unowned(output) };
     let result = T::func(&info, &mut data_chunk_handle);
     if let Err(e) = result {
         info.set_error(&e.to_string());
@@ -102,10 +102,12 @@ where
     let info = InitInfo::from(info);
     match T::init(&info) {
         Ok(init_data) => {
-            info.set_init_data(
-                Box::into_raw(Box::new(init_data)) as *mut c_void,
-                Some(drop_boxed::<T::InitData>),
-            );
+            unsafe {
+                info.set_init_data(
+                    Box::into_raw(Box::new(init_data)) as *mut c_void,
+                    Some(drop_boxed::<T::InitData>),
+                );
+            }
         }
         Err(e) => {
             info.set_error(&e.to_string());
@@ -120,10 +122,12 @@ where
     let info = BindInfo::from(info);
     match T::bind(&info) {
         Ok(bind_data) => {
-            info.set_bind_data(
-                Box::into_raw(Box::new(bind_data)) as *mut c_void,
-                Some(drop_boxed::<T::BindData>),
-            );
+            unsafe {
+                info.set_bind_data(
+                    Box::into_raw(Box::new(bind_data)) as *mut c_void,
+                    Some(drop_boxed::<T::BindData>),
+                );
+            }
         }
         Err(e) => {
             info.set_error(&e.to_string());

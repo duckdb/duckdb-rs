@@ -37,14 +37,17 @@ mod tests {
     };
 
     unsafe fn print_int_result(result: &mut duckdb_result) {
-        for i in 0..duckdb_column_count(result) {
-            print!("{} ", CStr::from_ptr(duckdb_column_name(result, i)).to_string_lossy());
+        let column_count = unsafe { duckdb_column_count(result) };
+        for i in 0..column_count {
+            let column_name = unsafe { duckdb_column_name(result, i) };
+            print!("{} ", unsafe { CStr::from_ptr(column_name) }.to_string_lossy());
         }
         println!();
         // print the data of the result
-        for row_idx in 0..duckdb_row_count(result) {
-            for col_idx in 0..duckdb_column_count(result) {
-                let val = duckdb_value_int32(result, col_idx, row_idx);
+        let row_count = unsafe { duckdb_row_count(result) };
+        for row_idx in 0..row_count {
+            for col_idx in 0..column_count {
+                let val = unsafe { duckdb_value_int32(result, col_idx, row_idx) };
                 print!("{val} ");
             }
             println!();

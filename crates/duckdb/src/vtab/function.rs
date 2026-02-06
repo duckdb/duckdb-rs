@@ -56,7 +56,9 @@ impl BindInfo {
     /// # Safety
     /// `data` must be a valid pointer, and `free_function` must properly free it.
     pub unsafe fn set_bind_data(&self, data: *mut c_void, free_function: Option<unsafe extern "C" fn(*mut c_void)>) {
-        duckdb_bind_set_bind_data(self.ptr, data, free_function);
+        unsafe {
+            duckdb_bind_set_bind_data(self.ptr, data, free_function);
+        }
     }
 
     /// Retrieves the number of regular (non-named) parameters to the function.
@@ -313,7 +315,9 @@ impl TableFunction {
     /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
     /// properly cleans up the data when called.
     pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        unsafe {
+            duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        }
     }
 
     /// Assigns extra information to the table function that can be fetched during binding, init, and execution.
