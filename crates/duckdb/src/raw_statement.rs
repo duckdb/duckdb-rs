@@ -270,26 +270,28 @@ impl RawStatement {
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
         use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
 
-        println!(
-            "row-count: {}, column-count: {}",
-            duckdb_row_count(&mut result),
-            duckdb_column_count(&mut result)
-        );
-        for i in 0..duckdb_column_count(&mut result) {
-            print!(
-                "column-name:{} ",
-                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+        unsafe {
+            println!(
+                "row-count: {}, column-count: {}",
+                duckdb_row_count(&mut result),
+                duckdb_column_count(&mut result)
             );
-        }
-        println!();
-        // print the data of the result
-        for row_idx in 0..duckdb_row_count(&mut result) {
-            print!("row-value:");
-            for col_idx in 0..duckdb_column_count(&mut result) {
-                let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                print!("{} ", CStr::from_ptr(val).to_string_lossy());
+            for i in 0..duckdb_column_count(&mut result) {
+                print!(
+                    "column-name:{} ",
+                    CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+                );
             }
             println!();
+            // print the data of the result
+            for row_idx in 0..duckdb_row_count(&mut result) {
+                print!("row-value:");
+                for col_idx in 0..duckdb_column_count(&mut result) {
+                    let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
+                    print!("{} ", CStr::from_ptr(val).to_string_lossy());
+                }
+                println!();
+            }
         }
     }
 

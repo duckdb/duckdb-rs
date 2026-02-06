@@ -623,7 +623,7 @@ impl Statement<'_> {
     /// this, as it loses our protective `'conn` lifetime bound.
     #[inline]
     pub(crate) unsafe fn into_raw(mut self) -> RawStatement {
-        let mut stmt = RawStatement::new(ptr::null_mut());
+        let mut stmt = unsafe { RawStatement::new(ptr::null_mut()) };
         mem::swap(&mut stmt, &mut self.stmt);
         stmt
     }

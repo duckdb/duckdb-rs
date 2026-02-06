@@ -285,7 +285,7 @@ mod build_linked {
             println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
-            env::set_var("PKG_CONFIG_PATH", pkgconfig_path);
+            unsafe { env::set_var("PKG_CONFIG_PATH", pkgconfig_path) };
 
             #[cfg(feature = "pkg-config")]
             let lib_found = pkg_config::Config::new().probe("duckdb").is_ok();
