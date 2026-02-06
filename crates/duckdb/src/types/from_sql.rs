@@ -40,21 +40,21 @@ impl PartialEq for FromSqlError {
 
 impl fmt::Display for FromSqlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
+        match self {
             Self::InvalidType => write!(f, "Invalid type"),
             Self::OutOfRange(i) => write!(f, "Value {i} out of range"),
             #[cfg(feature = "uuid")]
             Self::InvalidUuidSize(s) => {
                 write!(f, "Cannot read UUID value out of {s} byte blob")
             }
-            Self::Other(ref err) => err.fmt(f),
+            Self::Other(err) => err.fmt(f),
         }
     }
 }
 
 impl Error for FromSqlError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        if let Self::Other(ref err) = self {
+        if let Self::Other(err) = self {
             Some(&**err)
         } else {
             None
