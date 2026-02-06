@@ -7,10 +7,10 @@ use libduckdb_sys::{
 };
 
 use crate::{
+    Connection,
     core::{DataChunkHandle, LogicalTypeHandle},
     inner_connection::InnerConnection,
     vtab::arrow::WritableVector,
-    Connection,
 };
 mod function;
 
@@ -206,10 +206,10 @@ mod test {
     use libduckdb_sys::duckdb_string_t;
 
     use crate::{
+        Connection,
         core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
         types::DuckString,
         vtab::arrow::WritableVector,
-        Connection,
     };
 
     use super::{ScalarFunctionSignature, VScalar};

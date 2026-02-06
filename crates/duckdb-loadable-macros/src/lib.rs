@@ -1,12 +1,12 @@
 #![allow(clippy::redundant_clone)]
 use proc_macro2::{Ident, Span};
 
-use syn::{parse_macro_input, spanned::Spanned, Item};
+use syn::{Item, parse_macro_input, spanned::Spanned};
 
 use proc_macro::TokenStream;
 use quote::quote_spanned;
 
-use darling::{ast::NestedMeta, Error, FromMeta};
+use darling::{Error, FromMeta, ast::NestedMeta};
 
 use std::env;
 

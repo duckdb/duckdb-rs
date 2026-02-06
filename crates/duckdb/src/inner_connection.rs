@@ -1,16 +1,16 @@
 use std::{
-    ffi::{c_void, CStr, CString},
+    ffi::{CStr, CString, c_void},
     mem,
     os::raw::c_char,
     ptr, str,
     sync::{Arc, Mutex},
 };
 
-use super::{ffi, Appender, Config, Connection, Result};
+use super::{Appender, Config, Connection, Result, ffi};
 use crate::{
     error::{
-        result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract, result_from_duckdb_prepare,
-        Error,
+        Error, result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract,
+        result_from_duckdb_prepare,
     },
     raw_statement::RawStatement,
     statement::Statement,

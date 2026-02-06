@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 
-use crate::{error::Error, inner_connection::InnerConnection, Connection, Result};
+use crate::{Connection, Result, error::Error, inner_connection::InnerConnection};
 
 use super::ffi;
 

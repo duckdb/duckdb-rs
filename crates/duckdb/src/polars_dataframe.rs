@@ -1,6 +1,6 @@
 use polars::prelude::DataFrame;
 
-use super::{arrow::datatypes::SchemaRef, Statement};
+use super::{Statement, arrow::datatypes::SchemaRef};
 
 /// An handle for the resulting Polars DataFrame of a query.
 #[must_use = "Polars is lazy and will do nothing unless consumed"]
@@ -38,7 +38,7 @@ mod tests {
     use polars::prelude::*;
     use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
-    use crate::{test::checked_memory_handle, Result};
+    use crate::{Result, test::checked_memory_handle};
 
     #[test]
     fn test_query_polars_small() -> Result<()> {

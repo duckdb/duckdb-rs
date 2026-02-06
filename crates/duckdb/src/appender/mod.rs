@@ -1,10 +1,10 @@
-use super::{ffi, AppenderParams, Connection, Result, ValueRef};
+use super::{AppenderParams, Connection, Result, ValueRef, ffi};
 use std::{ffi::c_void, fmt, os::raw::c_char};
 
 use crate::{
+    Error,
     error::result_from_duckdb_appender,
     types::{ToSql, ToSqlOutput},
-    Error,
 };
 
 /// Appender for fast import data
@@ -249,7 +249,7 @@ impl fmt::Debug for Appender<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{params, Connection, Error, Result};
+    use crate::{Connection, Error, Result, params};
 
     #[test]
     fn test_append_one_row() -> Result<()> {

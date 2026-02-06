@@ -3,13 +3,13 @@ use std::{cell::OnceCell, collections::HashMap, ffi::CStr, ops::Deref, ptr, rc::
 use arrow::{
     array::StructArray,
     datatypes::{DataType, Schema, SchemaRef},
-    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
 };
 
-use super::{ffi, Result};
+use super::{Result, ffi};
 #[cfg(feature = "polars")]
 use crate::arrow2;
-use crate::{core::LogicalTypeHandle, error::result_from_duckdb_arrow, Error};
+use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
 
 /// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
 ///

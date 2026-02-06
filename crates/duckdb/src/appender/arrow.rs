@@ -1,9 +1,9 @@
-use super::{ffi, Appender, Result};
+use super::{Appender, Result, ffi};
 use crate::{
+    Error,
     core::DataChunkHandle,
     error::result_from_duckdb_appender,
     vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type},
-    Error,
 };
 use arrow::record_batch::RecordBatch;
 use ffi::{duckdb_append_data_chunk, duckdb_vector_size};
@@ -65,7 +65,7 @@ impl Appender<'_> {
 mod test {
     use crate::{Connection, Result};
     use arrow::{
-        array::{Int32Array, Int8Array, StringArray},
+        array::{Int8Array, Int32Array, StringArray},
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };

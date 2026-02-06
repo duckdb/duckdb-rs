@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use duckdb::{
-    arrow::{record_batch::RecordBatch, util::pretty::print_batches},
     Connection, Result,
+    arrow::{record_batch::RecordBatch, util::pretty::print_batches},
 };
 
 fn main() -> Result<()> {

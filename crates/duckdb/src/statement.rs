@@ -2,14 +2,14 @@ use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 
 use arrow::{array::StructArray, datatypes::SchemaRef};
 
-use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
-#[cfg(feature = "polars")]
-use crate::{arrow2, polars_dataframe::Polars};
+use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
     types::{TimeUnit, ToSql, ToSqlOutput},
 };
+#[cfg(feature = "polars")]
+use crate::{arrow2, polars_dataframe::Polars};
 
 /// A prepared statement.
 ///
@@ -653,7 +653,7 @@ impl Statement<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{params_from_iter, types::ToSql, Connection, Error, Result};
+    use crate::{Connection, Error, Result, params_from_iter, types::ToSql};
 
     #[test]
     fn test_execute() -> Result<()> {

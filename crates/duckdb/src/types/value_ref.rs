@@ -9,7 +9,7 @@ use arrow::{
         Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StringArray,
         StructArray, UnionArray,
     },
-    datatypes::{UInt16Type, UInt32Type, UInt8Type},
+    datatypes::{UInt8Type, UInt16Type, UInt32Type},
 };
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.

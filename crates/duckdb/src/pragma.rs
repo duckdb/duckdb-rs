@@ -3,10 +3,10 @@
 use std::ops::Deref;
 
 use crate::{
+    Connection, DatabaseName, Result, Row,
     error::Error,
     ffi,
     types::{ToSql, ToSqlOutput, ValueRef},
-    Connection, DatabaseName, Result, Row,
 };
 
 pub struct Sql {
@@ -271,7 +271,7 @@ fn is_identifier_continue(c: char) -> bool {
 #[cfg(test)]
 mod test {
     use super::Sql;
-    use crate::{pragma, Connection, DatabaseName, Result};
+    use crate::{Connection, DatabaseName, Result, pragma};
 
     #[test]
     fn pragma_query_value() -> Result<()> {

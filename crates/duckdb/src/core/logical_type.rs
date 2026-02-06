@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_char, CString},
+    ffi::{CString, c_char},
     fmt::Debug,
 };
 
@@ -433,7 +433,7 @@ mod test {
 
     #[test]
     fn test_invalid_type() {
-        use crate::ffi::{duckdb_create_logical_type, DUCKDB_TYPE_DUCKDB_TYPE_INVALID};
+        use crate::ffi::{DUCKDB_TYPE_DUCKDB_TYPE_INVALID, duckdb_create_logical_type};
 
         // Create an invalid logical type (what DuckDB returns in certain error cases)
         let invalid_type =

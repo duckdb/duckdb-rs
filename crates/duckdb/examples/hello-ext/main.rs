@@ -1,8 +1,8 @@
 use duckdb::{
+    Connection, Result,
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
     duckdb_entrypoint_c_api,
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
-    Connection, Result,
 };
 use std::{
     error::Error,

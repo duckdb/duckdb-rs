@@ -2,7 +2,7 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
 use crate::core::{Inserter, LogicalTypeId};
-use calamine::{open_workbook_auto, Data, DataType, Range, Reader};
+use calamine::{Data, DataType, Range, Reader, open_workbook_auto};
 
 #[allow(dead_code)]
 #[repr(C)]
@@ -175,7 +175,7 @@ impl VTab for ExcelVTab {
 
 #[cfg(test)]
 mod test {
-    use crate::{vtab::excel::ExcelVTab, Connection, Result};
+    use crate::{Connection, Result, vtab::excel::ExcelVTab};
     use arrow::array::{Array, Date32Array, Float64Array, StringArray};
     use std::error::Error;
 
