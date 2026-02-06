@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = ["duckdb", "database", "ffi"]
 license = "MIT"
 categories = ["database"]
-edition = "2021"
+edition = "2024"
 rust-version = "1.85.1"
 
 [workspace.dependencies]
