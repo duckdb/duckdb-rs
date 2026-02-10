@@ -6,6 +6,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use arrow::{
+    datatypes::{Schema, SchemaRef},
+    ffi::FFI_ArrowSchema,
+};
+
 use super::{ffi, Appender, Config, Connection, Result};
 use crate::{
     error::{
@@ -261,6 +266,78 @@ impl InnerConnection {
         self.interrupt.clone()
     }
 
+    /// Extracts the Arrow schema from a prepared statement without executing it.
+    pub fn prepared_schema(&self, stmt: ffi::duckdb_prepared_statement) -> Result<Option<SchemaRef>> {
+        let ncols = unsafe { ffi::duckdb_prepared_statement_column_count(stmt) as usize };
+        if ncols == 0 {
+            return Ok(None);
+        }
+
+        let mut names: Vec<CString> = Vec::with_capacity(ncols);
+        let mut logical_types = LogicalTypesGuard::with_capacity(ncols);
+
+        for i in 0..ncols {
+            let name_ptr = unsafe { ffi::duckdb_prepared_statement_column_name(stmt, i as ffi::idx_t) };
+            if name_ptr.is_null() {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(ffi::DuckDBError),
+                    Some(format!("Failed to get column name for column {i}")),
+                ));
+            }
+            let name = unsafe { CStr::from_ptr(name_ptr).to_owned() };
+            unsafe { ffi::duckdb_free(name_ptr as *mut c_void) };
+            names.push(name);
+
+            let logical_type = unsafe { ffi::duckdb_prepared_statement_column_logical_type(stmt, i as ffi::idx_t) };
+            if logical_type.is_null() {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(ffi::DuckDBError),
+                    Some(format!("Failed to get logical type for column {i}")),
+                ));
+            }
+            logical_types.push(logical_type);
+        }
+
+        let mut arrow_options = ArrowOptionsGuard::from_connection(self.con)?;
+        let name_ptrs: Vec<*const i8> = names.iter().map(|n| n.as_ptr()).collect();
+        let mut arrow_schema = FFI_ArrowSchema::empty();
+
+        let error_data = unsafe {
+            ffi::duckdb_to_arrow_schema(
+                arrow_options.as_mut_ptr(),
+                logical_types.as_mut_ptr(),
+                name_ptrs.as_ptr() as *mut *const i8,
+                ncols as ffi::idx_t,
+                &mut arrow_schema as *mut FFI_ArrowSchema as *mut ffi::ArrowSchema,
+            )
+        };
+
+        if !error_data.is_null() {
+            let error_msg = unsafe {
+                CStr::from_ptr(ffi::duckdb_error_data_message(error_data))
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            unsafe {
+                let mut error_data = error_data;
+                ffi::duckdb_destroy_error_data(&mut error_data);
+            }
+            return Err(Error::DuckDBFailure(
+                ffi::Error::new(ffi::DuckDBError),
+                Some(format!("Failed to convert to Arrow schema: {error_msg}")),
+            ));
+        }
+
+        let schema = Schema::try_from(&arrow_schema).map_err(|e| {
+            Error::DuckDBFailure(
+                ffi::Error::new(ffi::DuckDBError),
+                Some(format!("Failed to convert FFI Arrow schema: {e}")),
+            )
+        })?;
+
+        Ok(Some(Arc::new(schema)))
+    }
+
     #[inline]
     pub fn is_autocommit(&self) -> bool {
         true
@@ -272,6 +349,58 @@ struct ExtractedStatementsGuard(ffi::duckdb_extracted_statements);
 impl Drop for ExtractedStatementsGuard {
     fn drop(&mut self) {
         unsafe { ffi::duckdb_destroy_extracted(&mut self.0) }
+    }
+}
+
+/// RAII guard for a collection of DuckDB logical types.
+struct LogicalTypesGuard(Vec<ffi::duckdb_logical_type>);
+
+impl LogicalTypesGuard {
+    fn with_capacity(cap: usize) -> Self {
+        Self(Vec::with_capacity(cap))
+    }
+
+    fn push(&mut self, lt: ffi::duckdb_logical_type) {
+        self.0.push(lt);
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut ffi::duckdb_logical_type {
+        self.0.as_mut_ptr()
+    }
+}
+
+impl Drop for LogicalTypesGuard {
+    fn drop(&mut self) {
+        for lt in &mut self.0 {
+            unsafe { ffi::duckdb_destroy_logical_type(lt) }
+        }
+    }
+}
+
+/// RAII guard for DuckDB arrow options.
+struct ArrowOptionsGuard(ffi::duckdb_arrow_options);
+
+impl ArrowOptionsGuard {
+    fn from_connection(con: ffi::duckdb_connection) -> Result<Self> {
+        let mut opts: ffi::duckdb_arrow_options = ptr::null_mut();
+        unsafe { ffi::duckdb_connection_get_arrow_options(con, &mut opts) };
+        if opts.is_null() {
+            return Err(Error::DuckDBFailure(
+                ffi::Error::new(ffi::DuckDBError),
+                Some("Failed to get arrow options from connection".to_string()),
+            ));
+        }
+        Ok(Self(opts))
+    }
+
+    fn as_mut_ptr(&mut self) -> ffi::duckdb_arrow_options {
+        self.0
+    }
+}
+
+impl Drop for ArrowOptionsGuard {
+    fn drop(&mut self) {
+        unsafe { ffi::duckdb_destroy_arrow_options(&mut self.0) }
     }
 }
 

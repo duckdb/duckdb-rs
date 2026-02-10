@@ -653,6 +653,15 @@ impl Connection {
         self.db.borrow().is_autocommit()
     }
 
+    /// Extracts the Arrow schema from a prepared statement without executing it.
+    #[inline]
+    pub(crate) fn prepared_schema(
+        &self,
+        stmt: ffi::duckdb_prepared_statement,
+    ) -> Result<Option<arrow::datatypes::SchemaRef>> {
+        self.db.borrow().prepared_schema(stmt)
+    }
+
     /// Creates a new connection to the already-opened database.
     pub fn try_clone(&self) -> Result<Self> {
         let inner = self.db.borrow().try_clone()?;
