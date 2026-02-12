@@ -135,6 +135,8 @@ pub mod vscalar;
 
 #[cfg(test)]
 mod test_all_types;
+#[cfg(test)]
+mod table_index_list_bind_test;
 
 // Number of cached prepared statements we'll hold on to.
 const STATEMENT_CACHE_DEFAULT_CAPACITY: usize = 16;
