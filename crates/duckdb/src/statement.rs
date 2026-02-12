@@ -596,17 +596,15 @@ impl Statement<'_> {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
             ValueRef::Timestamp(u, i) => unsafe {
-                let micros = match u {
-                    TimeUnit::Second => i * 1_000_000,
-                    TimeUnit::Millisecond => i * 1_000,
-                    TimeUnit::Microsecond => i,
-                    TimeUnit::Nanosecond => i / 1_000,
-                };
-                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros })
+                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros: u.to_micros(i) })
             },
             ValueRef::Interval { months, days, nanos } => unsafe {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
+            },
+            ValueRef::Date32(days) => unsafe { ffi::duckdb_bind_date(ptr, col as u64, ffi::duckdb_date { days }) },
+            ValueRef::Time64(u, i) => unsafe {
+                ffi::duckdb_bind_time(ptr, col as u64, ffi::duckdb_time { micros: u.to_micros(i) })
             },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
