@@ -278,7 +278,7 @@ impl Connection {
     /// Need to pass in a valid db instance
     #[inline]
     pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Self> {
-        InnerConnection::new_from_raw_db(raw, false).map(|db| Self {
+        unsafe { InnerConnection::new_from_raw_db(raw, false) }.map(|db| Self {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
             path: None, // Can we know the path from connection?

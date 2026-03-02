@@ -140,7 +140,7 @@ impl ScalarFunction {
     /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
     /// properly cleans up the data when called.
     pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy);
+        unsafe { duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy) };
     }
 
     /// Assigns extra information to the scalar function that can be fetched during execution.
@@ -161,5 +161,5 @@ impl ScalarFunction {
 }
 
 unsafe extern "C" fn drop_ptr<T>(ptr: *mut c_void) {
-    let _ = Box::from_raw(ptr as *mut T);
+    let _ = unsafe { Box::from_raw(ptr as *mut T) };
 }

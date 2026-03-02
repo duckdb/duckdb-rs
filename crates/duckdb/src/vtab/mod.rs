@@ -87,11 +87,13 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    let info = TableFunctionInfo::<T>::from(info);
-    let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
-    let result = T::func(&info, &mut data_chunk_handle);
-    if let Err(e) = result {
-        info.set_error(&e.to_string());
+    unsafe {
+        let info = TableFunctionInfo::<T>::from(info);
+        let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
+        let result = T::func(&info, &mut data_chunk_handle);
+        if let Err(e) = result {
+            info.set_error(&e.to_string());
+        }
     }
 }
 
@@ -99,16 +101,18 @@ unsafe extern "C" fn init<T>(info: duckdb_init_info)
 where
     T: VTab,
 {
-    let info = InitInfo::from(info);
-    match T::init(&info) {
-        Ok(init_data) => {
-            info.set_init_data(
-                Box::into_raw(Box::new(init_data)) as *mut c_void,
-                Some(drop_boxed::<T::InitData>),
-            );
-        }
-        Err(e) => {
-            info.set_error(&e.to_string());
+    unsafe {
+        let info = InitInfo::from(info);
+        match T::init(&info) {
+            Ok(init_data) => {
+                info.set_init_data(
+                    Box::into_raw(Box::new(init_data)) as *mut c_void,
+                    Some(drop_boxed::<T::InitData>),
+                );
+            }
+            Err(e) => {
+                info.set_error(&e.to_string());
+            }
         }
     }
 }
@@ -117,16 +121,18 @@ unsafe extern "C" fn bind<T>(info: duckdb_bind_info)
 where
     T: VTab,
 {
-    let info = BindInfo::from(info);
-    match T::bind(&info) {
-        Ok(bind_data) => {
-            info.set_bind_data(
-                Box::into_raw(Box::new(bind_data)) as *mut c_void,
-                Some(drop_boxed::<T::BindData>),
-            );
-        }
-        Err(e) => {
-            info.set_error(&e.to_string());
+    unsafe {
+        let info = BindInfo::from(info);
+        match T::bind(&info) {
+            Ok(bind_data) => {
+                info.set_bind_data(
+                    Box::into_raw(Box::new(bind_data)) as *mut c_void,
+                    Some(drop_boxed::<T::BindData>),
+                );
+            }
+            Err(e) => {
+                info.set_error(&e.to_string());
+            }
         }
     }
 }

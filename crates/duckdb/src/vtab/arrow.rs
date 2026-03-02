@@ -45,23 +45,23 @@ pub struct ArrowVTab;
 
 unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
     let ptr = address as *mut FFI_ArrowSchema;
-    *Box::from_raw(ptr)
+    unsafe { *Box::from_raw(ptr) }
 }
 
 unsafe fn address_to_arrow_array(address: usize) -> FFI_ArrowArray {
     let ptr = address as *mut FFI_ArrowArray;
-    *Box::from_raw(ptr)
+    unsafe { *Box::from_raw(ptr) }
 }
 
 unsafe fn address_to_arrow_ffi(array: usize, schema: usize) -> (FFI_ArrowArray, FFI_ArrowSchema) {
-    let array = address_to_arrow_array(array);
-    let schema = address_to_arrow_schema(schema);
+    let array = unsafe { address_to_arrow_array(array) };
+    let schema = unsafe { address_to_arrow_schema(schema) };
     (array, schema)
 }
 
 unsafe fn address_to_arrow_record_batch(array: usize, schema: usize) -> RecordBatch {
-    let (array, schema) = address_to_arrow_ffi(array, schema);
-    let array_data = from_ffi(array, &schema).expect("ok");
+    let (array, schema) = unsafe { address_to_arrow_ffi(array, schema) };
+    let array_data = unsafe { from_ffi(array, &schema) }.expect("ok");
     let struct_array = StructArray::from(array_data);
     RecordBatch::from(&struct_array)
 }
@@ -226,7 +226,7 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
 
 fn arrow_map_to_duckdb_logical_type(field: &FieldRef) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
     // Map is a logical nested type that is represented as `List<entries: Struct<key: K, value: V>>`
-    let DataType::Struct(ref fields) = field.data_type() else {
+    let DataType::Struct(fields) = field.data_type() else {
         return Err(format!(
             "The inner field of a Map must be a Struct, got: {:?}",
             field.data_type()

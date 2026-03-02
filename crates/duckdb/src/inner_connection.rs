@@ -65,23 +65,25 @@ pub struct InnerConnection {
 impl InnerConnection {
     #[inline]
     unsafe fn new(database: Arc<Mutex<DatabaseHandle>>) -> Result<Self> {
-        let mut con: ffi::duckdb_connection = ptr::null_mut();
-        let db_raw = database.lock().expect("database handle mutex poisoned").raw();
-        let r = ffi::duckdb_connect(db_raw, &mut con);
-        if r != ffi::DuckDBSuccess {
-            ffi::duckdb_disconnect(&mut con);
-            return Err(Error::DuckDBFailure(
-                ffi::Error::new(r),
-                Some("connect error".to_owned()),
-            ));
-        }
-        let interrupt = Arc::new(InterruptHandle::new(con));
+        unsafe {
+            let mut con: ffi::duckdb_connection = ptr::null_mut();
+            let db_raw = database.lock().expect("database handle mutex poisoned").raw();
+            let r = ffi::duckdb_connect(db_raw, &mut con);
+            if r != ffi::DuckDBSuccess {
+                ffi::duckdb_disconnect(&mut con);
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(r),
+                    Some("connect error".to_owned()),
+                ));
+            }
+            let interrupt = Arc::new(InterruptHandle::new(con));
 
-        Ok(Self {
-            database,
-            con,
-            interrupt,
-        })
+            Ok(Self {
+                database,
+                con,
+                interrupt,
+            })
+        }
     }
 
     pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<Self> {
@@ -100,7 +102,7 @@ impl InnerConnection {
 
     #[inline]
     pub(crate) unsafe fn new_from_raw_db(raw: ffi::duckdb_database, close_on_drop: bool) -> Result<Self> {
-        Self::new(Arc::new(Mutex::new(DatabaseHandle::new(raw, close_on_drop))))
+        unsafe { Self::new(Arc::new(Mutex::new(DatabaseHandle::new(raw, close_on_drop)))) }
     }
 
     pub fn close(&mut self) -> Result<()> {
