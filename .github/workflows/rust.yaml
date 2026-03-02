@@ -102,18 +102,12 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: nightly-2025-08-15
-          components: rust-src
-      - name: Install LLVM
-        run: sudo apt-get install -y llvm
+          toolchain: nightly
       - name: Tests with asan
         env:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
-        # We cannot run "modern-full" with asan as the chrono feature will auto-load relase binaries of
+        # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
-        run: |
-          export ASAN_SYMBOLIZER_PATH=$(which llvm-symbolizer)
-          echo $ASAN_SYMBOLIZER_PATH
-          cargo -Z build-std test --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
+        run: cargo test --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
