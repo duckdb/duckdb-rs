@@ -8,7 +8,7 @@ use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput},
 };
 
 /// A prepared statement.
@@ -1235,6 +1235,33 @@ mod test {
             error_string
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_date32() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        // 19130 days since epoch = 2022-05-18
+        let result: bool = db.query_row("SELECT ? = DATE '2022-05-18'", [Value::Date32(19130)], |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_time64() -> Result<()> {
+        use crate::types::{TimeUnit, Value};
+
+        let db = Connection::open_in_memory()?;
+        // 45_045_123_456 micros = 12:30:45.123456
+        let micros = 45_045_123_456i64;
+        let result: bool = db.query_row(
+            "SELECT ? = TIME '12:30:45.123456'",
+            [Value::Time64(TimeUnit::Microsecond, micros)],
+            |row| row.get(0),
+        )?;
+        assert!(result);
         Ok(())
     }
 }
