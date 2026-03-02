@@ -8,7 +8,7 @@ use crate::{arrow2, polars_dataframe::Polars};
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput},
 };
 
 /// A prepared statement.
@@ -596,17 +596,15 @@ impl Statement<'_> {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
             ValueRef::Timestamp(u, i) => unsafe {
-                let micros = match u {
-                    TimeUnit::Second => i * 1_000_000,
-                    TimeUnit::Millisecond => i * 1_000,
-                    TimeUnit::Microsecond => i,
-                    TimeUnit::Nanosecond => i / 1_000,
-                };
-                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros })
+                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros: u.to_micros(i) })
             },
             ValueRef::Interval { months, days, nanos } => unsafe {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
+            },
+            ValueRef::Date32(days) => unsafe { ffi::duckdb_bind_date(ptr, col as u64, ffi::duckdb_date { days }) },
+            ValueRef::Time64(u, i) => unsafe {
+                ffi::duckdb_bind_time(ptr, col as u64, ffi::duckdb_time { micros: u.to_micros(i) })
             },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
@@ -1237,6 +1235,33 @@ mod test {
             error_string
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_date32() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        // 19130 days since epoch = 2022-05-18
+        let result: bool = db.query_row("SELECT ? = DATE '2022-05-18'", [Value::Date32(19130)], |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_time64() -> Result<()> {
+        use crate::types::{TimeUnit, Value};
+
+        let db = Connection::open_in_memory()?;
+        // 45_045_123_456 micros = 12:30:45.123456
+        let micros = 45_045_123_456i64;
+        let result: bool = db.query_row(
+            "SELECT ? = TIME '12:30:45.123456'",
+            [Value::Time64(TimeUnit::Microsecond, micros)],
+            |row| row.get(0),
+        )?;
+        assert!(result);
         Ok(())
     }
 }
