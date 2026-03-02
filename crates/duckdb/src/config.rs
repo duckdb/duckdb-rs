@@ -1,4 +1,4 @@
-use super::{ffi, Result};
+use super::{Result, ffi};
 use crate::error::Error;
 use std::{default::Default, ffi::CString, os::raw::c_char, ptr};
 
@@ -158,7 +158,7 @@ impl Drop for Config {
 
 #[cfg(test)]
 mod test {
-    use crate::{types::Value, Config, Connection, Result};
+    use crate::{Config, Connection, Result, types::Value};
 
     #[test]
     fn test_default_config() -> Result<()> {

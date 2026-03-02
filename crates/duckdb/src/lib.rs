@@ -72,7 +72,7 @@ use crate::{cache::StatementCache, inner_connection::InnerConnection, raw_statem
 pub use crate::r2d2::DuckdbConnectionManager;
 pub use crate::{
     appender::Appender,
-    appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter},
+    appender_params::{AppenderParams, AppenderParamsFromIter, appender_params_from_iter},
     arrow_batch::{Arrow, ArrowStream},
     cache::CachedStatement,
     column::Column,
@@ -80,7 +80,7 @@ pub use crate::{
     error::Error,
     ffi::ErrorCode,
     inner_connection::InterruptHandle,
-    params::{params_from_iter, Params, ParamsFromIter},
+    params::{Params, ParamsFromIter, params_from_iter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
     transaction::{DropBehavior, Transaction},

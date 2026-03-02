@@ -33,7 +33,7 @@ mod tests {
     use arrow::{
         array::{Array, Int32Array, StructArray},
         datatypes::DataType,
-        ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+        ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
     };
 
     unsafe fn print_int_result(result: &mut duckdb_result) {

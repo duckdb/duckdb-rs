@@ -2,8 +2,8 @@ use pretty_assertions::assert_eq;
 use rust_decimal::Decimal;
 
 use crate::{
-    types::{OrderedMap, TimeUnit, Type, Value, ValueRef},
     Connection,
+    types::{OrderedMap, TimeUnit, Type, Value, ValueRef},
 };
 
 #[test]
