@@ -13,11 +13,11 @@ use sealed::Sealed;
 /// [params]: https://duckdb.org/docs/stable/clients/c/prepared.html
 ///
 /// Note: Currently, this trait can only be implemented inside this crate.
-/// Additionally, it's methods (which are `doc(hidden)`) should currently not be
+/// Additionally, its methods (which are `doc(hidden)`) should currently not be
 /// considered part of the stable API, although it's possible they will
 /// stabilize in the future.
 ///
-/// # Passing parameters to SQLite
+/// # Passing parameters to DuckDB
 ///
 /// Many functions in this library let you pass parameters to SQLite. Doing this
 /// lets you avoid any risk of SQL injection, and is simpler than escaping
@@ -199,7 +199,7 @@ macro_rules! impl_appender_params_for_tuple {
 // (https://github.com/rusqlite/rusqlite/blob/master/src/params.rs).
 // This allows ergonomic row insertion without lifetime issues, e.g.:
 //   appender.append_rows(data.iter().map(|(id, name)| (id, name)))
-// Following stdlib convention, we support tuples up to arity 12.
+// Support tuples up to arity 16, matching rusqlite's Params.
 impl_appender_params_for_tuple!(T1);
 impl_appender_params_for_tuple!(T1, T2);
 impl_appender_params_for_tuple!(T1, T2, T3);
@@ -212,6 +212,10 @@ impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
 impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
 
 /// Adapter type which allows any iterator over [`ToSql`] values to implement
 /// [`Params`].
