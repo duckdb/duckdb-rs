@@ -259,6 +259,6 @@ Join our [Discord](https://discord.gg/tcvwpjfnZx) to chat with the community in 
 
 ## License
 
-Copyright 2021-2025 Stichting DuckDB Foundation
+Copyright (c) Stichting DuckDB Foundation
 
 Licensed under the [MIT license](LICENSE).
