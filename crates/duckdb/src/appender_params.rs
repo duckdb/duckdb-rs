@@ -13,11 +13,11 @@ use sealed::Sealed;
 /// [params]: https://duckdb.org/docs/stable/clients/c/prepared.html
 ///
 /// Note: Currently, this trait can only be implemented inside this crate.
-/// Additionally, it's methods (which are `doc(hidden)`) should currently not be
+/// Additionally, its methods (which are `doc(hidden)`) should currently not be
 /// considered part of the stable API, although it's possible they will
 /// stabilize in the future.
 ///
-/// # Passing parameters to SQLite
+/// # Passing parameters to DuckDB
 ///
 /// Many functions in this library let you pass parameters to SQLite. Doing this
 /// lets you avoid any risk of SQL injection, and is simpler than escaping
