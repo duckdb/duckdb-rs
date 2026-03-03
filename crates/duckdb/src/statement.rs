@@ -1264,4 +1264,97 @@ mod test {
         assert!(result);
         Ok(())
     }
+
+    #[test]
+    fn test_execute_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT, score DOUBLE)")?;
+
+        // Heterogeneous tuple
+        let mut stmt = db.prepare("INSERT INTO test VALUES (?, ?, ?)")?;
+        stmt.execute((1i32, "alice", 95.5f64))?;
+        stmt.execute((2i32, "bob", 87.0f64))?;
+
+        let mut stmt = db.prepare("SELECT id, name, score FROM test ORDER BY id")?;
+        let mut rows = stmt.query([])?;
+
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get::<_, i32>(0)?, 1);
+        assert_eq!(row.get::<_, String>(1)?, "alice");
+        assert_eq!(row.get::<_, f64>(2)?, 95.5);
+
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get::<_, i32>(0)?, 2);
+        assert_eq!(row.get::<_, String>(1)?, "bob");
+        assert_eq!(row.get::<_, f64>(2)?, 87.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_row_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT)")?;
+        db.execute("INSERT INTO test VALUES (1, 'alice')", [])?;
+
+        let name: String = db.query_row("SELECT name FROM test WHERE id = ?", (1i32,), |r| r.get(0))?;
+        assert_eq!(name, "alice");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple_single_element() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER)")?;
+
+        db.execute("INSERT INTO test VALUES (?)", (42i32,))?;
+
+        let val: i32 = db.query_row("SELECT id FROM test", [], |r| r.get(0))?;
+        assert_eq!(val, 42);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple_many_columns() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE TABLE test (a INT, b INT, c INT, d INT, e INT, f INT, g INT, h INT, i INT, j INT, k INT, l INT)",
+        )?;
+
+        db.execute(
+            "INSERT INTO test VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32, 9i32, 10i32, 11i32, 12i32,
+            ),
+        )?;
+
+        let sum: i32 = db.query_row("SELECT a+b+c+d+e+f+g+h+i+j+k+l FROM test", [], |r| r.get(0))?;
+        assert_eq!(sum, 78);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple_with_option() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT)")?;
+
+        db.execute("INSERT INTO test VALUES (?, ?)", (1i32, None::<String>))?;
+
+        let name: Option<String> = db.query_row("SELECT name FROM test WHERE id = ?", (1i32,), |r| r.get(0))?;
+        assert_eq!(name, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_empty_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER DEFAULT 1)")?;
+
+        db.execute("INSERT INTO test DEFAULT VALUES", ())?;
+
+        let val: i32 = db.query_row("SELECT id FROM test", (), |r| r.get(0))?;
+        assert_eq!(val, 1);
+        Ok(())
+    }
 }
