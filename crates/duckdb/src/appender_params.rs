@@ -199,7 +199,7 @@ macro_rules! impl_appender_params_for_tuple {
 // (https://github.com/rusqlite/rusqlite/blob/master/src/params.rs).
 // This allows ergonomic row insertion without lifetime issues, e.g.:
 //   appender.append_rows(data.iter().map(|(id, name)| (id, name)))
-// Following stdlib convention, we support tuples up to arity 12.
+// Support tuples up to arity 16, matching rusqlite's Params.
 impl_appender_params_for_tuple!(T1);
 impl_appender_params_for_tuple!(T1, T2);
 impl_appender_params_for_tuple!(T1, T2, T3);
@@ -212,6 +212,10 @@ impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
 impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+impl_appender_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
 
 /// Adapter type which allows any iterator over [`ToSql`] values to implement
 /// [`Params`].
