@@ -18,17 +18,19 @@ jobs:
     # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
     # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
     # - bundled feature tested by --all-features
-    name: Test ${{ matrix.target }}
+    name: Test ${{ matrix.name }}
     strategy:
       fail-fast: true
       matrix:
         include:
           - {
+              name: Windows,
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
               duckdb: libduckdb-windows-amd64.zip,
             }
           - {
+              name: Linux,
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-latest,
               duckdb: libduckdb-linux-amd64.zip,
@@ -107,7 +109,7 @@ jobs:
       - run: cargo msrv verify --path crates/duckdb-loadable-macros
       - run: cargo msrv verify --path crates/libduckdb-sys
 
-  Sanitizer:
+  sanitizer:
     name: Address Sanitizer
     runs-on: ubuntu-latest
     steps:

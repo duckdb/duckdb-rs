@@ -1,4 +1,4 @@
-name: CD
+name: Release
 
 on:
   push:
@@ -7,7 +7,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
 jobs:
-  Release:
+  release:
     name: Cargo Publish
     runs-on: ubuntu-latest
     steps:
