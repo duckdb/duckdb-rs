@@ -95,6 +95,17 @@ jobs:
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
 
+  msrv:
+    name: MSRV Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: taiki-e/install-action@cargo-msrv
+      - run: cargo msrv verify --path crates/duckdb
+      - run: cargo msrv verify --path crates/duckdb-loadable-macros
+      - run: cargo msrv verify --path crates/libduckdb-sys
+
   Sanitizer:
     name: Address Sanitizer
     runs-on: ubuntu-latest
