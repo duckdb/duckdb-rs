@@ -4,7 +4,8 @@ on:
   push:
     tags: ["*"]
 env:
-  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
 jobs:
   Release:
     name: Cargo Publish
