@@ -1319,18 +1319,20 @@ mod test {
     fn test_execute_tuple_many_columns() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch(
-            "CREATE TABLE test (a INT, b INT, c INT, d INT, e INT, f INT, g INT, h INT, i INT, j INT, k INT, l INT)",
+            "CREATE TABLE test (a INT, b TEXT, c DOUBLE, d INT, e TEXT, f DOUBLE, g INT, h TEXT, i DOUBLE, j INT, k TEXT, l DOUBLE, m INT, n TEXT, o DOUBLE, p INT)",
         )?;
 
+        // Use arity 16 with heterogeneous types to exercise the max tuple impl
         db.execute(
-            "INSERT INTO test VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO test VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32, 9i32, 10i32, 11i32, 12i32,
+                1i32, "a", 1.0f64, 2i32, "b", 2.0f64, 3i32, "c", 3.0f64, 4i32, "d", 4.0f64, 5i32, "e", 5.0f64, 6i32,
             ),
         )?;
 
-        let sum: i32 = db.query_row("SELECT a+b+c+d+e+f+g+h+i+j+k+l FROM test", [], |r| r.get(0))?;
-        assert_eq!(sum, 78);
+        let (a, p): (i32, i32) = db.query_row("SELECT a, p FROM test", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        assert_eq!(a, 1);
+        assert_eq!(p, 6);
         Ok(())
     }
 
