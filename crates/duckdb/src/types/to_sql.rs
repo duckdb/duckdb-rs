@@ -324,7 +324,7 @@ mod test {
     #[cfg(feature = "uuid")]
     #[test]
     fn test_uuid_blob_type() -> crate::Result<()> {
-        use crate::{params, Connection};
+        use crate::{Connection, params};
         use uuid::Uuid;
 
         let db = Connection::open_in_memory()?;
@@ -345,7 +345,7 @@ mod test {
     #[cfg(feature = "uuid")]
     #[test]
     fn test_uuid_type() -> crate::Result<()> {
-        use crate::{params, Connection};
+        use crate::{Connection, params};
         use uuid::Uuid;
 
         let db = Connection::open_in_memory()?;

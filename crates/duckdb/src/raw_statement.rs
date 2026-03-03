@@ -3,13 +3,13 @@ use std::{cell::OnceCell, collections::HashMap, ffi::CStr, ops::Deref, ptr, rc::
 use arrow::{
     array::StructArray,
     datatypes::{DataType, Schema, SchemaRef},
-    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
 };
 
-use super::{ffi, Result};
+use super::{Result, ffi};
 #[cfg(feature = "polars")]
 use crate::arrow2;
-use crate::{core::LogicalTypeHandle, error::result_from_duckdb_arrow, Error};
+use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
 
 /// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
 ///
@@ -268,28 +268,30 @@ impl RawStatement {
 
     #[allow(dead_code)]
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
+        unsafe {
+            use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
 
-        println!(
-            "row-count: {}, column-count: {}",
-            duckdb_row_count(&mut result),
-            duckdb_column_count(&mut result)
-        );
-        for i in 0..duckdb_column_count(&mut result) {
-            print!(
-                "column-name:{} ",
-                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+            println!(
+                "row-count: {}, column-count: {}",
+                duckdb_row_count(&mut result),
+                duckdb_column_count(&mut result)
             );
-        }
-        println!();
-        // print the data of the result
-        for row_idx in 0..duckdb_row_count(&mut result) {
-            print!("row-value:");
-            for col_idx in 0..duckdb_column_count(&mut result) {
-                let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                print!("{} ", CStr::from_ptr(val).to_string_lossy());
+            for i in 0..duckdb_column_count(&mut result) {
+                print!(
+                    "column-name:{} ",
+                    CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+                );
             }
             println!();
+            // print the data of the result
+            for row_idx in 0..duckdb_row_count(&mut result) {
+                print!("row-value:");
+                for col_idx in 0..duckdb_column_count(&mut result) {
+                    let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
+                    print!("{} ", CStr::from_ptr(val).to_string_lossy());
+                }
+                println!();
+            }
         }
     }
 

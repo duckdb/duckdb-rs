@@ -1,6 +1,6 @@
 //! Prepared statements cache for faster execution.
 
-use crate::{raw_statement::RawStatement, Connection, Result, Statement};
+use crate::{Connection, Result, Statement, raw_statement::RawStatement};
 use hashlink::LruCache;
 use std::{
     cell::RefCell,

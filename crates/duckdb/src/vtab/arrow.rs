@@ -1,5 +1,5 @@
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 use crate::{
     core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector, Vector},
@@ -8,12 +8,12 @@ use crate::{
 
 use arrow::{
     array::{
-        as_boolean_array, as_generic_binary_array, as_large_list_array, as_list_array, as_map_array,
-        as_primitive_array, as_string_array, as_struct_array, Array, ArrayData, AsArray, BinaryArray, BinaryViewArray,
-        BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder,
-        GenericListArray, GenericStringArray, IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray,
-        OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, TimestampMicrosecondArray,
-        TimestampNanosecondArray,
+        Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Decimal128Array,
+        FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder, GenericListArray, GenericStringArray,
+        IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StringArray,
+        StringViewArray, StructArray, TimestampMicrosecondArray, TimestampNanosecondArray, as_boolean_array,
+        as_generic_binary_array, as_large_list_array, as_list_array, as_map_array, as_primitive_array, as_string_array,
+        as_struct_array,
     },
     buffer::{BooleanBuffer, NullBuffer},
     compute::cast,
@@ -21,12 +21,12 @@ use arrow::{
 
 use arrow::{
     datatypes::*,
-    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
     record_batch::RecordBatch,
 };
 
 use libduckdb_sys::{duckdb_date, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector};
-use num::{cast::AsPrimitive, ToPrimitive};
+use num::{ToPrimitive, cast::AsPrimitive};
 
 /// A pointer to the Arrow record batch for the table function.
 #[repr(C)]
@@ -45,23 +45,23 @@ pub struct ArrowVTab;
 
 unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
     let ptr = address as *mut FFI_ArrowSchema;
-    *Box::from_raw(ptr)
+    unsafe { *Box::from_raw(ptr) }
 }
 
 unsafe fn address_to_arrow_array(address: usize) -> FFI_ArrowArray {
     let ptr = address as *mut FFI_ArrowArray;
-    *Box::from_raw(ptr)
+    unsafe { *Box::from_raw(ptr) }
 }
 
 unsafe fn address_to_arrow_ffi(array: usize, schema: usize) -> (FFI_ArrowArray, FFI_ArrowSchema) {
-    let array = address_to_arrow_array(array);
-    let schema = address_to_arrow_schema(schema);
+    let array = unsafe { address_to_arrow_array(array) };
+    let schema = unsafe { address_to_arrow_schema(schema) };
     (array, schema)
 }
 
 unsafe fn address_to_arrow_record_batch(array: usize, schema: usize) -> RecordBatch {
-    let (array, schema) = address_to_arrow_ffi(array, schema);
-    let array_data = from_ffi(array, &schema).expect("ok");
+    let (array, schema) = unsafe { address_to_arrow_ffi(array, schema) };
+    let array_data = unsafe { from_ffi(array, &schema) }.expect("ok");
     let struct_array = StructArray::from(array_data);
     RecordBatch::from(&struct_array)
 }
@@ -226,7 +226,7 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
 
 fn arrow_map_to_duckdb_logical_type(field: &FieldRef) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
     // Map is a logical nested type that is represented as `List<entries: Struct<key: K, value: V>>`
-    let DataType::Struct(ref fields) = field.data_type() else {
+    let DataType::Struct(fields) = field.data_type() else {
         return Err(format!(
             "The inner field of a Map must be a Struct, got: {:?}",
             field.data_type()
@@ -1155,7 +1155,7 @@ fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector) {
 
 #[cfg(test)]
 mod test {
-    use super::{arrow_recordbatch_to_query_params, ArrowVTab};
+    use super::{ArrowVTab, arrow_recordbatch_to_query_params};
     use crate::{Connection, Result};
     use arrow::{
         array::{
@@ -1169,8 +1169,8 @@ mod test {
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
-            i256, ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, IntervalDayTimeType,
-            IntervalMonthDayNanoType, IntervalYearMonthType, Schema,
+            ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, IntervalDayTimeType,
+            IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
         },
         record_batch::RecordBatch,
     };
@@ -1362,9 +1362,11 @@ mod test {
         let rb = stmt.query_arrow(param)?.next().expect("no record batch");
 
         let output_any_array = rb.column(0);
-        assert!(output_any_array
-            .data_type()
-            .equals_datatype(expected_output_array.data_type()));
+        assert!(
+            output_any_array
+                .data_type()
+                .equals_datatype(expected_output_array.data_type())
+        );
 
         match output_any_array.as_list_opt::<T>() {
             Some(output_array) => {
@@ -1491,9 +1493,11 @@ mod test {
         let rb = stmt.query_arrow(param)?.next().expect("no record batch");
 
         let output_any_array = rb.column(0);
-        assert!(output_any_array
-            .data_type()
-            .equals_datatype(expected_output_array.data_type()));
+        assert!(
+            output_any_array
+                .data_type()
+                .equals_datatype(expected_output_array.data_type())
+        );
 
         match output_any_array.as_fixed_size_list_opt() {
             Some(output_array) => {

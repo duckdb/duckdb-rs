@@ -7,10 +7,10 @@ use libduckdb_sys::{
 };
 
 use crate::{
+    Connection,
     core::{DataChunkHandle, LogicalTypeHandle},
     inner_connection::InnerConnection,
     vtab::arrow::WritableVector,
-    Connection,
 };
 mod function;
 
@@ -126,12 +126,12 @@ impl From<duckdb_function_info> for ScalarFunctionInfo {
 
 impl ScalarFunctionInfo {
     pub unsafe fn get_extra_info<T>(&self) -> &T {
-        &*(duckdb_scalar_function_get_extra_info(self.0).cast())
+        unsafe { &*(duckdb_scalar_function_get_extra_info(self.0).cast()) }
     }
 
     pub unsafe fn set_error(&self, error: &str) {
         let c_str = CString::new(error).unwrap();
-        duckdb_scalar_function_set_error(self.0, c_str.as_ptr());
+        unsafe { duckdb_scalar_function_set_error(self.0, c_str.as_ptr()) };
     }
 }
 
@@ -139,11 +139,13 @@ unsafe extern "C" fn scalar_func<T>(info: duckdb_function_info, input: duckdb_da
 where
     T: VScalar,
 {
-    let info = ScalarFunctionInfo::from(info);
-    let mut input = DataChunkHandle::new_unowned(input);
-    let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
-    if let Err(e) = result {
-        info.set_error(&e.to_string());
+    unsafe {
+        let info = ScalarFunctionInfo::from(info);
+        let mut input = DataChunkHandle::new_unowned(input);
+        let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
+        if let Err(e) = result {
+            info.set_error(&e.to_string());
+        }
     }
 }
 
@@ -206,10 +208,10 @@ mod test {
     use libduckdb_sys::duckdb_string_t;
 
     use crate::{
+        Connection,
         core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
         types::DuckString,
         vtab::arrow::WritableVector,
-        Connection,
     };
 
     use super::{ScalarFunctionSignature, VScalar};

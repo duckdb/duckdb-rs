@@ -3,8 +3,8 @@
 // cargo run --example repl path/to/database.db
 // cat example.sql | cargo run --example repl
 
-use duckdb::{arrow::record_batch::RecordBatch, Connection, Result as DuckResult};
-use rustyline::{error::ReadlineError, history::DefaultHistory, Config, Editor};
+use duckdb::{Connection, Result as DuckResult, arrow::record_batch::RecordBatch};
+use rustyline::{Config, Editor, error::ReadlineError, history::DefaultHistory};
 
 const HISTORY_FILE: &str = ".duckdb_rs_history";
 

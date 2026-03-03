@@ -91,7 +91,7 @@ mod build_bundled {
 
         #[cfg(feature = "buildtime_bindgen")]
         {
-            use super::{bindings, HeaderLocation};
+            use super::{HeaderLocation, bindings};
             let header = HeaderLocation::FromPath(format!("{out_dir}/duckdb/src/include/"));
             bindings::write_to_out_dir(header, out_path);
         }
@@ -219,7 +219,7 @@ mod build_linked {
     #[cfg(feature = "buildtime_bindgen")]
     use super::bindings;
 
-    use super::{is_compiler, win_target, HeaderLocation};
+    use super::{HeaderLocation, is_compiler, win_target};
     use std::{
         env, fs, io,
         path::{Path, PathBuf},
@@ -285,7 +285,7 @@ mod build_linked {
             println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
-            env::set_var("PKG_CONFIG_PATH", pkgconfig_path);
+            unsafe { env::set_var("PKG_CONFIG_PATH", pkgconfig_path) };
 
             #[cfg(feature = "pkg-config")]
             let lib_found = pkg_config::Config::new().probe("duckdb").is_ok();
@@ -592,11 +592,7 @@ mod bindings {
             .into_iter()
             .find_map(|i| {
                 if let syn::Item::Struct(s) = i {
-                    if s.ident == "duckdb_ext_api_v1" {
-                        Some(s)
-                    } else {
-                        None
-                    }
+                    if s.ident == "duckdb_ext_api_v1" { Some(s) } else { None }
                 } else {
                     None
                 }

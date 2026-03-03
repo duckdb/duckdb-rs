@@ -46,18 +46,18 @@ impl Drop for ScalarFunction {
     }
 }
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 
 use libduckdb_sys::{
-    self as ffi, duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
+    self as ffi, DuckDBSuccess, duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
     duckdb_create_scalar_function_set, duckdb_data_chunk, duckdb_delete_callback_t, duckdb_destroy_scalar_function,
     duckdb_function_info, duckdb_scalar_function, duckdb_scalar_function_add_parameter, duckdb_scalar_function_set,
     duckdb_scalar_function_set_extra_info, duckdb_scalar_function_set_function, duckdb_scalar_function_set_name,
     duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs, duckdb_scalar_function_set_volatile,
-    duckdb_vector, DuckDBSuccess,
+    duckdb_vector,
 };
 
-use crate::{core::LogicalTypeHandle, Error};
+use crate::{Error, core::LogicalTypeHandle};
 
 impl ScalarFunction {
     /// Creates a new empty scalar function.
@@ -140,7 +140,7 @@ impl ScalarFunction {
     /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
     /// properly cleans up the data when called.
     pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy);
+        unsafe { duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy) };
     }
 
     /// Assigns extra information to the scalar function that can be fetched during execution.
@@ -161,5 +161,5 @@ impl ScalarFunction {
 }
 
 unsafe extern "C" fn drop_ptr<T>(ptr: *mut c_void) {
-    let _ = Box::from_raw(ptr as *mut T);
+    let _ = unsafe { Box::from_raw(ptr as *mut T) };
 }

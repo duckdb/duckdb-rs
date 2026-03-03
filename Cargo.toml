@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/duckdb",
     "crates/libduckdb-sys",
@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = ["duckdb", "database", "ffi"]
 license = "MIT"
 categories = ["database"]
-edition = "2021"
+edition = "2024"
 rust-version = "1.85.1"
 
 [workspace.dependencies]
@@ -25,7 +25,7 @@ duckdb-loadable-macros = { version = "=0.1.14", path = "crates/duckdb-loadable-m
 libduckdb-sys = { version = "=1.4.4", path = "crates/libduckdb-sys" }
 
 arrow = { version = "57", default-features = false }
-bindgen = { version = "0.71.1", default-features = false }
+bindgen = { version = "0.72.1", default-features = false }
 calamine = "0.28.0"
 cast = "0.3"
 cc = "1.0"

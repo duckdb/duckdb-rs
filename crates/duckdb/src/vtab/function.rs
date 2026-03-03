@@ -1,5 +1,5 @@
 use super::{
-    drop_boxed,
+    LogicalTypeHandle, VTab, Value, drop_boxed,
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
         duckdb_bind_get_parameter, duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data,
@@ -10,10 +10,9 @@ use super::{
         duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
-    LogicalTypeHandle, VTab, Value,
 };
 use std::{
-    ffi::{c_void, CString},
+    ffi::{CString, c_void},
     fmt::Debug,
     marker::PhantomData,
     os::raw::c_char,
@@ -57,7 +56,7 @@ impl BindInfo {
     /// # Safety
     /// `data` must be a valid pointer, and `free_function` must properly free it.
     pub unsafe fn set_bind_data(&self, data: *mut c_void, free_function: Option<unsafe extern "C" fn(*mut c_void)>) {
-        duckdb_bind_set_bind_data(self.ptr, data, free_function);
+        unsafe { duckdb_bind_set_bind_data(self.ptr, data, free_function) };
     }
 
     /// Retrieves the number of regular (non-named) parameters to the function.
@@ -95,11 +94,7 @@ impl BindInfo {
         unsafe {
             let name = &CString::new(name).unwrap();
             let ptr = duckdb_bind_get_named_parameter(self.ptr, name.as_ptr());
-            if ptr.is_null() {
-                None
-            } else {
-                Some(Value::from(ptr))
-            }
+            if ptr.is_null() { None } else { Some(Value::from(ptr)) }
         }
     }
 
@@ -318,7 +313,7 @@ impl TableFunction {
     /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
     /// properly cleans up the data when called.
     pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+        unsafe { duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy) };
     }
 
     /// Assigns extra information to the table function that can be fetched during binding, init, and execution.

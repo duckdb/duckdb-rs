@@ -54,7 +54,7 @@ impl fmt::Display for FromSqlError {
 
 impl Error for FromSqlError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        if let Self::Other(ref err) = self {
+        if let Self::Other(err) = self {
             Some(&**err)
         } else {
             None
