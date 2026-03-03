@@ -184,7 +184,7 @@ impl Appender<'_> {
                 )
             },
             ValueRef::Decimal(d) => unsafe {
-                let decimal = to_duckdb_decimal(d);
+                let decimal = crate::types::to_duckdb_decimal(d);
                 let mut value = ffi::duckdb_create_decimal(decimal);
                 let res = ffi::duckdb_append_value(ptr, value);
                 // free value
@@ -565,10 +565,12 @@ mod test {
         assert_eq!((a, b), (11, 9));
         Ok(())
     }
+
+    #[test]
     fn test_appender_decimal() -> Result<()> {
-        let d1 = rust_decimal::Decimal::from_i128_with_scale(11344, 4);
-        let d2 = rust_decimal::Decimal::from_i128_with_scale(12312, 3);
-        let d3 = rust_decimal::Decimal::from_i128_with_scale(-98765, 5);
+        let d1 = Decimal::from_i128_with_scale(11344, 4);
+        let d2 = Decimal::from_i128_with_scale(12312, 3);
+        let d3 = Decimal::from_i128_with_scale(-98765, 5);
 
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE decimals (value DECIMAL(20, 10));")?;
@@ -585,6 +587,26 @@ mod test {
             .collect::<Result<Vec<Decimal>>>()?;
 
         assert_eq!(results, vec![d3, d1, d2]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_decimal_hugeint_upper_bits() -> Result<()> {
+        let d = Decimal::from_i128_with_scale(7922816251426433759354395033_i128, 10);
+
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE decimals (value DECIMAL(28, 10));")?;
+
+        let mut appender = conn.appender("decimals")?;
+        appender.append_row(params![d])?;
+        appender.flush()?;
+
+        let result: Decimal = conn
+            .prepare("SELECT value FROM decimals")?
+            .query_row([], |row| row.get(0))?;
+
+        assert_eq!(result, d);
 
         Ok(())
     }

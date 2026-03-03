@@ -605,9 +605,9 @@ impl Statement<'_> {
             ValueRef::Date32(days) => unsafe { ffi::duckdb_bind_date(ptr, col as u64, ffi::duckdb_date { days }) },
             ValueRef::Time64(u, i) => unsafe {
                 ffi::duckdb_bind_time(ptr, col as u64, ffi::duckdb_time { micros: u.to_micros(i) })
-},
+            },
             ValueRef::Decimal(d) => unsafe {
-                let decimal = to_duckdb_decimal(d);
+                let decimal = crate::types::to_duckdb_decimal(d);
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
             _ => unreachable!("not supported: {}", value.data_type()),
@@ -1361,6 +1361,10 @@ mod test {
 
         let val: i32 = db.query_row("SELECT id FROM test", (), |r| r.get(0))?;
         assert_eq!(val, 1);
+        Ok(())
+    }
+
+    #[test]
     fn test_with_decimal() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch(

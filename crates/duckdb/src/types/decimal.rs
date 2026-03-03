@@ -7,10 +7,10 @@ use crate::Result;
 use crate::{types::ToSqlOutput, ToSql};
 
 /// Convert a rust_decimal::Decimal to a ffi::duckdb_decimal
-pub fn to_duckdb_decimal(d: rust_decimal::Decimal) -> ffi::duckdb_decimal {
+pub(crate) fn to_duckdb_decimal(d: rust_decimal::Decimal) -> ffi::duckdb_decimal {
     // The max size of rust_decimal's scale is 28.
     let d_scale = d.scale() as u8;
-    let d_width = decimal_width(d);
+    let d_width = decimal_width(d).max(d_scale);
     let d_value = {
         let mantissa = d.mantissa();
         let lo = mantissa as u64;

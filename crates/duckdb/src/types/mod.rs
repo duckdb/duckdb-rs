@@ -3,7 +3,6 @@
 //! a value was NULL (which gets translated to `None`).
 
 pub use self::{
-    decimal::to_duckdb_decimal,
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     ordered_map::OrderedMap,
     string::DuckString,
@@ -11,6 +10,7 @@ pub use self::{
     value::Value,
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
 };
+pub(crate) use decimal::to_duckdb_decimal;
 
 use arrow::datatypes::DataType;
 use std::fmt;
