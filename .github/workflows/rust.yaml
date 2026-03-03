@@ -6,7 +6,8 @@ on:
   pull_request:
     branches: [main]
 env:
-  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
@@ -17,17 +18,19 @@ jobs:
     # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
     # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
     # - bundled feature tested by --all-features
-    name: Test ${{ matrix.target }}
+    name: Test ${{ matrix.name }}
     strategy:
       fail-fast: true
       matrix:
         include:
           - {
+              name: Windows,
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
               duckdb: libduckdb-windows-amd64.zip,
             }
           - {
+              name: Linux,
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-latest,
               duckdb: libduckdb-linux-amd64.zip,
@@ -36,7 +39,7 @@ jobs:
     env:
       DUCKDB_DOWNLOAD_LIB: "1"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.target }}
@@ -95,11 +98,23 @@ jobs:
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
 
-  Sanitizer:
+  msrv:
+    name: MSRV Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: taiki-e/install-action@cargo-binstall
+      - run: cargo binstall --no-confirm cargo-msrv
+      - run: cargo msrv verify --path crates/duckdb
+      - run: cargo msrv verify --path crates/duckdb-loadable-macros
+      - run: cargo msrv verify --path crates/libduckdb-sys
+
+  sanitizer:
     name: Address Sanitizer
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
