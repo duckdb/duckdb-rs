@@ -133,4 +133,4 @@ jobs:
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
         # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
-        run: cargo test --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
+        run: cargo test --lib --tests --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
