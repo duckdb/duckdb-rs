@@ -175,6 +175,24 @@ impl<'a> ValueRef<'a> {
     pub fn as_str(&self) -> FromSqlResult<&'a str> {
         match *self {
             ValueRef::Text(t) => std::str::from_utf8(t).map_err(|e| FromSqlError::Other(Box::new(e))),
+            ValueRef::Enum(ref enum_type, idx) => {
+                let (values, key) = match enum_type {
+                    EnumType::UInt8(arr) => (arr.values(), arr.key(idx)),
+                    EnumType::UInt16(arr) => (arr.values(), arr.key(idx)),
+                    EnumType::UInt32(arr) => (arr.values(), arr.key(idx)),
+                };
+                let dict_key = key.ok_or(FromSqlError::InvalidType)?;
+                let string_array = values
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or_else(|| FromSqlError::Other("enum dictionary values are not strings".into()))?;
+                if dict_key >= string_array.len() {
+                    return Err(FromSqlError::Other(
+                        format!("enum key {} out of bounds (len {})", dict_key, string_array.len()).into(),
+                    ));
+                }
+                Ok(string_array.value(dict_key))
+            }
             _ => Err(FromSqlError::InvalidType),
         }
     }

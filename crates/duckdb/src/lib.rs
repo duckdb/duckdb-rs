@@ -1876,10 +1876,7 @@ mod test {
         let mut stmt = conn.prepare("SELECT * FROM stats")?;
         let results: Vec<(String, i32)> = stmt
             .query_map([], |row| {
-                let name = match row.get_ref_unwrap(0).to_owned() {
-                    Value::Enum(e) => e,
-                    other => panic!("Expected Enum, got {:?}", other),
-                };
+                let name: String = row.get(0)?;
                 let value: i32 = row.get(1)?;
                 Ok((name, value))
             })?
@@ -1890,6 +1887,23 @@ mod test {
         assert_eq!(results[0], ("CA".to_string(), 10));
         assert_eq!(results[1], ("CA".to_string(), 20));
         assert_eq!(results[2], ("NY".to_string(), 4));
+        Ok(())
+    }
+
+    #[test]
+    fn test_enum_read_nullable() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE stats (name ENUM('CA', 'NY'));
+            INSERT INTO stats VALUES ('CA'), (NULL), ('NY');
+            "#,
+        )?;
+
+        let mut stmt = conn.prepare("SELECT name FROM stats")?;
+        let results: Vec<Option<String>> = stmt.query_map([], |row| row.get(0))?.map(|r| r.unwrap()).collect();
+
+        assert_eq!(results, vec![Some("CA".into()), None, Some("NY".into())]);
         Ok(())
     }
 }
