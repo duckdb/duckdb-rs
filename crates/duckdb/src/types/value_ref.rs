@@ -185,7 +185,12 @@ impl<'a> ValueRef<'a> {
                 let string_array = values
                     .as_any()
                     .downcast_ref::<StringArray>()
-                    .ok_or(FromSqlError::InvalidType)?;
+                    .ok_or_else(|| FromSqlError::Other("enum dictionary values are not strings".into()))?;
+                if dict_key >= string_array.len() {
+                    return Err(FromSqlError::Other(
+                        format!("enum key {} out of bounds (len {})", dict_key, string_array.len()).into(),
+                    ));
+                }
                 Ok(string_array.value(dict_key))
             }
             _ => Err(FromSqlError::InvalidType),
