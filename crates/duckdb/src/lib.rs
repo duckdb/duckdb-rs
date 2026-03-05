@@ -1858,4 +1858,38 @@ mod test {
 
         Ok(())
     }
+
+    /// Enum values should reflect actual row data, not just iterate over enum variants.
+    #[test]
+    fn test_enum_read() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE stats (
+                name ENUM('CA', 'NY'),
+                value INTEGER,
+            );
+            INSERT INTO stats VALUES ('CA', 10), ('CA', 20), ('NY', 4);
+            "#,
+        )?;
+
+        let mut stmt = conn.prepare("SELECT * FROM stats")?;
+        let results: Vec<(String, i32)> = stmt
+            .query_map([], |row| {
+                let name = match row.get_ref_unwrap(0).to_owned() {
+                    Value::Enum(e) => e,
+                    other => panic!("Expected Enum, got {:?}", other),
+                };
+                let value: i32 = row.get(1)?;
+                Ok((name, value))
+            })?
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], ("CA".to_string(), 10));
+        assert_eq!(results[1], ("CA".to_string(), 20));
+        assert_eq!(results[2], ("NY".to_string(), 4));
+        Ok(())
+    }
 }
