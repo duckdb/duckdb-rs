@@ -448,8 +448,7 @@ mod build_linked {
         out_dir: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(deps_dir) = profile_deps_dir(out_dir) else {
-            println!("cargo:warning=Could not determine target/deps directory, skipping runtime copy");
-            return Ok(());
+            return Err("Could not determine target/deps directory for runtime lib copy".into());
         };
         fs::create_dir_all(&deps_dir)?;
         let source = download_dir.join(lib_filename);
@@ -480,29 +479,17 @@ mod build_linked {
         Ok(target_root.join("duckdb-download"))
     }
 
-    // Mirrors Cargo's target/<profile>/deps layout (optionally with CARGO_TARGET_DIR / target triple).
+    // Mirrors Cargo's actual target/<triple>/<profile>/deps (or target/<profile>/deps)
+    // layout by deriving it from OUT_DIR.
     fn profile_deps_dir(out_dir: &str) -> Option<PathBuf> {
-        let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let mut target_root = env::var("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|_| {
-            Path::new(out_dir)
-                .ancestors()
-                .find(|ancestor| {
-                    ancestor
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name == "target")
-                })
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("target"))
-        });
-        if env::var("HOST").ok() != env::var("TARGET").ok() {
-            if let Ok(target) = env::var("TARGET") {
-                target_root.push(target);
-            }
-        }
-        target_root.push(profile);
-        target_root.push("deps");
-        Some(target_root)
+        let build_dir = Path::new(out_dir).ancestors().find(|ancestor| {
+            ancestor
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "build")
+        })?;
+        let profile_dir = build_dir.parent()?;
+        Some(profile_dir.join("deps"))
     }
 
     struct LibduckdbArchive {
