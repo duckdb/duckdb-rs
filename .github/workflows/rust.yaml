@@ -128,9 +128,13 @@ jobs:
           toolchain: nightly-2026-03-03
       - name: Tests with asan
         env:
+          # PRs use a downloaded libduckdb for speed (no bundled C++ ASAN coverage).
+          # Pushes to main keep extensions-full/bundled to preserve deeper coverage.
+          ASAN_FEATURES: ${{ github.ref == 'refs/heads/main' && 'serde_json url r2d2 uuid polars extensions-full' || 'serde_json url r2d2 uuid polars' }}
+          DUCKDB_DOWNLOAD_LIB: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
         # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
-        run: cargo test --lib --tests --features "serde_json url r2d2 uuid polars extensions-full" --target x86_64-unknown-linux-gnu --package duckdb
+        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb
