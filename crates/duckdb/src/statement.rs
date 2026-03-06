@@ -3,13 +3,13 @@ use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 use arrow::{array::StructArray, datatypes::SchemaRef};
 
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
+#[cfg(feature = "polars")]
+use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
     types::{ToSql, ToSqlOutput},
 };
-#[cfg(feature = "polars")]
-use crate::{arrow2, polars_dataframe::Polars};
 
 /// A prepared statement.
 ///
@@ -400,13 +400,6 @@ impl Statement<'_> {
     #[inline]
     pub fn stream_step(&self, schema: SchemaRef) -> Option<StructArray> {
         self.stmt.streaming_step(schema)
-    }
-
-    #[cfg(feature = "polars")]
-    /// Get next batch records in arrow2
-    #[inline]
-    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
-        self.stmt.step2()
     }
 
     #[inline]
