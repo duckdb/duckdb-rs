@@ -186,8 +186,10 @@ impl Appender<'_> {
             ValueRef::Decimal(d) => unsafe {
                 let decimal = crate::types::to_duckdb_decimal(d);
                 let mut value = ffi::duckdb_create_decimal(decimal);
+                if value.is_null() {
+                    return Err(Error::AppendError);
+                }
                 let res = ffi::duckdb_append_value(ptr, value);
-                // free value
                 ffi::duckdb_destroy_value(&mut value);
                 res
             },
