@@ -1,10 +1,8 @@
 use rust_decimal::prelude::FromPrimitive as _;
 
 use super::TimeUnit;
-use crate::ffi;
-use crate::types::{FromSql, FromSqlError, FromSqlResult, Value, ValueRef};
-use crate::Result;
-use crate::{types::ToSqlOutput, ToSql};
+use crate::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, Value, ValueRef};
+use crate::{Result, ToSql, ffi};
 
 /// Convert a rust_decimal::Decimal to a ffi::duckdb_decimal
 pub(crate) fn to_duckdb_decimal(d: rust_decimal::Decimal) -> ffi::duckdb_decimal {
@@ -75,7 +73,7 @@ impl FromSql for rust_decimal::Decimal {
                 s.parse::<rust_decimal::Decimal>().or_else(|_| {
                     s.parse::<i128>()
                         .map_err(|_| FromSqlError::InvalidType)
-                        .and_then(|i| Err(FromSqlError::OutOfRange(i as i128)))
+                        .and_then(|i| Err(FromSqlError::OutOfRange(i)))
                 })
             }
             _ => Err(FromSqlError::InvalidType),
