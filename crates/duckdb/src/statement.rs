@@ -606,6 +606,10 @@ impl Statement<'_> {
             ValueRef::Time64(u, i) => unsafe {
                 ffi::duckdb_bind_time(ptr, col as u64, ffi::duckdb_time { micros: u.to_micros(i) })
             },
+            ValueRef::Decimal(d) => unsafe {
+                let decimal = crate::types::to_duckdb_decimal(d);
+                ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
+            },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
         result_from_duckdb_prepare(rc, ptr)
@@ -652,6 +656,7 @@ impl Statement<'_> {
 #[cfg(test)]
 mod test {
     use crate::{Connection, Error, Result, params_from_iter, types::ToSql};
+    use rust_decimal::Decimal;
 
     #[test]
     fn test_execute() -> Result<()> {
@@ -1357,6 +1362,59 @@ mod test {
 
         let val: i32 = db.query_row("SELECT id FROM test", (), |r| r.get(0))?;
         assert_eq!(val, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_decimal() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "BEGIN; \
+            CREATE TABLE foo(x DECIMAL(18, 4)); \
+            CREATE TABLE bar(y DECIMAL(18, 2)); \
+            COMMIT;",
+        )?;
+
+        // If duckdb's scale is larger than rust_decimal's scale, value should not be truncated.
+        let value = Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO foo(x) VALUES (?)", [&value])?;
+        let row: Decimal = db.query_row("SELECT x FROM foo", [], |r| r.get::<_, Decimal>(0))?;
+        assert_eq!(row, value);
+
+        // If duckdb's scale is smaller than rust_decimal's scale, value should be truncated (1.2345 -> 1.23).
+        let value = Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO bar(y) VALUES (?)", [&value])?;
+        let row: Decimal = db.query_row("SELECT y FROM bar", [], |r| r.get::<_, Decimal>(0))?;
+        assert_eq!(row, Decimal::from_i128_with_scale(123, 2));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal_from_sql_integer_and_float() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        // FromSql: INTEGER -> Decimal
+        let row: Decimal = db.query_row("SELECT 42", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from(42));
+
+        // FromSql: BIGINT -> Decimal
+        let row: Decimal = db.query_row("SELECT 9999999999::BIGINT", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from(9999999999_i64));
+
+        // FromSql: DOUBLE -> Decimal (inherits float imprecision)
+        let row: Decimal = db.query_row("SELECT 3.14::DOUBLE", [], |r| r.get(0))?;
+        let diff = (row - Decimal::from_str_exact("3.14").unwrap()).abs();
+        assert!(diff < Decimal::from_str_exact("0.0001").unwrap());
+
+        // FromSql: VARCHAR -> Decimal
+        let row: Decimal = db.query_row("SELECT '123.456'::VARCHAR", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from_str_exact("123.456").unwrap());
+
+        // FromSql: HUGEINT -> Decimal
+        let row: Decimal = db.query_row("SELECT 12345678901234567890::HUGEINT", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from_i128_with_scale(12345678901234567890, 0));
+
         Ok(())
     }
 }
