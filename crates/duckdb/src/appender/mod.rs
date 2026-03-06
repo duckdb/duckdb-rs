@@ -595,21 +595,42 @@ mod test {
 
     #[test]
     fn test_appender_decimal_hugeint_upper_bits() -> Result<()> {
-        let d = Decimal::from_i128_with_scale(7922816251426433759354395033_i128, 10);
+        let negative = Decimal::from_i128_with_scale(-7922816251426433759354395033_i128, 10);
+        let positive = Decimal::from_i128_with_scale(7922816251426433759354395033_i128, 10);
 
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE decimals (value DECIMAL(28, 10));")?;
 
         let mut appender = conn.appender("decimals")?;
-        appender.append_row(params![d])?;
+        appender.append_row(params![negative])?;
+        appender.append_row(params![positive])?;
         appender.flush()?;
 
-        let result: Decimal = conn
-            .prepare("SELECT value FROM decimals")?
-            .query_row([], |row| row.get(0))?;
+        let results: Vec<Decimal> = conn
+            .prepare("SELECT value FROM decimals ORDER BY value ASC")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<Decimal>>>()?;
 
-        assert_eq!(result, d);
+        assert_eq!(results, vec![negative, positive]);
+        Ok(())
+    }
 
+    #[test]
+    fn test_appender_decimal_boundary_values() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE decimals (value DECIMAL(29, 0));")?;
+
+        let mut appender = conn.appender("decimals")?;
+        appender.append_row(params![Decimal::ZERO])?;
+        appender.append_row(params![Decimal::MAX])?;
+        appender.flush()?;
+
+        let results: Vec<Decimal> = conn
+            .prepare("SELECT value FROM decimals ORDER BY value ASC")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<Decimal>>>()?;
+
+        assert_eq!(results, vec![Decimal::ZERO, Decimal::MAX]);
         Ok(())
     }
 }
