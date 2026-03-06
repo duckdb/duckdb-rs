@@ -887,7 +887,6 @@ dependencies = [
  "num",
  "num-integer",
  "polars",
- "polars-arrow",
  "polars-core",
  "pretty_assertions",
  "r2d2",

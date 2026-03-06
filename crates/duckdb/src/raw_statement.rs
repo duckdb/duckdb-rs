@@ -7,9 +7,9 @@ use arrow::{
 };
 
 use super::{Result, ffi};
-#[cfg(feature = "polars")]
-use crate::arrow2;
 use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
+#[cfg(feature = "polars")]
+use polars_core::utils::arrow as polars_arrow;
 
 /// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
 ///
@@ -165,54 +165,54 @@ impl RawStatement {
 
     #[cfg(feature = "polars")]
     #[inline]
-    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
+    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
         self.result?;
 
         unsafe {
-            let mut ffi_arrow2_array = arrow2::ffi::ArrowArray::empty();
+            let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
 
             if ffi::duckdb_query_arrow_array(
                 self.result_unwrap(),
-                &mut std::ptr::addr_of_mut!(ffi_arrow2_array) as *mut _ as *mut ffi::duckdb_arrow_array,
+                &mut std::ptr::addr_of_mut!(ffi_arrow_array) as *mut _ as *mut ffi::duckdb_arrow_array,
             )
             .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
 
-            let mut ffi_arrow2_schema = arrow2::ffi::ArrowSchema::empty();
+            let mut ffi_arrow_schema = polars_arrow::ffi::ArrowSchema::empty();
 
             if ffi::duckdb_query_arrow_schema(
                 self.result_unwrap(),
-                &mut std::ptr::addr_of_mut!(ffi_arrow2_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
+                &mut std::ptr::addr_of_mut!(ffi_arrow_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
             )
             .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
 
-            let arrow2_field =
-                arrow2::ffi::import_field_from_c(&ffi_arrow2_schema).expect("Failed to import arrow2 Field from C");
-            let import_arrow2_array = arrow2::ffi::import_array_from_c(ffi_arrow2_array, arrow2_field.dtype);
+            let field =
+                polars_arrow::ffi::import_field_from_c(&ffi_arrow_schema).expect("Failed to import Polars Arrow field");
+            let import_array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype);
 
-            if let Err(err) = import_arrow2_array {
-                // When array is empty, import_array_from_c returns error with message
-                // "ComputeError("An ArrowArray of type X must have non-null children")
-                // Therefore, we return None when encountering this error.
+            if let Err(err) = import_array {
                 match err {
+                    // When array is empty, import_array_from_c returns error with message
+                    // "ComputeError("An ArrowArray of type X must have non-null children")
+                    // Therefore, we return None when encountering this error.
                     polars::error::PolarsError::ComputeError(_) => return None,
-                    _ => panic!("Failed to import arrow2 Array from C: {err}"),
+                    _ => panic!("Failed to import Polars Arrow array from C: {err}"),
                 }
             }
 
-            let arrow2_array = import_arrow2_array.unwrap();
-            let arrow2_struct_array = arrow2_array
+            let array = import_array.unwrap();
+            let struct_array = array
                 .as_any()
-                .downcast_ref::<arrow2::array::StructArray>()
-                .expect("Failed to downcast arrow2 Array to arrow2 StructArray")
+                .downcast_ref::<polars_arrow::array::StructArray>()
+                .expect("Failed to downcast Polars Arrow array to StructArray")
                 .to_owned();
 
-            Some(arrow2_struct_array)
+            Some(struct_array)
         }
     }
 
