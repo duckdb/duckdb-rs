@@ -71,9 +71,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                 /// Internal Entrypoint for error handling
                 pub unsafe fn #c_entrypoint_internal(info: ::duckdb::ffi::duckdb_extension_info, access: *const ::duckdb::ffi::duckdb_extension_access) -> ::std::result::Result<bool, Box<dyn ::std::error::Error>> {
                     unsafe {
-                        let have_api_struct = ::duckdb::ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version)
-                            .map_err(|e| -> ::std::boxed::Box<dyn ::std::error::Error> { e.into() })?;
-
+                        let have_api_struct = ::duckdb::ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version)?;
                         if !have_api_struct {
                             // initialization failed to return an api struct, likely due to an API version mismatch, we can simply return here
                             return Ok(false);
