@@ -55,7 +55,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         with:
           repository: "duckdb/duckdb"
-          tag: "v1.4.4"
+          tag: "v1.5.0"
           fileName: ${{ matrix.duckdb }}
           out-file-path: .
 

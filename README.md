@@ -131,7 +131,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "=1.4.4", features = ["bundled"] }
+duckdb = { version = "=1.5.0", features = ["bundled"] }
 ```
 
 ### Using the development version from git
