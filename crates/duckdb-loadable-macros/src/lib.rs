@@ -71,15 +71,21 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                 /// Internal Entrypoint for error handling
                 pub unsafe fn #c_entrypoint_internal(info: ::duckdb::ffi::duckdb_extension_info, access: *const ::duckdb::ffi::duckdb_extension_access) -> ::std::result::Result<bool, Box<dyn ::std::error::Error>> {
                     unsafe {
-                        let have_api_struct = ::duckdb::ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version).unwrap();
-
+                        let have_api_struct = ::duckdb::ffi::duckdb_rs_extension_api_init(info, access, #minimum_duckdb_version)?;
                         if !have_api_struct {
                             // initialization failed to return an api struct, likely due to an API version mismatch, we can simply return here
                             return Ok(false);
                         }
 
-                        // TODO: handle error here?
-                        let db: ::duckdb::ffi::duckdb_database = *(*access).get_database.unwrap()(info);
+                        let get_database = (*access)
+                            .get_database
+                            .ok_or("get_database function pointer is null in duckdb_extension_access")?;
+                        let db_ptr = get_database(info);
+                        if db_ptr.is_null() {
+                            // DuckDB already has the real reason for returning a null database handle.
+                            return Ok(false);
+                        }
+                        let db: ::duckdb::ffi::duckdb_database = *db_ptr;
                         let connection = ::duckdb::Connection::open_from_raw(db.cast())?;
 
                         #prefixed_original_function(connection)?;
@@ -96,22 +102,24 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                     unsafe {
                         let init_result = #c_entrypoint_internal(info, access);
 
-                        if let Err(x) = init_result {
-                            let error_c_string = ::std::ffi::CString::new(x.to_string());
-
-                            match error_c_string {
-                                Ok(e) => {
-                                    (*access).set_error.unwrap()(info, e.as_ptr());
-                                },
-                                Err(_e) => {
-                                    let error_alloc_failure = c"An error occured but the extension failed to allocate memory for an error string";
-                                    (*access).set_error.unwrap()(info, error_alloc_failure.as_ptr());
+                        match init_result {
+                            ::std::result::Result::Ok(v) => v,
+                            ::std::result::Result::Err(x) => {
+                                if let ::std::option::Option::Some(set_error_fn) = (*access).set_error {
+                                    let error_c_string = ::std::ffi::CString::new(x.to_string());
+                                    match error_c_string {
+                                        Ok(e) => {
+                                            set_error_fn(info, e.as_ptr());
+                                        },
+                                        Err(_e) => {
+                                            let error_alloc_failure = c"Extension initialization failed, but the error message could not be converted to a C string";
+                                            set_error_fn(info, error_alloc_failure.as_ptr());
+                                        }
+                                    }
                                 }
+                                false
                             }
-                            return false;
                         }
-
-                        init_result.unwrap()
                     }
                 }
 
