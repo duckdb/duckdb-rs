@@ -82,7 +82,12 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                         let get_database = (*access)
                             .get_database
                             .ok_or("get_database function pointer is null in duckdb_extension_access")?;
-                        let db: ::duckdb::ffi::duckdb_database = *get_database(info);
+                        let db_ptr = get_database(info);
+                        if db_ptr.is_null() {
+                            // DuckDB already has the real reason for returning a null database handle.
+                            return Ok(false);
+                        }
+                        let db: ::duckdb::ffi::duckdb_database = *db_ptr;
                         let connection = ::duckdb::Connection::open_from_raw(db.cast())?;
 
                         #prefixed_original_function(connection)?;
