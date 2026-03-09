@@ -112,7 +112,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                                             set_error_fn(info, e.as_ptr());
                                         },
                                         Err(_e) => {
-                                            let error_alloc_failure = c"An error occured but the extension failed to allocate memory for an error string";
+                                            let error_alloc_failure = c"Extension initialization failed, but the error message could not be converted to a C string";
                                             set_error_fn(info, error_alloc_failure.as_ptr());
                                         }
                                     }
