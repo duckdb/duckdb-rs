@@ -367,7 +367,8 @@ mod build_linked {
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
 
-        let version = env!("CARGO_PKG_VERSION").to_string();
+        // TODO: derive from CARGO_PKG_VERSION ("1.10500.0") or inject differently
+        let version = String::from("1.5.0");
 
         // Cache downloads in target/duckdb-download/<target>/<version> so successive builds reuse them
         let download_dir = workspace_download_dir(out_dir)?.join(&target).join(&version);
