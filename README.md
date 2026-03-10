@@ -119,6 +119,11 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 
 ## Installation
 
+### Versioning
+
+Starting with DuckDB `v1.5.0`, the duckdb-rs version encodes the DuckDB version in its major version component.
+The format is `1.MAJOR_MINOR_PATCH.x`, e.g., DuckDB `v1.5.0` maps to duckdb-rs `1.10500.x`.
+
 ### Using stable releases from crates.io
 
 The recommended way to use duckdb-rs is to add it from crates.io:
