@@ -489,6 +489,10 @@ impl<'stmt> Row<'stmt> {
                 let array = column.as_any().downcast_ref::<array::Time64MicrosecondArray>().unwrap();
                 ValueRef::Time64(types::TimeUnit::Microsecond, array.value(row))
             }
+            DataType::Time64(TimeUnit::Nanosecond) => {
+                let array = column.as_any().downcast_ref::<array::Time64NanosecondArray>().unwrap();
+                ValueRef::Time64(types::TimeUnit::Nanosecond, array.value(row))
+            }
             DataType::Interval(unit) => match unit {
                 IntervalUnit::MonthDayNano => {
                     let array = column
@@ -513,9 +517,6 @@ impl<'stmt> Row<'stmt> {
             // }
             // DataType::Time32(unit) if *unit == TimeUnit::Millisecond => {
             //     make_string_time!(array::Time32MillisecondArray, column, row)
-            // }
-            // DataType::Time64(unit) if *unit == TimeUnit::Nanosecond => {
-            //     make_string_time!(array::Time64NanosecondArray, column, row)
             // }
             DataType::LargeList(..) => {
                 let arr = column.as_any().downcast_ref::<array::LargeListArray>().unwrap();
