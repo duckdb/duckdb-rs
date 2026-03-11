@@ -121,7 +121,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 
 ### Versioning
 
-Starting with DuckDB `v1.5.0`, the duckdb-rs version encodes the DuckDB version in its major version component.
+Starting with DuckDB `v1.5.0`, the duckdb-rs version encodes the DuckDB version in its second semver component.
 The format is `1.MAJOR_MINOR_PATCH.x`, e.g., DuckDB `v1.5.0` maps to duckdb-rs `1.10500.x`.
 
 ### Using stable releases from crates.io
@@ -176,7 +176,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "1.4.1", features = ["bundled"] }
+   duckdb = { version = "1.10500.0", features = ["bundled"] }
    ```
 
 2. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
@@ -184,7 +184,7 @@ You can adjust this behavior in a number of ways:
    Linux example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.4.1/libduckdb-linux-arm64.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.5.0/libduckdb-linux-arm64.zip
    unzip libduckdb-linux-arm64.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -197,7 +197,7 @@ You can adjust this behavior in a number of ways:
    macOS example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.4.1/libduckdb-osx-universal.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.5.0/libduckdb-osx-universal.zip
    unzip libduckdb-osx-universal.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -207,7 +207,7 @@ You can adjust this behavior in a number of ways:
    cargo build --examples
    ```
 
-3. _Experimental:_ Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This always links against the dynamic library in the archive (setting `DUCKDB_STATIC` has no effect), and it effectively automates the manual steps above. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the `libduckdb-sys` crate version.
+3. Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This always links against the dynamic library in the archive (setting `DUCKDB_STATIC` has no effect), and it effectively automates the manual steps above. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the DuckDB version encoded in the `libduckdb-sys` crate version.
 
    ```shell
    DUCKDB_DOWNLOAD_LIB=1 cargo test
