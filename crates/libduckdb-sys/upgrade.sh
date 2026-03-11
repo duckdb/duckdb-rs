@@ -2,6 +2,9 @@
 
 set -e
 
+# NOTE: This script is currently broken and needs updating for the new
+# duckdb-rs versioning scheme before it can be used reliably.
+
 SCRIPT=$(realpath "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT")
 
