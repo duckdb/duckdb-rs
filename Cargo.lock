@@ -104,9 +104,9 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
 name = "arrow"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a2b10dcb159faf30d3f81f6d56c1211a5bea2ca424eabe477648a44b993320e"
+checksum = "602268ce9f569f282cedb9a9f6bac569b680af47b9b077d515900c03c5d190da"
 dependencies = [
  "arrow-arith",
  "arrow-array",
@@ -122,9 +122,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-arith"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "288015089e7931843c80ed4032c5274f02b37bcb720c4a42096d50b390e70372"
+checksum = "cd53c6bf277dea91f136ae8e3a5d7041b44b5e489e244e637d00ae302051f56f"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -136,9 +136,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-array"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65ca404ea6191e06bf30956394173337fa9c35f445bd447fe6c21ab944e1a23c"
+checksum = "e53796e07a6525edaf7dc28b540d477a934aff14af97967ad1d5550878969b9e"
 dependencies = [
  "ahash 0.8.12",
  "arrow-buffer",
@@ -154,9 +154,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-buffer"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36356383099be0151dacc4245309895f16ba7917d79bdb71a7148659c9206c56"
+checksum = "f2c1a85bb2e94ee10b76531d8bc3ce9b7b4c0d508cabfb17d477f63f2617bd20"
 dependencies = [
  "bytes",
  "half",
@@ -166,9 +166,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-cast"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c8e372ed52bd4ee88cc1e6c3859aa7ecea204158ac640b10e187936e7e87074"
+checksum = "89fb245db6b0e234ed8e15b644edb8664673fefe630575e94e62cd9d489a8a26"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -188,9 +188,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-data"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf87f4ff5fc13290aa47e499a8b669a82c5977c6a1fedce22c7f542c1fd5a597"
+checksum = "189d210bc4244c715fa3ed9e6e22864673cccb73d5da28c2723fb2e527329b33"
 dependencies = [
  "arrow-buffer",
  "arrow-schema",
@@ -201,9 +201,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-ord"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13c4e0530272ca755d6814218dffd04425c5b7854b87fa741d5ff848bf50aa39"
+checksum = "211136cb253577ee1a6665f741a13136d4e563f64f5093ffd6fb837af90b9495"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -214,9 +214,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-row"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b07f52788744cc71c4628567ad834cadbaeb9f09026ff1d7a4120f69edf7abd3"
+checksum = "8e0f20145f9f5ea3fe383e2ba7a7487bf19be36aa9dbf5dd6a1f92f657179663"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -227,18 +227,18 @@ dependencies = [
 
 [[package]]
 name = "arrow-schema"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bb63203e8e0e54b288d0d8043ca8fa1013820822a27692ef1b78a977d879f2c"
+checksum = "1b47e0ca91cc438d2c7879fe95e0bca5329fff28649e30a88c6f760b1faeddcb"
 dependencies = [
  "bitflags",
 ]
 
 [[package]]
 name = "arrow-select"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96d8a1c180b44ecf2e66c9a2f2bbcb8b1b6f14e165ce46ac8bde211a363411b"
+checksum = "750a7d1dda177735f5e82a314485b6915c7cccdbb278262ac44090f4aba4a325"
 dependencies = [
  "ahash 0.8.12",
  "arrow-array",
@@ -250,9 +250,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-string"
-version = "57.2.0"
+version = "58.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8ad6a81add9d3ea30bf8374ee8329992c7fd246ffd8b7e2f48a3cea5aa0cc9a"
+checksum = "e1eab1208bc4fe55d768cdc9b9f3d9df5a794cdb3ee2586bf89f9b30dc31ad8c"
 dependencies = [
  "arrow-array",
  "arrow-buffer",

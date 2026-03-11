@@ -129,6 +129,11 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
             1 => assert_eq!(value, ValueRef::Time64(TimeUnit::Microsecond, 86400000000)),
             _ => assert_eq!(value, ValueRef::Null),
         },
+        "time_ns" => match idx {
+            0 => assert_eq!(value, ValueRef::Time64(TimeUnit::Nanosecond, 0)),
+            1 => assert_eq!(value, ValueRef::Time64(TimeUnit::Nanosecond, 86400000000000)),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
         "timestamp" => match idx {
             0 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Microsecond, -9223372022400000000)),
             1 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Microsecond, 9223372036854775806)),
