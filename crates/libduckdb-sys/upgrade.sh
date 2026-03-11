@@ -2,6 +2,9 @@
 
 set -e
 
+# NOTE: This script is currently broken and needs updating for the new
+# duckdb-rs versioning scheme before it can be used reliably.
+
 SCRIPT=$(realpath "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT")
 
@@ -12,7 +15,7 @@ mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
 export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
 # Download and extract amalgamation
-DUCKDB_VERSION=v1.4.4
+DUCKDB_VERSION=v1.5.0
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
 git fetch

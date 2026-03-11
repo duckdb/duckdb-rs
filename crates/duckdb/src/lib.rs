@@ -1561,16 +1561,6 @@ mod test {
         db_interrupt.interrupt();
     }
 
-    #[cfg(feature = "bundled")]
-    #[test]
-    fn test_version() -> Result<()> {
-        let db = checked_memory_handle();
-        let expected: String = format!("v{}", env!("CARGO_PKG_VERSION"));
-        let actual = db.version()?;
-        assert_eq!(expected, actual);
-        Ok(())
-    }
-
     #[test]
     fn test_arrow_string_view_setting() -> Result<()> {
         // Test that only one setting doesn't work (missing arrow_output_version)

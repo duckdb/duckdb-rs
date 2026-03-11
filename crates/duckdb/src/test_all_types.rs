@@ -20,8 +20,7 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    // These aren't supported in the DuckDB Arrow layer
-    let excluded = ["uhugeint", "time_tz", "dec38_10", "bignum"];
+    let excluded = ["uhugeint", "time_tz", "time_ns", "dec38_10", "bignum"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",

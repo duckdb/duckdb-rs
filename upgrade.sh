@@ -2,6 +2,9 @@
 
 set -e
 
+# NOTE: This script is currently broken and needs updating for the new
+# duckdb-rs versioning scheme before it can be used reliably.
+
 if sed --version 2>/dev/null | grep -q GNU; then
   SED_INPLACE="sed -i"
 else

@@ -56,6 +56,11 @@ for e in EXTENSIONS:
         "include_dirs": list(include_list - base_include_list),
     }
 
+# Regenerate generated_extension_loader_package_build.cpp with ALL extensions.
+# The loop above calls get_sources() per-extension, which overwrites this file
+# each iteration, leaving only the last extension registered.
+get_sources(EXTENSIONS)
+
 manifest = {
     "base": {
         "cpp_files": list(base_source_list),
