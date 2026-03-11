@@ -438,8 +438,7 @@ mod build_linked {
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
 
-        // TODO: derive from CARGO_PKG_VERSION ("1.10500.0") or inject differently
-        let version = String::from("1.5.0");
+        let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
 
         // Cache downloads in target/duckdb-download/<target>/<version> so successive builds reuse them
         let download_dir = workspace_download_dir(out_dir)?.join(&target).join(&version);
@@ -549,6 +548,20 @@ mod build_linked {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("target"));
         Ok(target_root.join("duckdb-download"))
+    }
+
+    fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
+        // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
+        let encoded = pkg_version
+            .split('.')
+            .nth(1)
+            .expect("CARGO_PKG_VERSION should use the documented 1.MAJOR_MINOR_PATCH.x format")
+            .parse::<u32>()
+            .expect("CARGO_PKG_VERSION should encode the DuckDB version as an integer in its second component");
+        let duckdb_major = encoded / 10_000;
+        let duckdb_minor = (encoded / 100) % 100;
+        let duckdb_patch = encoded % 100;
+        format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
     }
 
     // Mirrors Cargo's actual target/<triple>/<profile>/deps (or target/<profile>/deps)
