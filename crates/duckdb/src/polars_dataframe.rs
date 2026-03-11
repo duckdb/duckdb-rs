@@ -26,7 +26,7 @@ impl<'stmt> Iterator for Polars<'stmt> {
     type Item = DataFrame;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let struct_array = self.stmt?.step2()?;
+        let struct_array = self.stmt?.stmt.step_polars()?;
         let df = DataFrame::try_from(struct_array).expect("Failed to construct DataFrame from StructArray");
 
         Some(df)

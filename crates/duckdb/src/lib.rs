@@ -95,8 +95,6 @@ pub use arrow;
 pub use duckdb_loadable_macros::duckdb_entrypoint_c_api;
 #[cfg(feature = "polars")]
 pub use polars;
-#[cfg(feature = "polars")]
-pub use polars_arrow as arrow2;
 
 /// The core module contains the main functionality of the DuckDB crate.
 pub mod core;
