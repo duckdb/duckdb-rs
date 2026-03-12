@@ -164,8 +164,7 @@ You can adjust this behavior in a number of ways:
 1. If you use the `bundled` feature, `libduckdb-sys` will use the
    [cc](https://crates.io/crates/cc) crate to compile DuckDB from source and
    link against that. This source is embedded in the `libduckdb-sys` crate and
-   as we are still in development, we will update it regularly. After we are more stable,
-   we will use the stable released version from [duckdb](https://github.com/duckdb/duckdb/releases).
+   tracks the DuckDB version vendored for that duckdb-rs release.
    This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
 
    ```bash
@@ -213,7 +212,7 @@ You can adjust this behavior in a number of ways:
    DUCKDB_DOWNLOAD_LIB=1 cargo test
    ```
 
-4. Installing the duckdb development packages will usually be all that is required, but
+4. Installing the DuckDB development packages will usually be all that is required, but
    the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
    and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
    options. The default when using vcpkg is to dynamically link,
@@ -236,20 +235,20 @@ Alternatively, link against libduckdb without the `bundled` feature (see build i
 We use [bindgen](https://crates.io/crates/bindgen) to generate the Rust
 declarations from DuckDB's C header file. `bindgen`
 [recommends](https://github.com/servo/rust-bindgen#library-usage-with-buildrs)
-running this as part of the build process of libraries that used this. We tried
+running this as part of the build process for libraries that use it. We tried
 this briefly (`duckdb` 0.10.0, specifically), but it had some annoyances:
 
 - The build time for `libduckdb-sys` (and therefore `duckdb`) increased
   dramatically.
-- Running `bindgen` requires a relatively-recent version of Clang, which many
+- Running `bindgen` requires a relatively recent version of Clang, which many
   systems do not have installed by default.
 - Running `bindgen` also requires the DuckDB header file to be present.
 
-So we try to avoid running `bindgen` at build-time by shipping
+So we try to avoid running `bindgen` at build time by shipping
 pregenerated bindings for DuckDB.
 
-If you use the `bundled` features, you will get pregenerated bindings for the
-bundled version of DuckDB. If you want to run `bindgen` at buildtime to
+If you use the `bundled` feature, you will get pregenerated bindings for the
+bundled version of DuckDB. If you want to run `bindgen` at build time to
 produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 ## Rust version compatibility
