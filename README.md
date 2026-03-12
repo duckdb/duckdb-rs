@@ -254,7 +254,7 @@ produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
 ## Rust version compatibility
 
-duckdb-rs is built and tested with stable Rust, and will keep a rolling MSRV (minimum supported Rust version) that can only be updated in major and minor releases on a need by basis (e.g. project dependencies bump their MSRV or a particular Rust feature is useful for us etc.). The new MSRV will be at least 6 months old. Patch releases are guaranteed to have the same MSRV.
+duckdb-rs is built and tested with stable Rust, and keeps a rolling MSRV (minimum supported Rust version) that may only be updated when the encoded DuckDB major/minor version changes, on a need basis (e.g. project dependencies bump their MSRV or a particular Rust feature is useful for us). The new MSRV will be at least 6 months old. DuckDB patch updates and crate patch releases (e.g. `1.10500.0` to `1.10500.1`) are guaranteed to keep the same MSRV.
 
 ## Contributing
 
