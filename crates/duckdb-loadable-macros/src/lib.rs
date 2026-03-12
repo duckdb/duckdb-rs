@@ -123,6 +123,7 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
                     }
                 }
 
+                #[allow(clippy::missing_safety_doc)]
                 #func
             }
             .into()
