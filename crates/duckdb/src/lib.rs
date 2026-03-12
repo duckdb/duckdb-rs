@@ -111,6 +111,7 @@ mod column;
 mod config;
 mod inner_connection;
 mod params;
+
 #[cfg(feature = "polars")]
 mod polars_dataframe;
 mod pragma;
@@ -124,6 +125,7 @@ mod transaction;
 #[cfg(feature = "extensions-full")]
 mod extension;
 
+pub mod profiling;
 pub mod types;
 /// The duckdb table function interface
 #[cfg(feature = "vtab")]
