@@ -43,6 +43,7 @@ use crate::{Connection, inner_connection::InnerConnection};
 /// There are two types of nodes: the "QUERY_ROOT" and "OPERATOR" nodes.
 /// The "QUERY_ROOT" refers exclusively to the top-level node; its metrics are measured over the entire query.
 /// The "OPERATOR" nodes refer to the individual operators in the query plan.
+#[derive(Debug, Clone)]
 pub struct ProfilingInfo {
     /// The metrics for the node, represented as a map from metric name to metric value.
     /// The actual format and units of the metric varies between metric kinds. For example,
@@ -57,8 +58,12 @@ pub struct ProfilingInfo {
 
 impl ProfilingInfo {
     /// # Safety
-    /// `info` must be a valid, non-null pointer obtained from [`libduckdb_sys::duckdb_get_profiling_info`].
-    unsafe fn from_raw(info: libduckdb_sys::duckdb_profiling_info) -> Self {
+    /// `info` must be a valid (or NULL) pointer obtained from [`libduckdb_sys::duckdb_get_profiling_info`].
+    fn from_raw(info: libduckdb_sys::duckdb_profiling_info) -> Option<Self> {
+        if info.is_null() {
+            return None;
+        }
+
         // Extract metrics
         let mut map = unsafe { libduckdb_sys::duckdb_profiling_info_get_metrics(info) };
         let map_size = unsafe { libduckdb_sys::duckdb_get_map_size(map) };
@@ -95,10 +100,12 @@ impl ProfilingInfo {
         let mut children = Vec::with_capacity(child_count as usize);
         for i in 0..child_count {
             let child_info = unsafe { Self::from_raw(libduckdb_sys::duckdb_profiling_info_get_child(info, i)) };
-            children.push(child_info);
+            if let Some(info) = child_info {
+                children.push(info);
+            }
         }
 
-        ProfilingInfo { metrics, children }
+        Some(ProfilingInfo { metrics, children })
     }
 }
 
@@ -106,11 +113,7 @@ impl InnerConnection {
     /// Retrieves the [`ProfilingInfo`] for the last executed query, if profiling is enabled.
     pub fn get_profiling_info(&self) -> Option<ProfilingInfo> {
         let info = unsafe { libduckdb_sys::duckdb_get_profiling_info(self.con) };
-        if info.is_null() {
-            None
-        } else {
-            Some(unsafe { ProfilingInfo::from_raw(info) })
-        }
+        ProfilingInfo::from_raw(info)
     }
 }
 
