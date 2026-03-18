@@ -195,17 +195,17 @@ impl RawStatement {
                 polars_arrow::ffi::import_field_from_c(&ffi_arrow_schema).expect("Failed to import Polars Arrow field");
             let import_array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype);
 
-            if let Err(err) = import_array {
-                match err {
-                    // When array is empty, import_array_from_c returns error with message
-                    // "ComputeError("An ArrowArray of type X must have non-null children")
-                    // Therefore, we return None when encountering this error.
-                    polars::error::PolarsError::ComputeError(_) => return None,
-                    _ => panic!("Failed to import Polars Arrow array from C: {err}"),
+            let array = match import_array {
+                Ok(array) => array,
+                // When array is empty, import_array_from_c returns ComputeError with message
+                // "An ArrowArray of type X must have non-null children".
+                Err(polars::error::PolarsError::ComputeError(msg))
+                    if msg.to_string().contains("non-null children") =>
+                {
+                    return None
                 }
-            }
-
-            let array = import_array.unwrap();
+                Err(err) => panic!("Failed to import Polars Arrow array from C: {err}"),
+            };
             let struct_array = array
                 .as_any()
                 .downcast_ref::<polars_arrow::array::StructArray>()
