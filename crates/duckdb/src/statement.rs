@@ -5,6 +5,8 @@ use arrow::{array::StructArray, datatypes::SchemaRef};
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
 #[cfg(feature = "polars")]
 use crate::polars_dataframe::Polars;
+#[cfg(feature = "polars")]
+use polars_core::utils::arrow as polars_arrow;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
@@ -400,6 +402,12 @@ impl Statement<'_> {
     #[inline]
     pub fn stream_step(&self, schema: SchemaRef) -> Option<StructArray> {
         self.stmt.streaming_step(schema)
+    }
+
+    #[cfg(feature = "polars")]
+    #[inline]
+    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
+        self.stmt.step_polars()
     }
 
     #[inline]

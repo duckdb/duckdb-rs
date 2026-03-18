@@ -166,13 +166,13 @@ impl RawStatement {
     #[cfg(feature = "polars")]
     #[inline]
     pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
-        self.result?;
+        let result = self.result?;
 
         unsafe {
             let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
 
             if ffi::duckdb_query_arrow_array(
-                self.result_unwrap(),
+                result,
                 &mut std::ptr::addr_of_mut!(ffi_arrow_array) as *mut _ as *mut ffi::duckdb_arrow_array,
             )
             .ne(&ffi::DuckDBSuccess)
@@ -183,7 +183,7 @@ impl RawStatement {
             let mut ffi_arrow_schema = polars_arrow::ffi::ArrowSchema::empty();
 
             if ffi::duckdb_query_arrow_schema(
-                self.result_unwrap(),
+                result,
                 &mut std::ptr::addr_of_mut!(ffi_arrow_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
             )
             .ne(&ffi::DuckDBSuccess)
