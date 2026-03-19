@@ -5,13 +5,13 @@ use arrow::{array::StructArray, datatypes::SchemaRef};
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
 #[cfg(feature = "polars")]
 use crate::polars_dataframe::Polars;
-#[cfg(feature = "polars")]
-use polars_core::utils::arrow as polars_arrow;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
     types::{ToSql, ToSqlOutput},
 };
+#[cfg(feature = "polars")]
+use polars_core::utils::arrow as polars_arrow;
 
 /// A prepared statement.
 ///

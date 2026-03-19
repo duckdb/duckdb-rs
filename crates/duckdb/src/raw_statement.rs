@@ -199,10 +199,8 @@ impl RawStatement {
                 Ok(array) => array,
                 // When array is empty, import_array_from_c returns ComputeError with message
                 // "An ArrowArray of type X must have non-null children".
-                Err(polars::error::PolarsError::ComputeError(msg))
-                    if msg.to_string().contains("non-null children") =>
-                {
-                    return None
+                Err(polars::error::PolarsError::ComputeError(msg)) if msg.to_string().contains("non-null children") => {
+                    return None;
                 }
                 Err(err) => panic!("Failed to import Polars Arrow array from C: {err}"),
             };
