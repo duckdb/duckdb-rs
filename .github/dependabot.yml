@@ -4,6 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: daily
+    allow:
+      - dependency-type: direct
     open-pull-requests-limit: 10
     target-branch: main
     labels: [auto-dependencies]
