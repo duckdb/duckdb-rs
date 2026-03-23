@@ -41,7 +41,7 @@ serde_json = { workspace = true }
 syn = { workspace = true, optional = true }
 tar = { workspace = true }
 vcpkg = { workspace = true, optional = true }
-zip = { version = "6", default-features = false, features = ["deflate"] }
+zip = { version = "7", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
