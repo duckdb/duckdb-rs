@@ -136,7 +136,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "=1.10500.0", features = ["bundled"] }
+duckdb = { version = "=1.10501.0", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -175,7 +175,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "1.10500.0", features = ["bundled"] }
+   duckdb = { version = "1.10501.0", features = ["bundled"] }
    ```
 
 2. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
@@ -183,7 +183,7 @@ You can adjust this behavior in a number of ways:
    Linux example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.5.0/libduckdb-linux-arm64.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.5.1/libduckdb-linux-arm64.zip
    unzip libduckdb-linux-arm64.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -196,7 +196,7 @@ You can adjust this behavior in a number of ways:
    macOS example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.5.0/libduckdb-osx-universal.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.5.1/libduckdb-osx-universal.zip
    unzip libduckdb-osx-universal.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
