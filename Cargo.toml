@@ -41,7 +41,7 @@ hashlink = "0.10"
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
 pkg-config = "0.3.24"
-polars = "0.49.1"
+polars = "0.53.0"
 polars-core = "0.49.1"
 pretty_assertions = "1.4.1"
 prettyplease = "0.2.20"
