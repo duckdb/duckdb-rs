@@ -44,6 +44,10 @@ mod build_bundled {
     use std::collections::{HashMap, HashSet};
     #[cfg(feature = "bundled-cmake")]
     use std::env;
+    #[cfg(feature = "bundled-cmake")]
+    use std::path::PathBuf;
+    #[cfg(feature = "bundled-cmake")]
+    use std::process::Command;
 
     #[cfg(not(feature = "bundled-cmake"))]
     #[derive(serde::Deserialize)]
@@ -292,12 +296,17 @@ mod build_bundled {
         println!("cargo:rerun-if-changed=duckdb-sources");
         println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_EXTENSION_LOAD");
         println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
+        println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
+        println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
+        println!("cargo:rerun-if-env-changed=CMAKE_GENERATOR");
 
         write_bindings(&source_dir.join("src/include"), out_path);
 
         let mut config = cmake::Config::new(source_dir);
+        config.out_dir(cmake_out_dir());
+        prefer_ninja_generator(&mut config);
         config
-            .profile(if debug_build() { "Debug" } else { "Release" })
+            .profile(&cmake_build_type())
             .define("BUILD_UNITTESTS", "0")
             .define("BUILD_SHELL", "0")
             .define("DISABLE_UNITY", "1");
@@ -339,10 +348,22 @@ mod build_bundled {
     }
 
     #[cfg(feature = "bundled-cmake")]
-    fn debug_build() -> bool {
-        match env::var("DEBUG") {
-            Ok(v) => v != "false" && v != "0",
-            Err(_) => false,
+    fn cmake_build_type() -> String {
+        env::var("DUCKDB_CMAKE_BUILD_TYPE")
+            .ok()
+            .or_else(|| env::var("CMAKE_BUILD_TYPE").ok())
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| validate_cmake_build_type(&value))
+            .unwrap_or_else(|| "Release".to_owned())
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn validate_cmake_build_type(value: &str) -> String {
+        match value {
+            "Debug" | "Release" | "RelWithDebInfo" | "MinSizeRel" => value.to_owned(),
+            _ => panic!(
+                "unsupported CMake build type `{value}`; expected one of Debug, Release, RelWithDebInfo, MinSizeRel"
+            ),
         }
     }
 
@@ -351,6 +372,59 @@ mod build_bundled {
         env::var(name)
             .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
             .unwrap_or(false)
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn cmake_out_dir() -> PathBuf {
+        let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
+        let generator = env::var("CMAKE_GENERATOR")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| {
+                if find_program(&["ninja", "ninja-build"]).is_some() {
+                    "ninja".to_string()
+                } else {
+                    "default".to_string()
+                }
+            });
+        out_dir.join(format!("cmake-{}", sanitize_path_component(&generator)))
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn prefer_ninja_generator(config: &mut cmake::Config) {
+        if env::var_os("CMAKE_GENERATOR").is_some() {
+            return;
+        }
+
+        if let Some(ninja) = find_program(&["ninja", "ninja-build"]) {
+            config.generator("Ninja");
+            config.env("CMAKE_MAKE_PROGRAM", ninja);
+        }
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn find_program(candidates: &[&str]) -> Option<String> {
+        for candidate in candidates {
+            let status = Command::new(candidate).arg("--version").output().ok()?;
+            if status.status.success() {
+                return Some((*candidate).to_string());
+            }
+        }
+        None
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn sanitize_path_component(input: &str) -> String {
+        input
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect()
     }
 
     #[cfg(feature = "bundled-cmake")]

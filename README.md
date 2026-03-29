@@ -102,6 +102,10 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 
 - `json` - Enables reading and writing JSON files. Requires `bundled`.
 - `parquet` - Enables reading and writing Parquet files. Requires `bundled`.
+- `autocomplete` - Enables DuckDB's autocomplete extension. Requires `bundled-cmake`.
+- `icu` - Enables DuckDB's ICU extension. Requires `bundled-cmake`.
+- `tpch` - Enables DuckDB's TPC-H extension. Requires `bundled-cmake`.
+- `tpcds` - Enables DuckDB's TPC-DS extension. Requires `bundled-cmake`.
 - `appender-arrow` - Efficient bulk insertion of Arrow data into DuckDB tables.
 - `polars` - Integration with Polars DataFrames.
 
@@ -114,6 +118,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 ### Build configuration
 
 - `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
+- `bundled-cmake` - Builds DuckDB through its upstream CMake build system. This currently targets git/workspace checkouts of duckdb-rs where `crates/libduckdb-sys/duckdb-sources` is available locally.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
 - `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development.
 
@@ -178,7 +183,25 @@ You can adjust this behavior in a number of ways:
    duckdb = { version = "1.10501.0", features = ["bundled"] }
    ```
 
-2. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
+2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
+
+   Example:
+
+   ```toml
+   [dependencies]
+   duckdb = { git = "https://github.com/duckdb/duckdb-rs", branch = "main", features = ["bundled-cmake", "icu"] }
+   ```
+
+   Notes:
+
+   - `bundled-cmake` currently targets git/workspace checkouts. It is not available from crates.io because the full `duckdb-sources` tree is not packaged there.
+   - If any CMake-only extension feature is enabled, the bundled build switches to the CMake backend and all bundled extensions for that build are compiled through CMake.
+   - When `ninja` is available on `PATH`, the CMake backend prefers the Ninja generator automatically. Set `CMAKE_GENERATOR` to override this.
+   - `bundled-cmake` builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` to `Debug`, `RelWithDebInfo`, `MinSizeRel`, or `Release` to override this.
+   - Set `DUCKDB_DISABLE_EXTENSION_LOAD=1` to disable runtime extension loading and installation in the CMake backend.
+   - Set `DUCKDB_EXTENSION_CONFIGS` to a semicolon-separated list of DuckDB extension config files to load additional extensions through DuckDB's native CMake machinery.
+
+3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
 
    Linux example:
 
@@ -206,13 +229,13 @@ You can adjust this behavior in a number of ways:
    cargo build --examples
    ```
 
-3. Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This always links against the dynamic library in the archive (setting `DUCKDB_STATIC` has no effect), and it effectively automates the manual steps above. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the DuckDB version encoded in the `libduckdb-sys` crate version.
+4. Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This always links against the dynamic library in the archive (setting `DUCKDB_STATIC` has no effect), and it effectively automates the manual steps above. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the DuckDB version encoded in the `libduckdb-sys` crate version.
 
    ```shell
    DUCKDB_DOWNLOAD_LIB=1 cargo test
    ```
 
-4. Installing the DuckDB development packages will usually be all that is required, but
+5. Installing the DuckDB development packages will usually be all that is required, but
    the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
    and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
    options. The default when using vcpkg is to dynamically link,
@@ -220,15 +243,17 @@ You can adjust this behavior in a number of ways:
 
 When none of the options above are used, the build script falls back to this discovery path and will emit the appropriate `cargo:rustc-link-lib` directives if DuckDB is found on your system.
 
-### ICU extension and the bundled feature
+### ICU extension and the bundled features
 
-When using the `bundled` feature, the ICU extension is not included due to crates.io's 10MB package size limit. This means some date/time operations (like `now() - interval '1 day'` or `ts::date` casts) will fail. You can load ICU at runtime:
+When using the legacy `bundled` feature, the ICU extension is not included due to crates.io's 10MB package size limit. This means some date/time operations (like `now() - interval '1 day'` or `ts::date` casts) will fail. You can load ICU at runtime:
 
 ```rust,ignore
 conn.execute_batch("INSTALL icu; LOAD icu;")?;
 ```
 
 Alternatively, link against libduckdb without the `bundled` feature (see build instructions above). The ICU extension will be built-in and pre-loaded in that case.
+
+If you are working from a duckdb-rs checkout, you can also use `bundled-cmake,icu` to compile ICU in through DuckDB's CMake build.
 
 ### Binding generation
 
