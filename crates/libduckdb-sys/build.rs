@@ -35,19 +35,24 @@ fn main() {
 
 #[cfg(feature = "bundled")]
 mod build_bundled {
-    use std::{
-        collections::{HashMap, HashSet},
-        path::Path,
-    };
+    use std::path::Path;
 
+    #[cfg(feature = "bundled-cmake")]
+    use crate::is_compiler;
     use crate::win_target;
+    #[cfg(not(feature = "bundled-cmake"))]
+    use std::collections::{HashMap, HashSet};
+    #[cfg(feature = "bundled-cmake")]
+    use std::env;
 
+    #[cfg(not(feature = "bundled-cmake"))]
     #[derive(serde::Deserialize)]
     struct Sources {
         cpp_files: HashSet<String>,
         include_dirs: HashSet<String>,
     }
 
+    #[cfg(not(feature = "bundled-cmake"))]
     #[derive(serde::Deserialize)]
     struct Manifest {
         base: Sources,
@@ -56,6 +61,7 @@ mod build_bundled {
         extensions: HashMap<String, Sources>,
     }
 
+    #[cfg(not(feature = "bundled-cmake"))]
     #[allow(unused)]
     fn add_extension(
         cfg: &mut cc::Build,
@@ -72,6 +78,7 @@ mod build_bundled {
         );
     }
 
+    #[cfg(not(feature = "bundled-cmake"))]
     fn rewrite_generated_extension_loader(enabled_extensions: &[String], loader_path: &Path) -> std::io::Result<()> {
         // DuckDB 1.5.0's package_build.py generates this translation unit from the full packaged
         // extension list, not the subset that duckdb-rs enables through Cargo features. That means
@@ -125,6 +132,7 @@ mod build_bundled {
         )
     }
 
+    #[cfg(not(feature = "bundled-cmake"))]
     fn extension_enabled(extension: &str) -> Option<bool> {
         match extension {
             "core_functions" => Some(true),
@@ -134,6 +142,7 @@ mod build_bundled {
         }
     }
 
+    #[cfg(not(feature = "bundled-cmake"))]
     fn to_camel_case(extension: &str) -> String {
         extension
             .split('_')
@@ -145,6 +154,7 @@ mod build_bundled {
             .collect()
     }
 
+    #[cfg(not(feature = "bundled-cmake"))]
     fn untar_archive(out_dir: &str) {
         let path = "duckdb.tar.gz";
 
@@ -154,18 +164,22 @@ mod build_bundled {
         archive.unpack(out_dir).expect("archive");
     }
 
+    #[cfg(feature = "bundled-cmake")]
+    pub fn main(_out_dir: &str, out_path: &Path) {
+        build_with_cmake(out_path);
+    }
+
+    #[cfg(not(feature = "bundled-cmake"))]
     pub fn main(out_dir: &str, out_path: &Path) {
-        untar_archive(out_dir);
+        build_with_cc(out_dir, out_path);
+    }
 
-        if !cfg!(feature = "bundled") {
-            // This is just a sanity check, the top level `main` should ensure this.
-            panic!("This module should not be used: bundled feature has not been enabled");
-        }
-
+    #[allow(unused_variables)]
+    fn write_bindings(header_dir: &Path, out_path: &Path) {
         #[cfg(feature = "buildtime_bindgen")]
         {
             use super::{HeaderLocation, bindings};
-            let header = HeaderLocation::FromPath(format!("{out_dir}/duckdb/src/include/"));
+            let header = HeaderLocation::FromPath(header_dir.to_string_lossy().into_owned());
             bindings::write_to_out_dir(header, out_path);
         }
 
@@ -181,6 +195,18 @@ mod build_bundled {
             )
             .expect("Could not copy bindings to output directory");
         }
+    }
+
+    #[cfg(not(feature = "bundled-cmake"))]
+    fn build_with_cc(out_dir: &str, out_path: &Path) {
+        untar_archive(out_dir);
+
+        if !cfg!(feature = "bundled") {
+            // This is just a sanity check, the top level `main` should ensure this.
+            panic!("This module should not be used: bundled feature has not been enabled");
+        }
+
+        write_bindings(&Path::new(out_dir).join("duckdb/src/include"), out_path);
 
         let manifest_file = std::fs::File::open(format!("{out_dir}/duckdb/manifest.json")).expect("manifest file");
         let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
@@ -250,6 +276,136 @@ mod build_bundled {
         cfg.compile("duckdb");
 
         println!("cargo:lib_dir={out_dir}");
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn build_with_cmake(out_path: &Path) {
+        let source_dir = Path::new("duckdb-sources");
+        let cmake_lists = source_dir.join("CMakeLists.txt");
+        if !cmake_lists.exists() {
+            panic!(
+                "`bundled-cmake` requires a duckdb-rs checkout with DuckDB sources at {}",
+                cmake_lists.display()
+            );
+        }
+
+        println!("cargo:rerun-if-changed=duckdb-sources");
+        println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_EXTENSION_LOAD");
+        println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
+
+        write_bindings(&source_dir.join("src/include"), out_path);
+
+        let mut config = cmake::Config::new(source_dir);
+        config
+            .profile(if debug_build() { "Debug" } else { "Release" })
+            .define("BUILD_UNITTESTS", "0")
+            .define("BUILD_SHELL", "0")
+            .define("DISABLE_UNITY", "1");
+
+        let enabled_extensions = cmake_enabled_extensions();
+        if !enabled_extensions.is_empty() {
+            config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
+        }
+
+        let skipped_extensions = cmake_skipped_extensions();
+        if !skipped_extensions.is_empty() {
+            config.define("SKIP_EXTENSIONS", skipped_extensions.join(";"));
+        }
+
+        if env_var_truthy("DUCKDB_DISABLE_EXTENSION_LOAD") {
+            config.define("DISABLE_EXTENSION_LOAD", "1");
+        } else {
+            config
+                .define("ENABLE_EXTENSION_AUTOLOADING", "1")
+                .define("ENABLE_EXTENSION_AUTOINSTALL", "1");
+        }
+
+        if let Ok(configs) = env::var("DUCKDB_EXTENSION_CONFIGS") {
+            if !configs.trim().is_empty() {
+                config.define("DUCKDB_EXTENSION_CONFIGS", configs);
+            }
+        }
+
+        let dst = config.build();
+        let lib_dir = dst.join("lib");
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        println!("cargo:rustc-link-lib=static=duckdb_generated_extension_loader");
+        for extension in enabled_extensions {
+            println!("cargo:rustc-link-lib=static={extension}_extension");
+        }
+        println!("cargo:rustc-link-lib=static=duckdb_static");
+        link_cmake_system_libs();
+        println!("cargo:lib_dir={}", lib_dir.display());
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn debug_build() -> bool {
+        match env::var("DEBUG") {
+            Ok(v) => v != "false" && v != "0",
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn env_var_truthy(name: &str) -> bool {
+        env::var(name)
+            .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn cmake_enabled_extensions() -> Vec<&'static str> {
+        let mut extensions = Vec::new();
+        if cfg!(feature = "json") {
+            extensions.push("json");
+        }
+        if cfg!(feature = "parquet") {
+            extensions.push("parquet");
+        }
+        if cfg!(feature = "autocomplete") {
+            extensions.push("autocomplete");
+        }
+        if cfg!(feature = "icu") {
+            extensions.push("icu");
+        }
+        if cfg!(feature = "tpcds") {
+            extensions.push("tpcds");
+        }
+        if cfg!(feature = "tpch") {
+            extensions.push("tpch");
+        }
+        extensions
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn cmake_skipped_extensions() -> Vec<&'static str> {
+        let mut extensions = vec!["jemalloc"];
+        if !cfg!(feature = "parquet") {
+            extensions.push("parquet");
+        }
+        extensions
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn link_cmake_system_libs() {
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+
+        match target_os.as_str() {
+            "linux" => println!("cargo:rustc-link-lib=dylib=dl"),
+            "windows" => {
+                println!("cargo:rustc-link-lib=dylib=ws2_32");
+                println!("cargo:rustc-link-lib=dylib=rstrtmgr");
+                if is_compiler("msvc") {
+                    println!("cargo:rustc-link-lib=dylib=bcrypt");
+                }
+            }
+            _ => {}
+        }
+
+        if !(win_target() && is_compiler("msvc")) {
+            let cxx_runtime = if target_os == "macos" { "c++" } else { "stdc++" };
+            println!("cargo:rustc-link-lib=dylib={cxx_runtime}");
+        }
     }
 }
 

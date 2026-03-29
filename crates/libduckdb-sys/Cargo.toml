@@ -17,9 +17,14 @@ rust-version = { workspace = true }
 [features]
 default = ["vcpkg", "pkg-config"]
 bundled = ["cc"]
+bundled-cmake = ["bundled", "dep:cmake"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
+autocomplete = ["bundled-cmake"]
+icu = ["bundled-cmake"]
+tpcds = ["bundled-cmake"]
+tpch = ["bundled-cmake"]
 extensions-full = ["json", "parquet"]
 winduckdb = []
 # Warning: experimental feature
@@ -28,6 +33,7 @@ loadable-extension = ["prettyplease", "quote", "syn"]
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"], optional = true }
 cc = { workspace = true, features = ["parallel"], optional = true }
+cmake = { version = "0.1", optional = true }
 flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
 prettyplease = { workspace = true, optional = true }
