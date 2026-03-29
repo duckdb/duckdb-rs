@@ -111,6 +111,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
+          - { name: Linux, os: ubuntu-latest }
           - { name: macOS, os: macos-latest }
           - { name: Windows, os: windows-latest }
     runs-on: ${{ matrix.os }}
@@ -119,8 +120,8 @@ jobs:
         with:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Link bundled-cmake ICU test binary
-        run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib --no-run
+      - name: Run ICU test
+        run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib extension::test::test_extension_icu -- --exact
 
   msrv:
     name: MSRV Check
