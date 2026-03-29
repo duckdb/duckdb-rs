@@ -115,11 +115,17 @@ jobs:
           - { name: macOS, os: macos-latest }
           - { name: Windows, os: windows-latest }
     runs-on: ${{ matrix.os }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: mozilla-actions/sccache-action@v0.0.9
       - name: Run ICU test
         run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib extension::test::test_extension_icu -- --exact
 

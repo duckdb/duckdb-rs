@@ -28,8 +28,11 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
+    println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
     println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=CMAKE_GENERATOR");
+    println!("cargo:rerun-if-env-changed=CMAKE_C_COMPILER_LAUNCHER");
+    println!("cargo:rerun-if-env-changed=CMAKE_CXX_COMPILER_LAUNCHER");
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
     write_bindings(&source_dir.join("src/include"), out_path);
@@ -51,8 +54,20 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         .define("BUILD_SHELL", "0")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
         .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
-        .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag())
-        .define("DISABLE_UNITY", "1");
+        .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag());
+
+    // Unity builds (DuckDB's default) combine .cpp files into fewer translation
+    // units and compile significantly faster. Allow opting out for debugging.
+    // Always set explicitly so the CMake cache doesn't keep a stale value.
+    let disable_unity = env::var("DUCKDB_DISABLE_UNITY").as_deref() == Ok("1");
+    config.define("DISABLE_UNITY", if disable_unity { "1" } else { "0" });
+
+    // Forward compiler launcher for sccache/ccache integration.
+    for var in ["CMAKE_C_COMPILER_LAUNCHER", "CMAKE_CXX_COMPILER_LAUNCHER"] {
+        if let Ok(launcher) = env::var(var) {
+            config.define(var, &launcher);
+        }
+    }
 
     let enabled_extensions = enabled_extensions();
     if !enabled_extensions.is_empty() {
