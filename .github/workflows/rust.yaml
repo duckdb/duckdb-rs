@@ -23,7 +23,7 @@ jobs:
   test:
     # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
     # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
-    # - bundled feature tested by --all-features
+    # - bundled feature covered by the Ubuntu clippy feature set below
     name: Test ${{ matrix.name }}
     strategy:
       fail-fast: true

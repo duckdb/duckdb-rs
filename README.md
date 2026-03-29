@@ -100,15 +100,17 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 
 ### File formats
 
-- `json` - Enables reading and writing JSON files. Requires `bundled`.
-- `parquet` - Enables reading and writing Parquet files. Requires `bundled`. The experimental `bundled-cmake` backend always includes Parquet to match DuckDB's upstream defaults.
+- `json` - Enables reading and writing JSON files. Implies `bundled`.
+- `parquet` - Enables reading and writing Parquet files. Implies `bundled`.
 
 ### Bundled DuckDB extensions
 
-- `autocomplete` - Enables DuckDB's autocomplete extension. Requires `bundled-cmake`.
-- `icu` - Enables DuckDB's ICU extension. Requires `bundled-cmake`.
-- `tpch` - Enables DuckDB's TPC-H extension. Requires `bundled-cmake`.
-- `tpcds` - Enables DuckDB's TPC-DS extension. Requires `bundled-cmake`.
+These extensions are only available through the CMake build backend and imply `bundled-cmake`.
+
+- `autocomplete` - DuckDB's autocomplete extension.
+- `icu` - DuckDB's ICU extension for locale-aware operations.
+- `tpch` - DuckDB's TPC-H benchmark extension.
+- `tpcds` - DuckDB's TPC-DS benchmark extension.
 
 ### Data integration
 
@@ -124,7 +126,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 ### Build configuration
 
 - `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
-- `bundled-cmake` - *Experimental*. Builds DuckDB through its upstream CMake build system. This currently targets git/workspace checkouts of duckdb-rs where `crates/libduckdb-sys/duckdb-sources` is available locally. It implies `bundled`, and this path always links DuckDB's default bundled extensions for this build, currently `core_functions` and `parquet`, so it also implies the `parquet` Cargo feature.
+- `bundled-cmake` - *Experimental*. Builds DuckDB via its upstream CMake build system instead of `cc`. Requires a duckdb-rs checkout (not available from crates.io). See [step 2](#notes-on-building-duckdb-and-libduckdb-sys) below for details.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
 - `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development.
 
@@ -200,16 +202,14 @@ You can adjust this behavior in a number of ways:
 
    Notes:
 
-   - `bundled-cmake` is *experimental*.
-   - `bundled-cmake` currently targets git/workspace checkouts. It is not available from crates.io because the full `duckdb-sources` tree is not packaged there.
-   - CMake-only extension features imply `bundled-cmake` through Cargo feature dependencies, so all bundled extensions for that build are compiled through CMake.
-   - `bundled-cmake` always links DuckDB's default bundled extensions for this build, currently `core_functions` and `parquet`. `core_functions` does not have a separate Cargo feature, and `bundled-cmake` therefore also implies `parquet`.
-   - `bundled-cmake` currently forces DuckDB's extension autoload/autoinstall defaults on to match the existing `bundled` backend, even though upstream DuckDB's CMake source defaults are off.
-   - When `ninja` is available on `PATH`, the CMake backend prefers the Ninja generator automatically. Set `CMAKE_GENERATOR` to override this.
-   - `bundled-cmake` builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE` to `Debug`, `RelWithDebInfo`, `MinSizeRel`, or `Release` to override this. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence when both are set.
-   - `DUCKDB_EXTENSION_CONFIGS` is not supported yet in `bundled-cmake`. Additional static extension libraries from those configs are not auto-linked yet, so the build now fails fast instead of producing a broken binary.
-   - TODO: extend `bundled-cmake` to support out-of-tree static extensions end-to-end, e.g. `sqlite_scanner`, without requiring manual extra linking steps.
-   - Use `cargo build -vv -F bundled-cmake` to surface the underlying CMake configure/build logs in Cargo output.
+   - `bundled-cmake` is *experimental* and requires a git/workspace checkout. It is not available from crates.io because the full `duckdb-sources` tree is not packaged there.
+   - `bundled-cmake` implies `bundled` (for conditional-compilation gates) but replaces the `cc` build backend with CMake. Enabling any CMake-only extension feature (e.g. `icu`) automatically activates `bundled-cmake`.
+   - `bundled-cmake` always links DuckDB's default static extensions (`core_functions` and `parquet`), so it also implies the `parquet` Cargo feature.
+   - Extension autoload/autoinstall are forced on to match the existing `bundled` backend, even though upstream CMake defaults are off.
+   - When `ninja` is on `PATH`, the Ninja generator is preferred automatically. Set `CMAKE_GENERATOR` to override.
+   - Builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE` to override. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
+   - `DUCKDB_EXTENSION_CONFIGS` is not yet supported; the build fails fast rather than producing a broken binary.
+   - Use `cargo build -vv -F bundled-cmake` to surface CMake configure/build logs.
 
 3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
 
@@ -261,7 +261,7 @@ When using the `bundled` feature, the ICU extension is not included due to crate
 conn.execute_batch("INSTALL icu; LOAD icu;")?;
 ```
 
-Alternatively, link against libduckdb without the `bundled` feature (see build instructions above). The ICU extension will be built-in and pre-loaded in that case.
+Alternatively, link against a system libduckdb that was compiled with ICU (see build instructions above).
 
 If you are working from a duckdb-rs checkout, you can also use `bundled-cmake,icu` to compile ICU in through DuckDB's CMake build.
 

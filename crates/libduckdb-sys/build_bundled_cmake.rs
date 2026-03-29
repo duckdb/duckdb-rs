@@ -10,6 +10,12 @@ use std::{
 // upstream's default parquet linkage in the CMake backend.
 const SKIPPED_EXTENSIONS: &[&str] = &["jemalloc"];
 
+struct Generator {
+    name: Option<String>,
+    out_dir: PathBuf,
+    make_program: Option<String>,
+}
+
 pub fn main(_out_dir: &str, out_path: &Path) {
     let source_dir = Path::new("duckdb-sources");
     let cmake_lists = source_dir.join("CMakeLists.txt");
@@ -29,13 +35,14 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     write_bindings(&source_dir.join("src/include"), out_path);
 
     let cmake_build_type = cmake_build_type();
-    let (cmake_out_dir, ninja_program, generator_description) = select_generator();
-    cargo_warning(&format!("bundled-cmake generator: {generator_description}"));
+    let generator = select_generator();
     let mut config = cmake::Config::new(source_dir);
-    config.out_dir(cmake_out_dir);
-    if let Some(ninja) = ninja_program.as_deref() {
-        config.generator("Ninja");
-        config.env("CMAKE_MAKE_PROGRAM", ninja);
+    config.out_dir(&generator.out_dir);
+    if let Some(generator_name) = generator.name.as_deref() {
+        config.generator(generator_name);
+    }
+    if let Some(make_program) = generator.make_program.as_deref() {
+        config.define("CMAKE_MAKE_PROGRAM", make_program);
     }
     configure_macos_deployment_target(&mut config);
     config
@@ -52,9 +59,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
 
-    if !SKIPPED_EXTENSIONS.is_empty() {
-        config.define("SKIP_EXTENSIONS", SKIPPED_EXTENSIONS.join(";"));
-    }
+    config.define("SKIP_EXTENSIONS", SKIPPED_EXTENSIONS.join(";"));
 
     // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
     // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` for now.
@@ -74,8 +79,8 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    // Preserve the static dependency order for single-pass linkers:
-    // duckdb_static -> duckdb_generated_extension_loader -> *_extension.
+    // Preserve the static link order required by single-pass linkers:
+    // emit `duckdb_static` first, then the generated loader, then the extensions.
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_generated_extension_loader");
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
@@ -87,12 +92,15 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 }
 
 fn cmake_build_type() -> String {
-    env::var("DUCKDB_CMAKE_BUILD_TYPE")
-        .ok()
-        .or_else(|| env::var("CMAKE_BUILD_TYPE").ok())
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| validate_cmake_build_type(&value))
-        .unwrap_or_else(|| "Release".to_owned())
+    for var in ["DUCKDB_CMAKE_BUILD_TYPE", "CMAKE_BUILD_TYPE"] {
+        if let Some(value) = env::var(var).ok().filter(|v| !v.trim().is_empty()) {
+            let value = validate_cmake_build_type(&value);
+            cargo_warning(&format!("bundled-cmake build type: {value} (from {var})"));
+            return value;
+        }
+    }
+    cargo_warning("bundled-cmake build type: Release (default)");
+    "Release".to_owned()
 }
 
 fn validate_cmake_build_type(value: &str) -> String {
@@ -104,35 +112,43 @@ fn validate_cmake_build_type(value: &str) -> String {
     }
 }
 
-fn select_generator() -> (PathBuf, Option<String>, String) {
+fn select_generator() -> Generator {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
     if let Some(generator) = env::var("CMAKE_GENERATOR")
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
-        if generator.contains("Ninja") && find_program(&["ninja", "ninja-build"]).is_none() {
-            panic!("CMAKE_GENERATOR={generator} requires `ninja` or `ninja-build` on PATH, but neither was found");
-        }
-        let cmake_out_dir = out_dir.join(format!("cmake-{}", sanitize_path_component(&generator)));
-        return (cmake_out_dir, None, format!("{generator} (from CMAKE_GENERATOR)"));
+        let make_program = if generator.contains("Ninja") {
+            Some(find_program(&["ninja", "ninja-build"]).unwrap_or_else(|| {
+                panic!("CMAKE_GENERATOR={generator} requires `ninja` or `ninja-build` on PATH, but neither was found")
+            }))
+        } else {
+            None
+        };
+        cargo_warning(&format!("bundled-cmake generator: {generator} (from CMAKE_GENERATOR)"));
+        return Generator {
+            out_dir: out_dir.join(format!("cmake-{}", sanitize_path_component(&generator))),
+            name: Some(generator),
+            make_program,
+        };
     }
 
     let ninja_program = find_program(&["ninja", "ninja-build"]);
-    let out_dir_component = if ninja_program.is_some() {
-        "ninja".to_string()
+    if let Some(ninja) = ninja_program {
+        cargo_warning(&format!("bundled-cmake generator: Ninja (autodetected via {ninja})"));
+        Generator {
+            out_dir: out_dir.join("cmake-ninja"),
+            name: Some("Ninja".to_string()),
+            make_program: Some(ninja),
+        }
     } else {
-        "default".to_string()
-    };
-    let generator_description = if let Some(ninja) = ninja_program.as_deref() {
-        format!("Ninja (autodetected via {ninja})")
-    } else {
-        "default CMake generator (ninja not detected)".to_string()
-    };
-    (
-        out_dir.join(format!("cmake-{}", sanitize_path_component(&out_dir_component))),
-        ninja_program,
-        generator_description,
-    )
+        cargo_warning("bundled-cmake generator: default CMake generator (ninja not detected)");
+        Generator {
+            out_dir: out_dir.join("cmake-default"),
+            name: None,
+            make_program: None,
+        }
+    }
 }
 
 fn warning_suppression_flag() -> &'static str {
@@ -171,7 +187,7 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
 fn find_program(candidates: &[&str]) -> Option<String> {
     for candidate in candidates {
         match which::which(candidate) {
-            Ok(_) => return Some(candidate.to_string()),
+            Ok(path) => return Some(path.display().to_string()),
             Err(which::Error::CannotFindBinaryPath) => {}
             Err(err) => {
                 cargo_warning(&format!(
@@ -288,13 +304,22 @@ fn static_library_filename(name: &str) -> String {
 fn list_static_extension_libraries(lib_dir: &Path, cmake_build_type: &str) -> io::Result<BTreeSet<String>> {
     let mut extension_libraries = BTreeSet::new();
     for candidate_dir in candidate_library_dirs(lib_dir, cmake_build_type)? {
-        for entry in fs::read_dir(candidate_dir)? {
+        for entry in fs::read_dir(&candidate_dir)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
             if !file_type.is_file() {
                 continue;
             }
-            let Some(name) = normalized_static_library_name(&entry.file_name().to_string_lossy()) else {
+            let file_name = entry.file_name();
+            let Some(file_name) = file_name.to_str() else {
+                cargo_warning(&format!(
+                    "bundled-cmake ignored non-UTF-8 library filename in {}: {}",
+                    candidate_dir.display(),
+                    entry.path().display()
+                ));
+                continue;
+            };
+            let Some(name) = normalized_static_library_name(file_name) else {
                 continue;
             };
             if name.ends_with("_extension") && !name.ends_with("_loadable_extension") {
