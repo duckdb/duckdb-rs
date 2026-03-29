@@ -120,7 +120,14 @@ mod row;
 mod statement;
 mod transaction;
 
-#[cfg(any(feature = "json", feature = "parquet", feature = "icu"))]
+#[cfg(any(
+    feature = "autocomplete",
+    feature = "icu",
+    feature = "json",
+    feature = "parquet",
+    feature = "tpcds",
+    feature = "tpch"
+))]
 mod extension;
 
 pub mod profiling;

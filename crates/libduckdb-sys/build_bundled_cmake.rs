@@ -1,8 +1,14 @@
 use crate::{is_compiler, win_target, write_bindings};
 use std::{
+    collections::BTreeSet,
     env, fs, io,
     path::{Path, PathBuf},
 };
+
+// Keep this in sync with DuckDB's always-loaded base extension config in
+// duckdb-sources/extension/extension_config.cmake. We intentionally keep
+// upstream's default parquet linkage in the CMake backend.
+const SKIPPED_EXTENSIONS: &[&str] = &["jemalloc"];
 
 pub fn main(_out_dir: &str, out_path: &Path) {
     let source_dir = Path::new("duckdb-sources");
@@ -14,8 +20,6 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         );
     }
 
-    println!("cargo:rerun-if-changed=duckdb-sources");
-    println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_EXTENSION_LOAD");
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
@@ -38,6 +42,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         .profile(&cmake_build_type)
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
+        .define("CMAKE_INSTALL_LIBDIR", "lib")
         .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
         .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag())
         .define("DISABLE_UNITY", "1");
@@ -47,18 +52,15 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
 
-    let skipped_extensions = skipped_extensions();
-    if !skipped_extensions.is_empty() {
-        config.define("SKIP_EXTENSIONS", skipped_extensions.join(";"));
+    if !SKIPPED_EXTENSIONS.is_empty() {
+        config.define("SKIP_EXTENSIONS", SKIPPED_EXTENSIONS.join(";"));
     }
 
-    if env_var_truthy("DUCKDB_DISABLE_EXTENSION_LOAD") {
-        config.define("DISABLE_EXTENSION_LOAD", "1");
-    } else {
-        config
-            .define("ENABLE_EXTENSION_AUTOLOADING", "1")
-            .define("ENABLE_EXTENSION_AUTOINSTALL", "1");
-    }
+    // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
+    // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` for now.
+    config
+        .define("ENABLE_EXTENSION_AUTOLOADING", "1")
+        .define("ENABLE_EXTENSION_AUTOINSTALL", "1");
 
     if let Ok(configs) = env::var("DUCKDB_EXTENSION_CONFIGS") {
         if !configs.trim().is_empty() {
@@ -70,6 +72,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     let dst = config.build();
     let lib_dir = dst.join("lib");
+    validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Preserve the static dependency order for single-pass linkers:
     // duckdb_static -> duckdb_generated_extension_loader -> *_extension.
@@ -99,12 +102,6 @@ fn validate_cmake_build_type(value: &str) -> String {
             panic!("unsupported CMake build type `{value}`; expected one of Debug, Release, RelWithDebInfo, MinSizeRel")
         }
     }
-}
-
-fn env_var_truthy(name: &str) -> bool {
-    env::var(name)
-        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false)
 }
 
 fn select_generator() -> (PathBuf, Option<String>, String) {
@@ -156,7 +153,13 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
         env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo should set CARGO_CFG_TARGET_ARCH for macOS builds");
     let target_arch = match target_arch_env.as_str() {
         "aarch64" => "arm64",
-        other => other,
+        "x86_64" => "x86_64",
+        other => {
+            cargo_warning(&format!(
+                "bundled-cmake macOS target arch `{target_arch_env}` is not explicitly recognized; forwarding `{other}` to CMake"
+            ));
+            other
+        }
     };
     cargo_warning(&format!(
         "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
@@ -191,6 +194,60 @@ fn sanitize_path_component(input: &str) -> String {
             }
         })
         .collect()
+}
+
+fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_extensions: &[&str]) {
+    let actual_extensions = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
+        panic!(
+            "failed to inspect bundled-cmake extension libraries in {}: {err}",
+            lib_dir.display()
+        )
+    });
+    let expected_extensions = expected_extension_libraries(enabled_extensions);
+    let missing_extensions = expected_extensions
+        .difference(&actual_extensions)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected_extensions = actual_extensions
+        .difference(&expected_extensions)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing_extensions.is_empty() || !unexpected_extensions.is_empty() {
+        let mut problems = Vec::new();
+        if !missing_extensions.is_empty() {
+            let noun = if missing_extensions.len() == 1 {
+                "library"
+            } else {
+                "libraries"
+            };
+            problems.push(format!(
+                "did not produce expected extension {noun}: {}",
+                missing_extensions.join(", ")
+            ));
+        }
+        if !unexpected_extensions.is_empty() {
+            problems.push(format!(
+                "produced unexpected static extension libraries: {}",
+                unexpected_extensions.join(", ")
+            ));
+        }
+        panic!(
+            "bundled-cmake {}; expected [{}], found [{}]",
+            problems.join("; "),
+            expected_extensions.iter().cloned().collect::<Vec<_>>().join(", "),
+            actual_extensions.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+    }
+}
+
+fn expected_extension_libraries(enabled_extensions: &[&str]) -> BTreeSet<String> {
+    let mut expected = BTreeSet::from([String::from("core_functions_extension")]);
+    expected.extend(
+        enabled_extensions
+            .iter()
+            .map(|extension| format!("{extension}_extension")),
+    );
+    expected
 }
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {
@@ -228,6 +285,34 @@ fn static_library_filename(name: &str) -> String {
     }
 }
 
+fn list_static_extension_libraries(lib_dir: &Path, cmake_build_type: &str) -> io::Result<BTreeSet<String>> {
+    let mut extension_libraries = BTreeSet::new();
+    for candidate_dir in candidate_library_dirs(lib_dir, cmake_build_type)? {
+        for entry in fs::read_dir(candidate_dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if !file_type.is_file() {
+                continue;
+            }
+            let Some(name) = normalized_static_library_name(&entry.file_name().to_string_lossy()) else {
+                continue;
+            };
+            if name.ends_with("_extension") && !name.ends_with("_loadable_extension") {
+                extension_libraries.insert(name);
+            }
+        }
+    }
+    Ok(extension_libraries)
+}
+
+fn normalized_static_library_name(filename: &str) -> Option<String> {
+    if let Some(name) = filename.strip_suffix(".lib") {
+        return Some(name.to_string());
+    }
+    let name = filename.strip_prefix("lib")?.strip_suffix(".a")?;
+    Some(name.to_string())
+}
+
 fn resolve_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) -> io::Result<Option<PathBuf>> {
     let filename = static_library_filename(name);
     for candidate_dir in candidate_library_dirs(lib_dir, cmake_build_type)? {
@@ -245,11 +330,14 @@ fn candidate_library_dirs(lib_dir: &Path, cmake_build_type: &str) -> io::Result<
     if build_type_dir.exists() {
         candidates.push(build_type_dir);
     }
-    let mut child_dirs = fs::read_dir(lib_dir)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .collect::<Vec<_>>();
+    let mut child_dirs = Vec::new();
+    for entry in fs::read_dir(lib_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            child_dirs.push(path);
+        }
+    }
     child_dirs.sort();
     for child_dir in child_dirs {
         if !candidates.contains(&child_dir) {
@@ -274,10 +362,11 @@ fn describe_library_search(lib_dir: &Path, cmake_build_type: &str, name: &str) -
 }
 
 fn describe_directory_entries(dir: &Path) -> io::Result<Vec<String>> {
-    let mut entries = fs::read_dir(dir)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path().display().to_string())
-        .collect::<Vec<_>>();
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        entries.push(entry.path().display().to_string());
+    }
     entries.sort();
     if entries.is_empty() {
         entries.push("<empty>".to_string());
@@ -311,34 +400,31 @@ fn enabled_extensions() -> Vec<&'static str> {
     extensions
 }
 
-fn skipped_extensions() -> Vec<&'static str> {
-    // Keep this in sync with DuckDB's always-loaded base extension config in
-    // duckdb-sources/extension/extension_config.cmake. We intentionally keep
-    // upstream's default parquet linkage in the CMake backend.
-    vec!["jemalloc"]
-}
-
 fn link_system_libs() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("Cargo should set CARGO_CFG_TARGET_OS");
 
     match target_os.as_str() {
-        "android" | "freebsd" | "linux" => {
+        "linux" => {
             println!("cargo:rustc-link-lib=dylib=dl");
             println!("cargo:rustc-link-lib=dylib=pthread");
+            println!("cargo:rustc-link-lib=dylib=stdc++");
         }
-        "macos" => {}
+        "macos" => {
+            println!("cargo:rustc-link-lib=dylib=c++");
+        }
         "windows" => {
             println!("cargo:rustc-link-lib=dylib=ws2_32");
             println!("cargo:rustc-link-lib=dylib=rstrtmgr");
             if is_compiler("msvc") {
                 println!("cargo:rustc-link-lib=dylib=bcrypt");
+            } else {
+                println!("cargo:rustc-link-lib=dylib=stdc++");
             }
         }
-        other => panic!("unsupported target OS `{other}` for bundled-cmake"),
-    }
-
-    if !(win_target() && is_compiler("msvc")) {
-        let cxx_runtime = if target_os == "macos" { "c++" } else { "stdc++" };
-        println!("cargo:rustc-link-lib=dylib={cxx_runtime}");
+        other => {
+            panic!(
+                "bundled-cmake is currently supported only on Linux, macOS, and Windows; unsupported target OS `{other}`"
+            )
+        }
     }
 }
