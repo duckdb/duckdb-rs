@@ -207,7 +207,7 @@ You can adjust this behavior in a number of ways:
    - When `ninja` is available on `PATH`, the CMake backend prefers the Ninja generator automatically. Set `CMAKE_GENERATOR` to override this.
    - `bundled-cmake` builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` to `Debug`, `RelWithDebInfo`, `MinSizeRel`, or `Release` to override this.
    - Set `DUCKDB_DISABLE_EXTENSION_LOAD=1` to disable runtime extension loading and installation in the CMake backend.
-   - Set `DUCKDB_EXTENSION_CONFIGS` to a semicolon-separated list of DuckDB extension config files to load additional extensions through DuckDB's native CMake machinery.
+   - `DUCKDB_EXTENSION_CONFIGS` is not supported yet in `bundled-cmake`. Additional static extension libraries from those configs are not auto-linked yet, so the build now fails fast instead of producing a broken binary.
    - TODO: extend `bundled-cmake` to support out-of-tree static extensions end-to-end, e.g. `sqlite_scanner`, without requiring manual extra linking steps.
    - Use `cargo build -vv -F bundled-cmake` to surface the underlying CMake configure/build logs in Cargo output.
 

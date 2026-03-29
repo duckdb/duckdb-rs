@@ -17,19 +17,21 @@ struct Manifest {
 }
 
 fn add_extension(
-    cfg: &mut cc::Build,
     manifest: &Manifest,
     extension: &str,
     cpp_files: &mut HashSet<String>,
     include_dirs: &mut HashSet<String>,
 ) {
-    let sources = manifest.extensions.get(extension).unwrap();
+    let sources = manifest.extensions.get(extension).unwrap_or_else(|| {
+        let mut available = manifest.extensions.keys().cloned().collect::<Vec<_>>();
+        available.sort();
+        panic!(
+            "extension `{extension}` is missing from duckdb manifest; available extensions: {}",
+            available.join(", ")
+        );
+    });
     cpp_files.extend(sources.cpp_files.clone());
     include_dirs.extend(sources.include_dirs.clone());
-    cfg.define(
-        &format!("DUCKDB_EXTENSION_{}_LINKED", extension.to_uppercase()),
-        Some("1"),
-    );
 }
 
 fn rewrite_generated_extension_loader(enabled_extensions: &[String], loader_path: &Path) -> std::io::Result<()> {
@@ -85,13 +87,10 @@ fn rewrite_generated_extension_loader(enabled_extensions: &[String], loader_path
     )
 }
 
-fn extension_enabled(extension: &str) -> Option<bool> {
-    match extension {
-        "core_functions" => Some(true),
-        "parquet" => Some(cfg!(feature = "parquet")),
-        "json" => Some(cfg!(feature = "json")),
-        _ => None,
-    }
+fn extension_enabled(extension: &str) -> bool {
+    extension == "core_functions"
+        || (extension == "parquet" && cfg!(feature = "parquet"))
+        || (extension == "json" && cfg!(feature = "json"))
 }
 
 fn to_camel_case(extension: &str) -> String {
@@ -127,19 +126,22 @@ pub fn main(out_dir: &str, out_path: &Path) {
     let mut extensions = manifest
         .extensions
         .keys()
-        .filter(|name| matches!(extension_enabled(name), Some(true)))
+        .filter(|name| extension_enabled(name))
         .cloned()
         .collect::<Vec<String>>();
     extensions.sort();
 
     cpp_files.extend(manifest.base.cpp_files.clone());
-    #[allow(clippy::all)]
-    include_dirs.extend(manifest.base.include_dirs.clone());
+    include_dirs.extend(manifest.base.include_dirs.iter().cloned());
 
     let mut cfg = cc::Build::new();
 
     for extension in &extensions {
-        add_extension(&mut cfg, &manifest, extension, &mut cpp_files, &mut include_dirs);
+        add_extension(&manifest, extension, &mut cpp_files, &mut include_dirs);
+        cfg.define(
+            &format!("DUCKDB_EXTENSION_{}_LINKED", extension.to_uppercase()),
+            Some("1"),
+        );
     }
     let loader_path = Path::new(out_dir).join("duckdb/generated_extension_loader_package_build.cpp");
     rewrite_generated_extension_loader(&extensions, &loader_path)

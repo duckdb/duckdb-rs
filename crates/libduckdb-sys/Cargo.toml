@@ -18,7 +18,7 @@ rust-version = { workspace = true }
 default = ["vcpkg", "pkg-config"]
 bundled = ["cc"]
 # Warning: experimental feature
-bundled-cmake = ["bundled", "dep:cmake", "parquet"]
+bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
@@ -48,6 +48,7 @@ serde_json = { workspace = true }
 syn = { workspace = true, optional = true }
 tar = { workspace = true }
 vcpkg = { workspace = true, optional = true }
+which = { version = "8", optional = true }
 zip = { version = "6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
