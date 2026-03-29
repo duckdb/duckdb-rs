@@ -18,7 +18,7 @@ rust-version = { workspace = true }
 default = ["vcpkg", "pkg-config"]
 bundled = ["cc"]
 # Warning: experimental feature
-bundled-cmake = ["bundled", "dep:cmake"]
+bundled-cmake = ["bundled", "dep:cmake", "parquet"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]

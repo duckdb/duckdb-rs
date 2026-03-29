@@ -24,7 +24,7 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir).join("bindgen.rs");
     #[cfg(feature = "bundled")]
-    build_bundled::main(&out_dir, &out_path);
+    build_bundled_backend::main(&out_dir, &out_path);
     #[cfg(not(feature = "bundled"))]
     build_linked::main(&out_dir, &out_path)
 }
@@ -34,40 +34,32 @@ mod build_bundled_cc;
 #[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
 mod build_bundled_cmake;
 
+#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+use crate::build_bundled_cc as build_bundled_backend;
+#[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
+use crate::build_bundled_cmake as build_bundled_backend;
+
 #[cfg(feature = "bundled")]
-mod build_bundled {
-    use std::path::Path;
-
-    #[cfg(not(feature = "bundled-cmake"))]
-    use crate::build_bundled_cc as backend;
-    #[cfg(feature = "bundled-cmake")]
-    use crate::build_bundled_cmake as backend;
-
-    pub fn main(out_dir: &str, out_path: &Path) {
-        backend::main(out_dir, out_path);
+#[allow(unused_variables)]
+pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
+    #[cfg(feature = "buildtime_bindgen")]
+    {
+        use crate::{HeaderLocation, bindings};
+        let header = HeaderLocation::FromPath(header_dir.to_string_lossy().into_owned());
+        bindings::write_to_out_dir(header, out_path);
     }
 
-    #[allow(unused_variables)]
-    pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
-        #[cfg(feature = "buildtime_bindgen")]
-        {
-            use super::{HeaderLocation, bindings};
-            let header = HeaderLocation::FromPath(header_dir.to_string_lossy().into_owned());
-            bindings::write_to_out_dir(header, out_path);
-        }
-
-        #[cfg(not(feature = "buildtime_bindgen"))]
-        {
-            use std::fs;
-            fs::copy(
-                #[cfg(not(feature = "loadable-extension"))]
-                "src/bindgen_bundled_version.rs",
-                #[cfg(feature = "loadable-extension")]
-                "src/bindgen_bundled_version_loadable.rs",
-                out_path,
-            )
-            .expect("Could not copy bindings to output directory");
-        }
+    #[cfg(not(feature = "buildtime_bindgen"))]
+    {
+        use std::fs;
+        fs::copy(
+            #[cfg(not(feature = "loadable-extension"))]
+            "src/bindgen_bundled_version.rs",
+            #[cfg(feature = "loadable-extension")]
+            "src/bindgen_bundled_version_loadable.rs",
+            out_path,
+        )
+        .expect("Could not copy bindings to output directory");
     }
 }
 

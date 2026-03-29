@@ -47,10 +47,7 @@ mod test {
                 |r| r.get(0)
             )?
         );
-        assert_eq!(
-            true,
-            db.query_row::<bool, _, _>("SELECT length(icu_sort_key('Ş', 'ro')) > 0;", [], |r| r.get(0))?
-        );
+        assert!(db.query_row::<bool, _, _>("SELECT length(icu_sort_key('Ş', 'ro')) > 0;", [], |r| r.get(0))?);
         Ok(())
     }
 

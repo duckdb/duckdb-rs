@@ -64,7 +64,8 @@ jobs:
 
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+        # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
+        run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full" --locked -- -D warnings
 
       - name: Dry-run release of crates
         if: matrix.os == 'ubuntu-latest'
@@ -96,10 +97,6 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo build --example hello-ext --features="loadable-extension"
 
-      - name: Test bundled-cmake ICU
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" extension::test::test_extension_icu -- --exact
-
       - name: Build loadable extension (windows)
         if: matrix.os == 'windows-latest'
         run: cargo build --example hello-ext --features="loadable-extension"
@@ -107,6 +104,23 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+
+  cmake:
+    name: Bundled CMake ${{ matrix.name }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: macOS, os: macos-latest }
+          - { name: Windows, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Link bundled-cmake ICU test binary
+        run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib --no-run
 
   msrv:
     name: MSRV Check

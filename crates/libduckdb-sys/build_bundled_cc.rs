@@ -1,4 +1,4 @@
-use crate::{build_bundled::write_bindings, win_target};
+use crate::{win_target, write_bindings};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -13,12 +13,9 @@ struct Sources {
 #[derive(serde::Deserialize)]
 struct Manifest {
     base: Sources,
-
-    #[allow(unused)]
     extensions: HashMap<String, Sources>,
 }
 
-#[allow(unused)]
 fn add_extension(
     cfg: &mut cc::Build,
     manifest: &Manifest,
@@ -26,8 +23,9 @@ fn add_extension(
     cpp_files: &mut HashSet<String>,
     include_dirs: &mut HashSet<String>,
 ) {
-    cpp_files.extend(manifest.extensions.get(extension).unwrap().cpp_files.clone());
-    include_dirs.extend(manifest.extensions.get(extension).unwrap().include_dirs.clone());
+    let sources = manifest.extensions.get(extension).unwrap();
+    cpp_files.extend(sources.cpp_files.clone());
+    include_dirs.extend(sources.include_dirs.clone());
     cfg.define(
         &format!("DUCKDB_EXTENSION_{}_LINKED", extension.to_uppercase()),
         Some("1"),
@@ -118,10 +116,6 @@ fn untar_archive(out_dir: &str) {
 
 pub fn main(out_dir: &str, out_path: &Path) {
     untar_archive(out_dir);
-
-    if !cfg!(feature = "bundled") {
-        panic!("This module should not be used: bundled feature has not been enabled");
-    }
 
     write_bindings(&Path::new(out_dir).join("duckdb/src/include"), out_path);
 

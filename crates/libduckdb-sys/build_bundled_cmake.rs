@@ -1,4 +1,4 @@
-use crate::{build_bundled::write_bindings, is_compiler, win_target};
+use crate::{is_compiler, win_target, write_bindings};
 use std::{
     env,
     path::{Path, PathBuf},
@@ -25,14 +25,17 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     write_bindings(&source_dir.join("src/include"), out_path);
 
+    let ninja_program = autodetect_ninja_program();
     let mut config = cmake::Config::new(source_dir);
-    config.out_dir(cmake_out_dir());
-    prefer_ninja_generator(&mut config);
+    config.out_dir(cmake_out_dir(ninja_program.is_some()));
+    prefer_ninja_generator(&mut config, ninja_program.as_deref());
     configure_macos_deployment_target(&mut config);
     config
         .profile(&cmake_build_type())
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
+        .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
+        .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag())
         .define("DISABLE_UNITY", "1");
 
     let enabled_extensions = enabled_extensions();
@@ -55,6 +58,9 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     if let Ok(configs) = env::var("DUCKDB_EXTENSION_CONFIGS") {
         if !configs.trim().is_empty() {
+            // TODO: support out-of-tree static extensions end-to-end by
+            // discovering and linking the additional *_extension libraries
+            // that these configs can introduce (e.g. sqlite_scanner).
             config.define("DUCKDB_EXTENSION_CONFIGS", configs);
         }
     }
@@ -96,13 +102,13 @@ fn env_var_truthy(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn cmake_out_dir() -> PathBuf {
+fn cmake_out_dir(has_ninja: bool) -> PathBuf {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
     let generator = env::var("CMAKE_GENERATOR")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| {
-            if find_program(&["ninja", "ninja-build"]).is_some() {
+            if has_ninja {
                 "ninja".to_string()
             } else {
                 "default".to_string()
@@ -111,40 +117,51 @@ fn cmake_out_dir() -> PathBuf {
     out_dir.join(format!("cmake-{}", sanitize_path_component(&generator)))
 }
 
-fn prefer_ninja_generator(config: &mut cmake::Config) {
+fn prefer_ninja_generator(config: &mut cmake::Config, ninja_program: Option<&str>) {
     if env::var_os("CMAKE_GENERATOR").is_some() {
         return;
     }
 
-    if let Some(ninja) = find_program(&["ninja", "ninja-build"]) {
+    if let Some(ninja) = ninja_program {
         config.generator("Ninja");
         config.env("CMAKE_MAKE_PROGRAM", ninja);
     }
 }
 
+fn autodetect_ninja_program() -> Option<String> {
+    find_program(&["ninja", "ninja-build"])
+}
+
+fn warning_suppression_flag() -> &'static str {
+    if win_target() && is_compiler("msvc") {
+        "/w"
+    } else {
+        "-w"
+    }
+}
+
 fn configure_macos_deployment_target(config: &mut cmake::Config) {
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") || env::var("TARGET").ok() != env::var("HOST").ok() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
 
     let deployment_target = env::var("MACOSX_DEPLOYMENT_TARGET").unwrap_or_else(|_| "11.0".to_string());
-    let target_arch_env = env::var("CARGO_CFG_TARGET_ARCH");
-    let target_arch = match target_arch_env.as_deref() {
-        Ok("aarch64") => "arm64",
-        Ok(other) => other,
-        Err(_) => "arm64",
+    let target_arch_env =
+        env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo should set CARGO_CFG_TARGET_ARCH for macOS builds");
+    let target_arch = match target_arch_env.as_str() {
+        "aarch64" => "arm64",
+        other => other,
     };
     config.define("CMAKE_OSX_DEPLOYMENT_TARGET", &deployment_target);
     config.define("CMAKE_OSX_ARCHITECTURES", target_arch);
-    config.define("CMAKE_C_FLAGS", "-w");
-    config.define("CMAKE_CXX_FLAGS", "-w");
 }
 
 fn find_program(candidates: &[&str]) -> Option<String> {
     for candidate in candidates {
-        let status = Command::new(candidate).arg("--version").output().ok()?;
-        if status.status.success() {
-            return Some((*candidate).to_string());
+        if let Ok(status) = Command::new(candidate).arg("--version").output() {
+            if status.status.success() {
+                return Some((*candidate).to_string());
+            }
         }
     }
     None
@@ -193,10 +210,11 @@ fn skipped_extensions() -> Vec<&'static str> {
 }
 
 fn link_system_libs() {
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").expect("Cargo should set CARGO_CFG_TARGET_OS");
 
     match target_os.as_str() {
-        "linux" => println!("cargo:rustc-link-lib=dylib=dl"),
+        "android" | "freebsd" | "linux" => println!("cargo:rustc-link-lib=dylib=dl"),
+        "macos" => {}
         "windows" => {
             println!("cargo:rustc-link-lib=dylib=ws2_32");
             println!("cargo:rustc-link-lib=dylib=rstrtmgr");
@@ -204,7 +222,7 @@ fn link_system_libs() {
                 println!("cargo:rustc-link-lib=dylib=bcrypt");
             }
         }
-        _ => {}
+        other => panic!("unsupported target OS `{other}` for bundled-cmake"),
     }
 
     if !(win_target() && is_compiler("msvc")) {
