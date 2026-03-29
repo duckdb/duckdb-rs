@@ -299,12 +299,14 @@ mod build_bundled {
         println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
         println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
         println!("cargo:rerun-if-env-changed=CMAKE_GENERATOR");
+        println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
         write_bindings(&source_dir.join("src/include"), out_path);
 
         let mut config = cmake::Config::new(source_dir);
         config.out_dir(cmake_out_dir());
         prefer_ninja_generator(&mut config);
+        configure_macos_deployment_target(&mut config);
         config
             .profile(&cmake_build_type())
             .define("BUILD_UNITTESTS", "0")
@@ -339,6 +341,7 @@ mod build_bundled {
         let lib_dir = dst.join("lib");
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:rustc-link-lib=static=duckdb_generated_extension_loader");
+        println!("cargo:rustc-link-lib=static=core_functions_extension");
         for extension in enabled_extensions {
             println!("cargo:rustc-link-lib=static={extension}_extension");
         }
@@ -400,6 +403,26 @@ mod build_bundled {
             config.generator("Ninja");
             config.env("CMAKE_MAKE_PROGRAM", ninja);
         }
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    fn configure_macos_deployment_target(config: &mut cmake::Config) {
+        if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") || env::var("TARGET").ok() != env::var("HOST").ok()
+        {
+            return;
+        }
+
+        let deployment_target = env::var("MACOSX_DEPLOYMENT_TARGET").unwrap_or_else(|_| "11.0".to_string());
+        let target_arch_env = env::var("CARGO_CFG_TARGET_ARCH");
+        let target_arch = match target_arch_env.as_deref() {
+            Ok("aarch64") => "arm64",
+            Ok(other) => other,
+            Err(_) => "arm64",
+        };
+        config.define("CMAKE_OSX_DEPLOYMENT_TARGET", &deployment_target);
+        config.define("CMAKE_OSX_ARCHITECTURES", target_arch);
+        config.define("CMAKE_C_FLAGS", "-w");
+        config.define("CMAKE_CXX_FLAGS", "-w");
     }
 
     #[cfg(feature = "bundled-cmake")]

@@ -120,7 +120,7 @@ mod row;
 mod statement;
 mod transaction;
 
-#[cfg(feature = "extensions-full")]
+#[cfg(any(feature = "json", feature = "parquet", feature = "icu"))]
 mod extension;
 
 pub mod profiling;
