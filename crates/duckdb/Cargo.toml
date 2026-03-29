@@ -19,6 +19,7 @@ name = "duckdb"
 [features]
 default = []
 bundled = ["libduckdb-sys/bundled"]
+# Warning: experimental feature
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]

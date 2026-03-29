@@ -17,6 +17,7 @@ rust-version = { workspace = true }
 [features]
 default = ["vcpkg", "pkg-config"]
 bundled = ["cc"]
+# Warning: experimental feature
 bundled-cmake = ["bundled", "dep:cmake"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
