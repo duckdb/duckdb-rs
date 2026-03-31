@@ -147,6 +147,8 @@ fn configured_extension_configs() -> Vec<String> {
                 .split(';')
                 .filter_map(|entry| {
                     let entry = entry.trim();
+                    // Unlike DUCKDB_LINK_EXTENSIONS, configs are file paths that
+                    // may contain commas, so only `;` is a valid separator here.
                     (!entry.is_empty()).then(|| entry.to_string())
                 })
                 .collect()
@@ -208,16 +210,15 @@ fn linked_extensions(enabled_extensions: &[&'static str], custom_link_extensions
     let mut linked = Vec::new();
     let mut seen = BTreeSet::new();
 
-    for extension in enabled_extensions {
-        let extension = extension.to_string();
-        if seen.insert(extension.clone()) {
-            linked.push(extension);
+    for &ext in enabled_extensions {
+        if seen.insert(ext) {
+            linked.push(ext.to_string());
         }
     }
 
-    for extension in custom_link_extensions {
-        if seen.insert(extension.clone()) {
-            linked.push(extension.clone());
+    for ext in custom_link_extensions {
+        if seen.insert(ext.as_str()) {
+            linked.push(ext.clone());
         }
     }
 
@@ -449,41 +450,36 @@ fn validate_extension_libraries(
         )
     });
     let expected_extensions = expected_extension_libraries(linked_extensions);
-    let missing_extensions = expected_extensions
-        .difference(&actual_extensions)
-        .cloned()
-        .collect::<Vec<_>>();
-    let unexpected_extensions = actual_extensions
-        .difference(&expected_extensions)
-        .cloned()
-        .collect::<Vec<_>>();
-    if !missing_extensions.is_empty() {
-        let noun = if missing_extensions.len() == 1 {
-            "library"
-        } else {
-            "libraries"
-        };
+    let missing: Vec<_> = expected_extensions.difference(&actual_extensions).collect();
+    let unexpected: Vec<_> = actual_extensions.difference(&expected_extensions).collect();
+    let fmt_set = |s: &BTreeSet<String>| -> String {
+        s.iter().map(String::as_str).collect::<Vec<_>>().join(", ")
+    };
+    if !missing.is_empty() {
+        let noun = if missing.len() == 1 { "library" } else { "libraries" };
+        let missing_fmt: Vec<_> = missing.iter().map(|s| s.as_str()).collect();
         panic!(
             "bundled-cmake did not produce expected extension {noun}: {}; expected [{}], found [{}]",
-            missing_extensions.join(", "),
-            expected_extensions.iter().cloned().collect::<Vec<_>>().join(", "),
-            actual_extensions.iter().cloned().collect::<Vec<_>>().join(", ")
+            missing_fmt.join(", "),
+            fmt_set(&expected_extensions),
+            fmt_set(&actual_extensions)
         );
     }
-    if !unexpected_extensions.is_empty() {
+    if !unexpected.is_empty() {
+        let unexpected_fmt: Vec<_> = unexpected.iter().map(|s| s.as_str()).collect();
         if !custom_extension_configs.is_empty() {
             panic!(
                 "bundled-cmake produced extension libraries not listed in DUCKDB_LINK_EXTENSIONS: {}; \
                  add them to DUCKDB_LINK_EXTENSIONS or verify your extension config. \
                  Expected [{}], found [{}]",
-                unexpected_extensions.join(", "),
-                expected_extensions.iter().cloned().collect::<Vec<_>>().join(", "),
-                actual_extensions.iter().cloned().collect::<Vec<_>>().join(", ")
+                unexpected_fmt.join(", "),
+                fmt_set(&expected_extensions),
+                fmt_set(&actual_extensions)
             );
         } else {
             cargo_warning(&format!(
                 "bundled-cmake produced additional static extension libraries that duckdb-rs did not link: {}",
-                unexpected_extensions.join(", ")
+                unexpected_fmt.join(", ")
             ));
         }
     }
