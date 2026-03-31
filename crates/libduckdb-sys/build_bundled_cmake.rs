@@ -29,6 +29,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     println!("cargo:rerun-if-changed={}", source_dir.display());
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
+    println!("cargo:rerun-if-env-changed=DUCKDB_LINK_EXTENSIONS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
     println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
@@ -47,6 +48,9 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     }
 
     let cmake_build_type = cmake_build_type();
+    let custom_extension_configs = configured_extension_configs();
+    let custom_static_extensions = configured_static_extensions();
+    validate_custom_extension_support(&custom_extension_configs, &custom_static_extensions);
     let generator = select_generator();
     let mut config = cmake::Config::new(source_dir);
     config.out_dir(&generator.out_dir);
@@ -92,6 +96,9 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     if !enabled_extensions.is_empty() {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
+    if !custom_extension_configs.is_empty() {
+        config.define("DUCKDB_EXTENSION_CONFIGS", custom_extension_configs.join(";"));
+    }
 
     config.define("SKIP_EXTENSIONS", SKIPPED_EXTENSIONS.join(";"));
 
@@ -103,18 +110,95 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     let dst = config.build();
     let lib_dir = dst.join("lib");
-    validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
+    let linked_extensions = linked_extensions(&enabled_extensions, &custom_static_extensions);
+    validate_extension_libraries(&lib_dir, &cmake_build_type, &linked_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
     // loader → extensions → duckdb_static (which satisfies all core symbols).
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_generated_extension_loader");
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
-    for extension in enabled_extensions {
+    for extension in linked_extensions {
         link_static_library(&lib_dir, &cmake_build_type, &format!("{extension}_extension"));
     }
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
     println!("cargo:lib_dir={}", lib_dir.display());
+}
+
+fn configured_extension_configs() -> Vec<String> {
+    env::var("DUCKDB_EXTENSION_CONFIGS")
+        .ok()
+        .map(|value| {
+            value
+                .split(';')
+                .filter_map(|entry| {
+                    let entry = entry.trim();
+                    (!entry.is_empty()).then(|| entry.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn configured_static_extensions() -> Vec<String> {
+    let mut extensions = Vec::new();
+    let mut seen = BTreeSet::new();
+    if let Ok(value) = env::var("DUCKDB_LINK_EXTENSIONS") {
+        for extension in value.split([',', ';']) {
+            let extension = extension.trim();
+            if extension.is_empty() {
+                continue;
+            }
+            let extension = extension.strip_suffix("_extension").unwrap_or(extension).to_string();
+            if extension == "core_functions" {
+                cargo_warning("ignoring `core_functions` in DUCKDB_LINK_EXTENSIONS because it is always linked");
+                continue;
+            }
+            if seen.insert(extension.clone()) {
+                extensions.push(extension);
+            }
+        }
+    }
+    extensions
+}
+
+fn validate_custom_extension_support(custom_extension_configs: &[String], custom_static_extensions: &[String]) {
+    if custom_extension_configs.is_empty() && custom_static_extensions.is_empty() {
+        return;
+    }
+
+    let target_os = env::var("CARGO_CFG_TARGET_OS").expect("Cargo should set CARGO_CFG_TARGET_OS");
+    if !matches!(target_os.as_str(), "linux" | "macos") {
+        panic!(
+            "custom bundled-cmake extensions currently require a Linux or macOS target; remove DUCKDB_EXTENSION_CONFIGS/DUCKDB_LINK_EXTENSIONS for target OS `{target_os}`"
+        );
+    }
+
+    if !custom_extension_configs.is_empty() && custom_static_extensions.is_empty() {
+        cargo_warning(
+            "DUCKDB_EXTENSION_CONFIGS was set without DUCKDB_LINK_EXTENSIONS; builds will only succeed if the custom configs do not add statically linked extensions",
+        );
+    }
+}
+
+fn linked_extensions(enabled_extensions: &[&'static str], custom_static_extensions: &[String]) -> Vec<String> {
+    let mut linked = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for extension in enabled_extensions {
+        let extension = extension.to_string();
+        if seen.insert(extension.clone()) {
+            linked.push(extension);
+        }
+    }
+
+    for extension in custom_static_extensions {
+        if seen.insert(extension.clone()) {
+            linked.push(extension.clone());
+        }
+    }
+
+    linked
 }
 
 fn cmake_build_type() -> String {
@@ -273,30 +357,51 @@ fn sanitize_path_component(input: &str) -> String {
         .collect()
 }
 
-fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_extensions: &[&str]) {
-    // Missing extensions are already caught by link_static_library's panic;
-    // this check only guards against CMake producing extensions we did not
-    // ask for (e.g. upstream SKIPPED_EXTENSIONS drift).
-    let actual = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
+fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, linked_extensions: &[String]) {
+    let actual_extensions = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
         panic!(
             "failed to inspect bundled-cmake extension libraries in {}: {err}",
             lib_dir.display()
         )
     });
-    let mut expected: BTreeSet<String> = enabled_extensions
-        .iter()
-        .map(|ext| format!("{ext}_extension"))
-        .collect();
-    // CMake always builds this base extension through extension_config.cmake.
-    expected.insert("core_functions_extension".to_string());
-
-    let unexpected: Vec<String> = actual.difference(&expected).cloned().collect();
-    if !unexpected.is_empty() {
+    let expected_extensions = expected_extension_libraries(linked_extensions);
+    let missing_extensions = expected_extensions
+        .difference(&actual_extensions)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected_extensions = actual_extensions
+        .difference(&expected_extensions)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing_extensions.is_empty() {
+        let noun = if missing_extensions.len() == 1 {
+            "library"
+        } else {
+            "libraries"
+        };
         panic!(
-            "bundled-cmake produced unexpected static extension libraries: {}",
-            unexpected.join(", ")
+            "bundled-cmake did not produce expected extension {noun}: {}; expected [{}], found [{}]",
+            missing_extensions.join(", "),
+            expected_extensions.iter().cloned().collect::<Vec<_>>().join(", "),
+            actual_extensions.iter().cloned().collect::<Vec<_>>().join(", ")
         );
     }
+    if !unexpected_extensions.is_empty() {
+        cargo_warning(&format!(
+            "bundled-cmake produced additional static extension libraries that duckdb-rs did not link: {}. Add them to DUCKDB_LINK_EXTENSIONS if they should be linked into DuckDB",
+            unexpected_extensions.join(", ")
+        ));
+    }
+}
+
+fn expected_extension_libraries(linked_extensions: &[String]) -> BTreeSet<String> {
+    let mut expected = BTreeSet::from([String::from("core_functions_extension")]);
+    expected.extend(
+        linked_extensions
+            .iter()
+            .map(|extension| format!("{extension}_extension")),
+    );
+    expected
 }
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {
