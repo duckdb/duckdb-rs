@@ -2,9 +2,7 @@ use crate::{is_compiler, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
-    fs,
-    hash::{Hash, Hasher},
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -54,12 +52,16 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     let custom_extension_configs = configured_extension_configs();
     let custom_link_extensions = configured_link_extensions();
     validate_custom_extension_support(&custom_extension_configs, &custom_link_extensions);
-    let generator = select_generator(
+    // CMake caches generated extension loader state, so extension-related config
+    // changes (including build type and unity mode) need distinct build dirs to
+    // avoid requiring `cargo clean`.
+    let cache_key = cmake_cache_key(
         &cmake_build_type,
         &enabled_extensions,
         &custom_extension_configs,
         &custom_link_extensions,
     );
+    let generator = select_generator(&cache_key);
     let mut config = cmake::Config::new(source_dir);
     config.out_dir(&generator.out_dir);
     if let Some(generator_name) = generator.name.as_deref() {
@@ -243,21 +245,8 @@ fn validate_cmake_build_type(value: &str) -> String {
     }
 }
 
-fn select_generator(
-    cmake_build_type: &str,
-    enabled_extensions: &[&'static str],
-    custom_extension_configs: &[String],
-    custom_link_extensions: &[String],
-) -> Generator {
+fn select_generator(cache_key: &str) -> Generator {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
-    // CMake caches generated extension loader state, so extension-related config
-    // changes need distinct build dirs to avoid requiring `cargo clean`.
-    let cache_key = cmake_cache_key(
-        cmake_build_type,
-        enabled_extensions,
-        custom_extension_configs,
-        custom_link_extensions,
-    );
     if let Some(generator) = env_var("CMAKE_GENERATOR").filter(|value| !value.trim().is_empty()) {
         let (make_program, probe_error) = if generator.contains("Ninja") {
             find_program(&["ninja", "ninja-build"])
@@ -314,13 +303,53 @@ fn cmake_cache_key(
     custom_link_extensions: &[String],
 ) -> String {
     let disable_unity = env::var("DUCKDB_DISABLE_UNITY").as_deref() == Ok("1");
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    cmake_build_type.hash(&mut hasher);
-    disable_unity.hash(&mut hasher);
-    enabled_extensions.hash(&mut hasher);
-    custom_extension_configs.hash(&mut hasher);
-    custom_link_extensions.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut key_material = Vec::new();
+    push_cache_key_component(&mut key_material, "cmake_build_type", std::iter::once(cmake_build_type));
+    push_cache_key_component(
+        &mut key_material,
+        "disable_unity",
+        std::iter::once(if disable_unity { "1" } else { "0" }),
+    );
+    push_cache_key_component(
+        &mut key_material,
+        "enabled_extensions",
+        enabled_extensions.iter().copied(),
+    );
+    push_cache_key_component(
+        &mut key_material,
+        "custom_extension_configs",
+        custom_extension_configs.iter().map(String::as_str),
+    );
+    push_cache_key_component(
+        &mut key_material,
+        "custom_link_extensions",
+        custom_link_extensions.iter().map(String::as_str),
+    );
+    format!("{:016x}", stable_cache_hash(&key_material))
+}
+
+fn push_cache_key_component<'a>(key_material: &mut Vec<u8>, label: &str, values: impl IntoIterator<Item = &'a str>) {
+    key_material.extend_from_slice(label.as_bytes());
+    key_material.push(0xff);
+    for value in values {
+        key_material.extend_from_slice(value.as_bytes());
+        key_material.push(0);
+    }
+    key_material.push(0xfe);
+}
+
+fn stable_cache_hash(key_material: &[u8]) -> u64 {
+    // Keep cache keys stable across Rust toolchain upgrades so extension config
+    // changes do not strand old CMake build directories unnecessarily.
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in key_material {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 fn warning_suppression_flag() -> &'static str {
