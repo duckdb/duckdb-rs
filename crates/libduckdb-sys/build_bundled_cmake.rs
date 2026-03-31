@@ -118,7 +118,12 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     let dst = config.build();
     let lib_dir = dst.join("lib");
     let linked_extensions = linked_extensions(&enabled_extensions, &custom_link_extensions);
-    validate_extension_libraries(&lib_dir, &cmake_build_type, &linked_extensions);
+    validate_extension_libraries(
+        &lib_dir,
+        &cmake_build_type,
+        &linked_extensions,
+        &custom_extension_configs,
+    );
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
     // loader → extensions → duckdb_static (which satisfies all core symbols).
@@ -183,7 +188,16 @@ fn validate_custom_extension_support(custom_extension_configs: &[String], custom
 
     if !custom_extension_configs.is_empty() && custom_link_extensions.is_empty() {
         cargo_warning(
-            "DUCKDB_EXTENSION_CONFIGS was set without DUCKDB_LINK_EXTENSIONS; builds will only succeed if the custom configs do not add statically linked extensions",
+            "DUCKDB_EXTENSION_CONFIGS was set without DUCKDB_LINK_EXTENSIONS; \
+             duckdb-rs will fail the build if those configs produce static extension libraries \
+             because it cannot link them implicitly",
+        );
+    }
+
+    if custom_extension_configs.is_empty() && !custom_link_extensions.is_empty() {
+        cargo_warning(
+            "DUCKDB_LINK_EXTENSIONS was set without DUCKDB_EXTENSION_CONFIGS; \
+             CMake will not know to build these extensions and the build will likely fail",
         );
     }
 }
@@ -393,7 +407,12 @@ fn sanitize_path_component(input: &str) -> String {
         .collect()
 }
 
-fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, linked_extensions: &[String]) {
+fn validate_extension_libraries(
+    lib_dir: &Path,
+    cmake_build_type: &str,
+    linked_extensions: &[String],
+    custom_extension_configs: &[String],
+) {
     let actual_extensions = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
         panic!(
             "failed to inspect bundled-cmake extension libraries in {}: {err}",
@@ -423,10 +442,21 @@ fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, linked_e
         );
     }
     if !unexpected_extensions.is_empty() {
-        cargo_warning(&format!(
-            "bundled-cmake produced additional static extension libraries that duckdb-rs did not link: {}. Add them to DUCKDB_LINK_EXTENSIONS if they should be linked into DuckDB",
-            unexpected_extensions.join(", ")
-        ));
+        if !custom_extension_configs.is_empty() {
+            panic!(
+                "bundled-cmake produced extension libraries not listed in DUCKDB_LINK_EXTENSIONS: {}; \
+                 add them to DUCKDB_LINK_EXTENSIONS or verify your extension config. \
+                 Expected [{}], found [{}]",
+                unexpected_extensions.join(", "),
+                expected_extensions.iter().cloned().collect::<Vec<_>>().join(", "),
+                actual_extensions.iter().cloned().collect::<Vec<_>>().join(", ")
+            );
+        } else {
+            cargo_warning(&format!(
+                "bundled-cmake produced additional static extension libraries that duckdb-rs did not link: {}",
+                unexpected_extensions.join(", ")
+            ));
+        }
     }
 }
 
