@@ -208,10 +208,12 @@ You can adjust this behavior in a number of ways:
    - Extension autoload/autoinstall are forced on to match the existing `bundled` backend, even though upstream CMake defaults are off.
    - When `ninja` is on `PATH`, the Ninja generator is preferred automatically. Set `CMAKE_GENERATOR` to override.
    - Builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE` to override. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
-   - Custom CMake extension configs are supported on Linux and macOS via two env vars:
-     `DUCKDB_EXTENSION_CONFIGS` tells CMake which extra config files to include, and
-     `DUCKDB_LINK_EXTENSIONS` tells `build.rs` which additional `*_extension` static
-     libraries to link into DuckDB.
+   - Custom CMake extension configs are supported when the Cargo target is Linux
+     or macOS, via two env vars (both must be set together):
+     `DUCKDB_EXTENSION_CONFIGS` (semicolon-separated) tells CMake which extra
+     config files to include, and `DUCKDB_LINK_EXTENSIONS` (comma- or
+     semicolon-separated) tells `build.rs` which additional static libraries to
+     link into DuckDB. A trailing `_extension` suffix is stripped automatically.
    - Use `cargo build -vv -F bundled-cmake` to surface CMake configure/build logs.
 
    If the selected config already pins its own source via `GIT_URL`/`GIT_TAG`
@@ -228,7 +230,9 @@ You can adjust this behavior in a number of ways:
    Local source overrides follow DuckDB's upstream
    `DUCKDB_<EXTENSION_NAME>_DIRECTORY` convention. For `sqlite_scanner`, that
    env var is `DUCKDB_SQLITE_SCANNER_DIRECTORY`. Set it only if you want to
-   override the pinned fetch with a local checkout:
+   override the pinned fetch with a local checkout. Note: `build.rs` does not
+   track per-extension directory overrides, so changing them requires
+   `cargo clean` or a change to one of the tracked env vars above.
 
    ```shell
    export DUCKDB_SQLITE_SCANNER_DIRECTORY=/abs/path/to/duckdb-sqlite
