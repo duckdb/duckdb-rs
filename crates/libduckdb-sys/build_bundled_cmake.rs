@@ -2,7 +2,9 @@ use crate::{is_compiler, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
-    fs, io,
+    fs,
+    hash::{Hash, Hasher},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -48,10 +50,16 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     }
 
     let cmake_build_type = cmake_build_type();
+    let enabled_extensions = enabled_extensions();
     let custom_extension_configs = configured_extension_configs();
-    let custom_static_extensions = configured_static_extensions();
-    validate_custom_extension_support(&custom_extension_configs, &custom_static_extensions);
-    let generator = select_generator();
+    let custom_link_extensions = configured_link_extensions();
+    validate_custom_extension_support(&custom_extension_configs, &custom_link_extensions);
+    let generator = select_generator(
+        &cmake_build_type,
+        &enabled_extensions,
+        &custom_extension_configs,
+        &custom_link_extensions,
+    );
     let mut config = cmake::Config::new(source_dir);
     config.out_dir(&generator.out_dir);
     if let Some(generator_name) = generator.name.as_deref() {
@@ -92,7 +100,6 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         }
     }
 
-    let enabled_extensions = enabled_extensions();
     if !enabled_extensions.is_empty() {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
@@ -110,7 +117,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
     let dst = config.build();
     let lib_dir = dst.join("lib");
-    let linked_extensions = linked_extensions(&enabled_extensions, &custom_static_extensions);
+    let linked_extensions = linked_extensions(&enabled_extensions, &custom_link_extensions);
     validate_extension_libraries(&lib_dir, &cmake_build_type, &linked_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
@@ -140,7 +147,7 @@ fn configured_extension_configs() -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn configured_static_extensions() -> Vec<String> {
+fn configured_link_extensions() -> Vec<String> {
     let mut extensions = Vec::new();
     let mut seen = BTreeSet::new();
     if let Ok(value) = env::var("DUCKDB_LINK_EXTENSIONS") {
@@ -162,8 +169,8 @@ fn configured_static_extensions() -> Vec<String> {
     extensions
 }
 
-fn validate_custom_extension_support(custom_extension_configs: &[String], custom_static_extensions: &[String]) {
-    if custom_extension_configs.is_empty() && custom_static_extensions.is_empty() {
+fn validate_custom_extension_support(custom_extension_configs: &[String], custom_link_extensions: &[String]) {
+    if custom_extension_configs.is_empty() && custom_link_extensions.is_empty() {
         return;
     }
 
@@ -174,14 +181,14 @@ fn validate_custom_extension_support(custom_extension_configs: &[String], custom
         );
     }
 
-    if !custom_extension_configs.is_empty() && custom_static_extensions.is_empty() {
+    if !custom_extension_configs.is_empty() && custom_link_extensions.is_empty() {
         cargo_warning(
             "DUCKDB_EXTENSION_CONFIGS was set without DUCKDB_LINK_EXTENSIONS; builds will only succeed if the custom configs do not add statically linked extensions",
         );
     }
 }
 
-fn linked_extensions(enabled_extensions: &[&'static str], custom_static_extensions: &[String]) -> Vec<String> {
+fn linked_extensions(enabled_extensions: &[&'static str], custom_link_extensions: &[String]) -> Vec<String> {
     let mut linked = Vec::new();
     let mut seen = BTreeSet::new();
 
@@ -192,7 +199,7 @@ fn linked_extensions(enabled_extensions: &[&'static str], custom_static_extensio
         }
     }
 
-    for extension in custom_static_extensions {
+    for extension in custom_link_extensions {
         if seen.insert(extension.clone()) {
             linked.push(extension.clone());
         }
@@ -222,8 +229,21 @@ fn validate_cmake_build_type(value: &str) -> String {
     }
 }
 
-fn select_generator() -> Generator {
+fn select_generator(
+    cmake_build_type: &str,
+    enabled_extensions: &[&'static str],
+    custom_extension_configs: &[String],
+    custom_link_extensions: &[String],
+) -> Generator {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
+    // CMake caches generated extension loader state, so extension-related config
+    // changes need distinct build dirs to avoid requiring `cargo clean`.
+    let cache_key = cmake_cache_key(
+        cmake_build_type,
+        enabled_extensions,
+        custom_extension_configs,
+        custom_link_extensions,
+    );
     if let Some(generator) = env_var("CMAKE_GENERATOR").filter(|value| !value.trim().is_empty()) {
         let (make_program, probe_error) = if generator.contains("Ninja") {
             find_program(&["ninja", "ninja-build"])
@@ -244,7 +264,7 @@ fn select_generator() -> Generator {
         };
         cargo_warning(&format!("bundled-cmake generator: {generator} (from CMAKE_GENERATOR)"));
         return Generator {
-            out_dir: out_dir.join(format!("cmake-{}", sanitize_path_component(&generator))),
+            out_dir: out_dir.join(format!("cmake-{}-{cache_key}", sanitize_path_component(&generator))),
             name: Some(generator),
             make_program,
         };
@@ -254,7 +274,7 @@ fn select_generator() -> Generator {
     if let Some(ninja) = ninja_program {
         cargo_warning(&format!("bundled-cmake generator: Ninja (autodetected via {ninja})"));
         Generator {
-            out_dir: out_dir.join("cmake-ninja"),
+            out_dir: out_dir.join(format!("cmake-ninja-{cache_key}")),
             name: Some("Ninja".to_string()),
             make_program: Some(ninja),
         }
@@ -266,11 +286,27 @@ fn select_generator() -> Generator {
         }
         cargo_warning("bundled-cmake generator: default CMake generator (ninja not detected)");
         Generator {
-            out_dir: out_dir.join("cmake-default"),
+            out_dir: out_dir.join(format!("cmake-default-{cache_key}")),
             name: None,
             make_program: None,
         }
     }
+}
+
+fn cmake_cache_key(
+    cmake_build_type: &str,
+    enabled_extensions: &[&'static str],
+    custom_extension_configs: &[String],
+    custom_link_extensions: &[String],
+) -> String {
+    let disable_unity = env::var("DUCKDB_DISABLE_UNITY").as_deref() == Ok("1");
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    cmake_build_type.hash(&mut hasher);
+    disable_unity.hash(&mut hasher);
+    enabled_extensions.hash(&mut hasher);
+    custom_extension_configs.hash(&mut hasher);
+    custom_link_extensions.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn warning_suppression_flag() -> &'static str {
