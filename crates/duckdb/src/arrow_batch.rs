@@ -1,7 +1,8 @@
+use std::iter::FusedIterator;
+
 use super::{
-    Statement,
+    Result, Statement,
     arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
-    Result,
 };
 
 /// A handle for the resulting RecordBatch of a query.
@@ -75,3 +76,5 @@ impl<'stmt> Iterator for ArrowStream<'stmt> {
         }
     }
 }
+
+impl FusedIterator for ArrowStream<'_> {}
