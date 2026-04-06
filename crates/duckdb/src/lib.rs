@@ -1511,10 +1511,9 @@ mod test {
         let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
         let mut stmt = db.prepare("SELECT i FROM range(1000000000) t(i)")?;
 
-        let stream = stmt.stream_arrow([], schema)?;
+        let mut stream = stmt.stream_arrow([], schema)?;
 
         let mut ok_batches = 0usize;
-        let mut stream = stream;
 
         // Fetch at least one batch to ensure the stream has started.
         let first = stream.next().expect("Expected at least one batch from stream");
@@ -1530,13 +1529,14 @@ mod test {
             Err(e) => {
                 assert!(ok_batches > 0, "Expected at least one batch before error");
                 let msg = format!("{e}");
-                assert!(
-                    msg == "INTERRUPT Error: Interrupted!",
-                    "Expected interrupt error, got: {msg}"
-                );
-                Ok(())
+                assert!(msg.contains("INTERRUPT"), "Expected interrupt error, got: {msg}");
             }
         }
+
+        // After an error, the iterator must yield None on subsequent calls.
+        assert!(stream.next().is_none());
+
+        Ok(())
     }
 
     #[test]
