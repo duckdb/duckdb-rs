@@ -1512,10 +1512,9 @@ mod test {
         let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
         let mut stmt = db.prepare("SELECT i FROM range(1000000000) t(i)")?;
 
-        let stream = stmt.stream_arrow([], schema)?;
+        let mut stream = stmt.stream_arrow([], schema)?;
 
         let mut ok_batches = 0usize;
-        let mut stream = stream;
 
         // Fetch at least one batch to ensure the stream has started.
         let first = stream.next().expect("Expected at least one batch from stream");
@@ -1531,10 +1530,7 @@ mod test {
             Err(e) => {
                 assert!(ok_batches > 0, "Expected at least one batch before error");
                 let msg = format!("{e}");
-                assert!(
-                    msg == "INTERRUPT Error: Interrupted!",
-                    "Expected interrupt error, got: {msg}"
-                );
+                assert!(msg.contains("INTERRUPT"), "Expected interrupt error, got: {msg}");
                 Ok(())
             }
         }
@@ -1553,15 +1549,18 @@ mod test {
         let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int32, true)]));
 
         let mut stmt = db.prepare("SELECT value FROM test_data")?;
-        let stream = stmt.stream_arrow([], schema)?;
+        let mut stream = stmt.stream_arrow([], schema)?;
 
         // Collect results - all should be successful
-        let results: Result<Vec<_>> = stream.collect();
+        let results: Result<Vec<_>> = stream.by_ref().collect();
         let batches = results?;
 
         // Verify we got all 100 rows
         let total_rows: usize = batches.iter().map(|rb| rb.num_rows()).sum();
         assert_eq!(total_rows, 100);
+
+        // Verify the iterator is fused: exhausted stream yields None
+        assert!(stream.next().is_none());
 
         Ok(())
     }

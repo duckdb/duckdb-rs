@@ -1,6 +1,8 @@
+use std::iter::FusedIterator;
+
 use super::{
-    arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
     Result, Statement,
+    arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
 };
 
 /// A handle for the resulting RecordBatch of a query.
@@ -65,12 +67,16 @@ impl<'stmt> Iterator for ArrowStream<'stmt> {
         let stmt = self.stmt?;
         match stmt.stream_step(self.get_schema()) {
             Ok(Some(array)) => Some(Ok(RecordBatch::from(&array))),
-            Ok(None) => None,
+            Ok(None) => {
+                self.stmt = None;
+                None
+            }
             Err(e) => {
-                // Clear the statement to prevent further iteration after error
                 self.stmt = None;
                 Some(Err(e))
             }
         }
     }
 }
+
+impl<'stmt> FusedIterator for ArrowStream<'stmt> {}

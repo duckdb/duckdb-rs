@@ -162,7 +162,8 @@ impl RawStatement {
 
                 let schema = FFI_ArrowSchema::try_from(schema.deref())
                     .map_err(|e| Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(e.to_string())))?;
-                let array_data = from_ffi(arrays, &schema).expect("ok");
+                let array_data = from_ffi(arrays, &schema)
+                    .map_err(|e| Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(e.to_string())))?;
                 let struct_array = StructArray::from(array_data);
                 return Ok(Some(struct_array));
             }
