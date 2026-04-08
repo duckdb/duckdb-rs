@@ -27,14 +27,19 @@ pub trait VScalar: Sized {
     /// Shared across worker threads and invocations — must not be modified during execution.
     /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
     type State: Sized + Send + Sync + 'static;
-    /// The actual function
+    /// The actual function.
+    ///
+    /// DuckDB guarantees that `input` and `output` stay live for the
+    /// duration of this call. Implementations are expected to populate
+    /// `output` for rows `0..input.len()` and must not read or write beyond
+    /// that range.
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it:
-    ///
-    /// - Dereferences multiple raw pointers (`func`).
-    ///
+    /// This method is `unsafe` because the `input` chunk and `output` vector
+    /// wrap raw DuckDB pointers (see [`DataChunkHandle::new_unowned`] and the
+    /// `WritableVector` impl on `duckdb_vector`). Callers must guarantee those
+    /// pointers are valid DuckDB-owned storage for the duration of the call.
     unsafe fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,

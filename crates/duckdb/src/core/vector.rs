@@ -17,8 +17,7 @@ use crate::ffi::{
 /// A flat vector borrowed from a [`DataChunkHandle`].
 ///
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
-/// preventing the chunk from being dropped while the vector is still alive
-/// (see <https://github.com/duckdb/duckdb-rs/issues/673>).
+/// preventing the chunk from being dropped while the vector is still alive.
 pub struct FlatVector<'a> {
     ptr: duckdb_vector,
     capacity: usize,
@@ -166,8 +165,7 @@ impl Inserter<&Vec<u8>> for FlatVector<'_> {
 /// A list vector borrowed from a [`DataChunkHandle`].
 ///
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
-/// preventing the chunk from being dropped while the vector is still alive
-/// (see <https://github.com/duckdb/duckdb-rs/issues/673>).
+/// preventing the chunk from being dropped while the vector is still alive.
 ///
 /// Regression test for the use-after-free in issue #673: a `ListVector`
 /// must not be allowed to outlive its parent `DataChunkHandle`.
@@ -279,11 +277,10 @@ impl<'a> ListVector<'a> {
     }
 }
 
-/// A array vector (fixed-size list) borrowed from a [`DataChunkHandle`].
+/// An array vector (fixed-size list) borrowed from a [`DataChunkHandle`].
 ///
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
-/// preventing the chunk from being dropped while the vector is still alive
-/// (see <https://github.com/duckdb/duckdb-rs/issues/673>).
+/// preventing the chunk from being dropped while the vector is still alive.
 pub struct ArrayVector<'a> {
     ptr: duckdb_vector,
     _phantom: PhantomData<&'a ()>,
@@ -338,8 +335,7 @@ impl<'a> ArrayVector<'a> {
 /// A struct vector borrowed from a [`DataChunkHandle`].
 ///
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
-/// preventing the chunk from being dropped while the vector is still alive
-/// (see <https://github.com/duckdb/duckdb-rs/issues/673>).
+/// preventing the chunk from being dropped while the vector is still alive.
 pub struct StructVector<'a> {
     ptr: duckdb_vector,
     _phantom: PhantomData<&'a ()>,
