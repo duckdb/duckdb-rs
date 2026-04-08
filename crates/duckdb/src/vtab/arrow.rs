@@ -2,7 +2,7 @@ use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctio
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 use crate::{
-    core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector, Vector},
+    core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector},
     types::DuckString,
 };
 
@@ -683,85 +683,53 @@ fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<
 fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
     data_type: DataType,
     array: &dyn Array,
-    out_vector: &mut dyn Vector,
+    out_vector: &mut FlatVector,
 ) {
     let array = cast(array, &data_type).unwrap_or_else(|_| panic!("array is casted into {data_type}"));
-    let out_vector: &mut FlatVector = out_vector.as_mut_any().downcast_mut().unwrap();
     out_vector.copy::<T::Native>(array.as_primitive::<T>().values());
     set_nulls_in_flat_vector(&array, out_vector);
 }
 
-fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<(), Box<dyn std::error::Error>> {
+fn primitive_array_to_vector(
+    array: &dyn Array,
+    out: &mut FlatVector,
+) -> Result<(), Box<dyn std::error::Error>> {
     match array.data_type() {
         DataType::Boolean => {
-            boolean_array_to_vector(as_boolean_array(array), out.as_mut_any().downcast_mut().unwrap());
+            boolean_array_to_vector(as_boolean_array(array), out);
         }
         DataType::UInt8 => {
-            primitive_array_to_flat_vector::<UInt8Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<UInt8Type>(as_primitive_array(array), out);
         }
         DataType::UInt16 => {
-            primitive_array_to_flat_vector::<UInt16Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<UInt16Type>(as_primitive_array(array), out);
         }
         DataType::UInt32 => {
-            primitive_array_to_flat_vector::<UInt32Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<UInt32Type>(as_primitive_array(array), out);
         }
         DataType::UInt64 => {
-            primitive_array_to_flat_vector::<UInt64Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<UInt64Type>(as_primitive_array(array), out);
         }
         DataType::Int8 => {
-            primitive_array_to_flat_vector::<Int8Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Int8Type>(as_primitive_array(array), out);
         }
         DataType::Int16 => {
-            primitive_array_to_flat_vector::<Int16Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Int16Type>(as_primitive_array(array), out);
         }
         DataType::Int32 => {
-            primitive_array_to_flat_vector::<Int32Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Int32Type>(as_primitive_array(array), out);
         }
         DataType::Int64 => {
-            primitive_array_to_flat_vector::<Int64Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Int64Type>(as_primitive_array(array), out);
         }
         DataType::Float32 => {
-            primitive_array_to_flat_vector::<Float32Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Float32Type>(as_primitive_array(array), out);
         }
         DataType::Float64 => {
-            primitive_array_to_flat_vector::<Float64Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Float64Type>(as_primitive_array(array), out);
         }
         DataType::Decimal128(width, _) => {
-            decimal_array_to_vector(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-                *width,
-            );
+            decimal_array_to_vector(as_primitive_array(array), out, *width);
         }
         DataType::Interval(_) | DataType::Duration(_) => {
             let array = IntervalMonthDayNanoArray::from(
@@ -773,10 +741,7 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<
                     .map(|a| IntervalMonthDayNanoType::make_value(a.months, a.days, a.nanoseconds / 1000))
                     .collect::<Vec<_>>(),
             );
-            primitive_array_to_flat_vector::<IntervalMonthDayNanoType>(
-                as_primitive_array(&array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<IntervalMonthDayNanoType>(as_primitive_array(&array), out);
         }
         // DuckDB Only supports timetamp_tz in microsecond precision
         DataType::Timestamp(_, Some(tz)) => primitive_array_to_flat_vector_cast::<TimestampMicrosecondType>(
@@ -785,28 +750,19 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut dyn Vector) -> Result<
             out,
         ),
         DataType::Timestamp(unit, None) => match unit {
-            TimeUnit::Second => primitive_array_to_flat_vector::<TimestampSecondType>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            ),
-            TimeUnit::Millisecond => primitive_array_to_flat_vector::<TimestampMillisecondType>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            ),
-            TimeUnit::Microsecond => primitive_array_to_flat_vector::<TimestampMicrosecondType>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            ),
-            TimeUnit::Nanosecond => primitive_array_to_flat_vector::<TimestampNanosecondType>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            ),
+            TimeUnit::Second => primitive_array_to_flat_vector::<TimestampSecondType>(as_primitive_array(array), out),
+            TimeUnit::Millisecond => {
+                primitive_array_to_flat_vector::<TimestampMillisecondType>(as_primitive_array(array), out)
+            }
+            TimeUnit::Microsecond => {
+                primitive_array_to_flat_vector::<TimestampMicrosecondType>(as_primitive_array(array), out)
+            }
+            TimeUnit::Nanosecond => {
+                primitive_array_to_flat_vector::<TimestampNanosecondType>(as_primitive_array(array), out)
+            }
         },
         DataType::Date32 => {
-            primitive_array_to_flat_vector::<Date32Type>(
-                as_primitive_array(array),
-                out.as_mut_any().downcast_mut().unwrap(),
-            );
+            primitive_array_to_flat_vector::<Date32Type>(as_primitive_array(array), out);
         }
         DataType::Date64 => primitive_array_to_flat_vector_cast::<Date32Type>(Date32Type::DATA_TYPE, array, out),
         DataType::Time32(_) => {

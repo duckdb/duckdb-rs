@@ -1,4 +1,4 @@
-use std::{any::Any, ffi::CString, slice};
+use std::{ffi::CString, slice};
 
 use libduckdb_sys::{
     DuckDbString, duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid,
@@ -14,14 +14,6 @@ use crate::ffi::{
     duckdb_vector_get_validity, duckdb_vector_size,
 };
 
-/// Vector trait.
-pub trait Vector {
-    /// Returns a reference to the underlying Any type that this trait object
-    fn as_any(&self) -> &dyn Any;
-    /// Returns a mutable reference to the underlying Any type that this trait object
-    fn as_mut_any(&mut self) -> &mut dyn Any;
-}
-
 /// A flat vector
 pub struct FlatVector {
     ptr: duckdb_vector,
@@ -34,16 +26,6 @@ impl From<duckdb_vector> for FlatVector {
             ptr,
             capacity: unsafe { duckdb_vector_size() as usize },
         }
-    }
-}
-
-impl Vector for FlatVector {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_mut_any(&mut self) -> &mut dyn Any {
-        self
     }
 }
 
