@@ -41,23 +41,23 @@ impl DataChunkHandle {
     }
 
     /// Get the vector at the specific column index: `idx`.
-    pub fn flat_vector(&self, idx: usize) -> FlatVector {
-        FlatVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
+    pub fn flat_vector(&self, idx: usize) -> FlatVector<'_> {
+        unsafe { FlatVector::from_raw(duckdb_data_chunk_get_vector(self.ptr, idx as u64)) }
     }
 
     /// Get a list vector from the column index.
-    pub fn list_vector(&self, idx: usize) -> ListVector {
-        ListVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
+    pub fn list_vector(&self, idx: usize) -> ListVector<'_> {
+        unsafe { ListVector::from_raw(duckdb_data_chunk_get_vector(self.ptr, idx as u64)) }
     }
 
     /// Get a array vector from the column index.
-    pub fn array_vector(&self, idx: usize) -> ArrayVector {
-        ArrayVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
+    pub fn array_vector(&self, idx: usize) -> ArrayVector<'_> {
+        unsafe { ArrayVector::from_raw(duckdb_data_chunk_get_vector(self.ptr, idx as u64)) }
     }
 
     /// Get struct vector at the column index: `idx`.
-    pub fn struct_vector(&self, idx: usize) -> StructVector {
-        StructVector::from(unsafe { duckdb_data_chunk_get_vector(self.ptr, idx as u64) })
+    pub fn struct_vector(&self, idx: usize) -> StructVector<'_> {
+        unsafe { StructVector::from_raw(duckdb_data_chunk_get_vector(self.ptr, idx as u64)) }
     }
 
     /// Set the size of the data chunk

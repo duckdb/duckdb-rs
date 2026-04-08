@@ -256,7 +256,7 @@ fn arrow_map_to_duckdb_logical_type(field: &FieldRef) -> Result<LogicalTypeHandl
 // FIXME: flat vectors don't have all of thsese types. I think they only
 /// Converts flat vector to an arrow array
 pub fn flat_vector_to_arrow_array(
-    vector: &mut FlatVector,
+    vector: &mut FlatVector<'_>,
     len: usize,
 ) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
     let raw_type_id = vector.logical_type().raw_id();
@@ -514,19 +514,19 @@ impl<'a> DataChunkHandleSlice<'a> {
 }
 
 impl WritableVector for DataChunkHandleSlice<'_> {
-    fn array_vector(&mut self) -> ArrayVector {
+    fn array_vector(&mut self) -> ArrayVector<'_> {
         self.chunk.array_vector(self.column_index)
     }
 
-    fn flat_vector(&mut self) -> FlatVector {
+    fn flat_vector(&mut self) -> FlatVector<'_> {
         self.chunk.flat_vector(self.column_index)
     }
 
-    fn struct_vector(&mut self) -> StructVector {
+    fn struct_vector(&mut self) -> StructVector<'_> {
         self.chunk.struct_vector(self.column_index)
     }
 
-    fn list_vector(&mut self) -> ListVector {
+    fn list_vector(&mut self) -> ListVector<'_> {
         self.chunk.list_vector(self.column_index)
     }
 }
@@ -535,13 +535,13 @@ impl WritableVector for DataChunkHandleSlice<'_> {
 /// To get the specific vector type, use the appropriate method.
 pub trait WritableVector {
     /// Get the vector as a `FlatVector`.
-    fn flat_vector(&mut self) -> FlatVector;
+    fn flat_vector(&mut self) -> FlatVector<'_>;
     /// Get the vector as a `ListVector`.
-    fn list_vector(&mut self) -> ListVector;
+    fn list_vector(&mut self) -> ListVector<'_>;
     /// Get the vector as a `ArrayVector`.
-    fn array_vector(&mut self) -> ArrayVector;
+    fn array_vector(&mut self) -> ArrayVector<'_>;
     /// Get the vector as a `StructVector`.
-    fn struct_vector(&mut self) -> StructVector;
+    fn struct_vector(&mut self) -> StructVector<'_>;
 }
 
 /// Writes an Arrow array to a `WritableVector`.
@@ -637,20 +637,26 @@ pub fn write_arrow_array_to_vector(
 }
 
 impl WritableVector for duckdb_vector {
-    fn array_vector(&mut self) -> ArrayVector {
-        ArrayVector::from(*self)
+    fn array_vector(&mut self) -> ArrayVector<'_> {
+        // SAFETY: the returned vector borrows from `&mut self`, so it cannot
+        // outlive this `duckdb_vector` handle. The caller is responsible for
+        // ensuring the underlying C++ vector outlives this handle.
+        unsafe { ArrayVector::from_raw(*self) }
     }
 
-    fn flat_vector(&mut self) -> FlatVector {
-        FlatVector::from(*self)
+    fn flat_vector(&mut self) -> FlatVector<'_> {
+        // SAFETY: see `array_vector`.
+        unsafe { FlatVector::from_raw(*self) }
     }
 
-    fn list_vector(&mut self) -> ListVector {
-        ListVector::from(*self)
+    fn list_vector(&mut self) -> ListVector<'_> {
+        // SAFETY: see `array_vector`.
+        unsafe { ListVector::from_raw(*self) }
     }
 
-    fn struct_vector(&mut self) -> StructVector {
-        StructVector::from(*self)
+    fn struct_vector(&mut self) -> StructVector<'_> {
+        // SAFETY: see `array_vector`.
+        unsafe { StructVector::from_raw(*self) }
     }
 }
 
@@ -674,7 +680,7 @@ pub fn record_batch_to_duckdb_data_chunk(
     Ok(())
 }
 
-fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<T>, out_vector: &mut FlatVector) {
+fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<T>, out_vector: &mut FlatVector<'_>) {
     // assert!(array.len() <= out_vector.capacity());
     out_vector.copy::<T::Native>(array.values());
     set_nulls_in_flat_vector(array, out_vector);
@@ -683,17 +689,14 @@ fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<
 fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
     data_type: DataType,
     array: &dyn Array,
-    out_vector: &mut FlatVector,
+    out_vector: &mut FlatVector<'_>,
 ) {
     let array = cast(array, &data_type).unwrap_or_else(|_| panic!("array is casted into {data_type}"));
     out_vector.copy::<T::Native>(array.as_primitive::<T>().values());
     set_nulls_in_flat_vector(&array, out_vector);
 }
 
-fn primitive_array_to_vector(
-    array: &dyn Array,
-    out: &mut FlatVector,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Result<(), Box<dyn std::error::Error>> {
     match array.data_type() {
         DataType::Boolean => {
             boolean_array_to_vector(as_boolean_array(array), out);
@@ -777,7 +780,7 @@ fn primitive_array_to_vector(
 }
 
 /// Convert Arrow [Decimal128Array] to a duckdb vector.
-fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector, width: u8) {
+fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector<'_>, width: u8) {
     match width {
         1..=4 => {
             let out_data = out.as_mut_slice();
@@ -812,7 +815,7 @@ fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector, width:
 }
 
 /// Convert Arrow [BooleanArray] to a duckdb vector.
-fn boolean_array_to_vector(array: &BooleanArray, out: &mut FlatVector) {
+fn boolean_array_to_vector(array: &BooleanArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -821,7 +824,7 @@ fn boolean_array_to_vector(array: &BooleanArray, out: &mut FlatVector) {
     set_nulls_in_flat_vector(array, out);
 }
 
-fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out: &mut FlatVector) {
+fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     // TODO: zero copy assignment
@@ -832,7 +835,7 @@ fn string_array_to_vector<O: OffsetSizeTrait>(array: &GenericStringArray<O>, out
     set_nulls_in_flat_vector(array, out);
 }
 
-fn string_view_array_to_vector(array: &StringViewArray, out: &mut FlatVector) {
+fn string_view_array_to_vector(array: &StringViewArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -842,7 +845,7 @@ fn string_view_array_to_vector(array: &StringViewArray, out: &mut FlatVector) {
     set_nulls_in_flat_vector(array, out);
 }
 
-fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
+fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -852,7 +855,7 @@ fn binary_array_to_vector(array: &BinaryArray, out: &mut FlatVector) {
     set_nulls_in_flat_vector(array, out);
 }
 
-fn binary_view_array_to_vector(array: &BinaryViewArray, out: &mut FlatVector) {
+fn binary_view_array_to_vector(array: &BinaryViewArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -862,7 +865,7 @@ fn binary_view_array_to_vector(array: &BinaryViewArray, out: &mut FlatVector) {
     set_nulls_in_flat_vector(array, out);
 }
 
-fn fixed_size_binary_array_to_vector(array: &FixedSizeBinaryArray, out: &mut FlatVector) {
+fn fixed_size_binary_array_to_vector(array: &FixedSizeBinaryArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -873,7 +876,7 @@ fn fixed_size_binary_array_to_vector(array: &FixedSizeBinaryArray, out: &mut Fla
     // set_nulls_in_flat_vector(array, out);
 }
 
-fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector) {
+fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
@@ -886,7 +889,7 @@ fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector) 
 
 fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     array: &GenericListArray<O>,
-    out: &mut ListVector,
+    out: &mut ListVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
     match value_array.data_type() {
@@ -955,7 +958,7 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
 
 fn fixed_size_list_array_to_vector(
     array: &FixedSizeListArray,
-    out: &mut ArrayVector,
+    out: &mut ArrayVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
     let mut child = out.child(value_array.len());
@@ -988,7 +991,7 @@ fn as_fixed_size_list_array(arr: &dyn Array) -> &FixedSizeListArray {
     arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap()
 }
 
-fn struct_array_to_vector(array: &StructArray, out: &mut StructVector) -> Result<(), Box<dyn std::error::Error>> {
+fn struct_array_to_vector(array: &StructArray, out: &mut StructVector<'_>) -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..array.num_columns() {
         let column = array.column(i);
         match column.data_type() {
@@ -1069,7 +1072,7 @@ pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema)
     [arr as *mut _ as usize, sch as *mut _ as usize]
 }
 
-fn set_nulls_in_flat_vector(array: &dyn Array, out_vector: &mut FlatVector) {
+fn set_nulls_in_flat_vector(array: &dyn Array, out_vector: &mut FlatVector<'_>) {
     if let Some(nulls) = array.nulls() {
         for (i, null) in nulls.into_iter().enumerate() {
             if !null {
@@ -1079,7 +1082,7 @@ fn set_nulls_in_flat_vector(array: &dyn Array, out_vector: &mut FlatVector) {
     }
 }
 
-fn set_nulls_in_struct_vector(array: &dyn Array, out_vector: &mut StructVector) {
+fn set_nulls_in_struct_vector(array: &dyn Array, out_vector: &mut StructVector<'_>) {
     if let Some(nulls) = array.nulls() {
         for (i, null) in nulls.into_iter().enumerate() {
             if !null {
@@ -1089,7 +1092,7 @@ fn set_nulls_in_struct_vector(array: &dyn Array, out_vector: &mut StructVector) 
     }
 }
 
-fn set_nulls_in_array_vector(array: &dyn Array, out_vector: &mut ArrayVector) {
+fn set_nulls_in_array_vector(array: &dyn Array, out_vector: &mut ArrayVector<'_>) {
     if let Some(nulls) = array.nulls() {
         for (i, null) in nulls.into_iter().enumerate() {
             if !null {
@@ -1099,7 +1102,7 @@ fn set_nulls_in_array_vector(array: &dyn Array, out_vector: &mut ArrayVector) {
     }
 }
 
-fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector) {
+fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) {
     if let Some(nulls) = array.nulls() {
         for (i, null) in nulls.into_iter().enumerate() {
             if !null {
