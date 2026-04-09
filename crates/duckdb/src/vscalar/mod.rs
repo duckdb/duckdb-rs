@@ -36,10 +36,13 @@ pub trait VScalar: Sized {
     ///
     /// # Safety
     ///
-    /// This method is `unsafe` because the `input` chunk and `output` vector
-    /// wrap raw DuckDB pointers (see [`DataChunkHandle::new_unowned`] and the
-    /// `WritableVector` impl on `duckdb_vector`). Callers must guarantee those
-    /// pointers are valid DuckDB-owned storage for the duration of the call.
+    /// This method is `unsafe` because the crate-internal DuckDB trampoline
+    /// invokes it with wrappers around raw DuckDB pointers (see
+    /// DataChunkHandle::new_unowned and the `WritableVector` impl on
+    /// `duckdb_vector`). Implementations may assume those wrappers are valid
+    /// for the duration of the call, but must treat them as borrowed DuckDB
+    /// storage and only read or write within the rows and types DuckDB
+    /// provided for this invocation.
     unsafe fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,

@@ -14,10 +14,14 @@ use crate::ffi::{
     duckdb_vector_get_validity, duckdb_vector_size,
 };
 
-/// A flat vector borrowed from a [`DataChunkHandle`].
+/// A flat vector borrowed from a [`crate::core::DataChunkHandle`].
 ///
+/// This is the plain contiguous DuckDB vector representation for scalar rows.
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
 /// preventing the chunk from being dropped while the vector is still alive.
+/// When created from a raw `duckdb_vector`, `'a` instead tracks the borrowed
+/// handle used to construct the wrapper, so callers must ensure the underlying
+/// DuckDB vector itself outlives the wrapper.
 pub struct FlatVector<'a> {
     ptr: duckdb_vector,
     capacity: usize,
@@ -29,7 +33,9 @@ impl<'a> FlatVector<'a> {
     ///
     /// # Safety
     /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`.
+    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
+    /// live wrapper may expose overlapping mutable access to the same
+    /// `duckdb_vector` for that lifetime.
     pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
@@ -162,13 +168,20 @@ impl Inserter<&Vec<u8>> for FlatVector<'_> {
     }
 }
 
-/// A list vector borrowed from a [`DataChunkHandle`].
+/// A list vector borrowed from a [`crate::core::DataChunkHandle`].
 ///
+/// It stores list entry offsets and lengths, with the actual elements living in
+/// a separate child vector.
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
 /// preventing the chunk from being dropped while the vector is still alive.
+/// When created from a raw `duckdb_vector`, `'a` instead tracks the borrowed
+/// handle used to construct the wrapper, so callers must ensure the underlying
+/// DuckDB vector itself outlives the wrapper.
 ///
 /// Regression test for the use-after-free in issue #673: a `ListVector`
 /// must not be allowed to outlive its parent `DataChunkHandle`.
+/// The `compile_fail,E0597` annotation pins the expected borrow-checker error,
+/// since accepting this pattern again would reopen that soundness bug.
 ///
 /// ```compile_fail,E0597
 /// use duckdb::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
@@ -178,11 +191,10 @@ impl Inserter<&Vec<u8>> for FlatVector<'_> {
 ///     let list_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
 ///     let chunk = DataChunkHandle::new(&[list_type]);
 ///     chunk.set_len(1);
-///     let mut v = chunk.list_vector(0);
-///     v.set_entry(0, 0, 2);
+///     let v = chunk.list_vector(0);
 ///     vec = v;
 /// }
-/// // chunk dropped — borrow checker must reject the next line.
+/// // chunk dropped; E0597 proves the wrapper cannot escape this scope.
 /// let _ = vec.get_entry(0);
 /// ```
 pub struct ListVector<'a> {
@@ -195,7 +207,9 @@ impl<'a> ListVector<'a> {
     ///
     /// # Safety
     /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`.
+    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
+    /// live wrapper may expose overlapping mutable access to the same
+    /// `duckdb_vector` for that lifetime.
     pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             entries: unsafe { FlatVector::from_raw(ptr) },
@@ -277,10 +291,16 @@ impl<'a> ListVector<'a> {
     }
 }
 
-/// An array vector (fixed-size list) borrowed from a [`DataChunkHandle`].
+/// An array vector (fixed-size list) borrowed from a
+/// [`crate::core::DataChunkHandle`].
 ///
+/// It exposes a fixed-width list type whose child storage is laid out
+/// contiguously for all rows.
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
 /// preventing the chunk from being dropped while the vector is still alive.
+/// When created from a raw `duckdb_vector`, `'a` instead tracks the borrowed
+/// handle used to construct the wrapper, so callers must ensure the underlying
+/// DuckDB vector itself outlives the wrapper.
 pub struct ArrayVector<'a> {
     ptr: duckdb_vector,
     _phantom: PhantomData<&'a ()>,
@@ -291,7 +311,9 @@ impl<'a> ArrayVector<'a> {
     ///
     /// # Safety
     /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`.
+    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
+    /// live wrapper may expose overlapping mutable access to the same
+    /// `duckdb_vector` for that lifetime.
     pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
@@ -332,10 +354,14 @@ impl<'a> ArrayVector<'a> {
     }
 }
 
-/// A struct vector borrowed from a [`DataChunkHandle`].
+/// A struct vector borrowed from a [`crate::core::DataChunkHandle`].
 ///
+/// It groups one child vector per struct field, all sharing the same row count.
 /// The `'a` lifetime ties the vector to the chunk it was obtained from,
 /// preventing the chunk from being dropped while the vector is still alive.
+/// When created from a raw `duckdb_vector`, `'a` instead tracks the borrowed
+/// handle used to construct the wrapper, so callers must ensure the underlying
+/// DuckDB vector itself outlives the wrapper.
 pub struct StructVector<'a> {
     ptr: duckdb_vector,
     _phantom: PhantomData<&'a ()>,
@@ -346,7 +372,9 @@ impl<'a> StructVector<'a> {
     ///
     /// # Safety
     /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`.
+    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
+    /// live wrapper may expose overlapping mutable access to the same
+    /// `duckdb_vector` for that lifetime.
     pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
