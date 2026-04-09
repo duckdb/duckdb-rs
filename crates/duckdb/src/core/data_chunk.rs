@@ -31,16 +31,14 @@ impl DataChunkHandle {
     ///
     /// # Safety
     ///
-    /// `ptr` must be a valid `duckdb_data_chunk` that remains allocated and
-    /// usable for the full lifetime of the returned handle. The caller must
-    /// ensure DuckDB does not destroy the chunk, free any column vectors
-    /// reachable from it, or concurrently mutate the same chunk/vector state
-    /// while this handle or any vectors derived from it are in use.
-    ///
-    /// TODO(#673 follow-up): this handle's `flat_vector` / `list_vector` /
-    /// `array_vector` / `struct_vector` accessors currently take `&self` and
-    /// return writable wrappers, so safe code can obtain two wrappers over
-    /// the same column and produce aliased `&mut [T]` slices.
+    /// `ptr` must be a valid `duckdb_data_chunk` that stays allocated and
+    /// unmutated by other code for the full lifetime of the returned handle
+    /// and any vectors derived from it.
+    //
+    // Known aliasing hole (#673 follow-up): `flat_vector` / `list_vector` /
+    // `array_vector` / `struct_vector` take `&self`, so safe code can get two
+    // writable wrappers over the same column and produce aliased `&mut [T]`
+    // slices.
     #[allow(dead_code)] // used only when `vtab` / `vscalar` features are enabled
     pub(crate) unsafe fn new_unowned(ptr: duckdb_data_chunk) -> Self {
         Self { ptr, owned: false }

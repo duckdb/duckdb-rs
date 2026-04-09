@@ -636,36 +636,27 @@ pub fn write_arrow_array_to_vector(
     Ok(())
 }
 
-// `duckdb_vector` is a `Copy` raw pointer typedef, so the `'_` lifetime on the
-// returned wrappers below is tied to `&mut self` (i.e. to the local variable
-// holding the pointer, not to the underlying C++ vector). This prevents reusing
-// the same `duckdb_vector` handle while a wrapper is in flight, but it does **not**
-// track the C++ vector's liveness. Callers must independently guarantee that the
-// underlying DuckDB vector outlives the returned wrapper.
-//
-// TODO(#673 follow-up): this `impl` is reachable from safe downstream code
-// because `WritableVector` is a public safe trait with a public impl for the
-// raw `duckdb_vector` pointer type. Marking the trait `unsafe` (or removing
-// the raw-pointer impl entirely) would move this obligation into the type
-// system instead of relying on caller discipline.
+// Known aliasing hole (#673 follow-up): `duckdb_vector` is a `Copy` raw-pointer
+// typedef, so `&mut self` only locks this particular binding — a caller holding
+// another copy of the same pointer can still call these accessors and obtain
+// aliased wrappers. `WritableVector` is a safe trait, so the obligation is on
+// the caller to ensure the underlying vector outlives the wrapper and that no
+// other copy is used concurrently. Marking the trait `unsafe` (or dropping the
+// raw-pointer impl) would move this into the type system.
 impl WritableVector for duckdb_vector {
     fn array_vector(&mut self) -> ArrayVector<'_> {
-        // SAFETY: see module note above `impl WritableVector for duckdb_vector`.
         unsafe { ArrayVector::from_raw(*self) }
     }
 
     fn flat_vector(&mut self) -> FlatVector<'_> {
-        // SAFETY: see module note above `impl WritableVector for duckdb_vector`.
         unsafe { FlatVector::from_raw(*self) }
     }
 
     fn list_vector(&mut self) -> ListVector<'_> {
-        // SAFETY: see module note above `impl WritableVector for duckdb_vector`.
         unsafe { ListVector::from_raw(*self) }
     }
 
     fn struct_vector(&mut self) -> StructVector<'_> {
-        // SAFETY: see module note above `impl WritableVector for duckdb_vector`.
         unsafe { StructVector::from_raw(*self) }
     }
 }

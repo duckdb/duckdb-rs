@@ -29,20 +29,23 @@ pub trait VScalar: Sized {
     type State: Sized + Send + Sync + 'static;
     /// The actual function.
     ///
-    /// DuckDB guarantees that `input` and `output` stay live for the
-    /// duration of this call. Implementations are expected to populate
-    /// `output` for rows `0..input.len()` and must not read or write beyond
-    /// that range.
+    /// DuckDB guarantees that `input` and `output` stay live for the duration
+    /// of this call. Implementations must populate `output` for rows
+    /// `0..input.len()` and must not read or write beyond that range.
     ///
     /// # Safety
     ///
-    /// This method is `unsafe` because the crate-internal DuckDB trampoline
-    /// invokes it with wrappers around raw DuckDB pointers (see
-    /// DataChunkHandle::new_unowned and the `WritableVector` impl on
-    /// `duckdb_vector`). Implementations may assume those wrappers are valid
-    /// for the duration of the call, but must treat them as borrowed DuckDB
-    /// storage and only read or write within the rows and types DuckDB
-    /// provided for this invocation.
+    /// Called by the DuckDB trampoline with wrappers over borrowed DuckDB
+    /// storage. Implementations must:
+    ///
+    /// - only read and write within the rows and column types DuckDB provided
+    ///   for this invocation;
+    /// - not retain `input`, `output`, or any vector/slice derived from them
+    ///   past return;
+    /// - not hold two writable wrappers over the same column at the same
+    ///   time. The wrapper types do not currently prevent this: calling e.g.
+    ///   `input.flat_vector(0)` twice and then `as_mut_slice` on each yields
+    ///   overlapping `&mut [T]`, which is undefined behavior.
     unsafe fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,
