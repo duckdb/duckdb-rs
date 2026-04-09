@@ -26,6 +26,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         );
     }
 
+    println!("cargo:rerun-if-changed={}", source_dir.display());
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
@@ -179,7 +180,6 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
         return;
     }
 
-    let deployment_target = env::var("MACOSX_DEPLOYMENT_TARGET").unwrap_or_else(|_| "11.0".to_string());
     let target_arch_env =
         env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo should set CARGO_CFG_TARGET_ARCH for macOS builds");
     let target_arch = match target_arch_env.as_str() {
@@ -192,10 +192,21 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
             other
         }
     };
-    cargo_warning(&format!(
-        "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
-    ));
-    config.define("CMAKE_OSX_DEPLOYMENT_TARGET", &deployment_target);
+
+    let deployment_target = env::var("MACOSX_DEPLOYMENT_TARGET")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| (target_arch == "arm64").then(|| "11.0".to_string()));
+    if let Some(deployment_target) = deployment_target {
+        cargo_warning(&format!(
+            "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
+        ));
+        config.define("CMAKE_OSX_DEPLOYMENT_TARGET", &deployment_target);
+    } else {
+        cargo_warning(&format!(
+            "bundled-cmake macOS deployment target: toolchain default ({target_arch})"
+        ));
+    }
     config.define("CMAKE_OSX_ARCHITECTURES", target_arch);
 }
 
