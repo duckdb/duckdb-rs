@@ -290,23 +290,13 @@ fn expected_extension_libraries(enabled_extensions: &[&str]) -> BTreeSet<String>
 }
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {
-    let library_path = match resolve_static_library(lib_dir, cmake_build_type, name) {
-        Ok(Some(path)) => path,
-        Ok(None) => {
-            let search = describe_library_search(lib_dir, cmake_build_type, name)
-                .unwrap_or_else(|err| format!("unable to inspect library directory {}: {err}", lib_dir.display()));
-            panic!(
-                "expected bundled-cmake to produce static library `{}`; looked in {}",
-                name, search
-            );
-        }
-        Err(err) => {
-            panic!(
-                "failed to inspect bundled-cmake library directory {} while looking for `{}`: {err}",
-                lib_dir.display(),
-                name
-            );
-        }
+    let Some(library_path) = resolve_static_library(lib_dir, cmake_build_type, name) else {
+        let search = describe_library_search(lib_dir, cmake_build_type, name)
+            .unwrap_or_else(|err| format!("unable to inspect library directory {}: {err}", lib_dir.display()));
+        panic!(
+            "expected bundled-cmake to produce static library `{}`; looked in {}",
+            name, search
+        );
     };
     if let Some(parent) = library_path.parent() {
         if parent != lib_dir {
@@ -326,7 +316,7 @@ fn static_library_filename(name: &str) -> String {
 
 fn list_static_extension_libraries(lib_dir: &Path, cmake_build_type: &str) -> io::Result<BTreeSet<String>> {
     let mut extension_libraries = BTreeSet::new();
-    for candidate_dir in candidate_library_dirs(lib_dir, cmake_build_type)? {
+    for candidate_dir in candidate_library_dirs(lib_dir, cmake_build_type) {
         for entry in fs::read_dir(&candidate_dir)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
@@ -361,43 +351,30 @@ fn normalized_static_library_name(filename: &str) -> Option<String> {
     Some(name.to_string())
 }
 
-fn resolve_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) -> io::Result<Option<PathBuf>> {
+fn resolve_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) -> Option<PathBuf> {
     let filename = static_library_filename(name);
-    for candidate_dir in candidate_library_dirs(lib_dir, cmake_build_type)? {
-        let candidate = candidate_dir.join(&filename);
-        if candidate.exists() {
-            return Ok(Some(candidate));
-        }
-    }
-    Ok(None)
+    candidate_library_dirs(lib_dir, cmake_build_type)
+        .into_iter()
+        .map(|dir| dir.join(&filename))
+        .find(|path| path.exists())
 }
 
-fn candidate_library_dirs(lib_dir: &Path, cmake_build_type: &str) -> io::Result<Vec<PathBuf>> {
+fn candidate_library_dirs(lib_dir: &Path, cmake_build_type: &str) -> Vec<PathBuf> {
+    // Single-config generators (Ninja, Make) write directly into lib/.
+    // Multi-config generators (MSVC, Xcode) write into lib/<Config>/.
+    // Restricting to these two avoids picking up stale extension libraries
+    // from a previous build that used a different CMAKE_BUILD_TYPE.
     let mut candidates = vec![lib_dir.to_path_buf()];
     let build_type_dir = lib_dir.join(cmake_build_type);
-    if build_type_dir.exists() {
+    if build_type_dir.is_dir() {
         candidates.push(build_type_dir);
     }
-    let mut child_dirs = Vec::new();
-    for entry in fs::read_dir(lib_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            child_dirs.push(path);
-        }
-    }
-    child_dirs.sort();
-    for child_dir in child_dirs {
-        if !candidates.contains(&child_dir) {
-            candidates.push(child_dir);
-        }
-    }
-    Ok(candidates)
+    candidates
 }
 
 fn describe_library_search(lib_dir: &Path, cmake_build_type: &str, name: &str) -> io::Result<String> {
     let filename = static_library_filename(name);
-    let searched = candidate_library_dirs(lib_dir, cmake_build_type)?
+    let searched = candidate_library_dirs(lib_dir, cmake_build_type)
         .into_iter()
         .map(|dir| dir.join(&filename).display().to_string())
         .collect::<Vec<_>>();
