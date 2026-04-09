@@ -1,7 +1,8 @@
 use crate::{is_compiler, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
-    env, fs, io,
+    env::{self, VarError},
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -37,6 +38,13 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
     write_bindings(&source_dir.join("src/include"), out_path);
+    if let Some(configs) = env_var("DUCKDB_EXTENSION_CONFIGS") {
+        if !configs.trim().is_empty() {
+            cargo_warning(
+                "DUCKDB_EXTENSION_CONFIGS is not yet supported by bundled-cmake because additional static extension libraries are not auto-linked; ignoring it",
+            );
+        }
+    }
 
     let cmake_build_type = cmake_build_type();
     let generator = select_generator();
@@ -60,12 +68,22 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     // Unity builds (DuckDB's default) combine .cpp files into fewer translation
     // units and compile significantly faster. Allow opting out for debugging.
     // Always set explicitly so the CMake cache doesn't keep a stale value.
-    let disable_unity = env::var("DUCKDB_DISABLE_UNITY").as_deref() == Ok("1");
+    let disable_unity = match env_var("DUCKDB_DISABLE_UNITY").as_deref() {
+        Some("1" | "true" | "on" | "yes") => true,
+        Some("0" | "false" | "off" | "no") => false,
+        Some(other) => {
+            cargo_warning(&format!(
+                "Ignoring unsupported DUCKDB_DISABLE_UNITY value {other:?}; expected true/false or 1/0, yes/no, on/off"
+            ));
+            false
+        }
+        None => false,
+    };
     config.define("DISABLE_UNITY", if disable_unity { "1" } else { "0" });
 
     // Forward compiler launcher for sccache/ccache integration.
     for var in ["CMAKE_C_COMPILER_LAUNCHER", "CMAKE_CXX_COMPILER_LAUNCHER"] {
-        if let Ok(launcher) = env::var(var) {
+        if let Some(launcher) = env_var(var) {
             config.define(var, &launcher);
         }
     }
@@ -83,20 +101,12 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         .define("ENABLE_EXTENSION_AUTOLOADING", "1")
         .define("ENABLE_EXTENSION_AUTOINSTALL", "1");
 
-    if let Ok(configs) = env::var("DUCKDB_EXTENSION_CONFIGS") {
-        if !configs.trim().is_empty() {
-            panic!(
-                "DUCKDB_EXTENSION_CONFIGS is not yet supported by bundled-cmake because additional static extension libraries are not auto-linked; using it would produce a broken binary"
-            );
-        }
-    }
-
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    // Preserve the static link order required by single-pass linkers:
-    // emit `duckdb_static` first, then the generated loader, then the extensions.
+    // Preserve expected dependency order for common single-pass linkers:
+    // `duckdb_static` provides core symbols used by the generated loader and extensions.
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_generated_extension_loader");
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
@@ -109,7 +119,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
 
 fn cmake_build_type() -> String {
     for var in ["DUCKDB_CMAKE_BUILD_TYPE", "CMAKE_BUILD_TYPE"] {
-        if let Some(value) = env::var(var).ok().filter(|v| !v.trim().is_empty()) {
+        if let Some(value) = env_var(var).filter(|v| !v.trim().is_empty()) {
             let value = validate_cmake_build_type(&value);
             cargo_warning(&format!("bundled-cmake build type: {value} (from {var})"));
             return value;
@@ -130,16 +140,23 @@ fn validate_cmake_build_type(value: &str) -> String {
 
 fn select_generator() -> Generator {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
-    if let Some(generator) = env::var("CMAKE_GENERATOR")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        let make_program = if generator.contains("Ninja") {
-            Some(find_program(&["ninja", "ninja-build"]).unwrap_or_else(|| {
-                panic!("CMAKE_GENERATOR={generator} requires `ninja` or `ninja-build` on PATH, but neither was found")
-            }))
+    if let Some(generator) = env_var("CMAKE_GENERATOR").filter(|value| !value.trim().is_empty()) {
+        let (make_program, probe_error) = if generator.contains("Ninja") {
+            find_program(&["ninja", "ninja-build"])
         } else {
-            None
+            (None, None)
+        };
+        let make_program = match make_program {
+            Some(path) => Some(path),
+            None if generator.contains("Ninja") => {
+                let suffix = probe_error
+                    .map(|error| format!(" (probe error: {error})"))
+                    .unwrap_or_default();
+                panic!(
+                    "CMAKE_GENERATOR={generator} requires `ninja` or `ninja-build` on PATH, but neither was found{suffix}"
+                )
+            }
+            None => None,
         };
         cargo_warning(&format!("bundled-cmake generator: {generator} (from CMAKE_GENERATOR)"));
         return Generator {
@@ -149,7 +166,7 @@ fn select_generator() -> Generator {
         };
     }
 
-    let ninja_program = find_program(&["ninja", "ninja-build"]);
+    let (ninja_program, probe_error) = find_program(&["ninja", "ninja-build"]);
     if let Some(ninja) = ninja_program {
         cargo_warning(&format!("bundled-cmake generator: Ninja (autodetected via {ninja})"));
         Generator {
@@ -158,6 +175,11 @@ fn select_generator() -> Generator {
             make_program: Some(ninja),
         }
     } else {
+        if let Some(probe_error) = probe_error {
+            cargo_warning(&format!(
+                "failed to probe for bundled-cmake generator detection (`ninja`/`ninja-build`): {probe_error}"
+            ));
+        }
         cargo_warning("bundled-cmake generator: default CMake generator (ninja not detected)");
         Generator {
             out_dir: out_dir.join("cmake-default"),
@@ -190,10 +212,17 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
         }
     };
 
-    let deployment_target = env::var("MACOSX_DEPLOYMENT_TARGET")
-        .ok()
+    let deployment_target = env_var("MACOSX_DEPLOYMENT_TARGET")
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| (target_arch == "arm64").then(|| "11.0".to_string()));
+        .or_else(|| {
+            if target_arch == "arm64" {
+                Some("11.0".to_string())
+            } else if target_arch == "x86_64" {
+                Some("10.15".to_string())
+            } else {
+                None
+            }
+        });
     if let Some(deployment_target) = deployment_target {
         cargo_warning(&format!(
             "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
@@ -207,19 +236,28 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
     config.define("CMAKE_OSX_ARCHITECTURES", target_arch);
 }
 
-fn find_program(candidates: &[&str]) -> Option<String> {
+fn find_program(candidates: &[&str]) -> (Option<String>, Option<which::Error>) {
+    let mut last_error = None;
     for candidate in candidates {
         match which::which(candidate) {
-            Ok(path) => return Some(path.display().to_string()),
+            Ok(path) => return (Some(path.display().to_string()), None),
             Err(which::Error::CannotFindBinaryPath) => {}
             Err(err) => {
-                cargo_warning(&format!(
-                    "failed to probe `{candidate}` for bundled-cmake generator detection: {err}"
-                ));
+                last_error = Some(err);
             }
         }
     }
-    None
+    (None, last_error)
+}
+
+fn env_var(name: &str) -> Option<String> {
+    match env::var(name) {
+        Ok(value) => Some(value),
+        Err(VarError::NotPresent) => None,
+        Err(VarError::NotUnicode(_)) => {
+            panic!("bundled-cmake expects a valid UTF-8 value for environment variable `{name}`")
+        }
+    }
 }
 
 fn sanitize_path_component(input: &str) -> String {
@@ -249,6 +287,7 @@ fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_
         .iter()
         .map(|ext| format!("{ext}_extension"))
         .collect();
+    // CMake always builds this base extension through extension_config.cmake.
     expected.insert("core_functions_extension".to_string());
 
     let unexpected: Vec<String> = actual.difference(&expected).cloned().collect();
@@ -371,6 +410,9 @@ fn enabled_extensions() -> Vec<&'static str> {
 }
 
 fn link_system_libs() {
+    // Keep the per-OS lists below in sync with DuckDB's current linker requirements in
+    // duckdb-sources/src/CMakeLists.txt. If upstream drifts after a submodule bump,
+    // update every branch here alongside it.
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("Cargo should set CARGO_CFG_TARGET_OS");
 
     match target_os.as_str() {
