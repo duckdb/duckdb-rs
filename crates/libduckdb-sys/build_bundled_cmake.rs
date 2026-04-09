@@ -236,57 +236,28 @@ fn sanitize_path_component(input: &str) -> String {
 }
 
 fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_extensions: &[&str]) {
-    let actual_extensions = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
+    // Missing extensions are already caught by link_static_library's panic;
+    // this check only guards against CMake producing extensions we did not
+    // ask for (e.g. upstream SKIPPED_EXTENSIONS drift).
+    let actual = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
         panic!(
             "failed to inspect bundled-cmake extension libraries in {}: {err}",
             lib_dir.display()
         )
     });
-    let expected_extensions = expected_extension_libraries(enabled_extensions);
-    let missing_extensions = expected_extensions
-        .difference(&actual_extensions)
-        .cloned()
-        .collect::<Vec<_>>();
-    let unexpected_extensions = actual_extensions
-        .difference(&expected_extensions)
-        .cloned()
-        .collect::<Vec<_>>();
-    if !missing_extensions.is_empty() || !unexpected_extensions.is_empty() {
-        let mut problems = Vec::new();
-        if !missing_extensions.is_empty() {
-            let noun = if missing_extensions.len() == 1 {
-                "library"
-            } else {
-                "libraries"
-            };
-            problems.push(format!(
-                "did not produce expected extension {noun}: {}",
-                missing_extensions.join(", ")
-            ));
-        }
-        if !unexpected_extensions.is_empty() {
-            problems.push(format!(
-                "produced unexpected static extension libraries: {}",
-                unexpected_extensions.join(", ")
-            ));
-        }
+    let mut expected: BTreeSet<String> = enabled_extensions
+        .iter()
+        .map(|ext| format!("{ext}_extension"))
+        .collect();
+    expected.insert("core_functions_extension".to_string());
+
+    let unexpected: Vec<String> = actual.difference(&expected).cloned().collect();
+    if !unexpected.is_empty() {
         panic!(
-            "bundled-cmake {}; expected [{}], found [{}]",
-            problems.join("; "),
-            expected_extensions.iter().cloned().collect::<Vec<_>>().join(", "),
-            actual_extensions.iter().cloned().collect::<Vec<_>>().join(", ")
+            "bundled-cmake produced unexpected static extension libraries: {}",
+            unexpected.join(", ")
         );
     }
-}
-
-fn expected_extension_libraries(enabled_extensions: &[&str]) -> BTreeSet<String> {
-    let mut expected = BTreeSet::from([String::from("core_functions_extension")]);
-    expected.extend(
-        enabled_extensions
-            .iter()
-            .map(|extension| format!("{extension}_extension")),
-    );
-    expected
 }
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {
