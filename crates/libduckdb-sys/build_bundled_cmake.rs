@@ -186,10 +186,7 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
         "aarch64" => "arm64",
         "x86_64" => "x86_64",
         other => {
-            cargo_warning(&format!(
-                "bundled-cmake macOS target arch `{target_arch_env}` is not explicitly recognized; forwarding `{other}` to CMake"
-            ));
-            other
+            panic!("bundled-cmake: unsupported macOS CARGO_CFG_TARGET_ARCH `{other}`; expected `aarch64` or `x86_64`")
         }
     };
 
