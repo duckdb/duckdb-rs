@@ -1,4 +1,14 @@
-use std::{any::Any, ffi::CString, slice};
+//! Borrowed vector wrappers over [`duckdb_vector`].
+//!
+//! Each wrapper type carries a lifetime `'a`. When obtained via a
+//! [`DataChunkHandle`][crate::core::DataChunkHandle] accessor, `'a` is
+//! bound to the chunk so the wrapper cannot outlive it. When built via
+//! one of the `unsafe fn from_raw` constructors (including the raw
+//! `duckdb_vector` path used by `vtab::arrow`), `'a` is caller-chosen and
+//! must not exceed the DuckDB vector's actual validity — that path does not
+//! track liveness in the type system.
+
+use std::{ffi::CString, marker::PhantomData, slice};
 
 use libduckdb_sys::{
     DuckDbString, duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid,
@@ -14,42 +24,33 @@ use crate::ffi::{
     duckdb_vector_get_validity, duckdb_vector_size,
 };
 
-/// Vector trait.
-pub trait Vector {
-    /// Returns a reference to the underlying Any type that this trait object
-    fn as_any(&self) -> &dyn Any;
-    /// Returns a mutable reference to the underlying Any type that this trait object
-    fn as_mut_any(&mut self) -> &mut dyn Any;
-}
-
-/// A flat vector
-pub struct FlatVector {
+/// A flat (contiguous, scalar-row) vector borrowed from a
+/// [`DataChunkHandle`][crate::core::DataChunkHandle].
+pub struct FlatVector<'a> {
     ptr: duckdb_vector,
     capacity: usize,
+    _phantom: PhantomData<&'a ()>,
 }
 
-impl From<duckdb_vector> for FlatVector {
-    fn from(ptr: duckdb_vector) -> Self {
+impl<'a> FlatVector<'a> {
+    /// Wrap a raw `duckdb_vector` pointer.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
             capacity: unsafe { duckdb_vector_size() as usize },
+            _phantom: PhantomData,
         }
     }
-}
 
-impl Vector for FlatVector {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_mut_any(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-impl FlatVector {
     fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
-        Self { ptr, capacity }
+        Self {
+            ptr,
+            capacity,
+            _phantom: PhantomData,
+        }
     }
 
     /// Returns the capacity of the vector
@@ -127,7 +128,7 @@ pub trait Inserter<T> {
     fn insert(&self, index: usize, value: T);
 }
 
-impl Inserter<CString> for FlatVector {
+impl Inserter<CString> for FlatVector<'_> {
     fn insert(&self, index: usize, value: CString) {
         unsafe {
             duckdb_vector_assign_string_element(self.ptr, index as u64, value.as_ptr());
@@ -135,19 +136,19 @@ impl Inserter<CString> for FlatVector {
     }
 }
 
-impl Inserter<&str> for FlatVector {
+impl Inserter<&str> for FlatVector<'_> {
     fn insert(&self, index: usize, value: &str) {
         self.insert(index, value.as_bytes());
     }
 }
 
-impl Inserter<&String> for FlatVector {
+impl Inserter<&String> for FlatVector<'_> {
     fn insert(&self, index: usize, value: &String) {
         self.insert(index, value.as_str());
     }
 }
 
-impl Inserter<&[u8]> for FlatVector {
+impl Inserter<&[u8]> for FlatVector<'_> {
     fn insert(&self, index: usize, value: &[u8]) {
         let value_size = value.len();
         unsafe {
@@ -162,27 +163,48 @@ impl Inserter<&[u8]> for FlatVector {
     }
 }
 
-impl Inserter<&Vec<u8>> for FlatVector {
+impl Inserter<&Vec<u8>> for FlatVector<'_> {
     fn insert(&self, index: usize, value: &Vec<u8>) {
         self.insert(index, value.as_slice());
     }
 }
 
-/// A list vector.
-pub struct ListVector {
+/// A list vector borrowed from a [`DataChunkHandle`][crate::core::DataChunkHandle].
+///
+/// Stores list entry offsets and lengths; elements live in a separate child vector.
+///
+/// Regression guard for #673 — a `ListVector` must not outlive its parent chunk:
+///
+/// ```compile_fail
+/// use duckdb::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
+///
+/// let vec;
+/// {
+///     let list_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
+///     let chunk = DataChunkHandle::new(&[list_type]);
+///     chunk.set_len(1);
+///     let v = chunk.list_vector(0);
+///     vec = v;
+/// }
+/// // chunk goes out of scope here; borrow checking rejects the outer use.
+/// let _ = vec.get_entry(0);
+/// ```
+pub struct ListVector<'a> {
     /// ListVector does not own the vector pointer.
-    entries: FlatVector,
+    entries: FlatVector<'a>,
 }
 
-impl From<duckdb_vector> for ListVector {
-    fn from(ptr: duckdb_vector) -> Self {
+impl<'a> ListVector<'a> {
+    /// Wrap a raw `duckdb_vector` pointer.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
-            entries: FlatVector::from(ptr),
+            entries: unsafe { FlatVector::from_raw(ptr) },
         }
     }
-}
 
-impl ListVector {
     /// Returns the number of entries in the list vector.
     pub fn len(&self) -> usize {
         unsafe { duckdb_list_vector_get_size(self.entries.ptr) as usize }
@@ -195,25 +217,25 @@ impl ListVector {
 
     /// Returns the child vector.
     // TODO: not ideal interface. Where should we keep capacity.
-    pub fn child(&self, capacity: usize) -> FlatVector {
+    pub fn child(&self, capacity: usize) -> FlatVector<'a> {
         self.reserve(capacity);
         FlatVector::with_capacity(unsafe { duckdb_list_vector_get_child(self.entries.ptr) }, capacity)
     }
 
     /// Take the child as [StructVector].
-    pub fn struct_child(&self, capacity: usize) -> StructVector {
+    pub fn struct_child(&self, capacity: usize) -> StructVector<'a> {
         self.reserve(capacity);
-        StructVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+        unsafe { StructVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
     }
 
     /// Take the child as [ArrayVector].
-    pub fn array_child(&self) -> ArrayVector {
-        ArrayVector::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    pub fn array_child(&self) -> ArrayVector<'a> {
+        unsafe { ArrayVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
     }
 
     /// Take the child as [ListVector].
-    pub fn list_child(&self) -> Self {
-        Self::from(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    pub fn list_child(&self) -> ListVector<'a> {
+        unsafe { ListVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
     }
 
     /// Set primitive data to the child node.
@@ -258,18 +280,27 @@ impl ListVector {
     }
 }
 
-/// A array vector. (fixed-size list)
-pub struct ArrayVector {
+/// A fixed-size list vector borrowed from a
+/// [`DataChunkHandle`][crate::core::DataChunkHandle].
+///
+/// Exposes a fixed-width list whose child storage is contiguous across all rows.
+pub struct ArrayVector<'a> {
     ptr: duckdb_vector,
+    _phantom: PhantomData<&'a ()>,
 }
 
-impl From<duckdb_vector> for ArrayVector {
-    fn from(ptr: duckdb_vector) -> Self {
-        Self { ptr }
+impl<'a> ArrayVector<'a> {
+    /// Wrap a raw `duckdb_vector` pointer.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
     }
-}
 
-impl ArrayVector {
     /// Get the logical type of this ArrayVector.
     pub fn logical_type(&self) -> LogicalTypeHandle {
         unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
@@ -284,7 +315,7 @@ impl ArrayVector {
     /// Returns the child vector.
     /// capacity should be a multiple of the array size.
     // TODO: not ideal interface. Where should we keep count.
-    pub fn child(&self, capacity: usize) -> FlatVector {
+    pub fn child(&self, capacity: usize) -> FlatVector<'a> {
         FlatVector::with_capacity(unsafe { duckdb_array_vector_get_child(self.ptr) }, capacity)
     }
 
@@ -303,20 +334,28 @@ impl ArrayVector {
     }
 }
 
-/// A struct vector.
-pub struct StructVector {
+/// A struct vector borrowed from a [`DataChunkHandle`][crate::core::DataChunkHandle].
+///
+/// Groups one child vector per struct field, all sharing the same row count.
+pub struct StructVector<'a> {
     ptr: duckdb_vector,
+    _phantom: PhantomData<&'a ()>,
 }
 
-impl From<duckdb_vector> for StructVector {
-    fn from(ptr: duckdb_vector) -> Self {
-        Self { ptr }
+impl<'a> StructVector<'a> {
+    /// Wrap a raw `duckdb_vector` pointer.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
     }
-}
 
-impl StructVector {
     /// Returns the child by idx in the list vector.
-    pub fn child(&self, idx: usize, capacity: usize) -> FlatVector {
+    pub fn child(&self, idx: usize, capacity: usize) -> FlatVector<'a> {
         FlatVector::with_capacity(
             unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) },
             capacity,
@@ -324,18 +363,18 @@ impl StructVector {
     }
 
     /// Take the child as [StructVector].
-    pub fn struct_vector_child(&self, idx: usize) -> Self {
-        Self::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
+    pub fn struct_vector_child(&self, idx: usize) -> StructVector<'a> {
+        unsafe { StructVector::from_raw(duckdb_struct_vector_get_child(self.ptr, idx as u64)) }
     }
 
     /// Take the child as [ListVector].
-    pub fn list_vector_child(&self, idx: usize) -> ListVector {
-        ListVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
+    pub fn list_vector_child(&self, idx: usize) -> ListVector<'a> {
+        unsafe { ListVector::from_raw(duckdb_struct_vector_get_child(self.ptr, idx as u64)) }
     }
 
     /// Take the child as [ArrayVector].
-    pub fn array_vector_child(&self, idx: usize) -> ArrayVector {
-        ArrayVector::from(unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) })
+    pub fn array_vector_child(&self, idx: usize) -> ArrayVector<'a> {
+        unsafe { ArrayVector::from_raw(duckdb_struct_vector_get_child(self.ptr, idx as u64)) }
     }
 
     /// Get the logical type of this struct vector.
