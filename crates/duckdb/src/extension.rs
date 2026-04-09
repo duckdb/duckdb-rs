@@ -2,7 +2,7 @@
 mod test {
     use crate::{Connection, Result};
 
-    // https://duckdb.org/docs/extensions/json
+    // https://duckdb.org/docs/current/data/json/overview
     #[cfg(feature = "json")]
     #[test]
     fn test_extension_json() -> Result<()> {
@@ -18,7 +18,7 @@ mod test {
         Ok(())
     }
 
-    // https://duckdb.org/docs/data/parquet/overview.html
+    // https://duckdb.org/docs/current/data/parquet/overview
     #[cfg(feature = "parquet")]
     #[test]
     fn test_extension_parquet() -> Result<()> {
@@ -34,7 +34,7 @@ mod test {
         Ok(())
     }
 
-    // https://duckdb.org/docs/stable/core_extensions/icu.html
+    // https://duckdb.org/docs/current/core_extensions/icu
     #[cfg(feature = "icu")]
     #[test]
     fn test_extension_icu() -> Result<()> {

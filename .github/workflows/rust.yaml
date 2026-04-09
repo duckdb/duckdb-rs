@@ -126,7 +126,14 @@ jobs:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: mozilla-actions/sccache-action@v0.0.9
-      - name: Run ICU test
+      - name: Verify static linking
+        shell: bash
+        run: |
+          output=$(cargo run -p duckdb --example repl --no-default-features --features "bundled-cmake,icu" -- -c "from duckdb_extensions() where extension_name = 'icu';")
+          echo "$output"
+          grep -qF "STATICALLY_LINKED" <<<"$output"
+          grep -qF "(BUILT-IN)" <<<"$output"
+      - name: ICU functional test
         run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib extension::test::test_extension_icu -- --exact
 
   msrv:
