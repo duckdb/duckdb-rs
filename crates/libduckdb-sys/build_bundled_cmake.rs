@@ -453,6 +453,12 @@ fn link_system_libs() {
 
     match target_os.as_str() {
         "linux" => {
+            let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+            if target_env != "gnu" {
+                panic!(
+                    "bundled-cmake on linux is currently only supported with the `gnu` target env (libstdc++); got `{target_env}`"
+                );
+            }
             println!("cargo:rustc-link-lib=dylib=dl");
             println!("cargo:rustc-link-lib=dylib=pthread");
             println!("cargo:rustc-link-lib=dylib=stdc++");
