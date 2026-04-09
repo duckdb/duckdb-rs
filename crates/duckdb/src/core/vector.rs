@@ -32,11 +32,9 @@ impl<'a> FlatVector<'a> {
     /// Build a `FlatVector` from a raw `duckdb_vector` pointer.
     ///
     /// # Safety
-    /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
-    /// live wrapper may expose overlapping mutable access to the same
-    /// `duckdb_vector` for that lifetime.
-    pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for the
+    /// entirety of the chosen lifetime `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
             capacity: unsafe { duckdb_vector_size() as usize },
@@ -206,11 +204,9 @@ impl<'a> ListVector<'a> {
     /// Build a `ListVector` from a raw `duckdb_vector` pointer.
     ///
     /// # Safety
-    /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
-    /// live wrapper may expose overlapping mutable access to the same
-    /// `duckdb_vector` for that lifetime.
-    pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for the
+    /// entirety of the chosen lifetime `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             entries: unsafe { FlatVector::from_raw(ptr) },
         }
@@ -310,11 +306,9 @@ impl<'a> ArrayVector<'a> {
     /// Build an `ArrayVector` from a raw `duckdb_vector` pointer.
     ///
     /// # Safety
-    /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
-    /// live wrapper may expose overlapping mutable access to the same
-    /// `duckdb_vector` for that lifetime.
-    pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for the
+    /// entirety of the chosen lifetime `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
             _phantom: PhantomData,
@@ -371,11 +365,9 @@ impl<'a> StructVector<'a> {
     /// Build a `StructVector` from a raw `duckdb_vector` pointer.
     ///
     /// # Safety
-    /// The caller must ensure that `ptr` is a valid `duckdb_vector` and that
-    /// it remains valid for the entirety of the chosen lifetime `'a`. No other
-    /// live wrapper may expose overlapping mutable access to the same
-    /// `duckdb_vector` for that lifetime.
-    pub unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for the
+    /// entirety of the chosen lifetime `'a`.
+    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             ptr,
             _phantom: PhantomData,
