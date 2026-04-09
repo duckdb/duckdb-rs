@@ -291,12 +291,13 @@ fn expected_extension_libraries(enabled_extensions: &[&str]) -> BTreeSet<String>
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {
     let Some(library_path) = resolve_static_library(lib_dir, cmake_build_type, name) else {
-        let search = describe_library_search(lib_dir, cmake_build_type, name)
-            .unwrap_or_else(|err| format!("unable to inspect library directory {}: {err}", lib_dir.display()));
-        panic!(
-            "expected bundled-cmake to produce static library `{}`; looked in {}",
-            name, search
-        );
+        let filename = static_library_filename(name);
+        let searched = candidate_library_dirs(lib_dir, cmake_build_type)
+            .into_iter()
+            .map(|dir| dir.join(&filename).display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        panic!("expected bundled-cmake to produce static library `{name}`; looked in [{searched}]");
     };
     if let Some(parent) = library_path.parent() {
         if parent != lib_dir {
@@ -370,33 +371,6 @@ fn candidate_library_dirs(lib_dir: &Path, cmake_build_type: &str) -> Vec<PathBuf
         candidates.push(build_type_dir);
     }
     candidates
-}
-
-fn describe_library_search(lib_dir: &Path, cmake_build_type: &str, name: &str) -> io::Result<String> {
-    let filename = static_library_filename(name);
-    let searched = candidate_library_dirs(lib_dir, cmake_build_type)
-        .into_iter()
-        .map(|dir| dir.join(&filename).display().to_string())
-        .collect::<Vec<_>>();
-    let contents = describe_directory_entries(lib_dir)?;
-    Ok(format!(
-        "paths [{}]; lib dir contents [{}]",
-        searched.join(", "),
-        contents.join(", ")
-    ))
-}
-
-fn describe_directory_entries(dir: &Path) -> io::Result<Vec<String>> {
-    let mut entries = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        entries.push(entry.path().display().to_string());
-    }
-    entries.sort();
-    if entries.is_empty() {
-        entries.push("<empty>".to_string());
-    }
-    Ok(entries)
 }
 
 fn cargo_warning(message: &str) {
