@@ -23,7 +23,7 @@ jobs:
   test:
     # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
     # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
-    # - bundled feature tested by --all-features
+    # - bundled feature covered by the Ubuntu clippy feature set below
     name: Test ${{ matrix.name }}
     strategy:
       fail-fast: true
@@ -64,7 +64,8 @@ jobs:
 
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+        # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
+        run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full" --locked -- -D warnings
 
       - name: Dry-run release of crates
         if: matrix.os == 'ubuntu-latest'
@@ -103,6 +104,37 @@ jobs:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
           LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+
+  cmake:
+    name: Bundled CMake ${{ matrix.name }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-latest }
+          - { name: macOS, os: macos-latest }
+          - { name: Windows, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Verify static linking
+        shell: bash
+        run: |
+          output=$(cargo run -p duckdb --example repl --no-default-features --features "bundled-cmake,icu" -- -c "from duckdb_extensions() where extension_name = 'icu';")
+          echo "$output"
+          grep -qF "STATICALLY_LINKED" <<<"$output"
+          grep -qF "(BUILT-IN)" <<<"$output"
+      - name: ICU functional test
+        run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib extension::test::test_extension_icu -- --exact
 
   msrv:
     name: MSRV Check

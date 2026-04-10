@@ -2,7 +2,8 @@
 mod test {
     use crate::{Connection, Result};
 
-    // https://duckdb.org/docs/extensions/json
+    // https://duckdb.org/docs/current/data/json/overview
+    #[cfg(feature = "json")]
     #[test]
     fn test_extension_json() -> Result<()> {
         let db = Connection::open_in_memory()?;
@@ -17,7 +18,8 @@ mod test {
         Ok(())
     }
 
-    // https://duckdb.org/docs/data/parquet/overview.html
+    // https://duckdb.org/docs/current/data/parquet/overview
+    #[cfg(feature = "parquet")]
     #[test]
     fn test_extension_parquet() -> Result<()> {
         let db = Connection::open_in_memory()?;
@@ -32,6 +34,24 @@ mod test {
         Ok(())
     }
 
+    // https://duckdb.org/docs/current/core_extensions/icu
+    #[cfg(feature = "icu")]
+    #[test]
+    fn test_extension_icu() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        assert_eq!(
+            1i64,
+            db.query_row::<i64, _, _>(
+                "SELECT count(*) FROM icu_calendar_names() WHERE name = 'gregorian';",
+                [],
+                |r| r.get(0)
+            )?
+        );
+        assert!(db.query_row::<bool, _, _>("SELECT length(icu_sort_key('Ş', 'ro')) > 0;", [], |r| r.get(0))?);
+        Ok(())
+    }
+
+    #[cfg(feature = "parquet")]
     #[test]
     fn test_extension_remote_parquet() -> Result<()> {
         let db = Connection::open_in_memory()?;

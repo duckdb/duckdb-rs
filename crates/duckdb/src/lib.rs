@@ -120,7 +120,14 @@ mod row;
 mod statement;
 mod transaction;
 
-#[cfg(feature = "extensions-full")]
+#[cfg(any(
+    feature = "autocomplete",
+    feature = "icu",
+    feature = "json",
+    feature = "parquet",
+    feature = "tpcds",
+    feature = "tpch"
+))]
 mod extension;
 
 pub mod profiling;
