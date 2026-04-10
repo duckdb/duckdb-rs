@@ -40,8 +40,8 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     write_bindings(&source_dir.join("src/include"), out_path);
     if let Some(configs) = env_var("DUCKDB_EXTENSION_CONFIGS") {
         if !configs.trim().is_empty() {
-            cargo_warning(
-                "DUCKDB_EXTENSION_CONFIGS is not yet supported by bundled-cmake because additional static extension libraries are not auto-linked; ignoring it",
+            panic!(
+                "DUCKDB_EXTENSION_CONFIGS is not yet supported by bundled-cmake because additional static extension libraries are not auto-linked"
             );
         }
     }
@@ -105,14 +105,14 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
-    // Preserve expected dependency order for common single-pass linkers:
-    // `duckdb_static` provides core symbols used by the generated loader and extensions.
-    link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
+    // Emit in dependents-before-dependencies order for single-pass linkers:
+    // loader → extensions → duckdb_static (which satisfies all core symbols).
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_generated_extension_loader");
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
     for extension in enabled_extensions {
         link_static_library(&lib_dir, &cmake_build_type, &format!("{extension}_extension"));
     }
+    link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
     println!("cargo:lib_dir={}", lib_dir.display());
 }
