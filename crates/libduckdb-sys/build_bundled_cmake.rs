@@ -13,8 +13,10 @@ const SKIPPED_EXTENSIONS: &[&str] = &["jemalloc"];
 
 struct Generator {
     name: Option<String>,
-    out_dir: PathBuf,
     make_program: Option<String>,
+    /// Short tag folded into the cache key so different generators get isolated
+    /// build directories (e.g. "ninja", "default", or a sanitized user value).
+    tag: String,
 }
 
 pub fn main(_out_dir: &str, out_path: &Path) {
@@ -55,15 +57,20 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     // CMake caches generated extension loader state, so extension-related config
     // changes (including build type and unity mode) need distinct build dirs to
     // avoid requiring `cargo clean`.
+    let generator = detect_generator();
     let cache_key = cmake_cache_key(
         &cmake_build_type,
         &enabled_extensions,
         &custom_extension_configs,
         &custom_link_extensions,
+        &generator.tag,
     );
-    let generator = select_generator(&cache_key);
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
+    // Bare hash dir name avoids exceeding Windows MAX_PATH (260) and CMake's
+    // OBJECT_PATH_MAX (250) for deeply-nested DuckDB object files.
+    let build_dir = out_dir.join(&cache_key);
     let mut config = cmake::Config::new(source_dir);
-    config.out_dir(&generator.out_dir);
+    config.out_dir(&build_dir);
     if let Some(generator_name) = generator.name.as_deref() {
         config.generator(generator_name);
     }
@@ -246,8 +253,7 @@ fn validate_cmake_build_type(value: &str) -> String {
     }
 }
 
-fn select_generator(cache_key: &str) -> Generator {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
+fn detect_generator() -> Generator {
     if let Some(generator) = env_var("CMAKE_GENERATOR").filter(|value| !value.trim().is_empty()) {
         let (make_program, probe_error) = if generator.contains("Ninja") {
             find_program(&["ninja", "ninja-build"])
@@ -268,7 +274,7 @@ fn select_generator(cache_key: &str) -> Generator {
         };
         cargo_warning(&format!("bundled-cmake generator: {generator} (from CMAKE_GENERATOR)"));
         return Generator {
-            out_dir: out_dir.join(format!("cmake-{}-{cache_key}", sanitize_path_component(&generator))),
+            tag: sanitize_path_component(&generator),
             name: Some(generator),
             make_program,
         };
@@ -278,7 +284,7 @@ fn select_generator(cache_key: &str) -> Generator {
     if let Some(ninja) = ninja_program {
         cargo_warning(&format!("bundled-cmake generator: Ninja (autodetected via {ninja})"));
         Generator {
-            out_dir: out_dir.join(format!("cmake-ninja-{cache_key}")),
+            tag: "ninja".to_string(),
             name: Some("Ninja".to_string()),
             make_program: Some(ninja),
         }
@@ -290,7 +296,7 @@ fn select_generator(cache_key: &str) -> Generator {
         }
         cargo_warning("bundled-cmake generator: default CMake generator (ninja not detected)");
         Generator {
-            out_dir: out_dir.join(format!("cmake-default-{cache_key}")),
+            tag: "default".to_string(),
             name: None,
             make_program: None,
         }
@@ -302,9 +308,11 @@ fn cmake_cache_key(
     enabled_extensions: &[&'static str],
     custom_extension_configs: &[String],
     custom_link_extensions: &[String],
+    generator_tag: &str,
 ) -> String {
     let disable_unity = env::var("DUCKDB_DISABLE_UNITY").as_deref() == Ok("1");
     let mut key_material = Vec::new();
+    push_cache_key_component(&mut key_material, "generator", std::iter::once(generator_tag));
     push_cache_key_component(&mut key_material, "cmake_build_type", std::iter::once(cmake_build_type));
     push_cache_key_component(
         &mut key_material,
@@ -326,7 +334,9 @@ fn cmake_cache_key(
         "custom_link_extensions",
         custom_link_extensions.iter().map(String::as_str),
     );
-    format!("{:016x}", stable_cache_hash(&key_material))
+    // 8 hex chars (32-bit) is plenty for local build-dir uniqueness and keeps
+    // the path short enough to stay under Windows MAX_PATH (260).
+    format!("{:08x}", stable_cache_hash(&key_material) as u32)
 }
 
 fn push_cache_key_component<'a>(key_material: &mut Vec<u8>, label: &str, values: impl IntoIterator<Item = &'a str>) {
@@ -452,9 +462,7 @@ fn validate_extension_libraries(
     let expected_extensions = expected_extension_libraries(linked_extensions);
     let missing: Vec<_> = expected_extensions.difference(&actual_extensions).collect();
     let unexpected: Vec<_> = actual_extensions.difference(&expected_extensions).collect();
-    let fmt_set = |s: &BTreeSet<String>| -> String {
-        s.iter().map(String::as_str).collect::<Vec<_>>().join(", ")
-    };
+    let fmt_set = |s: &BTreeSet<String>| -> String { s.iter().map(String::as_str).collect::<Vec<_>>().join(", ") };
     if !missing.is_empty() {
         let noun = if missing.len() == 1 { "library" } else { "libraries" };
         let missing_fmt: Vec<_> = missing.iter().map(|s| s.as_str()).collect();
