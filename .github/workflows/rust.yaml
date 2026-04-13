@@ -120,21 +120,36 @@ jobs:
       RUSTC_WRAPPER: sccache
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
+      DUCKDB_DISABLE_EXTENSION_LOAD: "1"
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: mozilla-actions/sccache-action@v0.0.9
-      - name: Verify static linking
+
+      - name: Verify static linking with extension loading disabled
         shell: bash
         run: |
-          output=$(cargo run -p duckdb --example repl --no-default-features --features "bundled-cmake,icu" -- -c "from duckdb_extensions() where extension_name = 'icu';")
+          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
           echo "$output"
-          grep -qF "STATICALLY_LINKED" <<<"$output"
-          grep -qF "(BUILT-IN)" <<<"$output"
+          grep -qF "STATICALLY_LINKED,(BUILT-IN)" <<<"$output"
+
+          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
+          echo "$output"
+          grep -qF "false,false" <<<"$output"
+
+          set +e
+          output=$(cargo run -p duckdb --example repl --features icu -- -c "LOAD sqlite_scanner;" 2>&1)
+          status=$?
+          set -e
+
+          echo "$output"
+          test $status -ne 0
+          grep -qF "Loading external extensions is disabled through a compile time flag" <<<"$output"
+
       - name: ICU functional test
-        run: cargo test -p duckdb --no-default-features --features "bundled-cmake,icu" --lib extension::test::test_extension_icu -- --exact
+        run: cargo test -p duckdb --features icu --lib extension::test::test_extension_icu -- --exact
 
   msrv:
     name: MSRV Check
