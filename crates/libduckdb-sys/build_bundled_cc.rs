@@ -179,6 +179,14 @@ pub fn main(out_dir: &str, out_path: &Path) {
 
     if win_target() {
         cfg.define("DUCKDB_BUILD_LIBRARY", None);
+        // Bundled DuckDB's AdditionalLockInfo helper calls the Windows
+        // Restart Manager APIs (RmStartSession, RmRegisterResources,
+        // RmGetList, RmEndSession), which live in rstrtmgr.lib. The
+        // cmake backend already emits this link directive; mirror it
+        // here so the cc backend produces the same link line. Without
+        // it, downstream crates get LNK2019 "unresolved external symbol
+        // RmStartSession" at link time (see duckdb/duckdb-rs#544).
+        println!("cargo:rustc-link-lib=dylib=rstrtmgr");
     }
     cfg.compile("duckdb");
 
