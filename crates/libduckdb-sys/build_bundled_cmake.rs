@@ -31,6 +31,8 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
+    println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_EXTENSION_LOAD");
+    println!("cargo:rerun-if-env-changed=DISABLE_EXTENSION_LOAD");
     println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=CMAKE_GENERATOR");
     println!("cargo:rerun-if-env-changed=CMAKE_C_COMPILER_LAUNCHER");
@@ -68,18 +70,13 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     // Unity builds (DuckDB's default) combine .cpp files into fewer translation
     // units and compile significantly faster. Allow opting out for debugging.
     // Always set explicitly so the CMake cache doesn't keep a stale value.
-    let disable_unity = match env_var("DUCKDB_DISABLE_UNITY").as_deref() {
-        Some("1" | "true" | "on" | "yes") => true,
-        Some("0" | "false" | "off" | "no") => false,
-        Some(other) => {
-            cargo_warning(&format!(
-                "Ignoring unsupported DUCKDB_DISABLE_UNITY value {other:?}; expected true/false or 1/0, yes/no, on/off"
-            ));
-            false
-        }
-        None => false,
-    };
+    let disable_unity = env_flag("DUCKDB_DISABLE_UNITY");
     config.define("DISABLE_UNITY", if disable_unity { "1" } else { "0" });
+
+    // Always set explicitly so the CMake cache does not keep a stale value when
+    // the environment variable changes between builds.
+    let disable_extension_load = env_flag_aliases(&["DUCKDB_DISABLE_EXTENSION_LOAD", "DISABLE_EXTENSION_LOAD"]);
+    config.define("DISABLE_EXTENSION_LOAD", if disable_extension_load { "1" } else { "0" });
 
     // Forward compiler launcher for sccache/ccache integration.
     for var in ["CMAKE_C_COMPILER_LAUNCHER", "CMAKE_CXX_COMPILER_LAUNCHER"] {
@@ -96,10 +93,17 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     config.define("SKIP_EXTENSIONS", SKIPPED_EXTENSIONS.join(";"));
 
     // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
-    // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` for now.
+    // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` unless
+    // extension loading is compiled out entirely.
     config
-        .define("ENABLE_EXTENSION_AUTOLOADING", "1")
-        .define("ENABLE_EXTENSION_AUTOINSTALL", "1");
+        .define(
+            "ENABLE_EXTENSION_AUTOLOADING",
+            if disable_extension_load { "0" } else { "1" },
+        )
+        .define(
+            "ENABLE_EXTENSION_AUTOINSTALL",
+            if disable_extension_load { "0" } else { "1" },
+        );
 
     let dst = config.build();
     let lib_dir = dst.join("lib");
@@ -258,6 +262,47 @@ fn env_var(name: &str) -> Option<String> {
             panic!("bundled-cmake expects a valid UTF-8 value for environment variable `{name}`")
         }
     }
+}
+
+fn parse_env_flag(name: &str) -> Option<bool> {
+    match env_var(name).as_deref() {
+        Some("1" | "true" | "on" | "yes") => Some(true),
+        Some("0" | "false" | "off" | "no") => Some(false),
+        Some(other) => {
+            cargo_warning(&format!(
+                "Ignoring unsupported {name} value {other:?}; expected true/false or 1/0, yes/no, on/off"
+            ));
+            None
+        }
+        None => None,
+    }
+}
+
+fn env_flag(name: &str) -> bool {
+    parse_env_flag(name).unwrap_or(false)
+}
+
+fn env_flag_aliases(names: &[&str]) -> bool {
+    let mut values = Vec::new();
+    for name in names {
+        if let Some(value) = parse_env_flag(name) {
+            values.push((*name, value));
+        }
+    }
+    let Some((selected_name, selected_value)) = values.first().copied() else {
+        return false;
+    };
+    if values.iter().any(|(_, value)| *value != selected_value) {
+        let sources = values
+            .iter()
+            .map(|(name, value)| format!("{name}={}", if *value { 1 } else { 0 }))
+            .collect::<Vec<_>>()
+            .join(", ");
+        cargo_warning(&format!(
+            "Conflicting values for equivalent environment variables ({sources}); using {selected_name}"
+        ));
+    }
+    selected_value
 }
 
 fn sanitize_path_component(input: &str) -> String {
