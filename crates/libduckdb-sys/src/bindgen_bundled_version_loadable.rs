@@ -40,6 +40,7 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL: DUCKDB_TYPE = 36;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL: DUCKDB_TYPE = 37;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL: DUCKDB_TYPE = 38;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS: DUCKDB_TYPE = 39;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY: DUCKDB_TYPE = 40;
 #[doc = "! An enum over DuckDB's internal types."]
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 #[doc = "! An enum over DuckDB's internal types."]
@@ -2168,6 +2169,8 @@ pub struct duckdb_ext_api_v1 {
     pub duckdb_file_handle_sync:
         ::std::option::Option<unsafe extern "C" fn(file_handle: duckdb_file_handle) -> duckdb_state>,
     pub duckdb_file_handle_size: ::std::option::Option<unsafe extern "C" fn(file_handle: duckdb_file_handle) -> i64>,
+    pub duckdb_geometry_type_get_crs:
+        ::std::option::Option<unsafe extern "C" fn(type_: duckdb_logical_type) -> *mut ::std::os::raw::c_char>,
     pub duckdb_create_log_storage: ::std::option::Option<unsafe extern "C" fn() -> duckdb_log_storage>,
     pub duckdb_destroy_log_storage: ::std::option::Option<unsafe extern "C" fn(log_storage: *mut duckdb_log_storage)>,
     pub duckdb_log_storage_set_write_log_entry: ::std::option::Option<
@@ -10956,6 +10959,23 @@ pub unsafe fn duckdb_file_handle_size(file_handle: duckdb_file_handle) -> i64 {
     (fun)(file_handle)
 }
 
+static __DUCKDB_GEOMETRY_TYPE_GET_CRS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_geometry_type_get_crs(
+    type_: duckdb_logical_type,
+) -> *mut ::std::os::raw::c_char {
+    let function_ptr = __DUCKDB_GEOMETRY_TYPE_GET_CRS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        type_: duckdb_logical_type,
+    ) -> *mut ::std::os::raw::c_char = ::std::mem::transmute(function_ptr);
+    (fun)(type_)
+}
+
 static __DUCKDB_CREATE_LOG_STORAGE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
@@ -13889,6 +13909,10 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     if let Some(fun) = (*p_api).duckdb_file_handle_size {
         __DUCKDB_FILE_HANDLE_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_geometry_type_get_crs {
+        __DUCKDB_GEOMETRY_TYPE_GET_CRS
             .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
     }
     if let Some(fun) = (*p_api).duckdb_create_log_storage {

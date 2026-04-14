@@ -149,7 +149,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "=1.10501.0", features = ["bundled"] }
+duckdb = { version = "=1.10502.0", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -188,7 +188,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "1.10501.0", features = ["bundled"] }
+   duckdb = { version = "1.10502.0", features = ["bundled"] }
    ```
 
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
@@ -216,7 +216,7 @@ You can adjust this behavior in a number of ways:
    Linux example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.5.1/libduckdb-linux-arm64.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.5.2/libduckdb-linux-arm64.zip
    unzip libduckdb-linux-arm64.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -229,7 +229,7 @@ You can adjust this behavior in a number of ways:
    macOS example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.5.1/libduckdb-osx-universal.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v1.5.2/libduckdb-osx-universal.zip
    unzip libduckdb-osx-universal.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
