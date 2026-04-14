@@ -40,6 +40,7 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL: DUCKDB_TYPE = 36;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL: DUCKDB_TYPE = 37;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL: DUCKDB_TYPE = 38;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS: DUCKDB_TYPE = 39;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY: DUCKDB_TYPE = 40;
 #[doc = "! An enum over DuckDB's internal types."]
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 #[doc = "! An enum over DuckDB's internal types."]
@@ -3581,4 +3582,8 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = "Registers a custom log storage for the logger.\n\n @param database A database object.\n @param log_storage The log storage object.\n @return Whether the registration was successful."]
     pub fn duckdb_register_log_storage(database: duckdb_database, log_storage: duckdb_log_storage) -> duckdb_state;
+}
+unsafe extern "C" {
+    #[doc = "Gets the CRS (Coordinate Reference System) of a GEOMETRY type.\nResult must be freed with `duckdb_free`.\n\n @param type The GEOMETRY type.\n @return The CRS of the GEOMETRY type, or NULL if the type is not a GEOMETRY type."]
+    pub fn duckdb_geometry_type_get_crs(type_: duckdb_logical_type) -> *mut ::std::os::raw::c_char;
 }
