@@ -237,7 +237,8 @@ mod test {
             input: &mut DataChunkHandle,
             _: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            let mut msg = input.flat_vector(0).as_slice_with_len::<duckdb_string_t>(input.len())[0];
+            let vector = input.flat_vector(0);
+            let mut msg = unsafe { vector.as_slice_with_len::<duckdb_string_t>(input.len()) }[0];
             let string = DuckString::new(&mut msg).as_str();
             Err(format!("Error: {string}").into())
         }
@@ -276,7 +277,7 @@ mod test {
             output: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
             let values = input.flat_vector(0);
-            let values = values.as_slice_with_len::<duckdb_string_t>(input.len());
+            let values = unsafe { values.as_slice_with_len::<duckdb_string_t>(input.len()) };
             let strings = values
                 .iter()
                 .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string())
@@ -311,11 +312,11 @@ mod test {
             let output = output.flat_vector();
             let counts = input.flat_vector(1);
             let values = input.flat_vector(0);
-            let values = values.as_slice_with_len::<duckdb_string_t>(input.len());
+            let values = unsafe { values.as_slice_with_len::<duckdb_string_t>(input.len()) };
             let strings = values
                 .iter()
                 .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string());
-            let counts = counts.as_slice_with_len::<i32>(input.len());
+            let counts = unsafe { counts.as_slice_with_len::<i32>(input.len()) };
             for (count, value) in counts.iter().zip(strings).take(input.len()) {
                 output.insert(0, value.repeat((*count) as usize).as_str());
             }
@@ -426,7 +427,7 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let len = input.len();
             let mut output_vec = output.flat_vector();
-            let data = output_vec.as_mut_slice::<i64>();
+            let data = unsafe { output_vec.as_mut_slice::<i64>() };
 
             for item in data.iter_mut().take(len) {
                 *item = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
@@ -454,7 +455,7 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let len = input.len();
             let mut output_vec = output.flat_vector();
-            let data = output_vec.as_mut_slice::<i64>();
+            let data = unsafe { output_vec.as_mut_slice::<i64>() };
 
             for item in data.iter_mut().take(len) {
                 *item = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;

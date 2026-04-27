@@ -76,28 +76,57 @@ impl<'a> FlatVector<'a> {
         !valid
     }
 
-    /// Returns an unsafe mutable pointer to the vector’s
-    pub fn as_mut_ptr<T>(&self) -> *mut T {
+    /// Returns a mutable pointer to the vector's backing data cast to `T`.
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage.
+    /// Before dereferencing the pointer, the caller must also ensure the target
+    /// element is initialized, in bounds, and not accessed through another
+    /// incompatible or aliased reference.
+    pub unsafe fn as_mut_ptr<T>(&self) -> *mut T {
         unsafe { duckdb_vector_get_data(self.ptr).cast() }
     }
 
-    /// Returns a slice of the vector
-    pub fn as_slice<T>(&self) -> &[T] {
+    /// Returns a typed slice of the vector.
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
+    /// the backing allocation is sized for `self.capacity()` elements of `T`,
+    /// each returned element is initialized before it is read, and no `&mut`
+    /// references to the same storage exist for the returned lifetime.
+    pub unsafe fn as_slice<T>(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.as_mut_ptr(), self.capacity()) }
     }
 
-    /// Returns a slice of the vector up to a certain length
-    pub fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
+    /// Returns a typed slice of the vector up to a certain length.
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
+    /// the backing allocation is sized for at least `len` elements of `T`, each
+    /// returned element is initialized before it is read, and no `&mut`
+    /// references to the same storage exist for the returned lifetime.
+    pub unsafe fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
         unsafe { slice::from_raw_parts(self.as_mut_ptr(), len) }
     }
 
-    /// Returns a mutable slice of the vector
-    pub fn as_mut_slice<T>(&mut self) -> &mut [T] {
+    /// Returns a typed mutable slice of the vector.
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
+    /// the backing allocation is sized for `self.capacity()` elements of `T`,
+    /// and no other references to the same storage exist for the returned
+    /// lifetime.
+    pub unsafe fn as_mut_slice<T>(&mut self) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity()) }
     }
 
-    /// Returns a mutable slice of the vector up to a certain length
-    pub fn as_mut_slice_with_len<T>(&mut self, len: usize) -> &mut [T] {
+    /// Returns a typed mutable slice of the vector up to a certain length.
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
+    /// the backing allocation is sized for at least `len` elements of `T`, and
+    /// no other references to the same storage exist for the returned lifetime.
+    pub unsafe fn as_mut_slice_with_len<T>(&mut self, len: usize) -> &mut [T] {
         unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 
@@ -115,10 +144,17 @@ impl<'a> FlatVector<'a> {
         }
     }
 
-    /// Copy data to the vector.
-    pub fn copy<T: Copy>(&mut self, data: &[T]) {
+    /// Copy typed data to the vector.
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage
+    /// and no other references to the same storage exist during the copy.
+    ///
+    /// # Panics
+    /// Panics if `data.len()` exceeds the vector capacity.
+    pub unsafe fn copy<T: Copy>(&mut self, data: &[T]) {
         assert!(data.len() <= self.capacity());
-        self.as_mut_slice::<T>()[0..data.len()].copy_from_slice(data);
+        (unsafe { self.as_mut_slice::<T>() })[0..data.len()].copy_from_slice(data);
     }
 }
 
@@ -239,20 +275,25 @@ impl<'a> ListVector<'a> {
     }
 
     /// Set primitive data to the child node.
-    pub fn set_child<T: Copy>(&self, data: &[T]) {
-        self.child(data.len()).copy(data);
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the child vector's physical storage
+    /// and no other references to the same storage exist during the copy.
+    pub unsafe fn set_child<T: Copy>(&self, data: &[T]) {
+        unsafe { self.child(data.len()).copy(data) };
         self.set_len(data.len());
     }
 
     /// Set offset and length to the entry.
     pub fn set_entry(&mut self, idx: usize, offset: usize, length: usize) {
-        self.entries.as_mut_slice::<duckdb_list_entry>()[idx].offset = offset as u64;
-        self.entries.as_mut_slice::<duckdb_list_entry>()[idx].length = length as u64;
+        let entries = unsafe { self.entries.as_mut_slice::<duckdb_list_entry>() };
+        entries[idx].offset = offset as u64;
+        entries[idx].length = length as u64;
     }
 
     /// Get offset and length for the entry at index.
     pub fn get_entry(&self, idx: usize) -> (usize, usize) {
-        let entry = self.entries.as_slice::<duckdb_list_entry>()[idx];
+        let entry = (unsafe { self.entries.as_slice::<duckdb_list_entry>() })[idx];
         (entry.offset as usize, entry.length as usize)
     }
 
@@ -320,8 +361,12 @@ impl<'a> ArrayVector<'a> {
     }
 
     /// Set primitive data to the child node.
-    pub fn set_child<T: Copy>(&self, data: &[T]) {
-        self.child(data.len()).copy(data);
+    ///
+    /// # Safety
+    /// The caller must ensure `T` matches the child vector's physical storage
+    /// and no other references to the same storage exist during the copy.
+    pub unsafe fn set_child<T: Copy>(&self, data: &[T]) {
+        unsafe { self.child(data.len()).copy(data) };
     }
 
     /// Set row as null
