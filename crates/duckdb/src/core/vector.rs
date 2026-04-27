@@ -78,10 +78,12 @@ impl<'a> FlatVector<'a> {
 
     /// Returns a mutable pointer to the vector's backing data cast to `T`.
     ///
-    /// DuckDB stores this as untyped vector data. Dereferencing the returned
-    /// pointer is only valid when `T` matches the vector's physical storage and
-    /// the accessed element is initialized.
-    pub fn as_mut_ptr<T>(&self) -> *mut T {
+    /// # Safety
+    /// The caller must ensure `T` matches the DuckDB vector's physical storage.
+    /// Before dereferencing the pointer, the caller must also ensure the target
+    /// element is initialized, in bounds, and not accessed through another
+    /// incompatible or aliased reference.
+    pub unsafe fn as_mut_ptr<T>(&self) -> *mut T {
         unsafe { duckdb_vector_get_data(self.ptr).cast() }
     }
 
