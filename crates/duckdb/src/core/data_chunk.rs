@@ -116,7 +116,7 @@ mod test {
     fn test_vector() {
         let datachunk = DataChunkHandle::new(&[LogicalTypeHandle::from(LogicalTypeId::Bigint)]);
         let mut vector = datachunk.flat_vector(0);
-        let data = vector.as_mut_slice::<i64>();
+        let data = unsafe { vector.as_mut_slice::<i64>() };
 
         data[0] = 42;
     }

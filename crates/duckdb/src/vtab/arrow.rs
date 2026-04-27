@@ -265,7 +265,7 @@ pub fn flat_vector_to_arrow_array(
         LogicalTypeId::Invalid => Err("Cannot convert invalid logical type returned by DuckDB".into()),
         LogicalTypeId::Unsupported => Err(format!("Unsupported DuckDB logical type ID {raw_type_id}").into()),
         LogicalTypeId::Integer => {
-            let data = vector.as_slice_with_len::<i32>(len);
+            let data = unsafe { vector.as_slice_with_len::<i32>(len) };
 
             Ok(Arc::new(PrimitiveArray::<Int32Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -278,7 +278,7 @@ pub fn flat_vector_to_arrow_array(
         | LogicalTypeId::TimestampMs
         | LogicalTypeId::TimestampS
         | LogicalTypeId::TimestampTZ => {
-            let data = vector.as_slice_with_len::<duckdb_timestamp>(len);
+            let data = unsafe { vector.as_slice_with_len::<duckdb_timestamp>(len) };
             let micros = data.iter().map(|duckdb_timestamp { micros }| *micros);
             let structs = TimestampMicrosecondArray::from_iter_values_with_nulls(
                 micros,
@@ -290,7 +290,7 @@ pub fn flat_vector_to_arrow_array(
             Ok(Arc::new(structs))
         }
         LogicalTypeId::Varchar => {
-            let data = vector.as_slice_with_len::<duckdb_string_t>(len);
+            let data = unsafe { vector.as_slice_with_len::<duckdb_string_t>(len) };
 
             let duck_strings = data.iter().enumerate().map(|(i, s)| {
                 if vector.row_is_null(i as u64) {
@@ -306,7 +306,7 @@ pub fn flat_vector_to_arrow_array(
             Ok(Arc::new(StringArray::from(values)))
         }
         LogicalTypeId::Boolean => {
-            let data = vector.as_slice_with_len::<bool>(len);
+            let data = unsafe { vector.as_slice_with_len::<bool>(len) };
 
             Ok(Arc::new(BooleanArray::new(
                 BooleanBuffer::from_iter(data.iter().copied()),
@@ -316,7 +316,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::Float => {
-            let data = vector.as_slice_with_len::<f32>(len);
+            let data = unsafe { vector.as_slice_with_len::<f32>(len) };
 
             Ok(Arc::new(PrimitiveArray::<Float32Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -326,7 +326,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::Double => {
-            let data = vector.as_slice_with_len::<f64>(len);
+            let data = unsafe { vector.as_slice_with_len::<f64>(len) };
 
             Ok(Arc::new(PrimitiveArray::<Float64Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -336,7 +336,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::Date => {
-            let data = vector.as_slice_with_len::<duckdb_date>(len);
+            let data = unsafe { vector.as_slice_with_len::<duckdb_date>(len) };
 
             Ok(Arc::new(Date32Array::from_iter_values_with_nulls(
                 data.iter().map(|duckdb_date { days }| *days),
@@ -346,7 +346,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::Time => {
-            let data = vector.as_slice_with_len::<duckdb_time>(len);
+            let data = unsafe { vector.as_slice_with_len::<duckdb_time>(len) };
 
             Ok(Arc::new(
                 PrimitiveArray::<Time64MicrosecondType>::from_iter_values_with_nulls(
@@ -358,7 +358,7 @@ pub fn flat_vector_to_arrow_array(
             ))
         }
         LogicalTypeId::Smallint => {
-            let data = vector.as_slice_with_len::<i16>(len);
+            let data = unsafe { vector.as_slice_with_len::<i16>(len) };
 
             Ok(Arc::new(PrimitiveArray::<Int16Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -368,7 +368,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::USmallint => {
-            let data = vector.as_slice_with_len::<u16>(len);
+            let data = unsafe { vector.as_slice_with_len::<u16>(len) };
 
             Ok(Arc::new(PrimitiveArray::<UInt16Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -378,7 +378,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::Blob => {
-            let mut data = vector.as_slice_with_len::<duckdb_string_t>(len).to_vec();
+            let mut data = unsafe { vector.as_slice_with_len::<duckdb_string_t>(len) }.to_vec();
 
             let duck_strings = data.iter_mut().enumerate().map(|(i, ptr)| {
                 if vector.row_is_null(i as u64) {
@@ -400,7 +400,7 @@ pub fn flat_vector_to_arrow_array(
             Ok(Arc::new(builder.finish()))
         }
         LogicalTypeId::Tinyint => {
-            let data = vector.as_slice_with_len::<i8>(len);
+            let data = unsafe { vector.as_slice_with_len::<i8>(len) };
 
             Ok(Arc::new(PrimitiveArray::<Int8Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -410,7 +410,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::Bigint => {
-            let data = vector.as_slice_with_len::<i64>(len);
+            let data = unsafe { vector.as_slice_with_len::<i64>(len) };
 
             Ok(Arc::new(PrimitiveArray::<Int64Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -420,7 +420,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::UBigint => {
-            let data = vector.as_slice_with_len::<u64>(len);
+            let data = unsafe { vector.as_slice_with_len::<u64>(len) };
 
             Ok(Arc::new(PrimitiveArray::<UInt64Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -430,7 +430,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::UTinyint => {
-            let data = vector.as_slice_with_len::<u8>(len);
+            let data = unsafe { vector.as_slice_with_len::<u8>(len) };
 
             Ok(Arc::new(PrimitiveArray::<UInt8Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -440,7 +440,7 @@ pub fn flat_vector_to_arrow_array(
             )))
         }
         LogicalTypeId::UInteger => {
-            let data = vector.as_slice_with_len::<u32>(len);
+            let data = unsafe { vector.as_slice_with_len::<u32>(len) };
 
             Ok(Arc::new(PrimitiveArray::<UInt32Type>::from_iter_values_with_nulls(
                 data.iter().copied(),
@@ -451,7 +451,7 @@ pub fn flat_vector_to_arrow_array(
         }
         LogicalTypeId::TimestampNs => {
             // even nano second precision is stored in micros when using the c api
-            let data = vector.as_slice_with_len::<duckdb_timestamp>(len);
+            let data = unsafe { vector.as_slice_with_len::<duckdb_timestamp>(len) };
             let nanos = data.iter().map(|duckdb_timestamp { micros }| *micros * 1000);
             let structs = TimestampNanosecondArray::from_iter_values_with_nulls(
                 nanos,
@@ -683,7 +683,7 @@ pub fn record_batch_to_duckdb_data_chunk(
 
 fn primitive_array_to_flat_vector<T: ArrowPrimitiveType>(array: &PrimitiveArray<T>, out_vector: &mut FlatVector<'_>) {
     // assert!(array.len() <= out_vector.capacity());
-    out_vector.copy::<T::Native>(array.values());
+    unsafe { out_vector.copy::<T::Native>(array.values()) };
     set_nulls_in_flat_vector(array, out_vector);
 }
 
@@ -693,7 +693,7 @@ fn primitive_array_to_flat_vector_cast<T: ArrowPrimitiveType>(
     out_vector: &mut FlatVector<'_>,
 ) {
     let array = cast(array, &data_type).unwrap_or_else(|_| panic!("array is casted into {data_type}"));
-    out_vector.copy::<T::Native>(array.as_primitive::<T>().values());
+    unsafe { out_vector.copy::<T::Native>(array.as_primitive::<T>().values()) };
     set_nulls_in_flat_vector(&array, out_vector);
 }
 
@@ -784,25 +784,25 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Res
 fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector<'_>, width: u8) {
     match width {
         1..=4 => {
-            let out_data = out.as_mut_slice();
+            let out_data = unsafe { out.as_mut_slice() };
             for (i, value) in array.values().iter().enumerate() {
                 out_data[i] = value.to_i16().unwrap();
             }
         }
         5..=9 => {
-            let out_data = out.as_mut_slice();
+            let out_data = unsafe { out.as_mut_slice() };
             for (i, value) in array.values().iter().enumerate() {
                 out_data[i] = value.to_i32().unwrap();
             }
         }
         10..=18 => {
-            let out_data = out.as_mut_slice();
+            let out_data = unsafe { out.as_mut_slice() };
             for (i, value) in array.values().iter().enumerate() {
                 out_data[i] = value.to_i64().unwrap();
             }
         }
         19..=38 => {
-            let out_data = out.as_mut_slice();
+            let out_data = unsafe { out.as_mut_slice() };
             for (i, value) in array.values().iter().enumerate() {
                 out_data[i] = value.to_i128().unwrap();
             }
@@ -820,7 +820,7 @@ fn boolean_array_to_vector(array: &BooleanArray, out: &mut FlatVector<'_>) {
     assert!(array.len() <= out.capacity());
 
     for i in 0..array.len() {
-        out.as_mut_slice()[i] = array.value(i);
+        (unsafe { out.as_mut_slice() })[i] = array.value(i);
     }
     set_nulls_in_flat_vector(array, out);
 }

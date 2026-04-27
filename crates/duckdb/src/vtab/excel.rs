@@ -140,17 +140,17 @@ impl VTab for ExcelVTab {
                             vector.insert(j, s.as_str());
                         }
                         Data::Float(f) => {
-                            vector.as_mut_slice::<f64>()[j] = *f;
+                            (unsafe { vector.as_mut_slice::<f64>() })[j] = *f;
                         }
                         Data::Int(ii) => {
-                            vector.as_mut_slice::<i64>()[j] = *ii;
+                            (unsafe { vector.as_mut_slice::<i64>() })[j] = *ii;
                         }
                         Data::Bool(b) => {
-                            vector.as_mut_slice::<bool>()[j] = *b;
+                            (unsafe { vector.as_mut_slice::<bool>() })[j] = *b;
                         }
                         Data::DateTime(d) => {
                             // 25569 = number of days between Unix and Excel epochs
-                            vector.as_mut_slice::<i32>()[j] = d.as_f64().round() as i32 - 25569;
+                            (unsafe { vector.as_mut_slice::<i32>() })[j] = d.as_f64().round() as i32 - 25569;
                         }
                         _ => {
                             vector.set_null(j);
