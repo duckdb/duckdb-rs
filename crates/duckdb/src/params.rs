@@ -101,11 +101,12 @@ use sealed::Sealed;
 /// ## Named parameters
 ///
 /// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
-/// for heterogeneous values, or as any `HashMap` whose keys borrow as `str`
-/// and whose values share one [`ToSql`] type, including maps with custom
-/// hashers. The keys must not include the `$` prefix. Named-parameter APIs must
-/// be used with named SQL placeholders such as `$name`, not positional
-/// placeholders such as `?` or `?1`.
+/// or a manually constructed `&[(&str, &dyn ToSql)]` for heterogeneous values,
+/// or as any `HashMap` whose keys borrow as `str` and whose values share one
+/// [`ToSql`] type, including maps with custom hashers. The keys must not
+/// include the `$` prefix. Named-parameter APIs must be used with named SQL
+/// placeholders such as `$name`, not positional placeholders such as `?` or
+/// `?1`.
 ///
 /// Returns [`Error::InvalidParameterName`](crate::Error::InvalidParameterName)
 /// if a SQL placeholder has no matching key, a provided key is not present in
@@ -431,7 +432,7 @@ impl Params for &[(&str, &dyn ToSql)] {
                 .iter()
                 .enumerate()
                 .find_map(|(idx, (key, value))| (*key == name).then_some((idx, *value)))
-                .ok_or_else(|| Error::InvalidParameterName(name.clone()))?;
+                .ok_or(Error::InvalidParameterName(name))?;
             used[idx] = true;
             params.push(value);
         }
@@ -454,6 +455,7 @@ where
 
 impl<K, V, S> Params for &HashMap<K, V, S>
 where
+    // Borrow<str> lets HashMap use the same hash/equality contract for lookup by &str.
     K: Borrow<str> + Eq + Hash,
     V: ToSql,
     S: BuildHasher,
@@ -467,18 +469,19 @@ where
             reject_positional(&name)?;
             let (key, value) = self
                 .get_key_value(name.as_str())
-                .ok_or_else(|| Error::InvalidParameterName(name.clone()))?;
+                .ok_or(Error::InvalidParameterName(name))?;
             bound.insert(key.borrow());
             params.push(value as &dyn ToSql);
         }
 
-        if self.len() > bound.len() {
-            for key in self.keys() {
-                let key = key.borrow();
-                if !bound.contains(key) {
-                    return Err(Error::InvalidParameterName(key.to_string()));
-                }
-            }
+        // HashMap iteration order is arbitrary, so choose a stable extra key for diagnostics.
+        if let Some(extra) = self
+            .keys()
+            .map(|key| -> &str { key.borrow() })
+            .filter(|key| !bound.contains(*key))
+            .min()
+        {
+            return Err(Error::InvalidParameterName(extra.to_string()));
         }
 
         stmt.bind_parameters(params)

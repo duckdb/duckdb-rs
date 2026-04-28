@@ -1198,18 +1198,35 @@ mod test {
     }
 
     #[test]
+    fn test_named_parameters_reject_extra_hashmap_key_deterministically() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42), ("z_extra", 1), ("a_extra", 2)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT $foo", &named_params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("a_extra".to_string()));
+        Ok(())
+    }
+
+    #[test]
     fn test_named_parameters_reject_extra_slice_key() -> Result<()> {
         let db = Connection::open_in_memory()?;
+        let bar = 23;
         let params = crate::named_params! {
             "foo": 42,
+            "middle_extra": 0,
+            "bar": bar,
             "first_extra": 1,
             "second_extra": 2,
         };
 
         let err = db
-            .query_row("SELECT $foo", params, |row| row.get::<_, i32>(0))
+            .query_row("SELECT $foo + $bar", params, |row| row.get::<_, i32>(0))
             .unwrap_err();
-        assert_eq!(err, Error::InvalidParameterName("first_extra".to_string()));
+        assert_eq!(err, Error::InvalidParameterName("middle_extra".to_string()));
         Ok(())
     }
 
@@ -1272,6 +1289,68 @@ mod test {
             err,
             Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_dollar_number_placeholders() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("1", 42), ("2", 23)]);
+        let db = Connection::open_in_memory()?;
+
+        let hashmap_err = db
+            .query_row("SELECT $1 + $2", &named_params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(
+            hashmap_err,
+            Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
+        );
+
+        let slice_err = db
+            .query_row(
+                "SELECT $1 + $2",
+                crate::named_params! {
+                    "1": 42,
+                    "2": 23,
+                },
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_err();
+        assert_eq!(
+            slice_err,
+            Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_mixed_placeholders() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let err = db.prepare("SELECT $foo + ?").unwrap_err();
+        assert!(err.to_string().contains("Mixing named and positional parameters"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_bind_null_values() -> Result<()> {
+        use std::collections::HashMap;
+
+        let db = Connection::open_in_memory()?;
+        let named_params = HashMap::from([("x", None::<i32>)]);
+
+        let hashmap_result: bool = db.query_row("SELECT $x IS NULL", &named_params, |row| row.get(0))?;
+        assert!(hashmap_result);
+
+        let slice_result: bool = db.query_row(
+            "SELECT $x IS NULL",
+            crate::named_params! {
+                "x": Option::<i32>::None,
+            },
+            |row| row.get(0),
+        )?;
+        assert!(slice_result);
+
         Ok(())
     }
 
