@@ -181,6 +181,8 @@ macro_rules! params {
 ///
 /// This is useful when named parameters have different Rust types.
 /// Parameter names must not include the `$` prefix.
+/// This macro must be used with named SQL placeholders such as `$name`,
+/// not positional placeholders such as `?` or `?1`.
 ///
 /// # Example
 ///

@@ -103,7 +103,8 @@ use sealed::Sealed;
 /// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
 /// for heterogeneous values, or as a `HashMap` whose keys borrow as `str` and
 /// whose values implement [`ToSql`]. The keys must not include the `$`
-/// prefix.
+/// prefix. Named-parameter APIs must be used with named SQL placeholders such
+/// as `$name`, not positional placeholders such as `?` or `?1`.
 ///
 /// ### Example (named parameters with a HashMap)
 ///
@@ -403,11 +404,45 @@ fn contains_name(names: &[String], key: &str) -> bool {
     names.iter().any(|name| name == key)
 }
 
+fn is_positional_parameter_name(name: &str) -> bool {
+    !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn positional_parameter_name(names: &[String]) -> Option<&str> {
+    names
+        .iter()
+        .find(|name| is_positional_parameter_name(name))
+        .map(String::as_str)
+}
+
+fn duplicate_name<'a>(keys: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let mut seen = Vec::new();
+
+    for key in keys {
+        if seen.contains(&key) {
+            return Some(key.to_string());
+        }
+        seen.push(key);
+    }
+
+    None
+}
+
 impl Sealed for &[(&str, &dyn ToSql)] {}
 
 impl Params for &[(&str, &dyn ToSql)] {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         let names = parameter_names(stmt)?;
+
+        if let Some(name) = positional_parameter_name(&names) {
+            return Err(Error::InvalidParameterName(format!(
+                "positional parameter {name} cannot be used with named parameters"
+            )));
+        }
+
+        if let Some(name) = duplicate_name(self.iter().map(|(key, _)| *key)) {
+            return Err(Error::InvalidParameterName(format!("duplicate parameter name: {name}")));
+        }
 
         let params: Vec<_> = names
             .iter()
@@ -444,6 +479,12 @@ where
 {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         let names = parameter_names(stmt)?;
+
+        if let Some(name) = positional_parameter_name(&names) {
+            return Err(Error::InvalidParameterName(format!(
+                "positional parameter {name} cannot be used with named parameters"
+            )));
+        }
 
         let params: Vec<_> = names
             .iter()

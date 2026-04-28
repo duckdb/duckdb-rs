@@ -1193,6 +1193,40 @@ mod test {
     }
 
     #[test]
+    fn test_named_parameters_reject_duplicate_slice_keys() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let first = 42;
+        let second = 23;
+        let params = &[("foo", &first as &dyn ToSql), ("foo", &second as &dyn ToSql)] as &[(&str, &dyn ToSql)];
+
+        let err = db
+            .query_row("SELECT $foo", params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::InvalidParameterName("duplicate parameter name: foo".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_positional_placeholders() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("1", 42), ("2", 23)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT ? > ?", &named_params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_named_parameters_string_keys_query_map() -> Result<()> {
         use std::collections::HashMap;
 
