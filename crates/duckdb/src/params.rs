@@ -101,10 +101,16 @@ use sealed::Sealed;
 /// ## Named parameters
 ///
 /// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
-/// for heterogeneous values, or as a `HashMap` whose keys borrow as `str` and
-/// whose values implement [`ToSql`]. The keys must not include the `$`
-/// prefix. Named-parameter APIs must be used with named SQL placeholders such
-/// as `$name`, not positional placeholders such as `?` or `?1`.
+/// for heterogeneous values, or as any `HashMap` whose keys borrow as `str`
+/// and whose values share one [`ToSql`] type, including maps with custom
+/// hashers. The keys must not include the `$` prefix. Named-parameter APIs must
+/// be used with named SQL placeholders such as `$name`, not positional
+/// placeholders such as `?` or `?1`.
+///
+/// Returns [`Error::InvalidParameterName`](crate::Error::InvalidParameterName)
+/// if a SQL placeholder has no matching key, a provided key is not present in
+/// the SQL, slice parameters contain duplicate keys, or positional placeholders
+/// are used with named-parameter APIs.
 ///
 /// ### Example (named parameters with a HashMap)
 ///
@@ -404,14 +410,10 @@ fn contains_name(names: &[String], key: &str) -> bool {
     names.iter().any(|name| name == key)
 }
 
-fn is_positional_parameter_name(name: &str) -> bool {
-    !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_digit())
-}
-
 fn positional_parameter_name(names: &[String]) -> Option<&str> {
     names
         .iter()
-        .find(|name| is_positional_parameter_name(name))
+        .find(|name| !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_digit()))
         .map(String::as_str)
 }
 

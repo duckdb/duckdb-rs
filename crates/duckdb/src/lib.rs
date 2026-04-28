@@ -201,11 +201,8 @@ macro_rules! params {
 /// ```
 #[macro_export]
 macro_rules! named_params {
-    () => {
-        &[] as &[(&str, &dyn $crate::ToSql)]
-    };
-    ($($name:literal : $param:expr),+ $(,)?) => {
-        &[$(($name, &$param as &dyn $crate::ToSql)),+] as &[(&str, &dyn $crate::ToSql)]
+    ($($name:literal : $param:expr),* $(,)?) => {
+        &[$(($name, &$param as &dyn $crate::ToSql)),*] as &[(&str, &dyn $crate::ToSql)]
     };
 }
 
