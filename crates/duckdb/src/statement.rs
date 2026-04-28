@@ -1202,13 +1202,14 @@ mod test {
         let db = Connection::open_in_memory()?;
         let params = crate::named_params! {
             "foo": 42,
-            "extra": 1,
+            "first_extra": 1,
+            "second_extra": 2,
         };
 
         let err = db
             .query_row("SELECT $foo", params, |row| row.get::<_, i32>(0))
             .unwrap_err();
-        assert_eq!(err, Error::InvalidParameterName("extra".to_string()));
+        assert_eq!(err, Error::InvalidParameterName("first_extra".to_string()));
         Ok(())
     }
 

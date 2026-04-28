@@ -1,7 +1,7 @@
 use crate::{Error, Result, Statement, ToSql};
 use std::{
     borrow::Borrow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{BuildHasher, Hash},
 };
 
@@ -401,64 +401,43 @@ where
     }
 }
 
-fn parameter_names(stmt: &Statement<'_>) -> Result<Vec<String>> {
-    let n = stmt.parameter_count();
-    (1..=n).map(|i| stmt.parameter_name(i)).collect()
-}
-
-fn contains_name(names: &[String], key: &str) -> bool {
-    names.iter().any(|name| name == key)
-}
-
-fn positional_parameter_name(names: &[String]) -> Option<&str> {
-    names
-        .iter()
-        .find(|name| !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_digit()))
-        .map(String::as_str)
-}
-
-fn duplicate_name<'a>(keys: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    let mut seen = Vec::new();
-
-    for key in keys {
-        if seen.contains(&key) {
-            return Some(key.to_string());
-        }
-        seen.push(key);
+fn reject_positional(name: &str) -> Result<()> {
+    if !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(Error::InvalidParameterName(format!(
+            "positional parameter {name} cannot be used with named parameters"
+        )));
     }
-
-    None
+    Ok(())
 }
 
 impl Sealed for &[(&str, &dyn ToSql)] {}
 
 impl Params for &[(&str, &dyn ToSql)] {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
-        let names = parameter_names(stmt)?;
-
-        if let Some(name) = positional_parameter_name(&names) {
-            return Err(Error::InvalidParameterName(format!(
-                "positional parameter {name} cannot be used with named parameters"
-            )));
-        }
-
-        if let Some(name) = duplicate_name(self.iter().map(|(key, _)| *key)) {
-            return Err(Error::InvalidParameterName(format!("duplicate parameter name: {name}")));
-        }
-
-        let params: Vec<_> = names
-            .iter()
-            .map(|name| {
-                self.iter()
-                    .find_map(|(key, value)| (*key == name).then_some(*value))
-                    .ok_or_else(|| Error::InvalidParameterName(name.clone()))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
+        let n = stmt.parameter_count();
+        let mut seen: HashSet<&str> = HashSet::with_capacity(self.len());
         for (key, _) in self {
-            if !contains_name(&names, key) {
-                return Err(Error::InvalidParameterName((*key).to_string()));
+            if !seen.insert(*key) {
+                return Err(Error::InvalidParameterName(format!("duplicate parameter name: {key}")));
             }
+        }
+
+        let mut params = Vec::with_capacity(n);
+        let mut used = vec![false; self.len()];
+        for i in 1..=n {
+            let name = stmt.parameter_name(i)?;
+            reject_positional(&name)?;
+            let (idx, value) = self
+                .iter()
+                .enumerate()
+                .find_map(|(idx, (key, value))| (*key == name).then_some((idx, *value)))
+                .ok_or_else(|| Error::InvalidParameterName(name.clone()))?;
+            used[idx] = true;
+            params.push(value);
+        }
+
+        if let Some(idx) = used.iter().position(|u| !u) {
+            return Err(Error::InvalidParameterName(self[idx].0.to_string()));
         }
 
         stmt.bind_parameters(params)
@@ -480,27 +459,25 @@ where
     S: BuildHasher,
 {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
-        let names = parameter_names(stmt)?;
-
-        if let Some(name) = positional_parameter_name(&names) {
-            return Err(Error::InvalidParameterName(format!(
-                "positional parameter {name} cannot be used with named parameters"
-            )));
+        let n = stmt.parameter_count();
+        let mut params = Vec::with_capacity(n);
+        let mut bound: HashSet<&str> = HashSet::with_capacity(n);
+        for i in 1..=n {
+            let name = stmt.parameter_name(i)?;
+            reject_positional(&name)?;
+            let (key, value) = self
+                .get_key_value(name.as_str())
+                .ok_or_else(|| Error::InvalidParameterName(name.clone()))?;
+            bound.insert(key.borrow());
+            params.push(value as &dyn ToSql);
         }
 
-        let params: Vec<_> = names
-            .iter()
-            .map(|name| {
-                self.get(name.as_str())
-                    .map(|value| value as &dyn ToSql)
-                    .ok_or_else(|| Error::InvalidParameterName(name.clone()))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        for key in self.keys() {
-            let key = key.borrow();
-            if !contains_name(&names, key) {
-                return Err(Error::InvalidParameterName(key.to_string()));
+        if self.len() > bound.len() {
+            for key in self.keys() {
+                let key = key.borrow();
+                if !bound.contains(key) {
+                    return Err(Error::InvalidParameterName(key.to_string()));
+                }
             }
         }
 
