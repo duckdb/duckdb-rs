@@ -1,6 +1,6 @@
 [package]
 name = "duckdb"
-version = "1.4.1"
+version = { workspace = true }
 authors = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
@@ -19,12 +19,19 @@ name = "duckdb"
 [features]
 default = []
 bundled = ["libduckdb-sys/bundled"]
+# Warning: experimental feature
+bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake", "parquet"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
+autocomplete = ["libduckdb-sys/autocomplete", "bundled-cmake"]
+icu = ["libduckdb-sys/icu", "bundled-cmake"]
+tpcds = ["libduckdb-sys/tpcds", "bundled-cmake"]
+tpch = ["libduckdb-sys/tpch", "bundled-cmake"]
 vscalar = ["vtab-arrow"]
 vscalar-arrow = []
 vtab = []
-vtab-loadable = ["vtab", "duckdb-loadable-macros"]
+# Deprecated: use loadable-extension instead
+vtab-loadable = ["loadable-extension"]
 vtab-excel = ["vtab", "calamine"]
 vtab-arrow = ["vtab", "num"]
 appender-arrow = ["vtab-arrow"]
@@ -32,9 +39,9 @@ vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
 extensions-full = ["json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
-polars = ["dep:polars", "dep:polars-arrow"]
+polars = ["dep:polars", "dep:polars-core"]
 # Warning: experimental feature
-loadable-extension = ["libduckdb-sys/loadable-extension"]
+loadable-extension = ["vtab", "duckdb-loadable-macros", "libduckdb-sys/loadable-extension"]
 
 [dependencies]
 arrow = { workspace = true, features = ["prettyprint", "ffi"] }
@@ -49,13 +56,19 @@ libduckdb-sys = { workspace = true }
 num = { workspace = true, features = ["std"], optional = true }
 num-integer = { workspace = true }
 polars = { workspace = true, features = ["dtype-full"], optional = true }
-polars-arrow = { workspace = true, optional = true }
+polars-core = { workspace = true, optional = true }
 r2d2 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 serde_json = { workspace = true, optional = true }
 strum = { workspace = true, features = ["derive"] }
 url = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
+
+# Not used directly. Pins the transitive version via arrow-cast so `cargo update`
+# honors our MSRV. comfy-table 7.2+ requires Rust 1.88 (if-let chains) but doesn't
+# declare rust-version, so cargo's MSRV-aware resolver can't filter it out.
+# Drop this pin when MSRV reaches 1.88.
+comfy-table = "~7.1"
 
 [dev-dependencies]
 doc-comment = { workspace = true }
@@ -79,9 +92,4 @@ all-features = false
 [[example]]
 name = "hello-ext"
 crate-type = ["cdylib"]
-required-features = ["vtab-loadable"]
-
-[[example]]
-name = "hello-ext-capi"
-crate-type = ["cdylib"]
-required-features = ["vtab-loadable", "loadable-extension"]
+required-features = ["loadable-extension"]

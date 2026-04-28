@@ -9,7 +9,7 @@ use arrow::{
         Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StringArray,
         StructArray, UnionArray,
     },
-    datatypes::{UInt16Type, UInt32Type, UInt8Type},
+    datatypes::{UInt8Type, UInt16Type, UInt32Type},
 };
 
 /// An absolute length of time in seconds, milliseconds, microseconds or nanoseconds.
@@ -175,6 +175,24 @@ impl<'a> ValueRef<'a> {
     pub fn as_str(&self) -> FromSqlResult<&'a str> {
         match *self {
             ValueRef::Text(t) => std::str::from_utf8(t).map_err(|e| FromSqlError::Other(Box::new(e))),
+            ValueRef::Enum(ref enum_type, idx) => {
+                let (values, key) = match enum_type {
+                    EnumType::UInt8(arr) => (arr.values(), arr.key(idx)),
+                    EnumType::UInt16(arr) => (arr.values(), arr.key(idx)),
+                    EnumType::UInt32(arr) => (arr.values(), arr.key(idx)),
+                };
+                let dict_key = key.ok_or(FromSqlError::InvalidType)?;
+                let string_array = values
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or_else(|| FromSqlError::Other("enum dictionary values are not strings".into()))?;
+                if dict_key >= string_array.len() {
+                    return Err(FromSqlError::Other(
+                        format!("enum key {} out of bounds (len {})", dict_key, string_array.len()).into(),
+                    ));
+                }
+                Ok(string_array.value(dict_key))
+            }
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -256,14 +274,17 @@ impl From<ValueRef<'_>> for Value {
                 Self::Enum(dict_values.value(dict_key).to_string())
             }
             ValueRef::Struct(items, idx) => {
-                let value: Vec<(String, Self)> = items
-                    .columns()
-                    .iter()
-                    .zip(items.fields().iter().map(|f| f.name().to_owned()))
-                    .map(|(column, name)| -> (String, Self) {
-                        (name, Row::value_ref_internal(idx, 0, column).to_owned())
-                    })
-                    .collect();
+                let capacity = items.columns().len();
+                let mut value = Vec::with_capacity(capacity);
+                value.extend(
+                    items
+                        .columns()
+                        .iter()
+                        .zip(items.fields().iter().map(|f| f.name().to_owned()))
+                        .map(|(column, name)| -> (String, Self) {
+                            (name, Row::value_ref_internal(idx, 0, column).to_owned())
+                        }),
+                );
                 Self::Struct(OrderedMap::from(value))
             }
             ValueRef::Map(arr, idx) => {
@@ -271,25 +292,23 @@ impl From<ValueRef<'_>> for Value {
                 let values = arr.values();
                 let offsets = arr.offsets();
                 let range = offsets[idx]..offsets[idx + 1];
-                Self::Map(OrderedMap::from(
-                    range
-                        .map(|row| {
-                            let row = row.try_into().unwrap();
-                            let key = Row::value_ref_internal(row, idx, keys).to_owned();
-                            let value = Row::value_ref_internal(row, idx, values).to_owned();
-                            (key, value)
-                        })
-                        .collect::<Vec<_>>(),
-                ))
+                let capacity = range.len();
+                let mut map_vec = Vec::with_capacity(capacity);
+                map_vec.extend(range.map(|row| {
+                    let row = row.try_into().unwrap();
+                    let key = Row::value_ref_internal(row, idx, keys).to_owned();
+                    let value = Row::value_ref_internal(row, idx, values).to_owned();
+                    (key, value)
+                }));
+                Self::Map(OrderedMap::from(map_vec))
             }
             ValueRef::Array(items, idx) => {
                 let value_length = usize::try_from(items.value_length()).unwrap();
                 let range = (idx * value_length)..((idx + 1) * value_length);
-                Self::Array(
-                    range
-                        .map(|row| Row::value_ref_internal(row, idx, items.values()).to_owned())
-                        .collect(),
-                )
+                let capacity = value_length;
+                let mut array_vec = Vec::with_capacity(capacity);
+                array_vec.extend(range.map(|row| Row::value_ref_internal(row, idx, items.values()).to_owned()));
+                Self::Array(array_vec)
             }
             ValueRef::Union(column, idx) => {
                 let column = column.as_any().downcast_ref::<UnionArray>().unwrap();
@@ -304,11 +323,10 @@ impl From<ValueRef<'_>> for Value {
 }
 
 fn from_list(start: usize, end: usize, idx: usize, values: &ArrayRef) -> Value {
-    Value::List(
-        (start..end)
-            .map(|row| Row::value_ref_internal(row, idx, values).to_owned())
-            .collect(),
-    )
+    let capacity = end - start;
+    let mut list_vec = Vec::with_capacity(capacity);
+    list_vec.extend((start..end).map(|row| Row::value_ref_internal(row, idx, values).to_owned()));
+    Value::List(list_vec)
 }
 
 impl<'a> From<&'a str> for ValueRef<'a> {

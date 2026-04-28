@@ -1,4 +1,5 @@
 use super::{
+    LogicalTypeHandle, VTab, Value, drop_boxed,
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
         duckdb_bind_get_parameter, duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data,
@@ -9,10 +10,9 @@ use super::{
         duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
-    LogicalTypeHandle, VTab, Value,
 };
 use std::{
-    ffi::{c_void, CString},
+    ffi::{CString, c_void},
     fmt::Debug,
     marker::PhantomData,
     os::raw::c_char,
@@ -36,6 +36,7 @@ impl BindInfo {
             duckdb_bind_add_result_column(self.ptr, c_str.as_ptr() as *const c_char, column_type.ptr);
         }
     }
+
     /// Report that an error has occurred while calling bind.
     ///
     /// # Arguments
@@ -49,18 +50,20 @@ impl BindInfo {
     /// Sets the user-provided bind data in the bind object. This object can be retrieved again during execution.
     ///
     /// # Arguments
-    ///  * `extra_data`: The bind data object.
-    ///  * `destroy`: The callback that will be called to destroy the bind data (if any)
+    ///  * `data`: The bind data object.
+    ///  * `free_function`: The callback that will be called to destroy the bind data (if any)
     ///
     /// # Safety
-    ///
+    /// `data` must be a valid pointer, and `free_function` must properly free it.
     pub unsafe fn set_bind_data(&self, data: *mut c_void, free_function: Option<unsafe extern "C" fn(*mut c_void)>) {
-        duckdb_bind_set_bind_data(self.ptr, data, free_function);
+        unsafe { duckdb_bind_set_bind_data(self.ptr, data, free_function) };
     }
+
     /// Retrieves the number of regular (non-named) parameters to the function.
     pub fn get_parameter_count(&self) -> u64 {
         unsafe { duckdb_bind_get_parameter_count(self.ptr) }
     }
+
     /// Retrieves the parameter at the given index.
     ///
     /// # Arguments
@@ -91,11 +94,7 @@ impl BindInfo {
         unsafe {
             let name = &CString::new(name).unwrap();
             let ptr = duckdb_bind_get_named_parameter(self.ptr, name.as_ptr());
-            if ptr.is_null() {
-                None
-            } else {
-                Some(Value::from(ptr))
-            }
+            if ptr.is_null() { None } else { Some(Value::from(ptr)) }
         }
     }
 
@@ -107,10 +106,7 @@ impl BindInfo {
     pub fn set_cardinality(&self, cardinality: idx_t, is_exact: bool) {
         unsafe { duckdb_bind_set_cardinality(self.ptr, cardinality, is_exact) }
     }
-    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`]
-    ///
-    /// # Arguments
-    /// * `returns`: The extra info
+    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`].
     pub fn get_extra_info<T>(&self) -> *const T {
         unsafe { duckdb_bind_get_extra_info(self.ptr).cast() }
     }
@@ -162,13 +158,11 @@ impl InitInfo {
         indices
     }
 
-    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`]
-    ///
-    /// # Arguments
-    /// * `returns`: The extra info
+    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`].
     pub fn get_extra_info<T>(&self) -> *const T {
         unsafe { duckdb_init_get_extra_info(self.0).cast() }
     }
+
     /// Gets the bind data set by [`BindInfo::set_bind_data`] during the bind.
     ///
     /// Note that the bind data should be considered as read-only.
@@ -179,6 +173,7 @@ impl InitInfo {
     pub fn get_bind_data<T>(&self) -> *const T {
         unsafe { duckdb_init_get_bind_data(self.0).cast() }
     }
+
     /// Sets how many threads can process this table function in parallel (default: 1)
     ///
     /// # Arguments
@@ -186,6 +181,7 @@ impl InitInfo {
     pub fn set_max_threads(&self, max_threads: idx_t) {
         unsafe { duckdb_init_set_max_threads(self.0, max_threads) }
     }
+
     /// Report that an error has occurred while calling init.
     ///
     /// # Arguments
@@ -305,17 +301,35 @@ impl TableFunction {
         self
     }
 
-    /// Assigns extra information to the table function that can be fetched during binding, etc.
+    /// Assigns extra information to the table function using raw pointers.
+    ///
+    /// For most use cases, prefer [`set_extra_info`](Self::set_extra_info) which handles memory management automatically.
     ///
     /// # Arguments
-    /// * `extra_info`: The extra information
-    /// * `destroy`: The callback that will be called to destroy the bind data (if any)
+    /// * `extra_info`: The extra information as a raw pointer
+    /// * `destroy`: The callback that will be called to destroy the data (if any)
     ///
     /// # Safety
-    pub unsafe fn set_extra_info(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
+    /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
+    /// properly cleans up the data when called.
+    pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
+        unsafe { duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy) };
+    }
+
+    /// Assigns extra information to the table function that can be fetched during binding, init, and execution.
+    ///
+    /// # Arguments
+    /// * `info`: The extra information to store
+    pub fn set_extra_info<T>(&self, info: T) -> &Self
+    where
+        T: Send + Sync + 'static,
+    {
         unsafe {
-            duckdb_table_function_set_extra_info(self.ptr, extra_info, destroy);
+            let boxed = Box::new(info);
+            let ptr = Box::into_raw(boxed) as *mut c_void;
+            self.set_extra_info_raw(ptr, Some(drop_boxed::<T>));
         }
+        self
     }
 
     /// Sets the thread-local init function of the table function
@@ -383,13 +397,11 @@ impl<V: VTab> TableFunctionInfo<V> {
         }
     }
 
-    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`]
-    ///
-    /// # Arguments
-    /// * `returns`: The extra info
+    /// Retrieves the extra info of the function as set in [`TableFunction::set_extra_info`].
     pub fn get_extra_info<T>(&self) -> *mut T {
         unsafe { duckdb_function_get_extra_info(self.ptr).cast() }
     }
+
     /// Gets the thread-local init data set by [`InitInfo::set_init_data`] during the local_init.
     ///
     /// # Arguments

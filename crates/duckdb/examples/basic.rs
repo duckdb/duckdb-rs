@@ -1,8 +1,9 @@
 // Basic example copy from README
 
 use duckdb::{
+    Connection, Result,
     arrow::{record_batch::RecordBatch, util::pretty::print_batches},
-    params, Connection, Result,
+    params,
 };
 
 #[derive(Debug)]

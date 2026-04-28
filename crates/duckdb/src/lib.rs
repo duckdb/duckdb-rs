@@ -72,7 +72,7 @@ use crate::{cache::StatementCache, inner_connection::InnerConnection, raw_statem
 pub use crate::r2d2::DuckdbConnectionManager;
 pub use crate::{
     appender::Appender,
-    appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter},
+    appender_params::{AppenderParams, AppenderParamsFromIter, appender_params_from_iter},
     arrow_batch::{Arrow, ArrowStream},
     cache::CachedStatement,
     column::Column,
@@ -80,7 +80,7 @@ pub use crate::{
     error::Error,
     ffi::ErrorCode,
     inner_connection::InterruptHandle,
-    params::{params_from_iter, Params, ParamsFromIter},
+    params::{Params, ParamsFromIter, params_from_iter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
     transaction::{DropBehavior, Transaction},
@@ -91,10 +91,10 @@ pub use polars_dataframe::Polars;
 
 // re-export dependencies to minimise version maintenance for crate users
 pub use arrow;
+#[cfg(feature = "loadable-extension")]
+pub use duckdb_loadable_macros::duckdb_entrypoint_c_api;
 #[cfg(feature = "polars")]
 pub use polars;
-#[cfg(feature = "polars")]
-pub use polars_arrow as arrow2;
 
 /// The core module contains the main functionality of the DuckDB crate.
 pub mod core;
@@ -109,6 +109,7 @@ mod column;
 mod config;
 mod inner_connection;
 mod params;
+
 #[cfg(feature = "polars")]
 mod polars_dataframe;
 mod pragma;
@@ -119,9 +120,17 @@ mod row;
 mod statement;
 mod transaction;
 
-#[cfg(feature = "extensions-full")]
+#[cfg(any(
+    feature = "autocomplete",
+    feature = "icu",
+    feature = "json",
+    feature = "parquet",
+    feature = "tpcds",
+    feature = "tpch"
+))]
 mod extension;
 
+pub mod profiling;
 pub mod types;
 /// The duckdb table function interface
 #[cfg(feature = "vtab")]
@@ -276,7 +285,7 @@ impl Connection {
     /// Need to pass in a valid db instance
     #[inline]
     pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Self> {
-        InnerConnection::new(raw, false).map(|db| Self {
+        unsafe { InnerConnection::new_from_raw_db(raw, false) }.map(|db| Self {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
             path: None, // Can we know the path from connection?
@@ -531,6 +540,79 @@ impl Connection {
         self.db.borrow_mut().appender(self, table, schema)
     }
 
+    /// Create an Appender for fast import data with provided catalog, schema and table
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result, params, DatabaseName};
+    /// fn insert_rows(conn: &Connection) -> Result<()> {
+    ///     let mut app = conn.appender_to_catalog_and_db("catalog", &DatabaseName::Main.to_string(), "foo")?;
+    ///     app.append_rows([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `catalog` or `schema` not exists
+    pub fn appender_to_catalog_and_db(&self, table: &str, catalog: &str, schema: &str) -> Result<Appender<'_>> {
+        self.db
+            .borrow_mut()
+            .appender_to_catalog_and_db(self, table, catalog, schema)
+    }
+
+    /// Create an Appender that only provides values for specific columns.
+    ///
+    /// Columns not in the list will use their DEFAULT value, or NULL if no default.
+    /// This supports all types of DEFAULT expressions including non-deterministic
+    /// ones like `random()`, `current_timestamp`, or sequences.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,no_run
+    /// # use duckdb::{Connection, Result};
+    /// fn insert_partial(conn: &Connection) -> Result<()> {
+    ///     // Table: CREATE TABLE foo(id INT DEFAULT nextval('seq'), name TEXT, created TIMESTAMP DEFAULT current_timestamp)
+    ///     let mut app = conn.appender_with_columns("foo", &["name"])?;
+    ///     // Only provide name; id and created use their defaults
+    ///     app.append_row(["Alice"])?;
+    ///     app.append_row(["Bob"])?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if `table` does not exist or a column name is invalid.
+    pub fn appender_with_columns(&self, table: &str, columns: &[&str]) -> Result<Appender<'_>> {
+        self.appender_with_columns_to_db(table, &DatabaseName::Main.to_string(), columns)
+    }
+
+    /// Create an Appender that only provides values for specific columns, with schema.
+    ///
+    /// See [`appender_with_columns`](Connection::appender_with_columns) for details.
+    pub fn appender_with_columns_to_db(&self, table: &str, schema: &str, columns: &[&str]) -> Result<Appender<'_>> {
+        self.db
+            .borrow_mut()
+            .appender_with_columns(self, table, schema, None, columns)
+    }
+
+    /// Create an Appender that only provides values for specific columns, with catalog and schema.
+    ///
+    /// See [`appender_with_columns`](Connection::appender_with_columns) for details.
+    pub fn appender_with_columns_to_catalog_and_db(
+        &self,
+        table: &str,
+        catalog: &str,
+        schema: &str,
+        columns: &[&str],
+    ) -> Result<Appender<'_>> {
+        self.db
+            .borrow_mut()
+            .appender_with_columns(self, table, schema, Some(catalog), columns)
+    }
+
     /// Get a handle to interrupt long-running queries.
     ///
     /// ## Example
@@ -703,8 +785,8 @@ mod test {
     #[test]
     fn test_open() {
         let con = Connection::open_in_memory();
-        if con.is_err() {
-            panic!("open error {}", con.unwrap_err());
+        if let Err(e) = con {
+            panic!("open error {e}");
         }
         assert!(Connection::open_in_memory().is_ok());
         let db = checked_memory_handle();
@@ -715,11 +797,32 @@ mod test {
 
     #[test]
     fn test_open_from_raw() {
-        let con = Connection::open_in_memory();
-        assert!(con.is_ok());
-        let inner_con: InnerConnection = con.unwrap().db.into_inner();
         unsafe {
-            assert!(Connection::open_from_raw(inner_con.db).is_ok());
+            use std::{ffi::c_void, os::raw::c_char, ptr};
+
+            let mut db: ffi::duckdb_database = ptr::null_mut();
+            let mut c_err: *mut c_char = ptr::null_mut();
+            let r = ffi::duckdb_open_ext(
+                c":memory:".as_ptr(),
+                &mut db,
+                Config::default().duckdb_config(),
+                &mut c_err,
+            );
+            if r != ffi::DuckDBSuccess {
+                if !c_err.is_null() {
+                    ffi::duckdb_free(c_err as *mut c_void);
+                }
+                panic!("duckdb_open_ext failed: {r:?}");
+            }
+
+            let conn = Connection::open_from_raw(db).unwrap();
+            conn.execute_batch("SELECT 1").unwrap();
+            let cloned = conn.try_clone().unwrap();
+            drop(conn);
+            cloned.execute_batch("SELECT 2").unwrap();
+            cloned.close().unwrap();
+
+            ffi::duckdb_close(&mut db);
         }
     }
 
@@ -1033,6 +1136,22 @@ mod test {
             cloned_con.execute_batch("create table test2 (c1 bigint)")?;
             cloned_con.close().unwrap();
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_clone_after_owner_drop() -> Result<()> {
+        let clone1 = {
+            let owned = checked_memory_handle();
+            let clone1 = owned.try_clone()?;
+            drop(owned);
+            clone1
+        };
+
+        let clone2 = clone1.try_clone()?;
+        clone2.execute_batch("CREATE TABLE t312(i INTEGER); INSERT INTO t312 VALUES (1);")?;
+        let value: i32 = clone1.query_row("SELECT i FROM t312", [], |r| r.get(0))?;
+        assert_eq!(value, 1);
         Ok(())
     }
 
@@ -1359,6 +1478,39 @@ mod test {
     }
 
     #[test]
+    fn test_stream_arrow_with_call() -> Result<()> {
+        use arrow::datatypes::{DataType, Field, Schema};
+        use std::sync::Arc;
+
+        let db = checked_memory_handle();
+
+        db.execute_batch(
+            "CREATE TABLE test_data(id INTEGER, name VARCHAR);
+             INSERT INTO test_data VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie');",
+        )?;
+
+        db.execute_batch("CREATE MACRO test_func() AS TABLE SELECT * FROM test_data;")?;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("name", DataType::Utf8, true),
+        ]));
+
+        let mut stmt = db.prepare("CALL test_func()")?;
+        let rbs: Vec<RecordBatch> = stmt.stream_arrow([], schema)?.collect();
+
+        // Verify we got results
+        assert!(!rbs.is_empty(), "Expected at least one record batch");
+        let total_rows: usize = rbs.iter().map(|rb| rb.num_rows()).sum();
+        assert_eq!(total_rows, 3);
+
+        let id_column = rbs[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(id_column.value(0), 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn round_trip_interval() -> Result<()> {
         let db = checked_memory_handle();
         db.execute_batch("CREATE TABLE foo (t INTERVAL);")?;
@@ -1414,16 +1566,6 @@ mod test {
 
         drop(db);
         db_interrupt.interrupt();
-    }
-
-    #[cfg(feature = "bundled")]
-    #[test]
-    fn test_version() -> Result<()> {
-        let db = checked_memory_handle();
-        let expected: String = format!("v{}", env!("CARGO_PKG_VERSION"));
-        let actual = db.version()?;
-        assert_eq!(expected, actual);
-        Ok(())
     }
 
     #[test]
@@ -1548,6 +1690,217 @@ mod test {
             assert_eq!(count, 2);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach a new database to use as a catalog
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("attached.db");
+        db.execute_batch(&format!("ATTACH '{}' AS attached_db", attached_path.display()))?;
+
+        // Create a table in the attached database
+        db.execute_batch("CREATE TABLE attached_db.main.test_table (id INTEGER, name TEXT)")?;
+
+        // Use appender with catalog
+        {
+            let mut app = db.appender_to_catalog_and_db("test_table", "attached_db", "main")?;
+            app.append_row(params![1, "Alice"])?;
+            app.append_row(params![2, "Bob"])?;
+            app.append_row(params![3, "Charlie"])?;
+        }
+
+        // Verify data was inserted into the correct table
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM attached_db.main.test_table", [], |r| r.get(0))?;
+        assert_eq!(count, 3);
+
+        let name: String = db.query_row("SELECT name FROM attached_db.main.test_table WHERE id = ?", [2], |r| {
+            r.get(0)
+        })?;
+        assert_eq!(name, "Bob");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_multiple_schemas() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach a new database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("multi_schema.db");
+        db.execute_batch(&format!("ATTACH '{}' AS my_catalog", attached_path.display()))?;
+
+        // Create multiple schemas and tables
+        db.execute_batch("CREATE SCHEMA my_catalog.schema1")?;
+        db.execute_batch("CREATE SCHEMA my_catalog.schema2")?;
+        db.execute_batch("CREATE TABLE my_catalog.schema1.data (value INTEGER)")?;
+        db.execute_batch("CREATE TABLE my_catalog.schema2.data (value INTEGER)")?;
+
+        // Append to schema1
+        {
+            let mut app = db.appender_to_catalog_and_db("data", "my_catalog", "schema1")?;
+            app.append_rows([[10], [20], [30]])?;
+        }
+
+        // Append to schema2
+        {
+            let mut app = db.appender_to_catalog_and_db("data", "my_catalog", "schema2")?;
+            app.append_rows([[100], [200]])?;
+        }
+
+        // Verify data in schema1
+        let sum1: i64 = db.query_row("SELECT SUM(value) FROM my_catalog.schema1.data", [], |r| r.get(0))?;
+        assert_eq!(sum1, 60);
+
+        // Verify data in schema2
+        let sum2: i64 = db.query_row("SELECT SUM(value) FROM my_catalog.schema2.data", [], |r| r.get(0))?;
+        assert_eq!(sum2, 300);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_main_vs_attached() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Create table in main database
+        db.execute_batch("CREATE TABLE test (id INTEGER)")?;
+
+        // Attach another database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("other.db");
+        db.execute_batch(&format!("ATTACH '{}' AS other_db", attached_path.display()))?;
+        db.execute_batch("CREATE TABLE other_db.main.test (id INTEGER)")?;
+
+        // Append to main catalog (memory)
+        {
+            let mut app = db.appender_to_catalog_and_db("test", "memory", "main")?;
+            app.append_rows([[1], [2]])?;
+        }
+
+        // Append to attached catalog
+        {
+            let mut app = db.appender_to_catalog_and_db("test", "other_db", "main")?;
+            app.append_rows([[100], [200]])?;
+        }
+
+        // Verify main database
+        let count_main: i64 = db.query_row("SELECT COUNT(*) FROM test", [], |r| r.get(0))?;
+        assert_eq!(count_main, 2);
+
+        // Verify attached database
+        let count_attached: i64 = db.query_row("SELECT COUNT(*) FROM other_db.main.test", [], |r| r.get(0))?;
+        assert_eq!(count_attached, 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_error_invalid_catalog() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Try to create appender with non-existent catalog
+        let result = db.appender_to_catalog_and_db("test", "nonexistent_catalog", "main");
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_error_invalid_schema() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach a database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("test.db");
+        db.execute_batch(&format!("ATTACH '{}' AS my_db", attached_path.display()))?;
+
+        db.execute_batch("CREATE TABLE my_db.main.test (id INTEGER)")?;
+
+        // Try to create appender with non-existent schema
+        let result = db.appender_to_catalog_and_db("test", "my_db", "nonexistent_schema");
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_with_catalog_flush() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Attach database
+        let temp_dir = tempfile::tempdir().unwrap();
+        let attached_path = temp_dir.path().join("flush_test.db");
+        db.execute_batch(&format!("ATTACH '{}' AS flush_db", attached_path.display()))?;
+
+        db.execute_batch("CREATE TABLE flush_db.main.test (id INTEGER)")?;
+
+        // Use appender with explicit flush
+        {
+            let mut app = db.appender_to_catalog_and_db("test", "flush_db", "main")?;
+            app.append_row([1])?;
+            app.append_row([2])?;
+            app.flush()?;
+            app.append_row([3])?;
+            app.flush()?;
+        }
+
+        // Verify all rows were flushed
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM flush_db.main.test", [], |r| r.get(0))?;
+        assert_eq!(count, 3);
+
+        Ok(())
+    }
+
+    /// Enum values should reflect actual row data, not just iterate over enum variants.
+    #[test]
+    fn test_enum_read() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE stats (
+                name ENUM('CA', 'NY'),
+                value INTEGER,
+            );
+            INSERT INTO stats VALUES ('CA', 10), ('CA', 20), ('NY', 4);
+            "#,
+        )?;
+
+        let mut stmt = conn.prepare("SELECT * FROM stats")?;
+        let results: Vec<(String, i32)> = stmt
+            .query_map([], |row| {
+                let name: String = row.get(0)?;
+                let value: i32 = row.get(1)?;
+                Ok((name, value))
+            })?
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], ("CA".to_string(), 10));
+        assert_eq!(results[1], ("CA".to_string(), 20));
+        assert_eq!(results[2], ("NY".to_string(), 4));
+        Ok(())
+    }
+
+    #[test]
+    fn test_enum_read_nullable() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE stats (name ENUM('CA', 'NY'));
+            INSERT INTO stats VALUES ('CA'), (NULL), ('NY');
+            "#,
+        )?;
+
+        let mut stmt = conn.prepare("SELECT name FROM stats")?;
+        let results: Vec<Option<String>> = stmt.query_map([], |row| row.get(0))?.map(|r| r.unwrap()).collect();
+
+        assert_eq!(results, vec![Some("CA".into()), None, Some("NY".into())]);
         Ok(())
     }
 }

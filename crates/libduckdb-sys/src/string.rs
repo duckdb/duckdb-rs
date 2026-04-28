@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_char, CStr},
+    ffi::{CStr, c_char},
     ops::Deref,
 };
 

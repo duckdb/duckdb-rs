@@ -1,10 +1,12 @@
 // Usage:
 // cargo run --example repl
 // cargo run --example repl path/to/database.db
+// cargo run --example repl -- -c "SELECT 1"
+// cargo run --example repl path/to/database.db -c "SELECT 1" -c "SELECT 2"
 // cat example.sql | cargo run --example repl
 
-use duckdb::{arrow::record_batch::RecordBatch, Connection, Result as DuckResult};
-use rustyline::{error::ReadlineError, history::DefaultHistory, Config, Editor};
+use duckdb::{Connection, Result as DuckResult, arrow::record_batch::RecordBatch};
+use rustyline::{Config, Editor, error::ReadlineError, history::DefaultHistory};
 
 const HISTORY_FILE: &str = ".duckdb_rs_history";
 
@@ -158,7 +160,50 @@ impl SqlRepl {
     }
 }
 
+struct Args {
+    db_path: Option<String>,
+    commands: Vec<String>,
+}
+
+fn parse_args() -> Args {
+    let mut args = std::env::args().skip(1);
+    let mut db_path = None;
+    let mut commands = Vec::new();
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-c" => {
+                if let Some(sql) = args.next() {
+                    commands.push(sql);
+                } else {
+                    eprintln!("Error: -c requires a SQL argument");
+                    std::process::exit(1);
+                }
+            }
+            _ => {
+                if db_path.is_none() && !arg.starts_with('-') {
+                    db_path = Some(arg);
+                } else {
+                    eprintln!("Error: unexpected argument '{arg}'");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    Args { db_path, commands }
+}
+
 fn main() -> DuckResult<()> {
-    let mut repl = SqlRepl::new(std::env::args().nth(1).as_deref())?;
-    repl.run()
+    let args = parse_args();
+    let mut repl = SqlRepl::new(args.db_path.as_deref())?;
+
+    if args.commands.is_empty() {
+        repl.run()
+    } else {
+        for sql in &args.commands {
+            repl.execute_sql(sql)?;
+        }
+        Ok(())
+    }
 }

@@ -4,7 +4,7 @@
 #![allow(deref_nullptr)]
 #![allow(improper_ctypes)]
 
-#[allow(clippy::all)]
+#[allow(clippy::all, unsafe_op_in_unsafe_fn)]
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
 }
@@ -33,21 +33,23 @@ mod tests {
     use arrow::{
         array::{Array, Int32Array, StructArray},
         datatypes::DataType,
-        ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+        ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
     };
 
     unsafe fn print_int_result(result: &mut duckdb_result) {
-        for i in 0..duckdb_column_count(result) {
-            print!("{} ", CStr::from_ptr(duckdb_column_name(result, i)).to_string_lossy());
-        }
-        println!();
-        // print the data of the result
-        for row_idx in 0..duckdb_row_count(result) {
-            for col_idx in 0..duckdb_column_count(result) {
-                let val = duckdb_value_int32(result, col_idx, row_idx);
-                print!("{val} ");
+        unsafe {
+            for i in 0..duckdb_column_count(result) {
+                print!("{} ", CStr::from_ptr(duckdb_column_name(result, i)).to_string_lossy());
             }
             println!();
+            // print the data of the result
+            for row_idx in 0..duckdb_row_count(result) {
+                for col_idx in 0..duckdb_column_count(result) {
+                    let val = duckdb_value_int32(result, col_idx, row_idx);
+                    print!("{val} ");
+                }
+                println!();
+            }
         }
     }
 

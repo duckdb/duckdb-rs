@@ -1,9 +1,9 @@
-use super::{ffi, Appender, Result};
+use super::{Appender, Result, ffi};
 use crate::{
-    core::{DataChunkHandle, LogicalTypeHandle},
+    Error,
+    core::DataChunkHandle,
     error::result_from_duckdb_appender,
     vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type},
-    Error,
 };
 use arrow::record_batch::RecordBatch;
 use ffi::{duckdb_append_data_chunk, duckdb_vector_size};
@@ -28,15 +28,16 @@ impl Appender<'_> {
     /// Will return `Err` if append column count not the same with the table schema
     #[inline]
     pub fn append_record_batch(&mut self, record_batch: RecordBatch) -> Result<()> {
-        let logical_types: Vec<LogicalTypeHandle> = record_batch
-            .schema()
-            .fields()
-            .iter()
-            .map(|field| {
+        let schema = record_batch.schema();
+        let fields = schema.fields();
+        let capacity = fields.len();
+        let mut logical_types = Vec::with_capacity(capacity);
+        for field in fields.iter() {
+            logical_types.push(
                 to_duckdb_logical_type(field.data_type())
-                    .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                    .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))?,
+            );
+        }
 
         let vector_size = unsafe { duckdb_vector_size() } as usize;
         let num_rows = record_batch.num_rows();
@@ -64,7 +65,7 @@ impl Appender<'_> {
 mod test {
     use crate::{Connection, Result};
     use arrow::{
-        array::{Int32Array, Int8Array, StringArray},
+        array::{Int8Array, Int32Array, StringArray},
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };

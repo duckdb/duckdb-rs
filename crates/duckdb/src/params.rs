@@ -50,6 +50,10 @@ use sealed::Sealed;
 ///       hence why the number of parameters must be <= 32 or you need to
 ///       reach for `duckdb::params!`)
 ///
+///     - a tuple of mixed types (up to 16 elements), as in
+///       `thing.execute((1i32, "foo", 3.14f64))`. This is the most ergonomic
+///       way to pass heterogeneous parameters.
+///
 ///   Unfortunately, in the current design it's not possible to allow this for
 ///   references to arrays of non-references (e.g. `&[1i32, 2, 3]`). Code like
 ///   this should instead either use `params!`, an array literal, a `&[&dyn
@@ -81,6 +85,9 @@ use sealed::Sealed;
 ///     // Note: The types behind the references don't have to be `Sized`
 ///     stmt.execute(&["foo", "bar"])?;
 ///
+///     // Tuple of mixed types:
+///     stmt.execute((1i32, "blah"))?;
+///
 ///     // However, this doesn't work (see above):
 ///     // stmt.execute(&[1i32, 2i32])?;
 ///     Ok(())
@@ -111,17 +118,17 @@ use sealed::Sealed;
 ///
 /// ## No parameters
 ///
-/// You can just use an empty array literal for no params. The
-/// `duckdb::NO_PARAMS` constant which was so common in previous versions of
-/// this library is no longer needed (and is now deprecated).
+/// You can use an empty array literal or the empty tuple for no params.
 ///
 /// ### Example (no parameters)
 ///
 /// ```rust,no_run
 /// # use duckdb::{Connection, Result, params};
 /// fn delete_all_users(conn: &Connection) -> Result<()> {
-///     // Just use an empty array (e.g. `[]`) for no params.
+///     // Empty array:
 ///     conn.execute("DELETE FROM users", [])?;
+///     // Or empty tuple:
+///     conn.execute("DELETE FROM users", ())?;
 ///     Ok(())
 /// }
 /// ```
@@ -164,6 +171,15 @@ impl Params for [&dyn ToSql; 0] {
     }
 }
 
+// Empty tuple — allows `conn.execute("...", ())`.
+impl Sealed for () {}
+impl Params for () {
+    #[inline]
+    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+        stmt.bind_parameters(&[] as &[&dyn ToSql])
+    }
+}
+
 impl Sealed for &[&dyn ToSql] {}
 impl Params for &[&dyn ToSql] {
     #[inline]
@@ -197,8 +213,39 @@ macro_rules! impl_for_array_ref {
 // note above the impl of `[&dyn ToSql; 0]` for more information.
 impl_for_array_ref!(
     1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
-    18 19 20 21 22 23 24 25 26 27 29 30 31 32
+    18 19 20 21 22 23 24 25 26 27 28 29 30 31 32
 );
+
+macro_rules! impl_params_for_tuple {
+    ($($T:ident),+) => {
+        impl<$($T: ToSql),+> Sealed for ($($T,)+) {}
+        impl<$($T: ToSql),+> Params for ($($T,)+) {
+            fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = &self;
+                stmt.bind_parameters(&[$($T as &dyn ToSql),+])
+            }
+        }
+    };
+}
+
+// Implement Params for tuples up to arity 16, matching rusqlite.
+impl_params_for_tuple!(T1);
+impl_params_for_tuple!(T1, T2);
+impl_params_for_tuple!(T1, T2, T3);
+impl_params_for_tuple!(T1, T2, T3, T4);
+impl_params_for_tuple!(T1, T2, T3, T4, T5);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
 
 /// Adapter type which allows any iterator over [`ToSql`] values to implement
 /// [`Params`].

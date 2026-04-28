@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 
-use crate::{error::Error, inner_connection::InnerConnection, Connection, Result};
+use crate::{Connection, Result, error::Error, inner_connection::InnerConnection};
 
 use super::ffi;
 
@@ -87,11 +87,13 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    let info = TableFunctionInfo::<T>::from(info);
-    let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
-    let result = T::func(&info, &mut data_chunk_handle);
-    if result.is_err() {
-        info.set_error(&result.err().unwrap().to_string());
+    unsafe {
+        let info = TableFunctionInfo::<T>::from(info);
+        let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
+        let result = T::func(&info, &mut data_chunk_handle);
+        if let Err(e) = result {
+            info.set_error(&e.to_string());
+        }
     }
 }
 
@@ -99,16 +101,18 @@ unsafe extern "C" fn init<T>(info: duckdb_init_info)
 where
     T: VTab,
 {
-    let info = InitInfo::from(info);
-    match T::init(&info) {
-        Ok(init_data) => {
-            info.set_init_data(
-                Box::into_raw(Box::new(init_data)) as *mut c_void,
-                Some(drop_boxed::<T::InitData>),
-            );
-        }
-        Err(e) => {
-            info.set_error(&e.to_string());
+    unsafe {
+        let info = InitInfo::from(info);
+        match T::init(&info) {
+            Ok(init_data) => {
+                info.set_init_data(
+                    Box::into_raw(Box::new(init_data)) as *mut c_void,
+                    Some(drop_boxed::<T::InitData>),
+                );
+            }
+            Err(e) => {
+                info.set_error(&e.to_string());
+            }
         }
     }
 }
@@ -117,16 +121,18 @@ unsafe extern "C" fn bind<T>(info: duckdb_bind_info)
 where
     T: VTab,
 {
-    let info = BindInfo::from(info);
-    match T::bind(&info) {
-        Ok(bind_data) => {
-            info.set_bind_data(
-                Box::into_raw(Box::new(bind_data)) as *mut c_void,
-                Some(drop_boxed::<T::BindData>),
-            );
-        }
-        Err(e) => {
-            info.set_error(&e.to_string());
+    unsafe {
+        let info = BindInfo::from(info);
+        match T::bind(&info) {
+            Ok(bind_data) => {
+                info.set_bind_data(
+                    Box::into_raw(Box::new(bind_data)) as *mut c_void,
+                    Some(drop_boxed::<T::BindData>),
+                );
+            }
+            Err(e) => {
+                info.set_error(&e.to_string());
+            }
         }
     }
 }
@@ -142,6 +148,34 @@ impl Connection {
             .set_bind(Some(bind::<T>))
             .set_init(Some(init::<T>))
             .set_function(Some(func::<T>));
+        for ty in T::parameters().unwrap_or_default() {
+            table_function.add_parameter(&ty);
+        }
+        for (name, ty) in T::named_parameters().unwrap_or_default() {
+            table_function.add_named_parameter(&name, &ty);
+        }
+        self.db.borrow_mut().register_table_function(table_function)
+    }
+
+    /// Register the given TableFunction with custom extra info.
+    ///
+    /// This allows you to pass extra info that can be accessed during bind, init, and execution
+    /// via `BindInfo::get_extra_info`, `InitInfo::get_extra_info`, or `TableFunctionInfo::get_extra_info`.
+    ///
+    /// The extra info is cloned once during registration and stored in DuckDB's catalog.
+    #[inline]
+    pub fn register_table_function_with_extra_info<T: VTab, E>(&self, name: &str, extra_info: &E) -> Result<()>
+    where
+        E: Clone + Send + Sync + 'static,
+    {
+        let table_function = TableFunction::default();
+        table_function
+            .set_name(name)
+            .supports_pushdown(T::supports_pushdown())
+            .set_bind(Some(bind::<T>))
+            .set_init(Some(init::<T>))
+            .set_function(Some(func::<T>))
+            .set_extra_info(extra_info.clone());
         for ty in T::parameters().unwrap_or_default() {
             table_function.add_parameter(&ty);
         }
@@ -287,16 +321,54 @@ mod test {
         Ok(())
     }
 
-    #[cfg(feature = "vtab-loadable")]
-    use duckdb_loadable_macros::duckdb_entrypoint;
+    // Test table function with extra info
+    struct PrefixVTab;
 
-    // this function is never called, but is still type checked
-    // Exposes a extern C function named "libhello_ext_init" in the compiled dynamic library,
-    // the "entrypoint" that duckdb will use to load the extension.
-    #[cfg(feature = "vtab-loadable")]
-    #[duckdb_entrypoint]
-    fn libhello_ext_init(conn: Connection) -> Result<(), Box<dyn Error>> {
-        conn.register_table_function::<HelloVTab>("hello")?;
+    impl VTab for PrefixVTab {
+        type InitData = HelloInitData;
+        type BindData = HelloBindData;
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+            let name = bind.get_parameter(0).to_string();
+            Ok(HelloBindData { name })
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(HelloInitData {
+                done: AtomicBool::new(false),
+            })
+        }
+
+        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            let init_data = func.get_init_data();
+            let bind_data = func.get_bind_data();
+            let prefix = unsafe { &*func.get_extra_info::<String>() };
+
+            if init_data.done.swap(true, Ordering::Relaxed) {
+                output.set_len(0);
+            } else {
+                let vector = output.flat_vector(0);
+                let result = CString::new(format!("{prefix} {}", bind_data.name))?;
+                vector.insert(0, result);
+                output.set_len(1);
+            }
+            Ok(())
+        }
+
+        fn parameters() -> Option<Vec<LogicalTypeHandle>> {
+            Some(vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)])
+        }
+    }
+
+    #[test]
+    fn test_table_function_with_extra_info() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_table_function_with_extra_info::<PrefixVTab, _>("greet", &"Howdy".to_string())?;
+
+        let val = conn.query_row("select * from greet('partner')", [], |row| <(String,)>::try_from(row))?;
+        assert_eq!(val, ("Howdy partner".to_string(),));
+
         Ok(())
     }
 }

@@ -1,15 +1,15 @@
-use std::{ffi::CStr, ops::Deref, ptr, rc::Rc, sync::Arc};
+use std::{cell::OnceCell, collections::HashMap, ffi::CStr, ops::Deref, ptr, rc::Rc, sync::Arc};
 
 use arrow::{
     array::StructArray,
     datatypes::{DataType, Schema, SchemaRef},
-    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
 };
 
-use super::{ffi, Result};
+use super::{Result, ffi};
+use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
 #[cfg(feature = "polars")]
-use crate::arrow2;
-use crate::{error::result_from_duckdb_arrow, Error};
+use polars_core::utils::arrow as polars_arrow;
 
 /// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
 ///
@@ -24,6 +24,11 @@ pub struct RawStatement {
     result: Option<ffi::duckdb_arrow>,
     duckdb_result: Option<ffi::duckdb_result>,
     schema: Option<SchemaRef>,
+    column_name_cache: OnceCell<HashMap<Box<str>, usize>>,
+    // Tracks whether the duckdb_result is truly streaming or materialized.
+    // This is needed because some statements (like CALL) return materialized
+    // results even when execute_streaming is called.
+    is_streaming: bool,
     // Cached SQL (trimmed) that we use as the key when we're in the statement
     // cache. This is None for statements which didn't come from the statement
     // cache.
@@ -44,7 +49,9 @@ impl RawStatement {
             ptr: stmt,
             result: None,
             schema: None,
+            column_name_cache: OnceCell::new(),
             duckdb_result: None,
+            is_streaming: false,
             statement_cache_key: None,
         }
     }
@@ -121,7 +128,13 @@ impl RawStatement {
     pub fn streaming_step(&self, schema: SchemaRef) -> Option<StructArray> {
         if let Some(result) = self.duckdb_result {
             unsafe {
-                let mut out = ffi::duckdb_stream_fetch_chunk(result);
+                // Use duckdb_stream_fetch_chunk for truly streaming results,
+                // or duckdb_fetch_chunk for materialized results (e.g., from CALL statements)
+                let mut out = if self.is_streaming {
+                    ffi::duckdb_stream_fetch_chunk(result)
+                } else {
+                    ffi::duckdb_fetch_chunk(result)
+                };
 
                 if out.is_null() {
                     return None;
@@ -152,54 +165,52 @@ impl RawStatement {
 
     #[cfg(feature = "polars")]
     #[inline]
-    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
-        self.result?;
+    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
+        let result = self.result?;
 
         unsafe {
-            let mut ffi_arrow2_array = arrow2::ffi::ArrowArray::empty();
+            let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
 
             if ffi::duckdb_query_arrow_array(
-                self.result_unwrap(),
-                &mut std::ptr::addr_of_mut!(ffi_arrow2_array) as *mut _ as *mut ffi::duckdb_arrow_array,
+                result,
+                &mut std::ptr::addr_of_mut!(ffi_arrow_array) as *mut _ as *mut ffi::duckdb_arrow_array,
             )
             .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
 
-            let mut ffi_arrow2_schema = arrow2::ffi::ArrowSchema::empty();
+            let mut ffi_arrow_schema = polars_arrow::ffi::ArrowSchema::empty();
 
             if ffi::duckdb_query_arrow_schema(
-                self.result_unwrap(),
-                &mut std::ptr::addr_of_mut!(ffi_arrow2_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
+                result,
+                &mut std::ptr::addr_of_mut!(ffi_arrow_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
             )
             .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
 
-            let arrow2_field =
-                arrow2::ffi::import_field_from_c(&ffi_arrow2_schema).expect("Failed to import arrow2 Field from C");
-            let import_arrow2_array = arrow2::ffi::import_array_from_c(ffi_arrow2_array, arrow2_field.dtype);
+            let field =
+                polars_arrow::ffi::import_field_from_c(&ffi_arrow_schema).expect("Failed to import Polars Arrow field");
+            let import_array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype);
 
-            if let Err(err) = import_arrow2_array {
-                // When array is empty, import_array_from_c returns error with message
-                // "ComputeError("An ArrowArray of type X must have non-null children")
-                // Therefore, we return None when encountering this error.
-                match err {
-                    polars::error::PolarsError::ComputeError(_) => return None,
-                    _ => panic!("Failed to import arrow2 Array from C: {err}"),
+            let array = match import_array {
+                Ok(array) => array,
+                // When array is empty, import_array_from_c returns ComputeError with message
+                // "An ArrowArray of type X must have non-null children".
+                Err(polars::error::PolarsError::ComputeError(msg)) if msg.to_string().contains("non-null children") => {
+                    return None;
                 }
-            }
-
-            let arrow2_array = import_arrow2_array.unwrap();
-            let arrow2_struct_array = arrow2_array
+                Err(err) => panic!("Failed to import Polars Arrow array from C: {err}"),
+            };
+            let struct_array = array
                 .as_any()
-                .downcast_ref::<arrow2::array::StructArray>()
-                .expect("Failed to downcast arrow2 Array to arrow2 StructArray")
+                .downcast_ref::<polars_arrow::array::StructArray>()
+                .expect("Failed to downcast Polars Arrow array to StructArray")
                 .to_owned();
 
-            Some(arrow2_struct_array)
+            Some(struct_array)
         }
     }
 
@@ -216,6 +227,14 @@ impl RawStatement {
     }
 
     #[inline]
+    pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
+        unsafe {
+            let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
+            LogicalTypeHandle::new(ptr)
+        }
+    }
+
+    #[inline]
     pub fn schema(&self) -> SchemaRef {
         self.schema.clone().unwrap()
     }
@@ -228,30 +247,49 @@ impl RawStatement {
         Some(self.schema.as_ref().unwrap().field(idx).name())
     }
 
+    #[inline]
+    pub fn column_index(&self, name: &str) -> Option<usize> {
+        let cache = self.column_name_cache.get_or_init(|| self.build_column_name_cache());
+        cache.get(&*name.to_ascii_lowercase()).copied()
+    }
+
+    fn build_column_name_cache(&self) -> HashMap<Box<str>, usize> {
+        let schema = self.schema.as_ref().expect("The statement was not executed yet");
+        let mut cache = HashMap::with_capacity(schema.fields().len());
+        for (index, field) in schema.fields().iter().enumerate() {
+            cache
+                .entry(field.name().to_ascii_lowercase().into_boxed_str())
+                .or_insert(index);
+        }
+        cache
+    }
+
     #[allow(dead_code)]
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
+        unsafe {
+            use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
 
-        println!(
-            "row-count: {}, column-count: {}",
-            duckdb_row_count(&mut result),
-            duckdb_column_count(&mut result)
-        );
-        for i in 0..duckdb_column_count(&mut result) {
-            print!(
-                "column-name:{} ",
-                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+            println!(
+                "row-count: {}, column-count: {}",
+                duckdb_row_count(&mut result),
+                duckdb_column_count(&mut result)
             );
-        }
-        println!();
-        // print the data of the result
-        for row_idx in 0..duckdb_row_count(&mut result) {
-            print!("row-value:");
-            for col_idx in 0..duckdb_column_count(&mut result) {
-                let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                print!("{} ", CStr::from_ptr(val).to_string_lossy());
+            for i in 0..duckdb_column_count(&mut result) {
+                print!(
+                    "column-name:{} ",
+                    CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+                );
             }
             println!();
+            // print the data of the result
+            for row_idx in 0..duckdb_row_count(&mut result) {
+                print!("row-value:");
+                for col_idx in 0..duckdb_column_count(&mut result) {
+                    let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
+                    print!("{} ", CStr::from_ptr(val).to_string_lossy());
+                }
+                println!();
+            }
         }
     }
 
@@ -285,9 +323,21 @@ impl RawStatement {
 
             let rc = ffi::duckdb_execute_prepared_streaming(self.ptr, &mut out);
             if rc != ffi::DuckDBSuccess {
-                return Err(Error::DuckDBFailure(ffi::Error::new(rc), None));
+                let msg = {
+                    let c_err = ffi::duckdb_result_error(&mut out);
+                    if c_err.is_null() {
+                        None
+                    } else {
+                        Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+                    }
+                };
+                ffi::duckdb_destroy_result(&mut out);
+                return Err(Error::DuckDBFailure(ffi::Error::new(rc), msg));
             }
 
+            // Check if the result is truly streaming or materialized
+            // Some statements (like CALL) return materialized results even when streaming is requested
+            self.is_streaming = ffi::duckdb_result_is_streaming(out);
             self.duckdb_result = Some(out);
 
             Ok(())
@@ -297,6 +347,8 @@ impl RawStatement {
     #[inline]
     pub fn reset_result(&mut self) {
         self.schema = None;
+        self.column_name_cache = OnceCell::new();
+        self.is_streaming = false;
         if self.result.is_some() {
             unsafe {
                 ffi::duckdb_destroy_arrow(&mut self.result_unwrap());

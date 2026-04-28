@@ -2,7 +2,7 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
 use crate::core::{Inserter, LogicalTypeId};
-use calamine::{open_workbook_auto, Data, DataType, Range, Reader};
+use calamine::{Data, DataType, Range, Reader, open_workbook_auto};
 
 #[allow(dead_code)]
 #[repr(C)]
@@ -140,17 +140,17 @@ impl VTab for ExcelVTab {
                             vector.insert(j, s.as_str());
                         }
                         Data::Float(f) => {
-                            vector.as_mut_slice::<f64>()[j] = *f;
+                            (unsafe { vector.as_mut_slice::<f64>() })[j] = *f;
                         }
                         Data::Int(ii) => {
-                            vector.as_mut_slice::<i64>()[j] = *ii;
+                            (unsafe { vector.as_mut_slice::<i64>() })[j] = *ii;
                         }
                         Data::Bool(b) => {
-                            vector.as_mut_slice::<bool>()[j] = *b;
+                            (unsafe { vector.as_mut_slice::<bool>() })[j] = *b;
                         }
                         Data::DateTime(d) => {
                             // 25569 = number of days between Unix and Excel epochs
-                            vector.as_mut_slice::<i32>()[j] = d.as_f64().round() as i32 - 25569;
+                            (unsafe { vector.as_mut_slice::<i32>() })[j] = d.as_f64().round() as i32 - 25569;
                         }
                         _ => {
                             vector.set_null(j);
@@ -175,7 +175,7 @@ impl VTab for ExcelVTab {
 
 #[cfg(test)]
 mod test {
-    use crate::{vtab::excel::ExcelVTab, Connection, Result};
+    use crate::{Connection, Result, vtab::excel::ExcelVTab};
     use arrow::array::{Array, Date32Array, Float64Array, StringArray};
     use std::error::Error;
 

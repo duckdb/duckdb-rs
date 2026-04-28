@@ -2,14 +2,16 @@ use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 
 use arrow::{array::StructArray, datatypes::SchemaRef};
 
-use super::{ffi, AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef};
+use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
 #[cfg(feature = "polars")]
-use crate::{arrow2, polars_dataframe::Polars};
+use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{TimeUnit, ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput},
 };
+#[cfg(feature = "polars")]
+use polars_core::utils::arrow as polars_arrow;
 
 /// A prepared statement.
 ///
@@ -403,10 +405,9 @@ impl Statement<'_> {
     }
 
     #[cfg(feature = "polars")]
-    /// Get next batch records in arrow2
     #[inline]
-    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
-        self.stmt.step2()
+    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
+        self.stmt.step_polars()
     }
 
     #[inline]
@@ -596,17 +597,19 @@ impl Statement<'_> {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
             ValueRef::Timestamp(u, i) => unsafe {
-                let micros = match u {
-                    TimeUnit::Second => i * 1_000_000,
-                    TimeUnit::Millisecond => i * 1_000,
-                    TimeUnit::Microsecond => i,
-                    TimeUnit::Nanosecond => i / 1_000,
-                };
-                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros })
+                ffi::duckdb_bind_timestamp(ptr, col as u64, ffi::duckdb_timestamp { micros: u.to_micros(i) })
             },
             ValueRef::Interval { months, days, nanos } => unsafe {
                 let micros = nanos / 1_000;
                 ffi::duckdb_bind_interval(ptr, col as u64, ffi::duckdb_interval { months, days, micros })
+            },
+            ValueRef::Date32(days) => unsafe { ffi::duckdb_bind_date(ptr, col as u64, ffi::duckdb_date { days }) },
+            ValueRef::Time64(u, i) => unsafe {
+                ffi::duckdb_bind_time(ptr, col as u64, ffi::duckdb_time { micros: u.to_micros(i) })
+            },
+            ValueRef::Decimal(d) => unsafe {
+                let decimal = crate::types::to_duckdb_decimal(d);
+                ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
             _ => unreachable!("not supported: {}", value.data_type()),
         };
@@ -623,7 +626,7 @@ impl Statement<'_> {
     /// this, as it loses our protective `'conn` lifetime bound.
     #[inline]
     pub(crate) unsafe fn into_raw(mut self) -> RawStatement {
-        let mut stmt = RawStatement::new(ptr::null_mut());
+        let mut stmt = unsafe { RawStatement::new(ptr::null_mut()) };
         mem::swap(&mut stmt, &mut self.stmt);
         stmt
     }
@@ -653,7 +656,8 @@ impl Statement<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{params_from_iter, types::ToSql, Connection, Error, Result};
+    use crate::{Connection, Error, Result, params_from_iter, types::ToSql};
+    use rust_decimal::Decimal;
 
     #[test]
     fn test_execute() -> Result<()> {
@@ -1231,6 +1235,202 @@ mod test {
         let row = rows.next()?.unwrap();
         let result: bool = row.get(0)?;
         assert!(result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_streaming_error_message() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        // Trigger a conversion error - should fail with a descriptive message
+        let mut stmt = db.prepare("SELECT CAST('not-a-number' AS INTEGER)")?;
+        let result = stmt.stmt.execute_streaming();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+
+        let error_string = format!("{}", err);
+        assert!(
+            error_string.contains("Conversion Error"),
+            "Expected descriptive error, got: {}",
+            error_string
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_date32() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        // 19130 days since epoch = 2022-05-18
+        let result: bool = db.query_row("SELECT ? = DATE '2022-05-18'", [Value::Date32(19130)], |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_time64() -> Result<()> {
+        use crate::types::{TimeUnit, Value};
+
+        let db = Connection::open_in_memory()?;
+        // 45_045_123_456 micros = 12:30:45.123456
+        let micros = 45_045_123_456i64;
+        let result: bool = db.query_row(
+            "SELECT ? = TIME '12:30:45.123456'",
+            [Value::Time64(TimeUnit::Microsecond, micros)],
+            |row| row.get(0),
+        )?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT, score DOUBLE)")?;
+
+        // Heterogeneous tuple
+        let mut stmt = db.prepare("INSERT INTO test VALUES (?, ?, ?)")?;
+        stmt.execute((1i32, "alice", 95.5f64))?;
+        stmt.execute((2i32, "bob", 87.0f64))?;
+
+        let mut stmt = db.prepare("SELECT id, name, score FROM test ORDER BY id")?;
+        let mut rows = stmt.query([])?;
+
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get::<_, i32>(0)?, 1);
+        assert_eq!(row.get::<_, String>(1)?, "alice");
+        assert_eq!(row.get::<_, f64>(2)?, 95.5);
+
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get::<_, i32>(0)?, 2);
+        assert_eq!(row.get::<_, String>(1)?, "bob");
+        assert_eq!(row.get::<_, f64>(2)?, 87.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_row_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT)")?;
+        db.execute("INSERT INTO test VALUES (1, 'alice')", [])?;
+
+        let name: String = db.query_row("SELECT name FROM test WHERE id = ?", (1i32,), |r| r.get(0))?;
+        assert_eq!(name, "alice");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple_single_element() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER)")?;
+
+        db.execute("INSERT INTO test VALUES (?)", (42i32,))?;
+
+        let val: i32 = db.query_row("SELECT id FROM test", [], |r| r.get(0))?;
+        assert_eq!(val, 42);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple_many_columns() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE TABLE test (a INT, b TEXT, c DOUBLE, d INT, e TEXT, f DOUBLE, g INT, h TEXT, i DOUBLE, j INT, k TEXT, l DOUBLE, m INT, n TEXT, o DOUBLE, p INT)",
+        )?;
+
+        // Use arity 16 with heterogeneous types to exercise the max tuple impl
+        db.execute(
+            "INSERT INTO test VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1i32, "a", 1.0f64, 2i32, "b", 2.0f64, 3i32, "c", 3.0f64, 4i32, "d", 4.0f64, 5i32, "e", 5.0f64, 6i32,
+            ),
+        )?;
+
+        let (a, p): (i32, i32) = db.query_row("SELECT a, p FROM test", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        assert_eq!(a, 1);
+        assert_eq!(p, 6);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_tuple_with_option() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER, name TEXT)")?;
+
+        db.execute("INSERT INTO test VALUES (?, ?)", (1i32, None::<String>))?;
+
+        let name: Option<String> = db.query_row("SELECT name FROM test WHERE id = ?", (1i32,), |r| r.get(0))?;
+        assert_eq!(name, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_execute_empty_tuple() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE test (id INTEGER DEFAULT 1)")?;
+
+        db.execute("INSERT INTO test DEFAULT VALUES", ())?;
+
+        let val: i32 = db.query_row("SELECT id FROM test", (), |r| r.get(0))?;
+        assert_eq!(val, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_decimal() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "BEGIN; \
+            CREATE TABLE foo(x DECIMAL(18, 4)); \
+            CREATE TABLE bar(y DECIMAL(18, 2)); \
+            COMMIT;",
+        )?;
+
+        // If duckdb's scale is larger than rust_decimal's scale, value should not be truncated.
+        let value = Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO foo(x) VALUES (?)", [&value])?;
+        let row: Decimal = db.query_row("SELECT x FROM foo", [], |r| r.get::<_, Decimal>(0))?;
+        assert_eq!(row, value);
+
+        // If duckdb's scale is smaller than rust_decimal's scale, value should be truncated (1.2345 -> 1.23).
+        let value = Decimal::from_i128_with_scale(12345, 4);
+        db.execute("INSERT INTO bar(y) VALUES (?)", [&value])?;
+        let row: Decimal = db.query_row("SELECT y FROM bar", [], |r| r.get::<_, Decimal>(0))?;
+        assert_eq!(row, Decimal::from_i128_with_scale(123, 2));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal_from_sql_integer_and_float() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        // FromSql: INTEGER -> Decimal
+        let row: Decimal = db.query_row("SELECT 42", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from(42));
+
+        // FromSql: BIGINT -> Decimal
+        let row: Decimal = db.query_row("SELECT 9999999999::BIGINT", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from(9999999999_i64));
+
+        // FromSql: DOUBLE -> Decimal (inherits float imprecision)
+        let row: Decimal = db.query_row("SELECT 3.14::DOUBLE", [], |r| r.get(0))?;
+        let diff = (row - Decimal::from_str_exact("3.14").unwrap()).abs();
+        assert!(diff < Decimal::from_str_exact("0.0001").unwrap());
+
+        // FromSql: VARCHAR -> Decimal
+        let row: Decimal = db.query_row("SELECT '123.456'::VARCHAR", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from_str_exact("123.456").unwrap());
+
+        // FromSql: HUGEINT -> Decimal
+        let row: Decimal = db.query_row("SELECT 12345678901234567890::HUGEINT", [], |r| r.get(0))?;
+        assert_eq!(row, Decimal::from_i128_with_scale(12345678901234567890, 0));
 
         Ok(())
     }

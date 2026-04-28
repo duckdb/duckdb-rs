@@ -1,48 +1,89 @@
 use std::{
-    ffi::{c_void, CStr, CString},
+    ffi::{CStr, CString, c_void},
     mem,
     os::raw::c_char,
     ptr, str,
     sync::{Arc, Mutex},
 };
 
-use super::{ffi, Appender, Config, Connection, Result};
+use super::{Appender, Config, Connection, Result, ffi};
 use crate::{
     error::{
-        result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract, result_from_duckdb_prepare,
-        Error,
+        Error, result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract,
+        result_from_duckdb_prepare,
     },
     raw_statement::RawStatement,
     statement::Statement,
 };
 
+#[derive(Debug)]
+struct DatabaseHandle {
+    db: ffi::duckdb_database,
+    close_on_drop: bool,
+}
+
+// `duckdb_database` is an opaque C pointer. We share it via `Arc` so the database
+// is closed exactly once when the last connection referencing it is dropped.
+// This means the handle may be dropped on any thread that owns a `Connection`.
+unsafe impl Send for DatabaseHandle {}
+
+impl DatabaseHandle {
+    #[inline]
+    pub fn new(db: ffi::duckdb_database, close_on_drop: bool) -> Self {
+        Self { db, close_on_drop }
+    }
+
+    #[inline]
+    pub fn raw(&self) -> ffi::duckdb_database {
+        self.db
+    }
+}
+
+impl Drop for DatabaseHandle {
+    fn drop(&mut self) {
+        if !self.close_on_drop {
+            return;
+        }
+        if self.db.is_null() {
+            return;
+        }
+        unsafe {
+            ffi::duckdb_close(&mut self.db);
+            self.db = ptr::null_mut();
+        }
+    }
+}
+
 pub struct InnerConnection {
-    pub db: ffi::duckdb_database,
+    // Mutex makes the Send-only handle `Sync` so the `Arc` can be shared across threads;
+    // it is not used for concurrent access to the database itself.
+    database: Arc<Mutex<DatabaseHandle>>,
     pub con: ffi::duckdb_connection,
     interrupt: Arc<InterruptHandle>,
-    owned: bool,
 }
 
 impl InnerConnection {
     #[inline]
-    pub unsafe fn new(db: ffi::duckdb_database, owned: bool) -> Result<Self> {
-        let mut con: ffi::duckdb_connection = ptr::null_mut();
-        let r = ffi::duckdb_connect(db, &mut con);
-        if r != ffi::DuckDBSuccess {
-            ffi::duckdb_disconnect(&mut con);
-            return Err(Error::DuckDBFailure(
-                ffi::Error::new(r),
-                Some("connect error".to_owned()),
-            ));
-        }
-        let interrupt = Arc::new(InterruptHandle::new(con));
+    unsafe fn new(database: Arc<Mutex<DatabaseHandle>>) -> Result<Self> {
+        unsafe {
+            let mut con: ffi::duckdb_connection = ptr::null_mut();
+            let db_raw = database.lock().expect("database handle mutex poisoned").raw();
+            let r = ffi::duckdb_connect(db_raw, &mut con);
+            if r != ffi::DuckDBSuccess {
+                ffi::duckdb_disconnect(&mut con);
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(r),
+                    Some("connect error".to_owned()),
+                ));
+            }
+            let interrupt = Arc::new(InterruptHandle::new(con));
 
-        Ok(Self {
-            db,
-            con,
-            interrupt,
-            owned,
-        })
+            Ok(Self {
+                database,
+                con,
+                interrupt,
+            })
+        }
     }
 
     pub fn open_with_flags(c_path: &CStr, config: Config) -> Result<Self> {
@@ -55,14 +96,16 @@ impl InnerConnection {
                 ffi::duckdb_free(c_err as *mut c_void);
                 return Err(Error::DuckDBFailure(ffi::Error::new(r), msg));
             }
-            Self::new(db, true)
+            Self::new_from_raw_db(db, true)
         }
     }
 
+    #[inline]
+    pub(crate) unsafe fn new_from_raw_db(raw: ffi::duckdb_database, close_on_drop: bool) -> Result<Self> {
+        unsafe { Self::new(Arc::new(Mutex::new(DatabaseHandle::new(raw, close_on_drop)))) }
+    }
+
     pub fn close(&mut self) -> Result<()> {
-        if self.db.is_null() {
-            return Ok(());
-        }
         if self.con.is_null() {
             return Ok(());
         }
@@ -70,22 +113,17 @@ impl InnerConnection {
             ffi::duckdb_disconnect(&mut self.con);
             self.con = ptr::null_mut();
             self.interrupt.clear();
-
-            if self.owned {
-                ffi::duckdb_close(&mut self.db);
-                self.db = ptr::null_mut();
-            }
         }
         Ok(())
     }
 
     /// Creates a new connection to the already-opened database.
     pub fn try_clone(&self) -> Result<Self> {
-        unsafe { Self::new(self.db, false) }
+        unsafe { Self::new(self.database.clone()) }
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<()> {
-        let c_str = CString::new(sql).unwrap();
+        let c_str = CString::new(sql)?;
         unsafe {
             let mut out = mem::zeroed();
             let r = ffi::duckdb_query_arrow(self.con, c_str.as_ptr() as *const c_char, &mut out);
@@ -96,7 +134,7 @@ impl InnerConnection {
     }
 
     pub fn prepare<'a>(&mut self, conn: &'a Connection, sql: &str) -> Result<Statement<'a>> {
-        let c_str = CString::new(sql).unwrap();
+        let c_str = CString::new(sql)?;
 
         // Extract statements (handles both single and multi-statement queries)
         let mut extracted = ptr::null_mut();
@@ -162,8 +200,8 @@ impl InnerConnection {
 
     pub fn appender<'a>(&mut self, conn: &'a Connection, table: &str, schema: &str) -> Result<Appender<'a>> {
         let mut c_app: ffi::duckdb_appender = ptr::null_mut();
-        let c_table = CString::new(table).unwrap();
-        let c_schema = CString::new(schema).unwrap();
+        let c_table = CString::new(table)?;
+        let c_schema = CString::new(schema)?;
         let r = unsafe {
             ffi::duckdb_appender_create(
                 self.con,
@@ -174,6 +212,51 @@ impl InnerConnection {
         };
         result_from_duckdb_appender(r, &mut c_app)?;
         Ok(Appender::new(conn, c_app))
+    }
+
+    pub fn appender_to_catalog_and_db<'a>(
+        &mut self,
+        conn: &'a Connection,
+        table: &str,
+        catalog: &str,
+        schema: &str,
+    ) -> Result<Appender<'a>> {
+        let mut c_app: ffi::duckdb_appender = ptr::null_mut();
+        let c_table = CString::new(table)?;
+        let c_catalog = CString::new(catalog)?;
+        let c_schema = CString::new(schema)?;
+
+        let r = unsafe {
+            ffi::duckdb_appender_create_ext(
+                self.con,
+                c_catalog.as_ptr() as *const c_char,
+                c_schema.as_ptr() as *const c_char,
+                c_table.as_ptr() as *const c_char,
+                &mut c_app,
+            )
+        };
+        result_from_duckdb_appender(r, &mut c_app)?;
+        Ok(Appender::new(conn, c_app))
+    }
+
+    pub fn appender_with_columns<'a>(
+        &mut self,
+        conn: &'a Connection,
+        table: &str,
+        schema: &str,
+        catalog: Option<&str>,
+        columns: &[&str],
+    ) -> Result<Appender<'a>> {
+        // The C API only supports narrowing columns after the appender is created.
+        // Create the appender first, then activate the requested column subset.
+        let mut appender = match catalog {
+            Some(catalog) => self.appender_to_catalog_and_db(conn, table, catalog, schema)?,
+            None => self.appender(conn, table, schema)?,
+        };
+        for column in columns {
+            appender.add_column(column)?;
+        }
+        Ok(appender)
     }
 
     pub fn get_interrupt_handle(&self) -> Arc<InterruptHandle> {

@@ -46,17 +46,18 @@ impl Drop for ScalarFunction {
     }
 }
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 
 use libduckdb_sys::{
-    self as ffi, duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
+    self as ffi, DuckDBSuccess, duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
     duckdb_create_scalar_function_set, duckdb_data_chunk, duckdb_delete_callback_t, duckdb_destroy_scalar_function,
     duckdb_function_info, duckdb_scalar_function, duckdb_scalar_function_add_parameter, duckdb_scalar_function_set,
     duckdb_scalar_function_set_extra_info, duckdb_scalar_function_set_function, duckdb_scalar_function_set_name,
-    duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs, duckdb_vector, DuckDBSuccess,
+    duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs, duckdb_scalar_function_set_volatile,
+    duckdb_vector,
 };
 
-use crate::{core::LogicalTypeHandle, Error};
+use crate::{Error, core::LogicalTypeHandle};
 
 impl ScalarFunction {
     /// Creates a new empty scalar function.
@@ -112,30 +113,53 @@ impl ScalarFunction {
         self
     }
 
-    /// Assigns extra information to the scalar function that can be fetched during binding, etc.
+    /// Marks the scalar function as volatile.
     ///
-    /// # Arguments
-    /// * `extra_info`: The extra information
-    /// * `destroy`: The callback that will be called to destroy the bind data (if any)
+    /// Volatile functions are re-evaluated for each row, even if they have no parameters.
+    /// This is useful for functions that generate random or unique values, such as random
+    /// number generators, UUID generators, or fake data generators.
     ///
-    /// # Safety
-    unsafe fn set_extra_info_impl(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
-        duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy);
+    /// By default, DuckDB optimizes zero-argument scalar functions as constants, evaluating
+    /// them only once. Setting a function as volatile prevents this optimization.
+    pub fn set_volatile(&self) -> &Self {
+        unsafe {
+            duckdb_scalar_function_set_volatile(self.ptr);
+        }
+        self
     }
 
+    /// Assigns extra information to the scalar function using raw pointers.
+    ///
+    /// For most use cases, prefer [`set_extra_info`](Self::set_extra_info) which handles memory management automatically.
+    ///
+    /// # Arguments
+    /// * `extra_info`: The extra information as a raw pointer
+    /// * `destroy`: The callback that will be called to destroy the data (if any)
+    ///
+    /// # Safety
+    /// The caller must ensure that `extra_info` is a valid pointer and that `destroy`
+    /// properly cleans up the data when called.
+    pub unsafe fn set_extra_info_raw(&self, extra_info: *mut c_void, destroy: duckdb_delete_callback_t) {
+        unsafe { duckdb_scalar_function_set_extra_info(self.ptr, extra_info, destroy) };
+    }
+
+    /// Assigns extra information to the scalar function that can be fetched during execution.
+    ///
+    /// # Arguments
+    /// * `info`: The extra information to store
     pub fn set_extra_info<T>(&self, info: T) -> &Self
     where
-        T: Send + Sync,
+        T: Send + Sync + 'static,
     {
         unsafe {
             let t = Box::new(info);
             let c_void = Box::into_raw(t) as *mut c_void;
-            self.set_extra_info_impl(c_void, Some(drop_ptr::<T>));
+            self.set_extra_info_raw(c_void, Some(drop_ptr::<T>));
         }
         self
     }
 }
 
 unsafe extern "C" fn drop_ptr<T>(ptr: *mut c_void) {
-    let _ = Box::from_raw(ptr as *mut T);
+    let _ = unsafe { Box::from_raw(ptr as *mut T) };
 }
