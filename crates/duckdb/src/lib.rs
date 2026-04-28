@@ -80,7 +80,7 @@ pub use crate::{
     error::Error,
     ffi::ErrorCode,
     inner_connection::InterruptHandle,
-    params::{NamedParams, Params, ParamsFromIter, params_from_iter},
+    params::{Params, ParamsFromIter, params_from_iter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
     transaction::{DropBehavior, Transaction},
@@ -180,6 +180,7 @@ macro_rules! params {
 /// Convenience macro to build a named parameter slice.
 ///
 /// This is useful when named parameters have different Rust types.
+/// Parameter names must not include the `$` prefix.
 ///
 /// # Example
 ///
@@ -199,13 +200,10 @@ macro_rules! params {
 #[macro_export]
 macro_rules! named_params {
     () => {
-        &[] as $crate::NamedParams<'_>
+        &[] as &[(&str, &dyn $crate::ToSql)]
     };
     ($($name:literal : $param:expr),+ $(,)?) => {
-        &[$(($name, &$param as &dyn $crate::ToSql)),+] as $crate::NamedParams<'_>
-    };
-    ($($name:expr => $param:expr),+ $(,)?) => {
-        &[$(($name, &$param as &dyn $crate::ToSql)),+] as $crate::NamedParams<'_>
+        &[$(($name, &$param as &dyn $crate::ToSql)),+] as &[(&str, &dyn $crate::ToSql)]
     };
 }
 

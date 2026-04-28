@@ -102,7 +102,7 @@ use sealed::Sealed;
 ///
 /// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
 /// for heterogeneous values, or as a `HashMap` whose keys borrow as `str` and
-/// whose values implement [`ToSql`]. The keys should _not_ include the `$`
+/// whose values implement [`ToSql`]. The keys must not include the `$`
 /// prefix.
 ///
 /// ### Example (named parameters with a HashMap)
@@ -394,9 +394,6 @@ where
     }
 }
 
-/// Borrowed name/value pairs for named SQL parameters.
-pub type NamedParams<'a> = &'a [(&'a str, &'a dyn ToSql)];
-
 fn parameter_names(stmt: &Statement<'_>) -> Result<Vec<String>> {
     let n = stmt.parameter_count();
     (1..=n).map(|i| stmt.parameter_name(i)).collect()
@@ -406,9 +403,9 @@ fn contains_name(names: &[String], key: &str) -> bool {
     names.iter().any(|name| name == key)
 }
 
-impl<'a> Sealed for NamedParams<'a> {}
+impl Sealed for &[(&str, &dyn ToSql)] {}
 
-impl<'a> Params for NamedParams<'a> {
+impl Params for &[(&str, &dyn ToSql)] {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         let names = parameter_names(stmt)?;
 
@@ -465,24 +462,5 @@ where
         }
 
         stmt.bind_parameters(params)
-    }
-}
-
-impl<K, V, S> Sealed for HashMap<K, V, S>
-where
-    K: Borrow<str> + Eq + Hash,
-    V: ToSql,
-    S: BuildHasher,
-{
-}
-
-impl<K, V, S> Params for HashMap<K, V, S>
-where
-    K: Borrow<str> + Eq + Hash,
-    V: ToSql,
-    S: BuildHasher,
-{
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
-        (&self).__bind_in(stmt)
     }
 }

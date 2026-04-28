@@ -1165,6 +1165,48 @@ mod test {
     }
 
     #[test]
+    fn test_named_parameters_reject_missing_hashmap_key() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT $foo > $bar", &named_params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("bar".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_missing_slice_key() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let params = crate::named_params! {
+            "foo": 42,
+        };
+
+        let err = db
+            .query_row("SELECT $foo > $bar", params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("bar".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_string_keys_query_map() -> Result<()> {
+        use std::collections::HashMap;
+
+        let db = Connection::open_in_memory()?;
+        let params = HashMap::from([("min".to_string(), 2i64), ("max".to_string(), 3i64)]);
+        let mut stmt = db.prepare("SELECT i FROM range(5) tbl(i) WHERE i BETWEEN $min AND $max ORDER BY i")?;
+        let rows = stmt.query_map(&params, |row| row.get::<_, i64>(0))?;
+        let values = rows.collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(values, [2, 3]);
+        Ok(())
+    }
+
+    #[test]
     fn test_empty_stmt() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         let stmt = conn.prepare("");
