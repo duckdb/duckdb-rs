@@ -17,6 +17,11 @@ pub struct Value {
 macro_rules! primitive_getters {
     ($($name:ident: $rust_type:ty => $ffi_func:ident),* $(,)?) => {
         $(
+            #[doc = concat!("Returns the value converted to `", stringify!($rust_type), "` using DuckDB's C API.")]
+            ///
+            /// This method does not check the value's logical type before converting.
+            /// If DuckDB cannot convert the value, the C API may return type-specific fallback values
+            /// such as `false` or a minimum integer value.
             pub fn $name(&self) -> $rust_type {
                 unsafe { $ffi_func(self.ptr) }
             }
@@ -42,7 +47,7 @@ impl Drop for Value {
 }
 
 impl Value {
-    // Returns the value as a Rust type
+    // Returns the value as a Rust type.
     primitive_getters!(
         to_bool: bool => duckdb_get_bool,
         to_int8: i8 => duckdb_get_int8,
@@ -57,21 +62,32 @@ impl Value {
         to_double: f64 => duckdb_get_double,
     );
 
-    /// Returns the value as a Vec<Value>
-    pub fn to_vec(&self) -> Vec<Value> {
+    /// Returns the value as a list of [`Value`]s.
+    ///
+    /// Returns `None` when the value is not a DuckDB `LIST`, or when the value is SQL `NULL`.
+    pub fn to_list(&self) -> Option<Vec<Value>> {
+        if self.logical_type_id() != LogicalTypeId::List || self.is_null() {
+            return None;
+        }
+
         let size = unsafe { duckdb_get_list_size(self.ptr) };
         let mut out = Vec::with_capacity(size.try_into().unwrap());
         for i in 0..size {
-            let child = unsafe { duckdb_get_list_child(self.ptr, i as u64) };
+            let child = unsafe { duckdb_get_list_child(self.ptr, i) };
+            if child.is_null() {
+                return None;
+            }
             out.push(Value::from(child));
         }
-        out
+        Some(out)
     }
 
+    /// Returns whether the value is SQL `NULL`.
     pub fn is_null(&self) -> bool {
         unsafe { duckdb_is_null_value(self.ptr) }
     }
 
+    /// Returns the DuckDB logical type id for this value.
     pub fn logical_type_id(&self) -> LogicalTypeId {
         unsafe {
             let logical_type = duckdb_get_value_type(self.ptr);
@@ -110,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn test_value_to_vec() {
+    fn test_value_to_list() {
         let list_items: Vec<i64> = vec![1, -200, 2381292];
         let val = unsafe {
             let logical_type = LogicalTypeHandle::from(LogicalTypeId::Bigint);
@@ -125,17 +141,23 @@ mod tests {
             Value::from(duckdb_val)
         };
 
-        let list = val.to_vec();
+        let list = val.to_list().unwrap();
         assert_eq!(list.len(), list_items.len());
         assert_eq!(list.iter().map(|v| v.to_int64()).collect::<Vec<i64>>(), list_items);
     }
 
     #[test]
+    fn test_value_to_list_returns_none_for_non_list() {
+        let val = unsafe { Value::from(duckdb_create_int64(42)) };
+        assert!(val.to_list().is_none());
+    }
+
+    #[test]
     fn test_value_primitive_getters() {
         use crate::ffi::{
-            duckdb_create_bool, duckdb_create_date, duckdb_create_double, duckdb_create_float, duckdb_create_int16,
-            duckdb_create_int32, duckdb_create_int64, duckdb_create_int8, duckdb_create_uint16, duckdb_create_uint32,
-            duckdb_create_uint64, duckdb_create_uint8,
+            duckdb_create_bool, duckdb_create_double, duckdb_create_float, duckdb_create_int16, duckdb_create_int32,
+            duckdb_create_int64, duckdb_create_int8, duckdb_create_uint16, duckdb_create_uint32, duckdb_create_uint64,
+            duckdb_create_uint8,
         };
 
         unsafe {
@@ -176,12 +198,12 @@ mod tests {
             assert_eq!(u64_val.to_uint64(), 18000000000000000000);
 
             // Test float
-            let float_val = Value::from(duckdb_create_float(3.14f32));
-            assert_eq!(float_val.to_float(), 3.14);
+            let float_val = Value::from(duckdb_create_float(1.25f32));
+            assert_eq!(float_val.to_float(), 1.25);
 
             // Test double
-            let double_val = Value::from(duckdb_create_double(2.71828));
-            assert_eq!(double_val.to_double(), 2.71828);
+            let double_val = Value::from(duckdb_create_double(-4.5));
+            assert_eq!(double_val.to_double(), -4.5);
         }
     }
 
@@ -192,6 +214,13 @@ mod tests {
         unsafe {
             let null_val = Value::from(duckdb_create_null_value());
             assert!(null_val.is_null());
+            assert!(null_val.to_list().is_none());
         }
+    }
+
+    #[test]
+    fn test_value_logical_type_id() {
+        let val = unsafe { Value::from(duckdb_create_int64(42)) };
+        assert_eq!(val.logical_type_id(), LogicalTypeId::Bigint);
     }
 }
