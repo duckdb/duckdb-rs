@@ -1128,15 +1128,39 @@ mod test {
     fn test_named_parameters() -> Result<()> {
         use std::collections::HashMap;
 
-        let named_params: &HashMap<String, &dyn ToSql> = &HashMap::from([
-            ("foo".to_string(), &42 as &dyn ToSql),
-            ("bar".to_string(), &23 as &dyn ToSql),
-        ]);
+        let named_params = HashMap::from([("foo", 42), ("bar", 23)]);
 
         let db = Connection::open_in_memory()?;
         let sql = r#"SELECT $foo > $bar"#;
-        let result: bool = db.query_row(sql, named_params, |row| row.get(0))?;
-        assert_eq!(result, true);
+        let result: bool = db.query_row(sql, &named_params, |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_macro() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let name = "alice";
+        let params = crate::named_params! {
+            "foo": 42,
+            "name": name,
+        };
+        let result: bool = db.query_row("SELECT $foo > 40 AND $name = 'alice'", params, |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_extra_keys() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42), ("bar", 23), ("extra", 1)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT $foo > $bar", &named_params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("extra".to_string()));
         Ok(())
     }
 

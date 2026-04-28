@@ -1,5 +1,9 @@
 use crate::{Error, Result, Statement, ToSql};
-use std::collections::HashMap;
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    hash::{BuildHasher, Hash},
+};
 
 mod sealed {
     /// This trait exists just to ensure that the only impls of `trait Params`
@@ -96,23 +100,39 @@ use sealed::Sealed;
 ///
 /// ## Named parameters
 ///
-/// Named parameters are passed as a `&HashMap<String, &dyn ToSql>`. The keys
-/// should _not_ include the `$` prefix.
+/// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
+/// for heterogeneous values, or as a `HashMap` whose keys borrow as `str` and
+/// whose values implement [`ToSql`]. The keys should _not_ include the `$`
+/// prefix.
 ///
-/// ### Example (named parameters)
+/// ### Example (named parameters with a HashMap)
 ///
 /// ```rust,no_run
 /// use std::collections::HashMap;
-/// use duckdb::{Connection, Result, ToSql};
+/// use duckdb::{Connection, Result};
 ///
 /// fn execute_query(conn: &Connection) -> Result<Vec<String>> {
-///     let params: HashMap<String, &dyn ToSql> = HashMap::from([
-///         ("min".to_string(), &23 as &dyn ToSql),
-///         ("max".to_string(), &42 as &dyn ToSql),
-///     ]);
+///     let params = HashMap::from([("min", 23), ("max", 42)]);
 ///     let mut stmt = conn.prepare("SELECT name FROM people WHERE age BETWEEN $min AND $max")?;
 ///     let rows = stmt.query_map(&params, |row| row.get::<_, String>(0))?;
 ///     rows.collect()
+/// }
+/// ```
+///
+/// ### Example (named parameters with mixed types)
+///
+/// ```rust,no_run
+/// use duckdb::{Connection, Result, named_params};
+///
+/// fn execute_query(conn: &Connection, min_age: i32, name: &str) -> Result<bool> {
+///     conn.query_row(
+///         "SELECT $name = 'Alice' AND $age >= 18",
+///         named_params! {
+///             "name": name,
+///             "age": min_age,
+///         },
+///         |row| row.get(0),
+///     )
 /// }
 /// ```
 ///
@@ -374,26 +394,94 @@ where
     }
 }
 
-impl Sealed for &HashMap<String, &dyn ToSql> {}
+/// Borrowed name/value pairs for named SQL parameters.
+pub type NamedParams<'a> = &'a [(&'a str, &'a dyn ToSql)];
 
-impl Params for &HashMap<String, &dyn ToSql> {
+fn parameter_names(stmt: &Statement<'_>) -> Result<Vec<String>> {
+    let n = stmt.parameter_count();
+    (1..=n).map(|i| stmt.parameter_name(i)).collect()
+}
+
+fn contains_name(names: &[String], key: &str) -> bool {
+    names.iter().any(|name| name == key)
+}
+
+impl<'a> Sealed for NamedParams<'a> {}
+
+impl<'a> Params for NamedParams<'a> {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
-        let n = stmt.parameter_count();
-        let params: Vec<_> = (1..=n)
-            .map(|i| {
-                let name = stmt.parameter_name(i)?;
-                let val = *self.get(&name).ok_or(Error::InvalidParameterName(name))?;
-                Ok(val)
+        let names = parameter_names(stmt)?;
+
+        let params: Vec<_> = names
+            .iter()
+            .map(|name| {
+                self.iter()
+                    .find_map(|(key, value)| (*key == name).then_some(*value))
+                    .ok_or_else(|| Error::InvalidParameterName(name.clone()))
             })
-            .collect::<Result<Vec<_>, Error>>()?;
-        stmt.bind_parameters(&params)?;
-        Ok(())
+            .collect::<Result<Vec<_>>>()?;
+
+        for (key, _) in self {
+            if !contains_name(&names, key) {
+                return Err(Error::InvalidParameterName((*key).to_string()));
+            }
+        }
+
+        stmt.bind_parameters(params)
     }
 }
 
-impl Sealed for HashMap<String, &dyn ToSql> {}
+impl<K, V, S> Sealed for &HashMap<K, V, S>
+where
+    K: Borrow<str> + Eq + Hash,
+    V: ToSql,
+    S: BuildHasher,
+{
+}
 
-impl Params for HashMap<String, &dyn ToSql> {
+impl<K, V, S> Params for &HashMap<K, V, S>
+where
+    K: Borrow<str> + Eq + Hash,
+    V: ToSql,
+    S: BuildHasher,
+{
+    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+        let names = parameter_names(stmt)?;
+
+        let params: Vec<_> = names
+            .iter()
+            .map(|name| {
+                self.get(name.as_str())
+                    .map(|value| value as &dyn ToSql)
+                    .ok_or_else(|| Error::InvalidParameterName(name.clone()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        for key in self.keys() {
+            let key = key.borrow();
+            if !contains_name(&names, key) {
+                return Err(Error::InvalidParameterName(key.to_string()));
+            }
+        }
+
+        stmt.bind_parameters(params)
+    }
+}
+
+impl<K, V, S> Sealed for HashMap<K, V, S>
+where
+    K: Borrow<str> + Eq + Hash,
+    V: ToSql,
+    S: BuildHasher,
+{
+}
+
+impl<K, V, S> Params for HashMap<K, V, S>
+where
+    K: Borrow<str> + Eq + Hash,
+    V: ToSql,
+    S: BuildHasher,
+{
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         (&self).__bind_in(stmt)
     }

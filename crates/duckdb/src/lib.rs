@@ -80,7 +80,7 @@ pub use crate::{
     error::Error,
     ffi::ErrorCode,
     inner_connection::InterruptHandle,
-    params::{Params, ParamsFromIter, params_from_iter},
+    params::{NamedParams, Params, ParamsFromIter, params_from_iter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
     transaction::{DropBehavior, Transaction},
@@ -174,6 +174,38 @@ macro_rules! params {
     };
     ($($param:expr),+ $(,)?) => {
         &[$(&$param as &dyn $crate::ToSql),+] as &[&dyn $crate::ToSql]
+    };
+}
+
+/// Convenience macro to build a named parameter slice.
+///
+/// This is useful when named parameters have different Rust types.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// # use duckdb::{Connection, Result, named_params};
+/// fn find(conn: &Connection, min_age: i32, name: &str) -> Result<bool> {
+///     conn.query_row(
+///         "SELECT $age >= 18 AND $name = 'Alice'",
+///         named_params! {
+///             "age": min_age,
+///             "name": name,
+///         },
+///         |row| row.get(0),
+///     )
+/// }
+/// ```
+#[macro_export]
+macro_rules! named_params {
+    () => {
+        &[] as $crate::NamedParams<'_>
+    };
+    ($($name:literal : $param:expr),+ $(,)?) => {
+        &[$(($name, &$param as &dyn $crate::ToSql)),+] as $crate::NamedParams<'_>
+    };
+    ($($name:expr => $param:expr),+ $(,)?) => {
+        &[$(($name, &$param as &dyn $crate::ToSql)),+] as $crate::NamedParams<'_>
     };
 }
 
