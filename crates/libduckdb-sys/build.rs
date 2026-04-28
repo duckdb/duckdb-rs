@@ -24,152 +24,42 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir).join("bindgen.rs");
     #[cfg(feature = "bundled")]
-    {
-        build_bundled::main(&out_dir, &out_path);
-    }
+    build_bundled_backend::main(&out_dir, &out_path);
     #[cfg(not(feature = "bundled"))]
-    {
-        build_linked::main(&out_dir, &out_path)
-    }
+    build_linked::main(&out_dir, &out_path)
 }
 
+#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+mod build_bundled_cc;
+#[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
+mod build_bundled_cmake;
+
+#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+use crate::build_bundled_cc as build_bundled_backend;
+#[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
+use crate::build_bundled_cmake as build_bundled_backend;
+
 #[cfg(feature = "bundled")]
-mod build_bundled {
-    use std::{
-        collections::{HashMap, HashSet},
-        path::Path,
-    };
-
-    use crate::win_target;
-
-    #[derive(serde::Deserialize)]
-    struct Sources {
-        cpp_files: HashSet<String>,
-        include_dirs: HashSet<String>,
+#[allow(unused_variables)]
+pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
+    #[cfg(feature = "buildtime_bindgen")]
+    {
+        use crate::{HeaderLocation, bindings};
+        let header = HeaderLocation::FromPath(header_dir.to_string_lossy().into_owned());
+        bindings::write_to_out_dir(header, out_path);
     }
 
-    #[derive(serde::Deserialize)]
-    struct Manifest {
-        base: Sources,
-
-        #[allow(unused)]
-        extensions: HashMap<String, Sources>,
-    }
-
-    #[allow(unused)]
-    fn add_extension(
-        cfg: &mut cc::Build,
-        manifest: &Manifest,
-        extension: &str,
-        cpp_files: &mut HashSet<String>,
-        include_dirs: &mut HashSet<String>,
-    ) {
-        cpp_files.extend(manifest.extensions.get(extension).unwrap().cpp_files.clone());
-        include_dirs.extend(manifest.extensions.get(extension).unwrap().include_dirs.clone());
-        cfg.define(
-            &format!("DUCKDB_EXTENSION_{}_LINKED", extension.to_uppercase()),
-            Some("1"),
-        );
-    }
-
-    fn untar_archive(out_dir: &str) {
-        let path = "duckdb.tar.gz";
-
-        let tar_gz = std::fs::File::open(path).expect("archive file");
-        let tar = flate2::read::GzDecoder::new(tar_gz);
-        let mut archive = tar::Archive::new(tar);
-        archive.unpack(out_dir).expect("archive");
-    }
-
-    pub fn main(out_dir: &str, out_path: &Path) {
-        untar_archive(out_dir);
-
-        if !cfg!(feature = "bundled") {
-            // This is just a sanity check, the top level `main` should ensure this.
-            panic!("This module should not be used: bundled feature has not been enabled");
-        }
-
-        #[cfg(feature = "buildtime_bindgen")]
-        {
-            use super::{bindings, HeaderLocation};
-            let header = HeaderLocation::FromPath(format!("{out_dir}/duckdb/src/include/"));
-            bindings::write_to_out_dir(header, out_path);
-        }
-
-        #[cfg(not(feature = "buildtime_bindgen"))]
-        {
-            use std::fs;
-            fs::copy(
-                #[cfg(not(feature = "loadable-extension"))]
-                "src/bindgen_bundled_version.rs",
-                #[cfg(feature = "loadable-extension")]
-                "src/bindgen_bundled_version_loadable.rs",
-                out_path,
-            )
-            .expect("Could not copy bindings to output directory");
-        }
-
-        let manifest_file = std::fs::File::open(format!("{out_dir}/duckdb/manifest.json")).expect("manifest file");
-        let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
-
-        let mut cpp_files = HashSet::new();
-        let mut include_dirs = HashSet::new();
-
-        cpp_files.extend(manifest.base.cpp_files.clone());
-        // otherwise clippy will remove the clone here...
-        // https://github.com/rust-lang/rust-clippy/issues/9011
-        #[allow(clippy::all)]
-        include_dirs.extend(manifest.base.include_dirs.clone());
-
-        let mut cfg = cc::Build::new();
-
-        add_extension(&mut cfg, &manifest, "core_functions", &mut cpp_files, &mut include_dirs);
-
-        #[cfg(feature = "parquet")]
-        add_extension(&mut cfg, &manifest, "parquet", &mut cpp_files, &mut include_dirs);
-
-        #[cfg(feature = "json")]
-        add_extension(&mut cfg, &manifest, "json", &mut cpp_files, &mut include_dirs);
-
-        // duckdb/tools/pythonpkg/setup.py
-        cfg.define("DUCKDB_EXTENSION_AUTOINSTALL_DEFAULT", "1");
-        cfg.define("DUCKDB_EXTENSION_AUTOLOAD_DEFAULT", "1");
-
-        // Rebuild if the source tarball changes
-        println!("cargo:rerun-if-changed=duckdb.tar.gz");
-
-        cfg.include("duckdb");
-        cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/duckdb/{dir}")));
-
-        // Ensure deterministic builds
-        let mut cpp_files_vec: Vec<String> = cpp_files.into_iter().collect();
-        cpp_files_vec.sort();
-        for f in cpp_files_vec.into_iter().map(|file| format!("{out_dir}/{file}")) {
-            cfg.file(f);
-        }
-
-        cfg.cpp(true)
-            .flag_if_supported("-std=c++11")
-            .flag_if_supported("/utf-8")
-            .flag_if_supported("/bigobj")
-            .warnings(false)
-            .flag_if_supported("-w");
-
-        // Define NDEBUG if not in debug mode
-        let is_debug = match std::env::var("DEBUG") {
-            Ok(v) => v != "false" && v != "0",
-            Err(_) => false,
-        };
-        if !is_debug {
-            cfg.define("NDEBUG", None);
-        }
-
-        if win_target() {
-            cfg.define("DUCKDB_BUILD_LIBRARY", None);
-        }
-        cfg.compile("duckdb");
-
-        println!("cargo:lib_dir={out_dir}");
+    #[cfg(not(feature = "buildtime_bindgen"))]
+    {
+        use std::fs;
+        fs::copy(
+            #[cfg(not(feature = "loadable-extension"))]
+            "src/bindgen_bundled_version.rs",
+            #[cfg(feature = "loadable-extension")]
+            "src/bindgen_bundled_version_loadable.rs",
+            out_path,
+        )
+        .expect("Could not copy bindings to output directory");
     }
 }
 
@@ -219,7 +109,7 @@ mod build_linked {
     #[cfg(feature = "buildtime_bindgen")]
     use super::bindings;
 
-    use super::{is_compiler, win_target, HeaderLocation};
+    use super::{HeaderLocation, is_compiler, win_target};
     use std::{
         env, fs, io,
         path::{Path, PathBuf},
@@ -285,7 +175,7 @@ mod build_linked {
             println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
-            env::set_var("PKG_CONFIG_PATH", pkgconfig_path);
+            unsafe { env::set_var("PKG_CONFIG_PATH", pkgconfig_path) };
 
             #[cfg(feature = "pkg-config")]
             let lib_found = pkg_config::Config::new().probe("duckdb").is_ok();
@@ -367,7 +257,7 @@ mod build_linked {
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
 
-        let version = env!("CARGO_PKG_VERSION").to_string();
+        let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
 
         // Cache downloads in target/duckdb-download/<target>/<version> so successive builds reuse them
         let download_dir = workspace_download_dir(out_dir)?.join(&target).join(&version);
@@ -448,8 +338,7 @@ mod build_linked {
         out_dir: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(deps_dir) = profile_deps_dir(out_dir) else {
-            println!("cargo:warning=Could not determine target/deps directory, skipping runtime copy");
-            return Ok(());
+            return Err("Could not determine target/deps directory for runtime lib copy".into());
         };
         fs::create_dir_all(&deps_dir)?;
         let source = download_dir.join(lib_filename);
@@ -480,29 +369,31 @@ mod build_linked {
         Ok(target_root.join("duckdb-download"))
     }
 
-    // Mirrors Cargo's target/<profile>/deps layout (optionally with CARGO_TARGET_DIR / target triple).
+    fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
+        // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
+        let encoded = pkg_version
+            .split('.')
+            .nth(1)
+            .expect("CARGO_PKG_VERSION should use the documented 1.MAJOR_MINOR_PATCH.x format")
+            .parse::<u32>()
+            .expect("CARGO_PKG_VERSION should encode the DuckDB version as an integer in its second component");
+        let duckdb_major = encoded / 10_000;
+        let duckdb_minor = (encoded / 100) % 100;
+        let duckdb_patch = encoded % 100;
+        format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
+    }
+
+    // Mirrors Cargo's actual target/<triple>/<profile>/deps (or target/<profile>/deps)
+    // layout by deriving it from OUT_DIR.
     fn profile_deps_dir(out_dir: &str) -> Option<PathBuf> {
-        let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let mut target_root = env::var("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|_| {
-            Path::new(out_dir)
-                .ancestors()
-                .find(|ancestor| {
-                    ancestor
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name == "target")
-                })
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("target"))
-        });
-        if env::var("HOST").ok() != env::var("TARGET").ok() {
-            if let Ok(target) = env::var("TARGET") {
-                target_root.push(target);
-            }
-        }
-        target_root.push(profile);
-        target_root.push("deps");
-        Some(target_root)
+        let build_dir = Path::new(out_dir).ancestors().find(|ancestor| {
+            ancestor
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "build")
+        })?;
+        let profile_dir = build_dir.parent()?;
+        Some(profile_dir.join("deps"))
     }
 
     struct LibduckdbArchive {
@@ -592,11 +483,7 @@ mod bindings {
             .into_iter()
             .find_map(|i| {
                 if let syn::Item::Struct(s) = i {
-                    if s.ident == "duckdb_ext_api_v1" {
-                        Some(s)
-                    } else {
-                        None
-                    }
+                    if s.ident == "duckdb_ext_api_v1" { Some(s) } else { None }
                 } else {
                     None
                 }

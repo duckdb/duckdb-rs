@@ -5,8 +5,8 @@ use num_integer::Integer;
 use std::fmt::Write;
 
 use crate::{
-    types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
     Result,
+    types::{FromSql, FromSqlError, FromSqlResult, TimeUnit, ToSql, ToSqlOutput, ValueRef},
 };
 
 use super::Value;
@@ -131,17 +131,18 @@ impl FromSql for NaiveDateTime {
 impl<Tz: TimeZone> ToSql for DateTime<Tz> {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        let utc = self.with_timezone(&Utc);
         let mut buffer = String::with_capacity(29);
         write!(
             buffer,
             "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}+00:00",
-            self.year(),
-            self.month(),
-            self.day(),
-            self.hour(),
-            self.minute(),
-            self.second(),
-            self.nanosecond() / 1_000
+            utc.year(),
+            utc.month(),
+            utc.day(),
+            utc.hour(),
+            utc.minute(),
+            utc.second(),
+            utc.nanosecond() / 1_000
         )
         .unwrap();
         Ok(ToSqlOutput::from(buffer))
@@ -209,8 +210,8 @@ impl ToSql for Duration {
 #[cfg(test)]
 mod test {
     use crate::{
-        types::{FromSql, FromSqlError, ToSql, ToSqlOutput, ValueRef},
         Connection, Result,
+        types::{FromSql, FromSqlError, ToSql, ToSqlOutput, ValueRef},
     };
     use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 

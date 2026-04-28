@@ -3,13 +3,13 @@ use std::{cell::OnceCell, collections::HashMap, ffi::CStr, ops::Deref, ptr, rc::
 use arrow::{
     array::StructArray,
     datatypes::{DataType, Schema, SchemaRef},
-    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
 };
 
-use super::{ffi, Result};
+use super::{Result, ffi};
+use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
 #[cfg(feature = "polars")]
-use crate::arrow2;
-use crate::{core::LogicalTypeHandle, error::result_from_duckdb_arrow, Error};
+use polars_core::utils::arrow as polars_arrow;
 
 /// Private newtype for DuckDB prepared statements that finalize themselves when dropped.
 ///
@@ -165,54 +165,52 @@ impl RawStatement {
 
     #[cfg(feature = "polars")]
     #[inline]
-    pub fn step2(&self) -> Option<arrow2::array::StructArray> {
-        self.result?;
+    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
+        let result = self.result?;
 
         unsafe {
-            let mut ffi_arrow2_array = arrow2::ffi::ArrowArray::empty();
+            let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
 
             if ffi::duckdb_query_arrow_array(
-                self.result_unwrap(),
-                &mut std::ptr::addr_of_mut!(ffi_arrow2_array) as *mut _ as *mut ffi::duckdb_arrow_array,
+                result,
+                &mut std::ptr::addr_of_mut!(ffi_arrow_array) as *mut _ as *mut ffi::duckdb_arrow_array,
             )
             .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
 
-            let mut ffi_arrow2_schema = arrow2::ffi::ArrowSchema::empty();
+            let mut ffi_arrow_schema = polars_arrow::ffi::ArrowSchema::empty();
 
             if ffi::duckdb_query_arrow_schema(
-                self.result_unwrap(),
-                &mut std::ptr::addr_of_mut!(ffi_arrow2_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
+                result,
+                &mut std::ptr::addr_of_mut!(ffi_arrow_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
             )
             .ne(&ffi::DuckDBSuccess)
             {
                 return None;
             }
 
-            let arrow2_field =
-                arrow2::ffi::import_field_from_c(&ffi_arrow2_schema).expect("Failed to import arrow2 Field from C");
-            let import_arrow2_array = arrow2::ffi::import_array_from_c(ffi_arrow2_array, arrow2_field.dtype);
+            let field =
+                polars_arrow::ffi::import_field_from_c(&ffi_arrow_schema).expect("Failed to import Polars Arrow field");
+            let import_array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype);
 
-            if let Err(err) = import_arrow2_array {
-                // When array is empty, import_array_from_c returns error with message
-                // "ComputeError("An ArrowArray of type X must have non-null children")
-                // Therefore, we return None when encountering this error.
-                match err {
-                    polars::error::PolarsError::ComputeError(_) => return None,
-                    _ => panic!("Failed to import arrow2 Array from C: {err}"),
+            let array = match import_array {
+                Ok(array) => array,
+                // When array is empty, import_array_from_c returns ComputeError with message
+                // "An ArrowArray of type X must have non-null children".
+                Err(polars::error::PolarsError::ComputeError(msg)) if msg.to_string().contains("non-null children") => {
+                    return None;
                 }
-            }
-
-            let arrow2_array = import_arrow2_array.unwrap();
-            let arrow2_struct_array = arrow2_array
+                Err(err) => panic!("Failed to import Polars Arrow array from C: {err}"),
+            };
+            let struct_array = array
                 .as_any()
-                .downcast_ref::<arrow2::array::StructArray>()
-                .expect("Failed to downcast arrow2 Array to arrow2 StructArray")
+                .downcast_ref::<polars_arrow::array::StructArray>()
+                .expect("Failed to downcast Polars Arrow array to StructArray")
                 .to_owned();
 
-            Some(arrow2_struct_array)
+            Some(struct_array)
         }
     }
 
@@ -268,28 +266,30 @@ impl RawStatement {
 
     #[allow(dead_code)]
     unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
+        unsafe {
+            use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
 
-        println!(
-            "row-count: {}, column-count: {}",
-            duckdb_row_count(&mut result),
-            duckdb_column_count(&mut result)
-        );
-        for i in 0..duckdb_column_count(&mut result) {
-            print!(
-                "column-name:{} ",
-                CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+            println!(
+                "row-count: {}, column-count: {}",
+                duckdb_row_count(&mut result),
+                duckdb_column_count(&mut result)
             );
-        }
-        println!();
-        // print the data of the result
-        for row_idx in 0..duckdb_row_count(&mut result) {
-            print!("row-value:");
-            for col_idx in 0..duckdb_column_count(&mut result) {
-                let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                print!("{} ", CStr::from_ptr(val).to_string_lossy());
+            for i in 0..duckdb_column_count(&mut result) {
+                print!(
+                    "column-name:{} ",
+                    CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
+                );
             }
             println!();
+            // print the data of the result
+            for row_idx in 0..duckdb_row_count(&mut result) {
+                print!("row-value:");
+                for col_idx in 0..duckdb_column_count(&mut result) {
+                    let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
+                    print!("{} ", CStr::from_ptr(val).to_string_lossy());
+                }
+                println!();
+            }
         }
     }
 

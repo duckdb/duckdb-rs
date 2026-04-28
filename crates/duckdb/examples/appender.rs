@@ -1,4 +1,4 @@
-use duckdb::{params, Connection, DropBehavior, Result};
+use duckdb::{Connection, DropBehavior, Result, params};
 
 fn main() -> Result<()> {
     //let mut db = Connection::open("10m.db")?;
@@ -65,7 +65,7 @@ fn firstn(n: i32) -> impl std::iter::Iterator<Item = User> {
 }
 
 // Modified from https://github.com/avinassh/fast-sqlite3-inserts/blob/master/src/bin/common.rs
-use rand::{prelude::IndexedRandom, Rng};
+use rand::{Rng, prelude::IndexedRandom};
 
 #[inline]
 fn get_random_age() -> i8 {

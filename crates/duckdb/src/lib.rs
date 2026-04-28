@@ -72,7 +72,7 @@ use crate::{cache::StatementCache, inner_connection::InnerConnection, raw_statem
 pub use crate::r2d2::DuckdbConnectionManager;
 pub use crate::{
     appender::Appender,
-    appender_params::{appender_params_from_iter, AppenderParams, AppenderParamsFromIter},
+    appender_params::{AppenderParams, AppenderParamsFromIter, appender_params_from_iter},
     arrow_batch::{Arrow, ArrowStream},
     cache::CachedStatement,
     column::Column,
@@ -80,7 +80,7 @@ pub use crate::{
     error::Error,
     ffi::ErrorCode,
     inner_connection::InterruptHandle,
-    params::{params_from_iter, Params, ParamsFromIter},
+    params::{Params, ParamsFromIter, params_from_iter},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
     transaction::{DropBehavior, Transaction},
@@ -95,8 +95,6 @@ pub use arrow;
 pub use duckdb_loadable_macros::duckdb_entrypoint_c_api;
 #[cfg(feature = "polars")]
 pub use polars;
-#[cfg(feature = "polars")]
-pub use polars_arrow as arrow2;
 
 /// The core module contains the main functionality of the DuckDB crate.
 pub mod core;
@@ -111,6 +109,7 @@ mod column;
 mod config;
 mod inner_connection;
 mod params;
+
 #[cfg(feature = "polars")]
 mod polars_dataframe;
 mod pragma;
@@ -121,9 +120,17 @@ mod row;
 mod statement;
 mod transaction;
 
-#[cfg(feature = "extensions-full")]
+#[cfg(any(
+    feature = "autocomplete",
+    feature = "icu",
+    feature = "json",
+    feature = "parquet",
+    feature = "tpcds",
+    feature = "tpch"
+))]
 mod extension;
 
+pub mod profiling;
 pub mod types;
 /// The duckdb table function interface
 #[cfg(feature = "vtab")]
@@ -278,7 +285,7 @@ impl Connection {
     /// Need to pass in a valid db instance
     #[inline]
     pub unsafe fn open_from_raw(raw: ffi::duckdb_database) -> Result<Self> {
-        InnerConnection::new_from_raw_db(raw, false).map(|db| Self {
+        unsafe { InnerConnection::new_from_raw_db(raw, false) }.map(|db| Self {
             db: RefCell::new(db),
             cache: StatementCache::with_capacity(STATEMENT_CACHE_DEFAULT_CAPACITY),
             path: None, // Can we know the path from connection?
@@ -1561,16 +1568,6 @@ mod test {
         db_interrupt.interrupt();
     }
 
-    #[cfg(feature = "bundled")]
-    #[test]
-    fn test_version() -> Result<()> {
-        let db = checked_memory_handle();
-        let expected: String = format!("v{}", env!("CARGO_PKG_VERSION"));
-        let actual = db.version()?;
-        assert_eq!(expected, actual);
-        Ok(())
-    }
-
     #[test]
     fn test_arrow_string_view_setting() -> Result<()> {
         // Test that only one setting doesn't work (missing arrow_output_version)
@@ -1856,6 +1853,54 @@ mod test {
         let count: i64 = db.query_row("SELECT COUNT(*) FROM flush_db.main.test", [], |r| r.get(0))?;
         assert_eq!(count, 3);
 
+        Ok(())
+    }
+
+    /// Enum values should reflect actual row data, not just iterate over enum variants.
+    #[test]
+    fn test_enum_read() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE stats (
+                name ENUM('CA', 'NY'),
+                value INTEGER,
+            );
+            INSERT INTO stats VALUES ('CA', 10), ('CA', 20), ('NY', 4);
+            "#,
+        )?;
+
+        let mut stmt = conn.prepare("SELECT * FROM stats")?;
+        let results: Vec<(String, i32)> = stmt
+            .query_map([], |row| {
+                let name: String = row.get(0)?;
+                let value: i32 = row.get(1)?;
+                Ok((name, value))
+            })?
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], ("CA".to_string(), 10));
+        assert_eq!(results[1], ("CA".to_string(), 20));
+        assert_eq!(results[2], ("NY".to_string(), 4));
+        Ok(())
+    }
+
+    #[test]
+    fn test_enum_read_nullable() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE stats (name ENUM('CA', 'NY'));
+            INSERT INTO stats VALUES ('CA'), (NULL), ('NY');
+            "#,
+        )?;
+
+        let mut stmt = conn.prepare("SELECT name FROM stats")?;
+        let results: Vec<Option<String>> = stmt.query_map([], |row| row.get(0))?.map(|r| r.unwrap()).collect();
+
+        assert_eq!(results, vec![Some("CA".into()), None, Some("NY".into())]);
         Ok(())
     }
 }

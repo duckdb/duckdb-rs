@@ -10,6 +10,7 @@ pub use self::{
     value::Value,
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
 };
+pub(crate) use decimal::to_duckdb_decimal;
 
 use arrow::datatypes::DataType;
 use std::fmt;
@@ -25,6 +26,7 @@ mod url;
 mod value;
 mod value_ref;
 
+mod decimal;
 mod ordered_map;
 mod string;
 

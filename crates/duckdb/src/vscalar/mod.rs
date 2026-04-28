@@ -7,10 +7,10 @@ use libduckdb_sys::{
 };
 
 use crate::{
+    Connection,
     core::{DataChunkHandle, LogicalTypeHandle},
     inner_connection::InnerConnection,
     vtab::arrow::WritableVector,
-    Connection,
 };
 mod function;
 
@@ -27,14 +27,25 @@ pub trait VScalar: Sized {
     /// Shared across worker threads and invocations — must not be modified during execution.
     /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
     type State: Sized + Send + Sync + 'static;
-    /// The actual function
+    /// The actual function.
+    ///
+    /// DuckDB guarantees that `input` and `output` stay live for the duration
+    /// of this call. Implementations must populate `output` for rows
+    /// `0..input.len()` and must not read or write beyond that range.
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it:
+    /// Called by the DuckDB trampoline with wrappers over borrowed DuckDB
+    /// storage. Implementations must:
     ///
-    /// - Dereferences multiple raw pointers (`func`).
-    ///
+    /// - only read and write within the rows and column types DuckDB provided
+    ///   for this invocation;
+    /// - not retain `input`, `output`, or any vector/slice derived from them
+    ///   past return;
+    /// - not hold two writable wrappers over the same column at the same
+    ///   time. The wrapper types do not currently prevent this: calling e.g.
+    ///   `input.flat_vector(0)` twice and then `as_mut_slice` on each yields
+    ///   overlapping `&mut [T]`, which is undefined behavior.
     unsafe fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,
@@ -126,12 +137,12 @@ impl From<duckdb_function_info> for ScalarFunctionInfo {
 
 impl ScalarFunctionInfo {
     pub unsafe fn get_extra_info<T>(&self) -> &T {
-        &*(duckdb_scalar_function_get_extra_info(self.0).cast())
+        unsafe { &*(duckdb_scalar_function_get_extra_info(self.0).cast()) }
     }
 
     pub unsafe fn set_error(&self, error: &str) {
         let c_str = CString::new(error).unwrap();
-        duckdb_scalar_function_set_error(self.0, c_str.as_ptr());
+        unsafe { duckdb_scalar_function_set_error(self.0, c_str.as_ptr()) };
     }
 }
 
@@ -139,11 +150,13 @@ unsafe extern "C" fn scalar_func<T>(info: duckdb_function_info, input: duckdb_da
 where
     T: VScalar,
 {
-    let info = ScalarFunctionInfo::from(info);
-    let mut input = DataChunkHandle::new_unowned(input);
-    let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
-    if let Err(e) = result {
-        info.set_error(&e.to_string());
+    unsafe {
+        let info = ScalarFunctionInfo::from(info);
+        let mut input = DataChunkHandle::new_unowned(input);
+        let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
+        if let Err(e) = result {
+            info.set_error(&e.to_string());
+        }
     }
 }
 
@@ -206,10 +219,10 @@ mod test {
     use libduckdb_sys::duckdb_string_t;
 
     use crate::{
+        Connection,
         core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
         types::DuckString,
         vtab::arrow::WritableVector,
-        Connection,
     };
 
     use super::{ScalarFunctionSignature, VScalar};
@@ -224,7 +237,8 @@ mod test {
             input: &mut DataChunkHandle,
             _: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            let mut msg = input.flat_vector(0).as_slice_with_len::<duckdb_string_t>(input.len())[0];
+            let vector = input.flat_vector(0);
+            let mut msg = unsafe { vector.as_slice_with_len::<duckdb_string_t>(input.len()) }[0];
             let string = DuckString::new(&mut msg).as_str();
             Err(format!("Error: {string}").into())
         }
@@ -263,7 +277,7 @@ mod test {
             output: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
             let values = input.flat_vector(0);
-            let values = values.as_slice_with_len::<duckdb_string_t>(input.len());
+            let values = unsafe { values.as_slice_with_len::<duckdb_string_t>(input.len()) };
             let strings = values
                 .iter()
                 .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string())
@@ -298,11 +312,11 @@ mod test {
             let output = output.flat_vector();
             let counts = input.flat_vector(1);
             let values = input.flat_vector(0);
-            let values = values.as_slice_with_len::<duckdb_string_t>(input.len());
+            let values = unsafe { values.as_slice_with_len::<duckdb_string_t>(input.len()) };
             let strings = values
                 .iter()
                 .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string());
-            let counts = counts.as_slice_with_len::<i32>(input.len());
+            let counts = unsafe { counts.as_slice_with_len::<i32>(input.len()) };
             for (count, value) in counts.iter().zip(strings).take(input.len()) {
                 output.insert(0, value.repeat((*count) as usize).as_str());
             }
@@ -413,7 +427,7 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let len = input.len();
             let mut output_vec = output.flat_vector();
-            let data = output_vec.as_mut_slice::<i64>();
+            let data = unsafe { output_vec.as_mut_slice::<i64>() };
 
             for item in data.iter_mut().take(len) {
                 *item = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
@@ -441,7 +455,7 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let len = input.len();
             let mut output_vec = output.flat_vector();
-            let data = output_vec.as_mut_slice::<i64>();
+            let data = unsafe { output_vec.as_mut_slice::<i64>() };
 
             for item in data.iter_mut().take(len) {
                 *item = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
