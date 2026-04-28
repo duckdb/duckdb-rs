@@ -89,31 +89,23 @@ use sealed::Sealed;
 ///
 /// ## Named parameters
 ///
-/// If you need named parameters, they can be passed in one of two ways:
-///
-/// - As a `&HashMap<String, &dyn ToSql>`
-/// - If the `serde_json` feature is enabled, use `serde_json::Value`.
-///
-/// In both cases the keys should _not_ include the `$` prefix.
+/// Named parameters are passed as a `&HashMap<String, &dyn ToSql>`. The keys
+/// should _not_ include the `$` prefix.
 ///
 /// ### Example (named parameters)
 ///
 /// ```rust,no_run
-/// #[cfg(feature = "serde_json")]
-/// {
-///     use fallible_iterator::FallibleIterator;
-///     use duckdb::{Connection, Result};
-///     use serde_json::json;
-///     fn execute_query(conn: Connection) -> Result<Vec<String>> {
-///         let params = json!({
-///             "min": 23,
-///             "max": 42,
-///         });
-///         conn
-///           .prepare("SELECT name FROM people WHERE age BETWEEN $min AND $max")?
-///           .query(params)?.map(|row| row.get(0))
-///           .collect()
-///     }
+/// use std::collections::HashMap;
+/// use duckdb::{Connection, Result, ToSql};
+///
+/// fn execute_query(conn: &Connection) -> Result<Vec<String>> {
+///     let params: HashMap<String, &dyn ToSql> = HashMap::from([
+///         ("min".to_string(), &23 as &dyn ToSql),
+///         ("max".to_string(), &42 as &dyn ToSql),
+///     ]);
+///     let mut stmt = conn.prepare("SELECT name FROM people WHERE age BETWEEN $min AND $max")?;
+///     let rows = stmt.query_map(&params, |row| row.get::<_, String>(0))?;
+///     rows.collect()
 /// }
 /// ```
 ///
@@ -357,42 +349,5 @@ impl Sealed for HashMap<String, &dyn ToSql> {}
 impl Params for HashMap<String, &dyn ToSql> {
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         (&self).__bind_in(stmt)
-    }
-}
-
-#[cfg(feature = "serde_json")]
-mod serde_json_support {
-    use super::*;
-    use crate::{types::ToSql, Params, Statement};
-    use serde_json::Value;
-
-    impl Sealed for &Value {}
-
-    impl Params for &Value {
-        fn __bind_in(self, stmt: &mut Statement<'_>) -> crate::Result<()> {
-            match self {
-                Value::Object(ref map) => {
-                    let n = stmt.parameter_count();
-                    let params: Vec<&dyn ToSql> = (1..=n)
-                        .map(|i| {
-                            let name = stmt.parameter_name(i)?;
-                            let val = map.get(&name).ok_or(Error::InvalidParameterName(name))?;
-                            Ok(val as &dyn ToSql)
-                        })
-                        .collect::<Result<Vec<_>, Error>>()?;
-                    stmt.bind_parameters(&params)
-                }
-                Value::Array(ref array) => stmt.bind_parameters(&array[..]),
-                ref other => stmt.bind_parameters(&[other as &dyn ToSql]),
-            }
-        }
-    }
-
-    impl Sealed for Value {}
-
-    impl Params for Value {
-        fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
-            (&self).__bind_in(stmt)
-        }
     }
 }
