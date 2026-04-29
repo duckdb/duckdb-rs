@@ -131,7 +131,10 @@ impl Appender<'_> {
         self.validate_parameter_values(&values)?;
 
         let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
-        self.bind_parameter_values(&values)?;
+        if let Err(err) = self.bind_parameter_values(&values) {
+            let _ = unsafe { ffi::duckdb_appender_end_row(self.app) };
+            return Err(err);
+        }
         // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
         result_from_duckdb_appender(rc, &mut self.app)
@@ -212,7 +215,7 @@ impl Appender<'_> {
             },
             _ => {
                 return Err(Error::ToSqlConversionFailure(
-                    format!("appending value of type {} is not yet supported", value.data_type()).into(),
+                    appending_unsupported_value(value.data_type()).into(),
                 ));
             }
         };
@@ -343,15 +346,44 @@ mod test {
 
     #[test]
     fn test_append_unsupported_container_type_returns_error() -> Result<()> {
+        use arrow::{array::ListArray, datatypes::Int32Type};
+
         use crate::{
             ToSql,
-            types::{ToSqlOutput, Value},
+            types::{ListType, ToSqlOutput, Value, ValueRef},
         };
 
         struct OwnedList;
         impl ToSql for OwnedList {
             fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
                 Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
+            }
+        }
+
+        struct BorrowedList(ListArray);
+        impl BorrowedList {
+            fn new() -> Self {
+                Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(vec![
+                    Some(1),
+                    Some(2),
+                ])]))
+            }
+        }
+        impl ToSql for BorrowedList {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
+            }
+        }
+
+        fn assert_unsupported_list_error(err: Error) {
+            match err {
+                Error::ToSqlConversionFailure(e) => {
+                    assert!(
+                        e.to_string().contains("appending List values is not yet supported"),
+                        "unexpected message: {e}"
+                    );
+                }
+                other => panic!("expected ToSqlConversionFailure, got {other:?}"),
             }
         }
 
@@ -363,16 +395,11 @@ mod test {
         app.append_row(params![10, "before"])?;
         app.append_row(params![11, "also before"])?;
         let err = app.append_row(params![1, list]).unwrap_err();
+        assert_unsupported_list_error(err);
 
-        match err {
-            Error::ToSqlConversionFailure(e) => {
-                assert!(
-                    e.to_string().contains("appending List values is not yet supported"),
-                    "unexpected message: {e}"
-                );
-            }
-            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
-        }
+        let borrowed_list = BorrowedList::new();
+        let err = app.append_row(params![3, borrowed_list]).unwrap_err();
+        assert_unsupported_list_error(err);
         app.append_row(params![2, "ok"])?;
         app.flush()?;
 

@@ -306,6 +306,27 @@ mod test {
     }
 
     #[test]
+    fn pragma_rejects_unsupported_container_type() -> Result<()> {
+        use crate::{Error, types::Value};
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .pragma(None, "table_info", &Value::List(vec![Value::Int(1)]), |_| Ok(()))
+            .unwrap_err();
+
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(
+                    e.to_string().contains("binding List parameters is not yet supported"),
+                    "unexpected message: {e}"
+                );
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn pragma_update() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.pragma_update(None, "explain_output", &"PHYSICAL_ONLY")
