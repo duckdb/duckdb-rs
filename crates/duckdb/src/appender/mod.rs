@@ -117,7 +117,7 @@ impl Appender<'_> {
     }
 
     #[inline]
-    pub(crate) fn bind_parameters<P>(&mut self, params: P) -> Result<()>
+    pub(crate) fn append_parameter_row<P>(&mut self, params: P) -> Result<()>
     where
         P: IntoIterator,
         P::Item: ToSql,
@@ -128,18 +128,28 @@ impl Appender<'_> {
             .map(ToSql::to_sql)
             .collect::<Result<Vec<ToSqlOutput<'_>>>>()?;
 
-        for value in &values {
-            let value = to_value_ref(value)?;
-            validate_appender_value_ref(value)?;
-        }
+        self.validate_parameter_values(&values)?;
 
         let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
-        for value in &values {
-            self.bind_parameter(value)?;
-        }
+        self.bind_parameter_values(&values)?;
         // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
         result_from_duckdb_appender(rc, &mut self.app)
+    }
+
+    fn validate_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+        for value in values {
+            let value = to_value_ref(value)?;
+            validate_appender_value_ref(value)?;
+        }
+        Ok(())
+    }
+
+    fn bind_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+        for value in values {
+            self.bind_parameter(value)?;
+        }
+        Ok(())
     }
 
     fn bind_parameter(&self, value: &ToSqlOutput<'_>) -> Result<()> {
