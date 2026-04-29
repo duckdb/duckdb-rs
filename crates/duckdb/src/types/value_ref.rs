@@ -1,7 +1,7 @@
 use super::{Type, Value};
 use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
 
-use crate::Row;
+use crate::{Error, Result, Row};
 use rust_decimal::prelude::*;
 
 use arrow::{
@@ -343,6 +343,33 @@ impl<'a> From<&'a [u8]> for ValueRef<'a> {
     }
 }
 
+pub(crate) fn value_ref_from_value<'a>(
+    value: &'a Value,
+    unsupported_message: impl FnOnce(&'static str) -> String,
+) -> Result<ValueRef<'a>> {
+    if let Some(variant) = unsupported_value_variant(value) {
+        return Err(Error::ToSqlConversionFailure(unsupported_message(variant).into()));
+    }
+
+    Ok(ValueRef::from(value))
+}
+
+pub(crate) fn binding_unsupported_value(value_type: impl std::fmt::Display) -> String {
+    format!("binding {value_type} parameters is not yet supported")
+}
+
+fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
+    match value {
+        Value::List(_) => Some("List"),
+        Value::Array(_) => Some("Array"),
+        Value::Struct(_) => Some("Struct"),
+        Value::Map(_) => Some("Map"),
+        Value::Union(_) => Some("Union"),
+        Value::Enum(_) => Some("Enum"),
+        _ => None,
+    }
+}
+
 impl<'a> From<&'a Value> for ValueRef<'a> {
     #[inline]
     fn from(value: &'a Value) -> Self {
@@ -367,6 +394,8 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
+            // Use `value_ref_from_value` at bind sites that need fallible
+            // conversion for unsupported Value variants.
             Value::Enum(..) => todo!(),
             Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
                 unimplemented!()

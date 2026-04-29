@@ -6,7 +6,7 @@ use crate::{
     Connection, DatabaseName, Result, Row,
     error::Error,
     ffi,
-    types::{ToSql, ToSqlOutput, ValueRef},
+    types::{ToSql, ToSqlOutput, ValueRef, binding_unsupported_value, value_ref_from_value},
 };
 
 pub struct Sql {
@@ -60,7 +60,7 @@ impl Sql {
         let value = value.to_sql()?;
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
         };
         match value {
             ValueRef::BigInt(i) => {
