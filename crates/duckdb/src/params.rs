@@ -1,4 +1,9 @@
-use crate::{Result, Statement, ToSql};
+use crate::{Error, Result, Statement, ToSql};
+use std::{
+    borrow::Borrow,
+    collections::{HashMap, HashSet},
+    hash::{BuildHasher, Hash},
+};
 
 mod sealed {
     /// This trait exists just to ensure that the only impls of `trait Params`
@@ -90,6 +95,52 @@ use sealed::Sealed;
 ///     // However, this doesn't work (see above):
 ///     // stmt.execute(&[1i32, 2i32])?;
 ///     Ok(())
+/// }
+/// ```
+///
+/// ## Named parameters
+///
+/// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
+/// or a manually constructed `&[(&str, &dyn ToSql)]` for heterogeneous values,
+/// or as any `HashMap` whose keys borrow as `str` and whose values implement a
+/// single concrete [`ToSql`] type, including maps with custom hashers. The keys
+/// must not include the `$` prefix. Named-parameter APIs must be used with
+/// named SQL placeholders such as `$name`, not positional placeholders such as
+/// `?` or `?1`.
+///
+/// Returns [`Error::InvalidParameterName`](crate::Error::InvalidParameterName)
+/// if a SQL placeholder has no matching key, a provided key is not present in
+/// the SQL, slice parameters contain duplicate keys, or positional placeholders
+/// are used with named-parameter APIs.
+///
+/// ### Example (named parameters with a HashMap)
+///
+/// ```rust,no_run
+/// use std::collections::HashMap;
+/// use duckdb::{Connection, Result};
+///
+/// fn execute_query(conn: &Connection) -> Result<Vec<String>> {
+///     let params = HashMap::from([("min", 23), ("max", 42)]);
+///     let mut stmt = conn.prepare("SELECT name FROM people WHERE age BETWEEN $min AND $max")?;
+///     let rows = stmt.query_map(&params, |row| row.get::<_, String>(0))?;
+///     rows.collect()
+/// }
+/// ```
+///
+/// ### Example (named parameters with mixed types)
+///
+/// ```rust,no_run
+/// use duckdb::{Connection, Result, named_params};
+///
+/// fn execute_query(conn: &Connection, min_age: i32, name: &str) -> Result<bool> {
+///     conn.query_row(
+///         "SELECT $name = 'Alice' AND $age >= 18",
+///         named_params! {
+///             "name": name,
+///             "age": min_age,
+///         },
+///         |row| row.get(0),
+///     )
 /// }
 /// ```
 ///
@@ -348,5 +399,90 @@ where
     #[inline]
     fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         stmt.bind_parameters(self.0)
+    }
+}
+
+fn reject_positional(name: &str) -> Result<()> {
+    if !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(Error::InvalidParameterName(format!(
+            "positional parameter {name} cannot be used with named parameters"
+        )));
+    }
+    Ok(())
+}
+
+impl Sealed for &[(&str, &dyn ToSql)] {}
+
+impl Params for &[(&str, &dyn ToSql)] {
+    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+        let n = stmt.parameter_count();
+        let mut seen: HashSet<&str> = HashSet::with_capacity(self.len());
+        for (key, _) in self {
+            if !seen.insert(*key) {
+                return Err(Error::InvalidParameterName(format!("duplicate parameter name: {key}")));
+            }
+        }
+
+        let mut params = Vec::with_capacity(n);
+        let mut used = vec![false; self.len()];
+        for i in 1..=n {
+            let name = stmt.parameter_name(i)?;
+            reject_positional(&name)?;
+            let (idx, value) = self
+                .iter()
+                .enumerate()
+                .find_map(|(idx, (key, value))| (*key == name).then_some((idx, *value)))
+                .ok_or(Error::InvalidParameterName(name))?;
+            used[idx] = true;
+            params.push(value);
+        }
+
+        if let Some(idx) = used.iter().position(|u| !u) {
+            return Err(Error::InvalidParameterName(self[idx].0.to_string()));
+        }
+
+        stmt.bind_parameters(params)
+    }
+}
+
+impl<K, V, S> Sealed for &HashMap<K, V, S>
+where
+    K: Borrow<str> + Eq + Hash,
+    V: ToSql,
+    S: BuildHasher,
+{
+}
+
+impl<K, V, S> Params for &HashMap<K, V, S>
+where
+    K: Borrow<str> + Eq + Hash,
+    V: ToSql,
+    S: BuildHasher,
+{
+    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+        let n = stmt.parameter_count();
+        let mut params = Vec::with_capacity(n);
+        let mut bound: HashSet<&str> = HashSet::with_capacity(n);
+        for i in 1..=n {
+            let name = stmt.parameter_name(i)?;
+            reject_positional(&name)?;
+            let (key, value) = self
+                .get_key_value(name.as_str())
+                .ok_or(Error::InvalidParameterName(name))?;
+            bound.insert(key.borrow());
+            params.push(value as &dyn ToSql);
+        }
+
+        // HashMap iteration order is arbitrary, so choose a stable extra key for diagnostics.
+        if let Some(extra) = self
+            .keys()
+            .map(|key| -> &str { key.borrow() })
+            .filter(|key| !bound.contains(*key))
+            .min()
+        {
+            return Err(Error::InvalidParameterName(extra.to_string()));
+        }
+
+        stmt.bind_parameters(params)
     }
 }

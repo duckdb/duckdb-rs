@@ -1125,6 +1125,271 @@ mod test {
     }
 
     #[test]
+    fn test_named_parameters() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42), ("bar", 23)]);
+
+        let db = Connection::open_in_memory()?;
+        let sql = r#"SELECT $foo > $bar"#;
+        let result: bool = db.query_row(sql, &named_params, |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_macro() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let name = "alice";
+        let params = crate::named_params! {
+            "foo": 42,
+            "name": name,
+        };
+        let result: bool = db.query_row("SELECT $foo > 40 AND $name = 'alice'", params, |row| row.get(0))?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_named_parameters_macro() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let result: i32 = db.query_row("SELECT 1", crate::named_params! {}, |row| row.get(0))?;
+        assert_eq!(result, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_repeated_placeholder() -> Result<()> {
+        use std::collections::HashMap;
+
+        let db = Connection::open_in_memory()?;
+        let stmt = db.prepare("SELECT $foo + $foo")?;
+        assert_eq!(stmt.parameter_count(), 1);
+        assert_eq!(stmt.parameter_name(1)?, "foo");
+
+        let slice_result: i32 = db.query_row(
+            "SELECT $foo + $foo",
+            crate::named_params! {
+                "foo": 21,
+            },
+            |row| row.get(0),
+        )?;
+        assert_eq!(slice_result, 42);
+
+        let named_params = HashMap::from([("foo", 21)]);
+        let hashmap_result: i32 = db.query_row("SELECT $foo + $foo", &named_params, |row| row.get(0))?;
+        assert_eq!(hashmap_result, 42);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_extra_keys() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42), ("bar", 23), ("extra", 1)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT $foo > $bar", &named_params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("extra".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_extra_hashmap_key_deterministically() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42), ("z_extra", 1), ("a_extra", 2)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT $foo", &named_params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("a_extra".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_extra_slice_key() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let bar = 23;
+        let params = crate::named_params! {
+            "foo": 42,
+            "middle_extra": 0,
+            "bar": bar,
+            "first_extra": 1,
+            "second_extra": 2,
+        };
+
+        let err = db
+            .query_row("SELECT $foo + $bar", params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("middle_extra".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_missing_hashmap_key() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("foo", 42)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT $foo > $bar", &named_params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("bar".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_missing_slice_key() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let params = crate::named_params! {
+            "foo": 42,
+        };
+
+        let err = db
+            .query_row("SELECT $foo > $bar", params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(err, Error::InvalidParameterName("bar".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_duplicate_slice_keys() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let first = 42;
+        let second = 23;
+        let params = &[("foo", &first as &dyn ToSql), ("foo", &second as &dyn ToSql)] as &[(&str, &dyn ToSql)];
+
+        let err = db
+            .query_row("SELECT $foo", params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::InvalidParameterName("duplicate parameter name: foo".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_positional_placeholders() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("1", 42), ("2", 23)]);
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .query_row("SELECT ? > ?", &named_params, |row| row.get::<_, bool>(0))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_dollar_number_placeholders() -> Result<()> {
+        use std::collections::HashMap;
+
+        let named_params = HashMap::from([("1", 42), ("2", 23)]);
+        let db = Connection::open_in_memory()?;
+
+        let hashmap_err = db
+            .query_row("SELECT $1 + $2", &named_params, |row| row.get::<_, i32>(0))
+            .unwrap_err();
+        assert_eq!(
+            hashmap_err,
+            Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
+        );
+
+        let slice_err = db
+            .query_row(
+                "SELECT $1 + $2",
+                crate::named_params! {
+                    "1": 42,
+                    "2": 23,
+                },
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_err();
+        assert_eq!(
+            slice_err,
+            Error::InvalidParameterName("positional parameter 1 cannot be used with named parameters".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_reject_mixed_placeholders() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let err = db.prepare("SELECT $foo + ?").unwrap_err();
+        assert!(err.to_string().contains("Mixing named and positional parameters"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_bind_null_values() -> Result<()> {
+        use std::collections::HashMap;
+
+        let db = Connection::open_in_memory()?;
+        let named_params = HashMap::from([("x", None::<i32>)]);
+
+        let hashmap_result: bool = db.query_row("SELECT $x IS NULL", &named_params, |row| row.get(0))?;
+        assert!(hashmap_result);
+
+        let slice_result: bool = db.query_row(
+            "SELECT $x IS NULL",
+            crate::named_params! {
+                "x": Option::<i32>::None,
+            },
+            |row| row.get(0),
+        )?;
+        assert!(slice_result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_string_keys_query_map() -> Result<()> {
+        use std::collections::HashMap;
+
+        let db = Connection::open_in_memory()?;
+        let params = HashMap::from([("min".to_string(), 2i64), ("max".to_string(), 3i64)]);
+        let mut stmt = db.prepare("SELECT i FROM range(5) tbl(i) WHERE i BETWEEN $min AND $max ORDER BY i")?;
+        let rows = stmt.query_map(&params, |row| row.get::<_, i64>(0))?;
+        let values = rows.collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(values, [2, 3]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_named_parameters_cow_keys_custom_hasher() -> Result<()> {
+        use std::{
+            borrow::Cow,
+            collections::{HashMap, hash_map::DefaultHasher},
+            hash::BuildHasherDefault,
+        };
+
+        let db = Connection::open_in_memory()?;
+        let mut params: HashMap<Cow<'static, str>, i64, BuildHasherDefault<DefaultHasher>> = HashMap::default();
+        params.insert(Cow::Borrowed("min"), 2);
+        params.insert(Cow::Owned("max".to_string()), 3);
+
+        let mut stmt = db.prepare("SELECT i FROM range(5) tbl(i) WHERE i BETWEEN $min AND $max ORDER BY i")?;
+        let rows = stmt.query_map(&params, |row| row.get::<_, i64>(0))?;
+        let values = rows.collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(values, [2, 3]);
+        Ok(())
+    }
+
+    #[test]
     fn test_empty_stmt() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         let stmt = conn.prepare("");

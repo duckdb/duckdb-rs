@@ -177,6 +177,38 @@ macro_rules! params {
     };
 }
 
+/// Convenience macro to build a named parameter slice.
+///
+/// This coerces each value to `&dyn ToSql`, which is useful when named
+/// parameters have different Rust types.
+/// Parameter names must be bare names without the `$` prefix. This differs
+/// from rusqlite-style named parameter slices, where keys commonly include the
+/// placeholder prefix.
+/// This macro must be used with named SQL placeholders such as `$name`,
+/// not positional placeholders such as `?` or `?1`.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// # use duckdb::{Connection, Result, named_params};
+/// fn find(conn: &Connection, min_age: i32, name: &str) -> Result<bool> {
+///     conn.query_row(
+///         "SELECT $age >= 18 AND $name = 'Alice'",
+///         named_params! {
+///             "age": min_age,
+///             "name": name,
+///         },
+///         |row| row.get(0),
+///     )
+/// }
+/// ```
+#[macro_export]
+macro_rules! named_params {
+    ($($name:literal : $param:expr),* $(,)?) => {
+        &[$(($name, &$param as &dyn $crate::ToSql)),*] as &[(&str, &dyn $crate::ToSql)]
+    };
+}
+
 /// A typedef of the result returned by many methods.
 pub type Result<T, E = Error> = result::Result<T, E>;
 
