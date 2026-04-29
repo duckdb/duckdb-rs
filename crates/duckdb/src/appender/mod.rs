@@ -130,7 +130,8 @@ impl Appender<'_> {
 
         let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
         if let Err(err) = self.bind_parameter_values(&values) {
-            // Best-effort cleanup for defensive post-validation bind failures.
+            // validate_parameter_values catches unsupported types up-front; this guards
+            // against an unmapped variant slipping through bind_parameter.
             let _ = unsafe { ffi::duckdb_appender_end_row(self.app) };
             return Err(err);
         }

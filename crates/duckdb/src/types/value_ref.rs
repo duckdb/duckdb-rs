@@ -389,14 +389,14 @@ fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
     }
 }
 
-/// Converts non-container `Value` variants into a borrowed `ValueRef`.
-///
-/// # Panics
-///
-/// Panics for `Value::Enum`, `Value::List`, `Value::Struct`, `Value::Map`,
-/// `Value::Array`, and `Value::Union`. Internal bind and append paths use
-/// `value_ref_from_value` for fallible conversion.
 impl<'a> From<&'a Value> for ValueRef<'a> {
+    /// Converts non-container `Value` variants into a borrowed `ValueRef`.
+    ///
+    /// # Panics
+    ///
+    /// Panics for `Value::Enum`, `Value::List`, `Value::Struct`, `Value::Map`,
+    /// `Value::Array`, and `Value::Union`. Internal bind and append paths use
+    /// `value_ref_from_value` for fallible conversion.
     #[inline]
     fn from(value: &'a Value) -> Self {
         match *value {

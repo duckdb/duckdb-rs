@@ -416,27 +416,32 @@ impl Statement<'_> {
         P: IntoIterator,
         P::Item: ToSql,
     {
-        let result = (|| {
-            let expected = self.stmt.bind_parameter_count();
-            let mut index = 0;
-            for p in params.into_iter() {
-                index += 1; // The leftmost SQL parameter has an index of 1.
-                if index > expected {
-                    break;
-                }
-                self.bind_parameter(&p, index)?;
-            }
-            if index != expected {
-                Err(Error::InvalidParameterCount(index, expected))
-            } else {
-                Ok(())
-            }
-        })();
-
+        let result = self.try_bind_parameters(params);
         if result.is_err() {
             let _ = self.stmt.clear_bindings();
         }
         result
+    }
+
+    fn try_bind_parameters<P>(&mut self, params: P) -> Result<()>
+    where
+        P: IntoIterator,
+        P::Item: ToSql,
+    {
+        let expected = self.stmt.bind_parameter_count();
+        let mut index = 0;
+        for p in params.into_iter() {
+            index += 1; // The leftmost SQL parameter has an index of 1.
+            if index > expected {
+                break;
+            }
+            self.bind_parameter(&p, index)?;
+        }
+        if index != expected {
+            Err(Error::InvalidParameterCount(index, expected))
+        } else {
+            Ok(())
+        }
     }
 
     /// Return the number of parameters that can be bound to this statement.
