@@ -111,6 +111,9 @@ impl Appender<'_> {
     /// Returns `Err` if the row cannot be appended.
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
+        // AppenderParams normalizes arrays, tuples, slices, and iterators into
+        // append_parameter_row, which owns begin_row/end_row around validation
+        // and binding.
         params.__bind_in(self)
     }
 
