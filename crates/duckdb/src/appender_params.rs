@@ -118,7 +118,7 @@ use sealed::Sealed;
 pub trait AppenderParams: Sealed {
     // XXX not public api, might not need to expose.
     //
-    // Binds the parameters to the statement. It is unlikely calling this
+    // Binds the parameters to the appender. It is unlikely calling this
     // explicitly will do what you want. Please use `Appender::append_row` or
     // similar directly.
     //
@@ -134,9 +134,8 @@ impl Sealed for [&dyn ToSql; 0] {}
 impl AppenderParams for [&dyn ToSql; 0] {
     #[inline]
     fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
-        // Note: Can't just return `Ok(())` — `Statement::bind_parameters`
-        // checks that the right number of params were passed too.
-        // TODO: we should have tests for `Error::InvalidParameterCount`...
+        // Route through the normal append path so DuckDB can reject empty rows
+        // for tables that require values.
         stmt.append_parameter_row(&[] as &[&dyn ToSql])
     }
 }

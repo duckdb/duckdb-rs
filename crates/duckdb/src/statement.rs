@@ -1772,6 +1772,15 @@ mod test {
 
         let count: i32 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
         assert_eq!(count, 0);
+
+        stmt.raw_bind_parameter(1, 7)?;
+        stmt.raw_bind_parameter(2, "ok")?;
+        assert_eq!(stmt.raw_execute()?, 1);
+
+        let row = db.query_row("SELECT id, name FROM t", [], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?))
+        })?;
+        assert_eq!(row, (7, "ok".to_string()));
         Ok(())
     }
 }

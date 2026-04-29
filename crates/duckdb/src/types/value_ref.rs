@@ -360,17 +360,36 @@ pub(crate) fn binding_unsupported_value(value_type: impl std::fmt::Display) -> S
 
 fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
     match value {
+        Value::Null
+        | Value::Boolean(_)
+        | Value::TinyInt(_)
+        | Value::SmallInt(_)
+        | Value::Int(_)
+        | Value::BigInt(_)
+        | Value::HugeInt(_)
+        | Value::UTinyInt(_)
+        | Value::USmallInt(_)
+        | Value::UInt(_)
+        | Value::UBigInt(_)
+        | Value::Float(_)
+        | Value::Double(_)
+        | Value::Decimal(_)
+        | Value::Timestamp(_, _)
+        | Value::Text(_)
+        | Value::Blob(_)
+        | Value::Date32(_)
+        | Value::Time64(_, _)
+        | Value::Interval { .. } => None,
         Value::List(_) => Some("List"),
         Value::Array(_) => Some("Array"),
         Value::Struct(_) => Some("Struct"),
         Value::Map(_) => Some("Map"),
         Value::Union(_) => Some("Union"),
         Value::Enum(_) => Some("Enum"),
-        _ => None,
     }
 }
 
-/// Converts scalar `Value` variants into a borrowed `ValueRef`.
+/// Converts non-container `Value` variants into a borrowed `ValueRef`.
 ///
 /// # Panics
 ///
@@ -429,8 +448,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::types::Type;
+    use crate::types::{Type, Value, ValueRef};
     use crate::{Connection, Result};
+
+    #[test]
+    #[should_panic(expected = "ValueRef::from(&Value::List)")]
+    fn value_ref_from_list_value_panics() {
+        let value = Value::List(vec![Value::Int(1)]);
+        let _ = ValueRef::from(&value);
+    }
 
     #[test]
     fn test_list_types() -> Result<()> {
