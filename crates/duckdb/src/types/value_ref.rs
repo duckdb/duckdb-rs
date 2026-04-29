@@ -370,6 +370,13 @@ fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
     }
 }
 
+/// Converts scalar `Value` variants into a borrowed `ValueRef`.
+///
+/// # Panics
+///
+/// Panics for `Value::Enum`, `Value::List`, `Value::Struct`, `Value::Map`,
+/// `Value::Array`, and `Value::Union`. Internal bind and append paths use
+/// `value_ref_from_value` for fallible conversion.
 impl<'a> From<&'a Value> for ValueRef<'a> {
     #[inline]
     fn from(value: &'a Value) -> Self {
@@ -394,11 +401,14 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
-            // Use `value_ref_from_value` at bind sites that need fallible
-            // conversion for unsupported Value variants.
-            Value::Enum(..) => todo!(),
-            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
-                unimplemented!()
+            Value::Enum(..)
+            | Value::List(..)
+            | Value::Struct(..)
+            | Value::Map(..)
+            | Value::Array(..)
+            | Value::Union(..) => {
+                let variant = unsupported_value_variant(value).expect("unsupported Value variant");
+                panic!("ValueRef::from(&Value::{variant}) is not supported; use value_ref_from_value")
             }
         }
     }

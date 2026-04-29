@@ -416,20 +416,27 @@ impl Statement<'_> {
         P: IntoIterator,
         P::Item: ToSql,
     {
-        let expected = self.stmt.bind_parameter_count();
-        let mut index = 0;
-        for p in params.into_iter() {
-            index += 1; // The leftmost SQL parameter has an index of 1.
-            if index > expected {
-                break;
+        let result = (|| {
+            let expected = self.stmt.bind_parameter_count();
+            let mut index = 0;
+            for p in params.into_iter() {
+                index += 1; // The leftmost SQL parameter has an index of 1.
+                if index > expected {
+                    break;
+                }
+                self.bind_parameter(&p, index)?;
             }
-            self.bind_parameter(&p, index)?;
+            if index != expected {
+                Err(Error::InvalidParameterCount(index, expected))
+            } else {
+                Ok(())
+            }
+        })();
+
+        if result.is_err() {
+            let _ = self.stmt.clear_bindings();
         }
-        if index != expected {
-            Err(Error::InvalidParameterCount(index, expected))
-        } else {
-            Ok(())
-        }
+        result
     }
 
     /// Return the number of parameters that can be bound to this statement.
@@ -660,8 +667,40 @@ impl Statement<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{Connection, Error, Result, params_from_iter, types::ToSql};
+    use arrow::{array::ListArray, datatypes::Int32Type};
+
+    use crate::{
+        Connection, Error, Result, params_from_iter,
+        types::{ListType, ToSql, ToSqlOutput, ValueRef},
+    };
     use rust_decimal::Decimal;
+
+    struct BorrowedList(ListArray);
+    impl BorrowedList {
+        fn new() -> Self {
+            Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(vec![
+                Some(1),
+                Some(2),
+            ])]))
+        }
+    }
+    impl ToSql for BorrowedList {
+        fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+            Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
+        }
+    }
+
+    fn assert_binding_list_error(err: Error) {
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(
+                    e.to_string().contains("binding List parameters is not yet supported"),
+                    "unexpected message: {e}"
+                );
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_execute() -> Result<()> {
@@ -1688,12 +1727,10 @@ mod test {
         Ok(())
     }
 
-    // Container and enum types (List, Array, Struct, Map, Union, Enum) aren't
-    // yet wired up in `bind_parameter`.
-    // Until they are, binding one must surface an error rather than panic from safe Rust.
+    // Unsupported Value variants must surface an error instead of panicking.
     #[test]
     fn test_bind_unsupported_container_type_returns_error() -> Result<()> {
-        use crate::types::{ToSqlOutput, Value};
+        use crate::types::Value;
 
         struct OwnedList;
         impl ToSql for OwnedList {
@@ -1710,15 +1747,31 @@ mod test {
             .execute("INSERT INTO t VALUES (?, ?)", crate::params![1, list])
             .unwrap_err();
 
-        match err {
-            Error::ToSqlConversionFailure(e) => {
-                assert!(
-                    e.to_string().contains("binding List parameters is not yet supported"),
-                    "unexpected message: {e}"
-                );
-            }
-            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
-        }
+        assert_binding_list_error(err);
+
+        let borrowed_list = BorrowedList::new();
+        let err = db
+            .execute("INSERT INTO t VALUES (?, ?)", crate::params![2, borrowed_list])
+            .unwrap_err();
+        assert_binding_list_error(err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_error_clears_partial_parameter_state() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE t (id INTEGER NOT NULL, name TEXT)", [])?;
+
+        let mut stmt = db.prepare("INSERT INTO t VALUES (?, ?)")?;
+        let list = BorrowedList::new();
+        let err = stmt.execute(crate::params![1, list]).unwrap_err();
+        assert_binding_list_error(err);
+
+        stmt.raw_bind_parameter(2, "ok")?;
+        assert!(stmt.raw_execute().is_err());
+
+        let count: i32 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
+        assert_eq!(count, 0);
         Ok(())
     }
 }
