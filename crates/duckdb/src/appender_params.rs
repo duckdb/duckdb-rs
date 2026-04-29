@@ -119,7 +119,7 @@ pub trait AppenderParams: Sealed {
     // XXX not public api, might not need to expose.
     //
     // Binds the parameters to the statement. It is unlikely calling this
-    // explicitly will do what you want. Please use `Statement::query` or
+    // explicitly will do what you want. Please use `Appender::append_row` or
     // similar directly.
     //
     // For now, just hide the function in the docs...
@@ -137,7 +137,7 @@ impl AppenderParams for [&dyn ToSql; 0] {
         // Note: Can't just return `Ok(())` — `Statement::bind_parameters`
         // checks that the right number of params were passed too.
         // TODO: we should have tests for `Error::InvalidParameterCount`...
-        stmt.bind_parameters(&[] as &[&dyn ToSql])
+        stmt.append_parameter_row(&[] as &[&dyn ToSql])
     }
 }
 
@@ -145,7 +145,7 @@ impl Sealed for &[&dyn ToSql] {}
 impl AppenderParams for &[&dyn ToSql] {
     #[inline]
     fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
-        stmt.bind_parameters(self)
+        stmt.append_parameter_row(self)
     }
 }
 
@@ -156,14 +156,14 @@ macro_rules! impl_for_array_ref {
         impl<T: ToSql + ?Sized> Sealed for &[&T; $N] {}
         impl<T: ToSql + ?Sized> AppenderParams for &[&T; $N] {
             fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
-                stmt.bind_parameters(self)
+                stmt.append_parameter_row(self)
             }
         }
         impl<T: ToSql> Sealed for [T; $N] {}
         impl<T: ToSql> AppenderParams for [T; $N] {
             #[inline]
             fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
-                stmt.bind_parameters(&self)
+                stmt.append_parameter_row(&self)
             }
         }
     )+};
@@ -189,7 +189,7 @@ macro_rules! impl_appender_params_for_tuple {
             fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
                 #[allow(non_snake_case)]
                 let ($($T,)+) = &self;
-                stmt.bind_parameters(&[$($T as &dyn ToSql),+])
+                stmt.append_parameter_row([$($T as &dyn ToSql),+])
             }
         }
     };
@@ -340,7 +340,7 @@ where
 {
     #[inline]
     fn __bind_in(self, stmt: &mut Appender<'_>) -> Result<()> {
-        stmt.bind_parameters(self.0)
+        stmt.append_parameter_row(self.0)
     }
 }
 
