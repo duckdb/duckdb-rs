@@ -11,6 +11,7 @@ pub use self::{
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
 };
 pub(crate) use decimal::to_duckdb_decimal;
+pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
 
 use arrow::datatypes::DataType;
 use std::fmt;

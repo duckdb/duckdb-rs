@@ -1,5 +1,5 @@
-use super::{Null, TimeUnit, Value, ValueRef};
-use crate::{Error, Result};
+use super::{Null, TimeUnit, Value, ValueRef, binding_unsupported_value, value_ref_from_value};
+use crate::Result;
 use std::borrow::Cow;
 
 /// `ToSqlOutput` represents the possible output types for implementers of the
@@ -65,7 +65,7 @@ impl ToSql for ToSqlOutput<'_> {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
         Ok(match *self {
             ToSqlOutput::Borrowed(v) => ToSqlOutput::Borrowed(v),
-            ToSqlOutput::Owned(ref v) => ToSqlOutput::Borrowed(ValueRef::from(v)),
+            ToSqlOutput::Owned(ref v) => ToSqlOutput::Borrowed(value_ref_from_value(v, binding_unsupported_value)?),
         })
     }
 }
@@ -188,20 +188,10 @@ impl ToSql for [u8] {
 impl ToSql for Value {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        // `From<&Value> for ValueRef` panics for container/enum variants.
-        // Refuse them here so callers get a clean `ToSqlConversionFailure` instead.
-        let variant = match self {
-            Value::List(_) => "List",
-            Value::Array(_) => "Array",
-            Value::Struct(_) => "Struct",
-            Value::Map(_) => "Map",
-            Value::Union(_) => "Union",
-            Value::Enum(_) => "Enum",
-            _ => return Ok(ToSqlOutput::from(self)),
-        };
-        Err(Error::ToSqlConversionFailure(
-            format!("binding {variant} parameters is not yet supported").into(),
-        ))
+        Ok(ToSqlOutput::Borrowed(value_ref_from_value(
+            self,
+            binding_unsupported_value,
+        )?))
     }
 }
 
@@ -226,7 +216,7 @@ impl ToSql for std::time::Duration {
 
 #[cfg(test)]
 mod test {
-    use super::ToSql;
+    use super::{ToSql, ToSqlOutput};
 
     fn is_to_sql<T: ToSql>() {}
 
@@ -267,7 +257,21 @@ mod test {
             match value.to_sql() {
                 Err(Error::ToSqlConversionFailure(e)) => {
                     let msg = e.to_string();
-                    assert!(msg.contains(variant), "{variant}: unexpected message {msg}");
+                    assert!(
+                        msg.contains(&format!("binding {variant} parameters is not yet supported")),
+                        "{variant}: unexpected message {msg}"
+                    );
+                }
+                Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
+                Ok(_) => panic!("{variant}: expected error, got Ok"),
+            }
+            match ToSqlOutput::Owned(value.clone()).to_sql() {
+                Err(Error::ToSqlConversionFailure(e)) => {
+                    let msg = e.to_string();
+                    assert!(
+                        msg.contains(&format!("binding {variant} parameters is not yet supported")),
+                        "{variant}: unexpected message {msg}"
+                    );
                 }
                 Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
                 Ok(_) => panic!("{variant}: expected error, got Ok"),
