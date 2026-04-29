@@ -179,8 +179,11 @@ macro_rules! params {
 
 /// Convenience macro to build a named parameter slice.
 ///
-/// This is useful when named parameters have different Rust types.
-/// Parameter names must not include the `$` prefix.
+/// This coerces each value to `&dyn ToSql`, which is useful when named
+/// parameters have different Rust types.
+/// Parameter names must be bare names without the `$` prefix. This differs
+/// from rusqlite-style named parameter slices, where keys commonly include the
+/// placeholder prefix.
 /// This macro must be used with named SQL placeholders such as `$name`,
 /// not positional placeholders such as `?` or `?1`.
 ///

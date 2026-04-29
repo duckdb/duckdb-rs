@@ -102,11 +102,11 @@ use sealed::Sealed;
 ///
 /// Named parameters can be passed using [`duckdb::named_params!`](crate::named_params!)
 /// or a manually constructed `&[(&str, &dyn ToSql)]` for heterogeneous values,
-/// or as any `HashMap` whose keys borrow as `str` and whose values share one
-/// [`ToSql`] type, including maps with custom hashers. The keys must not
-/// include the `$` prefix. Named-parameter APIs must be used with named SQL
-/// placeholders such as `$name`, not positional placeholders such as `?` or
-/// `?1`.
+/// or as any `HashMap` whose keys borrow as `str` and whose values implement a
+/// single concrete [`ToSql`] type, including maps with custom hashers. The keys
+/// must not include the `$` prefix. Named-parameter APIs must be used with
+/// named SQL placeholders such as `$name`, not positional placeholders such as
+/// `?` or `?1`.
 ///
 /// Returns [`Error::InvalidParameterName`](crate::Error::InvalidParameterName)
 /// if a SQL placeholder has no matching key, a provided key is not present in
@@ -455,7 +455,6 @@ where
 
 impl<K, V, S> Params for &HashMap<K, V, S>
 where
-    // Borrow<str> lets HashMap use the same hash/equality contract for lookup by &str.
     K: Borrow<str> + Eq + Hash,
     V: ToSql,
     S: BuildHasher,
