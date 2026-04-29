@@ -80,8 +80,7 @@ impl Appender<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if append column count not the same with the table
-    /// schema, or if a value cannot be converted for appending.
+    /// Returns `Err` if a row cannot be appended.
     #[inline]
     pub fn append_rows<P, I>(&mut self, rows: I) -> Result<()>
     where
@@ -109,8 +108,7 @@ impl Appender<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if append column count not the same with the table
-    /// schema, or if a value cannot be converted for appending.
+    /// Returns `Err` if the row cannot be appended.
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
         params.__bind_in(self)
@@ -132,6 +130,7 @@ impl Appender<'_> {
 
         let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
         if let Err(err) = self.bind_parameter_values(&values) {
+            // Best-effort cleanup for defensive post-validation bind failures.
             let _ = unsafe { ffi::duckdb_appender_end_row(self.app) };
             return Err(err);
         }
@@ -158,8 +157,6 @@ impl Appender<'_> {
     fn bind_parameter(&self, value: &ToSqlOutput<'_>) -> Result<()> {
         let ptr = self.app;
         let value = to_value_ref(value)?;
-        // NOTE: we ignore the return value here
-        //       because if anything failed, end_row will fail
         // TODO: append more
         let rc = match value {
             ValueRef::Null => unsafe { ffi::duckdb_append_null(ptr) },

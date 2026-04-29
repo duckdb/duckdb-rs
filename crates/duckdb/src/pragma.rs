@@ -76,7 +76,7 @@ impl Sql {
             _ => {
                 return Err(Error::DuckDBFailure(
                     ffi::Error::new(ffi::DuckDBError),
-                    Some(format!("Unsupported value \"{value:?}\"")),
+                    Some(format!("Unsupported value type {}", value.data_type())),
                 ));
             }
         };
