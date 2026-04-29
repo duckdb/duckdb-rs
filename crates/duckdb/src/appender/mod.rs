@@ -136,7 +136,30 @@ impl Appender<'_> {
         let ptr = self.app;
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            // `From<&Value> for ValueRef` panics on container/enum variants.
+            // Refuse them here so callers see a clean error.
+            //
+            // Caveat: returning an error mid-row leaves the appender row in
+            // a partially populated state. Callers should treat this as a
+            // fatal row error and not attempt to reuse the partially built row.
+            ToSqlOutput::Owned(ref v) => {
+                use crate::types::Value;
+                let variant = match v {
+                    Value::List(_) => Some("List"),
+                    Value::Array(_) => Some("Array"),
+                    Value::Struct(_) => Some("Struct"),
+                    Value::Map(_) => Some("Map"),
+                    Value::Union(_) => Some("Union"),
+                    Value::Enum(_) => Some("Enum"),
+                    _ => None,
+                };
+                if let Some(variant) = variant {
+                    return Err(Error::ToSqlConversionFailure(
+                        format!("appending {variant} values is not yet supported").into(),
+                    ));
+                }
+                ValueRef::from(v)
+            }
         };
         // NOTE: we ignore the return value here
         //       because if anything failed, end_row will fail
@@ -193,7 +216,11 @@ impl Appender<'_> {
                 ffi::duckdb_destroy_value(&mut value);
                 res
             },
-            _ => unreachable!("not supported"),
+            _ => {
+                return Err(Error::ToSqlConversionFailure(
+                    format!("appending value of type {} is not yet supported", value.data_type()).into(),
+                ));
+            }
         };
         if rc != 0 {
             return Err(Error::AppendError);
@@ -275,6 +302,28 @@ mod test {
 
         let val = db.query_row("SELECT x FROM foo", [], |row| <(i32,)>::try_from(row))?;
         assert_eq!(val, (42,));
+        Ok(())
+    }
+
+    // Same gap as in `Statement::bind_parameter`: container types aren't yet
+    // wired up. Ensure they return an error rather than panic from safe Rust.
+    #[test]
+    fn test_append_unsupported_container_type_returns_error() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x INTEGER[])")?;
+
+        let list = Value::List(vec![Value::Int(1), Value::Int(2)]);
+        let mut app = db.appender("foo")?;
+        let err = app.append_row(params![&list]).unwrap_err();
+
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(e.to_string().contains("List"), "unexpected message: {e}");
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
         Ok(())
     }
 

@@ -1,5 +1,5 @@
 use super::{Null, TimeUnit, Value, ValueRef};
-use crate::Result;
+use crate::{Error, Result};
 use std::borrow::Cow;
 
 /// `ToSqlOutput` represents the possible output types for implementers of the
@@ -188,7 +188,20 @@ impl ToSql for [u8] {
 impl ToSql for Value {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::from(self))
+        // `From<&Value> for ValueRef` panics for container/enum variants.
+        // Refuse them here so callers get a clean `ToSqlConversionFailure` instead.
+        let variant = match self {
+            Value::List(_) => "List",
+            Value::Array(_) => "Array",
+            Value::Struct(_) => "Struct",
+            Value::Map(_) => "Map",
+            Value::Union(_) => "Union",
+            Value::Enum(_) => "Enum",
+            _ => return Ok(ToSqlOutput::from(self)),
+        };
+        Err(Error::ToSqlConversionFailure(
+            format!("binding {variant} parameters is not yet supported").into(),
+        ))
     }
 }
 
@@ -226,6 +239,40 @@ mod test {
         is_to_sql::<u8>();
         is_to_sql::<u16>();
         is_to_sql::<u32>();
+    }
+
+    #[test]
+    fn test_value_to_sql_rejects_unsupported_variants() {
+        use crate::{
+            Error,
+            types::{OrderedMap, Value},
+        };
+
+        let cases: &[(&str, Value)] = &[
+            ("List", Value::List(vec![Value::Int(1)])),
+            ("Array", Value::Array(vec![Value::Int(1)])),
+            (
+                "Struct",
+                Value::Struct(OrderedMap::from(vec![("k".to_string(), Value::Int(1))])),
+            ),
+            (
+                "Map",
+                Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Int(2))])),
+            ),
+            ("Union", Value::Union(Box::new(Value::Int(1)))),
+            ("Enum", Value::Enum("variant".to_string())),
+        ];
+
+        for (variant, value) in cases {
+            match value.to_sql() {
+                Err(Error::ToSqlConversionFailure(e)) => {
+                    let msg = e.to_string();
+                    assert!(msg.contains(variant), "{variant}: unexpected message {msg}");
+                }
+                Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
+                Ok(_) => panic!("{variant}: expected error, got Ok"),
+            }
+        }
     }
 
     #[test]

@@ -567,7 +567,26 @@ impl Statement<'_> {
         let ptr = unsafe { self.stmt.ptr() };
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            // `From<&Value> for ValueRef` panics on container/enum variants.
+            // Refuse them up front so callers see a clean error.
+            ToSqlOutput::Owned(ref v) => {
+                use crate::types::Value;
+                let variant = match v {
+                    Value::List(_) => Some("List"),
+                    Value::Array(_) => Some("Array"),
+                    Value::Struct(_) => Some("Struct"),
+                    Value::Map(_) => Some("Map"),
+                    Value::Union(_) => Some("Union"),
+                    Value::Enum(_) => Some("Enum"),
+                    _ => None,
+                };
+                if let Some(variant) = variant {
+                    return Err(Error::ToSqlConversionFailure(
+                        format!("binding {variant} parameters is not yet supported").into(),
+                    ));
+                }
+                ValueRef::from(v)
+            }
         };
         // TODO: bind more
         let rc = match value {
@@ -611,7 +630,11 @@ impl Statement<'_> {
                 let decimal = crate::types::to_duckdb_decimal(d);
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
-            _ => unreachable!("not supported: {}", value.data_type()),
+            _ => {
+                return Err(Error::ToSqlConversionFailure(
+                    format!("binding parameter of type {} is not yet supported", value.data_type()).into(),
+                ));
+            }
         };
         result_from_duckdb_prepare(rc, ptr)
     }
@@ -1681,6 +1704,29 @@ mod test {
         let row: Decimal = db.query_row("SELECT 12345678901234567890::HUGEINT", [], |r| r.get(0))?;
         assert_eq!(row, Decimal::from_i128_with_scale(12345678901234567890, 0));
 
+        Ok(())
+    }
+
+    // Container types (List, Array, Struct, Map, Union) aren't yet wired up in `bind_parameter`.
+    // Until they are, binding one must surface an error rather than panic from safe Rust.
+    #[test]
+    fn test_bind_unsupported_container_type_returns_error() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE t (id INTEGER, numbers INTEGER[])", [])?;
+
+        let list = Value::List(vec![Value::Int(1), Value::Int(2)]);
+        let err = db
+            .execute("INSERT INTO t VALUES (?, ?)", crate::params![1, &list])
+            .unwrap_err();
+
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(e.to_string().contains("List"), "unexpected message: {e}");
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
         Ok(())
     }
 }
