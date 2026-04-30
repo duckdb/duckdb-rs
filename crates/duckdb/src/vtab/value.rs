@@ -1,11 +1,11 @@
 use crate::core::LogicalTypeId;
 use crate::ffi::{
-    duckdb_destroy_value, duckdb_free, duckdb_get_bool, duckdb_get_double, duckdb_get_float, duckdb_get_int8,
+    DuckDbString, duckdb_destroy_value, duckdb_get_bool, duckdb_get_double, duckdb_get_float, duckdb_get_int8,
     duckdb_get_int16, duckdb_get_int32, duckdb_get_int64, duckdb_get_list_child, duckdb_get_list_size,
     duckdb_get_type_id, duckdb_get_uint8, duckdb_get_uint16, duckdb_get_uint32, duckdb_get_uint64,
     duckdb_get_value_type, duckdb_get_varchar, duckdb_is_null_value, duckdb_value,
 };
-use std::{ffi::CStr, fmt, os::raw::c_void};
+use std::fmt;
 
 /// The Value object holds a single arbitrary value of any type that can be
 /// stored in the database.
@@ -101,11 +101,10 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
-            let varchar = duckdb_get_varchar(self.ptr);
-            let c_str = CStr::from_ptr(varchar);
-            let res = write!(f, "{}", c_str.to_string_lossy());
-            duckdb_free(varchar as *mut c_void);
-            res
+            match DuckDbString::from_nullable_ptr(duckdb_get_varchar(self.ptr)) {
+                Some(varchar) => write!(f, "{}", varchar.to_string_lossy()),
+                None => f.write_str("NULL"),
+            }
         }
     }
 }

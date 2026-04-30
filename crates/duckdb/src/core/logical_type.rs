@@ -321,7 +321,7 @@ impl LogicalTypeHandle {
 
     /// Logical type child name by idx
     ///
-    /// Panics if the logical type is not a struct or union
+    /// Panics if the logical type is not a struct or union, or if `idx` is out of range.
     pub fn child_name(&self, idx: usize) -> String {
         unsafe {
             let child_name_ptr = match self.id() {
@@ -330,7 +330,10 @@ impl LogicalTypeHandle {
                 LogicalTypeId::Unsupported => panic!("unsupported logical type {}", self.raw_id()),
                 _ => panic!("not a struct or union"),
             };
-            let c_str = CString::from_raw(child_name_ptr);
+            if child_name_ptr.is_null() {
+                panic!("child index {idx} out of range");
+            }
+            let c_str = DuckDbString::from_ptr(child_name_ptr);
             let name = c_str.to_str().unwrap();
             name.to_string()
         }
@@ -354,13 +357,10 @@ impl LogicalTypeHandle {
     pub fn get_alias(&self) -> Option<String> {
         unsafe {
             let alias_ptr = duckdb_logical_type_get_alias(self.ptr);
-            if alias_ptr.is_null() {
-                None
-            } else {
-                let c_str = CString::from_raw(alias_ptr);
+            DuckDbString::from_nullable_ptr(alias_ptr).map(|c_str| {
                 let alias = c_str.to_str().unwrap();
-                Some(alias.to_string())
-            }
+                alias.to_string()
+            })
         }
     }
 
