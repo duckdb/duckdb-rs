@@ -7,7 +7,7 @@ use arrow::{
 };
 
 use super::{Result, ffi};
-use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
+use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow, error::result_from_duckdb_result};
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
 
@@ -299,7 +299,15 @@ impl RawStatement {
         unsafe {
             let mut out: ffi::duckdb_arrow = ptr::null_mut();
             let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
-            result_from_duckdb_arrow(rc, out)?;
+            if rc != ffi::DuckDBSuccess {
+                // Use duckdb_result to get the typed error code
+                let mut result: ffi::duckdb_result = std::mem::zeroed();
+                ffi::duckdb_execute_prepared(self.ptr, &mut result);
+                let err = result_from_duckdb_result(&mut result as *mut _);
+                ffi::duckdb_destroy_result(&mut result);
+                ffi::duckdb_destroy_arrow(&mut out);
+                return Err(err)
+            }
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
             let mut c_schema = Rc::into_raw(Rc::new(FFI_ArrowSchema::empty()));
@@ -323,16 +331,9 @@ impl RawStatement {
 
             let rc = ffi::duckdb_execute_prepared_streaming(self.ptr, &mut out);
             if rc != ffi::DuckDBSuccess {
-                let msg = {
-                    let c_err = ffi::duckdb_result_error(&mut out);
-                    if c_err.is_null() {
-                        None
-                    } else {
-                        Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
-                    }
-                };
+                let err = result_from_duckdb_result(&mut out as *mut _);
                 ffi::duckdb_destroy_result(&mut out);
-                return Err(Error::DuckDBFailure(ffi::Error::new(rc), msg));
+                return Err(err);
             }
 
             // Check if the result is truly streaming or materialized

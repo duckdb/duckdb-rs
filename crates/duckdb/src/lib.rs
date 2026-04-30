@@ -1102,8 +1102,7 @@ mod test {
 
         match result.unwrap_err() {
             Error::DuckDBFailure(err, _) => {
-                // TODO(wangfenjin): Update errorcode
-                assert_eq!(err.code, ErrorCode::Unknown);
+                assert_eq!(err.code, ErrorCode::ConstraintViolation);
             }
             err => panic!("Unexpected error {err}"),
         }

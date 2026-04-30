@@ -10,7 +10,7 @@ use super::{Appender, Config, Connection, Result, ffi};
 use crate::{
     error::{
         Error, result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract,
-        result_from_duckdb_prepare,
+        result_from_duckdb_prepare, result_from_duckdb_result,
     },
     raw_statement::RawStatement,
     statement::Statement,
@@ -177,15 +177,7 @@ impl InnerConnection {
         let rc = unsafe { ffi::duckdb_execute_prepared(stmt, &mut result) };
 
         let error = if rc != ffi::DuckDBSuccess {
-            unsafe {
-                let c_err = ffi::duckdb_result_error(&mut result as *mut _);
-                let msg = if c_err.is_null() {
-                    None
-                } else {
-                    Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
-                };
-                Some(Error::DuckDBFailure(ffi::Error::new(rc), msg))
-            }
+            Some(unsafe { result_from_duckdb_result(&mut result as *mut _)})
         } else {
             None
         };

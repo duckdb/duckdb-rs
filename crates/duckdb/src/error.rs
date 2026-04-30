@@ -297,6 +297,23 @@ pub fn result_from_duckdb_arrow(code: ffi::duckdb_state, mut out: ffi::duckdb_ar
 
 #[cold]
 #[inline]
+pub unsafe fn result_from_duckdb_result(result: *mut ffi::duckdb_result) -> crate::Error {
+    unsafe {
+        let ffi_error = ffi::Error::from_result(result);
+        let msg = {
+            let c_err = ffi::duckdb_result_error(result);
+            if (c_err).is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_err).to_string_lossy().into_owned())
+            }
+        };
+        crate::Error::DuckDBFailure(ffi_error, msg)
+    }
+}
+
+#[cold]
+#[inline]
 pub fn result_from_duckdb_extract(
     num_statements: ffi::idx_t,
     mut extracted: ffi::duckdb_extracted_statements,
