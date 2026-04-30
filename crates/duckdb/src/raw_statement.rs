@@ -286,11 +286,9 @@ impl RawStatement {
                 print!("row-value:");
                 for col_idx in 0..duckdb_column_count(&mut result) {
                     let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                    if val.is_null() {
-                        print!("NULL ");
-                    } else {
-                        let val = ffi::DuckDbString::from_ptr(val);
-                        print!("{} ", val.to_string_lossy());
+                    match ffi::DuckDbString::from_nullable_ptr(val) {
+                        Some(val) => print!("{} ", val.to_string_lossy()),
+                        None => print!("NULL "),
                     }
                 }
                 println!();
@@ -382,14 +380,15 @@ impl RawStatement {
         unsafe {
             let name_ptr = ffi::duckdb_parameter_name(self.ptr, idx as u64);
             // Range check above ensures this shouldn't be null, but check defensively
-            if name_ptr.is_null() {
-                return Err(Error::DuckDBFailure(
-                    ffi::Error::new(ffi::DuckDBError),
-                    Some(format!("Could not retrieve parameter name for index {idx}")),
-                ));
-            }
-
-            let name = ffi::DuckDbString::from_ptr(name_ptr).to_string_lossy().to_string();
+            let name = match ffi::DuckDbString::from_nullable_ptr(name_ptr) {
+                Some(name) => name.to_string_lossy().to_string(),
+                None => {
+                    return Err(Error::DuckDBFailure(
+                        ffi::Error::new(ffi::DuckDBError),
+                        Some(format!("Could not retrieve parameter name for index {idx}")),
+                    ));
+                }
+            };
 
             Ok(name)
         }

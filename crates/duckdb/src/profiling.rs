@@ -100,12 +100,8 @@ impl ProfilingInfo {
 
     fn value_to_string(value: libduckdb_sys::duckdb_value) -> Option<String> {
         let ptr = unsafe { libduckdb_sys::duckdb_get_varchar(value) };
-        if ptr.is_null() {
-            return None;
-        }
-
-        let mem = unsafe { libduckdb_sys::DuckDbString::from_ptr(ptr) };
-        Some(mem.to_string_lossy().to_string())
+        unsafe { libduckdb_sys::DuckDbString::from_nullable_ptr(ptr) }
+            .map(|varchar| varchar.to_string_lossy().to_string())
     }
 }
 

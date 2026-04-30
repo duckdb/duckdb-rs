@@ -26,6 +26,24 @@ impl DuckDbString {
         unsafe { Self::from_raw_parts(ptr, len) }
     }
 
+    /// Creates a `DuckDbString` from a nullable raw pointer to a C string.
+    ///
+    /// Returns `None` if `ptr` is null.
+    ///
+    /// # Safety
+    ///
+    /// If `ptr` is non-null, the caller must ensure that:
+    /// - `ptr` points to a null-terminated C string.
+    /// - `ptr` was allocated by DuckDB and must be released with `duckdb_free`.
+    /// - Ownership of `ptr` transfers to the returned `DuckDbString`. The caller must not reuse or free it.
+    pub unsafe fn from_nullable_ptr(ptr: *const c_char) -> Option<Self> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { Self::from_ptr(ptr) })
+        }
+    }
+
     /// Creates a `DuckDbString` from raw parts.
     ///
     /// # Safety
@@ -61,5 +79,15 @@ impl Drop for DuckDbString {
     fn drop(&mut self) {
         let ptr = self.ptr.as_ptr() as *mut core::ffi::c_void;
         unsafe { duckdb_free(ptr) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DuckDbString;
+
+    #[test]
+    fn from_nullable_ptr_returns_none_for_null() {
+        assert!(unsafe { DuckDbString::from_nullable_ptr(std::ptr::null()) }.is_none());
     }
 }

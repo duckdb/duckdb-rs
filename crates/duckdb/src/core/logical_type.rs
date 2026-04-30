@@ -357,13 +357,10 @@ impl LogicalTypeHandle {
     pub fn get_alias(&self) -> Option<String> {
         unsafe {
             let alias_ptr = duckdb_logical_type_get_alias(self.ptr);
-            if alias_ptr.is_null() {
-                None
-            } else {
-                let c_str = DuckDbString::from_ptr(alias_ptr);
+            DuckDbString::from_nullable_ptr(alias_ptr).map(|c_str| {
                 let alias = c_str.to_str().unwrap();
-                Some(alias.to_string())
-            }
+                alias.to_string()
+            })
         }
     }
 
