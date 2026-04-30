@@ -499,7 +499,7 @@ pub fn data_chunk_to_arrow(chunk: &DataChunkHandle) -> Result<RecordBatch, Box<d
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(RecordBatch::try_from_iter(columns.into_iter())?)
+    Ok(RecordBatch::try_from_iter(columns)?)
 }
 
 struct DataChunkHandleSlice<'a> {
