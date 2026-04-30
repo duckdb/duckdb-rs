@@ -4,7 +4,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 use crate::{
     Error,
     error::result_from_duckdb_appender,
-    types::{ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput, value_ref_from_value},
 };
 
 /// Appender for fast import data
@@ -80,7 +80,7 @@ impl Appender<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if append column count not the same with the table schema
+    /// Returns `Err` if a row cannot be appended.
     #[inline]
     pub fn append_rows<P, I>(&mut self, rows: I) -> Result<()>
     where
@@ -108,38 +108,59 @@ impl Appender<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if append column count not the same with the table schema
+    /// Returns `Err` if the row cannot be appended.
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
+        // AppenderParams normalizes arrays, tuples, slices, and iterators into
+        // append_parameter_row, which owns begin_row/end_row around validation
+        // and binding.
+        params.__bind_in(self)
+    }
+
+    #[inline]
+    pub(crate) fn append_parameter_row<P>(&mut self, params: P) -> Result<()>
+    where
+        P: IntoIterator,
+        P::Item: ToSql,
+    {
+        let params = params.into_iter().collect::<Vec<_>>();
+        let values = params
+            .iter()
+            .map(ToSql::to_sql)
+            .collect::<Result<Vec<ToSqlOutput<'_>>>>()?;
+
+        self.validate_parameter_values(&values)?;
+
         let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
-        params.__bind_in(self)?;
+        if let Err(err) = self.bind_parameter_values(&values) {
+            // validate_parameter_values catches unsupported types up-front; this guards
+            // against an unmapped variant slipping through bind_parameter.
+            let _ = unsafe { ffi::duckdb_appender_end_row(self.app) };
+            return Err(err);
+        }
         // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
         result_from_duckdb_appender(rc, &mut self.app)
     }
 
-    #[inline]
-    pub(crate) fn bind_parameters<P>(&mut self, params: P) -> Result<()>
-    where
-        P: IntoIterator,
-        P::Item: ToSql,
-    {
-        for p in params.into_iter() {
-            self.bind_parameter(&p)?;
+    fn validate_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+        for value in values {
+            let value = to_value_ref(value)?;
+            validate_appender_value_ref(value)?;
         }
         Ok(())
     }
 
-    fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P) -> Result<()> {
-        let value = param.to_sql()?;
+    fn bind_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+        for value in values {
+            self.bind_parameter(value)?;
+        }
+        Ok(())
+    }
 
+    fn bind_parameter(&self, value: &ToSqlOutput<'_>) -> Result<()> {
         let ptr = self.app;
-        let value = match value {
-            ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
-        };
-        // NOTE: we ignore the return value here
-        //       because if anything failed, end_row will fail
+        let value = to_value_ref(value)?;
         // TODO: append more
         let rc = match value {
             ValueRef::Null => unsafe { ffi::duckdb_append_null(ptr) },
@@ -193,7 +214,11 @@ impl Appender<'_> {
                 ffi::duckdb_destroy_value(&mut value);
                 res
             },
-            _ => unreachable!("not supported"),
+            _ => {
+                return Err(Error::ToSqlConversionFailure(
+                    appending_unsupported_value(value.data_type()).into(),
+                ));
+            }
         };
         if rc != 0 {
             return Err(Error::AppendError);
@@ -257,6 +282,48 @@ impl fmt::Debug for Appender<'_> {
     }
 }
 
+fn appending_unsupported_value(value_type: impl fmt::Display) -> String {
+    format!("appending {value_type} values is not yet supported")
+}
+
+fn to_value_ref<'value, 'output>(value: &'value ToSqlOutput<'output>) -> Result<ValueRef<'value>>
+where
+    'output: 'value,
+{
+    match *value {
+        ToSqlOutput::Borrowed(v) => Ok(v),
+        ToSqlOutput::Owned(ref v) => value_ref_from_value(v, appending_unsupported_value),
+    }
+}
+
+fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
+    match value {
+        ValueRef::Null
+        | ValueRef::Boolean(_)
+        | ValueRef::TinyInt(_)
+        | ValueRef::SmallInt(_)
+        | ValueRef::Int(_)
+        | ValueRef::BigInt(_)
+        | ValueRef::HugeInt(_)
+        | ValueRef::UTinyInt(_)
+        | ValueRef::USmallInt(_)
+        | ValueRef::UInt(_)
+        | ValueRef::UBigInt(_)
+        | ValueRef::Float(_)
+        | ValueRef::Double(_)
+        | ValueRef::Text(_)
+        | ValueRef::Timestamp(_, _)
+        | ValueRef::Blob(_)
+        | ValueRef::Date32(_)
+        | ValueRef::Time64(_, _)
+        | ValueRef::Interval { .. }
+        | ValueRef::Decimal(_) => Ok(()),
+        _ => Err(Error::ToSqlConversionFailure(
+            appending_unsupported_value(value.data_type()).into(),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use rust_decimal::Decimal;
@@ -275,6 +342,82 @@ mod test {
 
         let val = db.query_row("SELECT x FROM foo", [], |row| <(i32,)>::try_from(row))?;
         assert_eq!(val, (42,));
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_unsupported_container_type_returns_error() -> Result<()> {
+        use arrow::{array::ListArray, datatypes::Int32Type};
+
+        use crate::{
+            ToSql,
+            types::{ListType, ToSqlOutput, Value, ValueRef},
+        };
+
+        struct OwnedList;
+        impl ToSql for OwnedList {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
+            }
+        }
+
+        struct BorrowedList(ListArray);
+        impl BorrowedList {
+            fn new() -> Self {
+                Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(vec![
+                    Some(1),
+                    Some(2),
+                ])]))
+            }
+        }
+        impl ToSql for BorrowedList {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
+            }
+        }
+
+        fn assert_unsupported_list_error(err: Error) {
+            match err {
+                Error::ToSqlConversionFailure(e) => {
+                    assert!(
+                        e.to_string().contains("appending List values is not yet supported"),
+                        "unexpected message: {e}"
+                    );
+                }
+                other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+            }
+        }
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, name TEXT)")?;
+
+        let list = OwnedList;
+        let mut app = db.appender("foo")?;
+        app.append_row(params![10, "before"])?;
+        app.append_row(params![11, "also before"])?;
+        let err = app.append_row(params![1, list]).unwrap_err();
+        assert_unsupported_list_error(err);
+
+        let borrowed_list = BorrowedList::new();
+        let err = app.append_row(params![3, borrowed_list]).unwrap_err();
+        assert_unsupported_list_error(err);
+        app.append_row(params![2, "ok"])?;
+        app.flush()?;
+
+        let rows = db
+            .prepare("SELECT id, name FROM foo ORDER BY id")?
+            .query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(
+            rows,
+            vec![
+                (2, "ok".to_string()),
+                (10, "before".to_string()),
+                (11, "also before".to_string())
+            ]
+        );
+        let count: i32 = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
+        assert_eq!(count, 3);
         Ok(())
     }
 

@@ -211,7 +211,7 @@ impl ToSql for Duration {
 mod test {
     use crate::{
         Connection, Result,
-        types::{FromSql, FromSqlError, ToSql, ToSqlOutput, ValueRef},
+        types::{FromSql, FromSqlError, ToSql, ToSqlOutput, ValueRef, binding_unsupported_value, value_ref_from_value},
     };
     use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 
@@ -319,7 +319,7 @@ mod test {
         let sqled = td.to_sql().unwrap();
         let value = match sqled {
             ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value).unwrap(),
         };
         let reversed = FromSql::column_result(value).unwrap();
 
