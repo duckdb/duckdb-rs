@@ -286,7 +286,12 @@ impl RawStatement {
                 print!("row-value:");
                 for col_idx in 0..duckdb_column_count(&mut result) {
                     let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                    print!("{} ", CStr::from_ptr(val).to_string_lossy());
+                    if val.is_null() {
+                        print!("NULL ");
+                    } else {
+                        let val = ffi::DuckDbString::from_ptr(val);
+                        print!("{} ", val.to_string_lossy());
+                    }
                 }
                 println!();
             }
@@ -384,9 +389,7 @@ impl RawStatement {
                 ));
             }
 
-            let name = CStr::from_ptr(name_ptr).to_string_lossy().to_string();
-
-            ffi::duckdb_free(name_ptr as *mut std::ffi::c_void);
+            let name = ffi::DuckDbString::from_ptr(name_ptr).to_string_lossy().to_string();
 
             Ok(name)
         }

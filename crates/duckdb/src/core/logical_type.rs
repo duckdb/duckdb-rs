@@ -330,7 +330,7 @@ impl LogicalTypeHandle {
                 LogicalTypeId::Unsupported => panic!("unsupported logical type {}", self.raw_id()),
                 _ => panic!("not a struct or union"),
             };
-            let c_str = CString::from_raw(child_name_ptr);
+            let c_str = DuckDbString::from_ptr(child_name_ptr);
             let name = c_str.to_str().unwrap();
             name.to_string()
         }
@@ -357,7 +357,7 @@ impl LogicalTypeHandle {
             if alias_ptr.is_null() {
                 None
             } else {
-                let c_str = CString::from_raw(alias_ptr);
+                let c_str = DuckDbString::from_ptr(alias_ptr);
                 let alias = c_str.to_str().unwrap();
                 Some(alias.to_string())
             }

@@ -1,5 +1,5 @@
 use std::{
-    ffi::{CStr, CString, c_void},
+    ffi::{CStr, CString},
     mem,
     os::raw::c_char,
     ptr, str,
@@ -92,8 +92,12 @@ impl InnerConnection {
             let mut c_err = std::ptr::null_mut();
             let r = ffi::duckdb_open_ext(c_path.as_ptr(), &mut db, config.duckdb_config(), &mut c_err);
             if r != ffi::DuckDBSuccess {
-                let msg = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-                ffi::duckdb_free(c_err as *mut c_void);
+                let msg = if c_err.is_null() {
+                    None
+                } else {
+                    let c_err = ffi::DuckDbString::from_ptr(c_err);
+                    Some(c_err.to_string_lossy().to_string())
+                };
                 return Err(Error::DuckDBFailure(ffi::Error::new(r), msg));
             }
             Self::new_from_raw_db(db, true)

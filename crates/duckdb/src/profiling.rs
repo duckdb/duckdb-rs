@@ -74,20 +74,13 @@ impl ProfilingInfo {
             let mut key = unsafe { libduckdb_sys::duckdb_get_map_key(map, i) };
             let mut val = unsafe { libduckdb_sys::duckdb_get_map_value(map, i) };
 
-            let key_mem = unsafe { libduckdb_sys::duckdb_get_varchar(key) };
-            let val_mem = unsafe { libduckdb_sys::duckdb_get_varchar(val) };
+            let key_mem = unsafe { libduckdb_sys::DuckDbString::from_ptr(libduckdb_sys::duckdb_get_varchar(key)) };
+            let val_mem = unsafe { libduckdb_sys::DuckDbString::from_ptr(libduckdb_sys::duckdb_get_varchar(val)) };
 
-            let key_str = unsafe { std::ffi::CStr::from_ptr(key_mem) }
-                .to_string_lossy()
-                .to_string();
-            let val_str = unsafe { std::ffi::CStr::from_ptr(val_mem) }
-                .to_string_lossy()
-                .to_string();
+            let key_str = key_mem.to_string_lossy().to_string();
+            let val_str = val_mem.to_string_lossy().to_string();
 
             metrics.insert(key_str, val_str);
-
-            unsafe { libduckdb_sys::duckdb_free(key_mem as *mut std::ffi::c_void) };
-            unsafe { libduckdb_sys::duckdb_free(val_mem as *mut std::ffi::c_void) };
 
             unsafe { libduckdb_sys::duckdb_destroy_value(&mut key) };
             unsafe { libduckdb_sys::duckdb_destroy_value(&mut val) };
