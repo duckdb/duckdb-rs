@@ -101,7 +101,11 @@ impl Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
-            let varchar = DuckDbString::from_ptr(duckdb_get_varchar(self.ptr));
+            let varchar_ptr = duckdb_get_varchar(self.ptr);
+            if varchar_ptr.is_null() {
+                return f.write_str("NULL");
+            }
+            let varchar = DuckDbString::from_ptr(varchar_ptr);
             write!(f, "{}", varchar.to_string_lossy())
         }
     }

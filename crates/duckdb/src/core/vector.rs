@@ -428,10 +428,15 @@ impl<'a> StructVector<'a> {
     }
 
     /// Get the name of the child by idx.
+    ///
+    /// Panics if `idx` is out of range.
     pub fn child_name(&self, idx: usize) -> DuckDbString {
         let logical_type = self.logical_type();
         unsafe {
             let child_name_ptr = duckdb_struct_type_child_name(logical_type.ptr, idx as u64);
+            if child_name_ptr.is_null() {
+                panic!("child index {idx} out of range");
+            }
             DuckDbString::from_ptr(child_name_ptr)
         }
     }

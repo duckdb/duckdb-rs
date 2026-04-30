@@ -321,7 +321,7 @@ impl LogicalTypeHandle {
 
     /// Logical type child name by idx
     ///
-    /// Panics if the logical type is not a struct or union
+    /// Panics if the logical type is not a struct or union, or if `idx` is out of range.
     pub fn child_name(&self, idx: usize) -> String {
         unsafe {
             let child_name_ptr = match self.id() {
@@ -330,6 +330,9 @@ impl LogicalTypeHandle {
                 LogicalTypeId::Unsupported => panic!("unsupported logical type {}", self.raw_id()),
                 _ => panic!("not a struct or union"),
             };
+            if child_name_ptr.is_null() {
+                panic!("child index {idx} out of range");
+            }
             let c_str = DuckDbString::from_ptr(child_name_ptr);
             let name = c_str.to_str().unwrap();
             name.to_string()

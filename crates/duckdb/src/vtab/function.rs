@@ -293,8 +293,11 @@ impl TableFunction {
     ///
     /// # Arguments
     ///  * `name`: The name of the table function
+    ///
+    /// # Panics
+    /// Panics if `name` contains interior NUL bytes.
     pub fn set_name(&self, name: &str) -> &Self {
-        let string = CString::new(name).unwrap();
+        let string = CString::new(name).expect("table function name must not contain NUL bytes");
         unsafe {
             duckdb_table_function_set_name(self.ptr, string.as_ptr());
         }

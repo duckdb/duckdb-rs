@@ -59,6 +59,7 @@ pub struct ProfilingInfo {
 impl ProfilingInfo {
     /// # Safety
     /// `info` must be a valid (or NULL) pointer obtained from [`libduckdb_sys::duckdb_get_profiling_info`].
+    /// Metric key/value string conversions are treated as fallible. NULL varchar results are skipped.
     fn from_raw(info: libduckdb_sys::duckdb_profiling_info) -> Option<Self> {
         if info.is_null() {
             return None;
@@ -74,13 +75,9 @@ impl ProfilingInfo {
             let mut key = unsafe { libduckdb_sys::duckdb_get_map_key(map, i) };
             let mut val = unsafe { libduckdb_sys::duckdb_get_map_value(map, i) };
 
-            let key_mem = unsafe { libduckdb_sys::DuckDbString::from_ptr(libduckdb_sys::duckdb_get_varchar(key)) };
-            let val_mem = unsafe { libduckdb_sys::DuckDbString::from_ptr(libduckdb_sys::duckdb_get_varchar(val)) };
-
-            let key_str = key_mem.to_string_lossy().to_string();
-            let val_str = val_mem.to_string_lossy().to_string();
-
-            metrics.insert(key_str, val_str);
+            if let (Some(key_str), Some(val_str)) = (Self::value_to_string(key), Self::value_to_string(val)) {
+                metrics.insert(key_str, val_str);
+            }
 
             unsafe { libduckdb_sys::duckdb_destroy_value(&mut key) };
             unsafe { libduckdb_sys::duckdb_destroy_value(&mut val) };
@@ -99,6 +96,16 @@ impl ProfilingInfo {
         }
 
         Some(ProfilingInfo { metrics, children })
+    }
+
+    fn value_to_string(value: libduckdb_sys::duckdb_value) -> Option<String> {
+        let ptr = unsafe { libduckdb_sys::duckdb_get_varchar(value) };
+        if ptr.is_null() {
+            return None;
+        }
+
+        let mem = unsafe { libduckdb_sys::DuckDbString::from_ptr(ptr) };
+        Some(mem.to_string_lossy().to_string())
     }
 }
 
