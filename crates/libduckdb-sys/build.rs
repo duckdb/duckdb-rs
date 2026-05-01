@@ -120,6 +120,16 @@ mod build_linked {
         #[allow(unused_variables)]
         let header = find_duckdb(out_dir);
 
+        // Publish the resolved include directory so downstream crates
+        // that compile their own C/C++ code can read it from
+        // `DEP_DUCKDB_INCLUDE`. Wrapper-only mode (no explicit dir
+        // from env / vcpkg / pkg-config / download) intentionally
+        // skips the emission — there's no single directory to point
+        // at; the system header is on the default search path already.
+        if let Some(include_dir) = include_dir_for(&header) {
+            println!("cargo:include={include_dir}");
+        }
+
         #[cfg(not(feature = "buildtime_bindgen"))]
         {
             std::fs::copy(
@@ -135,6 +145,19 @@ mod build_linked {
         #[cfg(feature = "buildtime_bindgen")]
         {
             bindings::write_to_out_dir(header, out_path);
+        }
+    }
+
+    /// The `HeaderLocation` enum string conversion appends a filename to
+    /// the path it resolved. For `cargo:include=...` we want the
+    /// directory itself, not a file path. Re-derive it.
+    fn include_dir_for(header: &HeaderLocation) -> Option<String> {
+        match header {
+            HeaderLocation::FromEnvironment => env::var("DUCKDB_INCLUDE_DIR")
+                .or_else(|_| env::var("DUCKDB_LIB_DIR"))
+                .ok(),
+            HeaderLocation::FromPath(path) => Some(path.clone()),
+            HeaderLocation::Wrapper => None,
         }
     }
 
