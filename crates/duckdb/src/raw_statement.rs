@@ -299,15 +299,7 @@ impl RawStatement {
         unsafe {
             let mut out: ffi::duckdb_arrow = ptr::null_mut();
             let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
-            if rc != ffi::DuckDBSuccess {
-                // Use duckdb_result to get the typed error code
-                let mut result: ffi::duckdb_result = std::mem::zeroed();
-                ffi::duckdb_execute_prepared(self.ptr, &mut result);
-                let err = result_from_duckdb_result(&mut result as *mut _);
-                ffi::duckdb_destroy_result(&mut result);
-                ffi::duckdb_destroy_arrow(&mut out);
-                return Err(err)
-            }
+            result_from_duckdb_arrow(rc, out)?;
 
             let rows_changed = ffi::duckdb_arrow_rows_changed(out);
             let mut c_schema = Rc::into_raw(Rc::new(FFI_ArrowSchema::empty()));
