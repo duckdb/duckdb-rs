@@ -112,8 +112,8 @@ impl Appender<'_> {
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
         // AppenderParams normalizes arrays, tuples, slices, and iterators into
-        // append_parameter_row, which owns begin_row/end_row around validation
-        // and binding.
+        // append_parameter_row, which validates up-front, then wraps binding
+        // with begin_row/end_row.
         params.__bind_in(self)
     }
 
@@ -135,10 +135,12 @@ impl Appender<'_> {
         if let Err(err) = self.bind_parameter_values(&values) {
             // validate_parameter_values catches unsupported types up-front; this guards
             // against an unmapped variant slipping through bind_parameter.
-            let _ = unsafe { ffi::duckdb_appender_end_row(self.app) };
+            let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
+            // Prefer cleanup failure here: result_from_duckdb_appender destroys
+            // an appender that DuckDB reports as invalid after a partial row.
+            result_from_duckdb_appender(rc, &mut self.app)?;
             return Err(err);
         }
-        // NOTE: we only check end_row return value
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
         result_from_duckdb_appender(rc, &mut self.app)
     }
@@ -418,6 +420,27 @@ mod test {
         );
         let count: i32 = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
         assert_eq!(count, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_bind_failure_prefers_cleanup_error() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, value UUID)")?;
+
+        let mut app = db.appender("foo")?;
+        let err = app.append_row(params![1, 2]).unwrap_err();
+
+        match err {
+            Error::DuckDBFailure(_, Some(msg)) => {
+                assert!(
+                    msg.contains("Call to EndRow before all columns have been appended to"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected DuckDBFailure from appender cleanup, got {other:?}"),
+        }
+        assert!(app.app.is_null());
         Ok(())
     }
 
