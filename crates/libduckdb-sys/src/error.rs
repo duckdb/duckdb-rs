@@ -72,11 +72,11 @@ impl Error {
     }
 
     pub unsafe fn from_result(result: *mut crate::duckdb_result) -> Self {
-       let raw_type = unsafe { crate::duckdb_result_error_type(result) };
-       Self {
+        let raw_type = unsafe { crate::duckdb_result_error_type(result) };
+        Self {
             code: ErrorCode::from_duckdb_error_type(raw_type),
             extended_code: crate::duckdb_state_DuckDBError,
-       }
+        }
     }
 }
 
@@ -125,7 +125,7 @@ impl ErrorCode {
             crate::duckdb_error_type_DUCKDB_ERROR_MISSING_EXTENSION => ErrorCode::NotFound,
             crate::duckdb_error_type_DUCKDB_ERROR_AUTOLOAD => ErrorCode::NotFound,
             crate::duckdb_error_type_DUCKDB_ERROR_SEQUENCE => ErrorCode::OperationAborted,
-            crate:: duckdb_error_type_DUCKDB_INVALID_CONFIGURATION => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_INVALID_CONFIGURATION => ErrorCode::ApiMisuse,
             _ => ErrorCode::Unknown,
         }
     }
