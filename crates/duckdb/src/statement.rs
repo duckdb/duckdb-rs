@@ -8,7 +8,7 @@ use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{ToSql, ToSqlOutput},
+    types::{ToSql, ToSqlOutput, binding_unsupported_value, value_ref_from_value},
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -416,6 +416,18 @@ impl Statement<'_> {
         P: IntoIterator,
         P::Item: ToSql,
     {
+        let result = self.try_bind_parameters(params);
+        if result.is_err() {
+            let _ = self.stmt.clear_bindings();
+        }
+        result
+    }
+
+    fn try_bind_parameters<P>(&mut self, params: P) -> Result<()>
+    where
+        P: IntoIterator,
+        P::Item: ToSql,
+    {
         let expected = self.stmt.bind_parameter_count();
         let mut index = 0;
         for p in params.into_iter() {
@@ -567,7 +579,7 @@ impl Statement<'_> {
         let ptr = unsafe { self.stmt.ptr() };
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
         };
         // TODO: bind more
         let rc = match value {
@@ -611,7 +623,11 @@ impl Statement<'_> {
                 let decimal = crate::types::to_duckdb_decimal(d);
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
-            _ => unreachable!("not supported: {}", value.data_type()),
+            _ => {
+                return Err(Error::ToSqlConversionFailure(
+                    binding_unsupported_value(value.data_type()).into(),
+                ));
+            }
         };
         result_from_duckdb_prepare(rc, ptr)
     }
@@ -656,8 +672,40 @@ impl Statement<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{Connection, Error, Result, params_from_iter, types::ToSql};
+    use arrow::{array::ListArray, datatypes::Int32Type};
+
+    use crate::{
+        Connection, Error, Result, params_from_iter,
+        types::{ListType, ToSql, ToSqlOutput, ValueRef},
+    };
     use rust_decimal::Decimal;
+
+    struct BorrowedList(ListArray);
+    impl BorrowedList {
+        fn new() -> Self {
+            Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(vec![
+                Some(1),
+                Some(2),
+            ])]))
+        }
+    }
+    impl ToSql for BorrowedList {
+        fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+            Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
+        }
+    }
+
+    fn assert_binding_list_error(err: Error) {
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(
+                    e.to_string().contains("binding List parameters is not yet supported"),
+                    "unexpected message: {e}"
+                );
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_execute() -> Result<()> {
@@ -1681,6 +1729,63 @@ mod test {
         let row: Decimal = db.query_row("SELECT 12345678901234567890::HUGEINT", [], |r| r.get(0))?;
         assert_eq!(row, Decimal::from_i128_with_scale(12345678901234567890, 0));
 
+        Ok(())
+    }
+
+    // Unsupported Value variants must surface an error instead of panicking.
+    #[test]
+    fn test_bind_unsupported_container_type_returns_error() -> Result<()> {
+        use crate::types::Value;
+
+        struct OwnedList;
+        impl ToSql for OwnedList {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
+            }
+        }
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE t (id INTEGER, numbers INTEGER[])", [])?;
+
+        let list = OwnedList;
+        let err = db
+            .execute("INSERT INTO t VALUES (?, ?)", crate::params![1, list])
+            .unwrap_err();
+
+        assert_binding_list_error(err);
+
+        let borrowed_list = BorrowedList::new();
+        let err = db
+            .execute("INSERT INTO t VALUES (?, ?)", crate::params![2, borrowed_list])
+            .unwrap_err();
+        assert_binding_list_error(err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_error_clears_partial_parameter_state() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE t (id INTEGER NOT NULL, name TEXT)", [])?;
+
+        let mut stmt = db.prepare("INSERT INTO t VALUES (?, ?)")?;
+        let list = BorrowedList::new();
+        let err = stmt.execute(crate::params![1, list]).unwrap_err();
+        assert_binding_list_error(err);
+
+        stmt.raw_bind_parameter(2, "ok")?;
+        assert!(stmt.raw_execute().is_err());
+
+        let count: i32 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
+        assert_eq!(count, 0);
+
+        stmt.raw_bind_parameter(1, 7)?;
+        stmt.raw_bind_parameter(2, "ok")?;
+        assert_eq!(stmt.raw_execute()?, 1);
+
+        let row = db.query_row("SELECT id, name FROM t", [], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?))
+        })?;
+        assert_eq!(row, (7, "ok".to_string()));
         Ok(())
     }
 }

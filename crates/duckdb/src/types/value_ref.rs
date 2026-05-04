@@ -1,7 +1,7 @@
 use super::{Type, Value};
 use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
 
-use crate::Row;
+use crate::{Error, Result, Row};
 use rust_decimal::prelude::*;
 
 use arrow::{
@@ -343,7 +343,60 @@ impl<'a> From<&'a [u8]> for ValueRef<'a> {
     }
 }
 
+pub(crate) fn value_ref_from_value<'a>(
+    value: &'a Value,
+    unsupported_message: impl FnOnce(&'static str) -> String,
+) -> Result<ValueRef<'a>> {
+    if let Some(variant) = unsupported_value_variant(value) {
+        return Err(Error::ToSqlConversionFailure(unsupported_message(variant).into()));
+    }
+
+    Ok(ValueRef::from(value))
+}
+
+pub(crate) fn binding_unsupported_value(value_type: impl std::fmt::Display) -> String {
+    format!("binding {value_type} parameters is not yet supported")
+}
+
+fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
+    match value {
+        Value::Null
+        | Value::Boolean(_)
+        | Value::TinyInt(_)
+        | Value::SmallInt(_)
+        | Value::Int(_)
+        | Value::BigInt(_)
+        | Value::HugeInt(_)
+        | Value::UTinyInt(_)
+        | Value::USmallInt(_)
+        | Value::UInt(_)
+        | Value::UBigInt(_)
+        | Value::Float(_)
+        | Value::Double(_)
+        | Value::Decimal(_)
+        | Value::Timestamp(_, _)
+        | Value::Text(_)
+        | Value::Blob(_)
+        | Value::Date32(_)
+        | Value::Time64(_, _)
+        | Value::Interval { .. } => None,
+        Value::List(_) => Some("List"),
+        Value::Array(_) => Some("Array"),
+        Value::Struct(_) => Some("Struct"),
+        Value::Map(_) => Some("Map"),
+        Value::Union(_) => Some("Union"),
+        Value::Enum(_) => Some("Enum"),
+    }
+}
+
 impl<'a> From<&'a Value> for ValueRef<'a> {
+    /// Converts non-container `Value` variants into a borrowed `ValueRef`.
+    ///
+    /// # Panics
+    ///
+    /// Panics for `Value::Enum`, `Value::List`, `Value::Struct`, `Value::Map`,
+    /// `Value::Array`, and `Value::Union`. Internal bind and append paths use
+    /// `value_ref_from_value` for fallible conversion.
     #[inline]
     fn from(value: &'a Value) -> Self {
         match *value {
@@ -367,9 +420,14 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
-            Value::Enum(..) => todo!(),
-            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
-                unimplemented!()
+            Value::Enum(..)
+            | Value::List(..)
+            | Value::Struct(..)
+            | Value::Map(..)
+            | Value::Array(..)
+            | Value::Union(..) => {
+                let variant = unsupported_value_variant(value).expect("unsupported Value variant");
+                panic!("ValueRef::from(&Value::{variant}) is not supported; use value_ref_from_value")
             }
         }
     }
@@ -390,8 +448,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::types::Type;
+    use crate::types::{Type, Value, ValueRef};
     use crate::{Connection, Result};
+
+    #[test]
+    #[should_panic(expected = "ValueRef::from(&Value::List)")]
+    fn value_ref_from_list_value_panics() {
+        let value = Value::List(vec![Value::Int(1)]);
+        let _ = ValueRef::from(&value);
+    }
 
     #[test]
     fn test_list_types() -> Result<()> {

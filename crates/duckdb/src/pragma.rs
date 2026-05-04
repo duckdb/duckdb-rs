@@ -6,7 +6,7 @@ use crate::{
     Connection, DatabaseName, Result, Row,
     error::Error,
     ffi,
-    types::{ToSql, ToSqlOutput, ValueRef},
+    types::{ToSql, ToSqlOutput, ValueRef, binding_unsupported_value, value_ref_from_value},
 };
 
 pub struct Sql {
@@ -60,7 +60,7 @@ impl Sql {
         let value = value.to_sql()?;
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => ValueRef::from(v),
+            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
         };
         match value {
             ValueRef::BigInt(i) => {
@@ -76,7 +76,7 @@ impl Sql {
             _ => {
                 return Err(Error::DuckDBFailure(
                     ffi::Error::new(ffi::DuckDBError),
-                    Some(format!("Unsupported value \"{value:?}\"")),
+                    Some(format!("Unsupported value type {}", value.data_type())),
                 ));
             }
         };
@@ -302,6 +302,27 @@ mod test {
             Ok(())
         })?;
         assert_eq!(5, columns.len());
+        Ok(())
+    }
+
+    #[test]
+    fn pragma_rejects_unsupported_container_type() -> Result<()> {
+        use crate::{Error, types::Value};
+
+        let db = Connection::open_in_memory()?;
+        let err = db
+            .pragma(None, "table_info", &Value::List(vec![Value::Int(1)]), |_| Ok(()))
+            .unwrap_err();
+
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(
+                    e.to_string().contains("binding List parameters is not yet supported"),
+                    "unexpected message: {e}"
+                );
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
         Ok(())
     }
 
