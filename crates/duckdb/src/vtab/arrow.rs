@@ -1,5 +1,5 @@
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
 
 use crate::{
     core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector},
@@ -45,8 +45,22 @@ pub struct ArrowVTab;
 
 const ARROW_QUERY_PARAMS_MARKER: usize = 0x4152_5257; // "ARRW"
 
+fn arrow_record_batch_store() -> &'static Mutex<Vec<Arc<RecordBatch>>> {
+    static STORE: OnceLock<Mutex<Vec<Arc<RecordBatch>>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(Vec::new()))
+}
+
 fn register_arrow_record_batch(rb: RecordBatch) -> [usize; 2] {
-    let ptr = Box::into_raw(Box::new(rb));
+    // Views can rebind long after creation, so the RecordBatch allocation must
+    // remain valid for the process lifetime. The Arc keeps the pointee stable
+    // across Vec growth, while the static store keeps it visible to
+    // LeakSanitizer as reachable process-lifetime storage.
+    let mut store = arrow_record_batch_store()
+        .lock()
+        .expect("ArrowVTab record batch store poisoned");
+    let rb = Arc::new(rb);
+    let ptr = Arc::as_ptr(&rb);
+    store.push(rb);
     [ptr as usize, ARROW_QUERY_PARAMS_MARKER]
 }
 
@@ -85,8 +99,8 @@ unsafe fn address_to_arrow_record_batch(
         return Err("ArrowVTab query parameter marker mismatch; use arrow_recordbatch_to_query_params".into());
     }
 
-    // SAFETY: The caller guarantees that `ptr` is the leaked RecordBatch
-    // allocation created by `register_arrow_record_batch`.
+    // SAFETY: The caller guarantees that `ptr` is the RecordBatch allocation
+    // retained by `register_arrow_record_batch`.
     Ok(unsafe { (*ptr).clone() })
 }
 
@@ -1076,9 +1090,14 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector<'_>) -> Re
 ///
 /// This returns opaque query parameters for [`ArrowVTab`].
 ///
-/// Each call leaks one boxed [`RecordBatch`] for the lifetime of the process so
-/// stored views can rebind the same parameters later. Do not call this per row
-/// or per query. Create these parameters once per logical table or view.
+/// Each call permanently retains one [`RecordBatch`] allocation in a
+/// process-global arena that is never freed, so stored views can rebind the same
+/// parameters later. Memory grows monotonically. Do not call this per row or
+/// per query. Create these parameters once per logical table or view.
+///
+/// # Panics
+///
+/// Panics if the process-global ArrowVTab record batch store mutex is poisoned.
 pub fn arrow_recordbatch_to_query_params(rb: RecordBatch) -> [usize; 2] {
     register_arrow_record_batch(rb)
 }
@@ -1086,8 +1105,12 @@ pub fn arrow_recordbatch_to_query_params(rb: RecordBatch) -> [usize; 2] {
 /// Pass ArrayData to DuckDB.
 ///
 /// This converts the [`ArrayData`] to a [`RecordBatch`] immediately. Like
-/// [`arrow_recordbatch_to_query_params`], each call leaks one boxed
-/// [`RecordBatch`] for the lifetime of the process.
+/// [`arrow_recordbatch_to_query_params`], each call permanently retains one
+/// [`RecordBatch`] allocation in a process-global arena that is never freed.
+///
+/// # Panics
+///
+/// Panics if the process-global ArrowVTab record batch store mutex is poisoned.
 pub fn arrow_arraydata_to_query_params(data: ArrayData) -> [usize; 2] {
     let struct_array = StructArray::from(data);
     arrow_recordbatch_to_query_params(RecordBatch::from(&struct_array))
@@ -1096,8 +1119,13 @@ pub fn arrow_arraydata_to_query_params(data: ArrayData) -> [usize; 2] {
 /// Pass array and schema to DuckDB.
 ///
 /// This imports the FFI values immediately. Like
-/// [`arrow_recordbatch_to_query_params`], each call leaks one boxed
-/// [`RecordBatch`] for the lifetime of the process.
+/// [`arrow_recordbatch_to_query_params`], each call permanently retains one
+/// [`RecordBatch`] allocation in a process-global arena that is never freed.
+///
+/// # Panics
+///
+/// Panics if the FFI values cannot be imported as Arrow data, or if the
+/// process-global ArrowVTab record batch store mutex is poisoned.
 pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
     arrow_recordbatch_to_query_params(arrow_record_batch_from_ffi(array, schema))
 }
