@@ -177,7 +177,7 @@ impl InnerConnection {
         let rc = unsafe { ffi::duckdb_execute_prepared(stmt, &mut result) };
 
         let error = if rc != ffi::DuckDBSuccess {
-            Some(unsafe { result_from_duckdb_result(&mut result as *mut _)})
+            Some(unsafe { result_from_duckdb_result(&mut result as *mut _) })
         } else {
             None
         };
