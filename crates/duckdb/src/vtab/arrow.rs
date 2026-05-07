@@ -43,25 +43,55 @@ pub struct ArrowInitData {
 /// The Arrow table function.
 pub struct ArrowVTab;
 
-unsafe fn address_to_arrow_schema(address: usize) -> FFI_ArrowSchema {
-    let ptr = address as *mut FFI_ArrowSchema;
-    unsafe { *Box::from_raw(ptr) }
+const ARROW_QUERY_PARAMS_MARKER: usize = 0x4152_5257; // "ARRW"
+
+fn register_arrow_record_batch(rb: RecordBatch) -> [usize; 2] {
+    let ptr = Box::into_raw(Box::new(rb));
+    [ptr as usize, ARROW_QUERY_PARAMS_MARKER]
 }
 
-unsafe fn address_to_arrow_array(address: usize) -> FFI_ArrowArray {
-    let ptr = address as *mut FFI_ArrowArray;
-    unsafe { *Box::from_raw(ptr) }
+fn arrow_query_param_usize(bind: &BindInfo, index: u64, name: &str) -> Result<usize, Box<dyn std::error::Error>> {
+    let value = bind.get_parameter(index);
+    if value.is_null() {
+        return Err(format!("ArrowVTab {name} parameter must not be NULL").into());
+    }
+
+    let logical_type = value.logical_type_id();
+    if logical_type != LogicalTypeId::UBigint {
+        return Err(format!("ArrowVTab {name} parameter must be UBIGINT, got {logical_type:?}").into());
+    }
+
+    usize::try_from(value.to_uint64()).map_err(|_| format!("ArrowVTab {name} parameter does not fit in usize").into())
 }
 
-unsafe fn address_to_arrow_ffi(array: usize, schema: usize) -> (FFI_ArrowArray, FFI_ArrowSchema) {
-    let array = unsafe { address_to_arrow_array(array) };
-    let schema = unsafe { address_to_arrow_schema(schema) };
-    (array, schema)
+/// Imports a record batch from the current opaque ArrowVTab query parameters.
+///
+/// # Safety
+///
+/// `address` must be a non-null pointer returned by
+/// [`arrow_recordbatch_to_query_params`], and `marker` must be the matching
+/// layout marker returned with it. The marker catches common misuse only and
+/// does not make stale or forged pointers safe to dereference.
+unsafe fn address_to_arrow_record_batch(
+    address: usize,
+    marker: usize,
+) -> Result<RecordBatch, Box<dyn std::error::Error>> {
+    let ptr = address as *const RecordBatch;
+    if ptr.is_null() {
+        return Err("invalid ArrowVTab record batch address".into());
+    }
+
+    if marker != ARROW_QUERY_PARAMS_MARKER {
+        return Err("ArrowVTab query parameter marker mismatch; use arrow_recordbatch_to_query_params".into());
+    }
+
+    // SAFETY: The caller guarantees that `ptr` is the leaked RecordBatch
+    // allocation created by `register_arrow_record_batch`.
+    Ok(unsafe { (*ptr).clone() })
 }
 
-unsafe fn address_to_arrow_record_batch(array: usize, schema: usize) -> RecordBatch {
-    let (array, schema) = unsafe { address_to_arrow_ffi(array, schema) };
-    let array_data = unsafe { from_ffi(array, &schema) }.expect("ok");
+fn arrow_record_batch_from_ffi(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> RecordBatch {
+    let array_data = unsafe { from_ffi(array, &schema) }.expect("failed to import Arrow FFI data");
     let struct_array = StructArray::from(array_data);
     RecordBatch::from(&struct_array)
 }
@@ -75,20 +105,22 @@ impl VTab for ArrowVTab {
         if param_count != 2 {
             return Err(format!("Bad param count: {param_count}, expected 2").into());
         }
-        let array = bind.get_parameter(0).to_int64();
-        let schema = bind.get_parameter(1).to_int64();
+        let address = arrow_query_param_usize(bind, 0, "record batch address")?;
+        let marker = arrow_query_param_usize(bind, 1, "marker")?;
 
-        unsafe {
-            let rb = address_to_arrow_record_batch(array as usize, schema as usize);
-            for f in rb.schema().fields() {
-                let name = f.name();
-                let data_type = f.data_type();
-                let logical_type = to_duckdb_logical_type(data_type)?;
-                bind.add_result_column(name, logical_type);
-            }
-
-            Ok(ArrowBindData { rb: Mutex::new(rb) })
+        // SAFETY: ArrowVTab's raw-parameter API relies on callers passing
+        // values returned unchanged by `arrow_recordbatch_to_query_params`.
+        // Validation above catches nulls, type mismatches, and layout marker
+        // mismatches, but cannot validate forged addresses.
+        let rb = unsafe { address_to_arrow_record_batch(address, marker)? };
+        for f in rb.schema().fields() {
+            let name = f.name();
+            let data_type = f.data_type();
+            let logical_type = to_duckdb_logical_type(data_type)?;
+            bind.add_result_column(name, logical_type);
         }
+
+        Ok(ArrowBindData { rb: Mutex::new(rb) })
     }
 
     fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
@@ -114,13 +146,13 @@ impl VTab for ArrowVTab {
 
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
         Some(vec![
-            LogicalTypeHandle::from(LogicalTypeId::UBigint), // file path
-            LogicalTypeHandle::from(LogicalTypeId::UBigint), // sheet name
+            LogicalTypeHandle::from(LogicalTypeId::UBigint), // record batch address
+            LogicalTypeHandle::from(LogicalTypeId::UBigint), // query parameter marker
         ])
     }
 }
 
-/// Convert arrow DataType to duckdb type id
+/// Convert arrow DataType to DuckDB type id
 pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn std::error::Error>> {
     use LogicalTypeId::*;
 
@@ -181,7 +213,7 @@ impl TryFrom<DataType> for LogicalTypeId {
     }
 }
 
-/// Convert arrow DataType to duckdb logical type
+/// Convert arrow DataType to DuckDB logical type
 pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
     match data_type {
         DataType::Dictionary(_, value_type) => to_duckdb_logical_type(value_type),
@@ -1040,37 +1072,34 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector<'_>) -> Re
     Ok(())
 }
 
-/// Pass RecordBatch to duckdb.
+/// Pass a RecordBatch to DuckDB.
 ///
-/// # Safety
-/// The caller must ensure that the pointer is valid
-/// It's recommended to always use this function with arrow()
+/// This returns opaque query parameters for [`ArrowVTab`].
+///
+/// Each call leaks one boxed [`RecordBatch`] for the lifetime of the process so
+/// stored views can rebind the same parameters later. Do not call this per row
+/// or per query. Create these parameters once per logical table or view.
 pub fn arrow_recordbatch_to_query_params(rb: RecordBatch) -> [usize; 2] {
-    let data = ArrayData::from(StructArray::from(rb));
-    arrow_arraydata_to_query_params(data)
+    register_arrow_record_batch(rb)
 }
 
-/// Pass ArrayData to duckdb.
+/// Pass ArrayData to DuckDB.
 ///
-/// # Safety
-/// The caller must ensure that the pointer is valid
-/// It's recommended to always use this function with arrow()
+/// This converts the [`ArrayData`] to a [`RecordBatch`] immediately. Like
+/// [`arrow_recordbatch_to_query_params`], each call leaks one boxed
+/// [`RecordBatch`] for the lifetime of the process.
 pub fn arrow_arraydata_to_query_params(data: ArrayData) -> [usize; 2] {
-    let array = FFI_ArrowArray::new(&data);
-    let schema = FFI_ArrowSchema::try_from(data.data_type()).expect("Failed to convert schema");
-    arrow_ffi_to_query_params(array, schema)
+    let struct_array = StructArray::from(data);
+    arrow_recordbatch_to_query_params(RecordBatch::from(&struct_array))
 }
 
-/// Pass array and schema as a pointer to duckdb.
+/// Pass array and schema to DuckDB.
 ///
-/// # Safety
-/// The caller must ensure that the pointer is valid
-/// It's recommended to always use this function with arrow()
+/// This imports the FFI values immediately. Like
+/// [`arrow_recordbatch_to_query_params`], each call leaks one boxed
+/// [`RecordBatch`] for the lifetime of the process.
 pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
-    let arr = Box::into_raw(Box::new(array));
-    let sch = Box::into_raw(Box::new(schema));
-
-    [arr as *mut _ as usize, sch as *mut _ as usize]
+    arrow_recordbatch_to_query_params(arrow_record_batch_from_ffi(array, schema))
 }
 
 fn set_nulls_in_flat_vector(array: &dyn Array, out_vector: &mut FlatVector<'_>) {
@@ -1115,7 +1144,9 @@ fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) 
 
 #[cfg(test)]
 mod test {
-    use super::{ArrowVTab, arrow_recordbatch_to_query_params};
+    use super::{
+        ArrowVTab, arrow_arraydata_to_query_params, arrow_ffi_to_query_params, arrow_recordbatch_to_query_params,
+    };
     use crate::{Connection, Result};
     use arrow::{
         array::{
@@ -1132,9 +1163,27 @@ mod test {
             ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, IntervalDayTimeType,
             IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
         },
+        ffi::{FFI_ArrowArray, FFI_ArrowSchema},
         record_batch::RecordBatch,
     };
     use std::{error::Error, sync::Arc};
+
+    fn example_record_batch() -> RecordBatch {
+        let schema = Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("is_odd", DataType::Boolean, true),
+        ]);
+        RecordBatch::try_new(
+            Arc::new(schema),
+            vec![
+                Arc::new(Int32Array::from(vec![1, 2, 3, 4])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["apple", "banana", "cherry", "date"])) as ArrayRef,
+                Arc::new(BooleanArray::from(vec![true, false, true, false])) as ArrayRef,
+            ],
+        )
+        .expect("failed to create record batch")
+    }
 
     #[test]
     fn test_vtab_arrow() -> Result<(), Box<dyn Error>> {
@@ -1162,7 +1211,7 @@ mod test {
         db.register_table_function::<ArrowVTab>("arrow")?;
 
         // This is a show case that it's easy for you to build an in-memory data
-        // and pass into duckdb
+        // and pass into DuckDB
         let schema = Schema::new(vec![Field::new("a", DataType::Int32, false)]);
         let array = Int32Array::from(vec![1, 2, 3, 4, 5]);
         let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)]).expect("failed to create record batch");
@@ -1175,6 +1224,100 @@ mod test {
         assert_eq!(column.len(), 1);
         assert_eq!(column.value(0), 15);
         Ok(())
+    }
+
+    #[test]
+    fn test_vtab_arrow_view_can_rebind_record_batch() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let batch = example_record_batch();
+        let param = arrow_recordbatch_to_query_params(batch.clone());
+        db.execute(
+            &format!(
+                "CREATE VIEW arrow_view AS SELECT * FROM arrow({}::UBIGINT, {}::UBIGINT)",
+                param[0], param[1]
+            ),
+            [],
+        )?;
+
+        for _ in 0..2 {
+            let rbs: Vec<RecordBatch> = db.prepare("SELECT * FROM arrow_view")?.query_arrow([])?.collect();
+            assert_eq!(vec![batch.clone()], rbs);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_vtab_arrow_arraydata_query_params() -> Result<(), Box<dyn Error>> {
+        let batch = example_record_batch();
+        let struct_array = StructArray::from(batch);
+        let param = arrow_arraydata_to_query_params(struct_array.to_data());
+
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+        let mut stmt = db.prepare("select sum(id)::int32 from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+        let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(column.value(0), 10);
+        Ok(())
+    }
+
+    #[test]
+    fn test_vtab_arrow_ffi_query_params() -> Result<(), Box<dyn Error>> {
+        let batch = example_record_batch();
+        let struct_array = StructArray::from(batch);
+        let array = FFI_ArrowArray::new(&struct_array.to_data());
+        let schema = FFI_ArrowSchema::try_from(struct_array.data_type())?;
+        let param = arrow_ffi_to_query_params(array, schema);
+
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+        let mut stmt = db.prepare("select sum(id)::int32 from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+        let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(column.value(0), 10);
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_null_query_params_error() {
+        let db = Connection::open_in_memory().unwrap();
+        db.register_table_function::<ArrowVTab>("arrow").unwrap();
+
+        let err = db.prepare("SELECT * FROM arrow(NULL, NULL)").err().unwrap();
+        assert!(
+            err.to_string()
+                .contains("ArrowVTab record batch address parameter must not be NULL"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_arrow_zero_address_query_params_error() {
+        let db = Connection::open_in_memory().unwrap();
+        db.register_table_function::<ArrowVTab>("arrow").unwrap();
+
+        let valid = arrow_recordbatch_to_query_params(example_record_batch());
+        let sql = format!("SELECT * FROM arrow(0::UBIGINT, {}::UBIGINT)", valid[1]);
+        let err = db.prepare(&sql).err().unwrap();
+        assert!(
+            err.to_string().contains("invalid ArrowVTab record batch address"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_arrow_marker_mismatch_query_params_error() {
+        let db = Connection::open_in_memory().unwrap();
+        db.register_table_function::<ArrowVTab>("arrow").unwrap();
+
+        let err = db.prepare("SELECT * FROM arrow(1::UBIGINT, 2::UBIGINT)").err().unwrap();
+        assert!(
+            err.to_string().contains("query parameter marker mismatch"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
