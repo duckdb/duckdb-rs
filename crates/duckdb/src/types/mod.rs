@@ -163,37 +163,43 @@ impl From<&DataType> for Type {
     }
 }
 
+impl Type {
+    pub(crate) const fn name(&self) -> &'static str {
+        match self {
+            Self::Null => "Null",
+            Self::Boolean => "Boolean",
+            Self::TinyInt => "TinyInt",
+            Self::SmallInt => "SmallInt",
+            Self::Int => "Int",
+            Self::BigInt => "BigInt",
+            Self::HugeInt => "HugeInt",
+            Self::UTinyInt => "UTinyInt",
+            Self::USmallInt => "USmallInt",
+            Self::UInt => "UInt",
+            Self::UBigInt => "UBigInt",
+            Self::Float => "Float",
+            Self::Double => "Double",
+            Self::Decimal => "Decimal",
+            Self::Timestamp => "Timestamp",
+            Self::Text => "Text",
+            Self::Blob => "Blob",
+            Self::Date32 => "Date32",
+            Self::Time64 => "Time64",
+            Self::Interval => "Interval",
+            Self::Struct(..) => "Struct",
+            Self::List(..) => "List",
+            Self::Enum => "Enum",
+            Self::Map(..) => "Map",
+            Self::Array(..) => "Array",
+            Self::Union => "Union",
+            Self::Any => "Any",
+        }
+    }
+}
+
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::Null => f.pad("Null"),
-            Self::Boolean => f.pad("Boolean"),
-            Self::TinyInt => f.pad("TinyInt"),
-            Self::SmallInt => f.pad("SmallInt"),
-            Self::Int => f.pad("Int"),
-            Self::BigInt => f.pad("BigInt"),
-            Self::HugeInt => f.pad("HugeInt"),
-            Self::UTinyInt => f.pad("UTinyInt"),
-            Self::USmallInt => f.pad("USmallInt"),
-            Self::UInt => f.pad("UInt"),
-            Self::UBigInt => f.pad("UBigInt"),
-            Self::Float => f.pad("Float"),
-            Self::Double => f.pad("Double"),
-            Self::Decimal => f.pad("Decimal"),
-            Self::Timestamp => f.pad("Timestamp"),
-            Self::Text => f.pad("Text"),
-            Self::Blob => f.pad("Blob"),
-            Self::Date32 => f.pad("Date32"),
-            Self::Time64 => f.pad("Time64"),
-            Self::Interval => f.pad("Interval"),
-            Self::Struct(..) => f.pad("Struct"),
-            Self::List(..) => f.pad("List"),
-            Self::Enum => f.pad("Enum"),
-            Self::Map(..) => f.pad("Map"),
-            Self::Array(..) => f.pad("Array"),
-            Self::Union => f.pad("Union"),
-            Self::Any => f.pad("Any"),
-        }
+        f.pad(self.name())
     }
 }
 

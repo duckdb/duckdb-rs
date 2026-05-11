@@ -215,6 +215,7 @@ where
 
 impl Value {
     /// Returns DuckDB fundamental datatype.
+    // TODO: make this fallible. Determining type of List is expensive and also might fail.
     #[inline]
     pub fn data_type(&self) -> Type {
         match *self {
@@ -238,8 +239,20 @@ impl Value {
             Self::Date32(_) => Type::Date32,
             Self::Time64(..) => Type::Time64,
             Self::Interval { .. } => Type::Interval,
-            Self::Union(..) | Self::Struct(..) | Self::List(..) | Self::Array(..) | Self::Map(..) => todo!(),
+            Self::Struct(..) | Self::List(..) | Self::Array(..) | Self::Map(..) => todo!(),
+            Self::Union(..) => Type::Union,
             Self::Enum(..) => Type::Enum,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn data_type_name(&self) -> &'static str {
+        match *self {
+            Self::Struct(..) => "Struct",
+            Self::List(..) => "List",
+            Self::Array(..) => "Array",
+            Self::Map(..) => "Map",
+            _ => self.data_type().name(),
         }
     }
 }
