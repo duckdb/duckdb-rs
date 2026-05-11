@@ -4,7 +4,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 use crate::{
     Error,
     error::result_from_duckdb_appender,
-    types::{ToSql, ToSqlOutput, value_ref_from_value},
+    types::{ToSql, ToSqlOutput},
 };
 
 /// Appender for fast import data
@@ -217,9 +217,7 @@ impl Appender<'_> {
                 res
             },
             _ => {
-                return Err(Error::ToSqlConversionFailure(
-                    appending_unsupported_value(value.data_type()).into(),
-                ));
+                return Err(appending_unsupported_value(value.data_type()));
             }
         };
         if rc != 0 {
@@ -284,17 +282,14 @@ impl fmt::Debug for Appender<'_> {
     }
 }
 
-fn appending_unsupported_value(value_type: impl fmt::Display) -> String {
-    format!("appending {value_type} values is not yet supported")
+fn appending_unsupported_value(value_type: impl fmt::Display) -> crate::Error {
+    crate::Error::ToSqlConversionFailure(format!("appending {value_type} values is not yet supported").into())
 }
 
-fn to_value_ref<'value, 'output>(value: &'value ToSqlOutput<'output>) -> Result<ValueRef<'value>>
-where
-    'output: 'value,
-{
-    match *value {
-        ToSqlOutput::Borrowed(v) => Ok(v),
-        ToSqlOutput::Owned(ref v) => value_ref_from_value(v, appending_unsupported_value),
+fn to_value_ref<'value>(value: &'value ToSqlOutput<'_>) -> Result<ValueRef<'value>> {
+    match value.as_value_ref() {
+        Ok(v) => Ok(v),
+        Err(v) => Err(appending_unsupported_value(v.data_type_name())),
     }
 }
 
@@ -320,9 +315,7 @@ fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
         | ValueRef::Time64(_, _)
         | ValueRef::Interval { .. }
         | ValueRef::Decimal(_) => Ok(()),
-        _ => Err(Error::ToSqlConversionFailure(
-            appending_unsupported_value(value.data_type()).into(),
-        )),
+        _ => Err(appending_unsupported_value(value.data_type())),
     }
 }
 

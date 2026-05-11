@@ -8,7 +8,7 @@ use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{ToSql, ToSqlOutput, binding_unsupported_value, value_ref_from_value},
+    types::{ToSql, ToSqlOutput},
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -577,9 +577,9 @@ impl Statement<'_> {
         let value = param.to_sql()?;
 
         let ptr = unsafe { self.stmt.ptr() };
-        let value = match value {
-            ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
+        let value = match value.as_value_ref() {
+            Ok(v) => v,
+            Err(v) => return Err(binding_unsupported_value(v.data_type_name())),
         };
         // TODO: bind more
         let rc = match value {
@@ -624,9 +624,7 @@ impl Statement<'_> {
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
             _ => {
-                return Err(Error::ToSqlConversionFailure(
-                    binding_unsupported_value(value.data_type()).into(),
-                ));
+                return Err(binding_unsupported_value(value.data_type().name()));
             }
         };
         result_from_duckdb_prepare(rc, ptr)
@@ -661,6 +659,10 @@ impl fmt::Debug for Statement<'_> {
             .field("sql", &sql)
             .finish()
     }
+}
+
+fn binding_unsupported_value(type_name: &'static str) -> Error {
+    Error::ToSqlConversionFailure(format!("binding {type_name} parameters is not yet supported").into())
 }
 
 impl Statement<'_> {

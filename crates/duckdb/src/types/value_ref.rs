@@ -1,7 +1,7 @@
 use super::{Type, Value};
 use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
 
-use crate::{Error, Result, Row};
+use crate::Row;
 use rust_decimal::prelude::*;
 
 use arrow::{
@@ -343,50 +343,18 @@ impl<'a> From<&'a [u8]> for ValueRef<'a> {
     }
 }
 
-pub(crate) fn value_ref_from_value<'a>(
-    value: &'a Value,
-    unsupported_message: impl FnOnce(&'static str) -> String,
-) -> Result<ValueRef<'a>> {
-    if let Some(variant) = unsupported_value_variant(value) {
-        return Err(Error::ToSqlConversionFailure(unsupported_message(variant).into()));
+pub(crate) fn value_ref_from_value<'a>(value: &'a Value) -> Option<ValueRef<'a>> {
+    if is_unsupported_value_variant(value) {
+        return None;
     }
-
-    Ok(ValueRef::from(value))
+    Some(ValueRef::from(value))
 }
 
-pub(crate) fn binding_unsupported_value(value_type: impl std::fmt::Display) -> String {
-    format!("binding {value_type} parameters is not yet supported")
-}
-
-fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
-    match value {
-        Value::Null
-        | Value::Boolean(_)
-        | Value::TinyInt(_)
-        | Value::SmallInt(_)
-        | Value::Int(_)
-        | Value::BigInt(_)
-        | Value::HugeInt(_)
-        | Value::UTinyInt(_)
-        | Value::USmallInt(_)
-        | Value::UInt(_)
-        | Value::UBigInt(_)
-        | Value::Float(_)
-        | Value::Double(_)
-        | Value::Decimal(_)
-        | Value::Timestamp(_, _)
-        | Value::Text(_)
-        | Value::Blob(_)
-        | Value::Date32(_)
-        | Value::Time64(_, _)
-        | Value::Interval { .. } => None,
-        Value::List(_) => Some("List"),
-        Value::Array(_) => Some("Array"),
-        Value::Struct(_) => Some("Struct"),
-        Value::Map(_) => Some("Map"),
-        Value::Union(_) => Some("Union"),
-        Value::Enum(_) => Some("Enum"),
-    }
+fn is_unsupported_value_variant(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::List(_) | Value::Array(_) | Value::Struct(_) | Value::Map(_) | Value::Union(_) | Value::Enum(_)
+    )
 }
 
 impl<'a> From<&'a Value> for ValueRef<'a> {
@@ -397,6 +365,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
     /// Panics for `Value::Enum`, `Value::List`, `Value::Struct`, `Value::Map`,
     /// `Value::Array`, and `Value::Union`. Internal bind and append paths use
     /// `value_ref_from_value` for fallible conversion.
+    // TODO: this should be TryFrom instead. But that's a breaking change.
     #[inline]
     fn from(value: &'a Value) -> Self {
         match *value {
@@ -426,7 +395,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             | Value::Map(..)
             | Value::Array(..)
             | Value::Union(..) => {
-                let variant = unsupported_value_variant(value).expect("unsupported Value variant");
+                let variant = value.data_type_name();
                 panic!("ValueRef::from(&Value::{variant}) is not supported; use value_ref_from_value")
             }
         }
