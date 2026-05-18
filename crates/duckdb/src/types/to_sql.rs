@@ -1,4 +1,4 @@
-use super::{Null, TimeUnit, Value, ValueRef, binding_unsupported_value, value_ref_from_value};
+use super::{Null, TimeUnit, Value, ValueRef, value_ref_from_value};
 use crate::Result;
 use std::borrow::Cow;
 
@@ -7,11 +7,37 @@ use std::borrow::Cow;
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum ToSqlOutput<'a> {
-    /// A borrowed SQLite-representable value.
+    /// A borrowed statically typed value.
     Borrowed(ValueRef<'a>),
 
-    /// An owned SQLite-representable value.
+    /// An owned dynamically typed value.
     Owned(Value),
+
+    /// A borrowed dynamically typed value. If possible, use [ToSqlOutput::Borrowed] instead.
+    /// Used for container types (List, Struct, Map, etc.) that cannot be represented
+    /// as [`ValueRef<'a>`].
+    BorrowedValue(&'a Value),
+}
+
+impl<'a> ToSqlOutput<'a> {
+    /// Tries to converts to `ValueRef` and falls back to `&Value`.
+    ///
+    /// The fallback happens for container types that would have to allocate arrow arrays.
+    pub(crate) fn as_value_ref<'b>(&'b self) -> Result<ValueRef<'b>, &'b Value> {
+        match self {
+            ToSqlOutput::Borrowed(v) => Ok(*v),
+            ToSqlOutput::Owned(v) => value_ref_from_value(v).ok_or(v),
+            ToSqlOutput::BorrowedValue(v) => value_ref_from_value(v).ok_or(v),
+        }
+    }
+
+    pub(crate) fn data_type_name(&self) -> &'static str {
+        match self {
+            ToSqlOutput::Borrowed(value_ref) => value_ref.data_type().name(),
+            ToSqlOutput::Owned(value) => value.data_type_name(),
+            ToSqlOutput::BorrowedValue(value) => value.data_type_name(),
+        }
+    }
 }
 
 // Generically allow any type that can be converted into a ValueRef
@@ -63,9 +89,16 @@ from_value!(uuid::Uuid);
 impl ToSql for ToSqlOutput<'_> {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(match *self {
-            ToSqlOutput::Borrowed(v) => ToSqlOutput::Borrowed(v),
-            ToSqlOutput::Owned(ref v) => ToSqlOutput::Borrowed(value_ref_from_value(v, binding_unsupported_value)?),
+        Ok(match self {
+            ToSqlOutput::Borrowed(v) => ToSqlOutput::Borrowed(*v),
+            ToSqlOutput::BorrowedValue(v) => ToSqlOutput::BorrowedValue(v),
+            ToSqlOutput::Owned(v) => {
+                if let Some(r) = value_ref_from_value(v) {
+                    ToSqlOutput::Borrowed(r)
+                } else {
+                    ToSqlOutput::BorrowedValue(v)
+                }
+            }
         })
     }
 }
@@ -188,10 +221,11 @@ impl ToSql for [u8] {
 impl ToSql for Value {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Borrowed(value_ref_from_value(
-            self,
-            binding_unsupported_value,
-        )?))
+        Ok(if let Some(r) = value_ref_from_value(self) {
+            ToSqlOutput::Borrowed(r)
+        } else {
+            ToSqlOutput::BorrowedValue(self)
+        })
     }
 }
 
@@ -216,7 +250,9 @@ impl ToSql for std::time::Duration {
 
 #[cfg(test)]
 mod test {
-    use super::{ToSql, ToSqlOutput};
+    use crate::types::ToSqlOutput;
+
+    use super::ToSql;
 
     fn is_to_sql<T: ToSql>() {}
 
@@ -232,11 +268,8 @@ mod test {
     }
 
     #[test]
-    fn test_value_to_sql_rejects_unsupported_variants() {
-        use crate::{
-            Error,
-            types::{OrderedMap, Value},
-        };
+    fn test_value_to_sql_borrows_containers() {
+        use crate::types::{OrderedMap, Value};
 
         let cases: &[(&str, Value)] = &[
             ("List", Value::List(vec![Value::Int(1)])),
@@ -255,26 +288,14 @@ mod test {
 
         for (variant, value) in cases {
             match value.to_sql() {
-                Err(Error::ToSqlConversionFailure(e)) => {
-                    let msg = e.to_string();
-                    assert!(
-                        msg.contains(&format!("binding {variant} parameters is not yet supported")),
-                        "{variant}: unexpected message {msg}"
-                    );
-                }
-                Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
-                Ok(_) => panic!("{variant}: expected error, got Ok"),
+                Err(other) => panic!("{variant}: {other:?}"),
+                Ok(ToSqlOutput::BorrowedValue(_)) => {}
+                Ok(v) => panic!("{variant}: expected BorrowedValue, got: {v:?}"),
             }
             match ToSqlOutput::Owned(value.clone()).to_sql() {
-                Err(Error::ToSqlConversionFailure(e)) => {
-                    let msg = e.to_string();
-                    assert!(
-                        msg.contains(&format!("binding {variant} parameters is not yet supported")),
-                        "{variant}: unexpected message {msg}"
-                    );
-                }
-                Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
-                Ok(_) => panic!("{variant}: expected error, got Ok"),
+                Err(other) => panic!("{variant}: {other:?}"),
+                Ok(ToSqlOutput::BorrowedValue(_)) => {}
+                Ok(v) => panic!("{variant}: expected BorrowedValue, got: {v:?}"),
             }
         }
     }

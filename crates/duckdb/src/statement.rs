@@ -1,6 +1,9 @@
 use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 
-use arrow::{array::StructArray, datatypes::SchemaRef};
+use arrow::{
+    array::StructArray,
+    datatypes::{DataType, SchemaRef},
+};
 
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
 #[cfg(feature = "polars")]
@@ -8,7 +11,7 @@ use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{ToSql, ToSqlOutput, binding_unsupported_value, value_ref_from_value},
+    types::{ToSql, Value},
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -577,12 +580,20 @@ impl Statement<'_> {
         let value = param.to_sql()?;
 
         let ptr = unsafe { self.stmt.ptr() };
-        let value = match value {
-            ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
+
+        let value_ref = match value.as_value_ref() {
+            Ok(r) => r,
+            Err(value) => unsafe {
+                // Container types (List, Struct, etc.) are not convertible to ValueRef.
+                // Instead, bind them via duckdb_value C API.
+                let duckdb_val = value_to_duckdb(value)?;
+                let rc = ffi::duckdb_bind_value(ptr, col as u64, duckdb_val);
+                ffi::duckdb_destroy_value(&mut { duckdb_val });
+                return result_from_duckdb_prepare(rc, ptr);
+            },
         };
         // TODO: bind more
-        let rc = match value {
+        let rc = match value_ref {
             ValueRef::Null => unsafe { ffi::duckdb_bind_null(ptr, col as u64) },
             ValueRef::Boolean(i) => unsafe { ffi::duckdb_bind_boolean(ptr, col as u64, i) },
             ValueRef::TinyInt(i) => unsafe { ffi::duckdb_bind_int8(ptr, col as u64, i) },
@@ -623,11 +634,17 @@ impl Statement<'_> {
                 let decimal = crate::types::to_duckdb_decimal(d);
                 ffi::duckdb_bind_decimal(ptr, col as u64, decimal)
             },
-            _ => {
-                return Err(Error::ToSqlConversionFailure(
-                    binding_unsupported_value(value.data_type()).into(),
-                ));
-            }
+            ValueRef::List(..)
+            | ValueRef::Struct(..)
+            | ValueRef::Map(..)
+            | ValueRef::Array(..)
+            | ValueRef::Union(..)
+            | ValueRef::Enum(..) => unsafe {
+                let mut duckdb_val = value_ref_to_duckdb(value_ref)?;
+                let rc = ffi::duckdb_bind_value(ptr, col as u64, duckdb_val);
+                ffi::duckdb_destroy_value(&mut duckdb_val);
+                return result_from_duckdb_prepare(rc, ptr);
+            },
         };
         result_from_duckdb_prepare(rc, ptr)
     }
@@ -646,6 +663,10 @@ impl Statement<'_> {
         mem::swap(&mut stmt, &mut self.stmt);
         stmt
     }
+}
+
+fn binding_unsupported_value(type_name: &'static str) -> Error {
+    Error::ToSqlConversionFailure(format!("binding {type_name} parameters is not yet supported").into())
 }
 
 impl fmt::Debug for Statement<'_> {
@@ -670,6 +691,245 @@ impl Statement<'_> {
     }
 }
 
+/// Convert a `Value` to a `duckdb_value`. The caller must destroy the returned value.
+pub(crate) fn value_to_duckdb(value: &Value) -> Result<ffi::duckdb_value> {
+    Ok(match value {
+        Value::Null => unsafe { ffi::duckdb_create_null_value() },
+        Value::Boolean(b) => unsafe { ffi::duckdb_create_bool(*b) },
+        Value::TinyInt(i) => unsafe { ffi::duckdb_create_int8(*i) },
+        Value::SmallInt(i) => unsafe { ffi::duckdb_create_int16(*i) },
+        Value::Int(i) => unsafe { ffi::duckdb_create_int32(*i) },
+        Value::BigInt(i) => unsafe { ffi::duckdb_create_int64(*i) },
+        Value::HugeInt(i) => unsafe {
+            ffi::duckdb_create_hugeint(ffi::duckdb_hugeint {
+                lower: *i as u64,
+                upper: (*i >> 64) as i64,
+            })
+        },
+        Value::UTinyInt(i) => unsafe { ffi::duckdb_create_uint8(*i) },
+        Value::USmallInt(i) => unsafe { ffi::duckdb_create_uint16(*i) },
+        Value::UInt(i) => unsafe { ffi::duckdb_create_uint32(*i) },
+        Value::UBigInt(i) => unsafe { ffi::duckdb_create_uint64(*i) },
+        Value::Float(f) => unsafe { ffi::duckdb_create_float(*f) },
+        Value::Double(f) => unsafe { ffi::duckdb_create_double(*f) },
+        Value::Decimal(d) => unsafe {
+            let decimal = crate::types::to_duckdb_decimal(*d);
+            ffi::duckdb_create_decimal(decimal)
+        },
+        Value::Timestamp(u, i) => unsafe {
+            ffi::duckdb_create_timestamp(ffi::duckdb_timestamp {
+                micros: u.to_micros(*i),
+            })
+        },
+        Value::Text(s) => unsafe { ffi::duckdb_create_varchar_length(s.as_ptr() as *const c_char, s.len() as u64) },
+        Value::Blob(b) => unsafe { ffi::duckdb_create_blob(b.as_ptr(), b.len() as u64) },
+        Value::Date32(days) => unsafe { ffi::duckdb_create_date(ffi::duckdb_date { days: *days }) },
+        Value::Time64(u, i) => unsafe {
+            ffi::duckdb_create_time(ffi::duckdb_time {
+                micros: u.to_micros(*i),
+            })
+        },
+        Value::Interval { months, days, nanos } => unsafe {
+            ffi::duckdb_create_interval(ffi::duckdb_interval {
+                months: *months,
+                days: *days,
+                micros: *nanos / 1_000,
+            })
+        },
+        Value::List(items) => unsafe {
+            let child_type = infer_list_child_logical_type(items)?;
+            let mut duckdb_values: Vec<ffi::duckdb_value> = Vec::with_capacity(items.len());
+            // Track how many we've created for cleanup on error
+            let result = (|| -> Result<ffi::duckdb_value> {
+                for item in items {
+                    duckdb_values.push(value_to_duckdb(item)?);
+                }
+                let list_val =
+                    ffi::duckdb_create_list_value(child_type, duckdb_values.as_mut_ptr(), items.len() as u64);
+                Ok(list_val)
+            })();
+            // Cleanup: destroy child values and logical type
+            for mut v in duckdb_values {
+                ffi::duckdb_destroy_value(&mut v);
+            }
+            ffi::duckdb_destroy_logical_type(&mut { child_type });
+            return result;
+        },
+        Value::Enum(_) | Value::Struct(_) | Value::Map(_) | Value::Array(_) | Value::Union(_) => {
+            return Err(binding_unsupported_value(value.data_type_name()));
+        }
+    })
+}
+
+/// Infer the child logical type of a list from its elements.
+/// Uses the first non-null element. Errors on empty or all-null lists.
+fn infer_list_child_logical_type(items: &[Value]) -> Result<ffi::duckdb_logical_type> {
+    for item in items {
+        if !matches!(item, Value::Null) {
+            return value_to_logical_type(item);
+        }
+    }
+    Err(Error::ToSqlConversionFailure(
+        "cannot infer element type of empty or all-null list".into(),
+    ))
+}
+
+/// Convert a `Value` to its DuckDB logical type.
+fn value_to_logical_type(value: &Value) -> Result<ffi::duckdb_logical_type> {
+    use crate::core::LogicalTypeId;
+    let id = match value {
+        Value::Null => {
+            return Err(Error::ToSqlConversionFailure(
+                "cannot infer logical type from Value::Null".into(),
+            ));
+        }
+        Value::Boolean(_) => LogicalTypeId::Boolean,
+        Value::TinyInt(_) => LogicalTypeId::Tinyint,
+        Value::SmallInt(_) => LogicalTypeId::Smallint,
+        Value::Int(_) => LogicalTypeId::Integer,
+        Value::BigInt(_) => LogicalTypeId::Bigint,
+        Value::HugeInt(_) => LogicalTypeId::Hugeint,
+        Value::UTinyInt(_) => LogicalTypeId::UTinyint,
+        Value::USmallInt(_) => LogicalTypeId::USmallint,
+        Value::UInt(_) => LogicalTypeId::UInteger,
+        Value::UBigInt(_) => LogicalTypeId::UBigint,
+        Value::Float(_) => LogicalTypeId::Float,
+        Value::Double(_) => LogicalTypeId::Double,
+        Value::Decimal(_) => LogicalTypeId::Decimal,
+        Value::Timestamp(_, _) => LogicalTypeId::Timestamp,
+        Value::Text(_) => LogicalTypeId::Varchar,
+        Value::Blob(_) => LogicalTypeId::Blob,
+        Value::Date32(_) => LogicalTypeId::Date,
+        Value::Time64(_, _) => LogicalTypeId::Time,
+        Value::Interval { .. } => LogicalTypeId::Interval,
+        Value::Enum(_) => LogicalTypeId::Enum,
+        Value::List(items) => unsafe {
+            let child_type = infer_list_child_logical_type(items)?;
+            let list_type = ffi::duckdb_create_list_type(child_type);
+            ffi::duckdb_destroy_logical_type(&mut { child_type });
+            return Ok(list_type);
+        },
+        Value::Struct(_) | Value::Map(_) | Value::Array(_) | Value::Union(_) => {
+            return Err(binding_unsupported_value(value.data_type_name()));
+        }
+    };
+    Ok(unsafe { ffi::duckdb_create_logical_type(id as u32) })
+}
+
+/// Convert a `ValueRef` to a `duckdb_value`. The caller must destroy the returned value.
+pub(crate) fn value_ref_to_duckdb(value: ValueRef<'_>) -> Result<ffi::duckdb_value> {
+    use crate::types::ListType;
+    match value {
+        ValueRef::Null => Ok(unsafe { ffi::duckdb_create_null_value() }),
+        ValueRef::Boolean(b) => Ok(unsafe { ffi::duckdb_create_bool(b) }),
+        ValueRef::TinyInt(i) => Ok(unsafe { ffi::duckdb_create_int8(i) }),
+        ValueRef::SmallInt(i) => Ok(unsafe { ffi::duckdb_create_int16(i) }),
+        ValueRef::Int(i) => Ok(unsafe { ffi::duckdb_create_int32(i) }),
+        ValueRef::BigInt(i) => Ok(unsafe { ffi::duckdb_create_int64(i) }),
+        ValueRef::HugeInt(i) => Ok(unsafe {
+            ffi::duckdb_create_hugeint(ffi::duckdb_hugeint {
+                lower: i as u64,
+                upper: (i >> 64) as i64,
+            })
+        }),
+        ValueRef::UTinyInt(i) => Ok(unsafe { ffi::duckdb_create_uint8(i) }),
+        ValueRef::USmallInt(i) => Ok(unsafe { ffi::duckdb_create_uint16(i) }),
+        ValueRef::UInt(i) => Ok(unsafe { ffi::duckdb_create_uint32(i) }),
+        ValueRef::UBigInt(i) => Ok(unsafe { ffi::duckdb_create_uint64(i) }),
+        ValueRef::Float(f) => Ok(unsafe { ffi::duckdb_create_float(f) }),
+        ValueRef::Double(f) => Ok(unsafe { ffi::duckdb_create_double(f) }),
+        ValueRef::Decimal(d) => Ok(unsafe { ffi::duckdb_create_decimal(crate::types::to_duckdb_decimal(d)) }),
+        ValueRef::Timestamp(u, i) => {
+            Ok(unsafe { ffi::duckdb_create_timestamp(ffi::duckdb_timestamp { micros: u.to_micros(i) }) })
+        }
+        ValueRef::Text(s) => {
+            Ok(unsafe { ffi::duckdb_create_varchar_length(s.as_ptr() as *const c_char, s.len() as u64) })
+        }
+        ValueRef::Blob(b) => Ok(unsafe { ffi::duckdb_create_blob(b.as_ptr(), b.len() as u64) }),
+        ValueRef::Date32(days) => Ok(unsafe { ffi::duckdb_create_date(ffi::duckdb_date { days }) }),
+        ValueRef::Time64(u, i) => Ok(unsafe { ffi::duckdb_create_time(ffi::duckdb_time { micros: u.to_micros(i) }) }),
+        ValueRef::Interval { months, days, nanos } => Ok(unsafe {
+            ffi::duckdb_create_interval(ffi::duckdb_interval {
+                months,
+                days,
+                micros: nanos / 1_000,
+            })
+        }),
+        ValueRef::List(list_type, idx) => unsafe {
+            let (start, end, values, child_dt) = match list_type {
+                ListType::Regular(arr) => {
+                    let offsets = arr.offsets();
+                    let s: usize = offsets[idx].try_into().unwrap();
+                    let e: usize = offsets[idx + 1].try_into().unwrap();
+                    (s, e, arr.values(), arr.value_type())
+                }
+                ListType::Large(arr) => {
+                    let offsets = arr.offsets();
+                    let s: usize = offsets[idx].try_into().unwrap();
+                    let e: usize = offsets[idx + 1].try_into().unwrap();
+                    (s, e, arr.values(), arr.value_type())
+                }
+            };
+            let child_logical = arrow_datatype_to_logical_type(&child_dt)?;
+            let mut duckdb_values: Vec<ffi::duckdb_value> = Vec::with_capacity(end - start);
+            let result = (|| -> Result<ffi::duckdb_value> {
+                for row in start..end {
+                    let elem = Row::value_ref_internal(row, idx, values);
+                    duckdb_values.push(value_ref_to_duckdb(elem)?);
+                }
+                Ok(ffi::duckdb_create_list_value(
+                    child_logical,
+                    duckdb_values.as_mut_ptr(),
+                    duckdb_values.len() as u64,
+                ))
+            })();
+            for mut v in duckdb_values {
+                ffi::duckdb_destroy_value(&mut v);
+            }
+            ffi::duckdb_destroy_logical_type(&mut { child_logical });
+            result
+        },
+        _ => Err(binding_unsupported_value(value.data_type().name())),
+    }
+}
+
+/// Convert an Arrow `DataType` to a DuckDB logical type.
+fn arrow_datatype_to_logical_type(dt: &DataType) -> Result<ffi::duckdb_logical_type> {
+    use crate::core::LogicalTypeId;
+    let id = match dt {
+        DataType::Boolean => LogicalTypeId::Boolean,
+        DataType::Int8 => LogicalTypeId::Tinyint,
+        DataType::Int16 => LogicalTypeId::Smallint,
+        DataType::Int32 => LogicalTypeId::Integer,
+        DataType::Int64 => LogicalTypeId::Bigint,
+        DataType::UInt8 => LogicalTypeId::UTinyint,
+        DataType::UInt16 => LogicalTypeId::USmallint,
+        DataType::UInt32 => LogicalTypeId::UInteger,
+        DataType::UInt64 => LogicalTypeId::UBigint,
+        DataType::Float32 => LogicalTypeId::Float,
+        DataType::Float64 => LogicalTypeId::Double,
+        DataType::Utf8 | DataType::LargeUtf8 => LogicalTypeId::Varchar,
+        DataType::Binary | DataType::LargeBinary | DataType::FixedSizeBinary(_) => LogicalTypeId::Blob,
+        DataType::Date32 => LogicalTypeId::Date,
+        DataType::Timestamp(_, _) => LogicalTypeId::Timestamp,
+        DataType::Time64(_) => LogicalTypeId::Time,
+        DataType::Interval(_) => LogicalTypeId::Interval,
+        DataType::Decimal128(_, _) => LogicalTypeId::Decimal,
+        DataType::List(field) | DataType::LargeList(field) => unsafe {
+            let child = arrow_datatype_to_logical_type(field.data_type())?;
+            let list_type = ffi::duckdb_create_list_type(child);
+            ffi::duckdb_destroy_logical_type(&mut { child });
+            return Ok(list_type);
+        },
+        _ => {
+            return Err(Error::ToSqlConversionFailure(
+                format!("unsupported Arrow DataType for binding: {dt}").into(),
+            ));
+        }
+    };
+    Ok(unsafe { ffi::duckdb_create_logical_type(id as u32) })
+}
+
 #[cfg(test)]
 mod test {
     use arrow::{array::ListArray, datatypes::Int32Type};
@@ -682,28 +942,13 @@ mod test {
 
     struct BorrowedList(ListArray);
     impl BorrowedList {
-        fn new() -> Self {
-            Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(vec![
-                Some(1),
-                Some(2),
-            ])]))
+        fn new(value: Vec<Option<i32>>) -> Self {
+            Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(value)]))
         }
     }
     impl ToSql for BorrowedList {
         fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
             Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
-        }
-    }
-
-    fn assert_binding_list_error(err: Error) {
-        match err {
-            Error::ToSqlConversionFailure(e) => {
-                assert!(
-                    e.to_string().contains("binding List parameters is not yet supported"),
-                    "unexpected message: {e}"
-                );
-            }
-            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
         }
     }
 
@@ -1732,45 +1977,13 @@ mod test {
         Ok(())
     }
 
-    // Unsupported Value variants must surface an error instead of panicking.
-    #[test]
-    fn test_bind_unsupported_container_type_returns_error() -> Result<()> {
-        use crate::types::Value;
-
-        struct OwnedList;
-        impl ToSql for OwnedList {
-            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
-            }
-        }
-
-        let db = Connection::open_in_memory()?;
-        db.execute("CREATE TABLE t (id INTEGER, numbers INTEGER[])", [])?;
-
-        let list = OwnedList;
-        let err = db
-            .execute("INSERT INTO t VALUES (?, ?)", crate::params![1, list])
-            .unwrap_err();
-
-        assert_binding_list_error(err);
-
-        let borrowed_list = BorrowedList::new();
-        let err = db
-            .execute("INSERT INTO t VALUES (?, ?)", crate::params![2, borrowed_list])
-            .unwrap_err();
-        assert_binding_list_error(err);
-        Ok(())
-    }
-
     #[test]
     fn test_bind_error_clears_partial_parameter_state() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute("CREATE TABLE t (id INTEGER NOT NULL, name TEXT)", [])?;
 
         let mut stmt = db.prepare("INSERT INTO t VALUES (?, ?)")?;
-        let list = BorrowedList::new();
-        let err = stmt.execute(crate::params![1, list]).unwrap_err();
-        assert_binding_list_error(err);
+        stmt.execute(crate::params![1]).unwrap_err();
 
         stmt.raw_bind_parameter(2, "ok")?;
         assert!(stmt.raw_execute().is_err());
@@ -1786,6 +1999,119 @@ mod test {
             Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?))
         })?;
         assert_eq!(row, (7, "ok".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_list() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE test (numbers INTEGER[])", [])?;
+
+        let list_value = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        db.execute("INSERT INTO test VALUES (?)", crate::params![&list_value])?;
+
+        let result = db.query_row("SELECT numbers FROM test", [], |row| row.get::<_, Value>(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_list_with_nulls() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE test (numbers INTEGER[])", [])?;
+
+        let list_value = Value::List(vec![Value::Int(1), Value::Null, Value::Int(3)]);
+        db.execute("INSERT INTO test VALUES (?)", crate::params![&list_value])?;
+
+        let result = db.query_row("SELECT numbers FROM test", [], |row| row.get::<_, Value>(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(1), Value::Null, Value::Int(3)]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_empty_list_returns_error() {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory().unwrap();
+        db.execute("CREATE TABLE test (numbers INTEGER[])", []).unwrap();
+
+        let list_value = Value::List(vec![]);
+        let err = db
+            .execute("INSERT INTO test VALUES (?)", crate::params![&list_value])
+            .unwrap_err();
+
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(e.to_string().contains("empty or all-null"), "unexpected message: {e}");
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_bind_nested_list() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE test (matrix INTEGER[][])", [])?;
+
+        let inner1 = Value::List(vec![Value::Int(1), Value::Int(2)]);
+        let inner2 = Value::List(vec![Value::Int(3), Value::Int(4)]);
+        let list_value = Value::List(vec![inner1.clone(), inner2.clone()]);
+        db.execute("INSERT INTO test VALUES (?)", crate::params![&list_value])?;
+
+        let result: Value = db.query_row("SELECT matrix FROM test", [], |row| row.get::<_, Value>(0))?;
+
+        assert_eq!(result, Value::List(vec![inner1, inner2]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_list_ref() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE test (numbers INTEGER[])", [])?;
+
+        let list_array = BorrowedList::new(vec![Some(1), Some(2), Some(3)]);
+        db.execute("INSERT INTO test VALUES (?)", crate::params![list_array])?;
+
+        let result = db.query_row("SELECT numbers FROM test", [], |row| row.get::<_, Value>(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_list_ref_nulls() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE test (numbers INTEGER[])", [])?;
+
+        let list_array = BorrowedList::new(vec![Some(3), None, Some(5)]);
+        db.execute("INSERT INTO test VALUES (?)", crate::params![list_array])?;
+
+        let result = db.query_row("SELECT numbers FROM test", [], |r| r.get::<_, Value>(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(3), Value::Null, Value::Int(5)]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_list_ref_empty() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE test (numbers INTEGER[])", [])?;
+
+        let list_array = BorrowedList::new(vec![]);
+        db.execute("INSERT INTO test VALUES (?)", crate::params![list_array])?;
+
+        let result = db.query_row("SELECT numbers FROM test", [], |r| r.get::<_, Value>(0))?;
+        assert_eq!(result, Value::List(vec![]));
         Ok(())
     }
 }

@@ -6,7 +6,7 @@ use crate::{
     Connection, DatabaseName, Result, Row,
     error::Error,
     ffi,
-    types::{ToSql, ToSqlOutput, ValueRef, binding_unsupported_value, value_ref_from_value},
+    types::{ToSql, ValueRef},
 };
 
 pub struct Sql {
@@ -58,25 +58,22 @@ impl Sql {
 
     pub fn push_value(&mut self, value: &dyn ToSql) -> Result<()> {
         let value = value.to_sql()?;
-        let value = match value {
-            ToSqlOutput::Borrowed(v) => v,
-            ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
-        };
-        match value {
-            ValueRef::BigInt(i) => {
+        let value_ref = value.as_value_ref();
+        match value_ref {
+            Ok(ValueRef::BigInt(i)) => {
                 self.push_int(i);
             }
-            ValueRef::Double(r) => {
+            Ok(ValueRef::Double(r)) => {
                 self.push_real(r);
             }
-            ValueRef::Text(s) => {
+            Ok(ValueRef::Text(s)) => {
                 let s = std::str::from_utf8(s)?;
                 self.push_string_literal(s);
             }
             _ => {
                 return Err(Error::DuckDBFailure(
                     ffi::Error::new(ffi::DuckDBError),
-                    Some(format!("Unsupported value type {}", value.data_type())),
+                    Some(format!("Unsupported value type {}", value.data_type_name())),
                 ));
             }
         };
@@ -315,13 +312,10 @@ mod test {
             .unwrap_err();
 
         match err {
-            Error::ToSqlConversionFailure(e) => {
-                assert!(
-                    e.to_string().contains("binding List parameters is not yet supported"),
-                    "unexpected message: {e}"
-                );
+            Error::DuckDBFailure(_, Some(msg)) => {
+                assert!(msg.contains("Unsupported value type List"), "unexpected message: {msg}");
             }
-            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+            other => panic!("expected DuckDBFailure, got {other:?}"),
         }
         Ok(())
     }

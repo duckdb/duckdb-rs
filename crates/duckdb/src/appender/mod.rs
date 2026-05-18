@@ -4,7 +4,8 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 use crate::{
     Error,
     error::result_from_duckdb_appender,
-    types::{ToSql, ToSqlOutput, value_ref_from_value},
+    statement::{value_ref_to_duckdb, value_to_duckdb},
+    types::{ToSql, ToSqlOutput, Value},
 };
 
 /// Appender for fast import data
@@ -147,8 +148,10 @@ impl Appender<'_> {
 
     fn validate_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
         for value in values {
-            let value = to_value_ref(value)?;
-            validate_appender_value_ref(value)?;
+            match value.as_value_ref() {
+                Ok(r) => validate_appender_value_ref(r)?,
+                Err(v) => validate_appender_value(v)?,
+            }
         }
         Ok(())
     }
@@ -162,9 +165,21 @@ impl Appender<'_> {
 
     fn bind_parameter(&self, value: &ToSqlOutput<'_>) -> Result<()> {
         let ptr = self.app;
-        let value = to_value_ref(value)?;
+
+        let value_ref = match value.as_value_ref() {
+            Ok(r) => r,
+            Err(value) => unsafe {
+                // Container types cannot be converted to ValueRef.
+                // Bind them as duckdb_value instead.
+                let duckdb_val = value_to_duckdb(value)?;
+                let rc = ffi::duckdb_append_value(ptr, duckdb_val);
+                ffi::duckdb_destroy_value(&mut { duckdb_val });
+                return if rc != 0 { Err(Error::AppendError) } else { Ok(()) };
+            },
+        };
+
         // TODO: append more
-        let rc = match value {
+        let rc = match value_ref {
             ValueRef::Null => unsafe { ffi::duckdb_append_null(ptr) },
             ValueRef::Boolean(i) => unsafe { ffi::duckdb_append_bool(ptr, i) },
             ValueRef::TinyInt(i) => unsafe { ffi::duckdb_append_int8(ptr, i) },
@@ -216,11 +231,17 @@ impl Appender<'_> {
                 ffi::duckdb_destroy_value(&mut value);
                 res
             },
-            _ => {
-                return Err(Error::ToSqlConversionFailure(
-                    appending_unsupported_value(value.data_type()).into(),
-                ));
-            }
+            ValueRef::List(..)
+            | ValueRef::Struct(..)
+            | ValueRef::Map(..)
+            | ValueRef::Array(..)
+            | ValueRef::Union(..)
+            | ValueRef::Enum(..) => unsafe {
+                let mut duckdb_val = value_ref_to_duckdb(value_ref)?;
+                let res = ffi::duckdb_append_value(ptr, duckdb_val);
+                ffi::duckdb_destroy_value(&mut duckdb_val);
+                res
+            },
         };
         if rc != 0 {
             return Err(Error::AppendError);
@@ -284,18 +305,8 @@ impl fmt::Debug for Appender<'_> {
     }
 }
 
-fn appending_unsupported_value(value_type: impl fmt::Display) -> String {
-    format!("appending {value_type} values is not yet supported")
-}
-
-fn to_value_ref<'value, 'output>(value: &'value ToSqlOutput<'output>) -> Result<ValueRef<'value>>
-where
-    'output: 'value,
-{
-    match *value {
-        ToSqlOutput::Borrowed(v) => Ok(v),
-        ToSqlOutput::Owned(ref v) => value_ref_from_value(v, appending_unsupported_value),
-    }
+fn appending_unsupported_value(value_type: impl fmt::Display) -> crate::Error {
+    crate::Error::ToSqlConversionFailure(format!("appending {value_type} values is not yet supported").into())
 }
 
 fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
@@ -319,18 +330,63 @@ fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
         | ValueRef::Date32(_)
         | ValueRef::Time64(_, _)
         | ValueRef::Interval { .. }
-        | ValueRef::Decimal(_) => Ok(()),
+        | ValueRef::Decimal(_)
+        | ValueRef::List(..) => Ok(()),
         _ => Err(Error::ToSqlConversionFailure(
             appending_unsupported_value(value.data_type()).into(),
         )),
     }
 }
 
+fn validate_appender_value(value: &Value) -> Result<()> {
+    match value {
+        Value::Null
+        | Value::Boolean(_)
+        | Value::TinyInt(_)
+        | Value::SmallInt(_)
+        | Value::Int(_)
+        | Value::BigInt(_)
+        | Value::HugeInt(_)
+        | Value::UTinyInt(_)
+        | Value::USmallInt(_)
+        | Value::UInt(_)
+        | Value::UBigInt(_)
+        | Value::Float(_)
+        | Value::Double(_)
+        | Value::Text(_)
+        | Value::Timestamp(_, _)
+        | Value::Blob(_)
+        | Value::Date32(_)
+        | Value::Time64(_, _)
+        | Value::Interval { .. }
+        | Value::Decimal(_)
+        | Value::List(_) => Ok(()),
+        _ => Err(Error::ToSqlConversionFailure(
+            appending_unsupported_value(value.data_type_name()).into(),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use crate::ToSql;
+    use crate::types::{ListType, ToSqlOutput, ValueRef};
+    use arrow::{array::ListArray, datatypes::Int32Type};
     use rust_decimal::Decimal;
 
     use crate::{Connection, Error, Result, params};
+
+    struct BorrowedList(ListArray);
+    impl BorrowedList {
+        fn new(value: Vec<Option<i32>>) -> Self {
+            Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(value)]))
+        }
+    }
+    impl ToSql for BorrowedList {
+        fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+            Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
+        }
+    }
 
     #[test]
     fn test_append_one_row() -> Result<()> {
@@ -348,78 +404,56 @@ mod test {
     }
 
     #[test]
-    fn test_append_unsupported_container_type_returns_error() -> Result<()> {
-        use arrow::{array::ListArray, datatypes::Int32Type};
-
-        use crate::{
-            ToSql,
-            types::{ListType, ToSqlOutput, Value, ValueRef},
-        };
-
-        struct OwnedList;
-        impl ToSql for OwnedList {
-            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
-            }
-        }
-
-        struct BorrowedList(ListArray);
-        impl BorrowedList {
-            fn new() -> Self {
-                Self(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![Some(vec![
-                    Some(1),
-                    Some(2),
-                ])]))
-            }
-        }
-        impl ToSql for BorrowedList {
-            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Borrowed(ValueRef::List(ListType::Regular(&self.0), 0)))
-            }
-        }
-
-        fn assert_unsupported_list_error(err: Error) {
-            match err {
-                Error::ToSqlConversionFailure(e) => {
-                    assert!(
-                        e.to_string().contains("appending List values is not yet supported"),
-                        "unexpected message: {e}"
-                    );
-                }
-                other => panic!("expected ToSqlConversionFailure, got {other:?}"),
-            }
-        }
+    fn test_append_list() -> Result<()> {
+        use crate::types::Value;
 
         let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo(id INTEGER, name TEXT)")?;
+        db.execute_batch("CREATE TABLE foo(numbers INTEGER[])")?;
 
-        let list = OwnedList;
-        let mut app = db.appender("foo")?;
-        app.append_row(params![10, "before"])?;
-        app.append_row(params![11, "also before"])?;
-        let err = app.append_row(params![1, list]).unwrap_err();
-        assert_unsupported_list_error(err);
+        {
+            let mut app = db.appender("foo")?;
+            let list = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+            app.append_row(params![&list])?;
+        }
 
-        let borrowed_list = BorrowedList::new();
-        let err = app.append_row(params![3, borrowed_list]).unwrap_err();
-        assert_unsupported_list_error(err);
-        app.append_row(params![2, "ok"])?;
-        app.flush()?;
+        let result: Value = db.query_row("SELECT numbers FROM foo", [], |r| r.get(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+        Ok(())
+    }
 
-        let rows = db
-            .prepare("SELECT id, name FROM foo ORDER BY id")?
-            .query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)))?
-            .collect::<Result<Vec<_>>>()?;
-        assert_eq!(
-            rows,
-            vec![
-                (2, "ok".to_string()),
-                (10, "before".to_string()),
-                (11, "also before".to_string())
-            ]
-        );
-        let count: i32 = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
-        assert_eq!(count, 3);
+    #[test]
+    fn test_append_borrowed_list() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(numbers INTEGER[])")?;
+
+        {
+            let mut app = db.appender("foo")?;
+            let borrowed_list = BorrowedList::new(vec![Some(1), Some(2), Some(3)]);
+            app.append_row(params![borrowed_list]).unwrap();
+        }
+
+        let result: Value = db.query_row("SELECT numbers FROM foo", [], |r| r.get(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_borrowed_list_nulls() -> Result<()> {
+        use crate::types::Value;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(numbers INTEGER[])")?;
+
+        {
+            let mut app = db.appender("foo")?;
+            let borrowed_list = BorrowedList::new(vec![Some(1), None, Some(3)]);
+            app.append_row(params![borrowed_list]).unwrap();
+        }
+
+        let result: Value = db.query_row("SELECT numbers FROM foo", [], |r| r.get(0))?;
+        assert_eq!(result, Value::List(vec![Value::Int(1), Value::Null, Value::Int(3)]));
         Ok(())
     }
 
