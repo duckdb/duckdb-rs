@@ -1134,7 +1134,9 @@ mod test {
 
         match result.unwrap_err() {
             Error::DuckDBFailure(err, _) => {
-                // TODO(wangfenjin): Update errorcode
+                // TODO: ErrorCode is Unknown here because execute() uses duckdb_execute_prepared_arrow
+                // which does not expose error types. Fixing this requires migrating execute() off the
+                // deprecated arrow execution path.
                 assert_eq!(err.code, ErrorCode::Unknown);
             }
             err => panic!("Unexpected error {err}"),
@@ -1933,6 +1935,65 @@ mod test {
         let results: Vec<Option<String>> = stmt.query_map([], |row| row.get(0))?.map(|r| r.unwrap()).collect();
 
         assert_eq!(results, vec![Some("CA".into()), None, Some("NY".into())]);
+        Ok(())
+    }
+
+    // #[test]
+    // fn test_http_error_code() -> Result<()> {
+    //     let db = checked_memory_handle();
+
+    //     // httpfs may not be available in all builds, skip gracefully if not
+    //     if db.execute_batch("LOAD httpfs;").is_err() {
+    //         return Ok(());
+    //     }
+
+    //     let result = db.execute_batch(
+    //         "SELECT * FROM read_parquet('https://localhost:19999/nonexistent.parquet');"
+    //     );
+
+    //     match result {
+    //         Err(Error::DuckDBFailure(ref e, _)) => {
+    //             assert_eq!(
+    //                 e.code,
+    //                 ErrorCode::Http,
+    //                 "expected ErrorCode::Http for a failed HTTP fetch, got {:?}",
+    //                 e.code
+    //             );
+    //         }
+    //         Err(other) => panic!("expected DuckDBFailure with Http code, got: {other}"),
+    //         Ok(()) => panic!("expected an error but query succeeded"),
+    //     }
+
+    //     Ok(())
+    // }
+
+    #[test]
+    fn test_http_error_code() -> Result<()> {
+        let db = checked_memory_handle();
+
+        if db.execute_batch("LOAD httpfs;").is_err() {
+            return Ok(());
+        }
+
+        let result = db.query_row(
+            "SELECT * FROM read_parquet('https://localhost:19999/nonexistent.parquet');",
+            [],
+            |row| row.get::<_, i32>(0),
+        );
+
+        match result {
+            Err(Error::DuckDBFailure(ref e, _)) => {
+                assert_eq!(
+                    e.code,
+                    ErrorCode::Http,
+                    "expected ErrorCode::Http for a failed HTTP fetch, got {:?}",
+                    e.code
+                );
+            }
+            Err(other) => panic!("expected DuckDBFailure with Http code, got: {other}"),
+            Ok(_) => panic!("expected an error but query succeeded"),
+        }
+
         Ok(())
     }
 }

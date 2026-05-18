@@ -53,6 +53,8 @@ pub enum ErrorCode {
     NotADatabase,
     /// SQL error or missing database
     Unknown,
+    /// HTTP error
+    Http,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +68,65 @@ impl Error {
         Self {
             code: ErrorCode::Unknown,
             extended_code: result_code,
+        }
+    }
+
+    pub unsafe fn from_result(result: *mut crate::duckdb_result) -> Self {
+        let raw_type = unsafe { crate::duckdb_result_error_type(result) };
+        Self {
+            code: ErrorCode::from_duckdb_error_type(raw_type),
+            extended_code: crate::duckdb_state_DuckDBError,
+        }
+    }
+}
+
+impl ErrorCode {
+    pub fn from_duckdb_error_type(raw: crate::duckdb_error_type) -> Self {
+        match raw {
+            crate::duckdb_error_type_DUCKDB_ERROR_INVALID => ErrorCode::Unknown,
+            crate::duckdb_error_type_DUCKDB_ERROR_OUT_OF_RANGE => ErrorCode::ParameterOutOfRange,
+            crate::duckdb_error_type_DUCKDB_ERROR_CONVERSION => ErrorCode::TypeMismatch,
+            crate::duckdb_error_type_DUCKDB_ERROR_UNKNOWN_TYPE => ErrorCode::Unknown,
+            crate::duckdb_error_type_DUCKDB_ERROR_DECIMAL => ErrorCode::TypeMismatch,
+            crate::duckdb_error_type_DUCKDB_ERROR_MISMATCH_TYPE => ErrorCode::TypeMismatch,
+            crate::duckdb_error_type_DUCKDB_ERROR_DIVIDE_BY_ZERO => ErrorCode::OperationAborted,
+            crate::duckdb_error_type_DUCKDB_ERROR_OBJECT_SIZE => ErrorCode::TooBig,
+            crate::duckdb_error_type_DUCKDB_ERROR_INVALID_TYPE => ErrorCode::TypeMismatch,
+            crate::duckdb_error_type_DUCKDB_ERROR_SERIALIZATION => ErrorCode::DatabaseCorrupt,
+            crate::duckdb_error_type_DUCKDB_ERROR_TRANSACTION => ErrorCode::OperationAborted,
+            crate::duckdb_error_type_DUCKDB_ERROR_NOT_IMPLEMENTED => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_EXPRESSION => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_CATALOG => ErrorCode::NotFound,
+            crate::duckdb_error_type_DUCKDB_ERROR_PARSER => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_PLANNER => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_SCHEDULER => ErrorCode::OperationAborted,
+            crate::duckdb_error_type_DUCKDB_ERROR_EXECUTOR => ErrorCode::OperationAborted,
+            crate::duckdb_error_type_DUCKDB_ERROR_CONSTRAINT => ErrorCode::ConstraintViolation,
+            crate::duckdb_error_type_DUCKDB_ERROR_INDEX => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_STAT => ErrorCode::SystemIoFailure,
+            crate::duckdb_error_type_DUCKDB_ERROR_CONNECTION => ErrorCode::CannotOpen,
+            crate::duckdb_error_type_DUCKDB_ERROR_SYNTAX => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_SETTINGS => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_BINDER => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_NETWORK => ErrorCode::SystemIoFailure,
+            crate::duckdb_error_type_DUCKDB_ERROR_OPTIMIZER => ErrorCode::InternalMalfunction,
+            crate::duckdb_error_type_DUCKDB_ERROR_NULL_POINTER => ErrorCode::InternalMalfunction,
+            crate::duckdb_error_type_DUCKDB_ERROR_IO => ErrorCode::SystemIoFailure,
+            crate::duckdb_error_type_DUCKDB_ERROR_INTERRUPT => ErrorCode::OperationInterrupted,
+            crate::duckdb_error_type_DUCKDB_ERROR_FATAL => ErrorCode::InternalMalfunction,
+            crate::duckdb_error_type_DUCKDB_ERROR_INTERNAL => ErrorCode::InternalMalfunction,
+            crate::duckdb_error_type_DUCKDB_ERROR_INVALID_INPUT => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_OUT_OF_MEMORY => ErrorCode::OutOfMemory,
+            crate::duckdb_error_type_DUCKDB_ERROR_PERMISSION => ErrorCode::PermissionDenied,
+            crate::duckdb_error_type_DUCKDB_ERROR_PARAMETER_NOT_RESOLVED => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_PARAMETER_NOT_ALLOWED => ErrorCode::ApiMisuse,
+            crate::duckdb_error_type_DUCKDB_ERROR_DEPENDENCY => ErrorCode::ConstraintViolation,
+            crate::duckdb_error_type_DUCKDB_ERROR_HTTP => ErrorCode::Http,
+            crate::duckdb_error_type_DUCKDB_ERROR_MISSING_EXTENSION => ErrorCode::NotFound,
+            crate::duckdb_error_type_DUCKDB_ERROR_AUTOLOAD => ErrorCode::NotFound,
+            crate::duckdb_error_type_DUCKDB_ERROR_SEQUENCE => ErrorCode::OperationAborted,
+            crate::duckdb_error_type_DUCKDB_INVALID_CONFIGURATION => ErrorCode::ApiMisuse,
+            _ => ErrorCode::Unknown,
         }
     }
 }

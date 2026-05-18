@@ -202,4 +202,27 @@ mod tests {
             duckdb_close(&mut db);
         }
     }
+
+    #[test]
+    fn test_result_error_type() {
+        unsafe {
+            let mut db: duckdb_database = ptr::null_mut();
+            let mut con: duckdb_connection = ptr::null_mut();
+            duckdb_open(ptr::null_mut(), &mut db);
+            duckdb_connect(db, &mut con);
+
+            let mut result: duckdb_result = mem::zeroed();
+            let sql = CString::new("SELECT * FROM nonexistent_table").unwrap();
+            let rc = duckdb_query(con, sql.as_ptr() as *const c_char, &mut result);
+
+            assert_eq!(rc, duckdb_state_DuckDBError);
+
+            let error_type = duckdb_result_error_type(&mut result);
+            assert_eq!(error_type, duckdb_error_type_DUCKDB_ERROR_CATALOG);
+
+            duckdb_destroy_result(&mut result);
+            duckdb_disconnect(&mut con);
+            duckdb_close(&mut db);
+        }
+    }
 }
