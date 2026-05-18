@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -28,7 +29,6 @@ try:
     shutil.rmtree(TARGET_DIR)
 except FileNotFoundError:
     pass
-ARCHIVE_PATH.unlink(missing_ok=True)
 
 TARGET_DIR.mkdir()
 
@@ -105,7 +105,7 @@ def normalized_tarinfo(path):
     if path.is_symlink():
         tarinfo.type = tarfile.SYMTYPE
         tarinfo.mode = 0o777
-        tarinfo.linkname = os.readlink(path)
+        tarinfo.linkname = str(path.readlink())
     elif path.is_dir():
         tarinfo.type = tarfile.DIRTYPE
         tarinfo.mode = 0o755
@@ -123,22 +123,43 @@ def normalized_tarinfo(path):
 # BSD tar, the default on macOS, can suppress the gzip timestamp but does not
 # provide GNU tar's --mtime and --sort controls. Using tarfile
 # also avoids platform-specific metadata such as AppleDouble entries.
-def write_archive():
-    root = TARGET_DIR
-    with ARCHIVE_PATH.open("wb") as archive_file:
+def write_archive_to(archive_path):
+    with archive_path.open("wb") as archive_file:
         with gzip.GzipFile(
             filename="", mode="wb", fileobj=archive_file, mtime=0
         ) as gzip_file:
             with tarfile.open(
                 fileobj=gzip_file, mode="w", format=tarfile.PAX_FORMAT
             ) as tar:
-                for path in iter_archive_paths(root):
+                for path in iter_archive_paths(TARGET_DIR):
                     tarinfo = normalized_tarinfo(path)
                     if tarinfo.isfile():
-                        with open(path, "rb") as fileobj:
+                        with path.open("rb") as fileobj:
                             tar.addfile(tarinfo, fileobj)
                     else:
                         tar.addfile(tarinfo)
 
 
-write_archive()
+def replace_archive_if_changed():
+    with tempfile.NamedTemporaryFile(
+        dir=SCRIPT_DIR, prefix=f".{ARCHIVE_PATH.name}.", delete=False
+    ) as temp_file:
+        temp_archive_path = Path(temp_file.name)
+    try:
+        write_archive_to(temp_archive_path)
+        # Cargo tracks rerun-if-changed inputs by filesystem timestamp. Keep the
+        # existing archive in place when bytes match so a no-op source update
+        # does not trigger a bundled rebuild.
+        if (
+            ARCHIVE_PATH.exists()
+            and temp_archive_path.read_bytes() == ARCHIVE_PATH.read_bytes()
+        ):
+            temp_archive_path.unlink()
+            return
+        temp_archive_path.replace(ARCHIVE_PATH)
+    except Exception:
+        temp_archive_path.unlink(missing_ok=True)
+        raise
+
+
+replace_archive_if_changed()
