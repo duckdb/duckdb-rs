@@ -154,7 +154,15 @@ mod build_linked {
     fn include_dir_for(header: &HeaderLocation) -> Option<String> {
         match header {
             HeaderLocation::FromEnvironment => env::var("DUCKDB_INCLUDE_DIR")
-                .or_else(|_| env::var("DUCKDB_LIB_DIR"))
+                .or_else(|_| {
+                    env::var("DUCKDB_LIB_DIR").and_then(|dir| {
+                        if Path::new(&dir).join("duckdb.h").exists() {
+                            Ok(dir)
+                        } else {
+                            Err(env::VarError::NotPresent)
+                        }
+                    })
+                })
                 .ok(),
             HeaderLocation::FromPath(path) => Some(path.clone()),
             HeaderLocation::Wrapper => None,
