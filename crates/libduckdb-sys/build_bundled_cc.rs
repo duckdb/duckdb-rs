@@ -116,7 +116,15 @@ fn untar_archive(out_dir: &str) {
 pub fn main(out_dir: &str, out_path: &Path) {
     untar_archive(out_dir);
 
-    write_bindings(&Path::new(out_dir).join("duckdb/src/include"), out_path);
+    let include_path = Path::new(out_dir).join("duckdb/src/include");
+    write_bindings(&include_path, out_path);
+
+    // Publish the include directory so downstream crates that compile
+    // their own C/C++ code (e.g. extension shims that #include
+    // "duckdb.hpp") can pick it up from `DEP_DUCKDB_INCLUDE` without
+    // having to glob the target tree. Requires `links = "duckdb"` in
+    // the package manifest.
+    println!("cargo:include={}", include_path.display());
 
     let manifest_file = std::fs::File::open(format!("{out_dir}/duckdb/manifest.json")).expect("manifest file");
     let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");

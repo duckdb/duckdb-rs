@@ -8,6 +8,12 @@ homepage = { workspace = true }
 keywords = { workspace = true }
 readme = { workspace = true }
 build = "build.rs"
+# `links = "duckdb"` lets the build script publish metadata
+# (`cargo:include`, `cargo:lib_dir`) that downstream crates can read
+# via `DEP_DUCKDB_*` environment variables in their own build scripts.
+# Required for crates that need to compile their own C/C++ code that
+# `#include "duckdb.hpp"` against the bundled headers.
+links = "duckdb"
 categories = ["external-ffi-bindings", "database"]
 description = "Native bindings to the libduckdb library, C API"
 exclude = ["duckdb-sources"]

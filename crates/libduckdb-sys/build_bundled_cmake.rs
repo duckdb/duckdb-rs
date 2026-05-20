@@ -37,7 +37,14 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=CMAKE_CXX_COMPILER_LAUNCHER");
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
-    write_bindings(&source_dir.join("src/include"), out_path);
+    let include_path = source_dir.join("src/include").canonicalize().unwrap();
+    write_bindings(&include_path, out_path);
+
+    // Publish the include directory so downstream crates that compile
+    // their own C/C++ code can read it from `DEP_DUCKDB_INCLUDE`.
+    // See the matching emission in build_bundled_cc.rs.
+    println!("cargo:include={}", include_path.display());
+
     if let Some(configs) = env_var("DUCKDB_EXTENSION_CONFIGS") {
         if !configs.trim().is_empty() {
             panic!(
