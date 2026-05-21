@@ -6,11 +6,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// Keep this in sync with DuckDB's always-loaded base extension config in
-// duckdb-sources/extension/extension_config.cmake. We intentionally keep
-// upstream's default parquet linkage in the CMake backend.
-const SKIPPED_EXTENSIONS: &[&str] = &["jemalloc"];
-
 struct Generator {
     name: Option<String>,
     out_dir: PathBuf,
@@ -97,7 +92,11 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
 
-    config.define("SKIP_EXTENSIONS", SKIPPED_EXTENSIONS.join(";"));
+    // Always set explicitly so old CMake caches that skipped jemalloc do not
+    // keep forcing ENABLE_JEMALLOC=OFF. Upstream still gates jemalloc to
+    // supported 64-bit, non-musl Linux builds, so ON is a no-op elsewhere.
+    config.define("SKIP_EXTENSIONS", "");
+    config.define("ENABLE_JEMALLOC", "ON");
 
     // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
     // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` unless
@@ -328,7 +327,7 @@ fn sanitize_path_component(input: &str) -> String {
 fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_extensions: &[&str]) {
     // Missing extensions are already caught by link_static_library's panic;
     // this check only guards against CMake producing extensions we did not
-    // ask for (e.g. upstream SKIPPED_EXTENSIONS drift).
+    // ask for (e.g. upstream extension-config drift).
     let actual = list_static_extension_libraries(lib_dir, cmake_build_type).unwrap_or_else(|err| {
         panic!(
             "failed to inspect bundled-cmake extension libraries in {}: {err}",
