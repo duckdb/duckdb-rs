@@ -205,9 +205,10 @@ You can adjust this behavior in a number of ways:
    - `bundled-cmake` is *experimental* and requires a git/workspace checkout. It is not available from crates.io because the full `duckdb-sources` tree is not packaged there.
    - `bundled-cmake` implies `bundled` (for conditional-compilation gates) but replaces the `cc` build backend with CMake. Enabling any CMake-only extension feature (e.g. `icu`) automatically activates `bundled-cmake`.
    - `bundled-cmake` always links DuckDB's default static extensions (`core_functions` and `parquet`), so it also implies the `parquet` Cargo feature.
-   - Extension autoload/autoinstall are forced on to match the existing `bundled` backend, even though upstream CMake defaults are off.
+   - Extension autoload/autoinstall are forced on to match the existing `bundled` backend, even though upstream CMake defaults are off. If `DUCKDB_DISABLE_EXTENSION_LOAD=1` is set, both defaults are forced off as well.
    - When `ninja` is on `PATH`, the Ninja generator is preferred automatically. Set `CMAKE_GENERATOR` to override.
    - Builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE` to override. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
+   - Setting `DUCKDB_DISABLE_EXTENSION_LOAD=1` (or `DISABLE_EXTENSION_LOAD=1`) in the build environment compiles DuckDB without external extension install/load support. Statically linked extensions remain available.
    - `DUCKDB_EXTENSION_CONFIGS` is not yet supported; the build fails fast rather than producing a broken binary.
    - Use `cargo build -vv -F bundled-cmake` to surface CMake configure/build logs.
 
