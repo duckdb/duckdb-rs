@@ -235,6 +235,10 @@ impl RawStatement {
     pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
         unsafe {
             let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
+            assert!(
+                !ptr.is_null(),
+                "could not retrieve logical type for result column at index {idx}"
+            );
             LogicalTypeHandle::new(ptr)
         }
     }

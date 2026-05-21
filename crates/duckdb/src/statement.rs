@@ -1762,6 +1762,15 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "could not retrieve logical type for result column at index 1")]
+    fn test_column_logical_type_bad_index_panics() {
+        let db = Connection::open_in_memory().unwrap();
+        let stmt = db.prepare("SELECT 1").unwrap();
+
+        let _ = stmt.column_logical_type(1);
+    }
+
+    #[test]
     fn test_variant_result_decode_unsupported() -> Result<()> {
         let db = Connection::open_in_memory()?;
 

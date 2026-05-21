@@ -93,9 +93,9 @@ pub enum LogicalTypeId {
     TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS,
     /// VARIANT.
     ///
-    /// As of DuckDB 1.5.3, this type is exposed for metadata. Decoding
-    /// VARIANT result columns is not supported because DuckDB does not expose
-    /// C API helpers for decoding VARIANT values.
+    /// This type is exposed for metadata. Decoding VARIANT result columns is
+    /// not supported because DuckDB does not expose C API helpers for decoding
+    /// VARIANT values.
     Variant = DUCKDB_TYPE_DUCKDB_TYPE_VARIANT,
     /// DuckDB returned a type that this wrapper does not yet recognize
     Unsupported = u32::MAX,
@@ -198,15 +198,16 @@ impl From<LogicalTypeId> for LogicalTypeHandle {
     ///
     /// # Panics
     ///
-    /// Panics for [`LogicalTypeId::Unsupported`], which is only a sentinel for
-    /// unknown ids returned by DuckDB.
+    /// Panics for [`LogicalTypeId::Invalid`] and
+    /// [`LogicalTypeId::Unsupported`], which cannot be constructed as valid
+    /// logical types.
     fn from(id: LogicalTypeId) -> Self {
         // TODO: Split DuckDB-returned type ids from constructible logical type
-        // ids so `Unsupported` cannot reach this infallible conversion.
-        assert_ne!(
-            id,
-            LogicalTypeId::Unsupported,
-            "LogicalTypeId::Unsupported is a sentinel for unknown ids returned by DuckDB and cannot be used to construct a logical type"
+        // ids so `Invalid` and `Unsupported` cannot reach this infallible
+        // conversion.
+        assert!(
+            !matches!(id, LogicalTypeId::Invalid | LogicalTypeId::Unsupported),
+            "LogicalTypeId::{id:?} cannot be used to construct a logical type"
         );
         unsafe {
             Self {
@@ -361,7 +362,8 @@ impl LogicalTypeHandle {
 
     /// Logical type child by idx.
     ///
-    /// Panics if the logical type has no children, or if `idx` is out of range.
+    /// Panics if the logical type has no children, if `idx` is out of range,
+    /// or if the logical type is [`LogicalTypeId::Unsupported`].
     pub fn child(&self, idx: usize) -> Self {
         let c_logical_type = unsafe {
             match (self.id(), idx) {
@@ -495,18 +497,24 @@ mod test {
     #[test]
     fn test_nested_variant_type() {
         let typ = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Variant));
+        let list_of_int = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Integer));
 
         assert_eq!(typ.id(), LogicalTypeId::List);
         assert_eq!(typ.child(0).id(), LogicalTypeId::Variant);
         assert!(typ.contains_type_id(LogicalTypeId::Variant));
+        assert!(!list_of_int.contains_type_id(LogicalTypeId::Variant));
     }
 
     #[test]
-    #[should_panic(
-        expected = "LogicalTypeId::Unsupported is a sentinel for unknown ids returned by DuckDB and cannot be used to construct a logical type"
-    )]
+    #[should_panic(expected = "LogicalTypeId::Unsupported cannot be used to construct a logical type")]
     fn test_unsupported_type_cannot_construct_logical_type() {
         let _ = LogicalTypeHandle::from(LogicalTypeId::Unsupported);
+    }
+
+    #[test]
+    #[should_panic(expected = "LogicalTypeId::Invalid cannot be used to construct a logical type")]
+    fn test_invalid_type_cannot_construct_logical_type() {
+        let _ = LogicalTypeHandle::from(LogicalTypeId::Invalid);
     }
 
     #[test]

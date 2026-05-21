@@ -156,6 +156,9 @@ impl Statement<'_> {
     }
 
     /// Returns the declared logical data type of the column.
+    ///
+    /// # Caveats
+    /// Panics if `idx` is outside the valid column range.
     pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
         self.stmt.column_logical_type(idx)
     }
