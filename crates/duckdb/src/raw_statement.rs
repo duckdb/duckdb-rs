@@ -7,7 +7,12 @@ use arrow::{
 };
 
 use super::{Result, ffi};
-use crate::{Error, core::LogicalTypeHandle, error::result_from_duckdb_arrow};
+use crate::{
+    Error,
+    core::{LogicalTypeHandle, LogicalTypeId},
+    error::result_from_duckdb_arrow,
+    types::Type,
+};
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
 
@@ -299,6 +304,7 @@ impl RawStatement {
     /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
         self.reset_result();
+        self.validate_decodable_result_column_types()?;
         unsafe {
             let mut out: ffi::duckdb_arrow = ptr::null_mut();
             let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
@@ -321,6 +327,7 @@ impl RawStatement {
 
     pub fn execute_streaming(&mut self) -> Result<()> {
         self.reset_result();
+        self.validate_decodable_result_column_types()?;
         unsafe {
             let mut out: ffi::duckdb_result = std::mem::zeroed();
 
@@ -392,6 +399,33 @@ impl RawStatement {
 
             Ok(name)
         }
+    }
+
+    fn validate_decodable_result_column_types(&self) -> Result<()> {
+        let column_count = unsafe { ffi::duckdb_prepared_statement_column_count(self.ptr) as usize };
+        for idx in 0..column_count {
+            let logical_type = unsafe {
+                let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
+                if ptr.is_null() {
+                    return Err(Error::DuckDBFailure(
+                        ffi::Error::new(ffi::DuckDBError),
+                        Some(format!(
+                            "Could not retrieve logical type for result column at index {idx}"
+                        )),
+                    ));
+                }
+                LogicalTypeHandle::new(ptr)
+            };
+            if logical_type.contains_type_id(LogicalTypeId::Variant) {
+                return Err(Error::FromSqlConversionFailure(
+                    idx,
+                    Type::Variant,
+                    "decoding Variant columns is not supported".into(),
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     #[inline]

@@ -675,8 +675,10 @@ mod test {
     use arrow::{array::ListArray, datatypes::Int32Type};
 
     use crate::{
-        Connection, Error, Result, params_from_iter,
-        types::{ListType, ToSql, ToSqlOutput, ValueRef},
+        Connection, Error, Result,
+        core::LogicalTypeId,
+        params_from_iter,
+        types::{ListType, ToSql, ToSqlOutput, Type, ValueRef},
     };
     use rust_decimal::Decimal;
 
@@ -704,6 +706,19 @@ mod test {
                 );
             }
             other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
+    }
+
+    fn assert_variant_decode_error(err: Error, expected_idx: usize) {
+        match err {
+            Error::FromSqlConversionFailure(idx, Type::Variant, e) => {
+                assert_eq!(idx, expected_idx);
+                assert!(
+                    e.to_string().contains("decoding Variant columns is not supported"),
+                    "unexpected message: {e}"
+                );
+            }
+            other => panic!("expected FromSqlConversionFailure for Variant, got {other:?}"),
         }
     }
 
@@ -1729,6 +1744,90 @@ mod test {
         let row: Decimal = db.query_row("SELECT 12345678901234567890::HUGEINT", [], |r| r.get(0))?;
         assert_eq!(row, Decimal::from_i128_with_scale(12345678901234567890, 0));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_column_logical_type_metadata() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let stmt = db.prepare("SELECT {'a': 42}::VARIANT AS variant_col")?;
+
+        let logical_type = stmt.column_logical_type(0);
+        assert_eq!(logical_type.id(), LogicalTypeId::Variant);
+        assert_eq!(logical_type.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT);
+        assert_eq!(logical_type.num_children(), 0);
+        assert_eq!(format!("{logical_type:?}"), "Variant");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_result_decode_unsupported() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let err = match db
+            .prepare("SELECT 1 AS id, {'a': 42}::VARIANT AS variant_col")?
+            .query([])
+        {
+            Ok(_) => panic!("expected Variant query to fail"),
+            Err(err) => err,
+        };
+
+        assert_variant_decode_error(err, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_streaming_result_decode_unsupported() -> Result<()> {
+        use std::sync::Arc;
+
+        use arrow::datatypes::Schema;
+
+        let db = Connection::open_in_memory()?;
+        let err = match db
+            .prepare("SELECT 1 AS id, {'a': 42}::VARIANT AS variant_col")?
+            .stream_arrow([], Arc::new(Schema::empty()))
+        {
+            Ok(_) => panic!("expected Variant streaming query to fail"),
+            Err(err) => err,
+        };
+
+        assert_variant_decode_error(err, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_nested_variant_result_decode_unsupported() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let cases = [
+            "SELECT [123::VARIANT] AS variant_list",
+            "SELECT {'v': 123::VARIANT} AS variant_struct",
+            "SELECT map(['v'], [123::VARIANT]) AS variant_map",
+        ];
+
+        for sql in cases {
+            let err = match db.prepare(sql)?.query([]) {
+                Ok(_) => panic!("expected nested Variant query to fail for {sql}"),
+                Err(err) => err,
+            };
+            assert_variant_decode_error(err, 0);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_variant_parameter_delegates_to_duckdb() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE t (id INTEGER, variant_col VARIANT)", [])?;
+
+        db.execute("INSERT INTO t VALUES (?, ?)", crate::params![1, "hello"])?;
+
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM t WHERE variant_col IS NOT NULL", [], |row| {
+            row.get(0)
+        })?;
+        assert_eq!(count, 1);
         Ok(())
     }
 

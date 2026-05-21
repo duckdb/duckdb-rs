@@ -102,6 +102,8 @@ pub enum Type {
     Array(Box<Type>, u32),
     /// UNION
     Union,
+    /// VARIANT. See [`LogicalTypeId::Variant`](crate::core::LogicalTypeId::Variant).
+    Variant,
     /// Any
     Any,
 }
@@ -192,6 +194,7 @@ impl fmt::Display for Type {
             Self::Map(..) => f.pad("Map"),
             Self::Array(..) => f.pad("Array"),
             Self::Union => f.pad("Union"),
+            Self::Variant => f.pad("Variant"),
             Self::Any => f.pad("Any"),
         }
     }
