@@ -41,6 +41,7 @@ pub const DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL: DUCKDB_TYPE = 37;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL: DUCKDB_TYPE = 38;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS: DUCKDB_TYPE = 39;
 pub const DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY: DUCKDB_TYPE = 40;
+pub const DUCKDB_TYPE_DUCKDB_TYPE_VARIANT: DUCKDB_TYPE = 41;
 #[doc = "! An enum over DuckDB's internal types."]
 pub type DUCKDB_TYPE = ::std::os::raw::c_uint;
 #[doc = "! An enum over DuckDB's internal types."]
