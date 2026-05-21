@@ -38,9 +38,13 @@ sys.path.append(str(DUCKDB_SCRIPTS_DIR))
 import package_build
 
 
-def get_sources(extensions):
+def get_sources(extensions, default_linked_extensions=None):
+    kwargs = {}
+    if default_linked_extensions is not None:
+        kwargs["default_linked_extensions"] = default_linked_extensions
+
     (source_list, include_list, _) = package_build.build_package(
-        str(TARGET_DIR), extensions, False
+        str(TARGET_DIR), extensions, False, **kwargs
     )
     PACKAGE_BUILD_LOADER_PATH.unlink(missing_ok=True)
 
@@ -64,11 +68,13 @@ for e in EXTENSIONS:
         "include_dirs": sorted(include_list - base_include_list),
     }
 
-# Regenerate generated_extension_loader_package_build.cpp with ALL extensions.
+# Regenerate generated_extension_loader_package_build.cpp with ALL extension sources,
+# but default none of them to linked. build_bundled_cc.rs enables the Cargo
+# feature-selected subset with DUCKDB_EXTENSION_<NAME>_LINKED definitions.
 # The loop above calls get_sources() per-extension and cleans up package_build.py's
 # temporary loader each time. This final call still ensures the copied loader in
 # TARGET_DIR registers every extension.
-get_sources(EXTENSIONS)
+get_sources(EXTENSIONS, default_linked_extensions=[])
 
 manifest = {
     "base": {
