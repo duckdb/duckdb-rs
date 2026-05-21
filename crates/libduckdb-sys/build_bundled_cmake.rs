@@ -26,6 +26,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
+    println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_JEMALLOC");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_EXTENSION_LOAD");
     println!("cargo:rerun-if-env-changed=DISABLE_EXTENSION_LOAD");
     println!("cargo:rerun-if-env-changed=CMAKE_BUILD_TYPE");
@@ -92,11 +93,13 @@ pub fn main(_out_dir: &str, out_path: &Path) {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
 
-    // Always set explicitly so old CMake caches that skipped jemalloc do not
-    // keep forcing ENABLE_JEMALLOC=OFF. Upstream still gates jemalloc to
-    // supported 64-bit, non-musl Linux builds, so ON is a no-op elsewhere.
+    // Always set explicitly so old CMake caches do not keep stale allocator
+    // state. By default this enables jemalloc on DuckDB's supported 64-bit,
+    // non-musl Linux targets and remains a no-op elsewhere. The env var is an
+    // escape hatch back to DuckDB's standard allocator.
+    let disable_jemalloc = env_flag("DUCKDB_DISABLE_JEMALLOC");
     config.define("SKIP_EXTENSIONS", "");
-    config.define("ENABLE_JEMALLOC", "ON");
+    config.define("ENABLE_JEMALLOC", if disable_jemalloc { "OFF" } else { "ON" });
 
     // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
     // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` unless
