@@ -348,6 +348,36 @@ mod test {
     }
 
     #[test]
+    fn test_appender_variant_columns_delegate_to_duckdb() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, variant_col VARIANT)")?;
+
+        let mut app = db.appender("foo")?;
+        app.append_row(params![1, "hello"])?;
+        app.flush()?;
+
+        let mut app = db.appender_with_columns("foo", &["variant_col"])?;
+        app.append_row(params!["column_subset"])?;
+        app.flush()?;
+
+        let mut app = db.appender_with_columns("foo", &["id"])?;
+        app.add_column("variant_col")?;
+        app.append_row(params![3, "added_column"])?;
+        app.flush()?;
+
+        let mut app = db.appender_with_columns("foo", &["id"])?;
+        app.clear_columns()?;
+        app.append_row(params![4, "cleared_columns"])?;
+        app.flush()?;
+
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM foo WHERE variant_col IS NOT NULL", [], |row| {
+            row.get(0)
+        })?;
+        assert_eq!(count, 4);
+        Ok(())
+    }
+
+    #[test]
     fn test_append_unsupported_container_type_returns_error() -> Result<()> {
         use arrow::{array::ListArray, datatypes::Int32Type};
 

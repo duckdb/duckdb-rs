@@ -8,7 +8,7 @@ use crate::ffi::*;
 /// Logical Type Id
 /// <https://duckdb.org/docs/api/c/types>
 #[repr(u32)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LogicalTypeId {
     /// Invalid
@@ -91,6 +91,12 @@ pub enum LogicalTypeId {
     IntegerLiteral = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL,
     /// Time NS
     TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS,
+    /// VARIANT.
+    ///
+    /// This type is exposed for metadata. Decoding VARIANT result columns is
+    /// not supported because DuckDB does not expose C API helpers for decoding
+    /// VARIANT values.
+    Variant = DUCKDB_TYPE_DUCKDB_TYPE_VARIANT,
     /// DuckDB returned a type that this wrapper does not yet recognize
     Unsupported = u32::MAX,
 }
@@ -139,6 +145,7 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL => Self::StringLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL => Self::IntegerLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS => Self::TimeNs,
+            DUCKDB_TYPE_DUCKDB_TYPE_VARIANT => Self::Variant,
             // Unknown / forward compatible types
             _ => Self::Unsupported,
         }
@@ -187,8 +194,21 @@ impl Drop for LogicalTypeHandle {
 }
 
 impl From<LogicalTypeId> for LogicalTypeHandle {
-    /// Create a new [LogicalTypeHandle] from [LogicalTypeId]
+    /// Create a new [LogicalTypeHandle] from [LogicalTypeId].
+    ///
+    /// # Panics
+    ///
+    /// Panics for [`LogicalTypeId::Invalid`] and
+    /// [`LogicalTypeId::Unsupported`], which cannot be constructed as valid
+    /// logical types.
     fn from(id: LogicalTypeId) -> Self {
+        // TODO: Split DuckDB-returned type ids from constructible logical type
+        // ids so `Invalid` and `Unsupported` cannot reach this infallible
+        // conversion.
+        assert!(
+            !matches!(id, LogicalTypeId::Invalid | LogicalTypeId::Unsupported),
+            "LogicalTypeId::{id:?} cannot be used to construct a logical type"
+        );
         unsafe {
             Self {
                 ptr: duckdb_create_logical_type(id as u32),
@@ -315,6 +335,7 @@ impl LogicalTypeHandle {
             LogicalTypeId::Union => unsafe { duckdb_union_type_member_count(self.ptr) as usize },
             LogicalTypeId::List => 1,
             LogicalTypeId::Array => 1,
+            LogicalTypeId::Map => 2,
             _ => 0,
         }
     }
@@ -339,18 +360,44 @@ impl LogicalTypeHandle {
         }
     }
 
-    /// Logical type child by idx
+    /// Logical type child by idx.
+    ///
+    /// Panics if the logical type has no children, if `idx` is out of range,
+    /// or if the logical type is [`LogicalTypeId::Unsupported`].
     pub fn child(&self, idx: usize) -> Self {
         let c_logical_type = unsafe {
-            match self.id() {
-                LogicalTypeId::Struct => duckdb_struct_type_child_type(self.ptr, idx as u64),
-                LogicalTypeId::Union => duckdb_union_type_member_type(self.ptr, idx as u64),
-                LogicalTypeId::Array => duckdb_array_type_child_type(self.ptr),
-                LogicalTypeId::Unsupported => panic!("unsupported logical type {}", self.raw_id()),
-                _ => panic!("not a struct, union, or array"),
+            match (self.id(), idx) {
+                (LogicalTypeId::Struct, _) => duckdb_struct_type_child_type(self.ptr, idx as u64),
+                (LogicalTypeId::Union, _) => duckdb_union_type_member_type(self.ptr, idx as u64),
+                (LogicalTypeId::List, 0) => duckdb_list_type_child_type(self.ptr),
+                (LogicalTypeId::Array, 0) => duckdb_array_type_child_type(self.ptr),
+                (LogicalTypeId::Map, 0) => duckdb_map_type_key_type(self.ptr),
+                (LogicalTypeId::Map, 1) => duckdb_map_type_value_type(self.ptr),
+                (LogicalTypeId::Unsupported, _) => panic!("unsupported logical type {}", self.raw_id()),
+                (LogicalTypeId::List | LogicalTypeId::Array | LogicalTypeId::Map, _) => {
+                    panic!("child index {idx} out of range")
+                }
+                _ => panic!("logical type has no children"),
             }
         };
+        if c_logical_type.is_null() {
+            panic!("child index {idx} out of range");
+        }
         unsafe { Self::new(c_logical_type) }
+    }
+
+    pub(crate) fn contains_type_id(&self, id: LogicalTypeId) -> bool {
+        if self.id() == id {
+            return true;
+        }
+
+        for idx in 0..self.num_children() {
+            if self.child(idx).contains_type_id(id) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Alias of the logical type.
@@ -398,6 +445,28 @@ mod test {
     }
 
     #[test]
+    fn test_list_child() {
+        let child = LogicalTypeHandle::from(LogicalTypeId::Integer);
+        let list = LogicalTypeHandle::list(&child);
+
+        assert_eq!(list.id(), LogicalTypeId::List);
+        assert_eq!(list.num_children(), 1);
+        assert_eq!(list.child(0).id(), LogicalTypeId::Integer);
+    }
+
+    #[test]
+    fn test_map_children() {
+        let key = LogicalTypeHandle::from(LogicalTypeId::Varchar);
+        let value = LogicalTypeHandle::from(LogicalTypeId::Integer);
+        let map = LogicalTypeHandle::map(&key, &value);
+
+        assert_eq!(map.id(), LogicalTypeId::Map);
+        assert_eq!(map.num_children(), 2);
+        assert_eq!(map.child(0).id(), LogicalTypeId::Varchar);
+        assert_eq!(map.child(1).id(), LogicalTypeId::Integer);
+    }
+
+    #[test]
     fn test_decimal() {
         let typ = LogicalTypeHandle::decimal(10, 2);
 
@@ -412,6 +481,40 @@ mod test {
 
         assert_eq!(typ.decimal_width(), 0);
         assert_eq!(typ.decimal_scale(), 0);
+    }
+
+    #[test]
+    fn test_variant_type() {
+        let typ = LogicalTypeHandle::from(LogicalTypeId::Variant);
+
+        assert_eq!(typ.id(), LogicalTypeId::Variant);
+        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT);
+        assert_eq!(typ.num_children(), 0);
+        assert!(typ.contains_type_id(LogicalTypeId::Variant));
+        assert_eq!(format!("{typ:?}"), "Variant");
+    }
+
+    #[test]
+    fn test_nested_variant_type() {
+        let typ = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Variant));
+        let list_of_int = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Integer));
+
+        assert_eq!(typ.id(), LogicalTypeId::List);
+        assert_eq!(typ.child(0).id(), LogicalTypeId::Variant);
+        assert!(typ.contains_type_id(LogicalTypeId::Variant));
+        assert!(!list_of_int.contains_type_id(LogicalTypeId::Variant));
+    }
+
+    #[test]
+    #[should_panic(expected = "LogicalTypeId::Unsupported cannot be used to construct a logical type")]
+    fn test_unsupported_type_cannot_construct_logical_type() {
+        let _ = LogicalTypeHandle::from(LogicalTypeId::Unsupported);
+    }
+
+    #[test]
+    #[should_panic(expected = "LogicalTypeId::Invalid cannot be used to construct a logical type")]
+    fn test_invalid_type_cannot_construct_logical_type() {
+        let _ = LogicalTypeHandle::from(LogicalTypeId::Invalid);
     }
 
     #[test]
