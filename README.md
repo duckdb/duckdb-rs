@@ -150,7 +150,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "~1.10503.0", features = ["bundled"] }
+duckdb = { version = "~1.10503.1", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -189,7 +189,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "~1.10503.0", features = ["bundled"] }
+   duckdb = { version = "~1.10503.1", features = ["bundled"] }
    ```
 
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
@@ -203,16 +203,15 @@ You can adjust this behavior in a number of ways:
 
    Notes:
 
-   - `bundled-cmake` is *experimental* and requires a git/workspace checkout. It is not available from crates.io because the full `duckdb-sources` tree is not packaged there.
-   - `bundled-cmake` implies `bundled` (for conditional-compilation gates) but replaces the `cc` build backend with CMake. Enabling any CMake-only extension feature (e.g. `icu`) automatically activates `bundled-cmake`.
-   - `bundled-cmake` always links DuckDB's default static extensions (`core_functions` and `parquet`), so it also implies the `parquet` Cargo feature.
-   - The plain `bundled` backend uses DuckDB's standard allocator and does not build jemalloc. On supported 64-bit, non-musl Linux targets, `bundled-cmake` builds DuckDB with upstream's jemalloc allocator enabled; on other targets, DuckDB's CMake platform checks leave jemalloc disabled. Set `DUCKDB_DISABLE_JEMALLOC=1` in the build environment to force `bundled-cmake` to use DuckDB's standard allocator.
-   - Extension autoload/autoinstall are forced on to match the existing `bundled` backend, even though upstream CMake defaults are off. If `DUCKDB_DISABLE_EXTENSION_LOAD=1` is set, both defaults are forced off as well.
-   - When `ninja` is on `PATH`, the Ninja generator is preferred automatically. Set `CMAKE_GENERATOR` to override.
-   - Builds DuckDB in `Release` mode by default, even in Rust debug builds, to avoid DuckDB's much slower debug/sanitizer profile. Set `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE` to override. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
-   - Setting `DUCKDB_DISABLE_EXTENSION_LOAD=1` (or `DISABLE_EXTENSION_LOAD=1`) in the build environment compiles DuckDB without external extension install/load support. Statically linked extensions remain available.
-   - `DUCKDB_EXTENSION_CONFIGS` is not yet supported; the build fails fast rather than producing a broken binary.
-   - Use `cargo build -vv -F bundled-cmake` to surface CMake configure/build logs.
+   - `bundled-cmake` is *experimental* and requires a git/workspace checkout. Published crates omit the full `duckdb-sources` tree.
+   - It implies `bundled` for conditional-compilation gates, but uses CMake instead of the `cc` backend. Any CMake-only extension feature (e.g. `icu`) enables it automatically.
+   - It always links DuckDB's default static extensions (`core_functions` and `parquet`) and therefore implies the `parquet` Cargo feature.
+   - Plain `bundled` uses DuckDB's standard allocator and skips jemalloc. `bundled-cmake` enables upstream jemalloc on supported 64-bit, non-musl Linux targets. Other targets follow DuckDB's CMake checks. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
+   - Extension autoload/autoinstall are enabled to match `bundled`, despite upstream CMake defaults. Set `DUCKDB_DISABLE_EXTENSION_LOAD=1` or `DISABLE_EXTENSION_LOAD=1` to disable external extension install/load support and force autoload/autoinstall off. Statically linked extensions remain available.
+   - If `ninja` is on `PATH`, the build uses Ninja by default. Set `CMAKE_GENERATOR` to override.
+   - DuckDB builds in `Release` mode by default, even for Rust debug builds, avoiding DuckDB's much slower debug/sanitizer profile. Override with `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE`. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
+   - `DUCKDB_EXTENSION_CONFIGS` is unsupported. Setting it fails fast.
+   - Use `cargo build -vv -F bundled-cmake` for CMake configure/build logs.
 
 3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
 
