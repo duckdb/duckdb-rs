@@ -46,6 +46,10 @@ fn untar_archive(out_dir: &str) {
     let tar_gz = std::fs::File::open(path).expect("archive file");
     let tar = flate2::read::GzDecoder::new(tar_gz);
     let mut archive = tar::Archive::new(tar);
+    // These archives are generated for reproducibility, not source mtimes.
+    // Skipping mtime restoration also avoids Windows SetFileTime failures on
+    // filesystems such as FAT32, which cannot represent Unix epoch mtimes.
+    archive.set_preserve_mtime(false);
     archive.unpack(out_dir).expect("archive");
 }
 

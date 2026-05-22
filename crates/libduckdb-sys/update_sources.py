@@ -22,6 +22,11 @@ PACKAGE_BUILD_LOADER_PATH = (
 )
 SRC_DIR = SCRIPT_DIR / "src"
 
+# Keep the timestamp reproducible while staying within the FAT/FAT32 date
+# range used by some Windows target directories. Unix epoch mtimes can fail
+# when archive tools restore them through SetFileTime.
+ARCHIVE_MTIME = 946684800  # 2000-01-01T00:00:00Z
+
 # List of extensions' sources to grab. Technically, these sources will be compiled
 # but not included in the final build unless they're explicitly enabled.
 EXTENSIONS = ["core_functions", "parquet", "json"]
@@ -109,7 +114,7 @@ def normalized_tarinfo(path):
     tarinfo.gid = 0
     tarinfo.uname = ""
     tarinfo.gname = ""
-    tarinfo.mtime = 0
+    tarinfo.mtime = ARCHIVE_MTIME
     tarinfo.pax_headers = {}
 
     if path.is_symlink():
