@@ -151,7 +151,13 @@ Use the top-level upgrade script for DuckDB version updates:
 ./upgrade.sh
 ```
 
-This updates crate versions, updates DuckDB version references, and then calls `./crates/libduckdb-sys/upgrade.sh` to regenerate bindings.
+This updates the workspace crate version, the exact workspace dependency pins
+that keep sibling crates in lockstep, README `Cargo.toml` examples, and DuckDB
+version references such as workflow tags and README download URLs. It then calls
+`./crates/libduckdb-sys/upgrade.sh` to regenerate bindings.
+
+DuckDB's C API may occasionally have breaking changes, so version updates may
+also require code fixes.
 
 For a duckdb-rs patch release that does not change the bundled DuckDB version:
 
@@ -159,6 +165,6 @@ For a duckdb-rs patch release that does not change the bundled DuckDB version:
 ./upgrade.sh --patch
 ```
 
-Patch releases only update crate versions and `Cargo.lock`. They do not update the DuckDB submodule, generated bindings, or DuckDB download tags.
-
-DuckDB's C API may occasionally have breaking changes, so version updates may also require code fixes.
+Patch releases only update crate versions, exact workspace dependency pins,
+README `Cargo.toml` examples, and `Cargo.lock`. They do not update the DuckDB
+submodule, generated bindings, or DuckDB download tags.

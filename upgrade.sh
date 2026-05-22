@@ -23,8 +23,9 @@ Usage:
 
 Without arguments, upgrade to the latest DuckDB release.
 With DUCKDB_VERSION, upgrade bundled DuckDB and reset the crate patch to 0.
-With --patch, increment only the duckdb-rs crate patch version and leave DuckDB
-sources, generated bindings, and DuckDB download tags unchanged.
+Full upgrades also update workflow and README download URLs and regenerate
+bindings. With --patch, increment only the duckdb-rs crate patch version and
+leave DuckDB sources, generated bindings, and DuckDB download tags unchanged.
 EOF
 }
 
@@ -50,6 +51,11 @@ duckdb_version_to_crate_version() {
     printf '%s.%d%02d%02d.0' "$CRATE_MAJOR" "$DUCKDB_MAJOR" "$DUCKDB_MINOR" "$DUCKDB_PATCH"
 }
 
+valid_duckdb_version() {
+    local DUCKDB_VERSION=${1#v}
+    [[ "$DUCKDB_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
 next_crate_patch_version() {
     local CRATE_VERSION=$1
     local MAJOR ENCODED PATCH
@@ -62,6 +68,8 @@ next_crate_patch_version() {
 }
 
 update_crate_versions() {
+    cargo metadata --format-version 1 >/dev/null
+
     sed_inplace "s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" \
         Cargo.toml \
         crates/duckdb/Cargo.toml \
@@ -70,6 +78,13 @@ update_crate_versions() {
 
     # Update README Cargo.toml examples, not prose/history.
     sed_inplace "/version = \"/s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" README.md
+
+    local UPDATED_CRATE_VERSION
+    UPDATED_CRATE_VERSION=$(current_workspace_version)
+    if [ "$UPDATED_CRATE_VERSION" != "$TARGET_CRATE_VERSION" ]; then
+        echo "Expected workspace version $TARGET_CRATE_VERSION, found $UPDATED_CRATE_VERSION" >&2
+        exit 1
+    fi
 
     # Let Cargo rewrite Cargo.lock from the updated manifests instead of editing it as text.
     cargo metadata --format-version 1 >/dev/null
@@ -115,6 +130,11 @@ if [ "$PATCH_MODE" -eq 1 ]; then
 fi
 
 DUCKDB_VERSION=${1:-$(get_latest_release "duckdb/duckdb")}
+if ! valid_duckdb_version "$DUCKDB_VERSION"; then
+    echo "Invalid DuckDB version: $DUCKDB_VERSION" >&2
+    usage >&2
+    exit 1
+fi
 DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
 TARGET_CRATE_VERSION=$(duckdb_version_to_crate_version "$DUCKDB_VERSION" "$CRATE_MAJOR")
 
