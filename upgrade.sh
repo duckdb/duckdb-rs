@@ -15,6 +15,19 @@ get_latest_release() {
     gh api "repos/$REPO/releases/latest" --jq '.tag_name'
 }
 
+usage() {
+    cat <<'EOF'
+Usage:
+  ./upgrade.sh [DUCKDB_VERSION]
+  ./upgrade.sh --patch
+
+Without arguments, upgrade to the latest DuckDB release.
+With DUCKDB_VERSION, upgrade bundled DuckDB and reset the crate patch to 0.
+With --patch, increment only the duckdb-rs crate patch version and leave DuckDB
+sources, generated bindings, and DuckDB download tags unchanged.
+EOF
+}
+
 current_workspace_version() {
     grep '^version = "' Cargo.toml | head -n1 | sed -E 's/version = "([^"]+)"/\1/'
 }
@@ -37,14 +50,73 @@ duckdb_version_to_crate_version() {
     printf '%s.%d%02d%02d.0' "$CRATE_MAJOR" "$DUCKDB_MAJOR" "$DUCKDB_MINOR" "$DUCKDB_PATCH"
 }
 
-DUCKDB_VERSION=${1:-$(get_latest_release "duckdb/duckdb")}
-DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
+next_crate_patch_version() {
+    local CRATE_VERSION=$1
+    local MAJOR ENCODED PATCH
+    IFS=. read -r MAJOR ENCODED PATCH <<<"$CRATE_VERSION"
+    if [[ ! "$MAJOR" =~ ^[0-9]+$ || ! "$ENCODED" =~ ^[0-9]+$ || ! "$PATCH" =~ ^[0-9]+$ ]]; then
+        echo "Invalid current crate version: $CRATE_VERSION" >&2
+        exit 1
+    fi
+    printf '%s.%s.%s' "$MAJOR" "$ENCODED" "$((10#$PATCH + 1))"
+}
+
+update_crate_versions() {
+    sed_inplace "s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" \
+        Cargo.toml \
+        crates/duckdb/Cargo.toml \
+        crates/libduckdb-sys/Cargo.toml \
+        crates/duckdb-loadable-macros/Cargo.toml
+
+    # Update README Cargo.toml examples, not prose/history.
+    sed_inplace "/version = \"/s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" README.md
+
+    # Let Cargo rewrite Cargo.lock from the updated manifests instead of editing it as text.
+    cargo metadata --format-version 1 >/dev/null
+}
+
+PATCH_MODE=0
+
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    --patch)
+        PATCH_MODE=1
+        if [ $# -ne 1 ]; then
+            usage >&2
+            exit 1
+        fi
+        ;;
+    -*)
+        usage >&2
+        exit 1
+        ;;
+esac
+
+if [ "$PATCH_MODE" -eq 0 ] && [ $# -gt 1 ]; then
+    usage >&2
+    exit 1
+fi
+
 CURRENT_CRATE_VERSION=$(current_workspace_version)
 CURRENT_DUCKDB_VERSION=$(crate_version_to_duckdb_version "$CURRENT_CRATE_VERSION")
 CRATE_MAJOR=$(echo "$CURRENT_CRATE_VERSION" | cut -d. -f1)
-TARGET_CRATE_VERSION=$(duckdb_version_to_crate_version "$DUCKDB_VERSION" "$CRATE_MAJOR")
 CURRENT_CRATE_VERSION_PATTERN=${CURRENT_CRATE_VERSION//./\\.}
 CURRENT_DUCKDB_VERSION_PATTERN=${CURRENT_DUCKDB_VERSION//./\\.}
+
+if [ "$PATCH_MODE" -eq 1 ]; then
+    TARGET_CRATE_VERSION=$(next_crate_patch_version "$CURRENT_CRATE_VERSION")
+    echo "Start crate patch release for DuckDB $CURRENT_DUCKDB_VERSION"
+    echo "Update crate version from $CURRENT_CRATE_VERSION to $TARGET_CRATE_VERSION"
+    update_crate_versions
+    exit 0
+fi
+
+DUCKDB_VERSION=${1:-$(get_latest_release "duckdb/duckdb")}
+DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
+TARGET_CRATE_VERSION=$(duckdb_version_to_crate_version "$DUCKDB_VERSION" "$CRATE_MAJOR")
 
 if [ "$DUCKDB_VERSION" = "$CURRENT_DUCKDB_VERSION" ]; then
     echo "Already up to date, latest DuckDB version is $DUCKDB_VERSION and workspace version is $CURRENT_CRATE_VERSION"
@@ -54,20 +126,12 @@ fi
 echo "Start to upgrade DuckDB from $CURRENT_DUCKDB_VERSION to $DUCKDB_VERSION"
 echo "Update crate version from $CURRENT_CRATE_VERSION to $TARGET_CRATE_VERSION"
 
-sed_inplace "s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" \
-    Cargo.toml \
-    crates/duckdb/Cargo.toml \
-    crates/libduckdb-sys/Cargo.toml \
-    crates/duckdb-loadable-macros/Cargo.toml
+update_crate_versions
 
 sed_inplace "s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" \
     .github/workflows/rust.yaml
 
-# Update README: only Cargo.toml examples and download URLs, not prose/history.
-sed_inplace "/version = \"/s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" README.md
+# Update README download URLs, not prose/history.
 sed_inplace "/releases\/download/s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" README.md
-
-# Let Cargo rewrite Cargo.lock from the updated manifests instead of editing it as text.
-cargo metadata --format-version 1 >/dev/null
 
 exec ./crates/libduckdb-sys/upgrade.sh "$DUCKDB_VERSION"

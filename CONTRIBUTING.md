@@ -141,14 +141,24 @@ cd ~/github/duckdb-rs
 ASAN_OPTIONS=detect_leaks=1 ASAN_SYMBOLIZER_PATH=/usr/local/opt/llvm/bin/llvm-symbolizer cargo test --features bundled -- --nocapture
 ```
 
-### Update to new version
+### Update to a new version
 
-Everytime duckdb release to a new version, we also need to release a new version.
+When DuckDB releases a new version, duckdb-rs needs a matching release.
 
-We can use the scripts to do the upgrades:
+Use the top-level upgrade script for DuckDB version updates:
+
 ```shell
 ./upgrade.sh
 ```
-Which use sed to update the version number and then call `./libduckdb-sys/upgrade.sh` to generated new bindings.
 
-We may need to fix any error as duckdb's c-api may have breaking changes occasionally.
+This updates crate versions, updates DuckDB version references, and then calls `./crates/libduckdb-sys/upgrade.sh` to regenerate bindings.
+
+For a duckdb-rs patch release that does not change the bundled DuckDB version:
+
+```shell
+./upgrade.sh --patch
+```
+
+Patch releases only update crate versions and `Cargo.lock`. They do not update the DuckDB submodule, generated bindings, or DuckDB download tags.
+
+DuckDB's C API may occasionally have breaking changes, so version updates may also require code fixes.
