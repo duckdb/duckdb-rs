@@ -136,6 +136,7 @@ These extensions are only available through the CMake build backend and imply `b
 
 Starting with DuckDB `v1.5.0`, the duckdb-rs version encodes the DuckDB version in its second semver component.
 The format is `1.MAJOR_MINOR_PATCH.x`, e.g., DuckDB `v1.5.0` maps to duckdb-rs `1.10500.x`.
+Use a tilde requirement to receive duckdb-rs patch releases without automatically moving to a different bundled DuckDB version.
 
 ### Using stable releases from crates.io
 
@@ -149,7 +150,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "=1.10503.0", features = ["bundled"] }
+duckdb = { version = "~1.10503.0", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -188,7 +189,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "1.10503.0", features = ["bundled"] }
+   duckdb = { version = "~1.10503.0", features = ["bundled"] }
    ```
 
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
