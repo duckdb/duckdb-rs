@@ -55,6 +55,40 @@ pub struct ArrowInitData {
     vector_size: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RowSlice {
+    offset: usize,
+    len: usize,
+}
+
+impl ArrowInitData {
+    fn take_slice(&self, num_rows: usize) -> Option<RowSlice> {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        let vector_size = self.vector_size;
+        // DuckDB currently drives this scan serially, but if parallel scans are
+        // enabled later, this atomic read-modify-write makes each claimed row
+        // window disjoint. Relaxed ordering is enough because each RowSlice is
+        // self-contained and no other shared state is published through the atomic.
+        let offset = self
+            .offset
+            .fetch_update(Relaxed, Relaxed, |offset| {
+                if offset >= num_rows {
+                    None
+                } else {
+                    Some(offset.saturating_add(vector_size).min(num_rows))
+                }
+            })
+            // `fetch_update` retries compare-exchange contention internally.
+            // Err only means the closure observed completion and declined to update.
+            .ok()?;
+        Some(RowSlice {
+            offset,
+            len: (num_rows - offset).min(vector_size),
+        })
+    }
+}
+
 /// The Arrow table function.
 pub struct ArrowVTab;
 
@@ -165,26 +199,18 @@ impl VTab for ArrowVTab {
     }
 
     fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
-        use std::sync::atomic::Ordering::Relaxed;
-
         let init_info = func.get_init_data();
         let bind_info = func.get_bind_data();
 
         let rb = &bind_info.rb;
         let num_rows = rb.num_rows();
-        // ArrowVTab uses DuckDB's default single-threaded scan, so Relaxed
-        // load/store is sufficient for the per-scan offset.
-        let offset = init_info.offset.load(Relaxed);
-
-        if offset >= num_rows {
+        let Some(slice) = init_info.take_slice(num_rows) else {
             output.set_len(0);
             return Ok(());
-        }
+        };
 
         // Emit at most one vector's worth of rows per call (slicing is zero-copy)
-        let slice_len = (num_rows - offset).min(init_info.vector_size);
-        record_batch_to_duckdb_data_chunk(&rb.slice(offset, slice_len), output)?;
-        init_info.offset.store(offset + slice_len, Relaxed);
+        record_batch_to_duckdb_data_chunk(&rb.slice(slice.offset, slice.len), output)?;
 
         Ok(())
     }
@@ -1205,7 +1231,8 @@ fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) 
 #[cfg(test)]
 mod test {
     use super::{
-        ArrowVTab, arrow_arraydata_to_query_params, arrow_ffi_to_query_params, arrow_recordbatch_to_query_params,
+        ArrowInitData, ArrowVTab, RowSlice, arrow_arraydata_to_query_params, arrow_ffi_to_query_params,
+        arrow_recordbatch_to_query_params,
     };
     use crate::{Connection, Result};
     use arrow::{
@@ -1226,7 +1253,10 @@ mod test {
         ffi::{FFI_ArrowArray, FFI_ArrowSchema},
         record_batch::RecordBatch,
     };
-    use std::{error::Error, sync::Arc};
+    use std::{
+        error::Error,
+        sync::{Arc, Barrier, atomic::AtomicUsize},
+    };
 
     fn example_record_batch() -> RecordBatch {
         let schema = Schema::new(vec![
@@ -1243,6 +1273,102 @@ mod test {
             ],
         )
         .expect("failed to create record batch")
+    }
+
+    // Mark rows straddling vector-size slice boundaries as NULL so bitmap offsets
+    // are exercised when the source batch is sliced.
+    fn boundary_null(i: usize, vector_size: usize) -> bool {
+        i == vector_size.saturating_sub(1) || i == vector_size || i == vector_size.saturating_add(1)
+    }
+
+    fn large_record_batch(n: usize, vector_size: usize) -> RecordBatch {
+        let ids: Vec<i32> = (0..n as i32).collect();
+        let vals: Vec<Option<String>> = (0..n)
+            .map(|i| {
+                if boundary_null(i, vector_size) {
+                    None
+                } else {
+                    Some(format!("val-{i:05}"))
+                }
+            })
+            .collect();
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("val", DataType::Utf8, true),
+        ]));
+        RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(ids)) as ArrayRef,
+                Arc::new(StringArray::from(vals)) as ArrayRef,
+            ],
+        )
+        .expect("failed to create record batch")
+    }
+
+    #[test]
+    fn test_arrow_init_data_take_slice_partitions_rows_concurrently() {
+        let num_rows = 10_000usize;
+        let thread_count = 16;
+        let init = Arc::new(ArrowInitData {
+            offset: AtomicUsize::new(0),
+            vector_size: 1,
+        });
+        let start = Arc::new(Barrier::new(thread_count));
+
+        let mut handles = Vec::new();
+        for _ in 0..thread_count {
+            let init = Arc::clone(&init);
+            let start = Arc::clone(&start);
+            handles.push(std::thread::spawn(move || {
+                start.wait();
+
+                let mut slices = Vec::new();
+                while let Some(slice) = init.take_slice(num_rows) {
+                    assert!(slice.len > 0);
+                    assert!(slice.offset < num_rows);
+                    assert!(slice.offset + slice.len <= num_rows);
+                    slices.push(slice);
+                }
+                slices
+            }));
+        }
+
+        let mut slices = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("slice worker panicked"))
+            .collect::<Vec<_>>();
+        slices.sort_unstable_by_key(|slice| slice.offset);
+
+        assert_eq!(slices.len(), num_rows);
+        let mut next_offset = 0;
+        for slice in slices {
+            assert_eq!(slice.offset, next_offset);
+            next_offset += slice.len;
+        }
+        assert_eq!(next_offset, num_rows);
+        assert!(init.take_slice(num_rows).is_none());
+    }
+
+    #[test]
+    fn test_arrow_init_data_take_slice_handles_partial_tail() {
+        let init = ArrowInitData {
+            offset: AtomicUsize::new(0),
+            vector_size: 4,
+        };
+
+        assert_eq!(init.take_slice(9), Some(RowSlice { offset: 0, len: 4 }));
+        assert_eq!(init.take_slice(9), Some(RowSlice { offset: 4, len: 4 }));
+        assert_eq!(init.take_slice(9), Some(RowSlice { offset: 8, len: 1 }));
+        assert_eq!(init.take_slice(9), None);
+        assert_eq!(init.take_slice(9), None);
+
+        let empty = ArrowInitData {
+            offset: AtomicUsize::new(0),
+            vector_size: 4,
+        };
+        assert_eq!(empty.take_slice(0), None);
+        assert_eq!(empty.take_slice(0), None);
     }
 
     #[test]
@@ -1269,26 +1395,26 @@ mod test {
     fn test_vtab_arrow_large_record_batch() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ArrowVTab>("arrow")?;
+        let vector_size = unsafe { crate::ffi::duckdb_vector_size() } as usize;
+        assert!(vector_size > 0);
+
+        let two_vectors = vector_size.checked_mul(2).expect("vector size overflow");
+        let one_over = vector_size.checked_add(1).expect("vector size overflow");
+        let partial_tail = vector_size / 2;
+        let with_tail = two_vectors.checked_add(partial_tail).expect("vector size overflow");
 
         // Cover empty input, small input, vector-size boundary cases, and a tail
         // after multiple full vectors.
-        for n in [0usize, 1, 2047, 2048, 2049, 4096, 5000] {
-            let ids: Vec<i32> = (0..n as i32).collect();
-            let vals: Vec<String> = (0..n).map(|i| format!("val-{i:05}")).collect();
-            let schema = Arc::new(Schema::new(vec![
-                Field::new("id", DataType::Int32, false),
-                Field::new("val", DataType::Utf8, false),
-            ]));
-            let batch = RecordBatch::try_new(
-                schema,
-                vec![
-                    Arc::new(Int32Array::from(ids)) as ArrayRef,
-                    Arc::new(StringArray::from(vals)) as ArrayRef,
-                ],
-            )
-            .expect("failed to create record batch");
-
-            let param = arrow_recordbatch_to_query_params(batch);
+        for n in [
+            0usize,
+            1,
+            vector_size.saturating_sub(1),
+            vector_size,
+            one_over,
+            two_vectors,
+            with_tail,
+        ] {
+            let param = arrow_recordbatch_to_query_params(large_record_batch(n, vector_size));
             let rbs: Vec<RecordBatch> = db
                 .prepare("SELECT id, val FROM arrow(?, ?) ORDER BY id")?
                 .query_arrow(param)?
@@ -1315,18 +1441,31 @@ mod test {
                 "row order/content mismatch for n={n}"
             );
 
-            let vals: Vec<String> = rbs
+            let vals: Vec<Option<String>> = rbs
                 .iter()
                 .flat_map(|rb| {
-                    let vals = rb.column(1).as_any().downcast_ref::<StringArray>().unwrap();
-                    (0..vals.len()).map(|i| vals.value(i).to_string()).collect::<Vec<_>>()
+                    let val = rb.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+                    (0..val.len())
+                        .map(|i| {
+                            if val.is_null(i) {
+                                None
+                            } else {
+                                Some(val.value(i).to_string())
+                            }
+                        })
+                        .collect::<Vec<_>>()
                 })
                 .collect();
-            assert_eq!(
-                vals,
-                (0..n).map(|i| format!("val-{i:05}")).collect::<Vec<_>>(),
-                "string content mismatch for n={n}"
-            );
+            let expected_vals: Vec<Option<String>> = (0..n)
+                .map(|i| {
+                    if boundary_null(i, vector_size) {
+                        None
+                    } else {
+                        Some(format!("val-{i:05}"))
+                    }
+                })
+                .collect();
+            assert_eq!(vals, expected_vals, "null/value mismatch for n={n}");
         }
         Ok(())
     }
