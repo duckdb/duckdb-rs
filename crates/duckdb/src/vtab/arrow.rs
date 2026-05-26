@@ -44,13 +44,15 @@ pub struct ArrowBindData {
 ///
 /// DuckDB drives table functions with a pull model: [`ArrowVTab::func`] is
 /// called repeatedly and may emit at most one `DataChunk` per call. DuckDB
-/// reports that chunk capacity through `duckdb_vector_size()`. This offset lets
-/// each call slice the next window of rows, so batches larger than the vector
-/// size are streamed across multiple calls instead of overflowing a single
-/// chunk.
+/// reports that chunk capacity through `duckdb_vector_size()`, which returns
+/// DuckDB's compile-time `STANDARD_VECTOR_SIZE`. Capturing that capacity here
+/// lets each call slice the next window of rows, so batches larger than the
+/// vector size are streamed across multiple calls instead of overflowing a
+/// single chunk.
 #[repr(C)]
 pub struct ArrowInitData {
     offset: AtomicUsize,
+    vector_size: usize,
 }
 
 /// The Arrow table function.
@@ -151,8 +153,14 @@ impl VTab for ArrowVTab {
     }
 
     fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        let vector_size = unsafe { crate::ffi::duckdb_vector_size() } as usize;
+        if vector_size == 0 {
+            return Err("DuckDB vector size must be greater than zero".into());
+        }
+
         Ok(ArrowInitData {
             offset: AtomicUsize::new(0),
+            vector_size,
         })
     }
 
@@ -174,8 +182,7 @@ impl VTab for ArrowVTab {
         }
 
         // Emit at most one vector's worth of rows per call (slicing is zero-copy)
-        let vector_size = unsafe { crate::ffi::duckdb_vector_size() } as usize;
-        let slice_len = (num_rows - offset).min(vector_size);
+        let slice_len = (num_rows - offset).min(init_info.vector_size);
         record_batch_to_duckdb_data_chunk(&rb.slice(offset, slice_len), output)?;
         init_info.offset.store(offset + slice_len, Relaxed);
 
