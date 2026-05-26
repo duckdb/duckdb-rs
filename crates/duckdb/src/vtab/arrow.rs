@@ -1,5 +1,5 @@
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
-use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicUsize};
 
 use crate::{
     core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector},
@@ -28,16 +28,31 @@ use arrow::{
 use libduckdb_sys::{duckdb_date, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector};
 use num::{ToPrimitive, cast::AsPrimitive};
 
-/// A pointer to the Arrow record batch for the table function.
+/// The Arrow record batch for the table function.
+///
+/// Bind data is shared across `func` calls and should be treated as read-only.
+/// That is enough for `RecordBatch`: Arrow batches are immutable containers of
+/// shared array data, and the `VTab::BindData: Send + Sync` bound requires this
+/// value to be safe to share. The mutable scan position lives in
+/// `ArrowInitData.offset`, so the batch itself does not need a `Mutex`.
 #[repr(C)]
 pub struct ArrowBindData {
-    rb: Mutex<RecordBatch>,
+    rb: RecordBatch,
 }
 
-/// Keeps track of whether the Arrow record batch has been consumed.
+/// Tracks how many rows of the Arrow record batch have been emitted so far.
+///
+/// DuckDB drives table functions with a pull model: [`ArrowVTab::func`] is
+/// called repeatedly and may emit at most one `DataChunk` per call. DuckDB
+/// reports that chunk capacity through `duckdb_vector_size()`, which returns
+/// DuckDB's compile-time `STANDARD_VECTOR_SIZE`. Capturing that capacity here
+/// lets each call slice the next window of rows, so batches larger than the
+/// vector size are streamed across multiple calls instead of overflowing a
+/// single chunk.
 #[repr(C)]
 pub struct ArrowInitData {
-    done: AtomicBool,
+    offset: AtomicUsize,
+    vector_size: usize,
 }
 
 /// The Arrow table function.
@@ -134,26 +149,42 @@ impl VTab for ArrowVTab {
             bind.add_result_column(name, logical_type);
         }
 
-        Ok(ArrowBindData { rb: Mutex::new(rb) })
+        Ok(ArrowBindData { rb })
     }
 
     fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+        let vector_size = unsafe { crate::ffi::duckdb_vector_size() } as usize;
+        if vector_size == 0 {
+            return Err("DuckDB vector size must be greater than zero".into());
+        }
+
         Ok(ArrowInitData {
-            done: AtomicBool::new(false),
+            offset: AtomicUsize::new(0),
+            vector_size,
         })
     }
 
     fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
+        use std::sync::atomic::Ordering::Relaxed;
+
         let init_info = func.get_init_data();
         let bind_info = func.get_bind_data();
 
-        if init_info.done.load(std::sync::atomic::Ordering::Relaxed) {
+        let rb = &bind_info.rb;
+        let num_rows = rb.num_rows();
+        // ArrowVTab uses DuckDB's default single-threaded scan, so Relaxed
+        // load/store is sufficient for the per-scan offset.
+        let offset = init_info.offset.load(Relaxed);
+
+        if offset >= num_rows {
             output.set_len(0);
-        } else {
-            let rb = bind_info.rb.lock().unwrap();
-            record_batch_to_duckdb_data_chunk(&rb, output)?;
-            init_info.done.store(true, std::sync::atomic::Ordering::Relaxed);
+            return Ok(());
         }
+
+        // Emit at most one vector's worth of rows per call (slicing is zero-copy)
+        let slice_len = (num_rows - offset).min(init_info.vector_size);
+        record_batch_to_duckdb_data_chunk(&rb.slice(offset, slice_len), output)?;
+        init_info.offset.store(offset + slice_len, Relaxed);
 
         Ok(())
     }
@@ -1231,6 +1262,72 @@ mod test {
         let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
         assert_eq!(column.len(), 1);
         assert_eq!(column.value(0), i128::from(30000));
+        Ok(())
+    }
+
+    #[test]
+    fn test_vtab_arrow_large_record_batch() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        // Cover empty input, small input, vector-size boundary cases, and a tail
+        // after multiple full vectors.
+        for n in [0usize, 1, 2047, 2048, 2049, 4096, 5000] {
+            let ids: Vec<i32> = (0..n as i32).collect();
+            let vals: Vec<String> = (0..n).map(|i| format!("val-{i:05}")).collect();
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("id", DataType::Int32, false),
+                Field::new("val", DataType::Utf8, false),
+            ]));
+            let batch = RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(Int32Array::from(ids)) as ArrayRef,
+                    Arc::new(StringArray::from(vals)) as ArrayRef,
+                ],
+            )
+            .expect("failed to create record batch");
+
+            let param = arrow_recordbatch_to_query_params(batch);
+            let rbs: Vec<RecordBatch> = db
+                .prepare("SELECT id, val FROM arrow(?, ?) ORDER BY id")?
+                .query_arrow(param)?
+                .collect();
+
+            let total: usize = rbs.iter().map(|rb| rb.num_rows()).sum();
+            assert_eq!(total, n, "row count mismatch for n={n}");
+
+            // Verify every row survives the slicing in order, across chunk boundaries.
+            let ids: Vec<i32> = rbs
+                .iter()
+                .flat_map(|rb| {
+                    rb.column(0)
+                        .as_any()
+                        .downcast_ref::<Int32Array>()
+                        .unwrap()
+                        .values()
+                        .to_vec()
+                })
+                .collect();
+            assert_eq!(
+                ids,
+                (0..n as i32).collect::<Vec<_>>(),
+                "row order/content mismatch for n={n}"
+            );
+
+            let vals: Vec<String> = rbs
+                .iter()
+                .flat_map(|rb| {
+                    let vals = rb.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+                    (0..vals.len()).map(|i| vals.value(i).to_string()).collect::<Vec<_>>()
+                })
+                .collect();
+            assert_eq!(
+                vals,
+                (0..n).map(|i| format!("val-{i:05}")).collect::<Vec<_>>(),
+                "string content mismatch for n={n}"
+            );
+        }
         Ok(())
     }
 
