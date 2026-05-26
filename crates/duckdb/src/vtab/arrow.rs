@@ -28,10 +28,16 @@ use arrow::{
 use libduckdb_sys::{duckdb_date, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector};
 use num::{ToPrimitive, cast::AsPrimitive};
 
-/// A pointer to the Arrow record batch for the table function.
+/// The Arrow record batch for the table function.
+///
+/// Bind data is shared across `func` calls and should be treated as read-only.
+/// That is enough for `RecordBatch`: Arrow batches are immutable containers of
+/// shared array data, and the `VTab::BindData: Send + Sync` bound requires this
+/// value to be safe to share. The mutable scan position lives in
+/// `ArrowInitData.offset`, so the batch itself does not need a `Mutex`.
 #[repr(C)]
 pub struct ArrowBindData {
-    rb: Mutex<RecordBatch>,
+    rb: RecordBatch,
 }
 
 /// Tracks how many rows of the Arrow record batch have been emitted so far.
@@ -141,7 +147,7 @@ impl VTab for ArrowVTab {
             bind.add_result_column(name, logical_type);
         }
 
-        Ok(ArrowBindData { rb: Mutex::new(rb) })
+        Ok(ArrowBindData { rb })
     }
 
     fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
@@ -156,7 +162,7 @@ impl VTab for ArrowVTab {
         let init_info = func.get_init_data();
         let bind_info = func.get_bind_data();
 
-        let rb = bind_info.rb.lock().unwrap();
+        let rb = &bind_info.rb;
         let num_rows = rb.num_rows();
         // ArrowVTab uses DuckDB's default single-threaded scan, so Relaxed
         // load/store is sufficient for the per-scan offset.
