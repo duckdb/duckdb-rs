@@ -607,6 +607,15 @@ mod bindings {
             .header(header.clone())
             .allowlist_item(r#"(\w*duckdb\w*)"#)
             .allowlist_type("idx_t")
+            // duckdb.h forward-declares these Arrow C Data Interface structs.
+            // Bindgen would otherwise generate opaque zero-sized Rust types,
+            // but the new Arrow conversion APIs need concrete caller-allocated
+            // layouts. Define them in src/arrow_c_data.rs and make them visible
+            // to generated bindings through src/lib.rs instead of adding an
+            // arrow-rs dependency here.
+            // Spec: https://arrow.apache.org/docs/format/CDataInterface.html
+            .blocklist_type("ArrowArray")
+            .blocklist_type("ArrowSchema")
             .layout_tests(false) // causes problems on WASM builds
             .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
