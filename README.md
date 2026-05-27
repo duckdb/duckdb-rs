@@ -82,7 +82,7 @@ The following [examples](crates/duckdb/examples) demonstrate various features an
 - **appender** - Bulk data insertion using the appender API with transactions.
 - **parquet** - Reading Parquet files directly using DuckDB's Parquet extension.
 - **repl** - Interactive SQL REPL.
-- **hello-ext** - A loadable DuckDB extension.
+- **hello-ext** - A DuckDB extension written in Rust (see [Building and loading extensions](#building-and-loading-extensions)).
 
 Run any example with `cargo run --example <name>`.
 
@@ -126,9 +126,9 @@ These extensions are only available through the CMake build backend and imply `b
 ### Build configuration
 
 - `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
-- `bundled-cmake` - *Experimental*. Builds DuckDB via its upstream CMake build system instead of `cc`. Requires a duckdb-rs checkout (not available from crates.io). See [step 2](#notes-on-building-duckdb-and-libduckdb-sys) below for details.
+- `bundled-cmake` - _Experimental_. Builds DuckDB via its upstream CMake build system instead of `cc`. Requires a duckdb-rs checkout (not available from crates.io). See [step 2](#notes-on-building-duckdb-and-libduckdb-sys) below for details.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
-- `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development.
+- `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development. Only enable this when building an extension, never for a client application - see [Database client or extension?](#database-client-or-extension)
 
 ## Installation
 
@@ -202,8 +202,7 @@ You can adjust this behavior in a number of ways:
    ```
 
    Notes:
-
-   - `bundled-cmake` is *experimental* and requires a git/workspace checkout. Published crates omit the full `duckdb-sources` tree.
+   - `bundled-cmake` is _experimental_ and requires a git/workspace checkout. Published crates omit the full `duckdb-sources` tree.
    - It implies `bundled` for conditional-compilation gates, but uses CMake instead of the `cc` backend. Any CMake-only extension feature (e.g. `icu`) enables it automatically.
    - It always links DuckDB's default static extensions (`core_functions` and `parquet`) and therefore implies the `parquet` Cargo feature.
    - Plain `bundled` uses DuckDB's standard allocator and skips jemalloc. `bundled-cmake` enables upstream jemalloc on supported 64-bit, non-musl Linux targets. Other targets follow DuckDB's CMake checks. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
@@ -255,6 +254,8 @@ You can adjust this behavior in a number of ways:
 
 When none of the options above are used, the build script falls back to this discovery path and will emit the appropriate `cargo:rustc-link-lib` directives if DuckDB is found on your system.
 
+Cross-compiling with `bundled` is best-effort (not covered by CI): it compiles DuckDB from C++ source and so needs a working C++ cross-compiler for the target, not just the Rust toolchain. If you can't get one working, prefer one of the non-`bundled` options above (e.g. `DUCKDB_LIB_DIR` or `DUCKDB_DOWNLOAD_LIB=1`) and link a pre-built library for the target instead.
+
 ### ICU extension and the bundled features
 
 When using the `bundled` feature, the ICU extension is not included due to crates.io's 10MB package size limit. This means some date/time operations (like `now() - interval '1 day'` or `ts::date` casts) will fail. You can load ICU at runtime:
@@ -287,6 +288,40 @@ pregenerated bindings for DuckDB.
 If you use the `bundled` feature, you will get pregenerated bindings for the
 bundled version of DuckDB. If you want to run `bindgen` at build time to
 produce your own bindings, use the `buildtime_bindgen` Cargo feature.
+
+## Thread safety
+
+A `Connection` is `Send` but not `Sync`: you may move it between threads, but you cannot share a single connection across threads at the same time. DuckDB does support concurrent access through _multiple_ connections to the same database (see [DuckDB's concurrency docs](https://duckdb.org/docs/current/connect/concurrency).
+
+For multi-threaded applications, give each thread its own connection. The simplest way is a connection pool via the `r2d2` feature:
+
+```rust,ignore
+use duckdb::{DuckdbConnectionManager, params};
+
+let manager = DuckdbConnectionManager::file("file.db")?;
+let pool = r2d2::Pool::new(manager)?;
+
+// Each worker checks out its own connection from the pool.
+let conn = pool.get()?;
+conn.execute("INSERT INTO foo (bar) VALUES (?)", params![1])?;
+```
+
+## Database client or extension?
+
+duckdb-rs covers two distinct use cases, and you normally pick exactly one:
+
+- **As a database client** (most common): embed DuckDB in your Rust application to run queries, as shown in the [Quickstart](#quickstart).
+- **For writing DuckDB extensions**: build a loadable `.duckdb_extension` that DuckDB loads at runtime. Enable the `loadable-extension` feature.
+
+Do **not** enable `loadable-extension` for a regular client application. It replaces DuckDB's normal C API functions with extension wrappers that are only initialized when DuckDB loads your extension. Outside an extension context, calls such as `Connection::open_in_memory()` then panic with `DuckDB API not initialized or DuckDB feature omitted`.
+
+## Building and loading extensions
+
+The [`hello-ext`](crates/duckdb/examples/hello-ext) example shows the extension API in action: it registers a `hello(name)` table function via the `loadable-extension` feature and the `duckdb_entrypoint_c_api` macro.
+
+`cargo build` alone does **not** produce a loadable extension though. DuckDB only loads files ending in `.duckdb_extension` that carry a metadata footer matching the target DuckDB version. A bare shared library fails with _The file is not a DuckDB extension. The metadata at the end of the file is invalid_. Appending that footer requires DuckDB's extension build tooling.
+
+So rather than wiring this up by hand, start from the official [extension-template-rs](https://github.com/duckdb/extension-template-rs) template for a complete, ready-to-build Rust extension. It handles the metadata step, platform/version detection, tests, and CI. Its `make debug` builds the shared library and then appends the footer, producing a `.duckdb_extension` you load with `duckdb -unsigned`.
 
 ## Rust version compatibility
 
