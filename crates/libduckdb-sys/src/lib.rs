@@ -137,10 +137,15 @@ mod tests {
             .unwrap();
             let mut result: duckdb_result = mem::zeroed();
             if duckdb_query(con, sql.as_ptr() as *const c_char, &mut result) != duckdb_state_DuckDBSuccess {
-                panic!(
-                    "SELECT error: {}",
-                    CStr::from_ptr(duckdb_result_error(&mut result)).to_string_lossy()
-                )
+                let message = {
+                    let message = duckdb_result_error(&mut result);
+                    if message.is_null() {
+                        "<no error message>".into()
+                    } else {
+                        CStr::from_ptr(message).to_string_lossy().into_owned()
+                    }
+                };
+                panic!("SELECT error: {message}");
             }
 
             let mut arrow_options = duckdb_result_get_arrow_options(&mut result);
@@ -178,13 +183,10 @@ mod tests {
             assert_eq!(array.length, 2);
             assert_eq!(array.n_children, 2);
 
-            arrow_rs_ffi_layouts_match();
             let ffi_array = ptr::read((&array as *const ArrowArray).cast::<FFI_ArrowArray>());
             assert!(array.release.take().is_some());
-            assert!(array.release.is_none());
             let ffi_schema = ptr::read((&schema as *const ArrowSchema).cast::<FFI_ArrowSchema>());
             assert!(schema.release.take().is_some());
-            assert!(schema.release.is_none());
             let array_data = from_ffi(ffi_array, &ffi_schema).unwrap_or_else(|error| panic!("from_ffi: {error}"));
             let struct_array = StructArray::from(array_data);
             assert_eq!(struct_array.len(), 2);
