@@ -11,16 +11,18 @@ use crate::{
 ///
 /// # Thread Safety
 ///
-/// `Appender` is neither `Send` nor `Sync`:
-/// - Not `Send` because it holds a reference to `Connection`, which is `!Sync`
-/// - Not `Sync` because DuckDB appenders don't support concurrent access
+/// `Appender` is `Sync` but not `Send`:
+/// - `Sync` because every method that touches the underlying DuckDB appender
+///   takes `&mut self`, so no mutation is reachable through a shared
+///   `&Appender`. This is in the spirit of [`std::sync::Exclusive`].
+/// - Not `Send` because it holds a reference to `Connection`, which is `!Sync`.
 ///
 /// To use an appender in another thread, move the `Connection` to that thread
 /// and create the appender there.
 ///
-/// If you need to share an `Appender` across threads, wrap it in a `Mutex`.
-///
 /// See [DuckDB concurrency documentation](https://duckdb.org/docs/stable/connect/concurrency.html) for more details.
+///
+/// [`std::sync::Exclusive`]: https://doc.rust-lang.org/std/sync/struct.Exclusive.html
 ///
 /// # Wide Tables (Many Columns)
 ///
@@ -60,6 +62,15 @@ pub struct Appender<'conn> {
     conn: &'conn Connection,
     app: ffi::duckdb_appender,
 }
+
+// SAFETY: every method that touches the appender pointer takes `&mut self`.
+// The only shared access exposed by the public API (the `Debug` impl) reads
+// `Connection`'s immutable `path` field without touching the appender pointer
+// or the connection's `RefCell`. No mutation is reachable through a shared
+// `&Appender`, so sharing one across threads is sound. This is in the spirit
+// of `std::sync::Exclusive`, with an additional read-only `Debug` view. `Send`
+// stays disallowed because `&Connection: !Send` (`Connection` is `!Sync`).
+unsafe impl Sync for Appender<'_> {}
 
 #[cfg(feature = "appender-arrow")]
 mod arrow;
@@ -153,14 +164,14 @@ impl Appender<'_> {
         Ok(())
     }
 
-    fn bind_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+    fn bind_parameter_values(&mut self, values: &[ToSqlOutput<'_>]) -> Result<()> {
         for value in values {
             self.bind_parameter(value)?;
         }
         Ok(())
     }
 
-    fn bind_parameter(&self, value: &ToSqlOutput<'_>) -> Result<()> {
+    fn bind_parameter(&mut self, value: &ToSqlOutput<'_>) -> Result<()> {
         let ptr = self.app;
         let value = to_value_ref(value)?;
         // TODO: append more
@@ -330,7 +341,15 @@ fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
 mod test {
     use rust_decimal::Decimal;
 
+    use super::Appender;
     use crate::{Connection, Error, Result, params};
+
+    #[test]
+    fn appender_is_sync() {
+        fn assert_sync<T: Sync>() {}
+
+        assert_sync::<Appender<'_>>();
+    }
 
     #[test]
     fn test_append_one_row() -> Result<()> {
