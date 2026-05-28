@@ -129,7 +129,7 @@ impl Statement<'_> {
     /// # use arrow::record_batch::RecordBatch;
     /// # use arrow::datatypes::SchemaRef;
     /// fn get_arrow_data(conn: &Connection, schema: SchemaRef) -> Result<Vec<RecordBatch>> {
-    ///     Ok(conn.prepare("SELECT * FROM test")?.stream_arrow([], schema)?.collect())
+    ///     conn.prepare("SELECT * FROM test")?.stream_arrow([], schema)?.collect()
     /// }
     /// ```
     ///
@@ -400,7 +400,7 @@ impl Statement<'_> {
 
     /// Get next batch records in arrow-rs in a streaming way
     #[inline]
-    pub fn stream_step(&self, schema: SchemaRef) -> Option<StructArray> {
+    pub fn stream_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
         self.stmt.streaming_step(schema)
     }
 
