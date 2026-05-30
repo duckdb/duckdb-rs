@@ -98,6 +98,53 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 - `vscalar` - Create custom scalar functions that operate on individual values or rows.
 - `vscalar-arrow` - Arrow-optimized scalar functions for vectorized operations.
 
+#### Example: Custom Scalar Function
+
+Enable the `vscalar` feature to define and register custom scalar functions.
+
+```rust
+use duckdb::{
+    Connection,
+    core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId},
+    vscalar::{ScalarFunctionSignature, VScalar},
+    vtab::arrow::WritableVector,
+};
+
+struct Answer;
+
+impl VScalar for Answer {
+    type State = ();
+
+    unsafe fn invoke(
+        _: &Self::State,
+        input: &mut DataChunkHandle,
+        output: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut output = output.flat_vector();
+        let data = unsafe { output.as_mut_slice::<i64>() };
+
+        for value in data.iter_mut().take(input.len()) {
+            *value = 42;
+        }
+
+        Ok(())
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        vec![ScalarFunctionSignature::exact(
+            vec![],
+            LogicalTypeHandle::from(LogicalTypeId::Bigint),
+        )]
+    }
+}
+
+let conn = Connection::open_in_memory()?;
+conn.register_scalar_function::<Answer>("answer")?;
+
+let result: i64 = conn.query_row("SELECT answer()", [], |row| row.get(0))?;
+assert_eq!(result, 42);
+```
+
 ### File formats
 
 - `json` - Enables reading and writing JSON files. Implies `bundled`.
