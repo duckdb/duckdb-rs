@@ -69,34 +69,37 @@ pub enum HeaderLocation {
     FromPath(String),
 }
 
+fn is_loadable_extension() -> bool {
+    cfg!(feature = "loadable-extension")
+}
+
+fn header_filename() -> &'static str {
+    if is_loadable_extension() {
+        "duckdb_extension.h"
+    } else {
+        "duckdb.h"
+    }
+}
+
+fn wrapper_filename() -> &'static str {
+    if is_loadable_extension() {
+        "wrapper_ext.h"
+    } else {
+        "wrapper.h"
+    }
+}
+
 impl From<HeaderLocation> for String {
     fn from(header: HeaderLocation) -> Self {
         match header {
             HeaderLocation::FromEnvironment => {
                 let mut header = env::var("DUCKDB_INCLUDE_DIR").unwrap_or_else(|_| env::var("DUCKDB_LIB_DIR").unwrap());
-                header.push_str(if cfg!(feature = "loadable-extension") {
-                    "/duckdb_extension.h"
-                } else {
-                    "/duckdb.h"
-                });
+                header.push('/');
+                header.push_str(header_filename());
                 header
             }
-            HeaderLocation::Wrapper => {
-                if cfg!(feature = "loadable-extension") {
-                    "wrapper_ext.h".into()
-                } else {
-                    "wrapper.h".into()
-                }
-            }
-            HeaderLocation::FromPath(path) => format!(
-                "{}/{}",
-                path,
-                if cfg!(feature = "loadable-extension") {
-                    "duckdb_extension.h"
-                } else {
-                    "duckdb.h"
-                }
-            ),
+            HeaderLocation::Wrapper => wrapper_filename().into(),
+            HeaderLocation::FromPath(path) => format!("{}/{}", path, header_filename()),
         }
     }
 }
@@ -109,7 +112,7 @@ mod build_linked {
     #[cfg(feature = "buildtime_bindgen")]
     use super::bindings;
 
-    use super::{HeaderLocation, is_compiler, win_target};
+    use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
     use std::{
         env, fs, io,
         path::{Path, PathBuf},
@@ -177,10 +180,17 @@ mod build_linked {
             _ => "dylib=duckdb",
         }
     }
+
+    fn emit_link_lib(link_directive: &str) {
+        if !is_loadable_extension() {
+            println!("cargo:rustc-link-lib={link_directive}");
+        }
+    }
+
     // Prints the necessary cargo link commands and returns the path to the header.
     fn find_duckdb(out_dir: &str) -> HeaderLocation {
         println!("cargo:rerun-if-env-changed=DUCKDB_DOWNLOAD_LIB");
-        if !cfg!(feature = "loadable-extension") {
+        if !is_loadable_extension() {
             println!("cargo:rerun-if-env-changed=DUCKDB_INCLUDE_DIR");
             println!("cargo:rerun-if-env-changed=DUCKDB_LIB_DIR");
             println!("cargo:rerun-if-env-changed=DUCKDB_STATIC");
@@ -196,9 +206,7 @@ mod build_linked {
         }
 
         if win_target() && cfg!(feature = "winduckdb") {
-            if !cfg!(feature = "loadable-extension") {
-                println!("cargo:rustc-link-lib=dylib=duckdb");
-            }
+            emit_link_lib("dylib=duckdb");
             return HeaderLocation::Wrapper;
         }
         // Allow users to specify where to find DuckDB.
@@ -246,9 +254,7 @@ mod build_linked {
                     // request and hope that the library exists on the system paths. We used to
                     // output /usr/lib explicitly, but that can introduce other linking problems;
                     // see https://github.com/rusqlite/rusqlite/issues/207.
-                    if !cfg!(feature = "loadable-extension") {
-                        println!("cargo:rustc-link-lib={}", link_directive());
-                    }
+                    emit_link_lib(link_directive());
                     HeaderLocation::Wrapper
                 }
             }
@@ -257,9 +263,7 @@ mod build_linked {
         {
             // No pkg-config available; just output the link-lib request and hope
             // that the library exists on the system paths.
-            if !cfg!(feature = "loadable-extension") {
-                println!("cargo:rustc-link-lib={}", link_directive());
-            }
+            emit_link_lib(link_directive());
             HeaderLocation::Wrapper
         }
     }
@@ -322,9 +326,7 @@ mod build_linked {
 
     fn configure_link_search(lib_dir: &Path) {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
-        if !cfg!(feature = "loadable-extension") {
-            println!("cargo:rustc-link-lib={}", link_directive());
-        }
+        emit_link_lib(link_directive());
         if !win_target() {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
         }
@@ -481,7 +483,7 @@ mod build_linked {
 
 #[cfg(feature = "buildtime_bindgen")]
 mod bindings {
-    use super::HeaderLocation;
+    use super::{HeaderLocation, is_loadable_extension};
 
     use std::{fs::OpenOptions, io::Write, path::Path};
 
@@ -594,7 +596,7 @@ mod bindings {
         let mut output = Vec::new();
         let mut builder = bindgen::builder();
 
-        if cfg!(feature = "loadable-extension") {
+        if is_loadable_extension() {
             builder = builder.ignore_functions();
         }
 
