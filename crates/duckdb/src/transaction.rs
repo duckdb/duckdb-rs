@@ -142,11 +142,10 @@ impl Deref for Transaction<'_> {
     }
 }
 
-#[allow(unused_must_use)]
 impl Drop for Transaction<'_> {
     #[inline]
     fn drop(&mut self) {
-        self.finish_();
+        let _ = self.finish_();
     }
 }
 

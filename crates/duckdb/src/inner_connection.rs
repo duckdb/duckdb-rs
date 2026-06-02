@@ -277,7 +277,6 @@ impl Drop for ExtractedStatementsGuard {
 }
 
 impl Drop for InnerConnection {
-    #[allow(unused_must_use)]
     #[inline]
     fn drop(&mut self) {
         use std::thread::panicking;

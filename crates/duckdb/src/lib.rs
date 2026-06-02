@@ -727,12 +727,13 @@ mod test {
     use arrow::{array::Int32Array, datatypes::DataType, record_batch::RecordBatch};
     use fallible_iterator::FallibleIterator;
 
-    // this function is never called, but is still type checked; in
-    // particular, calls with specific instantiations will require
-    // that those types are `Send`.
-    #[allow(dead_code, unconditional_recursion, clippy::extra_unused_type_parameters)]
-    fn ensure_send<T: Send>() {
-        ensure_send::<Connection>();
+    #[test]
+    fn connection_is_send() {
+        fn assert_send<T: Send>() {
+            let _ = std::marker::PhantomData::<T>;
+        }
+
+        assert_send::<Connection>();
     }
 
     pub fn checked_memory_handle() -> Connection {

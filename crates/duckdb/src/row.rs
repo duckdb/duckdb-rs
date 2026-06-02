@@ -624,21 +624,31 @@ impl RowIndex for &'_ str {
 }
 
 macro_rules! tuple_try_from_row {
-    ($($field:ident),*) => {
+    () => {
+        impl<'a> convert::TryFrom<&'a Row<'a>> for () {
+            type Error = crate::Error;
+
+            fn try_from(_: &'a Row<'a>) -> Result<Self> {
+                Ok(())
+            }
+        }
+    };
+    ($($field:ident),+) => {
         impl<'a, $($field,)*> convert::TryFrom<&'a Row<'a>> for ($($field,)*) where $($field: FromSql,)* {
             type Error = crate::Error;
 
-            // we end with index += 1, which rustc warns about
-            // unused_variables and unused_mut are allowed for ()
-            #[allow(unused_assignments, unused_variables, unused_mut)]
             fn try_from(row: &'a Row<'a>) -> Result<Self> {
                 let mut index = 0;
-                $(
-                    #[allow(non_snake_case)]
-                    let $field = row.get::<_, $field>(index)?;
-                    index += 1;
-                )*
-                Ok(($($field,)*))
+                let values = (
+                    $({
+                        let value = row.get::<_, $field>(index)?;
+                        index += 1;
+                        value
+                    },)*
+                );
+                // Read the final increment so rustc does not flag it as an unused assignment.
+                let _ = index;
+                Ok(values)
             }
         }
     }
@@ -661,6 +671,15 @@ tuples_try_from_row!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 mod tests {
     #![allow(clippy::redundant_closure)] // false positives due to lifetime issues; clippy issue #5594
     use crate::{Connection, Result};
+
+    #[test]
+    fn test_try_from_row_for_tuple_0() -> Result<()> {
+        use std::convert::TryFrom;
+
+        let conn = Connection::open_in_memory()?;
+        conn.query_row("SELECT 1", [], |row| <()>::try_from(row))?;
+        Ok(())
+    }
 
     #[test]
     fn test_try_from_row_for_tuple_1() -> Result<()> {
@@ -691,6 +710,16 @@ mod tests {
         assert_eq!(val, (42, 47));
         let fail = conn.query_row("SELECT a, b FROM test", [], |row| <(u32, u32, u32)>::try_from(row));
         assert!(fail.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_from_row_for_tuple_3() -> Result<()> {
+        use std::convert::TryFrom;
+
+        let conn = Connection::open_in_memory()?;
+        let val = conn.query_row("SELECT 3, 5, 8", [], |row| <(u32, u32, u32)>::try_from(row))?;
+        assert_eq!(val, (3, 5, 8));
         Ok(())
     }
 
