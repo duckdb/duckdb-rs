@@ -1,4 +1,7 @@
-use std::{env, path::Path};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 /// Tells whether we're building for Windows. This is more suitable than a plain
 /// `cfg!(windows)`, since the latter does not properly handle cross-compilation
@@ -45,7 +48,7 @@ pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
     #[cfg(feature = "buildtime_bindgen")]
     {
         use crate::{HeaderLocation, bindings};
-        let header = HeaderLocation::FromPath(header_dir.to_string_lossy().into_owned());
+        let header = HeaderLocation::IncludeDir(header_dir.to_path_buf());
         bindings::write_to_out_dir(header, out_path);
     }
 
@@ -64,15 +67,17 @@ pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
 }
 
 pub enum HeaderLocation {
-    FromEnvironment,
+    IncludeDir(PathBuf),
+    HeaderPath(PathBuf),
     Wrapper,
-    FromPath(String),
 }
 
+#[allow(dead_code)]
 fn is_loadable_extension() -> bool {
     cfg!(feature = "loadable-extension")
 }
 
+#[allow(dead_code)]
 fn header_filename() -> &'static str {
     if is_loadable_extension() {
         "duckdb_extension.h"
@@ -81,25 +86,37 @@ fn header_filename() -> &'static str {
     }
 }
 
-fn wrapper_filename() -> &'static str {
-    if is_loadable_extension() {
-        "wrapper_ext.h"
-    } else {
-        "wrapper.h"
+#[allow(dead_code)]
+impl HeaderLocation {
+    fn from_env(lib_dir: &Path) -> Self {
+        if let Ok(include_dir) = env::var("DUCKDB_INCLUDE_DIR") {
+            return HeaderLocation::IncludeDir(PathBuf::from(include_dir));
+        }
+        let header_path = lib_dir.join(header_filename());
+        if header_path.exists() {
+            HeaderLocation::IncludeDir(lib_dir.to_path_buf())
+        } else {
+            HeaderLocation::HeaderPath(header_path)
+        }
     }
-}
 
-impl From<HeaderLocation> for String {
-    fn from(header: HeaderLocation) -> Self {
-        match header {
-            HeaderLocation::FromEnvironment => {
-                let mut header = env::var("DUCKDB_INCLUDE_DIR").unwrap_or_else(|_| env::var("DUCKDB_LIB_DIR").unwrap());
-                header.push('/');
-                header.push_str(header_filename());
-                header
-            }
-            HeaderLocation::Wrapper => wrapper_filename().into(),
-            HeaderLocation::FromPath(path) => format!("{}/{}", path, header_filename()),
+    #[cfg(feature = "buildtime_bindgen")]
+    fn header_path(&self) -> PathBuf {
+        match self {
+            HeaderLocation::IncludeDir(path) => path.join(header_filename()),
+            HeaderLocation::HeaderPath(path) => path.clone(),
+            HeaderLocation::Wrapper => PathBuf::from(if is_loadable_extension() {
+                "wrapper_ext.h"
+            } else {
+                "wrapper.h"
+            }),
+        }
+    }
+
+    fn include_dir(&self) -> Option<&Path> {
+        match self {
+            HeaderLocation::IncludeDir(path) => Some(path),
+            HeaderLocation::HeaderPath(_) | HeaderLocation::Wrapper => None,
         }
     }
 }
@@ -129,8 +146,8 @@ mod build_linked {
         // from env / vcpkg / pkg-config / download) intentionally
         // skips the emission — there's no single directory to point
         // at; the system header is on the default search path already.
-        if let Some(include_dir) = include_dir_for(&header) {
-            println!("cargo:include={include_dir}");
+        if let Some(include_dir) = header.include_dir() {
+            println!("cargo:include={}", include_dir.display());
         }
 
         #[cfg(not(feature = "buildtime_bindgen"))]
@@ -148,27 +165,6 @@ mod build_linked {
         #[cfg(feature = "buildtime_bindgen")]
         {
             bindings::write_to_out_dir(header, out_path);
-        }
-    }
-
-    /// The `HeaderLocation` enum string conversion appends a filename to
-    /// the path it resolved. For `cargo:include=...` we want the
-    /// directory itself, not a file path. Re-derive it.
-    fn include_dir_for(header: &HeaderLocation) -> Option<String> {
-        match header {
-            HeaderLocation::FromEnvironment => env::var("DUCKDB_INCLUDE_DIR")
-                .or_else(|_| {
-                    env::var("DUCKDB_LIB_DIR").and_then(|dir| {
-                        if Path::new(&dir).join("duckdb.h").exists() {
-                            Ok(dir)
-                        } else {
-                            Err(env::VarError::NotPresent)
-                        }
-                    })
-                })
-                .ok(),
-            HeaderLocation::FromPath(path) => Some(path.clone()),
-            HeaderLocation::Wrapper => None,
         }
     }
 
@@ -227,7 +223,7 @@ mod build_linked {
                 println!("cargo:rustc-link-search={dir}");
             }
 
-            return HeaderLocation::FromEnvironment;
+            return HeaderLocation::from_env(Path::new(&dir));
         }
 
         if should_download_libduckdb() {
@@ -244,7 +240,7 @@ mod build_linked {
             match pkg_config::Config::new().print_system_libs(false).probe("duckdb") {
                 Ok(mut lib) => {
                     if let Some(header) = lib.include_paths.pop() {
-                        HeaderLocation::FromPath(header.to_string_lossy().into())
+                        HeaderLocation::IncludeDir(header)
                     } else {
                         HeaderLocation::Wrapper
                     }
@@ -274,7 +270,7 @@ mod build_linked {
             // See if vcpkg can find it.
             if let Ok(mut lib) = vcpkg::Config::new().probe("duckdb") {
                 if let Some(header) = lib.include_paths.pop() {
-                    return Some(HeaderLocation::FromPath(header.to_string_lossy().into()));
+                    return Some(HeaderLocation::IncludeDir(header));
                 }
             }
         }
@@ -321,7 +317,7 @@ mod build_linked {
 
         copy_libduckdb(&download_dir, archive.dynamic_lib, out_dir)?;
 
-        Ok(HeaderLocation::FromPath(download_dir.to_string_lossy().into_owned()))
+        Ok(HeaderLocation::IncludeDir(download_dir))
     }
 
     fn configure_link_search(lib_dir: &Path) {
@@ -590,7 +586,7 @@ mod bindings {
     }
 
     pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
-        let header: String = header.into();
+        let header = header.header_path().to_string_lossy().into_owned();
         let mut output = Vec::new();
         let mut builder = bindgen::builder();
 
