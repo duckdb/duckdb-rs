@@ -434,6 +434,8 @@ fn cargo_warning(message: &str) {
 fn enabled_extensions() -> Vec<&'static str> {
     // Match DuckDB's upstream CMake defaults for quasi-core extensions rather
     // than trying to reproduce the cc backend's finer-grained selection.
+    // Keep intentional support changes visible to build_bundled_cc::extension_enabled,
+    // without forcing these genuinely different mechanisms through one helper.
     let mut extensions = vec!["parquet"];
     if cfg!(feature = "json") {
         extensions.push("json");

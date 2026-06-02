@@ -35,6 +35,8 @@ fn add_extension(
 }
 
 fn extension_enabled(extension: &str) -> bool {
+    // Keep this cc backend gate in sync with intentional support changes in
+    // build_bundled_cmake::enabled_extensions, without forcing a shared helper.
     extension == "core_functions"
         || (extension == "parquet" && cfg!(feature = "parquet"))
         || (extension == "json" && cfg!(feature = "json"))
