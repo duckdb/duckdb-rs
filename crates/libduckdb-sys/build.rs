@@ -489,22 +489,20 @@ mod bindings {
 
     #[cfg(feature = "loadable-extension")]
     fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
-        match ty {
-            syn::Type::Path(tp) => tp.path.segments.last(),
-            _ => None,
-        }
-        .map(|seg| match &seg.arguments {
-            syn::PathArguments::AngleBracketed(args) => args.args.first(),
-            _ => None,
-        })?
-        .map(|arg| match arg {
-            syn::GenericArgument::Type(t) => Some(t),
-            _ => None,
-        })?
-        .map(|ty| match ty {
-            syn::Type::BareFn(r) => Some(r),
-            _ => None,
-        })?
+        let syn::Type::Path(type_path) = ty else {
+            return None;
+        };
+        let segment = type_path.path.segments.last()?;
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return None;
+        };
+        let Some(syn::GenericArgument::Type(ty)) = args.args.first() else {
+            return None;
+        };
+        let syn::Type::BareFn(method) = ty else {
+            return None;
+        };
+        Some(method)
     }
 
     #[cfg(feature = "loadable-extension")]
