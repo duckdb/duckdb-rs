@@ -17,9 +17,6 @@ pub use self::arrow::{
     arrow_arraydata_to_query_params, arrow_ffi_to_query_params, arrow_recordbatch_to_query_params,
     record_batch_to_duckdb_data_chunk, to_duckdb_logical_type, to_duckdb_type_id,
 };
-#[cfg(feature = "vtab-excel")]
-mod excel;
-
 pub use function::{BindInfo, InitInfo, TableFunction, TableFunctionInfo};
 pub use value::Value;
 

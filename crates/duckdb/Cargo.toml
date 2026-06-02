@@ -32,7 +32,8 @@ vscalar-arrow = []
 vtab = []
 # Deprecated: use loadable-extension instead
 vtab-loadable = ["loadable-extension"]
-vtab-excel = ["vtab", "calamine"]
+# Deprecated no-op retained for feature compatibility.
+vtab-excel = ["vtab"]
 vtab-arrow = ["vtab", "num"]
 appender-arrow = ["vtab-arrow"]
 vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
@@ -45,7 +46,6 @@ loadable-extension = ["vtab", "duckdb-loadable-macros", "libduckdb-sys/loadable-
 
 [dependencies]
 arrow = { workspace = true, features = ["prettyprint", "ffi"] }
-calamine = { workspace = true, optional = true }
 cast = { workspace = true, features = ["std"] }
 chrono = { workspace = true, optional = true }
 duckdb-loadable-macros = { workspace = true, optional = true }

@@ -94,7 +94,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 
 - `vtab` - Base support for creating custom table functions and virtual tables.
 - `vtab-arrow` - Apache Arrow integration for virtual tables. Enables conversion between Arrow RecordBatch and DuckDB data chunks.
-- `vtab-excel` - Read Excel (.xlsx) files directly in SQL queries with automatic schema detection.
+- `vtab-excel` - Deprecated no-op retained for feature compatibility.
 - `vscalar` - Create custom scalar functions that operate on individual values or rows.
 - `vscalar-arrow` - Arrow-optimized scalar functions for vectorized operations.
 
@@ -119,7 +119,7 @@ These extensions are only available through the CMake build backend and imply `b
 
 ### Convenience features
 
-- `vtab-full` - Enables all virtual table features: `vtab-excel`, `vtab-arrow`, and `appender-arrow`.
+- `vtab-full` - Enables virtual table features: `vtab-arrow` and `appender-arrow`; retains the deprecated `vtab-excel` compatibility flag.
 - `extensions-full` - Enables all major extensions: `json`, `parquet`, and `vtab-full`.
 - `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde_json`, `url`, `r2d2`, `uuid`, and `polars`.
 
