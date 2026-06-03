@@ -183,6 +183,15 @@ mod build_linked {
         }
     }
 
+    #[cfg(feature = "pkg-config")]
+    fn duckdb_pkg_config() -> pkg_config::Config {
+        let mut config = pkg_config::Config::new();
+        if is_loadable_extension() {
+            config.cargo_metadata(false);
+        }
+        config
+    }
+
     // Prints the necessary cargo link commands and returns the path to the header.
     fn find_duckdb(out_dir: &str) -> HeaderLocation {
         println!("cargo:rerun-if-env-changed=DUCKDB_DOWNLOAD_LIB");
@@ -213,13 +222,13 @@ mod build_linked {
             unsafe { env::set_var("PKG_CONFIG_PATH", pkgconfig_path) };
 
             #[cfg(feature = "pkg-config")]
-            let lib_found = pkg_config::Config::new().probe("duckdb").is_ok();
+            let lib_found = duckdb_pkg_config().probe("duckdb").is_ok();
             #[cfg(not(feature = "pkg-config"))]
             let lib_found = false;
 
             if !lib_found {
                 // Otherwise just emit the bare minimum link commands.
-                println!("cargo:rustc-link-lib={}", link_directive());
+                emit_link_lib(link_directive());
                 println!("cargo:rustc-link-search={dir}");
             }
 
@@ -237,7 +246,7 @@ mod build_linked {
         // See if pkg-config can do everything for us.
         #[cfg(feature = "pkg-config")]
         {
-            match pkg_config::Config::new().print_system_libs(false).probe("duckdb") {
+            match duckdb_pkg_config().print_system_libs(false).probe("duckdb") {
                 Ok(mut lib) => {
                     if let Some(header) = lib.include_paths.pop() {
                         HeaderLocation::IncludeDir(header)
