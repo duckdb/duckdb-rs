@@ -12,7 +12,7 @@ struct Generator {
     make_program: Option<String>,
 }
 
-pub fn main(_out_dir: &str, out_path: &Path) {
+pub fn main(out_dir: &str, out_path: &Path) {
     let source_dir = Path::new("duckdb-sources");
     let cmake_lists = source_dir.join("CMakeLists.txt");
     if !cmake_lists.exists() {
@@ -52,7 +52,7 @@ pub fn main(_out_dir: &str, out_path: &Path) {
     }
 
     let cmake_build_type = cmake_build_type();
-    let generator = select_generator();
+    let generator = select_generator(out_dir);
     let mut config = cmake::Config::new(source_dir);
     config.out_dir(&generator.out_dir);
     if let Some(generator_name) = generator.name.as_deref() {
@@ -151,26 +151,23 @@ fn validate_cmake_build_type(value: &str) -> String {
     }
 }
 
-fn select_generator() -> Generator {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR should be set by Cargo"));
+fn select_generator(out_dir: &str) -> Generator {
+    let out_dir = PathBuf::from(out_dir);
     if let Some(generator) = env_var("CMAKE_GENERATOR").filter(|value| !value.trim().is_empty()) {
-        let (make_program, probe_error) = if generator.contains("Ninja") {
+        let needs_ninja = generator.contains("Ninja");
+        let (make_program, probe_error) = if needs_ninja {
             find_program(&["ninja", "ninja-build"])
         } else {
             (None, None)
         };
-        let make_program = match make_program {
-            Some(path) => Some(path),
-            None if generator.contains("Ninja") => {
-                let suffix = probe_error
-                    .map(|error| format!(" (probe error: {error})"))
-                    .unwrap_or_default();
-                panic!(
-                    "CMAKE_GENERATOR={generator} requires `ninja` or `ninja-build` on PATH, but neither was found{suffix}"
-                )
-            }
-            None => None,
-        };
+        if needs_ninja && make_program.is_none() {
+            let suffix = probe_error
+                .map(|error| format!(" (probe error: {error})"))
+                .unwrap_or_default();
+            panic!(
+                "CMAKE_GENERATOR={generator} requires `ninja` or `ninja-build` on PATH, but neither was found{suffix}"
+            );
+        }
         cargo_warning(&format!("bundled-cmake generator: {generator} (from CMAKE_GENERATOR)"));
         return Generator {
             out_dir: out_dir.join(format!("cmake-{}", sanitize_path_component(&generator))),
@@ -217,9 +214,9 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
 
     let target_arch_env =
         env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo should set CARGO_CFG_TARGET_ARCH for macOS builds");
-    let target_arch = match target_arch_env.as_str() {
-        "aarch64" => "arm64",
-        "x86_64" => "x86_64",
+    let (target_arch, default_deployment_target) = match target_arch_env.as_str() {
+        "aarch64" => ("arm64", "11.0"),
+        "x86_64" => ("x86_64", "10.15"),
         other => {
             panic!("bundled-cmake: unsupported macOS CARGO_CFG_TARGET_ARCH `{other}`; expected `aarch64` or `x86_64`")
         }
@@ -227,25 +224,11 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
 
     let deployment_target = env_var("MACOSX_DEPLOYMENT_TARGET")
         .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            if target_arch == "arm64" {
-                Some("11.0".to_string())
-            } else if target_arch == "x86_64" {
-                Some("10.15".to_string())
-            } else {
-                None
-            }
-        });
-    if let Some(deployment_target) = deployment_target {
-        cargo_warning(&format!(
-            "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
-        ));
-        config.define("CMAKE_OSX_DEPLOYMENT_TARGET", &deployment_target);
-    } else {
-        cargo_warning(&format!(
-            "bundled-cmake macOS deployment target: toolchain default ({target_arch})"
-        ));
-    }
+        .unwrap_or_else(|| default_deployment_target.to_string());
+    cargo_warning(&format!(
+        "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
+    ));
+    config.define("CMAKE_OSX_DEPLOYMENT_TARGET", &deployment_target);
     config.define("CMAKE_OSX_ARCHITECTURES", target_arch);
 }
 
@@ -444,6 +427,8 @@ fn cargo_warning(message: &str) {
 fn enabled_extensions() -> Vec<&'static str> {
     // Match DuckDB's upstream CMake defaults for quasi-core extensions rather
     // than trying to reproduce the cc backend's finer-grained selection.
+    // Review build_bundled_cc::extension_enabled when changing this list; the
+    // backend mechanisms and supported extension sets intentionally differ.
     let mut extensions = vec!["parquet"];
     if cfg!(feature = "json") {
         extensions.push("json");
