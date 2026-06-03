@@ -3,6 +3,8 @@
 //! DuckDB's public C header forward-declares these structs. The conversion
 //! APIs need concrete caller-allocated layouts, so `libduckdb-sys` defines the
 //! ABI records directly without taking a dependency on arrow-rs.
+//!
+//! Specification: <https://arrow.apache.org/docs/format/CDataInterface.html>
 
 use std::{
     ffi::{c_char, c_void},
