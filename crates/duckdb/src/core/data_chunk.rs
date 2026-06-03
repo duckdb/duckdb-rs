@@ -39,7 +39,7 @@ impl DataChunkHandle {
     // `array_vector` / `struct_vector` take `&self`, so safe code can get two
     // writable wrappers over the same column and produce aliased `&mut [T]`
     // slices.
-    #[allow(dead_code)] // used only when `vtab` / `vscalar` features are enabled
+    #[cfg(feature = "vtab")]
     pub(crate) unsafe fn new_unowned(ptr: duckdb_data_chunk) -> Self {
         Self { ptr, owned: false }
     }

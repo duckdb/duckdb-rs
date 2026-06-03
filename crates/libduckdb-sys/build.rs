@@ -6,7 +6,6 @@ use std::{env, path::Path};
 /// Note that there is no way to know at compile-time which system we'll be
 /// targeting, and this test must be made at run-time (of the build script) See
 /// https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
-#[allow(dead_code)]
 fn win_target() -> bool {
     std::env::var("CARGO_CFG_WINDOWS").is_ok()
 }
@@ -15,7 +14,7 @@ fn win_target() -> bool {
 /// the content of `CARGO_CFG_TARGET_ENV` (and is always lowercase)
 ///
 /// See [`win_target`]
-#[allow(dead_code)]
+#[cfg(any(not(feature = "bundled"), feature = "bundled-cmake"))]
 fn is_compiler(compiler_name: &str) -> bool {
     std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == compiler_name)
 }
@@ -40,7 +39,6 @@ use crate::build_bundled_cc as build_bundled_backend;
 use crate::build_bundled_cmake as build_bundled_backend;
 
 #[cfg(feature = "bundled")]
-#[allow(unused_variables)]
 pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
     #[cfg(feature = "buildtime_bindgen")]
     {
@@ -52,6 +50,7 @@ pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
     #[cfg(not(feature = "buildtime_bindgen"))]
     {
         use std::fs;
+        let _ = header_dir;
         fs::copy(
             #[cfg(not(feature = "loadable-extension"))]
             "src/bindgen_bundled_version.rs",
@@ -117,7 +116,6 @@ mod build_linked {
 
     pub fn main(out_dir: &str, out_path: &Path) {
         // We need this to config the LD_LIBRARY_PATH
-        #[allow(unused_variables)]
         let header = find_duckdb(out_dir);
 
         // Publish the resolved include directory so downstream crates
@@ -506,9 +504,9 @@ mod bindings {
     }
 
     #[cfg(feature = "loadable-extension")]
-    fn generate_functions(output: &mut String) {
+    fn generate_functions(mut output: String) -> String {
         // (1) parse sqlite3_api_routines fields from bindgen output
-        let ast: syn::File = syn::parse_str(output).expect("could not parse bindgen output");
+        let ast: syn::File = syn::parse_str(&output).expect("could not parse bindgen output");
         let duckdb_ext_api_v1: syn::ItemStruct = ast
             .items
             .into_iter()
@@ -587,6 +585,7 @@ mod bindings {
             &syn::parse2(tokens).expect("could not parse quote output"),
         ));
         output.push('\n');
+        output
     }
 
     pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
@@ -615,11 +614,10 @@ mod bindings {
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
 
-        #[allow(unused_mut)]
-        let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
+        let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
         #[cfg(feature = "loadable-extension")]
-        generate_functions(&mut output);
+        let output = generate_functions(output);
 
         let mut file = OpenOptions::new()
             .write(true)

@@ -91,7 +91,6 @@ impl<'conn> DerefMut for CachedStatement<'conn> {
 }
 
 impl Drop for CachedStatement<'_> {
-    #[allow(unused_must_use)]
     #[inline]
     fn drop(&mut self) {
         if let Some(stmt) = self.stmt.take() {

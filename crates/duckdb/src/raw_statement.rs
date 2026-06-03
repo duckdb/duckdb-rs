@@ -273,38 +273,6 @@ impl RawStatement {
         cache
     }
 
-    #[allow(dead_code)]
-    unsafe fn print_result(&self, mut result: ffi::duckdb_result) {
-        unsafe {
-            use ffi::{duckdb_column_count, duckdb_column_name, duckdb_row_count};
-
-            println!(
-                "row-count: {}, column-count: {}",
-                duckdb_row_count(&mut result),
-                duckdb_column_count(&mut result)
-            );
-            for i in 0..duckdb_column_count(&mut result) {
-                print!(
-                    "column-name:{} ",
-                    CStr::from_ptr(duckdb_column_name(&mut result, i)).to_string_lossy()
-                );
-            }
-            println!();
-            // print the data of the result
-            for row_idx in 0..duckdb_row_count(&mut result) {
-                print!("row-value:");
-                for col_idx in 0..duckdb_column_count(&mut result) {
-                    let val = ffi::duckdb_value_varchar(&mut result, col_idx, row_idx);
-                    match ffi::DuckDbString::from_nullable_ptr(val) {
-                        Some(val) => print!("{} ", val.to_string_lossy()),
-                        None => print!("NULL "),
-                    }
-                }
-                println!();
-            }
-        }
-    }
-
     /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
         self.reset_result();
