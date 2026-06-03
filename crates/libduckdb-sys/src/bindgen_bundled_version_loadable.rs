@@ -738,17 +738,6 @@ pub type duckdb_replacement_callback_t = ::std::option::Option<
         data: *mut ::std::os::raw::c_void,
     ),
 >;
-#[doc = "! Forward declare Arrow structs\n! It is important to notice that these structs are not defined by DuckDB but are actually Arrow external objects.\n! They're defined by the C Data Interface Arrow spec: https://arrow.apache.org/docs/format/CDataInterface.html"]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ArrowArray {
-    _unused: [u8; 0],
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ArrowSchema {
-    _unused: [u8; 0],
-}
 #[doc = "! Holds an arrow query result. Must be destroyed with `duckdb_destroy_arrow`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -14126,4 +14115,3 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     Ok(true)
 }
-
