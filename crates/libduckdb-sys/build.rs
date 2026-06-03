@@ -611,6 +611,9 @@ mod bindings {
             .header(header.clone())
             .allowlist_item(r#"(\w*duckdb\w*)"#)
             .allowlist_type("idx_t")
+            // Use the concrete ABI layouts from src/arrow_c_data.rs.
+            .blocklist_type("ArrowArray")
+            .blocklist_type("ArrowSchema")
             .layout_tests(false) // causes problems on WASM builds
             .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))

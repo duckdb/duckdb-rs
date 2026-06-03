@@ -4,8 +4,15 @@
 #![allow(deref_nullptr)]
 #![allow(improper_ctypes)]
 
+/// Dependency-free Arrow C Data Interface structs used by DuckDB Arrow APIs.
+mod arrow_c_data;
+pub use arrow_c_data::{ArrowArray, ArrowSchema};
+
 #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
 mod bindings {
+    // Bindgen references these blocklisted forward declarations unqualified.
+    use crate::arrow_c_data::{ArrowArray, ArrowSchema};
+
     include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
 }
 #[allow(clippy::all)]
