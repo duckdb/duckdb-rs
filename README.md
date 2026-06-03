@@ -81,6 +81,7 @@ The following [examples](crates/duckdb/examples) demonstrate various features an
 - **basic** - Basic usage including creating tables, inserting data, and querying with and without Arrow.
 - **appender** - Bulk data insertion using the appender API with transactions.
 - **parquet** - Reading Parquet files directly using DuckDB's Parquet extension.
+- **vscalar** - Defining and registering a custom scalar function (requires the `vscalar` feature).
 - **repl** - Interactive SQL REPL.
 - **hello-ext** - A DuckDB extension written in Rust (see [Building and loading extensions](#building-and-loading-extensions)).
 

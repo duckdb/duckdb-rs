@@ -93,3 +93,7 @@ all-features = false
 name = "hello-ext"
 crate-type = ["cdylib"]
 required-features = ["loadable-extension"]
+
+[[example]]
+name = "vscalar"
+required-features = ["vscalar"]
