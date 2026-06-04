@@ -97,3 +97,7 @@ required-features = ["loadable-extension"]
 [[example]]
 name = "vscalar"
 required-features = ["vscalar"]
+
+[[example]]
+name = "vtab"
+required-features = ["vtab"]
