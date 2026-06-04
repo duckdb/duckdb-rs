@@ -52,17 +52,20 @@ pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
 
     #[cfg(not(feature = "buildtime_bindgen"))]
     {
-        use std::fs;
         let _ = header_dir;
-        fs::copy(
-            #[cfg(not(feature = "loadable-extension"))]
-            "src/bindgen_bundled_version.rs",
-            #[cfg(feature = "loadable-extension")]
-            "src/bindgen_bundled_version_loadable.rs",
-            out_path,
-        )
-        .expect("Could not copy bindings to output directory");
+        copy_pregenerated_bindings(out_path);
     }
+}
+
+#[cfg(not(feature = "buildtime_bindgen"))]
+fn copy_pregenerated_bindings(out_path: &Path) {
+    let bindings_path = if is_loadable_extension() {
+        "src/bindgen_bundled_version_loadable.rs"
+    } else {
+        "src/bindgen_bundled_version.rs"
+    };
+    println!("cargo:rerun-if-changed={bindings_path}");
+    std::fs::copy(bindings_path, out_path).expect("Could not copy bindings to output directory");
 }
 
 pub enum HeaderLocation {
@@ -149,21 +152,10 @@ mod build_linked {
         }
 
         #[cfg(not(feature = "buildtime_bindgen"))]
-        {
-            std::fs::copy(
-                #[cfg(not(feature = "loadable-extension"))]
-                "src/bindgen_bundled_version.rs",
-                #[cfg(feature = "loadable-extension")]
-                "src/bindgen_bundled_version_loadable.rs",
-                out_path,
-            )
-            .expect("Could not copy bindings to output directory");
-        }
+        super::copy_pregenerated_bindings(out_path);
 
         #[cfg(feature = "buildtime_bindgen")]
-        {
-            bindings::write_to_out_dir(header, out_path);
-        }
+        bindings::write_to_out_dir(header, out_path);
     }
 
     fn link_directive() -> &'static str {
