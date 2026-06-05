@@ -1,4 +1,4 @@
-use crate::{win_target, write_bindings};
+use crate::{link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -126,6 +126,13 @@ pub fn main(out_dir: &str, out_path: &Path) {
         cfg.define("DUCKDB_BUILD_LIBRARY", None);
     }
     cfg.compile("duckdb");
+
+    // DuckDB references Windows system libraries that `cc` does not link automatically
+    // (e.g. unresolved `RmStartSession` pulled in by `duckdb::AdditionalLockInfo`, the
+    // Restart Manager). See link_windows_system_libs for the list and upstream mapping.
+    if win_target() {
+        link_windows_system_libs();
+    }
 
     println!("cargo:lib_dir={out_dir}");
 }

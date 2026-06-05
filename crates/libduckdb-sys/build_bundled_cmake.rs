@@ -1,4 +1,4 @@
-use crate::{is_compiler, win_target, write_bindings};
+use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
@@ -469,15 +469,7 @@ fn link_system_libs() {
         "macos" => {
             println!("cargo:rustc-link-lib=dylib=c++");
         }
-        "windows" => {
-            println!("cargo:rustc-link-lib=dylib=ws2_32");
-            println!("cargo:rustc-link-lib=dylib=rstrtmgr");
-            if is_compiler("msvc") {
-                println!("cargo:rustc-link-lib=dylib=bcrypt");
-            } else {
-                println!("cargo:rustc-link-lib=dylib=stdc++");
-            }
-        }
+        "windows" => link_windows_system_libs(),
         other => {
             panic!(
                 "bundled-cmake is currently supported only on Linux, macOS, and Windows; unsupported target OS `{other}`"
