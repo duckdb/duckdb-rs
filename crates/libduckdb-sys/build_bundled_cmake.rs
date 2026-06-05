@@ -70,6 +70,26 @@ pub fn main(out_dir: &str, out_path: &Path) {
         .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
         .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag());
 
+    // Re-enable C++ exceptions on MSVC. CMake's platform default would add /EHsc to
+    // CMAKE_CXX_FLAGS, but the cmake crate makes its own `cxxflag`s the *source* of
+    // -DCMAKE_CXX_FLAGS, replacing CMake's default, so /EHsc is otherwise dropped and
+    // DuckDB compiles with exception handling effectively off. A single-threaded error
+    // still unwinds via x64's table-based mechanism, but an exception thrown across the
+    // parallel CSV reader's worker threads (e.g. invalid UTF-8) is then mishandled at
+    // the C API boundary: it aborts with STATUS_STACK_BUFFER_OVERRUN (0xC0000409) under
+    // a CRT mismatch, or deadlocks when the CRT is aligned, instead of returning an
+    // error (https://github.com/duckdb/duckdb-rs/issues/774).
+    //
+    // INVARIANT: cxxflag("/EHsc") only reaches the compiler because we never call
+    // `config.define("CMAKE_CXX_FLAGS", ..)` — the cmake crate sources -DCMAKE_CXX_FLAGS
+    // from its `cxxflags` *only when* that var is not already in `defines`. Defining
+    // CMAKE_CXX_FLAGS anywhere here would silently discard /EHsc and reintroduce #774.
+    // (CMAKE_CXX_FLAGS_INIT, which we set to "/w", is a different variable and is safe.)
+    // Mirrors the gate in build_bundled_cc.rs; gcc/clang enable exceptions by default.
+    if win_target() && is_compiler("msvc") {
+        config.cxxflag("/EHsc");
+    }
+
     // Unity builds (DuckDB's default) combine .cpp files into fewer translation
     // units and compile significantly faster. Allow opting out for debugging.
     // Always set explicitly so the CMake cache doesn't keep a stale value.

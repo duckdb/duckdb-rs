@@ -1,4 +1,4 @@
-use crate::{link_windows_system_libs, win_target, write_bindings};
+use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -113,6 +113,20 @@ pub fn main(out_dir: &str, out_path: &Path) {
         .flag_if_supported("/bigobj")
         .warnings(false)
         .flag_if_supported("-w");
+
+    // Enable C++ exceptions on MSVC. CMake-built DuckDB gets /EHsc from CMake's default
+    // MSVC flags, but the cc build must add it explicitly: without it MSVC leaves
+    // exception handling off, the C API's try/catch blocks are inert, and a thrown
+    // exception (e.g. an invalid-UTF-8 CSV read) aborts the process with
+    // STATUS_STACK_BUFFER_OVERRUN (https://github.com/duckdb/duckdb-rs/issues/774).
+    // Apply it as a hard, gated flag rather than flag_if_supported: /EHsc is always
+    // accepted by MSVC/clang-cl, so the probe can only ever pass — but a *spurious*
+    // probe failure would silently drop /EHsc, yielding a clean build that crashes at
+    // runtime with no signal. gcc/clang (incl. MinGW) enable exceptions by default and
+    // reject /EHsc, so gate on MSVC. Mirrors the gate in build_bundled_cmake.rs.
+    if win_target() && is_compiler("msvc") {
+        cfg.flag("/EHsc");
+    }
 
     let is_debug = match std::env::var("DEBUG") {
         Ok(v) => v != "false" && v != "0",
