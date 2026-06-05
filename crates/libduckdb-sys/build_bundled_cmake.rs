@@ -134,6 +134,12 @@ pub fn main(out_dir: &str, out_path: &Path) {
             if disable_extension_load { "0" } else { "1" },
         );
 
+    // Windows MAX_PATH caveat: this build emits very deep object paths (the
+    // compressed_materialization unity object runs ~150 chars below the build dir) and
+    // Ninja does not shorten them to CMAKE_OBJECT_PATH_MAX, so a deep OUT_DIR can exceed
+    // 260 chars and fail late with `C1083: Cannot open compiler generated file: ''`. The
+    // build script can't raise the limit or move OUT_DIR — shorten the path instead
+    // (short CARGO_TARGET_DIR, drop `--target`, or check out nearer the drive root).
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
