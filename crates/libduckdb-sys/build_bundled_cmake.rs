@@ -70,22 +70,14 @@ pub fn main(out_dir: &str, out_path: &Path) {
         .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
         .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag());
 
-    // Re-enable C++ exceptions on MSVC. CMake's platform default would add /EHsc to
-    // CMAKE_CXX_FLAGS, but the cmake crate makes its own `cxxflag`s the *source* of
-    // -DCMAKE_CXX_FLAGS, replacing CMake's default, so /EHsc is otherwise dropped and
-    // DuckDB compiles with exception handling effectively off. A single-threaded error
-    // still unwinds via x64's table-based mechanism, but an exception thrown across the
-    // parallel CSV reader's worker threads (e.g. invalid UTF-8) is then mishandled at
-    // the C API boundary: it aborts with STATUS_STACK_BUFFER_OVERRUN (0xC0000409) under
-    // a CRT mismatch, or deadlocks when the CRT is aligned, instead of returning an
-    // error (https://github.com/duckdb/duckdb-rs/issues/774).
+    // Re-enable C++ exceptions on MSVC. The cmake crate makes its `cxxflag`s the
+    // source of -DCMAKE_CXX_FLAGS, replacing CMake's default (which includes /EHsc),
+    // so exception handling ends up effectively off: a thrown exception (e.g.
+    // invalid-UTF-8 CSV read) then aborts with STATUS_STACK_BUFFER_OVERRUN (#774).
     //
-    // INVARIANT: cxxflag("/EHsc") only reaches the compiler because we never call
-    // `config.define("CMAKE_CXX_FLAGS", ..)` — the cmake crate sources -DCMAKE_CXX_FLAGS
-    // from its `cxxflags` *only when* that var is not already in `defines`. Defining
-    // CMAKE_CXX_FLAGS anywhere here would silently discard /EHsc and reintroduce #774.
-    // (CMAKE_CXX_FLAGS_INIT, which we set to "/w", is a different variable and is safe.)
-    // Mirrors the gate in build_bundled_cc.rs; gcc/clang enable exceptions by default.
+    // Don't `config.define("CMAKE_CXX_FLAGS", ..)` here: it overrides the cxxflag
+    // above and silently drops /EHsc, reintroducing #774.
+    // Mirrors build_bundled_cc.rs; gcc/clang enable exceptions by default.
     if win_target() && is_compiler("msvc") {
         config.cxxflag("/EHsc");
     }
@@ -134,12 +126,11 @@ pub fn main(out_dir: &str, out_path: &Path) {
             if disable_extension_load { "0" } else { "1" },
         );
 
-    // Windows MAX_PATH caveat: this build emits very deep object paths (the
-    // compressed_materialization unity object runs ~150 chars below the build dir) and
-    // Ninja does not shorten them to CMAKE_OBJECT_PATH_MAX, so a deep OUT_DIR can exceed
-    // 260 chars and fail late with `C1083: Cannot open compiler generated file: ''`. The
-    // build script can't raise the limit or move OUT_DIR — shorten the path instead
-    // (short CARGO_TARGET_DIR, drop `--target`, or check out nearer the drive root).
+    // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
+    // CMAKE_OBJECT_PATH_MAX), so a deep OUT_DIR can exceed 260 chars and fail late with
+    // `C1083: Cannot open compiler generated file: ''`. The build script can't move
+    // OUT_DIR — shorten the path (short CARGO_TARGET_DIR, drop `--target`, or check out
+    // nearer the drive root).
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);

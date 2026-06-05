@@ -56,12 +56,10 @@ pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
     }
 }
 
-/// Link the Windows system libraries DuckDB needs but that neither `cc` nor a static
-/// CMake link adds automatically. Mirrors DuckDB's `DUCKDB_SYSTEM_LIBS`
-/// (duckdb-sources/src/CMakeLists.txt): `ws2_32` + `rstrtmgr` under `if(MSVC OR MINGW)`
-/// and `bcrypt` under `if(MSVC)`; the MinGW path also needs `stdc++`. Single canonical
-/// copy shared by both bundled backends — keep in sync with that upstream list on
-/// submodule bumps. Callers apply their own `win_target()` gate.
+/// Link the Windows system libraries DuckDB needs but that neither `cc` nor a
+/// static CMake link adds automatically. Mirrors DuckDB's `DUCKDB_SYSTEM_LIBS`
+/// (duckdb-sources/src/CMakeLists.txt) — keep in sync on submodule bumps.
+/// Callers apply their own `win_target()` gate.
 #[cfg(feature = "bundled")]
 pub(crate) fn link_windows_system_libs() {
     println!("cargo:rustc-link-lib=dylib=ws2_32");
