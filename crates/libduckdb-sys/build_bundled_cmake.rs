@@ -1,4 +1,4 @@
-use crate::{is_compiler, win_target, write_bindings};
+use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
@@ -70,6 +70,18 @@ pub fn main(out_dir: &str, out_path: &Path) {
         .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
         .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag());
 
+    // Re-enable C++ exceptions on MSVC. The cmake crate makes its `cxxflag`s the
+    // source of -DCMAKE_CXX_FLAGS, replacing CMake's default (which includes /EHsc),
+    // so exception handling ends up effectively off: a thrown exception (e.g.
+    // invalid-UTF-8 CSV read) then aborts with STATUS_STACK_BUFFER_OVERRUN (#774).
+    //
+    // Don't `config.define("CMAKE_CXX_FLAGS", ..)` here: it overrides the cxxflag
+    // above and silently drops /EHsc, reintroducing #774.
+    // Mirrors build_bundled_cc.rs; gcc/clang enable exceptions by default.
+    if win_target() && is_compiler("msvc") {
+        config.cxxflag("/EHsc");
+    }
+
     // Unity builds (DuckDB's default) combine .cpp files into fewer translation
     // units and compile significantly faster. Allow opting out for debugging.
     // Always set explicitly so the CMake cache doesn't keep a stale value.
@@ -114,6 +126,11 @@ pub fn main(out_dir: &str, out_path: &Path) {
             if disable_extension_load { "0" } else { "1" },
         );
 
+    // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
+    // CMAKE_OBJECT_PATH_MAX), so a deep OUT_DIR can exceed 260 chars and fail late with
+    // `C1083: Cannot open compiler generated file: ''`. The build script can't move
+    // OUT_DIR — shorten the path (short CARGO_TARGET_DIR, drop `--target`, or check out
+    // nearer the drive root).
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
@@ -469,15 +486,7 @@ fn link_system_libs() {
         "macos" => {
             println!("cargo:rustc-link-lib=dylib=c++");
         }
-        "windows" => {
-            println!("cargo:rustc-link-lib=dylib=ws2_32");
-            println!("cargo:rustc-link-lib=dylib=rstrtmgr");
-            if is_compiler("msvc") {
-                println!("cargo:rustc-link-lib=dylib=bcrypt");
-            } else {
-                println!("cargo:rustc-link-lib=dylib=stdc++");
-            }
-        }
+        "windows" => link_windows_system_libs(),
         other => {
             panic!(
                 "bundled-cmake is currently supported only on Linux, macOS, and Windows; unsupported target OS `{other}`"

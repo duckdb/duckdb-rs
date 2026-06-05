@@ -17,7 +17,6 @@ fn win_target() -> bool {
 /// the content of `CARGO_CFG_TARGET_ENV` (and is always lowercase)
 ///
 /// See [`win_target`]
-#[cfg(any(not(feature = "bundled"), feature = "bundled-cmake"))]
 fn is_compiler(compiler_name: &str) -> bool {
     std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == compiler_name)
 }
@@ -54,6 +53,21 @@ pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
     {
         let _ = header_dir;
         copy_pregenerated_bindings(out_path);
+    }
+}
+
+/// Link the Windows system libraries DuckDB needs but that neither `cc` nor a
+/// static CMake link adds automatically. Mirrors DuckDB's `DUCKDB_SYSTEM_LIBS`
+/// (duckdb-sources/src/CMakeLists.txt) — keep in sync on submodule bumps.
+/// Callers apply their own `win_target()` gate.
+#[cfg(feature = "bundled")]
+pub(crate) fn link_windows_system_libs() {
+    println!("cargo:rustc-link-lib=dylib=ws2_32");
+    println!("cargo:rustc-link-lib=dylib=rstrtmgr");
+    if is_compiler("msvc") {
+        println!("cargo:rustc-link-lib=dylib=bcrypt");
+    } else {
+        println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{win_target, write_bindings};
+use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -114,6 +114,16 @@ pub fn main(out_dir: &str, out_path: &Path) {
         .warnings(false)
         .flag_if_supported("-w");
 
+    // Enable C++ exceptions on MSVC: without /EHsc, exception handling is off, the
+    // C API's try/catch blocks are inert, and a thrown exception (e.g. invalid-UTF-8
+    // CSV read) aborts with STATUS_STACK_BUFFER_OVERRUN (#774). Hard flag, not
+    // flag_if_supported, so a spurious probe miss can't silently drop it. gcc/clang
+    // enable exceptions by default and reject /EHsc, so gate on MSVC. Mirrors
+    // build_bundled_cmake.rs.
+    if win_target() && is_compiler("msvc") {
+        cfg.flag("/EHsc");
+    }
+
     let is_debug = match std::env::var("DEBUG") {
         Ok(v) => v != "false" && v != "0",
         Err(_) => false,
@@ -126,6 +136,12 @@ pub fn main(out_dir: &str, out_path: &Path) {
         cfg.define("DUCKDB_BUILD_LIBRARY", None);
     }
     cfg.compile("duckdb");
+
+    // `cc` does not link DuckDB's Windows system libs automatically (e.g. unresolved
+    // `RmStartSession` from the Restart Manager). See link_windows_system_libs.
+    if win_target() {
+        link_windows_system_libs();
+    }
 
     println!("cargo:lib_dir={out_dir}");
 }
