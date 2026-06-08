@@ -33,20 +33,25 @@ pub trait VScalar: Sized {
     /// of this call. Implementations must populate `output` for rows
     /// `0..input.len()` and must not read or write beyond that range.
     ///
-    /// # Safety
+    /// This mirrors [`VTab::func`](crate::vtab::VTab::func): the method itself
+    /// is safe, but `input` and `output` are accessed through the vector
+    /// wrappers in [`crate::core`], several of whose accessors are `unsafe`.
     ///
-    /// Called by the DuckDB trampoline with wrappers over borrowed DuckDB
-    /// storage. Implementations must:
+    /// # Working with vectors
+    ///
+    /// When reaching for those `unsafe` accessors, implementations must uphold
+    /// their contracts:
     ///
     /// - only read and write within the rows and column types DuckDB provided
     ///   for this invocation;
     /// - not retain `input`, `output`, or any vector/slice derived from them
     ///   past return;
     /// - not hold two writable wrappers over the same column at the same
-    ///   time. The wrapper types do not currently prevent this: calling e.g.
-    ///   `input.flat_vector(0)` twice and then `as_mut_slice` on each yields
-    ///   overlapping `&mut [T]`, which is undefined behavior.
-    unsafe fn invoke(
+    ///   time. The column accessors (`flat_vector`, `list_vector`, ...) take
+    ///   `&self`, so safe code can obtain two wrappers over one column and
+    ///   call `as_mut_slice` on each, yielding overlapping `&mut [T]` —
+    ///   undefined behavior.
+    fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
@@ -232,7 +237,7 @@ mod test {
     impl VScalar for ErrorScalar {
         type State = ();
 
-        unsafe fn invoke(
+        fn invoke(
             _: &Self::State,
             input: &mut DataChunkHandle,
             _: &mut dyn WritableVector,
@@ -271,7 +276,7 @@ mod test {
     impl VScalar for EchoScalar {
         type State = TestState;
 
-        unsafe fn invoke(
+        fn invoke(
             state: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
@@ -304,7 +309,7 @@ mod test {
     impl VScalar for Repeat {
         type State = ();
 
-        unsafe fn invoke(
+        fn invoke(
             _: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
@@ -420,7 +425,7 @@ mod test {
     impl VScalar for CounterScalar {
         type State = ();
 
-        unsafe fn invoke(
+        fn invoke(
             _: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
@@ -448,7 +453,7 @@ mod test {
     impl VScalar for VolatileCounterScalar {
         type State = ();
 
-        unsafe fn invoke(
+        fn invoke(
             _: &Self::State,
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,

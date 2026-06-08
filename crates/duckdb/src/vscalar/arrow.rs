@@ -107,7 +107,7 @@ where
 {
     type State = T::State;
 
-    unsafe fn invoke(
+    fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,
         out: &mut dyn WritableVector,

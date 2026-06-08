@@ -20,7 +20,7 @@ impl VScalar for AddOne {
 
     /// Called once per data chunk. DuckDB passes a batch of input rows and
     /// expects the corresponding output values to be written back.
-    unsafe fn invoke(
+    fn invoke(
         _: &Self::State,
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
