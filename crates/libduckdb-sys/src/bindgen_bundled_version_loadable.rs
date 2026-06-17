@@ -369,7 +369,7 @@ pub struct duckdb_bit {
     pub data: *mut u8,
     pub size: idx_t,
 }
-#[doc = "! BIGNUMs are composed of a byte pointer, a size, and an `is_negative` bool.\n! The absolute value of the number is stored in `data` in little endian format.\n! You must free `data` with `duckdb_free`."]
+#[doc = "! BIGNUMs are composed of a byte pointer, a size, and an `is_negative` bool.\n! The absolute value of the number is stored in `data` in big endian format.\n! You must free `data` with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_bignum {
@@ -14115,3 +14115,4 @@ pub unsafe fn duckdb_rs_extension_api_init(
     }
     Ok(true)
 }
+

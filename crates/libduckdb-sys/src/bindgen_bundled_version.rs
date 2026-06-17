@@ -369,7 +369,7 @@ pub struct duckdb_bit {
     pub data: *mut u8,
     pub size: idx_t,
 }
-#[doc = "! BIGNUMs are composed of a byte pointer, a size, and an `is_negative` bool.\n! The absolute value of the number is stored in `data` in little endian format.\n! You must free `data` with `duckdb_free`."]
+#[doc = "! BIGNUMs are composed of a byte pointer, a size, and an `is_negative` bool.\n! The absolute value of the number is stored in `data` in big endian format.\n! You must free `data` with `duckdb_free`."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct duckdb_bignum {
@@ -1664,7 +1664,7 @@ unsafe extern "C" {
     pub fn duckdb_create_bignum(input: duckdb_bignum) -> duckdb_value;
 }
 unsafe extern "C" {
-    #[doc = "Creates a DECIMAL value from a duckdb_decimal\n\n @param input The duckdb_decimal value\n @return The value. This must be destroyed with `duckdb_destroy_value`."]
+    #[doc = "Creates a DECIMAL value from a duckdb_decimal\n\nThe width must be between 1 and 38, and the scale must not exceed the width.\n\n @param input The duckdb_decimal value\n @return The value, or `nullptr` if the width or scale are out of range. This must be destroyed with\n`duckdb_destroy_value`."]
     pub fn duckdb_create_decimal(input: duckdb_decimal) -> duckdb_value;
 }
 unsafe extern "C" {
@@ -1979,7 +1979,7 @@ unsafe extern "C" {
     ) -> duckdb_logical_type;
 }
 unsafe extern "C" {
-    #[doc = "Creates a DECIMAL type with the specified width and scale.\nThe resulting type should be destroyed with `duckdb_destroy_logical_type`.\n\n @param width The width of the decimal type\n @param scale The scale of the decimal type\n @return The logical type."]
+    #[doc = "Creates a DECIMAL type with the specified width and scale.\nThe resulting type should be destroyed with `duckdb_destroy_logical_type`.\n\n @param width The width of the decimal type. Must be between 1 and 38.\n @param scale The scale of the decimal type. Must not exceed the width.\n @return The logical type, or `nullptr` if the width or scale are out of range."]
     pub fn duckdb_create_decimal_type(width: u8, scale: u8) -> duckdb_logical_type;
 }
 unsafe extern "C" {
