@@ -29,7 +29,7 @@ if [ $# -gt 1 ]; then
 fi
 
 # Download and extract amalgamation
-DUCKDB_VERSION=${1:-v1.4.4}
+DUCKDB_VERSION=${1:-v1.4.5}
 if ! valid_duckdb_version "$DUCKDB_VERSION"; then
     echo "Invalid DuckDB version: $DUCKDB_VERSION" >&2
     usage >&2
