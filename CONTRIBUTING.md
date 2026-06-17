@@ -144,6 +144,7 @@ ASAN_OPTIONS=detect_leaks=1 ASAN_SYMBOLIZER_PATH=/usr/local/opt/llvm/bin/llvm-sy
 ### Update to a new version
 
 When DuckDB releases a new version, duckdb-rs needs a matching release.
+Prepare normal releases from `main`. For LTS releases that stay on DuckDB 1.4 Andium, use the `v1.4-andium` branch.
 
 Use the top-level upgrade script for DuckDB version updates:
 
