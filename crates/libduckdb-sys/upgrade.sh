@@ -23,17 +23,46 @@ crate_version_to_duckdb_version() {
     printf 'v%s.%s.%s' "$DUCKDB_MAJOR" "$DUCKDB_MINOR" "$DUCKDB_PATCH"
 }
 
+# Parse args before doing expensive regeneration work.
+DUCKDB_SHA=""
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --sha)
+            if [ -z "${2:-}" ]; then
+                echo "--sha requires a commit SHA" >&2
+                exit 1
+            fi
+            DUCKDB_SHA=$2
+            shift 2
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+    echo "Invalid commit SHA: $DUCKDB_SHA" >&2
+    exit 1
+fi
+
 cargo clean
 mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
 export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
-# Download and extract amalgamation
-DUCKDB_VERSION=${1:-$(crate_version_to_duckdb_version "$(current_workspace_version)")}
+DUCKDB_VERSION=${POSITIONAL[0]:-$(crate_version_to_duckdb_version "$(current_workspace_version)")}
 DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
+
+if [ -n "$DUCKDB_SHA" ]; then
+    echo "Pinning DuckDB sources to commit $DUCKDB_SHA (version $DUCKDB_VERSION)"
+fi
+
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
 git fetch
-git checkout "$DUCKDB_VERSION"
+git checkout "${DUCKDB_SHA:-$DUCKDB_VERSION}"
 cd "$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/update_sources.py"
 
