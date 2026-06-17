@@ -1,6 +1,41 @@
 #!/bin/bash
 
-set -e
+set -e -o pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+  ./crates/libduckdb-sys/upgrade.sh [DUCKDB_VERSION]
+
+Without arguments, regenerate bindings for the version pinned in this script.
+With DUCKDB_VERSION, regenerate bindings for that DuckDB release. The version
+may be specified with or without a leading "v", e.g. "1.4.5" or "v1.4.5".
+EOF
+}
+
+valid_duckdb_version() {
+    local version=${1#v}
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+if [ $# -gt 1 ]; then
+    usage >&2
+    exit 1
+fi
+
+# Download and extract amalgamation
+DUCKDB_VERSION=${1:-v1.4.5}
+if ! valid_duckdb_version "$DUCKDB_VERSION"; then
+    echo "Invalid DuckDB version: $DUCKDB_VERSION" >&2
+    usage >&2
+    exit 1
+fi
+DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
 
 SCRIPT=$(realpath "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT")
@@ -11,8 +46,6 @@ cargo clean
 mkdir -p "$SCRIPT_DIR/../../target" "$SCRIPT_DIR/duckdb"
 export DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb"
 
-# Download and extract amalgamation
-DUCKDB_VERSION=v1.4.4
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
 git fetch
