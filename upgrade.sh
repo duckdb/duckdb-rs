@@ -19,10 +19,17 @@ usage() {
     cat <<'EOF'
 Usage:
   ./upgrade.sh [DUCKDB_VERSION]
+  ./upgrade.sh DUCKDB_VERSION --sha COMMIT_SHA
+  ./upgrade.sh --sha COMMIT_SHA
   ./upgrade.sh --patch
 
 Without arguments, upgrade to the latest DuckDB release.
 With DUCKDB_VERSION, upgrade bundled DuckDB and reset the crate patch to 0.
+With DUCKDB_VERSION and --sha, pin the bundled DuckDB sources to COMMIT_SHA
+(e.g. a pre-tag release-branch commit) while still bumping to the planned
+DUCKDB_VERSION. With --sha alone, pin sources to COMMIT_SHA and test against
+the current crate version without bumping versions or download URLs (for
+testing arbitrary upstream commits).
 Full upgrades also update workflow and README download URLs and regenerate
 bindings. With --patch, increment only the duckdb-rs crate patch version and
 leave DuckDB sources, generated bindings, and DuckDB download tags unchanged.
@@ -91,26 +98,50 @@ update_crate_versions() {
 }
 
 PATCH_MODE=0
+DUCKDB_SHA=""
+POSITIONAL=()
 
-case "${1:-}" in
-    -h|--help)
-        usage
-        exit 0
-        ;;
-    --patch)
-        PATCH_MODE=1
-        if [ $# -ne 1 ]; then
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --patch)
+            PATCH_MODE=1
+            shift
+            ;;
+        --sha)
+            if [ -z "${2:-}" ]; then
+                echo "--sha requires a commit SHA" >&2
+                usage >&2
+                exit 1
+            fi
+            DUCKDB_SHA=$2
+            shift 2
+            ;;
+        -*)
             usage >&2
             exit 1
-        fi
-        ;;
-    -*)
-        usage >&2
-        exit 1
-        ;;
-esac
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
 
-if [ "$PATCH_MODE" -eq 0 ] && [ $# -gt 1 ]; then
+if [ "$PATCH_MODE" -eq 1 ] && { [ -n "$DUCKDB_SHA" ] || [ ${#POSITIONAL[@]} -ne 0 ]; }; then
+    usage >&2
+    exit 1
+fi
+
+if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+    echo "Invalid commit SHA: $DUCKDB_SHA" >&2
+    exit 1
+fi
+
+if [ "$PATCH_MODE" -eq 0 ] && [ ${#POSITIONAL[@]} -gt 1 ]; then
     usage >&2
     exit 1
 fi
@@ -129,7 +160,14 @@ if [ "$PATCH_MODE" -eq 1 ]; then
     exit 0
 fi
 
-DUCKDB_VERSION=${1:-$(get_latest_release "duckdb/duckdb")}
+# Test an arbitrary upstream commit: pin sources to the SHA and validate it
+# against the current crate version, without bumping versions or download URLs.
+if [ -n "$DUCKDB_SHA" ] && [ ${#POSITIONAL[@]} -eq 0 ]; then
+    echo "Test DuckDB commit $DUCKDB_SHA against current crate version $CURRENT_CRATE_VERSION (no version bump)"
+    exec ./crates/libduckdb-sys/upgrade.sh --sha "$DUCKDB_SHA"
+fi
+
+DUCKDB_VERSION=${POSITIONAL[0]:-$(get_latest_release "duckdb/duckdb")}
 if ! valid_duckdb_version "$DUCKDB_VERSION"; then
     echo "Invalid DuckDB version: $DUCKDB_VERSION" >&2
     usage >&2
@@ -138,12 +176,14 @@ fi
 DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
 TARGET_CRATE_VERSION=$(duckdb_version_to_crate_version "$DUCKDB_VERSION" "$CRATE_MAJOR")
 
-if [ "$DUCKDB_VERSION" = "$CURRENT_DUCKDB_VERSION" ]; then
+if [ -z "$DUCKDB_SHA" ] && [ "$DUCKDB_VERSION" = "$CURRENT_DUCKDB_VERSION" ]; then
     echo "Already up to date, latest DuckDB version is $DUCKDB_VERSION and workspace version is $CURRENT_CRATE_VERSION"
     exit 0
 fi
 
-echo "Start to upgrade DuckDB from $CURRENT_DUCKDB_VERSION to $DUCKDB_VERSION"
+SHA_NOTE=""
+[ -n "$DUCKDB_SHA" ] && SHA_NOTE=" (source pinned to commit $DUCKDB_SHA)"
+echo "Start to upgrade DuckDB from $CURRENT_DUCKDB_VERSION to $DUCKDB_VERSION$SHA_NOTE"
 echo "Update crate version from $CURRENT_CRATE_VERSION to $TARGET_CRATE_VERSION"
 
 update_crate_versions
@@ -154,4 +194,6 @@ sed_inplace "s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" \
 # Update README download URLs, not prose/history.
 sed_inplace "/releases\/download/s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" README.md
 
-exec ./crates/libduckdb-sys/upgrade.sh "$DUCKDB_VERSION"
+SYS_ARGS=("$DUCKDB_VERSION")
+[ -n "$DUCKDB_SHA" ] && SYS_ARGS+=(--sha "$DUCKDB_SHA")
+exec ./crates/libduckdb-sys/upgrade.sh "${SYS_ARGS[@]}"
