@@ -168,6 +168,7 @@ duckdb = { git = "https://github.com/duckdb/duckdb-rs", rev = "abc123def", featu
 ```
 
 Note: Using the main branch of duckdb-rs means you'll get the latest Rust bindings and features, but you'll still be using whatever version of DuckDB core is bundled with that commit (when using the `bundled` feature).
+Use the `v1.4-andium` branch for LTS releases that stay on DuckDB 1.4 Andium.
 
 ## Notes on building duckdb and libduckdb-sys
 
