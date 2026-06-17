@@ -21,7 +21,7 @@ rust-version = "1.84.1"
 
 [workspace.dependencies]
 duckdb = { version = "=1.4.5", path = "crates/duckdb" }
-duckdb-loadable-macros = { version = "=0.1.14", path = "crates/duckdb-loadable-macros" }
+duckdb-loadable-macros = { version = "=0.1.15", path = "crates/duckdb-loadable-macros" }
 libduckdb-sys = { version = "=1.4.5", path = "crates/libduckdb-sys" }
 
 arrow = { version = "56", default-features = false }
