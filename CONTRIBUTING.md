@@ -93,6 +93,10 @@ We can use the scripts to do the upgrades:
 ```shell
 ./upgrade.sh
 ```
+Pass a version to upgrade to a specific DuckDB release instead of the latest:
+```shell
+./upgrade.sh 1.4.5
+```
 Which use sed to update the version number and then call `./libduckdb-sys/upgrade.sh` to generated new bindings.
 
 We may need to fix any error as duckdb's c-api may have breaking changes occasionally.
