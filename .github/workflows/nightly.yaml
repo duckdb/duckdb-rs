@@ -1,0 +1,22 @@
+name: Nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      duckdb-sha:
+        description: DuckDB commit SHA to test against
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+  nightly:
+    name: DuckDB nightly
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show DuckDB commit
+        run: |
+          echo "DuckDB commit: ${{ inputs.duckdb-sha }}"
