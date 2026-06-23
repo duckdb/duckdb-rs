@@ -172,16 +172,18 @@ submodule, generated bindings, or DuckDB download tags.
 
 #### Testing a pre-tag DuckDB commit
 
-To integrate a DuckDB version before it is tagged, pass `--sha` to pin the
-bundled sources to an upstream commit (e.g. a release-branch commit). The
-`bundled` build compiles from source, so no published release binaries are
-needed.
+To integrate a DuckDB version before it is tagged, pass a commit SHA to `--sha`
+(e.g. a release-branch commit). The `bundled` build compiles from source, so no
+published release binaries are needed.
 
 ```shell
-./upgrade.sh --sha <COMMIT_SHA>          # test a commit, no version bump
+./upgrade.sh --sha <COMMIT_SHA>          # pin a commit, no version bump
 ./upgrade.sh v1.5.4 --sha <COMMIT_SHA>   # planned release, sources pinned to commit
 ```
 
-Both regenerate bindings and run the bundled tests. Download-based CI jobs
-(`DUCKDB_DOWNLOAD_LIB`, the Windows release zip) stay red until DuckDB publishes
-the release binaries; re-run `./upgrade.sh v1.5.4` to finalize once tagged.
+Both regenerate bundled sources and bindings, but do not run tests. Validate
+locally, or rely on the nightly workflow and CI to cover the bundled backends.
+Download-based CI jobs (`DUCKDB_DOWNLOAD_LIB`, the Windows release zip) stay red
+until DuckDB publishes the release binaries. If the planned release command
+above already bumped versions and download URLs, finalize the bundled sources
+and bindings from the tag with `./crates/libduckdb-sys/upgrade.sh v1.5.4`.

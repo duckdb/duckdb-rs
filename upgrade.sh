@@ -28,8 +28,7 @@ With DUCKDB_VERSION, upgrade bundled DuckDB and reset the crate patch to 0.
 With DUCKDB_VERSION and --sha, pin the bundled DuckDB sources to COMMIT_SHA
 (e.g. a pre-tag release-branch commit) while still bumping to the planned
 DUCKDB_VERSION. With --sha alone, pin sources to COMMIT_SHA and regenerate for
-the current crate version without bumping versions or download URLs (for
-testing arbitrary upstream commits).
+the current crate version without bumping versions or download URLs.
 Full upgrades also update workflow and README download URLs and regenerate
 bindings. With --patch, increment only the duckdb-rs crate patch version and
 leave DuckDB sources, generated bindings, and DuckDB download tags unchanged.
@@ -136,8 +135,8 @@ if [ "$PATCH_MODE" -eq 1 ] && { [ -n "$DUCKDB_SHA" ] || [ ${#POSITIONAL[@]} -ne 
     exit 1
 fi
 
-if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
-    echo "Invalid commit SHA: $DUCKDB_SHA" >&2
+if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "Invalid commit SHA: $DUCKDB_SHA (expected 40 hex characters)" >&2
     exit 1
 fi
 

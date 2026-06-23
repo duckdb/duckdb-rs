@@ -23,6 +23,15 @@ crate_version_to_duckdb_version() {
     printf 'v%s.%s.%s' "$DUCKDB_MAJOR" "$DUCKDB_MINOR" "$DUCKDB_PATCH"
 }
 
+fetch_duckdb_sha() {
+    local SHA=$1
+    if ! git fetch origin "$SHA"; then
+        echo "Failed to fetch DuckDB commit $SHA from origin." >&2
+        echo "Ensure the commit is reachable from an advertised remote ref." >&2
+        exit 1
+    fi
+}
+
 # Parse args before doing expensive regeneration work.
 DUCKDB_SHA=""
 POSITIONAL=()
@@ -43,8 +52,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
-    echo "Invalid commit SHA: $DUCKDB_SHA" >&2
+if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "Invalid commit SHA: $DUCKDB_SHA (expected 40 hex characters)" >&2
     exit 1
 fi
 
@@ -61,8 +70,14 @@ fi
 
 git submodule update --init --checkout
 cd "$SCRIPT_DIR/duckdb-sources"
-git fetch
-git checkout "${DUCKDB_SHA:-$DUCKDB_VERSION}"
+if [ -n "$DUCKDB_SHA" ]; then
+    fetch_duckdb_sha "$DUCKDB_SHA"
+    DUCKDB_TARGET=$DUCKDB_SHA
+else
+    git fetch --all --tags
+    DUCKDB_TARGET=$DUCKDB_VERSION
+fi
+git checkout "$DUCKDB_TARGET"
 cd "$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/update_sources.py"
 
@@ -77,9 +92,6 @@ if [ ! -f "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" ]; then
     exit 1
 fi
 
-# Sanity checks
-# FIXME: how to test this here?
-
 # Regenerate bindgen file for DUCKDB
 rm -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs"
 # Just to make sure there is only one bindgen.rs file in target dir
@@ -91,4 +103,4 @@ if [ ! -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs" ]; then
     exit 1
 fi
 
-printf '    \e[35;1mFinished\e[0m regenerating bundled DUCKDB sources\n'
+printf '    \e[35;1mFinished\e[0m regenerating bundled DUCKDB sources and bindings (tests not run)\n'

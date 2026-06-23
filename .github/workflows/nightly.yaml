@@ -45,6 +45,7 @@ jobs:
           git diff --stat
 
       - name: Test bundled backend
+        if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
         run: cargo test -p duckdb --features bundled
 
       - name: Test bundled-cmake backend
