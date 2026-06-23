@@ -33,6 +33,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Upgrade bundled DuckDB to nightly commit
+        id: upgrade
         env:
           DUCKDB_SHA: ${{ inputs.duckdb-sha }}
         run: ./upgrade.sh --sha "$DUCKDB_SHA"
@@ -47,4 +48,5 @@ jobs:
         run: cargo test -p duckdb --features bundled
 
       - name: Test bundled-cmake backend
+        if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
         run: cargo test -p duckdb --features bundled-cmake

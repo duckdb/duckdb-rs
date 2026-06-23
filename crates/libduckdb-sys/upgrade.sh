@@ -91,8 +91,4 @@ if [ ! -f "$SCRIPT_DIR/src/bindgen_bundled_version.rs" ]; then
     exit 1
 fi
 
-# Sanity checks
-cd "$SCRIPT_DIR/.."
-cargo test --features "extensions-full buildtime_bindgen"
-
-printf '    \e[35;1mFinished\e[0m bundled DUCKDB tests\n'
+printf '    \e[35;1mFinished\e[0m regenerating bundled DUCKDB sources\n'

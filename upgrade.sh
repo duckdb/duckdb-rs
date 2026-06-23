@@ -27,7 +27,7 @@ Without arguments, upgrade to the latest DuckDB release.
 With DUCKDB_VERSION, upgrade bundled DuckDB and reset the crate patch to 0.
 With DUCKDB_VERSION and --sha, pin the bundled DuckDB sources to COMMIT_SHA
 (e.g. a pre-tag release-branch commit) while still bumping to the planned
-DUCKDB_VERSION. With --sha alone, pin sources to COMMIT_SHA and test against
+DUCKDB_VERSION. With --sha alone, pin sources to COMMIT_SHA and regenerate for
 the current crate version without bumping versions or download URLs (for
 testing arbitrary upstream commits).
 Full upgrades also update workflow and README download URLs and regenerate
@@ -160,10 +160,10 @@ if [ "$PATCH_MODE" -eq 1 ]; then
     exit 0
 fi
 
-# Test an arbitrary upstream commit: pin sources to the SHA and validate it
-# against the current crate version, without bumping versions or download URLs.
+# Pin an arbitrary upstream commit against the current crate version, without
+# bumping versions or download URLs.
 if [ -n "$DUCKDB_SHA" ] && [ ${#POSITIONAL[@]} -eq 0 ]; then
-    echo "Test DuckDB commit $DUCKDB_SHA against current crate version $CURRENT_CRATE_VERSION (no version bump)"
+    echo "Pin DuckDB commit $DUCKDB_SHA against current crate version $CURRENT_CRATE_VERSION (no version bump)"
     exec ./crates/libduckdb-sys/upgrade.sh --sha "$DUCKDB_SHA"
 fi
 
