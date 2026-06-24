@@ -37,24 +37,22 @@ regenerate_bindings() {
     shift
     local FEATURES=$*
     local BINDGEN_RS
+    local TMP_OUTPUT
 
-    rm -f "$OUTPUT"
-    find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -exec rm {} \;
+    find "$WORKSPACE_DIR/target" -type f -name bindgen.rs -exec rm {} \;
     DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb" \
         DUCKDB_INCLUDE_DIR="$SCRIPT_DIR/duckdb/src/include" \
         cargo check -p libduckdb-sys --no-default-features --features "$FEATURES"
 
-    BINDGEN_RS=$(find "$SCRIPT_DIR/../../target" -type f -name bindgen.rs -print -quit)
+    BINDGEN_RS=$(find "$WORKSPACE_DIR/target" -path '*/libduckdb-sys-*/out/bindgen.rs' -print -quit)
     if [ -z "$BINDGEN_RS" ]; then
         echo "ERROR: bindgen.rs was not generated" >&2
         exit 1
     fi
 
-    cp "$BINDGEN_RS" "$OUTPUT"
-    if [ ! -f "$OUTPUT" ]; then
-        echo "ERROR: $OUTPUT was not regenerated" >&2
-        exit 1
-    fi
+    TMP_OUTPUT="${OUTPUT}.tmp"
+    cp "$BINDGEN_RS" "$TMP_OUTPUT"
+    mv "$TMP_OUTPUT" "$OUTPUT"
 }
 
 # Parse args before doing expensive regeneration work.
@@ -82,7 +80,7 @@ if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
     exit 1
 fi
 
-mkdir -p "$SCRIPT_DIR/../../target"
+mkdir -p "$WORKSPACE_DIR/target"
 
 DUCKDB_VERSION=${POSITIONAL[0]:-$(crate_version_to_duckdb_version "$(current_workspace_version)")}
 DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
@@ -104,7 +102,6 @@ git checkout "$DUCKDB_TARGET"
 cd "$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/update_sources.py"
 
-cd "$SCRIPT_DIR"
 regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version.rs" buildtime_bindgen
 regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" buildtime_bindgen loadable-extension
 
