@@ -51,6 +51,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.target }}
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
       - uses: robinraju/release-downloader@v1.4
@@ -133,6 +134,8 @@ jobs:
         with:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Verify static linking with extension loading disabled
@@ -166,6 +169,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-bin: false
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cargo-binstall
       - run: cargo binstall --no-confirm cargo-msrv
       - run: cargo msrv verify --path crates/duckdb
@@ -183,6 +187,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly-2026-03-03
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Tests with asan
         env:
