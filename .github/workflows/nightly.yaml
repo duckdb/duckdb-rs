@@ -1,6 +1,8 @@
 name: Nightly
 
 on:
+  # Triggered from DuckDB's NotifyExternalRepositories workflow.
+  # See https://github.com/duckdb/duckdb/pull/23352 for details.
   workflow_dispatch:
     inputs:
       duckdb-sha:
