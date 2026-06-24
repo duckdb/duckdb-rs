@@ -12,11 +12,42 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
 
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.duckdb-sha }}
+  cancel-in-progress: true
+
 jobs:
   nightly:
     name: DuckDB nightly
     runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
-      - name: Show DuckDB commit
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Upgrade bundled DuckDB to nightly commit
+        id: upgrade
+        env:
+          DUCKDB_SHA: ${{ inputs.duckdb-sha }}
+        run: ./upgrade.sh --sha "$DUCKDB_SHA"
+
+      - name: Show generated upgrade diff
+        if: always()
         run: |
-          echo "DuckDB commit: ${{ inputs.duckdb-sha }}"
+          git status --short
+          git diff --stat
+
+      - name: Test bundled backend
+        if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
+        run: cargo test -p duckdb --features bundled
+
+      - name: Test bundled-cmake backend
+        if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
+        run: cargo test -p duckdb --features bundled-cmake
