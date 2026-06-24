@@ -46,6 +46,11 @@ jobs:
 
       - name: Test bundled backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
+        # cc crate ignores CMAKE_*_COMPILER_LAUNCHER; wrap CC/CXX for sccache.
+        # Step-scoped so it doesn't reach the bundled-cmake step.
+        env:
+          CC: "sccache cc"
+          CXX: "sccache c++"
         run: cargo test -p duckdb --features bundled
 
       - name: Test bundled-cmake backend

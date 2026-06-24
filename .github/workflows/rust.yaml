@@ -44,11 +44,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       DUCKDB_DOWNLOAD_LIB: "1"
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.target }}
+      - uses: mozilla-actions/sccache-action@v0.0.10
 
       - uses: robinraju/release-downloader@v1.4
         name: Download duckdb
@@ -65,6 +68,10 @@ jobs:
       - name: run cargo clippy
         if: matrix.os == 'ubuntu-latest'
         # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
+        # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
+        env:
+          CC: "sccache cc"
+          CXX: "sccache c++"
         run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full" --locked -- -D warnings
 
       - name: Dry-run release of crates
@@ -168,11 +175,15 @@ jobs:
   sanitizer:
     name: Address Sanitizer
     runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly-2026-03-03
+      - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Tests with asan
         env:
           # PRs use a downloaded libduckdb for speed (no bundled C++ ASAN coverage).
@@ -182,6 +193,10 @@ jobs:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
+          # extensions-full (main only) compiles the bundled (cc) backend; wrap CC/CXX
+          # for sccache. Not ASAN-instrumented (RUSTFLAGS don't reach cc), so safe.
+          CC: "sccache cc"
+          CXX: "sccache c++"
         # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
         run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb
