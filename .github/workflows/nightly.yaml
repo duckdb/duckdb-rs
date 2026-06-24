@@ -1,6 +1,8 @@
 name: Nightly
 
 on:
+  # Triggered from DuckDB's NotifyExternalRepositories workflow.
+  # See https://github.com/duckdb/duckdb/pull/23352 for details.
   workflow_dispatch:
     inputs:
       duckdb-sha:
@@ -30,6 +32,8 @@ jobs:
         with:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Upgrade bundled DuckDB to nightly commit
