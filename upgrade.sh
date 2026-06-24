@@ -187,8 +187,7 @@ echo "Update crate version from $CURRENT_CRATE_VERSION to $TARGET_CRATE_VERSION"
 
 update_crate_versions
 
-sed_inplace "s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" \
-    .github/workflows/rust.yaml
+sed_inplace "s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" .github/workflows/rust.yaml
 
 # Update README download URLs, not prose/history.
 sed_inplace "/releases\/download/s!$CURRENT_DUCKDB_VERSION_PATTERN!$DUCKDB_VERSION!g" README.md
