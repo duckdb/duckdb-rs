@@ -51,6 +51,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: ${{ matrix.target }}
+          cache-on-failure: false
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
@@ -135,6 +136,7 @@ jobs:
           submodules: recursive
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          cache-on-failure: false
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
@@ -169,6 +171,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-bin: false
+          cache-on-failure: false
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cargo-binstall
       - run: cargo binstall --no-confirm cargo-msrv
@@ -187,6 +190,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly-2026-03-03
+          cache-on-failure: false
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Tests with asan
