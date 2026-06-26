@@ -29,6 +29,10 @@
 #include "duckdb/planner/filter/optional_filter.hpp"
 #include "duckdb/planner/filter/struct_filter.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
+#include "duckdb/common/types/date.hpp"
+#include "duckdb/common/types/decimal.hpp"
+#include "duckdb/common/types/time.hpp"
+#include "duckdb/common/types/timestamp.hpp"
 
 using duckdb::ArrowArrayStreamWrapper;
 using duckdb::ArrowStreamParameters;
@@ -64,8 +68,10 @@ struct RustCallbacks {
 //
 // Scalar format:  stype:u8 + payload
 //   stype 0 (i64) 1 (u64) 2 (f64) 3 (bool) 4 (utf8 len:u32+bytes) 5 (null)
+//   stype 6 (date32 i32:days) 7 (time unit:u8 + i64:µs) 8 (timestamp unit:u8 + i64)
+//   stype 9 (decimal128 i128:16LE-bytes + scale:u8)  stype 10 (blob len:u32 + bytes)
+//   unit byte: 0=s 1=ms 2=µs 3=ns
 //   stype 255 (unsupported)
-//   (Date/Time/Timestamp/Decimal128/Blob scalars are added in later tasks.)
 //
 // op byte (for tag 0):  0=EQ 1=NE 2=LT 3=GT 4=LE 5=GE  (matches ExpressionType 25-30)
 
@@ -78,6 +84,11 @@ static void push_u32(std::vector<uint8_t> &buf, uint32_t v) {
     buf.push_back((uint8_t)((v >> 24) & 0xff));
 }
 
+static void push_i32(std::vector<uint8_t> &buf, int32_t v) {
+    uint32_t u = (uint32_t)v;
+    for (int i = 0; i < 4; i++) { buf.push_back((uint8_t)(u & 0xff)); u >>= 8; }
+}
+
 static void push_i64(std::vector<uint8_t> &buf, int64_t v) {
     uint64_t u = (uint64_t)v;
     for (int i = 0; i < 8; i++) { buf.push_back((uint8_t)(u & 0xff)); u >>= 8; }
@@ -85,6 +96,12 @@ static void push_i64(std::vector<uint8_t> &buf, int64_t v) {
 
 static void push_u64(std::vector<uint8_t> &buf, uint64_t v) {
     for (int i = 0; i < 8; i++) { buf.push_back((uint8_t)(v & 0xff)); v >>= 8; }
+}
+
+static void push_i128(std::vector<uint8_t> &buf, duckdb::hugeint_t h) {
+    // Little-endian i128: low 64 bits then high 64 bits (two's complement).
+    push_u64(buf, h.lower);
+    push_i64(buf, h.upper);
 }
 
 static void push_f64(std::vector<uint8_t> &buf, double v) {
@@ -122,6 +139,53 @@ static void emit_scalar(const duckdb::Value &v, std::vector<uint8_t> &buf) {
             std::string s = v.ToString();
             push_u32(buf, (uint32_t)s.size());
             for (char c : s) { buf.push_back((uint8_t)c); }
+            break;
+        }
+        case duckdb::LogicalTypeId::DATE:
+            push_u8(buf, 6);
+            push_i32(buf, duckdb::DateValue::Get(v).days);
+            break;
+        case duckdb::LogicalTypeId::TIME:
+            push_u8(buf, 7);
+            push_u8(buf, 2); // unit = µs
+            push_i64(buf, duckdb::TimeValue::Get(v).micros);
+            break;
+        case duckdb::LogicalTypeId::TIMESTAMP:
+        case duckdb::LogicalTypeId::TIMESTAMP_TZ:
+            push_u8(buf, 8);
+            push_u8(buf, 2); // µs
+            push_i64(buf, duckdb::TimestampValue::Get(v).value);
+            break;
+        case duckdb::LogicalTypeId::TIMESTAMP_MS:
+            push_u8(buf, 8);
+            push_u8(buf, 1); // ms
+            push_i64(buf, duckdb::TimestampMSValue::Get(v).value);
+            break;
+        case duckdb::LogicalTypeId::TIMESTAMP_NS:
+            push_u8(buf, 8);
+            push_u8(buf, 3); // ns
+            push_i64(buf, duckdb::TimestampNSValue::Get(v).value);
+            break;
+        case duckdb::LogicalTypeId::TIMESTAMP_SEC:
+            push_u8(buf, 8);
+            push_u8(buf, 0); // s
+            push_i64(buf, duckdb::TimestampSValue::Get(v).value);
+            break;
+        case duckdb::LogicalTypeId::BLOB: {
+            push_u8(buf, 10);
+            const std::string &s = duckdb::StringValue::Get(v);
+            push_u32(buf, (uint32_t)s.size());
+            for (char c : s) { buf.push_back((uint8_t)c); }
+            break;
+        }
+        case duckdb::LogicalTypeId::DECIMAL: {
+            // Only INT128-physical decimals are pushed by CanPushdown; the arrow column is Decimal128.
+            uint8_t width = duckdb::DecimalType::GetWidth(v.type());
+            uint8_t scale = duckdb::DecimalType::GetScale(v.type());
+            if (width <= 18) { push_u8(buf, 255); break; } // not INT128-physical → unsupported (fail-loud)
+            push_u8(buf, 9);
+            push_i128(buf, v.GetValueUnsafe<duckdb::hugeint_t>());
+            push_u8(buf, scale);
             break;
         }
         default:

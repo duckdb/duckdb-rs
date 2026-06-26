@@ -5,12 +5,14 @@
 //! a projected `RecordBatch`, producing a `BooleanArray` mask for `filter_record_batch`.
 
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
-    LargeStringArray, RecordBatch, Scalar, StringArray, StructArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, Float32Array, Float64Array,
+    Int8Array, Int16Array, Int32Array, Int64Array, LargeBinaryArray, LargeStringArray, RecordBatch, Scalar,
+    StringArray, StructArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+    TimestampNanosecondArray, TimestampSecondArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow::compute::kernels::{boolean, cmp};
 use arrow::compute::{is_not_null, is_null};
-use arrow::datatypes::DataType;
+use arrow::datatypes::{DataType, TimeUnit};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -36,6 +38,11 @@ pub(crate) enum ScalarVal {
     F64(f64),
     Bool(bool),
     Utf8(String),
+    Date32(i32),
+    Time { unit: u8, v: i64 },
+    Timestamp { unit: u8, v: i64 },
+    Blob(Vec<u8>),
+    Decimal128 { v: i128, scale: u8 },
     Null,
     Unsupported,
 }
@@ -89,6 +96,10 @@ impl<'a> Cursor<'a> {
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
+    fn read_i32(&mut self) -> i32 {
+        self.read_u32() as i32
+    }
+
     fn read_i64(&mut self) -> i64 {
         let mut v: u64 = 0;
         for i in 0..8u64 {
@@ -108,6 +119,14 @@ impl<'a> Cursor<'a> {
     fn read_f64(&mut self) -> f64 {
         let bits = self.read_u64();
         f64::from_bits(bits)
+    }
+
+    fn read_i128(&mut self) -> i128 {
+        let mut bytes = [0u8; 16];
+        for b in bytes.iter_mut() {
+            *b = self.read_u8();
+        }
+        i128::from_le_bytes(bytes)
     }
 
     fn read_path(&mut self) -> Vec<usize> {
@@ -138,6 +157,16 @@ impl<'a> Cursor<'a> {
                 }
             }
             5 => ScalarVal::Null,
+            6 => ScalarVal::Date32(self.read_i32()),
+            7 => { let unit = self.read_u8(); let v = self.read_i64(); ScalarVal::Time { unit, v } }
+            8 => { let unit = self.read_u8(); let v = self.read_i64(); ScalarVal::Timestamp { unit, v } }
+            9 => { let v = self.read_i128(); let scale = self.read_u8(); ScalarVal::Decimal128 { v, scale } }
+            10 => {
+                let len = self.read_u32() as usize;
+                let bytes = self.buf.get(self.pos..self.pos + len).unwrap_or(&[]).to_vec();
+                self.pos += len;
+                ScalarVal::Blob(bytes)
+            }
             _ => ScalarVal::Unsupported,
         }
     }
@@ -326,6 +355,82 @@ pub(crate) fn evaluate(node: &FilterNode, batch: &RecordBatch) -> Result<Boolean
     }
 }
 
+fn time_unit_tag(u: &TimeUnit) -> u8 {
+    match u {
+        TimeUnit::Second => 0,
+        TimeUnit::Millisecond => 1,
+        TimeUnit::Microsecond => 2,
+        TimeUnit::Nanosecond => 3,
+    }
+}
+
+/// Convert an integer timestamp/time `v` from `from` unit to `to` unit.
+/// Exact (multiply) when going finer-or-equal; fail loud if a coarser target would lose precision.
+fn convert_time_unit(v: i64, from: u8, to: u8) -> Result<i64, FilterError> {
+    const FACTORS: [i128; 4] = [1, 1_000, 1_000_000, 1_000_000_000]; // s, ms, µs, ns per second
+    // `from` comes from the (untrusted) wire buffer; an out-of-range unit byte must fail loud,
+    // not panic on an out-of-bounds index. (`to` comes from time_unit_tag and is always 0..=3.)
+    if from as usize >= FACTORS.len() || to as usize >= FACTORS.len() {
+        return Err(FilterError::Unhandled(format!("unknown time unit byte: from={from} to={to}")));
+    }
+    let (f, t) = (FACTORS[from as usize], FACTORS[to as usize]);
+    let vi = v as i128;
+    let out = if t >= f {
+        vi * (t / f)
+    } else {
+        let div = f / t;
+        if vi % div != 0 {
+            return Err(FilterError::Unhandled(format!(
+                "timestamp constant {v} (unit {from}) not representable in column unit {to}"
+            )));
+        }
+        vi / div
+    };
+    i64::try_from(out).map_err(|_| FilterError::Unhandled(format!("timestamp constant overflow converting unit {from}->{to}")))
+}
+
+/// Comparison of a float column against a NaN constant, using DuckDB's float total order
+/// (NaN sorts highest; NaN == NaN). `col` is Float32 or Float64.
+/// Result is non-null: positions that are SQL-null in `col` yield false.
+///
+/// Note: arrow-rs 58 uses total-order semantics for cmp kernels (NaN == NaN is true), so
+/// we cannot use `cmp::neq(col, col)` to detect NaN (it returns false for NaN positions).
+/// Instead, we inspect the raw float bits directly via downcast.
+fn nan_compare(col: &ArrayRef, op: &CmpOp) -> Result<BooleanArray, FilterError> {
+    let n = col.len();
+    let not_null: Vec<bool> = (0..n).map(|i| col.is_valid(i)).collect();
+
+    // Detect NaN by inspecting raw values (works for both Float32 and Float64 columns).
+    let is_nan: Vec<bool> = if let Some(arr) = col.as_any().downcast_ref::<Float64Array>() {
+        (0..n).map(|i| col.is_valid(i) && arr.value(i).is_nan()).collect()
+    } else if let Some(arr) = col.as_any().downcast_ref::<Float32Array>() {
+        (0..n).map(|i| col.is_valid(i) && arr.value(i).is_nan()).collect()
+    } else {
+        return Err(FilterError::Unhandled(format!(
+            "nan_compare: expected Float32 or Float64 column, got {:?}",
+            col.data_type()
+        )));
+    };
+
+    let out: Vec<bool> = (0..n)
+        .map(|i| {
+            if !not_null[i] {
+                return false; // NULL never satisfies a comparison
+            }
+            let nan = is_nan[i];
+            match op {
+                CmpOp::Eq => nan,        // = NaN  → only NaN
+                CmpOp::Ne => !nan,       // <> NaN → everything that is not NaN
+                CmpOp::Lt => !nan,       // < NaN  → everything below NaN
+                CmpOp::Le => true,       // <= NaN → all (NaN is the max)
+                CmpOp::Gt => false,      // > NaN  → nothing exceeds NaN
+                CmpOp::Ge => nan,        // >= NaN → only NaN
+            }
+        })
+        .collect();
+    Ok(BooleanArray::from(out))
+}
+
 /// Build a one-element typed scalar matching the column's DataType from the incoming `val`,
 /// then dispatch the comparison kernel.
 ///
@@ -384,9 +489,19 @@ fn compare(col: &ArrayRef, op: &CmpOp, val: &ScalarVal) -> Result<BooleanArray, 
         }
 
         // ── Floats (DuckDB pushes as F64) ──────────────────────────────────────
-        (DataType::Float64, ScalarVal::F64(v)) => dispatch(op, col, &Scalar::new(Float64Array::from(vec![*v]))),
+        (DataType::Float64, ScalarVal::F64(v)) => {
+            if v.is_nan() {
+                return nan_compare(col, op);
+            }
+            dispatch(op, col, &Scalar::new(Float64Array::from(vec![*v])))
+        }
         // Float32: f64 → f32 cast is a deliberate precision round, not a correctness issue
-        (DataType::Float32, ScalarVal::F64(v)) => dispatch(op, col, &Scalar::new(Float32Array::from(vec![*v as f32]))),
+        (DataType::Float32, ScalarVal::F64(v)) => {
+            if v.is_nan() {
+                return nan_compare(col, op);
+            }
+            dispatch(op, col, &Scalar::new(Float32Array::from(vec![*v as f32])))
+        }
 
         // ── Boolean ────────────────────────────────────────────────────────────
         (DataType::Boolean, ScalarVal::Bool(v)) => dispatch(op, col, &Scalar::new(BooleanArray::from(vec![*v]))),
@@ -396,6 +511,42 @@ fn compare(col: &ArrayRef, op: &CmpOp, val: &ScalarVal) -> Result<BooleanArray, 
         // LargeUtf8: present for completeness; DuckDB's arrow_scan rarely emits it
         (DataType::LargeUtf8, ScalarVal::Utf8(v)) => {
             dispatch(op, col, &Scalar::new(LargeStringArray::from(vec![v.as_str()])))
+        }
+
+        // ── Date / Time ────────────────────────────────────────────────────────
+        (DataType::Date32, ScalarVal::Date32(v)) => dispatch(op, col, &Scalar::new(Date32Array::from(vec![*v]))),
+        (DataType::Time64(TimeUnit::Microsecond), ScalarVal::Time { unit: 2, v }) => {
+            dispatch(op, col, &Scalar::new(Time64MicrosecondArray::from(vec![*v])))
+        }
+
+        // ── Blob ────────────────────────────────────────────────────────────────
+        (DataType::Binary, ScalarVal::Blob(b)) => dispatch(op, col, &Scalar::new(BinaryArray::from(vec![b.as_slice()]))),
+        (DataType::LargeBinary, ScalarVal::Blob(b)) => {
+            dispatch(op, col, &Scalar::new(LargeBinaryArray::from(vec![b.as_slice()])))
+        }
+
+        // ── Timestamps (convert wire unit → column unit, lossless or fail loud) ──
+        (DataType::Timestamp(col_unit, tz), ScalarVal::Timestamp { unit, v }) => {
+            let v_col = convert_time_unit(*v, *unit, time_unit_tag(col_unit))?;
+            match col_unit {
+                TimeUnit::Second => dispatch(op, col, &Scalar::new(TimestampSecondArray::from(vec![v_col]).with_timezone_opt(tz.clone()))),
+                TimeUnit::Millisecond => dispatch(op, col, &Scalar::new(TimestampMillisecondArray::from(vec![v_col]).with_timezone_opt(tz.clone()))),
+                TimeUnit::Microsecond => dispatch(op, col, &Scalar::new(TimestampMicrosecondArray::from(vec![v_col]).with_timezone_opt(tz.clone()))),
+                TimeUnit::Nanosecond => dispatch(op, col, &Scalar::new(TimestampNanosecondArray::from(vec![v_col]).with_timezone_opt(tz.clone()))),
+            }
+        }
+
+        // ── Decimal128 (column precision/scale drive the scalar; scale must match) ──
+        (DataType::Decimal128(p, s), ScalarVal::Decimal128 { v, scale }) => {
+            if *scale != *s as u8 {
+                return Err(FilterError::Unhandled(format!(
+                    "decimal scale mismatch: constant scale {scale} vs column scale {s}"
+                )));
+            }
+            let arr = Decimal128Array::from(vec![*v])
+                .with_precision_and_scale(*p, *s)
+                .map_err(|e| FilterError::Unhandled(e.to_string()))?;
+            dispatch(op, col, &Scalar::new(arr))
         }
 
         // ── Anything else → clean error (never silently wrong) ─────────────────

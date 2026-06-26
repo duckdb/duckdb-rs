@@ -751,6 +751,127 @@ mod test {
     }
 
     #[test]
+    fn timestamp_unknown_unit_byte_errors_not_panics() {
+        // An out-of-range timestamp unit byte (from a corrupt/forward-incompatible wire buffer)
+        // must fail loud (FilterError), NOT panic on an out-of-bounds factor-table index.
+        use super::filter::{CmpOp, FilterNode, ScalarVal, evaluate};
+        use arrow::array::TimestampMicrosecondArray;
+        use arrow::datatypes::{DataType, Field, TimeUnit};
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "ts",
+            DataType::Timestamp(TimeUnit::Microsecond, None),
+            false,
+        )]));
+        let ts = TimestampMicrosecondArray::from(vec![1_000_000i64, 2_000_000, 3_000_000]);
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(ts)]).unwrap();
+        let node = FilterNode::Compare {
+            path: vec![0],
+            op: CmpOp::Gt,
+            val: ScalarVal::Timestamp { unit: 9, v: 1_000_000 }, // 9 = invalid unit byte
+        };
+        assert!(
+            evaluate(&node, &batch).is_err(),
+            "unknown timestamp unit byte must error, not panic"
+        );
+    }
+
+    #[test]
+    fn typed_scalar_filters_match_appender() {
+        use arrow::array::{ArrayRef, BinaryArray, Date32Array, TimestampMicrosecondArray};
+        use arrow::datatypes::{DataType, Field, TimeUnit};
+        // date d (Date32), ts (Timestamp µs, no tz), b (Binary)
+        let d = Arc::new(Date32Array::from(vec![19000i32, 19001, 19002, 19003])) as ArrayRef; // days since epoch
+        let ts = Arc::new(TimestampMicrosecondArray::from(vec![
+            1_000_000i64, 2_000_000, 3_000_000, 4_000_000,
+        ])) as ArrayRef;
+        let b = Arc::new(BinaryArray::from(vec![
+            b"aa".as_ref(), b"bb".as_ref(), b"cc".as_ref(), b"dd".as_ref(),
+        ])) as ArrayRef;
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("d", DataType::Date32, false),
+            Field::new("ts", DataType::Timestamp(TimeUnit::Microsecond, None), false),
+            Field::new("b", DataType::Binary, false),
+        ]));
+        let batch = RecordBatch::try_new(schema, vec![d, ts, b]).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (d DATE, ts TIMESTAMP, b BLOB)").unwrap();
+        {
+            let mut app = conn.appender("t").unwrap();
+            app.append_record_batch(batch.clone()).unwrap();
+        }
+        let reg = conn.register_arrow("v", vec![batch]).unwrap();
+
+        let q = |sql: String| conn.query_row::<i64, _, _>(&sql, [], |r| r.get(0)).unwrap();
+        for where_clause in [
+            "WHERE d > DATE '2022-01-02'",
+            "WHERE ts >= TIMESTAMP '1970-01-01 00:00:03'",
+            "WHERE b = '\\x63\\x63'::BLOB",
+        ] {
+            assert_eq!(
+                q(format!("SELECT count(*) FROM v {where_clause}")),
+                q(format!("SELECT count(*) FROM t {where_clause}")),
+                "typed-scalar filter must match the Appender oracle: {where_clause}"
+            );
+        }
+        drop(reg);
+    }
+
+    #[test]
+    fn decimal128_filter_matches_appender() {
+        use arrow::array::{ArrayRef, Decimal128Array};
+        use arrow::datatypes::{DataType, Field};
+        // DECIMAL(38,2): values 1.00, 2.50, 3.00, 4.25 → unscaled i128 *100
+        let dec = Arc::new(
+            Decimal128Array::from(vec![100i128, 250, 300, 425])
+                .with_precision_and_scale(38, 2)
+                .unwrap(),
+        ) as ArrayRef;
+        let schema = Arc::new(Schema::new(vec![Field::new("p", DataType::Decimal128(38, 2), false)]));
+        let batch = RecordBatch::try_new(schema, vec![dec]).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (p DECIMAL(38,2))").unwrap();
+        {
+            let mut app = conn.appender("t").unwrap();
+            app.append_record_batch(batch.clone()).unwrap();
+        }
+        let reg = conn.register_arrow("v", vec![batch]).unwrap();
+        let q = |sql: String| conn.query_row::<i64, _, _>(&sql, [], |r| r.get(0)).unwrap();
+        for where_clause in ["WHERE p > 2.50", "WHERE p = 3.00", "WHERE p <= 2.50"] {
+            assert_eq!(
+                q(format!("SELECT count(*) FROM v {where_clause}")),
+                q(format!("SELECT count(*) FROM t {where_clause}")),
+                "decimal128 filter must match the Appender oracle: {where_clause}"
+            );
+        }
+        drop(reg);
+    }
+
+    #[test]
+    fn nan_compare_total_order_direct() {
+        use super::filter::{CmpOp, FilterNode, ScalarVal, evaluate};
+        use arrow::array::{Array, Float64Array};
+        use arrow::datatypes::{DataType, Field};
+        // values: 1.0, NaN, 3.0, NULL
+        let schema = Arc::new(Schema::new(vec![Field::new("f", DataType::Float64, true)]));
+        let arr = Float64Array::from(vec![Some(1.0), Some(f64::NAN), Some(3.0), None]);
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(arr)]).unwrap();
+        let eval = |op| {
+            let node = FilterNode::Compare { path: vec![0], op, val: ScalarVal::F64(f64::NAN) };
+            let m = evaluate(&node, &batch).unwrap();
+            (0..m.len()).map(|i| m.is_valid(i) && m.value(i)).collect::<Vec<bool>>()
+        };
+        // DuckDB total order: NaN is the largest; NaN == NaN; NULL never matches.
+        assert_eq!(eval(CmpOp::Eq), vec![false, true, false, false]);   // = NaN → only NaN
+        assert_eq!(eval(CmpOp::Ne), vec![true, false, true, false]);    // <> NaN → non-NaN, non-null
+        assert_eq!(eval(CmpOp::Lt), vec![true, false, true, false]);    // < NaN → everything below NaN
+        assert_eq!(eval(CmpOp::Le), vec![true, true, true, false]);     // <= NaN → all non-null
+        assert_eq!(eval(CmpOp::Gt), vec![false, false, false, false]);  // > NaN → nothing
+        assert_eq!(eval(CmpOp::Ge), vec![false, true, false, false]);   // >= NaN → only NaN
+    }
+
+    #[test]
     fn multi_column_projection_and_filter_matches_appender() {
         use arrow::array::{ArrayRef, Int64Array};
         use arrow::datatypes::{DataType, Field, Schema};
