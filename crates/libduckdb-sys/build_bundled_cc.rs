@@ -107,6 +107,11 @@ pub fn main(out_dir: &str, out_path: &Path) {
         cfg.file(f);
     }
 
+    // Zero-copy Arrow registration shim (compiled with the amalgamation so it links against the
+    // DuckDB C++ API and shares its include dirs).
+    cfg.file("src/arrow_zerocopy_shim.cpp");
+    println!("cargo:rerun-if-changed=src/arrow_zerocopy_shim.cpp");
+
     cfg.cpp(true)
         .flag_if_supported("-std=c++11")
         .flag_if_supported("/utf-8")
