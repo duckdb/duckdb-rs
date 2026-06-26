@@ -860,6 +860,30 @@ mod tests {
     }
 
     #[test]
+    fn uhugeint_promotion_uses_matching_result_column() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let mut stmt = db.prepare(&format!(
+            "
+            SELECT
+                1::HUGEINT AS a,
+                2::UHUGEINT AS b,
+                3::DECIMAL(38,0) AS c,
+                ({U128_MAX_SQL})::UHUGEINT AS d
+            "
+        ))?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+
+        assert_eq!(row.get_ref(0)?, ValueRef::HugeInt(1));
+        assert_eq!(row.get_ref(1)?, ValueRef::UHugeInt(2));
+        assert_eq!(row.get_ref(2)?, ValueRef::HugeInt(3));
+        assert_eq!(row.get_ref(3)?, ValueRef::UHugeInt(u128::MAX));
+
+        Ok(())
+    }
+
+    #[test]
     fn bound_uhugeint_result_uses_logical_metadata_when_cast() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let max = u128::MAX;
