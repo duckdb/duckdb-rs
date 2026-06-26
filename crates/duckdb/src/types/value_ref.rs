@@ -39,10 +39,15 @@ impl TimeUnit {
 }
 
 /// A non-owning [static type value](https://duckdb.org/docs/sql/data_types/overview). Typically the
-/// memory backing this value is owned by SQLite.
+/// memory backing this value is owned by DuckDB.
+///
+/// Container variants decode child values without DuckDB child logical type
+/// metadata. See the [`crate::types`] compatibility notes for `UHUGEINT`
+/// behavior inside containers.
 ///
 /// See [`Value`](Value) for an owning dynamic type value.
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum ValueRef<'a> {
     /// The value is a `NULL` value.
     Null,
@@ -58,6 +63,13 @@ pub enum ValueRef<'a> {
     BigInt(i64),
     /// The value is a signed huge integer.
     HugeInt(i128),
+    /// The value is an unsigned huge integer.
+    ///
+    /// Top-level `UHUGEINT` result values decode to this variant because row
+    /// decoding uses DuckDB logical type metadata. Borrowed container values do
+    /// not carry that metadata and cannot recover nested `UHUGEINT` values
+    /// above `i128::MAX`.
+    UHugeInt(u128),
     /// The value is a unsigned tiny integer.
     UTinyInt(u8),
     /// The value is a unsigned small integer.
@@ -70,7 +82,7 @@ pub enum ValueRef<'a> {
     Float(f32),
     /// The value is a f64.
     Double(f64),
-    /// The value is a decimal
+    /// The value is a Decimal.
     Decimal(Decimal),
     /// The value is a timestamp.
     Timestamp(TimeUnit, i64),
@@ -91,17 +103,17 @@ pub enum ValueRef<'a> {
         /// nanos
         nanos: i64,
     },
-    /// The value is a list
+    /// The value is a list.
     List(ListType<'a>, usize),
     /// The value is an enum
     Enum(EnumType<'a>, usize),
-    /// The value is a struct
+    /// The value is a struct.
     Struct(&'a StructArray, usize),
-    /// The value is an array
+    /// The value is an array.
     Array(&'a FixedSizeListArray, usize),
-    /// The value is a map
+    /// The value is a map.
     Map(&'a MapArray, usize),
-    /// The value is a union
+    /// The value is a union.
     Union(&'a ArrayRef, usize),
 }
 
@@ -137,6 +149,7 @@ impl ValueRef<'_> {
             ValueRef::Int(_) => Type::Int,
             ValueRef::BigInt(_) => Type::BigInt,
             ValueRef::HugeInt(_) => Type::HugeInt,
+            ValueRef::UHugeInt(_) => Type::UHugeInt,
             ValueRef::UTinyInt(_) => Type::UTinyInt,
             ValueRef::USmallInt(_) => Type::USmallInt,
             ValueRef::UInt(_) => Type::UInt,
@@ -220,6 +233,7 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Int(i) => Self::Int(i),
             ValueRef::BigInt(i) => Self::BigInt(i),
             ValueRef::HugeInt(i) => Self::HugeInt(i),
+            ValueRef::UHugeInt(i) => Self::UHugeInt(i),
             ValueRef::UTinyInt(i) => Self::UTinyInt(i),
             ValueRef::USmallInt(i) => Self::USmallInt(i),
             ValueRef::UInt(i) => Self::UInt(i),
@@ -236,26 +250,7 @@ impl From<ValueRef<'_>> for Value {
             ValueRef::Date32(d) => Self::Date32(d),
             ValueRef::Time64(t, d) => Self::Time64(t, d),
             ValueRef::Interval { months, days, nanos } => Self::Interval { months, days, nanos },
-            ValueRef::List(items, idx) => match items {
-                ListType::Regular(items) => {
-                    let offsets = items.offsets();
-                    from_list(
-                        offsets[idx].try_into().unwrap(),
-                        offsets[idx + 1].try_into().unwrap(),
-                        idx,
-                        items.values(),
-                    )
-                }
-                ListType::Large(items) => {
-                    let offsets = items.offsets();
-                    from_list(
-                        offsets[idx].try_into().unwrap(),
-                        offsets[idx + 1].try_into().unwrap(),
-                        idx,
-                        items.values(),
-                    )
-                }
-            },
+            ValueRef::List(items, idx) => from_list_value(items, idx),
             ValueRef::Enum(items, idx) => {
                 let dict_values = match items {
                     EnumType::UInt8(res) => res.values(),
@@ -273,60 +268,88 @@ impl From<ValueRef<'_>> for Value {
                 .unwrap();
                 Self::Enum(dict_values.value(dict_key).to_string())
             }
-            ValueRef::Struct(items, idx) => {
-                let capacity = items.columns().len();
-                let mut value = Vec::with_capacity(capacity);
-                value.extend(
-                    items
-                        .columns()
-                        .iter()
-                        .zip(items.fields().iter().map(|f| f.name().to_owned()))
-                        .map(|(column, name)| -> (String, Self) {
-                            (name, Row::value_ref_internal(idx, 0, column).to_owned())
-                        }),
-                );
-                Self::Struct(OrderedMap::from(value))
-            }
-            ValueRef::Map(arr, idx) => {
-                let keys = arr.keys();
-                let values = arr.values();
-                let offsets = arr.offsets();
-                let range = offsets[idx]..offsets[idx + 1];
-                let capacity = range.len();
-                let mut map_vec = Vec::with_capacity(capacity);
-                map_vec.extend(range.map(|row| {
-                    let row = row.try_into().unwrap();
-                    let key = Row::value_ref_internal(row, idx, keys).to_owned();
-                    let value = Row::value_ref_internal(row, idx, values).to_owned();
-                    (key, value)
-                }));
-                Self::Map(OrderedMap::from(map_vec))
-            }
-            ValueRef::Array(items, idx) => {
-                let value_length = usize::try_from(items.value_length()).unwrap();
-                let range = (idx * value_length)..((idx + 1) * value_length);
-                let capacity = value_length;
-                let mut array_vec = Vec::with_capacity(capacity);
-                array_vec.extend(range.map(|row| Row::value_ref_internal(row, idx, items.values()).to_owned()));
-                Self::Array(array_vec)
-            }
-            ValueRef::Union(column, idx) => {
-                let column = column.as_any().downcast_ref::<UnionArray>().unwrap();
-                let type_id = column.type_id(idx);
-                let value_offset = column.value_offset(idx);
-
-                let tag = Row::value_ref_internal(idx, value_offset, column.child(type_id));
-                Self::Union(Box::new(tag.to_owned()))
-            }
+            ValueRef::Struct(items, idx) => from_struct(items, idx),
+            ValueRef::Map(arr, idx) => from_map(arr, idx),
+            ValueRef::Array(items, idx) => from_array(items, idx),
+            ValueRef::Union(column, idx) => from_union(column, idx),
         }
     }
 }
 
-fn from_list(start: usize, end: usize, idx: usize, values: &ArrayRef) -> Value {
+fn from_list_value(items: ListType<'_>, idx: usize) -> Value {
+    match items {
+        ListType::Regular(items) => {
+            let offsets = items.offsets();
+            from_list(
+                offsets[idx].try_into().unwrap(),
+                offsets[idx + 1].try_into().unwrap(),
+                items.values(),
+            )
+        }
+        ListType::Large(items) => {
+            let offsets = items.offsets();
+            from_list(
+                offsets[idx].try_into().unwrap(),
+                offsets[idx + 1].try_into().unwrap(),
+                items.values(),
+            )
+        }
+    }
+}
+
+fn from_list(start: usize, end: usize, values: &ArrayRef) -> Value {
     let capacity = end - start;
     let mut list_vec = Vec::with_capacity(capacity);
-    list_vec.extend((start..end).map(|row| Row::value_ref_internal(row, idx, values).to_owned()));
+    list_vec.extend((start..end).map(|row| Row::value_ref_internal(row, values).to_owned()));
     Value::List(list_vec)
+}
+
+fn from_struct(items: &StructArray, idx: usize) -> Value {
+    let capacity = items.columns().len();
+    let mut value = Vec::with_capacity(capacity);
+    value.extend(
+        items
+            .columns()
+            .iter()
+            .zip(items.fields().iter().map(|f| f.name().to_owned()))
+            .map(|(column, name)| -> (String, Value) { (name, Row::value_ref_internal(idx, column).to_owned()) }),
+    );
+    Value::Struct(OrderedMap::from(value))
+}
+
+fn from_map(arr: &MapArray, idx: usize) -> Value {
+    let keys = arr.keys();
+    let values = arr.values();
+    let offsets = arr.offsets();
+    let range = offsets[idx]..offsets[idx + 1];
+    let capacity = range.len();
+    let mut map_vec = Vec::with_capacity(capacity);
+    map_vec.extend(range.map(|row| {
+        let row = row.try_into().unwrap();
+        let key = Row::value_ref_internal(row, keys).to_owned();
+        let value = Row::value_ref_internal(row, values).to_owned();
+        (key, value)
+    }));
+    Value::Map(OrderedMap::from(map_vec))
+}
+
+fn from_array(items: &FixedSizeListArray, idx: usize) -> Value {
+    let value_length = usize::try_from(items.value_length()).unwrap();
+    let range = (idx * value_length)..((idx + 1) * value_length);
+    let mut array_vec = Vec::with_capacity(value_length);
+    array_vec.extend(range.map(|row| Row::value_ref_internal(row, items.values()).to_owned()));
+    Value::Array(array_vec)
+}
+
+fn from_union(column: &ArrayRef, idx: usize) -> Value {
+    let column = column.as_any().downcast_ref::<UnionArray>().unwrap();
+    let type_id = column.type_id(idx);
+    // Arrow's value offset is the row in the active child array. DuckDB
+    // currently emits sparse unions where this equals `idx`, but using the
+    // offset keeps the decoder correct for dense unions too.
+    let value_offset = column.value_offset(idx);
+    let tag = Row::value_ref_internal(value_offset, column.child(type_id));
+    Value::Union(Box::new(tag.to_owned()))
 }
 
 impl<'a> From<&'a str> for ValueRef<'a> {
@@ -367,6 +390,7 @@ fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
         | Value::Int(_)
         | Value::BigInt(_)
         | Value::HugeInt(_)
+        | Value::UHugeInt(_)
         | Value::UTinyInt(_)
         | Value::USmallInt(_)
         | Value::UInt(_)
@@ -407,6 +431,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Int(i) => ValueRef::Int(i),
             Value::BigInt(i) => ValueRef::BigInt(i),
             Value::HugeInt(i) => ValueRef::HugeInt(i),
+            Value::UHugeInt(i) => ValueRef::UHugeInt(i),
             Value::UTinyInt(i) => ValueRef::UTinyInt(i),
             Value::USmallInt(i) => ValueRef::USmallInt(i),
             Value::UInt(i) => ValueRef::UInt(i),

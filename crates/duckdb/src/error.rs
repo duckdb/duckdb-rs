@@ -22,8 +22,13 @@ pub enum Error {
     /// Error when DuckDB gives us an integral value outside the range of the
     /// requested type (e.g., trying to get the value 1000 into a `u8`).
     /// The associated `usize` is the column index,
-    /// and the associated `i64` is the value returned by SQLite.
+    /// and the associated `i128` is the value returned by DuckDB.
     IntegralValueOutOfRange(usize, i128),
+
+    /// Error when DuckDB gives us an unsigned integral value outside the range
+    /// of the requested type. The associated `usize` is the column index, and
+    /// the associated `u128` is the value returned by DuckDB.
+    UnsignedIntegralValueOutOfRange(usize, u128),
 
     /// Error converting a string to UTF-8.
     Utf8Error(str::Utf8Error),
@@ -99,6 +104,9 @@ impl PartialEq for Error {
         match (self, other) {
             (Self::DuckDBFailure(e1, s1), Self::DuckDBFailure(e2, s2)) => e1 == e2 && s1 == s2,
             (Self::IntegralValueOutOfRange(i1, n1), Self::IntegralValueOutOfRange(i2, n2)) => i1 == i2 && n1 == n2,
+            (Self::UnsignedIntegralValueOutOfRange(i1, n1), Self::UnsignedIntegralValueOutOfRange(i2, n2)) => {
+                i1 == i2 && n1 == n2
+            }
             (Self::Utf8Error(e1), Self::Utf8Error(e2)) => e1 == e2,
             (Self::NulError(e1), Self::NulError(e2)) => e1 == e2,
             (Self::InvalidParameterName(n1), Self::InvalidParameterName(n2)) => n1 == n2,
@@ -144,6 +152,7 @@ impl From<FromSqlError> for Error {
         // context.
         match err {
             FromSqlError::OutOfRange(val) => Self::IntegralValueOutOfRange(UNKNOWN_COLUMN, val),
+            FromSqlError::OutOfRangeUnsigned(val) => Self::UnsignedIntegralValueOutOfRange(UNKNOWN_COLUMN, val),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(_) => {
                 Self::FromSqlConversionFailure(UNKNOWN_COLUMN, Type::Blob, Box::new(err))
@@ -171,6 +180,13 @@ impl fmt::Display for Error {
                     write!(f, "Integer {val} out of range at index {col}")
                 } else {
                     write!(f, "Integer {val} out of range")
+                }
+            }
+            Self::UnsignedIntegralValueOutOfRange(col, val) => {
+                if col != UNKNOWN_COLUMN {
+                    write!(f, "Unsigned integer {val} out of range at index {col}")
+                } else {
+                    write!(f, "Unsigned integer {val} out of range")
                 }
             }
             Self::Utf8Error(ref err) => err.fmt(f),
@@ -211,6 +227,7 @@ impl error::Error for Error {
             Self::NulError(ref err) => Some(err),
 
             Self::IntegralValueOutOfRange(..)
+            | Self::UnsignedIntegralValueOutOfRange(..)
             | Self::InvalidParameterName(_)
             | Self::ExecuteReturnedResults
             | Self::QueryReturnedNoRows

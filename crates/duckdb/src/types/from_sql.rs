@@ -17,6 +17,11 @@ pub enum FromSqlError {
     /// requested type.
     OutOfRange(i128),
 
+    /// Error when an unsigned 128-bit value returned by DuckDB cannot be
+    /// stored into the requested type. This is reported for `UHUGEINT` sources;
+    /// same-magnitude signed sources use [`Self::OutOfRange`].
+    OutOfRangeUnsigned(u128),
+
     /// `feature = "uuid"` Error returned when reading a `uuid` from a blob with
     /// a size other than 16. Only available when the `uuid` feature is enabled.
     #[cfg(feature = "uuid")]
@@ -31,6 +36,7 @@ impl PartialEq for FromSqlError {
         match (self, other) {
             (Self::InvalidType, Self::InvalidType) => true,
             (Self::OutOfRange(n1), Self::OutOfRange(n2)) => n1 == n2,
+            (Self::OutOfRangeUnsigned(n1), Self::OutOfRangeUnsigned(n2)) => n1 == n2,
             #[cfg(feature = "uuid")]
             (Self::InvalidUuidSize(s1), Self::InvalidUuidSize(s2)) => s1 == s2,
             (..) => false,
@@ -43,6 +49,7 @@ impl fmt::Display for FromSqlError {
         match *self {
             Self::InvalidType => write!(f, "Invalid type"),
             Self::OutOfRange(i) => write!(f, "Value {i} out of range"),
+            Self::OutOfRangeUnsigned(i) => write!(f, "Unsigned value {i} out of range"),
             #[cfg(feature = "uuid")]
             Self::InvalidUuidSize(s) => {
                 write!(f, "Cannot read UUID value out of {s} byte blob")
@@ -82,6 +89,8 @@ macro_rules! from_sql_integral(
                     ValueRef::Int(i) => <$t as cast::From<i32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::BigInt(i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::HugeInt(i) => <$t as cast::From<i128>>::cast(i).into_result(FromSqlError::OutOfRange(i)),
+                    ValueRef::UHugeInt(i) => <$t as cast::From<u128>>::cast(i)
+                        .into_result(FromSqlError::OutOfRangeUnsigned(i)),
 
                     ValueRef::UTinyInt(i) => <$t as cast::From<u8>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::USmallInt(i) => <$t as cast::From<u16>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
@@ -146,6 +155,7 @@ into_result_integral!(u8);
 into_result_integral!(u16);
 into_result_integral!(u32);
 into_result_integral!(u64);
+into_result_integral!(u128);
 into_result_integral!(usize);
 into_result_integral!(f32);
 into_result_integral!(f64);
@@ -169,6 +179,7 @@ from_sql_integral!(u8);
 from_sql_integral!(u16);
 from_sql_integral!(u32);
 from_sql_integral!(u64);
+from_sql_integral!(u128);
 from_sql_integral!(usize);
 from_sql_integral!(f32);
 from_sql_integral!(f64);
@@ -266,7 +277,7 @@ impl FromSql for Value {
 
 #[cfg(test)]
 mod test {
-    use super::FromSql;
+    use super::{FromSql, FromSqlError};
     use crate::{Connection, Error, Result};
 
     #[test]
@@ -373,6 +384,32 @@ mod test {
         check_ranges::<u8>(&db, &[-2, -1, 256], &[0, 1, 255]);
         check_ranges::<u16>(&db, &[-2, -1, 65536], &[0, 1, 65535]);
         check_ranges::<u32>(&db, &[-2, -1, 4_294_967_296], &[0, 1, 4_294_967_295]);
+
+        let err = db
+            .query_row("SELECT (-1)::HUGEINT", [], |r| r.get::<_, u128>(0))
+            .unwrap_err();
+        match err {
+            Error::IntegralValueOutOfRange(_, value) => assert_eq!(value, -1),
+            _ => panic!("unexpected error: {err}"),
+        }
+
+        let ubigint_max = u128::from(u64::MAX);
+        let value = db.query_row("SELECT (18446744073709551615)::UBIGINT", [], |r| r.get::<_, u128>(0))?;
+        assert_eq!(value, ubigint_max);
+
+        let u64_overflow = ubigint_max + 1;
+        let err = db
+            .query_row("SELECT (18446744073709551616)::UHUGEINT", [], |r| r.get::<_, u64>(0))
+            .unwrap_err();
+        match err {
+            Error::UnsignedIntegralValueOutOfRange(_, value) => assert_eq!(value, u64_overflow),
+            _ => panic!("unexpected error: {err}"),
+        }
+
+        assert_eq!(
+            FromSqlError::OutOfRangeUnsigned(u64_overflow).to_string(),
+            "Unsigned value 18446744073709551616 out of range"
+        );
         Ok(())
     }
 
@@ -554,6 +591,15 @@ mod test {
         );
         assert_eq!(
             db.query_row("SELECT -0.51::DECIMAL(10,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+
+        assert_eq!(
+            db.query_row("SELECT 0.50::DECIMAL(38,2)", [], |row| row.get::<_, i32>(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.50::DECIMAL(38,2)", [], |row| row.get::<_, i32>(0))?,
             -1
         );
 

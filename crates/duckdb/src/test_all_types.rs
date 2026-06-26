@@ -20,7 +20,7 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    let excluded = ["uhugeint", "time_tz", "time_ns", "dec38_10", "bignum", "geometry"];
+    let excluded = ["time_tz", "time_ns", "dec38_10", "bignum", "geometry"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
@@ -100,8 +100,8 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
             _ => assert_eq!(value, ValueRef::Null),
         },
         "uhugeint" => match idx {
-            0 => assert_eq!(value, ValueRef::UBigInt(0)),
-            1 => assert_eq!(value, ValueRef::UBigInt(18446744073709551615)),
+            0 => assert_eq!(value, ValueRef::UHugeInt(0)),
+            1 => assert_eq!(value, ValueRef::UHugeInt(u128::MAX)),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "float" => match idx {

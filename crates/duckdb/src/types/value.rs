@@ -4,9 +4,14 @@ use rust_decimal::prelude::*;
 /// Owning [dynamic type value](https://duckdb.org/docs/stable/sql/data_types/overview.html).
 /// Value's type is typically dictated by DuckDB (not by the caller).
 ///
+/// Container variants decode child values without DuckDB child logical type
+/// metadata. See the [`crate::types`] compatibility notes for `UHUGEINT`
+/// behavior inside containers.
+///
 /// See [`ValueRef`](crate::types::ValueRef) for a non-owning dynamic type
 /// value.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     /// The value is a `NULL` value.
     Null,
@@ -22,6 +27,13 @@ pub enum Value {
     BigInt(i64),
     /// The value is a signed huge integer.
     HugeInt(i128),
+    /// The value is an unsigned huge integer.
+    ///
+    /// Top-level `UHUGEINT` result values materialize as this variant. Nested
+    /// `UHUGEINT` values inside lists, structs, maps, arrays, and unions do
+    /// not currently carry DuckDB child logical metadata and cannot recover
+    /// values above `i128::MAX`.
+    UHugeInt(u128),
     /// The value is a unsigned tiny integer.
     UTinyInt(u8),
     /// The value is a unsigned small integer.
@@ -59,17 +71,17 @@ pub enum Value {
         /// nanos
         nanos: i64,
     },
-    /// The value is a list
+    /// The value is a list.
     List(Vec<Value>),
     /// The value is an enum
     Enum(String),
-    /// The value is a struct
+    /// The value is a struct.
     Struct(OrderedMap<String, Value>),
-    /// The value is an array
+    /// The value is an array.
     Array(Vec<Value>),
-    /// The value is a map
+    /// The value is a map.
     Map(OrderedMap<Value, Value>),
-    /// The value is a union
+    /// The value is a union.
     Union(Box<Value>),
 }
 
@@ -172,6 +184,13 @@ impl From<i128> for Value {
     }
 }
 
+impl From<u128> for Value {
+    #[inline]
+    fn from(i: u128) -> Self {
+        Self::UHugeInt(i)
+    }
+}
+
 impl From<f32> for Value {
     #[inline]
     fn from(f: f32) -> Self {
@@ -225,6 +244,7 @@ impl Value {
             Self::Int(_) => Type::Int,
             Self::BigInt(_) => Type::BigInt,
             Self::HugeInt(_) => Type::HugeInt,
+            Self::UHugeInt(_) => Type::UHugeInt,
             Self::UTinyInt(_) => Type::UTinyInt,
             Self::USmallInt(_) => Type::USmallInt,
             Self::UInt(_) => Type::UInt,
