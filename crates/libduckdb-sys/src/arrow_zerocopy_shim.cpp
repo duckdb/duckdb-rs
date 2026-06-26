@@ -27,6 +27,7 @@
 #include "duckdb/planner/filter/null_filter.hpp"
 #include "duckdb/planner/filter/in_filter.hpp"
 #include "duckdb/planner/filter/optional_filter.hpp"
+#include "duckdb/planner/filter/struct_filter.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
 
 using duckdb::ArrowArrayStreamWrapper;
@@ -50,24 +51,23 @@ struct RustCallbacks {
 // evaluates it against the projected RecordBatch before returning the Arrow stream.
 //
 // Node format:  tag:u8 + payload
-//   tag 0  (COMPARE):    col:u32 + op:u8 + scalar
-//   tag 1  (IS_NULL):    col:u32
-//   tag 2  (IS_NOT_NULL): col:u32
+//   tag 0  (COMPARE):    path + op:u8 + scalar
+//   tag 1  (IS_NULL):    path
+//   tag 2  (IS_NOT_NULL): path
 //   tag 3  (AND):        n:u32  + n*node
 //   tag 4  (OR):         n:u32  + n*node
-//   tag 5  (IN):         col:u32 + n:u32 + n*scalar
+//   tag 5  (IN):         path + n:u32 + n*scalar
 //   tag 255 (UNHANDLED): raw_filter_type:u32
 //
-// Scalar format:  stype:u8 + payload
-//   stype 0 (i64):         value:i64  (8 bytes LE)
-//   stype 1 (u64):         value:u64  (8 bytes LE)
-//   stype 2 (f64):         value:f64  (8 bytes LE, IEEE 754 bits)
-//   stype 3 (bool):        value:u8   (0 = false, 1 = true)
-//   stype 4 (utf8):        len:u32 + len bytes (UTF-8, no NUL terminator)
-//   stype 5 (null):        (no payload)
-//   stype 255 (unsupported): (no payload)
+// path:  depth:u32 + depth*u32  (depth >= 1; index[0] = projected root column,
+//        index[1..] = struct child indices)
 //
-// op byte (for tag 0):  0=EQ 1=NE 2=LT 3=GT 4=LE 5=GE  (matches ExpressionType 25–30)
+// Scalar format:  stype:u8 + payload
+//   stype 0 (i64) 1 (u64) 2 (f64) 3 (bool) 4 (utf8 len:u32+bytes) 5 (null)
+//   stype 255 (unsupported)
+//   (Date/Time/Timestamp/Decimal128/Blob scalars are added in later tasks.)
+//
+// op byte (for tag 0):  0=EQ 1=NE 2=LT 3=GT 4=LE 5=GE  (matches ExpressionType 25-30)
 
 static void push_u8(std::vector<uint8_t> &buf, uint8_t v) { buf.push_back(v); }
 
@@ -91,6 +91,11 @@ static void push_f64(std::vector<uint8_t> &buf, double v) {
     uint64_t u;
     memcpy(&u, &v, 8);
     for (int i = 0; i < 8; i++) { buf.push_back((uint8_t)(u & 0xff)); u >>= 8; }
+}
+
+static void push_column_path(std::vector<uint8_t> &buf, const std::vector<duckdb::idx_t> &path) {
+    push_u32(buf, (uint32_t)path.size());
+    for (auto idx : path) { push_u32(buf, (uint32_t)idx); }
 }
 
 static void emit_scalar(const duckdb::Value &v, std::vector<uint8_t> &buf) {
@@ -134,18 +139,19 @@ static bool is_handled_filter_type(duckdb::TableFilterType t) {
         case TableFilterType::CONJUNCTION_AND:
         case TableFilterType::CONJUNCTION_OR:
         case TableFilterType::IN_FILTER:
+        case TableFilterType::STRUCT_EXTRACT:
             return true;
         default:
             return false;
     }
 }
 
-static void emit_filter(const duckdb::TableFilter &filter, duckdb::idx_t projected_col, std::vector<uint8_t> &buf) {
+static void emit_filter(const duckdb::TableFilter &filter, const std::vector<duckdb::idx_t> &path, std::vector<uint8_t> &buf) {
     using duckdb::TableFilterType;
     if (filter.filter_type == TableFilterType::CONSTANT_COMPARISON) {
         auto &c = filter.Cast<duckdb::ConstantFilter>();
         push_u8(buf, 0); // tag COMPARE
-        push_u32(buf, (uint32_t)projected_col);
+        push_column_path(buf, path);
         // Map ExpressionType to op byte: EQ=25->0, NE=26->1, LT=27->2, GT=28->3, LE=29->4, GE=30->5
         uint8_t op = 255;
         switch ((int)c.comparison_type) {
@@ -160,30 +166,30 @@ static void emit_filter(const duckdb::TableFilter &filter, duckdb::idx_t project
         emit_scalar(c.constant, buf);
     } else if (filter.filter_type == TableFilterType::IS_NULL) {
         push_u8(buf, 1); // tag IS_NULL
-        push_u32(buf, (uint32_t)projected_col);
+        push_column_path(buf, path);
     } else if (filter.filter_type == TableFilterType::IS_NOT_NULL) {
         push_u8(buf, 2); // tag IS_NOT_NULL
-        push_u32(buf, (uint32_t)projected_col);
+        push_column_path(buf, path);
     } else if (filter.filter_type == TableFilterType::CONJUNCTION_AND) {
-        // Recursively emit children (all share the same projected_col)
+        // Recursively emit children (all share the same path)
         auto &conj = filter.Cast<duckdb::ConjunctionAndFilter>();
         push_u8(buf, 3); // tag AND
         push_u32(buf, (uint32_t)conj.child_filters.size());
         for (auto &child : conj.child_filters) {
-            emit_filter(*child, projected_col, buf);
+            emit_filter(*child, path, buf);
         }
     } else if (filter.filter_type == TableFilterType::CONJUNCTION_OR) {
-        // Recursively emit children (all share the same projected_col)
+        // Recursively emit children (all share the same path)
         auto &conj = filter.Cast<duckdb::ConjunctionOrFilter>();
         push_u8(buf, 4); // tag OR
         push_u32(buf, (uint32_t)conj.child_filters.size());
         for (auto &child : conj.child_filters) {
-            emit_filter(*child, projected_col, buf);
+            emit_filter(*child, path, buf);
         }
     } else if (filter.filter_type == TableFilterType::IN_FILTER) {
         auto &inf = filter.Cast<duckdb::InFilter>();
         push_u8(buf, 5); // tag IN
-        push_u32(buf, (uint32_t)projected_col);
+        push_column_path(buf, path);
         push_u32(buf, (uint32_t)inf.values.size());
         for (auto &v : inf.values) {
             emit_scalar(v, buf);
@@ -193,11 +199,17 @@ static void emit_filter(const duckdb::TableFilter &filter, duckdb::idx_t project
         // If the child is a handled kind, emit it; otherwise skip safely (empty AND = keep all rows).
         auto &opt = filter.Cast<duckdb::OptionalFilter>();
         if (opt.child_filter && is_handled_filter_type(opt.child_filter->filter_type)) {
-            emit_filter(*opt.child_filter, projected_col, buf);
+            emit_filter(*opt.child_filter, path, buf);
         } else {
             push_u8(buf, 3); // tag AND
             push_u32(buf, 0); // 0 children = no-op (keep all rows)
         }
+    } else if (filter.filter_type == TableFilterType::STRUCT_EXTRACT) {
+        // Descend into a struct child: append child_idx to the path and recurse on the child filter.
+        auto &sf = filter.Cast<duckdb::StructFilter>();
+        std::vector<duckdb::idx_t> child_path = path;
+        child_path.push_back(sf.child_idx);
+        emit_filter(*sf.child_filter, child_path, buf);
     } else if (filter.filter_type == TableFilterType::DYNAMIC_FILTER ||
                filter.filter_type == TableFilterType::BLOOM_FILTER) {
         // Join-reduction filters: not required for correctness; the join above re-checks.
@@ -243,7 +255,7 @@ static duckdb::unique_ptr<ArrowArrayStreamWrapper> ShimProduce(uintptr_t factory
         for (auto &kv : filters) {
             duckdb::idx_t projected_col = kv.first; // already the projected batch position
             const duckdb::TableFilter &tf = *kv.second;
-            emit_filter(tf, projected_col, filter_buf);
+            emit_filter(tf, std::vector<duckdb::idx_t>{projected_col}, filter_buf);
         }
     } else {
         // No filters: emit empty AND (keep all rows)

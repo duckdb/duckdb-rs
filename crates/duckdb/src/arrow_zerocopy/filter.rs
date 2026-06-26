@@ -6,7 +6,7 @@
 
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
-    LargeStringArray, RecordBatch, Scalar, StringArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    LargeStringArray, RecordBatch, Scalar, StringArray, StructArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow::compute::kernels::{boolean, cmp};
 use arrow::compute::{is_not_null, is_null};
@@ -52,12 +52,12 @@ pub(crate) enum CmpOp {
 
 #[derive(Debug)]
 pub(crate) enum FilterNode {
-    Compare { col: usize, op: CmpOp, val: ScalarVal },
-    IsNull { col: usize },
-    IsNotNull { col: usize },
+    Compare { path: Vec<usize>, op: CmpOp, val: ScalarVal },
+    IsNull { path: Vec<usize> },
+    IsNotNull { path: Vec<usize> },
     And(Vec<FilterNode>),
     Or(Vec<FilterNode>),
-    In { col: usize, vals: Vec<ScalarVal> },
+    In { path: Vec<usize>, vals: Vec<ScalarVal> },
     Unhandled(u32),
 }
 
@@ -110,6 +110,11 @@ impl<'a> Cursor<'a> {
         f64::from_bits(bits)
     }
 
+    fn read_path(&mut self) -> Vec<usize> {
+        let depth = self.read_u32() as usize;
+        (0..depth).map(|_| self.read_u32() as usize).collect()
+    }
+
     fn remaining(&self) -> usize {
         self.buf.len().saturating_sub(self.pos)
     }
@@ -150,7 +155,7 @@ impl<'a> Cursor<'a> {
         }
         match self.read_u8() {
             0 => {
-                let col = self.read_u32() as usize;
+                let path = self.read_path();
                 let op_byte = self.read_u8();
                 let op = match op_byte {
                     0 => CmpOp::Eq,
@@ -166,14 +171,10 @@ impl<'a> Cursor<'a> {
                     }
                 };
                 let val = self.read_scalar();
-                FilterNode::Compare { col, op, val }
+                FilterNode::Compare { path, op, val }
             }
-            1 => FilterNode::IsNull {
-                col: self.read_u32() as usize,
-            },
-            2 => FilterNode::IsNotNull {
-                col: self.read_u32() as usize,
-            },
+            1 => FilterNode::IsNull { path: self.read_path() },
+            2 => FilterNode::IsNotNull { path: self.read_path() },
             3 => {
                 let n = self.read_u32() as usize;
                 let children = (0..n).map(|_| self.read_node_inner(depth + 1)).collect();
@@ -185,10 +186,10 @@ impl<'a> Cursor<'a> {
                 FilterNode::Or(children)
             }
             5 => {
-                let col = self.read_u32() as usize;
+                let path = self.read_path();
                 let n = self.read_u32() as usize;
                 let vals = (0..n).map(|_| self.read_scalar()).collect();
-                FilterNode::In { col, vals }
+                FilterNode::In { path, vals }
             }
             255 => FilterNode::Unhandled(self.read_u32()),
             tag => FilterNode::Unhandled(tag as u32),
@@ -210,8 +211,47 @@ pub(crate) fn decode(buf: &[u8]) -> FilterNode {
 // Evaluator
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Resolve a column path to its leaf array plus an optional "ancestor-valid" mask.
+/// `path[0]` selects the projected column; each subsequent index descends into a
+/// `StructArray` child. The returned mask (when `Some`) is `true` where every ancestor
+/// struct is non-null at that row; `None` means no ancestor struct carried nulls.
+fn resolve_path(
+    batch: &RecordBatch,
+    path: &[usize],
+) -> Result<(ArrayRef, Option<BooleanArray>), FilterError> {
+    let root = *path
+        .first()
+        .ok_or_else(|| FilterError::Unhandled("empty column path".into()))?;
+    if root >= batch.num_columns() {
+        return Err(FilterError::Unhandled(format!("column index {root} out of range")));
+    }
+    let mut arr: ArrayRef = batch.column(root).clone();
+    let mut ancestor_valid: Option<BooleanArray> = None;
+    for &idx in &path[1..] {
+        let sa = arr.as_any().downcast_ref::<StructArray>().ok_or_else(|| {
+            FilterError::Unhandled(format!("path descends into non-struct: {:?}", arr.data_type()))
+        })?;
+        if let Some(nulls) = sa.nulls() {
+            // Collect per-logical-element validity (true = non-null). `iter()` applies the
+            // NullBuffer's offset/len, so this is correct even for a sliced StructArray
+            // (a user may register a sliced batch) — unlike cloning the raw inner buffer.
+            let this_valid: BooleanArray = nulls.iter().collect();
+            ancestor_valid = Some(match ancestor_valid {
+                Some(prev) => boolean::and(&prev, &this_valid).map_err(|e| FilterError::Unhandled(e.to_string()))?,
+                None => this_valid,
+            });
+        }
+        let child = sa
+            .columns()
+            .get(idx)
+            .ok_or_else(|| FilterError::Unhandled(format!("struct child index {idx} out of range")))?;
+        arr = child.clone();
+    }
+    Ok((arr, ancestor_valid))
+}
+
 /// Evaluate a filter node against a projected `RecordBatch`, returning a boolean mask.
-/// Column indices in the `FilterNode` refer to positions in the projected batch.
+/// Column paths in the `FilterNode` refer to positions in the projected batch.
 pub(crate) fn evaluate(node: &FilterNode, batch: &RecordBatch) -> Result<BooleanArray, FilterError> {
     match node {
         FilterNode::Unhandled(k) => Err(FilterError::Unhandled(format!("TableFilterType {k}"))),
@@ -234,20 +274,31 @@ pub(crate) fn evaluate(node: &FilterNode, batch: &RecordBatch) -> Result<Boolean
             Ok(acc)
         }
 
-        FilterNode::IsNull { col } => {
-            is_null(batch.column(*col).as_ref()).map_err(|e| FilterError::Unhandled(e.to_string()))
+        FilterNode::IsNull { path } => {
+            let (col, valid) = resolve_path(batch, path)?;
+            let mut m = is_null(col.as_ref()).map_err(|e| FilterError::Unhandled(e.to_string()))?;
+            if let Some(v) = valid {
+                let not_v = boolean::not(&v).map_err(|e| FilterError::Unhandled(e.to_string()))?;
+                m = boolean::or(&m, &not_v).map_err(|e| FilterError::Unhandled(e.to_string()))?;
+            }
+            Ok(m)
         }
 
-        FilterNode::IsNotNull { col } => {
-            is_not_null(batch.column(*col).as_ref()).map_err(|e| FilterError::Unhandled(e.to_string()))
+        FilterNode::IsNotNull { path } => {
+            let (col, valid) = resolve_path(batch, path)?;
+            let mut m = is_not_null(col.as_ref()).map_err(|e| FilterError::Unhandled(e.to_string()))?;
+            if let Some(v) = valid {
+                m = boolean::and(&m, &v).map_err(|e| FilterError::Unhandled(e.to_string()))?;
+            }
+            Ok(m)
         }
 
-        FilterNode::In { col, vals } => {
+        FilterNode::In { path, vals } => {
             // OR of equality comparisons; NULLs in the column are never matched (DuckDB semantics).
-            let col_arr = batch.column(*col);
+            let (col_arr, valid) = resolve_path(batch, path)?;
             let mut acc = BooleanArray::from(vec![false; batch.num_rows()]);
             for val in vals {
-                let eq_mask = compare(col_arr, &CmpOp::Eq, val)?;
+                let eq_mask = compare(&col_arr, &CmpOp::Eq, val)?;
                 // `compare` with a non-null scalar returns a BooleanArray where null column
                 // entries produce null in the mask — coerce them to false so they don't match.
                 let n = eq_mask.len();
@@ -258,10 +309,20 @@ pub(crate) fn evaluate(node: &FilterNode, batch: &RecordBatch) -> Result<Boolean
                 );
                 acc = boolean::or(&acc, &eq_no_null).map_err(|e| FilterError::Unhandled(e.to_string()))?;
             }
+            if let Some(v) = valid {
+                acc = boolean::and(&acc, &v).map_err(|e| FilterError::Unhandled(e.to_string()))?;
+            }
             Ok(acc)
         }
 
-        FilterNode::Compare { col, op, val } => compare(batch.column(*col), op, val),
+        FilterNode::Compare { path, op, val } => {
+            let (col, valid) = resolve_path(batch, path)?;
+            let mask = compare(&col, op, val)?;
+            match valid {
+                Some(v) => boolean::and(&mask, &v).map_err(|e| FilterError::Unhandled(e.to_string())),
+                None => Ok(mask),
+            }
+        }
     }
 }
 

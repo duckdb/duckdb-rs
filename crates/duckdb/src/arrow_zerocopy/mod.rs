@@ -414,12 +414,12 @@ mod test {
         use super::filter::{FilterNode, evaluate};
         // sample(): region (col 1) = [us, eu, NULL, us]
         let batch = sample();
-        let null_mask = evaluate(&FilterNode::IsNull { col: 1 }, &batch).unwrap();
+        let null_mask = evaluate(&FilterNode::IsNull { path: vec![1] }, &batch).unwrap();
         assert_eq!(
             null_mask.iter().map(|v| v.unwrap_or(false)).collect::<Vec<_>>(),
             vec![false, false, true, false]
         );
-        let not_null_mask = evaluate(&FilterNode::IsNotNull { col: 1 }, &batch).unwrap();
+        let not_null_mask = evaluate(&FilterNode::IsNotNull { path: vec![1] }, &batch).unwrap();
         assert_eq!(
             not_null_mask.iter().map(|v| v.unwrap_or(false)).collect::<Vec<_>>(),
             vec![true, true, false, true]
@@ -433,12 +433,12 @@ mod test {
         let batch = sample();
         let node = FilterNode::Or(vec![
             FilterNode::Compare {
-                col: 0,
+                path: vec![0],
                 op: CmpOp::Eq,
                 val: ScalarVal::I64(1),
             },
             FilterNode::Compare {
-                col: 0,
+                path: vec![0],
                 op: CmpOp::Eq,
                 val: ScalarVal::I64(4),
             },
@@ -456,7 +456,7 @@ mod test {
         // sample(): region (col 1) = [us, eu, NULL, us]; region IN ('us') must NOT match the NULL row
         let batch = sample();
         let node = FilterNode::In {
-            col: 1,
+            path: vec![1],
             vals: vec![ScalarVal::Utf8("us".into())],
         };
         let mask = evaluate(&node, &batch).unwrap();
@@ -549,7 +549,7 @@ mod test {
         // sample_types(): i32 (col 0) = [-1, 0, 1, 2, 3]; i32 >= 0 → [false, true, true, true, true]
         let batch = sample_types();
         let node = FilterNode::Compare {
-            col: 0,
+            path: vec![0],
             op: CmpOp::Ge,
             val: ScalarVal::I64(0),
         };
@@ -566,7 +566,7 @@ mod test {
         // sample_types(): u32 (col 1) = [10, 50, 99, 100, 200]; u32 < 100 → [true, true, true, false, false]
         let batch = sample_types();
         let node = FilterNode::Compare {
-            col: 1,
+            path: vec![1],
             op: CmpOp::Lt,
             val: ScalarVal::U64(100),
         };
@@ -583,7 +583,7 @@ mod test {
         // sample_types(): f64 (col 2) = [0.5, 1.0, 1.5, 2.0, 2.5]; f64 > 1.5 → [false, false, false, true, true]
         let batch = sample_types();
         let node = FilterNode::Compare {
-            col: 2,
+            path: vec![2],
             op: CmpOp::Gt,
             val: ScalarVal::F64(1.5),
         };
@@ -600,7 +600,7 @@ mod test {
         // sample_types(): b (col 3) = [true, false, true, false, true]; b = true → [true, false, true, false, true]
         let batch = sample_types();
         let node = FilterNode::Compare {
-            col: 3,
+            path: vec![3],
             op: CmpOp::Eq,
             val: ScalarVal::Bool(true),
         };
@@ -616,7 +616,7 @@ mod test {
         use super::filter::{CmpOp, FilterNode, ScalarVal, evaluate};
         // Int32 column (col 0) with an F64 scalar — no arm covers this combo; must fail loud.
         let node = FilterNode::Compare {
-            col: 0,
+            path: vec![0],
             op: CmpOp::Eq,
             val: ScalarVal::F64(1.0),
         };
@@ -635,7 +635,7 @@ mod test {
         let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int8, false)]));
         let batch = RecordBatch::try_new(schema, vec![Arc::new(Int8Array::from(vec![1i8, 2, 3]))]).unwrap();
         let node = FilterNode::Compare {
-            col: 0,
+            path: vec![0],
             op: CmpOp::Ge,
             val: ScalarVal::I64(300),
         };
@@ -672,6 +672,82 @@ mod test {
         let conn = Connection::open_in_memory().unwrap();
         let result = conn.register_arrow("v", vec![batch1, batch2]);
         assert!(result.is_err(), "mismatched schemas must return Err");
+    }
+
+    #[test]
+    fn struct_extract_filter_matches_appender() {
+        use arrow::array::{ArrayRef, Int64Array, StructArray};
+        use arrow::datatypes::{DataType, Field, Fields};
+        // Column `s STRUCT(id BIGINT, score BIGINT)` with all-valid structs. (A null-struct row is
+        // deliberately NOT used here: DuckDB's native Appender ingestion and its Arrow-scan path
+        // diverge on struct-null propagation — extracting a field from a NULL struct is NULL in the
+        // Arrow path but the Appender stores the child value — so a null-struct row is not a sound
+        // oracle comparison. The null-struct masking semantics are asserted directly in
+        // `struct_path_null_struct_masking_direct`.)
+        let id = Arc::new(Int64Array::from(vec![1i64, 2, 3, 4])) as ArrayRef;
+        let score = Arc::new(Int64Array::from(vec![10i64, 20, 30, 40])) as ArrayRef;
+        let fields: Fields = vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("score", DataType::Int64, false),
+        ]
+        .into();
+        let s = Arc::new(StructArray::new(fields.clone(), vec![id, score], None)) as ArrayRef;
+        let schema = Arc::new(Schema::new(vec![Field::new("s", DataType::Struct(fields), true)]));
+        let batch = RecordBatch::try_new(schema, vec![s]).unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (s STRUCT(id BIGINT, score BIGINT))").unwrap();
+        {
+            let mut app = conn.appender("t").unwrap();
+            app.append_record_batch(batch.clone()).unwrap();
+        }
+        let reg = conn.register_arrow("v", vec![batch]).unwrap();
+
+        let q = |sql: String| conn.query_row::<i64, _, _>(&sql, [], |r| r.get(0)).unwrap();
+        for where_clause in ["WHERE s.id > 2", "WHERE s.score = 20", "WHERE s.id IS NOT NULL"] {
+            assert_eq!(
+                q(format!("SELECT count(*) FROM v {where_clause}")),
+                q(format!("SELECT count(*) FROM t {where_clause}")),
+                "struct-field filter must match the Appender oracle: {where_clause}"
+            );
+        }
+        drop(reg);
+    }
+
+    #[test]
+    fn struct_path_null_struct_masking_direct() {
+        // Directly asserts the SQL-correct semantics for a NULL struct: extracting a field from a
+        // null struct yields NULL, so `s.id > 2` must EXCLUDE a null-struct row (even when the
+        // child slot holds a value), and `s.id IS NULL` must be TRUE for it. This is what
+        // resolve_path's ancestor-valid masking provides; it cannot be checked against the Appender
+        // oracle because DuckDB's native ingestion mishandles null-struct child values.
+        use super::filter::{CmpOp, FilterNode, ScalarVal, evaluate};
+        use arrow::array::{Array, ArrayRef, Int64Array, StructArray};
+        use arrow::buffer::NullBuffer;
+        use arrow::datatypes::{DataType, Field, Fields};
+        let id = Arc::new(Int64Array::from(vec![1i64, 2, 3, 4])) as ArrayRef;
+        let fields: Fields = vec![Field::new("id", DataType::Int64, false)].into();
+        let nulls = NullBuffer::from(vec![true, true, false, true]); // row 2 = NULL struct
+        let s = Arc::new(StructArray::new(fields.clone(), vec![id], Some(nulls))) as ArrayRef;
+        let schema = Arc::new(Schema::new(vec![Field::new("s", DataType::Struct(fields), true)]));
+        let batch = RecordBatch::try_new(schema, vec![s]).unwrap();
+
+        let bits = |node: FilterNode| -> Vec<bool> {
+            let m = evaluate(&node, &batch).unwrap();
+            (0..m.len()).map(|i| m.is_valid(i) && m.value(i)).collect()
+        };
+        // s.id > 2 : row 2 (null struct) excluded despite child id=3; only row 3 (id=4) kept.
+        assert_eq!(
+            bits(FilterNode::Compare { path: vec![0, 0], op: CmpOp::Gt, val: ScalarVal::I64(2) }),
+            vec![false, false, false, true],
+            "null-struct row must be excluded from s.id > 2"
+        );
+        // s.id IS NULL : only the null-struct row (row 2) reads as NULL.
+        assert_eq!(
+            bits(FilterNode::IsNull { path: vec![0, 0] }),
+            vec![false, false, true, false],
+            "field of a null struct must read as NULL"
+        );
     }
 
     #[test]
