@@ -273,7 +273,14 @@ static void emit_filter(const duckdb::TableFilter &filter, const std::vector<duc
         auto &sf = filter.Cast<duckdb::StructFilter>();
         std::vector<duckdb::idx_t> child_path = path;
         child_path.push_back(sf.child_idx);
-        emit_filter(*sf.child_filter, child_path, buf);
+        if (sf.child_filter) {
+            emit_filter(*sf.child_filter, child_path, buf);
+        } else {
+            // DuckDB always supplies a child filter; guard defensively so a null can never be
+            // dereferenced (mirrors the OPTIONAL_FILTER guard). Empty AND = keep all rows.
+            push_u8(buf, 3);
+            push_u32(buf, 0);
+        }
     } else if (filter.filter_type == TableFilterType::DYNAMIC_FILTER ||
                filter.filter_type == TableFilterType::BLOOM_FILTER) {
         // Join-reduction filters: not required for correctness; the join above re-checks.

@@ -355,12 +355,18 @@ pub(crate) fn evaluate(node: &FilterNode, batch: &RecordBatch) -> Result<Boolean
     }
 }
 
+// Wire unit-byte tags for Time/Timestamp scalars; must match the C++ emit_scalar unit byte.
+const UNIT_SEC: u8 = 0;
+const UNIT_MS: u8 = 1;
+const UNIT_US: u8 = 2;
+const UNIT_NS: u8 = 3;
+
 fn time_unit_tag(u: &TimeUnit) -> u8 {
     match u {
-        TimeUnit::Second => 0,
-        TimeUnit::Millisecond => 1,
-        TimeUnit::Microsecond => 2,
-        TimeUnit::Nanosecond => 3,
+        TimeUnit::Second => UNIT_SEC,
+        TimeUnit::Millisecond => UNIT_MS,
+        TimeUnit::Microsecond => UNIT_US,
+        TimeUnit::Nanosecond => UNIT_NS,
     }
 }
 
@@ -515,7 +521,7 @@ fn compare(col: &ArrayRef, op: &CmpOp, val: &ScalarVal) -> Result<BooleanArray, 
 
         // ── Date / Time ────────────────────────────────────────────────────────
         (DataType::Date32, ScalarVal::Date32(v)) => dispatch(op, col, &Scalar::new(Date32Array::from(vec![*v]))),
-        (DataType::Time64(TimeUnit::Microsecond), ScalarVal::Time { unit: 2, v }) => {
+        (DataType::Time64(TimeUnit::Microsecond), ScalarVal::Time { unit: UNIT_US, v }) => {
             dispatch(op, col, &Scalar::new(Time64MicrosecondArray::from(vec![*v])))
         }
 

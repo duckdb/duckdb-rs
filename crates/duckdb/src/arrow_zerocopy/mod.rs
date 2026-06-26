@@ -11,17 +11,23 @@
 //! buffer that is decoded and evaluated in Rust before returning each stream. The following filter
 //! kinds are handled end-to-end:
 //!
-//! * `CONSTANT_COMPARISON` (eq / ne / lt / gt / le / ge)
+//! * `CONSTANT_COMPARISON` (eq / ne / lt / gt / le / ge) over all pushable scalar types: ints,
+//!   unsigned, float/double (incl. NaN total-order), bool, Utf8, Blob, Date, Time (µs),
+//!   Timestamp (all four DuckDB units incl. TZ), Decimal128.
 //! * `IS_NULL` / `IS_NOT_NULL`
 //! * `CONJUNCTION_AND` / `CONJUNCTION_OR` (nested trees)
 //! * `IN_FILTER`
+//! * `STRUCT_EXTRACT` — struct-field (column-path) predicates via recursive descent.
 //!
 //! The following are safely skipped (the outer query re-checks):
 //!
 //! * `OPTIONAL_FILTER` — a hint; correctness is guaranteed by the join.
 //! * `DYNAMIC_FILTER` / `BLOOM_FILTER` — join-reduction filters; re-checked by the join.
 //!
-//! Any other filter kind causes an error stream (fail-loud, never silently wrong).
+//! On DuckDB v1.5.4 the optimizer routes every pushable arrow-scan filter to one of these
+//! structured kinds (it constant-folds expressions and keeps genuinely-complex predicates above
+//! the scan). The catch-all `EXPRESSION_FILTER` kind is not emitted; should one ever appear it
+//! produces a clean error stream (fail-loud, never silently wrong).
 
 pub(crate) mod filter;
 
@@ -219,10 +225,15 @@ impl Connection {
     ///
     /// Scans reference the held Arrow buffers in place — no copy into DuckDB storage. The
     /// factory is replayable (a fresh stream per scan, so self-joins work) and honors both
-    /// **projection pushdown** (DuckDB selects only needed columns) and **filter pushdown**
-    /// (CONSTANT_COMPARISON, IS_NULL/IS_NOT_NULL, CONJUNCTION_AND/OR, IN_FILTER are evaluated
-    /// in Rust; OPTIONAL/DYNAMIC/BLOOM filters are safely skipped; any other kind causes an
-    /// error stream).
+    /// **projection pushdown** (DuckDB selects only needed columns) and **filter pushdown**:
+    /// constant comparisons, IS [NOT] NULL, IN, AND/OR, and STRUCT_EXTRACT
+    /// (struct-field) predicates are evaluated in Rust over scalars of all pushable types (ints,
+    /// unsigned, float/double incl. NaN total-order, bool, Utf8, Blob, Date, Time (µs), Timestamp,
+    /// Decimal128). OPTIONAL/DYNAMIC/BLOOM filters are safely skipped. On DuckDB v1.5.4 the
+    /// optimizer routes every pushable arrow-scan filter to one of these structured kinds (it
+    /// constant-folds expressions and keeps genuinely-complex predicates above the scan), so the
+    /// catch-all EXPRESSION_FILTER kind is not emitted here; should one ever appear it produces a
+    /// clean error stream (fail-loud, never silently wrong).
     ///
     /// Dropping the returned [`ArrowView`] automatically unregisters the view from DuckDB
     /// (via `DROP VIEW IF EXISTS`) before freeing the factory memory, so a late scan errors
