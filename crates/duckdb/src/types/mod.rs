@@ -1,6 +1,31 @@
 //! [`ToSql`] and [`FromSql`] are also implemented for `Option<T>` where `T`
 //! implements [`ToSql`] or [`FromSql`] for the cases where you want to know if
 //! a value was NULL (which gets translated to `None`).
+//!
+//! # Dynamic value compatibility notes
+//!
+//! [`Type`], [`Value`], and [`ValueRef`] are non-exhaustive. Downstream code
+//! matching these enums should include a wildcard arm so new DuckDB types can
+//! be added without another source break.
+//!
+//! Top-level `UHUGEINT` result values use [`Value::UHugeInt`] and
+//! [`ValueRef::UHugeInt`] when DuckDB reports `UHUGEINT` logical metadata for
+//! the result column. Nested `UHUGEINT` values inside lists, structs, maps,
+//! arrays, and unions do not currently carry DuckDB child logical type metadata
+//! through the borrowed container API, so values above `i128::MAX` cannot
+//! recover their `u128` value from those metadata-less carriers.
+//!
+//! Parameter-derived scale-zero Arrow decimal result columns are intentionally
+//! not guessed. DuckDB can report `Invalid` logical metadata for a bare bound
+//! parameter (`SELECT ?`) even when the bound value is `u128`. In that case
+//! `duckdb-rs` preserves the existing signed [`Value::HugeInt`] fallback instead
+//! of inferring `UHUGEINT`, `HUGEINT`, or `DECIMAL` from parameter names,
+//! aliases, or expression text. Cast the result expression so DuckDB reports
+//! stable logical metadata when a dynamic `UHUGEINT` carrier is required.
+//!
+//! DuckDB `DECIMAL(38, s)` values that do not fit `rust_decimal::Decimal`
+//! remain a separate limitation; a full-width decimal carrier can be added in a
+//! follow-up without changing the `UHUGEINT` binding support added here.
 
 pub use self::{
     from_sql::{FromSql, FromSqlError, FromSqlResult},
@@ -16,6 +41,8 @@ pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
 use arrow::datatypes::DataType;
 use std::fmt;
 
+use crate::ffi;
+
 #[cfg(feature = "chrono")]
 mod chrono;
 mod from_sql;
@@ -30,6 +57,20 @@ mod value_ref;
 mod decimal;
 mod ordered_map;
 mod string;
+
+pub(crate) fn to_duckdb_hugeint(i: i128) -> ffi::duckdb_hugeint {
+    ffi::duckdb_hugeint {
+        lower: i as u64,
+        upper: (i >> 64) as i64,
+    }
+}
+
+pub(crate) fn to_duckdb_uhugeint(i: u128) -> ffi::duckdb_uhugeint {
+    ffi::duckdb_uhugeint {
+        lower: i as u64,
+        upper: (i >> 64) as u64,
+    }
+}
 
 /// Empty struct that can be used to fill in a query parameter as `NULL`.
 ///
@@ -49,6 +90,7 @@ pub struct Null;
 /// DuckDB data types.
 /// See [Fundamental Datatypes](https://duckdb.org/docs/sql/data_types/overview).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Type {
     /// NULL
     Null,
@@ -64,6 +106,8 @@ pub enum Type {
     BigInt,
     /// HUGEINT
     HugeInt,
+    /// UHUGEINT
+    UHugeInt,
     /// UTINYINT
     UTinyInt,
     /// USMALLINT
@@ -136,9 +180,12 @@ impl From<&DataType> for Type {
             // DataType::LargeBinary => Self::LargeBinary,
             DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
             DataType::List(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
-            DataType::FixedSizeList(field, size) => {
-                Self::Array(Box::new(Self::from(field.data_type())), (*size).try_into().unwrap())
-            }
+            DataType::FixedSizeList(field, size) => Self::Array(
+                Box::new(Self::from(field.data_type())),
+                (*size)
+                    .try_into()
+                    .expect("Arrow FixedSizeList size must be non-negative"),
+            ),
             // DataType::LargeList(_) => Self::LargeList,
             DataType::Struct(inner) => {
                 let capacity = inner.len();
@@ -153,11 +200,17 @@ impl From<&DataType> for Type {
             DataType::Map(field, ..) => {
                 let data_type = field.data_type();
                 match data_type {
-                    DataType::Struct(fields) => Self::Map(
+                    DataType::Struct(fields) if fields.len() == 2 => Self::Map(
                         Box::new(Self::from(fields[0].data_type())),
                         Box::new(Self::from(fields[1].data_type())),
                     ),
-                    _ => unreachable!(),
+                    DataType::Struct(fields) => {
+                        panic!(
+                            "Arrow Map child struct must have exactly two fields, got {}",
+                            fields.len()
+                        )
+                    }
+                    _ => panic!("Arrow Map child type must be Struct(key, value), got {data_type}"),
                 }
             }
             res => unimplemented!("{}", res),
@@ -175,6 +228,7 @@ impl fmt::Display for Type {
             Self::Int => f.pad("Int"),
             Self::BigInt => f.pad("BigInt"),
             Self::HugeInt => f.pad("HugeInt"),
+            Self::UHugeInt => f.pad("UHugeInt"),
             Self::UTinyInt => f.pad("UTinyInt"),
             Self::USmallInt => f.pad("USmallInt"),
             Self::UInt => f.pad("UInt"),

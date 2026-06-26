@@ -57,6 +57,7 @@ impl FromSql for rust_decimal::Decimal {
             ValueRef::Int(i) => rust_decimal::Decimal::from_i32(i).ok_or(FromSqlError::OutOfRange(i as i128)),
             ValueRef::BigInt(i) => rust_decimal::Decimal::from_i64(i).ok_or(FromSqlError::OutOfRange(i as i128)),
             ValueRef::HugeInt(i) => rust_decimal::Decimal::from_i128(i).ok_or(FromSqlError::OutOfRange(i)),
+            ValueRef::UHugeInt(i) => rust_decimal::Decimal::from_u128(i).ok_or(FromSqlError::OutOfRangeUnsigned(i)),
             ValueRef::UTinyInt(i) => rust_decimal::Decimal::from_u8(i).ok_or(FromSqlError::OutOfRange(i as i128)),
             ValueRef::USmallInt(i) => rust_decimal::Decimal::from_u16(i).ok_or(FromSqlError::OutOfRange(i as i128)),
             ValueRef::UInt(i) => rust_decimal::Decimal::from_u32(i).ok_or(FromSqlError::OutOfRange(i as i128)),
@@ -89,6 +90,7 @@ mod test {
     use rust_decimal::Decimal;
 
     use super::*;
+    use crate::{Connection, Error, Result};
 
     #[test]
     fn test_to_duckdb_decimal_large_negative_upper_bits() {
@@ -123,6 +125,38 @@ mod test {
             FromSqlError::OutOfRange(value) => assert_eq!(value, i128::MAX),
             _ => panic!("expected OutOfRange, got {err}"),
         }
+    }
+
+    #[test]
+    fn test_from_sql_uhugeint_overflow_is_out_of_range() {
+        let err = Decimal::column_result(ValueRef::UHugeInt(u128::MAX)).unwrap_err();
+        match err {
+            FromSqlError::OutOfRangeUnsigned(value) => assert_eq!(value, u128::MAX),
+            _ => panic!("expected OutOfRange, got {err}"),
+        }
+    }
+
+    #[test]
+    fn test_read_uhugeint_as_decimal() -> Result<()> {
+        const U128_MAX_SQL: &str = "340282366920938463463374607431768211455";
+
+        let db = Connection::open_in_memory()?;
+
+        let value: Decimal = db.query_row("SELECT (5)::UHUGEINT", [], |row| row.get(0))?;
+        assert_eq!(value, Decimal::from(5));
+
+        let err = db
+            .query_row(&format!("SELECT ({U128_MAX_SQL})::UHUGEINT"), [], |row| {
+                row.get::<_, Decimal>(0)
+            })
+            .unwrap_err();
+
+        match err {
+            Error::UnsignedIntegralValueOutOfRange(0, value) => assert_eq!(value, u128::MAX),
+            other => panic!("expected unsigned out-of-range error, got {other:?}"),
+        }
+
+        Ok(())
     }
 
     #[test]

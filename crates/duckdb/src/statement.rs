@@ -3,12 +3,15 @@ use std::{convert, ffi::c_void, fmt, mem, os::raw::c_char, ptr, str};
 use arrow::{array::StructArray, datatypes::SchemaRef};
 
 use super::{AndThenRows, Connection, Error, MappedRows, Params, RawStatement, Result, Row, Rows, ValueRef, ffi};
+use crate::core::LogicalTypeId;
 #[cfg(feature = "polars")]
 use crate::polars_dataframe::Polars;
 use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
-    types::{ToSql, ToSqlOutput, binding_unsupported_value, value_ref_from_value},
+    types::{
+        ToSql, ToSqlOutput, binding_unsupported_value, to_duckdb_hugeint, to_duckdb_uhugeint, value_ref_from_value,
+    },
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -572,6 +575,11 @@ impl Statement<'_> {
         self.stmt.schema()
     }
 
+    #[inline]
+    pub(crate) fn result_column_logical_id(&self, idx: usize) -> Option<LogicalTypeId> {
+        self.stmt.result_column_logical_id(idx)
+    }
+
     // generic because many of these branches can constant fold away.
     fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P, col: usize) -> Result<()> {
         let value = param.to_sql()?;
@@ -589,13 +597,8 @@ impl Statement<'_> {
             ValueRef::SmallInt(i) => unsafe { ffi::duckdb_bind_int16(ptr, col as u64, i) },
             ValueRef::Int(i) => unsafe { ffi::duckdb_bind_int32(ptr, col as u64, i) },
             ValueRef::BigInt(i) => unsafe { ffi::duckdb_bind_int64(ptr, col as u64, i) },
-            ValueRef::HugeInt(i) => unsafe {
-                let hi = ffi::duckdb_hugeint {
-                    lower: i as u64,
-                    upper: (i >> 64) as i64,
-                };
-                ffi::duckdb_bind_hugeint(ptr, col as u64, hi)
-            },
+            ValueRef::HugeInt(i) => unsafe { ffi::duckdb_bind_hugeint(ptr, col as u64, to_duckdb_hugeint(i)) },
+            ValueRef::UHugeInt(i) => unsafe { ffi::duckdb_bind_uhugeint(ptr, col as u64, to_duckdb_uhugeint(i)) },
             ValueRef::UTinyInt(i) => unsafe { ffi::duckdb_bind_uint8(ptr, col as u64, i) },
             ValueRef::USmallInt(i) => unsafe { ffi::duckdb_bind_uint16(ptr, col as u64, i) },
             ValueRef::UInt(i) => unsafe { ffi::duckdb_bind_uint32(ptr, col as u64, i) },
@@ -773,6 +776,24 @@ mod test {
             let id: i32 = stmt.query_one([&"one"], |r| r.get(0))?;
             assert_eq!(id, 1);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_u128_as_uhugeint() -> Result<()> {
+        const U128_MAX_SQL: &str = "340282366920938463463374607431768211455";
+
+        let db = Connection::open_in_memory()?;
+        let max = u128::MAX;
+
+        let typ: String = db.query_row("SELECT typeof(?)", [&max], |row| row.get(0))?;
+        assert_eq!(typ, "UHUGEINT");
+
+        let equals_max: bool = db.query_row(&format!("SELECT ? = ({U128_MAX_SQL})::UHUGEINT"), [&max], |row| {
+            row.get(0)
+        })?;
+        assert!(equals_max);
+
         Ok(())
     }
 

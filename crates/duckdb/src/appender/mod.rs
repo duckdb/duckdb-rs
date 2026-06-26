@@ -4,7 +4,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 use crate::{
     Error,
     error::result_from_duckdb_appender,
-    types::{ToSql, ToSqlOutput, value_ref_from_value},
+    types::{ToSql, ToSqlOutput, to_duckdb_hugeint, to_duckdb_uhugeint, value_ref_from_value},
 };
 
 /// Appender for fast import data
@@ -186,13 +186,8 @@ impl Appender<'_> {
             ValueRef::USmallInt(i) => unsafe { ffi::duckdb_append_uint16(ptr, i) },
             ValueRef::UInt(i) => unsafe { ffi::duckdb_append_uint32(ptr, i) },
             ValueRef::UBigInt(i) => unsafe { ffi::duckdb_append_uint64(ptr, i) },
-            ValueRef::HugeInt(i) => unsafe {
-                let hi = ffi::duckdb_hugeint {
-                    lower: i as u64,
-                    upper: (i >> 64) as i64,
-                };
-                ffi::duckdb_append_hugeint(ptr, hi)
-            },
+            ValueRef::HugeInt(i) => unsafe { ffi::duckdb_append_hugeint(ptr, to_duckdb_hugeint(i)) },
+            ValueRef::UHugeInt(i) => unsafe { ffi::duckdb_append_uhugeint(ptr, to_duckdb_uhugeint(i)) },
 
             ValueRef::Float(r) => unsafe { ffi::duckdb_append_float(ptr, r) },
             ValueRef::Double(r) => unsafe { ffi::duckdb_append_double(ptr, r) },
@@ -219,13 +214,7 @@ impl Appender<'_> {
             },
             ValueRef::Decimal(d) => unsafe {
                 let decimal = crate::types::to_duckdb_decimal(d);
-                let mut value = ffi::duckdb_create_decimal(decimal);
-                if value.is_null() {
-                    return Err(Error::AppendError);
-                }
-                let res = ffi::duckdb_append_value(ptr, value);
-                ffi::duckdb_destroy_value(&mut value);
-                res
+                append_decimal(ptr, decimal)?
             },
             _ => {
                 return Err(Error::ToSqlConversionFailure(
@@ -299,6 +288,18 @@ fn appending_unsupported_value(value_type: impl fmt::Display) -> String {
     format!("appending {value_type} values is not yet supported")
 }
 
+unsafe fn append_decimal(ptr: ffi::duckdb_appender, decimal: ffi::duckdb_decimal) -> Result<ffi::duckdb_state> {
+    let mut value = unsafe { ffi::duckdb_create_decimal(decimal) };
+    if value.is_null() {
+        return Err(Error::AppendError);
+    }
+    let res = unsafe { ffi::duckdb_append_value(ptr, value) };
+    unsafe {
+        ffi::duckdb_destroy_value(&mut value);
+    }
+    Ok(res)
+}
+
 fn to_value_ref<'value, 'output>(value: &'value ToSqlOutput<'output>) -> Result<ValueRef<'value>>
 where
     'output: 'value,
@@ -318,6 +319,7 @@ fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
         | ValueRef::Int(_)
         | ValueRef::BigInt(_)
         | ValueRef::HugeInt(_)
+        | ValueRef::UHugeInt(_)
         | ValueRef::UTinyInt(_)
         | ValueRef::USmallInt(_)
         | ValueRef::UInt(_)
@@ -505,6 +507,26 @@ mod test {
 
         let val = db.query_row("SELECT sum(x), sum(y) FROM foo", [], |row| <(i32, i32)>::try_from(row))?;
         assert_eq!(val, (25, 30));
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_u128_as_uhugeint() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute("CREATE TABLE t(v UHUGEINT)", [])?;
+
+        let mut appender = db.appender("t")?;
+        appender.append_row([0u128])?;
+        appender.append_row([u128::MAX])?;
+        drop(appender);
+
+        let values: Vec<u128> = db
+            .prepare("SELECT v FROM t ORDER BY v")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(values, vec![0, u128::MAX]);
+
         Ok(())
     }
 

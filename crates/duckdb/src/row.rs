@@ -1,6 +1,7 @@
 use std::{convert, sync::Arc};
 
 use super::{Error, Result, Statement};
+use crate::core::LogicalTypeId;
 use crate::types::{self, EnumType, FromSql, FromSqlError, ListType, ValueRef};
 
 use arrow::{
@@ -336,6 +337,7 @@ impl<'stmt> Row<'stmt> {
                 Error::InvalidColumnType(idx, self.stmt.column_name_unwrap(idx).into(), value.data_type())
             }
             FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
+            FromSqlError::OutOfRangeUnsigned(i) => Error::UnsignedIntegralValueOutOfRange(idx, i),
             FromSqlError::Other(err) => Error::FromSqlConversionFailure(idx, value.data_type(), err),
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(_) => {
@@ -361,19 +363,31 @@ impl<'stmt> Row<'stmt> {
     /// name for this row.
     pub fn get_ref<I: RowIndex>(&self, idx: I) -> Result<ValueRef<'_>> {
         let idx = idx.idx(self.stmt)?;
-        // Narrowing from `ValueRef<'stmt>` (which `self.stmt.value_ref(idx)`
-        // returns) to `ValueRef<'a>` is needed because it's only valid until
-        // the next call to sqlite3_step.
+        // Narrowing from `ValueRef<'stmt>` (which `self.value_ref(row, idx)`
+        // returns) to `ValueRef<'a>` is needed because it is only valid until
+        // the next row fetch.
         let val_ref = self.value_ref(self.current_row, idx);
         Ok(val_ref)
     }
 
     fn value_ref(&self, row: usize, col: usize) -> ValueRef<'_> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
-        Self::value_ref_internal(row, col, column)
+        let value = Self::value_ref_internal(row, column);
+
+        // Arrow decodes HUGEINT, UHUGEINT, and scale-zero DECIMAL through the
+        // signed HugeInt carrier. Promote only when DuckDB's result metadata
+        // explicitly reports UHUGEINT; otherwise preserve the existing HugeInt
+        // fallback for parameter-derived or metadata-less results.
+        if let ValueRef::HugeInt(value) = value {
+            if matches!(self.stmt.result_column_logical_id(col), Some(LogicalTypeId::UHugeint)) {
+                return ValueRef::UHugeInt(value as u128);
+            }
+        }
+
+        value
     }
 
-    pub(crate) fn value_ref_internal(row: usize, col: usize, column: &ArrayRef) -> ValueRef<'_> {
+    pub(crate) fn value_ref_internal<'a>(row: usize, column: &'a ArrayRef) -> ValueRef<'a> {
         if column.is_null(row) {
             return ValueRef::Null;
         }
@@ -448,13 +462,15 @@ impl<'stmt> Row<'stmt> {
                 let array = column.as_any().downcast_ref::<array::Float64Array>().unwrap();
                 ValueRef::Double(array.value(row))
             }
-            DataType::Decimal128(..) => {
+            DataType::Decimal128(_, scale) => {
                 let array = column.as_any().downcast_ref::<array::Decimal128Array>().unwrap();
-                // hugeint: d:38,0
-                if array.scale() == 0 {
-                    return ValueRef::HugeInt(array.value(row));
+                let value = array.value(row);
+                let scale = u32::try_from(*scale).expect("Arrow decimal scale must be non-negative");
+                if scale == 0 {
+                    ValueRef::HugeInt(value)
+                } else {
+                    ValueRef::Decimal(Decimal::from_i128_with_scale(value, scale))
                 }
-                ValueRef::Decimal(Decimal::from_i128_with_scale(array.value(row), array.scale() as u32))
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
                 let array = column.as_any().downcast_ref::<array::TimestampSecondArray>().unwrap();
@@ -558,7 +574,7 @@ impl<'stmt> Row<'stmt> {
                 ValueRef::Array(arr, row)
             }
             DataType::Union(..) => ValueRef::Union(column, row),
-            _ => unreachable!("invalid value: {}, {}", col, column.data_type()),
+            _ => unreachable!("invalid value: {}", column.data_type()),
         }
     }
 
@@ -669,8 +685,13 @@ tuples_try_from_row!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::redundant_closure)] // false positives due to lifetime issues; clippy issue #5594
-    use crate::{Connection, Result};
+    use crate::{
+        Connection, Error, Result,
+        types::{Type, Value, ValueRef},
+    };
+
+    const U128_MAX_SQL: &str = "340282366920938463463374607431768211455";
+    const I128_MAX_PLUS_ONE_SQL: &str = "170141183460469231731687303715884105728";
 
     #[test]
     fn test_try_from_row_for_tuple_0() -> Result<()> {
@@ -807,6 +828,186 @@ mod tests {
         assert_eq!(val.15, 15);
 
         // We don't test one bigger because it's unimplemented
+        Ok(())
+    }
+
+    #[test]
+    fn uhugeint_arrives_as_uhugeint() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let mut stmt = db.prepare("SELECT (1)::UHUGEINT")?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get_ref(0)?, ValueRef::UHugeInt(1));
+        assert_eq!(row.get_ref(0)?.data_type(), Type::UHugeInt);
+        assert_eq!(row.get::<_, u128>(0)?, 1);
+
+        let mut stmt = db.prepare(&format!("SELECT ({U128_MAX_SQL})::UHUGEINT"))?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get_ref(0)?, ValueRef::UHugeInt(u128::MAX));
+        assert_eq!(row.get_ref(0)?.data_type(), Type::UHugeInt);
+        assert_eq!(row.get::<_, u128>(0)?, u128::MAX);
+
+        let i128_max_plus_one = (i128::MAX as u128) + 1;
+        let mut stmt = db.prepare(&format!("SELECT ({I128_MAX_PLUS_ONE_SQL})::UHUGEINT"))?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.unwrap();
+        assert_eq!(row.get_ref(0)?, ValueRef::UHugeInt(i128_max_plus_one));
+        assert_eq!(row.get::<_, u128>(0)?, i128_max_plus_one);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bound_uhugeint_result_uses_logical_metadata_when_cast() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let max = u128::MAX;
+
+        let value = db.query_row("SELECT ?::UHUGEINT", [&max], |row| {
+            assert_eq!(row.get_ref(0)?, ValueRef::UHugeInt(max));
+            row.get::<_, u128>(0)
+        })?;
+        assert_eq!(value, max);
+
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_arrow_decimal_metadata_keeps_hugeint_fallback() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let byte = 255_i128;
+        let byte_value = db.query_row("SELECT ?", [&byte], |row| {
+            assert_eq!(row.get_ref(0)?, ValueRef::HugeInt(byte));
+            row.get::<_, u8>(0)
+        })?;
+        assert_eq!(byte_value, 255);
+
+        let value = 5_u128;
+        let decimal = db.query_row("SELECT ? + 0::DECIMAL(38,0)", [&value], |row| {
+            row.get_ref(0).map(|value| value.to_owned())
+        })?;
+        assert_eq!(decimal, Value::HugeInt(5));
+
+        Ok(())
+    }
+
+    #[test]
+    fn uhugeint_upper_half_is_out_of_range_for_i128() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let err = db
+            .query_row(&format!("SELECT ({I128_MAX_PLUS_ONE_SQL})::UHUGEINT"), [], |row| {
+                row.get::<_, i128>(0)
+            })
+            .unwrap_err();
+
+        match err {
+            Error::UnsignedIntegralValueOutOfRange(0, value) => {
+                assert_eq!(value, (i128::MAX as u128) + 1)
+            }
+            other => panic!("expected unsigned out-of-range error, got {other:?}"),
+        }
+
+        let err = db
+            .query_row(&format!("SELECT ({U128_MAX_SQL})::UHUGEINT"), [], |row| {
+                row.get::<_, i128>(0)
+            })
+            .unwrap_err();
+
+        match err {
+            Error::UnsignedIntegralValueOutOfRange(0, value) => assert_eq!(value, u128::MAX),
+            other => panic!("expected unsigned out-of-range error, got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn nested_uhugeint_uses_metadata_less_hugeint_carrier() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let list = db.query_row(&format!("SELECT [({U128_MAX_SQL})::UHUGEINT]"), [], |row| {
+            let value = row.get_ref(0)?;
+            assert!(matches!(value.data_type(), Type::List(ref inner) if **inner == Type::Decimal));
+            Ok(value.to_owned())
+        })?;
+
+        assert_eq!(list, Value::List(vec![Value::HugeInt(-1)]));
+
+        let structure = db.query_row(
+            &format!("SELECT struct_pack(v := ({U128_MAX_SQL})::UHUGEINT)"),
+            [],
+            |row| {
+                let value = row.get_ref(0)?;
+                assert!(matches!(value.data_type(), Type::Struct(_)));
+                Ok(value.to_owned())
+            },
+        )?;
+
+        match structure {
+            Value::Struct(fields) => {
+                assert_eq!(fields.get(&"v".to_string()), Some(&Value::HugeInt(-1)));
+            }
+            other => panic!("expected struct, got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn uhugeint_logical_type_cache_survives_later_batches() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let values = db
+            .prepare(
+                "
+                SELECT
+                    CASE
+                        WHEN i = 2500 THEN NULL::UHUGEINT
+                        ELSE i::UHUGEINT
+                    END AS v
+                FROM range(3000) AS t(i)
+                ORDER BY i
+                ",
+            )?
+            .query_map([], |row| row.get_ref(0).map(|value| value.to_owned()))?
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(values.len(), 3000);
+        assert_eq!(values[0], Value::UHugeInt(0));
+        assert_eq!(values[2048], Value::UHugeInt(2048));
+        assert_eq!(values[2500], Value::Null);
+        assert_eq!(values[2999], Value::UHugeInt(2999));
+
+        Ok(())
+    }
+
+    #[test]
+    fn uhugeint_nulls_use_cached_logical_type() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let values = db
+            .prepare(&format!(
+                "
+                SELECT v FROM (
+                    VALUES
+                        (0, (0)::UHUGEINT),
+                        (1, NULL::UHUGEINT),
+                        (2, ({U128_MAX_SQL})::UHUGEINT)
+                ) AS t(ord, v)
+                ORDER BY ord
+                "
+            ))?
+            .query_map([], |row| row.get_ref(0).map(|value| value.to_owned()))?
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(
+            values,
+            vec![Value::UHugeInt(0), Value::Null, Value::UHugeInt(u128::MAX)]
+        );
+
         Ok(())
     }
 

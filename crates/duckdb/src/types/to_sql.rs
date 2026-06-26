@@ -7,10 +7,10 @@ use std::borrow::Cow;
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum ToSqlOutput<'a> {
-    /// A borrowed SQLite-representable value.
+    /// A borrowed DuckDB-representable value.
     Borrowed(ValueRef<'a>),
 
-    /// An owned SQLite-representable value.
+    /// An owned DuckDB-representable value.
     Owned(Value),
 }
 
@@ -47,6 +47,7 @@ from_value!(i16);
 from_value!(i32);
 from_value!(i64);
 from_value!(i128);
+from_value!(u128);
 from_value!(isize);
 from_value!(u8);
 from_value!(u16);
@@ -135,6 +136,7 @@ to_sql_self!(i16);
 to_sql_self!(i32);
 to_sql_self!(i64);
 to_sql_self!(i128);
+to_sql_self!(u128);
 to_sql_self!(isize);
 to_sql_self!(u8);
 to_sql_self!(u16);
@@ -226,9 +228,14 @@ mod test {
         is_to_sql::<i16>();
         is_to_sql::<i32>();
         is_to_sql::<i64>();
+        is_to_sql::<i128>();
+        is_to_sql::<isize>();
         is_to_sql::<u8>();
         is_to_sql::<u16>();
         is_to_sql::<u32>();
+        is_to_sql::<u64>();
+        is_to_sql::<u128>();
+        is_to_sql::<usize>();
     }
 
     #[test]

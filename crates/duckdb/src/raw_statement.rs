@@ -29,6 +29,9 @@ pub struct RawStatement {
     result: Option<ffi::duckdb_arrow>,
     duckdb_result: Option<ffi::duckdb_result>,
     schema: Option<SchemaRef>,
+    // Cached DuckDB logical ids for result columns. Arrow reports HUGEINT,
+    // UHUGEINT, and scale-zero DECIMAL through the same decimal shape.
+    result_column_logical_ids: Option<Box<[LogicalTypeId]>>,
     column_name_cache: OnceCell<HashMap<Box<str>, usize>>,
     // Tracks whether the duckdb_result is truly streaming or materialized.
     // This is needed because some statements (like CALL) return materialized
@@ -54,6 +57,7 @@ impl RawStatement {
             ptr: stmt,
             result: None,
             schema: None,
+            result_column_logical_ids: None,
             column_name_cache: OnceCell::new(),
             duckdb_result: None,
             is_streaming: false,
@@ -233,14 +237,34 @@ impl RawStatement {
 
     #[inline]
     pub fn column_logical_type(&self, idx: usize) -> LogicalTypeHandle {
+        self.try_column_logical_type(idx)
+            .unwrap_or_else(|e| panic!("could not retrieve logical type for result column at index {idx}: {e}"))
+    }
+
+    #[inline]
+    pub(crate) fn try_column_logical_type(&self, idx: usize) -> Result<LogicalTypeHandle> {
         unsafe {
             let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
-            assert!(
-                !ptr.is_null(),
-                "could not retrieve logical type for result column at index {idx}"
-            );
-            LogicalTypeHandle::new(ptr)
+            if ptr.is_null() {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(ffi::DuckDBError),
+                    Some(format!(
+                        "Could not retrieve logical type for result column at index {idx}"
+                    )),
+                ));
+            }
+            Ok(LogicalTypeHandle::new(ptr))
         }
+    }
+
+    #[inline]
+    pub(crate) fn result_column_logical_id(&self, idx: usize) -> Option<LogicalTypeId> {
+        let logical_ids = self.result_column_logical_ids.as_ref()?;
+        debug_assert!(
+            idx < logical_ids.len(),
+            "result column logical-id cache is shorter than the result schema"
+        );
+        logical_ids.get(idx).copied()
     }
 
     #[inline]
@@ -276,7 +300,7 @@ impl RawStatement {
     /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
         self.reset_result();
-        self.validate_decodable_result_column_types()?;
+        let result_column_logical_ids = self.validate_and_load_result_column_logical_ids()?;
         unsafe {
             let mut out: ffi::duckdb_arrow = ptr::null_mut();
             let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
@@ -293,13 +317,14 @@ impl RawStatement {
             Rc::from_raw(c_schema);
 
             self.result = Some(out);
+            self.result_column_logical_ids = Some(result_column_logical_ids);
             Ok(rows_changed as usize)
         }
     }
 
     pub fn execute_streaming(&mut self) -> Result<()> {
         self.reset_result();
-        self.validate_decodable_result_column_types()?;
+        let result_column_logical_ids = self.validate_and_load_result_column_logical_ids()?;
         unsafe {
             let mut out: ffi::duckdb_result = std::mem::zeroed();
 
@@ -320,7 +345,12 @@ impl RawStatement {
             // Check if the result is truly streaming or materialized
             // Some statements (like CALL) return materialized results even when streaming is requested
             self.is_streaming = ffi::duckdb_result_is_streaming(out);
+
             self.duckdb_result = Some(out);
+            // Row decoding consumes this cache only for the non-streaming path
+            // today. Keep streaming execution state symmetrical for callers
+            // that inspect statement metadata after execution.
+            self.result_column_logical_ids = Some(result_column_logical_ids);
 
             Ok(())
         }
@@ -329,6 +359,7 @@ impl RawStatement {
     #[inline]
     pub fn reset_result(&mut self) {
         self.schema = None;
+        self.result_column_logical_ids = None;
         self.column_name_cache = OnceCell::new();
         self.is_streaming = false;
         if self.result.is_some() {
@@ -373,21 +404,11 @@ impl RawStatement {
         }
     }
 
-    fn validate_decodable_result_column_types(&self) -> Result<()> {
+    fn validate_and_load_result_column_logical_ids(&self) -> Result<Box<[LogicalTypeId]>> {
         let column_count = unsafe { ffi::duckdb_prepared_statement_column_count(self.ptr) as usize };
+        let mut logical_ids = Vec::with_capacity(column_count);
         for idx in 0..column_count {
-            let logical_type = unsafe {
-                let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
-                if ptr.is_null() {
-                    return Err(Error::DuckDBFailure(
-                        ffi::Error::new(ffi::DuckDBError),
-                        Some(format!(
-                            "Could not retrieve logical type for result column at index {idx}"
-                        )),
-                    ));
-                }
-                LogicalTypeHandle::new(ptr)
-            };
+            let logical_type = self.try_column_logical_type(idx)?;
             if logical_type.contains_type_id(LogicalTypeId::Variant) {
                 return Err(Error::FromSqlConversionFailure(
                     idx,
@@ -395,11 +416,11 @@ impl RawStatement {
                     "decoding Variant columns is not supported".into(),
                 ));
             }
+            logical_ids.push(logical_type.id());
         }
 
-        Ok(())
+        Ok(logical_ids.into_boxed_slice())
     }
-
     #[inline]
     pub fn sql(&self) -> Option<&CStr> {
         panic!("not supported")
