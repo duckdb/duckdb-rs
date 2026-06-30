@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicUsize};
 
 use crate::{
     core::{ArrayVector, FlatVector, Inserter, ListVector, LogicalTypeId, StructVector},
-    types::DuckString,
+    types::{Decimal, DuckString},
 };
 
 use arrow::{
@@ -308,7 +308,10 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
                     format!("Unsupported data type: {data_type}, negative decimal scale is not supported").into(),
                 );
             }
-            Ok(LogicalTypeHandle::decimal(*width, (*scale).try_into().unwrap()))
+            let scale = (*scale).try_into().unwrap();
+            Decimal::new(*width, scale, 0)
+                .map_err(|err| format!("Unsupported data type: {data_type}, invalid decimal type: {err}"))?;
+            Ok(LogicalTypeHandle::decimal(*width, scale))
         }
         DataType::Map(field, _) => arrow_map_to_duckdb_logical_type(field),
         DataType::Boolean
@@ -836,8 +839,8 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Res
         DataType::Float64 => {
             primitive_array_to_flat_vector::<Float64Type>(as_primitive_array(array), out);
         }
-        DataType::Decimal128(width, _) => {
-            decimal_array_to_vector(as_primitive_array(array), out, *width);
+        DataType::Decimal128(width, scale) => {
+            decimal_array_to_vector(as_primitive_array(array), out, *width, *scale)?;
         }
         DataType::Interval(_) | DataType::Duration(_) => {
             let array = IntervalMonthDayNanoArray::from(
@@ -885,38 +888,71 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Res
 }
 
 /// Convert Arrow [Decimal128Array] to a duckdb vector.
-fn decimal_array_to_vector(array: &Decimal128Array, out: &mut FlatVector<'_>, width: u8) {
+fn decimal_array_to_vector(
+    array: &Decimal128Array,
+    out: &mut FlatVector<'_>,
+    width: u8,
+    scale: i8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let scale = u8::try_from(scale).map_err(|_| {
+        format!(
+            "Unsupported data type: {}, negative decimal scale is not supported",
+            array.data_type()
+        )
+    })?;
+    Decimal::new(width, scale, 0).map_err(|err| format!("invalid Arrow decimal type {}: {err}", array.data_type()))?;
+
     match width {
         1..=4 => {
             let out_data = unsafe { out.as_mut_slice() };
-            for (i, value) in array.values().iter().enumerate() {
-                out_data[i] = value.to_i16().unwrap();
+            for (i, slot) in out_data.iter_mut().enumerate().take(array.len()) {
+                let value = arrow_decimal_value(array, width, scale, i)?;
+                *slot = value.to_i16().unwrap();
             }
         }
         5..=9 => {
             let out_data = unsafe { out.as_mut_slice() };
-            for (i, value) in array.values().iter().enumerate() {
-                out_data[i] = value.to_i32().unwrap();
+            for (i, slot) in out_data.iter_mut().enumerate().take(array.len()) {
+                let value = arrow_decimal_value(array, width, scale, i)?;
+                *slot = value.to_i32().unwrap();
             }
         }
         10..=18 => {
             let out_data = unsafe { out.as_mut_slice() };
-            for (i, value) in array.values().iter().enumerate() {
-                out_data[i] = value.to_i64().unwrap();
+            for (i, slot) in out_data.iter_mut().enumerate().take(array.len()) {
+                let value = arrow_decimal_value(array, width, scale, i)?;
+                *slot = value.to_i64().unwrap();
             }
         }
         19..=38 => {
             let out_data = unsafe { out.as_mut_slice() };
-            for (i, value) in array.values().iter().enumerate() {
-                out_data[i] = value.to_i128().unwrap();
+            for (i, slot) in out_data.iter_mut().enumerate().take(array.len()) {
+                let value = arrow_decimal_value(array, width, scale, i)?;
+                *slot = value.to_i128().unwrap();
             }
         }
         // This should never happen, arrow only supports 1-38 decimal digits
-        _ => panic!("Invalid decimal width: {width}"),
+        _ => return Err(format!("Invalid decimal width: {width}").into()),
     }
 
     // Set nulls
     set_nulls_in_flat_vector(array, out);
+    Ok(())
+}
+
+fn arrow_decimal_value(
+    array: &Decimal128Array,
+    width: u8,
+    scale: u8,
+    row: usize,
+) -> Result<i128, Box<dyn std::error::Error>> {
+    if array.is_null(row) {
+        return Ok(0);
+    }
+
+    let value = array.value(row);
+    Decimal::new(width, scale, value).map_err(|err| format!("invalid Arrow decimal value at row {row}: {err}"))?;
+    Ok(value)
 }
 
 /// Convert Arrow [BooleanArray] to a duckdb vector.
@@ -2013,6 +2049,52 @@ mod test {
             Decimal128Array::from(vec![i128::from(12345)]).with_data_type(DataType::Decimal128(5, 0));
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal128_rejects_out_of_precision_values() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let schema = Schema::new(vec![Field::new("d", DataType::Decimal128(5, 2), true)]);
+        let array = Decimal128Array::from(vec![i128::from(999999)]).with_data_type(DataType::Decimal128(5, 2));
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array) as ArrayRef])?;
+        let param = arrow_recordbatch_to_query_params(batch);
+
+        let err = db
+            .query_row("SELECT d FROM arrow(?, ?)", param, |row| {
+                row.get::<_, crate::types::Value>(0)
+            })
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("invalid Arrow decimal value at row 0"),
+            "unexpected error: {err}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal128_rejects_invalid_type_without_values() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let schema = Schema::new(vec![Field::new("d", DataType::Decimal128(5, 10), true)]);
+        let array = Decimal128Array::from(vec![None::<i128>]).with_data_type(DataType::Decimal128(5, 10));
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array) as ArrayRef])?;
+        let param = arrow_recordbatch_to_query_params(batch);
+
+        let err = db
+            .query_row("SELECT d FROM arrow(?, ?)", param, |row| {
+                row.get::<_, crate::types::Value>(0)
+            })
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("decimal scale 10 exceeds width 5"),
+            "unexpected error: {err}"
+        );
         Ok(())
     }
 
