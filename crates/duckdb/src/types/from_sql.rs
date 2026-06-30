@@ -1,9 +1,8 @@
 use std::{error::Error, fmt};
 
 use cast;
-use rust_decimal::RoundingStrategy::MidpointAwayFromZero;
 
-use super::{TimeUnit, Value, ValueRef};
+use super::{Decimal, TimeUnit, Value, ValueRef};
 
 /// Enum listing possible errors from [`FromSql`] trait.
 #[derive(Debug)]
@@ -78,8 +77,40 @@ pub trait FromSql: Sized {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self>;
 }
 
-macro_rules! from_sql_integral(
-    ($t:ident) => (
+fn rounded_decimal(value: i128, scale: u8) -> Option<i128> {
+    let divisor = 10_i128.checked_pow(u32::from(scale))?;
+    let quotient = value / divisor;
+    let remainder = value % divisor;
+
+    // Mirror DuckDB's DECIMAL-to-INTEGER cast: round to nearest, with
+    // fractional ties rounded away from zero.
+    if remainder.unsigned_abs() * 2 < divisor as u128 {
+        return Some(quotient);
+    }
+
+    if value.is_negative() {
+        quotient.checked_sub(1)
+    } else {
+        quotient.checked_add(1)
+    }
+}
+
+fn rounded_decimal_result(value: i128, scale: u8) -> FromSqlResult<i128> {
+    rounded_decimal(value, scale).ok_or(FromSqlError::OutOfRange(value))
+}
+
+fn decimal_to_f32(decimal: Decimal) -> f32 {
+    // Preserve decimal scale, while inheriting normal binary float precision loss.
+    decimal.value() as f32 / 10_f32.powi(i32::from(decimal.scale()))
+}
+
+fn decimal_to_f64(decimal: Decimal) -> f64 {
+    // Preserve decimal scale, while inheriting normal binary float precision loss.
+    decimal.value() as f64 / 10_f64.powi(i32::from(decimal.scale()))
+}
+
+macro_rules! from_sql_numeric(
+    ($t:ident, $decimal:expr) => (
         impl FromSql for $t {
             #[inline]
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
@@ -100,11 +131,7 @@ macro_rules! from_sql_integral(
                     ValueRef::Float(i) => <$t as cast::From<f32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Double(i) => <$t as cast::From<f64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
 
-                    ValueRef::Decimal(d) => {
-                         // DuckDB rounds DECIMAL to INTEGER (following PostgreSQL behavior)
-                        let rounded = d.round_dp_with_strategy(0, MidpointAwayFromZero);
-                        <$t as cast::From<i128>>::cast(rounded.mantissa()).into_result(FromSqlError::OutOfRange(d.mantissa()))
-                    }
+                    ValueRef::Decimal(decimal) => ($decimal)(decimal),
 
                     ValueRef::Timestamp(_, i) => <$t as cast::From<i64>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
                     ValueRef::Date32(i) => <$t as cast::From<i32>>::cast(i).into_result(FromSqlError::OutOfRange(i as i128)),
@@ -121,6 +148,22 @@ macro_rules! from_sql_integral(
                 }
             }
         }
+    )
+);
+
+macro_rules! from_sql_integral(
+    ($t:ident) => (
+        from_sql_numeric!($t, |decimal: Decimal| {
+            let rounded = rounded_decimal_result(decimal.value(), decimal.scale())?;
+            <$t as cast::From<i128>>::cast(rounded)
+                .into_result(FromSqlError::OutOfRange(rounded))
+        });
+    )
+);
+
+macro_rules! from_sql_float(
+    ($t:ident, $decimal_to_float:ident) => (
+        from_sql_numeric!($t, |decimal: Decimal| Ok($decimal_to_float(decimal)));
     )
 );
 
@@ -181,8 +224,8 @@ from_sql_integral!(u32);
 from_sql_integral!(u64);
 from_sql_integral!(u128);
 from_sql_integral!(usize);
-from_sql_integral!(f32);
-from_sql_integral!(f64);
+from_sql_float!(f32, decimal_to_f32);
+from_sql_float!(f64, decimal_to_f64);
 
 impl FromSql for bool {
     #[inline]
@@ -600,6 +643,17 @@ mod test {
         );
         assert_eq!(
             db.query_row("SELECT -0.50::DECIMAL(38,2)", [], |row| row.get::<_, i32>(0))?,
+            -1
+        );
+        assert_eq!(
+            db.query_row("SELECT 0.500000000000000000000000000000::DECIMAL(38,30)", [], |row| row
+                .get::<_, i32>(0))?,
+            1
+        );
+        assert_eq!(
+            db.query_row("SELECT -0.500000000000000000000000000000::DECIMAL(38,30)", [], |row| {
+                row.get::<_, i32>(0)
+            })?,
             -1
         );
 

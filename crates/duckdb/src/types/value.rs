@@ -1,5 +1,4 @@
-use super::{Null, OrderedMap, TimeUnit, Type};
-use rust_decimal::prelude::*;
+use super::{Decimal, Null, OrderedMap, TimeUnit, Type};
 
 /// Owning [dynamic type value](https://duckdb.org/docs/stable/sql/data_types/overview.html).
 /// Value's type is typically dictated by DuckDB (not by the caller).
@@ -46,7 +45,10 @@ pub enum Value {
     Float(f32),
     /// The value is a f64.
     Double(f64),
-    /// The value is a Decimal.
+    /// The value is a DuckDB decimal.
+    ///
+    /// [`Decimal`] stores DuckDB's decimal width, scale, and scaled integer
+    /// payload.
     Decimal(Decimal),
     /// The value is a timestamp.
     Timestamp(TimeUnit, i64),
@@ -188,6 +190,13 @@ impl From<u128> for Value {
     #[inline]
     fn from(i: u128) -> Self {
         Self::UHugeInt(i)
+    }
+}
+
+impl From<Decimal> for Value {
+    #[inline]
+    fn from(decimal: Decimal) -> Self {
+        Self::Decimal(decimal)
     }
 }
 

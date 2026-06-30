@@ -39,8 +39,9 @@ appender-arrow = ["vtab-arrow"]
 vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
 extensions-full = ["json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
-modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars"]
+modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars", "rust_decimal"]
 polars = ["dep:polars", "dep:polars-core"]
+rust_decimal = ["dep:rust_decimal"]
 # Warning: experimental feature
 loadable-extension = ["vtab", "duckdb-loadable-macros", "libduckdb-sys/loadable-extension"]
 
@@ -58,7 +59,7 @@ num-integer = { workspace = true }
 polars = { workspace = true, features = ["dtype-full"], optional = true }
 polars-core = { workspace = true, optional = true }
 r2d2 = { workspace = true, optional = true }
-rust_decimal = { workspace = true }
+rust_decimal = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum = { workspace = true, features = ["derive"] }
 url = { workspace = true, optional = true }
@@ -80,7 +81,7 @@ tempfile = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [package.metadata.docs.rs]
-features = ["vtab-full", "modern-full", "vscalar", "vscalar-arrow"]
+features = ["vtab-full", "modern-full", "vscalar", "vscalar-arrow", "rust_decimal"]
 all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"

@@ -1,9 +1,8 @@
 use pretty_assertions::assert_eq;
-use rust_decimal::Decimal;
 
 use crate::{
     Connection,
-    types::{OrderedMap, TimeUnit, Type, Value, ValueRef},
+    types::{Decimal, OrderedMap, TimeUnit, Type, Value, ValueRef},
 };
 
 #[test]
@@ -20,7 +19,7 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    let excluded = ["time_tz", "time_ns", "dec38_10", "bignum", "geometry"];
+    let excluded = ["time_tz", "time_ns", "bignum", "geometry"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
@@ -115,8 +114,8 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
             _ => assert_eq!(value, ValueRef::Null),
         },
         "decimal" => match idx {
-            0 => assert_eq!(value, ValueRef::Decimal(Decimal::from_i128_with_scale(0, 0))),
-            1 => assert_eq!(value, ValueRef::Decimal(Decimal::from_i128_with_scale(1, 0))),
+            0 => assert_eq!(value, ValueRef::Decimal(Decimal::new(18, 0, 0).unwrap())),
+            1 => assert_eq!(value, ValueRef::Decimal(Decimal::new(18, 0, 1).unwrap())),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "date" => match idx {
@@ -155,23 +154,34 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
             _ => assert_eq!(value, ValueRef::Null),
         },
         "dec_4_1" => match idx {
-            0 => assert_eq!(value, ValueRef::Decimal(Decimal::from_i128_with_scale(-9999, 1))),
-            1 => assert_eq!(value, ValueRef::Decimal(Decimal::from_i128_with_scale(9999, 1))),
+            0 => assert_eq!(value, ValueRef::Decimal(Decimal::new(4, 1, -9999).unwrap())),
+            1 => assert_eq!(value, ValueRef::Decimal(Decimal::new(4, 1, 9999).unwrap())),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "dec_9_4" => match idx {
-            0 => assert_eq!(value, ValueRef::Decimal(Decimal::from_i128_with_scale(-999999999, 4))),
-            1 => assert_eq!(value, ValueRef::Decimal(Decimal::from_i128_with_scale(999999999, 4))),
+            0 => assert_eq!(value, ValueRef::Decimal(Decimal::new(9, 4, -999999999).unwrap())),
+            1 => assert_eq!(value, ValueRef::Decimal(Decimal::new(9, 4, 999999999).unwrap())),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "dec_18_6" => match idx {
             0 => assert_eq!(
                 value,
-                ValueRef::Decimal(Decimal::from_i128_with_scale(-999999999999999999, 6))
+                ValueRef::Decimal(Decimal::new(18, 6, -999999999999999999).unwrap())
             ),
             1 => assert_eq!(
                 value,
-                ValueRef::Decimal(Decimal::from_i128_with_scale(999999999999999999, 6))
+                ValueRef::Decimal(Decimal::new(18, 6, 999999999999999999).unwrap())
+            ),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "dec38_10" => match idx {
+            0 => assert_eq!(
+                value,
+                ValueRef::Decimal(Decimal::new(38, 10, -99_999_999_999_999_999_999_999_999_999_999_999_999).unwrap())
+            ),
+            1 => assert_eq!(
+                value,
+                ValueRef::Decimal(Decimal::new(38, 10, 99_999_999_999_999_999_999_999_999_999_999_999_999).unwrap())
             ),
             _ => assert_eq!(value, ValueRef::Null),
         },
