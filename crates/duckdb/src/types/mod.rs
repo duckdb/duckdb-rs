@@ -23,11 +23,30 @@
 //! aliases, or expression text. Cast the result expression so DuckDB reports
 //! stable logical metadata when a dynamic `UHUGEINT` carrier is required.
 //!
-//! DuckDB `DECIMAL(38, s)` values that do not fit `rust_decimal::Decimal`
-//! remain a separate limitation; a full-width decimal carrier can be added in a
-//! follow-up without changing the `UHUGEINT` binding support added here.
+//! DuckDB `DECIMAL` values use [`Decimal`], a full-domain carrier storing
+//! DuckDB's decimal width, scale, and scaled integer payload.
+//! Reading a [`Decimal`] as `f32` or `f64` preserves its fractional component
+//! but still inherits normal binary floating-point precision loss. Read
+//! [`Decimal`] directly when exact decimal transport matters.
+//! Enable the `rust_decimal` feature for compatibility impls that convert to
+//! and from `rust_decimal::Decimal` when the value fits that crate's smaller
+//! decimal domain, including compatibility reads from `FLOAT`, `DOUBLE`, and
+//! text columns.
+//!
+//! Arrow decimal result values use [`Value::Decimal`] and [`ValueRef::Decimal`]
+//! directly except for scale-zero `Decimal128(38, 0)`, which is also the Arrow
+//! shape DuckDB uses for `HUGEINT` and `UHUGEINT`. Top-level result columns use
+//! DuckDB logical metadata to distinguish those cases when DuckDB reports it.
+//! Narrower scale-zero `DECIMAL` widths are unambiguous and materialize as
+//! [`Decimal`] rather than the legacy signed [`Value::HugeInt`] fallback.
+//! Metadata-less scale-zero `Decimal128(38, 0)` values preserve the existing
+//! signed [`Value::HugeInt`] fallback. This affects parameter-derived
+//! expressions where DuckDB reports `Invalid` metadata, and nested container
+//! children where the borrowed container API does not carry DuckDB child
+//! logical metadata.
 
 pub use self::{
+    decimal::{Decimal, DecimalError},
     from_sql::{FromSql, FromSqlError, FromSqlResult},
     ordered_map::OrderedMap,
     string::DuckString,

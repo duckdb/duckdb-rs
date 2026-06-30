@@ -1,9 +1,7 @@
 use super::{Type, Value};
-use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
+use crate::types::{Decimal, FromSqlError, FromSqlResult, OrderedMap};
 
 use crate::{Error, Result, Row};
-use rust_decimal::prelude::*;
-
 use arrow::{
     array::{
         Array, ArrayRef, DictionaryArray, FixedSizeListArray, LargeListArray, ListArray, MapArray, StringArray,
@@ -82,7 +80,10 @@ pub enum ValueRef<'a> {
     Float(f32),
     /// The value is a f64.
     Double(f64),
-    /// The value is a Decimal.
+    /// The value is a DuckDB decimal.
+    ///
+    /// [`Decimal`] stores DuckDB's decimal width, scale, and scaled integer
+    /// payload.
     Decimal(Decimal),
     /// The value is a timestamp.
     Timestamp(TimeUnit, i64),
@@ -363,6 +364,13 @@ impl<'a> From<&'a [u8]> for ValueRef<'a> {
     #[inline]
     fn from(s: &[u8]) -> ValueRef<'_> {
         ValueRef::Blob(s)
+    }
+}
+
+impl From<Decimal> for ValueRef<'_> {
+    #[inline]
+    fn from(decimal: Decimal) -> Self {
+        Self::Decimal(decimal)
     }
 }
 

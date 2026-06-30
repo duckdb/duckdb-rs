@@ -341,10 +341,11 @@ fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
 
 #[cfg(test)]
 mod test {
-    use rust_decimal::Decimal;
-
     use super::Appender;
-    use crate::{Connection, Error, Result, params};
+    use crate::{
+        Connection, Error, Result, params,
+        types::{Decimal, Value},
+    };
 
     #[test]
     fn appender_is_sync() {
@@ -807,9 +808,9 @@ mod test {
 
     #[test]
     fn test_appender_decimal() -> Result<()> {
-        let d1 = Decimal::from_i128_with_scale(11344, 4);
-        let d2 = Decimal::from_i128_with_scale(12312, 3);
-        let d3 = Decimal::from_i128_with_scale(-98765, 5);
+        let d1 = Decimal::new(20, 4, 11344)?;
+        let d2 = Decimal::new(20, 3, 12312)?;
+        let d3 = Decimal::new(20, 5, -98765)?;
 
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE decimals (value DECIMAL(20, 10));")?;
@@ -825,15 +826,22 @@ mod test {
             .query_map([], |row| row.get(0))?
             .collect::<Result<Vec<Decimal>>>()?;
 
-        assert_eq!(results, vec![d3, d1, d2]);
+        assert_eq!(
+            results,
+            vec![
+                Decimal::new(20, 10, -9876500000)?,
+                Decimal::new(20, 10, 11344000000)?,
+                Decimal::new(20, 10, 123120000000)?,
+            ]
+        );
 
         Ok(())
     }
 
     #[test]
     fn test_appender_decimal_hugeint_upper_bits() -> Result<()> {
-        let negative = Decimal::from_i128_with_scale(-7922816251426433759354395033_i128, 10);
-        let positive = Decimal::from_i128_with_scale(7922816251426433759354395033_i128, 10);
+        let negative = Decimal::new(28, 10, -7922816251426433759354395033_i128)?;
+        let positive = Decimal::new(28, 10, 7922816251426433759354395033_i128)?;
 
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE decimals (value DECIMAL(28, 10));")?;
@@ -857,9 +865,12 @@ mod test {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE decimals (value DECIMAL(29, 0));")?;
 
+        let zero = Decimal::new(29, 0, 0)?;
+        let max = Decimal::new(29, 0, 79_228_162_514_264_337_593_543_950_335)?;
+
         let mut appender = conn.appender("decimals")?;
-        appender.append_row(params![Decimal::ZERO])?;
-        appender.append_row(params![Decimal::MAX])?;
+        appender.append_row(params![zero])?;
+        appender.append_row(params![max])?;
         appender.flush()?;
 
         let results: Vec<Decimal> = conn
@@ -867,7 +878,29 @@ mod test {
             .query_map([], |row| row.get(0))?
             .collect::<Result<Vec<Decimal>>>()?;
 
-        assert_eq!(results, vec![Decimal::ZERO, Decimal::MAX]);
+        assert_eq!(results, vec![zero, max]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_duck_decimal() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE decimals (value DECIMAL(38, 2));")?;
+
+        let direct = Decimal::new(38, 2, 12_345_678_901_234_567_890_123_456_789_012)?;
+        let owned = Decimal::new(38, 2, -12_345_678_901_234_567_890_123_456_789_012)?;
+
+        let mut appender = conn.appender("decimals")?;
+        appender.append_row(params![direct])?;
+        appender.append_row(params![Value::Decimal(owned)])?;
+        appender.flush()?;
+
+        let results: Vec<Decimal> = conn
+            .prepare("SELECT value FROM decimals ORDER BY value ASC")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<Decimal>>>()?;
+
+        assert_eq!(results, vec![owned, direct]);
         Ok(())
     }
 }

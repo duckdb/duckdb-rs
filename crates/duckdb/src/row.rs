@@ -2,7 +2,7 @@ use std::{convert, sync::Arc};
 
 use super::{Error, Result, Statement};
 use crate::core::LogicalTypeId;
-use crate::types::{self, EnumType, FromSql, FromSqlError, ListType, ValueRef};
+use crate::types::{self, Decimal, EnumType, FromSql, FromSqlError, ListType, ValueRef};
 
 use arrow::{
     array::{
@@ -13,7 +13,6 @@ use arrow::{
 };
 use fallible_iterator::FallibleIterator;
 use fallible_streaming_iterator::FallibleStreamingIterator;
-use rust_decimal::prelude::*;
 
 /// An handle for the resulting rows of a query.
 #[must_use = "Rows is lazy and will do nothing unless consumed"]
@@ -374,13 +373,21 @@ impl<'stmt> Row<'stmt> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
         let value = Self::value_ref_internal(row, column);
 
-        // Arrow decodes HUGEINT, UHUGEINT, and scale-zero DECIMAL through the
-        // signed HugeInt carrier. Promote only when DuckDB's result metadata
-        // explicitly reports UHUGEINT; otherwise preserve the existing HugeInt
-        // fallback for parameter-derived or metadata-less results.
+        // Arrow gives HUGEINT, UHUGEINT, and DECIMAL(38,0) the same
+        // Decimal128(38,0) physical shape. value_ref_internal keeps that
+        // ambiguous shape in the signed HugeInt carrier. Top-level result
+        // metadata recovers UHUGEINT and DECIMAL; otherwise preserve the
+        // existing HugeInt fallback for parameter-derived or metadata-less
+        // results.
         if let ValueRef::HugeInt(value) = value {
-            if matches!(self.stmt.result_column_logical_id(col), Some(LogicalTypeId::UHugeint)) {
-                return ValueRef::UHugeInt(value as u128);
+            match self.stmt.result_column_logical_id(col) {
+                Some(LogicalTypeId::UHugeint) => return ValueRef::UHugeInt(value as u128),
+                Some(LogicalTypeId::Decimal) => {
+                    if let DataType::Decimal128(width, 0) = column.data_type() {
+                        return ValueRef::Decimal(Decimal::from_chunk(*width, 0, value));
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -462,14 +469,14 @@ impl<'stmt> Row<'stmt> {
                 let array = column.as_any().downcast_ref::<array::Float64Array>().unwrap();
                 ValueRef::Double(array.value(row))
             }
-            DataType::Decimal128(_, scale) => {
+            DataType::Decimal128(width, scale) => {
                 let array = column.as_any().downcast_ref::<array::Decimal128Array>().unwrap();
                 let value = array.value(row);
-                let scale = u32::try_from(*scale).expect("Arrow decimal scale must be non-negative");
-                if scale == 0 {
+                let scale = u8::try_from(*scale).expect("Arrow decimal scale must be non-negative");
+                if scale == 0 && *width == Decimal::MAX_WIDTH {
                     ValueRef::HugeInt(value)
                 } else {
-                    ValueRef::Decimal(Decimal::from_i128_with_scale(value, scale))
+                    ValueRef::Decimal(Decimal::from_chunk(*width, scale, value))
                 }
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
@@ -687,11 +694,13 @@ tuples_try_from_row!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 mod tests {
     use crate::{
         Connection, Error, Result,
-        types::{Type, Value, ValueRef},
+        types::{Decimal, Type, Value, ValueRef},
     };
 
     const U128_MAX_SQL: &str = "340282366920938463463374607431768211455";
     const I128_MAX_PLUS_ONE_SQL: &str = "170141183460469231731687303715884105728";
+    const WIDE_DECIMAL_SQL: &str = "123456789012345678901234567890.12";
+    const WIDE_DECIMAL_MANTISSA: i128 = 12_345_678_901_234_567_890_123_456_789_012;
 
     #[test]
     fn test_try_from_row_for_tuple_0() -> Result<()> {
@@ -877,7 +886,7 @@ mod tests {
 
         assert_eq!(row.get_ref(0)?, ValueRef::HugeInt(1));
         assert_eq!(row.get_ref(1)?, ValueRef::UHugeInt(2));
-        assert_eq!(row.get_ref(2)?, ValueRef::HugeInt(3));
+        assert_eq!(row.get_ref(2)?, ValueRef::Decimal(Decimal::new(38, 0, 3)?));
         assert_eq!(row.get_ref(3)?, ValueRef::UHugeInt(u128::MAX));
 
         Ok(())
@@ -913,6 +922,38 @@ mod tests {
             row.get_ref(0).map(|value| value.to_owned())
         })?;
         assert_eq!(decimal, Value::HugeInt(5));
+
+        Ok(())
+    }
+
+    #[test]
+    fn decimal_columns_use_duck_decimal_carrier() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let value = db.query_row("SELECT 1.23::DECIMAL(38,2)", [], |row| {
+            row.get_ref(0).map(|value| value.to_owned())
+        })?;
+        assert_eq!(value, Value::Decimal(Decimal::new(38, 2, 123)?));
+
+        let value = db.query_row("SELECT 3::DECIMAL(38,0)", [], |row| {
+            row.get_ref(0).map(|value| value.to_owned())
+        })?;
+        match value {
+            Value::Decimal(decimal) => {
+                assert_eq!(decimal.width(), 38);
+                assert_eq!(decimal, Decimal::new(38, 0, 3)?);
+            }
+            other => panic!("expected decimal, got {other:?}"),
+        }
+
+        let decimal = db.query_row(&format!("SELECT {WIDE_DECIMAL_SQL}::DECIMAL(38,2)"), [], |row| {
+            assert_eq!(
+                row.get_ref(0)?,
+                ValueRef::Decimal(Decimal::new(38, 2, WIDE_DECIMAL_MANTISSA)?)
+            );
+            row.get::<_, Decimal>(0)
+        })?;
+        assert_eq!(decimal, Decimal::new(38, 2, WIDE_DECIMAL_MANTISSA)?);
 
         Ok(())
     }
@@ -976,6 +1017,52 @@ mod tests {
             }
             other => panic!("expected struct, got {other:?}"),
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn nested_scale_zero_decimal_uses_decimal_when_width_is_unambiguous() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let list = db.query_row("SELECT [3::DECIMAL(5,0)]", [], |row| {
+            let value = row.get_ref(0)?;
+            assert!(matches!(value.data_type(), Type::List(ref inner) if **inner == Type::Decimal));
+            Ok(value.to_owned())
+        })?;
+
+        assert_eq!(list, Value::List(vec![Value::Decimal(Decimal::new(5, 0, 3)?)]));
+
+        let structure = db.query_row("SELECT struct_pack(a := 1.5::DECIMAL(5,1))", [], |row| {
+            let value = row.get_ref(0)?;
+            assert!(matches!(value.data_type(), Type::Struct(_)));
+            Ok(value.to_owned())
+        })?;
+
+        match structure {
+            Value::Struct(fields) => {
+                assert_eq!(
+                    fields.get(&"a".to_string()),
+                    Some(&Value::Decimal(Decimal::new(5, 1, 15)?))
+                );
+            }
+            other => panic!("expected struct, got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn nested_decimal_38_0_keeps_metadata_less_hugeint_fallback() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let list = db.query_row("SELECT [3::DECIMAL(38,0)]", [], |row| {
+            let value = row.get_ref(0)?;
+            assert!(matches!(value.data_type(), Type::List(ref inner) if **inner == Type::Decimal));
+            Ok(value.to_owned())
+        })?;
+
+        assert_eq!(list, Value::List(vec![Value::HugeInt(3)]));
 
         Ok(())
     }

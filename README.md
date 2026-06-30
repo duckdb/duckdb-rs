@@ -118,12 +118,17 @@ These extensions are only available through the CMake build backend and imply `b
 
 - `appender-arrow` - Efficient bulk insertion of Arrow data into DuckDB tables.
 - `polars` - Integration with Polars DataFrames.
+- `rust_decimal` - Compatibility impls for `rust_decimal::Decimal`. DuckDB
+  `DECIMAL` values use `duckdb::types::Decimal` as the core full-domain
+  carrier; this feature restores `ToSql`/`FromSql` conversions for
+  `rust_decimal::Decimal` when values fit that crate's decimal domain,
+  including compatibility reads from `FLOAT`, `DOUBLE`, and text columns.
 
 ### Convenience features
 
 - `vtab-full` - Enables virtual table features: `vtab-arrow` and `appender-arrow`; retains the deprecated `vtab-excel` compatibility flag.
 - `extensions-full` - Enables all major extensions: `json`, `parquet`, and `vtab-full`.
-- `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde_json`, `url`, `r2d2`, `uuid`, and `polars`.
+- `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde_json`, `url`, `r2d2`, `uuid`, `polars`, and `rust_decimal`.
 
 ### Build configuration
 

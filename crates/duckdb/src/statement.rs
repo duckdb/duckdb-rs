@@ -681,9 +681,8 @@ mod test {
         Connection, Error, Result,
         core::LogicalTypeId,
         params_from_iter,
-        types::{ListType, ToSql, ToSqlOutput, Type, ValueRef},
+        types::{Decimal, ListType, ToSql, ToSqlOutput, Type, ValueRef},
     };
-    use rust_decimal::Decimal;
 
     struct BorrowedList(ListArray);
     impl BorrowedList {
@@ -1725,45 +1724,73 @@ mod test {
             COMMIT;",
         )?;
 
-        // If duckdb's scale is larger than rust_decimal's scale, value should not be truncated.
-        let value = Decimal::from_i128_with_scale(12345, 4);
+        // If DuckDB's scale matches the value scale, the scaled integer is preserved.
+        let value = Decimal::new(18, 4, 12345)?;
         db.execute("INSERT INTO foo(x) VALUES (?)", [&value])?;
         let row: Decimal = db.query_row("SELECT x FROM foo", [], |r| r.get::<_, Decimal>(0))?;
         assert_eq!(row, value);
 
-        // If duckdb's scale is smaller than rust_decimal's scale, value should be truncated (1.2345 -> 1.23).
-        let value = Decimal::from_i128_with_scale(12345, 4);
+        // If DuckDB's scale is smaller than the value scale, DuckDB coerces
+        // 1.2345 to the target DECIMAL(18,2) value.
+        let value = Decimal::new(18, 4, 12345)?;
         db.execute("INSERT INTO bar(y) VALUES (?)", [&value])?;
         let row: Decimal = db.query_row("SELECT y FROM bar", [], |r| r.get::<_, Decimal>(0))?;
-        assert_eq!(row, Decimal::from_i128_with_scale(123, 2));
+        assert_eq!(row, Decimal::new(18, 2, 123)?);
 
         Ok(())
     }
 
     #[test]
-    fn test_decimal_from_sql_integer_and_float() -> Result<()> {
+    fn test_with_duck_decimal() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x DECIMAL(38, 2));")?;
+
+        let value = Decimal::new(38, 2, 12_345_678_901_234_567_890_123_456_789_012)?;
+        db.execute("INSERT INTO foo(x) VALUES (?)", [&value])?;
+
+        let row: Decimal = db.query_row("SELECT x FROM foo", [], |r| r.get(0))?;
+        assert_eq!(row, value);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal_from_sql_integer() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
         // FromSql: INTEGER -> Decimal
         let row: Decimal = db.query_row("SELECT 42", [], |r| r.get(0))?;
-        assert_eq!(row, Decimal::from(42));
+        assert_eq!(row, Decimal::new(2, 0, 42)?);
 
         // FromSql: BIGINT -> Decimal
         let row: Decimal = db.query_row("SELECT 9999999999::BIGINT", [], |r| r.get(0))?;
-        assert_eq!(row, Decimal::from(9999999999_i64));
-
-        // FromSql: DOUBLE -> Decimal (inherits float imprecision)
-        let row: Decimal = db.query_row("SELECT 3.14::DOUBLE", [], |r| r.get(0))?;
-        let diff = (row - Decimal::from_str_exact("3.14").unwrap()).abs();
-        assert!(diff < Decimal::from_str_exact("0.0001").unwrap());
-
-        // FromSql: VARCHAR -> Decimal
-        let row: Decimal = db.query_row("SELECT '123.456'::VARCHAR", [], |r| r.get(0))?;
-        assert_eq!(row, Decimal::from_str_exact("123.456").unwrap());
+        assert_eq!(row, Decimal::new(10, 0, 9999999999_i64 as i128)?);
 
         // FromSql: HUGEINT -> Decimal
         let row: Decimal = db.query_row("SELECT 12345678901234567890::HUGEINT", [], |r| r.get(0))?;
-        assert_eq!(row, Decimal::from_i128_with_scale(12345678901234567890, 0));
+        assert_eq!(row, Decimal::new(20, 0, 12345678901234567890)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal_from_sql_float_targets_preserve_fraction() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let row: f64 = db.query_row("SELECT 123.45::DECIMAL(10,2)", [], |r| r.get(0))?;
+        assert!((row - 123.45).abs() < f64::EPSILON);
+
+        let row: f32 = db.query_row("SELECT 0.4::DECIMAL(10,1)", [], |r| r.get(0))?;
+        assert!((row - 0.4).abs() < f32::EPSILON);
+
+        let row: f32 = db.query_row("SELECT -0.4::DECIMAL(10,1)", [], |r| r.get(0))?;
+        assert!((row + 0.4).abs() < f32::EPSILON);
+
+        let row: f64 = db.query_row("SELECT 1.5::DECIMAL(10,1)", [], |r| r.get(0))?;
+        assert!((row - 1.5).abs() < f64::EPSILON);
+
+        let row: f64 = db.query_row("SELECT -1.5::DECIMAL(10,1)", [], |r| r.get(0))?;
+        assert!((row + 1.5).abs() < f64::EPSILON);
 
         Ok(())
     }
