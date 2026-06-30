@@ -927,7 +927,7 @@ mod tests {
     }
 
     #[test]
-    fn decimal_columns_use_duck_decimal_carrier() -> Result<()> {
+    fn decimal_columns_use_native_decimal_carrier() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
         let value = db.query_row("SELECT 1.23::DECIMAL(38,2)", [], |row| {

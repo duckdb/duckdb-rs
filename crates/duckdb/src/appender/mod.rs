@@ -883,7 +883,7 @@ mod test {
     }
 
     #[test]
-    fn test_appender_duck_decimal() -> Result<()> {
+    fn test_appender_native_decimal() -> Result<()> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("CREATE TABLE decimals (value DECIMAL(38, 2));")?;
 

@@ -1741,7 +1741,7 @@ mod test {
     }
 
     #[test]
-    fn test_with_duck_decimal() -> Result<()> {
+    fn test_with_native_decimal() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x DECIMAL(38, 2));")?;
 

@@ -433,12 +433,12 @@ mod test {
     #[test]
     fn test_to_duckdb_decimal_large_negative_upper_bits() -> Result<()> {
         let decimal = Decimal::new(28, 10, -7922816251426433759354395033_i128)?;
-        let duck_decimal = to_duckdb_decimal(decimal);
+        let duckdb_decimal = to_duckdb_decimal(decimal);
 
-        assert_eq!(duck_decimal.width, 28);
-        assert_eq!(duck_decimal.scale, 10);
-        assert_eq!(duck_decimal.value.lower, 7_378_697_629_483_820_647);
-        assert_eq!(duck_decimal.value.upper, -429_496_730);
+        assert_eq!(duckdb_decimal.width, 28);
+        assert_eq!(duckdb_decimal.scale, 10);
+        assert_eq!(duckdb_decimal.value.lower, 7_378_697_629_483_820_647);
+        assert_eq!(duckdb_decimal.value.upper, -429_496_730);
         Ok(())
     }
 
