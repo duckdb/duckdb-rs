@@ -4,6 +4,8 @@ use super::{
 };
 
 /// A handle for the resulting RecordBatch of a query.
+///
+/// The iterator panics if DuckDB fails to convert a result chunk to Arrow.
 #[must_use = "Arrow is lazy and will do nothing unless consumed"]
 pub struct Arrow<'stmt> {
     pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
@@ -28,11 +30,17 @@ impl<'stmt> Iterator for Arrow<'stmt> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(RecordBatch::from(&self.stmt?.step()?))
+        match self.stmt?.step() {
+            Ok(Some(array)) => Some(RecordBatch::from(&array)),
+            Ok(None) => None,
+            Err(err) => panic!("Failed to fetch Arrow record batch: {err}"),
+        }
     }
 }
 
-/// A handle for the resulting RecordBatch of a query in streaming
+/// A handle for the resulting RecordBatch of a query in streaming.
+///
+/// The iterator panics if DuckDB fails to convert a result chunk to Arrow.
 #[must_use = "Arrow stream is lazy and will not fetch data unless consumed"]
 #[allow(clippy::needless_lifetimes)]
 pub struct ArrowStream<'stmt> {
@@ -62,6 +70,10 @@ impl<'stmt> Iterator for ArrowStream<'stmt> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(RecordBatch::from(&self.stmt?.stream_step(self.get_schema())?))
+        match self.stmt?.stream_step(self.get_schema()) {
+            Ok(Some(array)) => Some(RecordBatch::from(&array)),
+            Ok(None) => None,
+            Err(err) => panic!("Failed to fetch streaming Arrow record batch: {err}"),
+        }
     }
 }

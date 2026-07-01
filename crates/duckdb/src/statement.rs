@@ -395,21 +395,25 @@ impl Statement<'_> {
         self.stmt.row_count()
     }
 
-    /// Get next batch records in arrow-rs
+    /// Get next batch records in arrow-rs.
+    ///
+    /// Returns `Err` if DuckDB cannot convert the next result chunk to Arrow.
     #[inline]
-    pub fn step(&self) -> Option<StructArray> {
+    pub fn step(&self) -> Result<Option<StructArray>> {
         self.stmt.step()
     }
 
-    /// Get next batch records in arrow-rs in a streaming way
+    /// Get next batch records in arrow-rs in a streaming way.
+    ///
+    /// Returns `Err` if DuckDB cannot convert the next result chunk to Arrow.
     #[inline]
-    pub fn stream_step(&self, schema: SchemaRef) -> Option<StructArray> {
+    pub fn stream_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
         self.stmt.streaming_step(schema)
     }
 
     #[cfg(feature = "polars")]
     #[inline]
-    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
+    pub(crate) fn step_polars(&self) -> Result<Option<polars_arrow::array::StructArray>> {
         self.stmt.step_polars()
     }
 
@@ -1593,6 +1597,73 @@ mod test {
     }
 
     #[test]
+    fn test_step_after_streaming_materialized_result_returns_none() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            "CREATE TABLE test_data(id INTEGER);
+             INSERT INTO test_data VALUES (1), (2);
+             CREATE MACRO test_func() AS TABLE SELECT * FROM test_data;",
+        )?;
+
+        let mut stmt = db.prepare("CALL test_func()")?;
+        stmt.stmt.execute_streaming()?;
+
+        assert!(stmt.stmt.step()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_row_count_after_query_execution() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i)")?;
+        {
+            let rows = stmt.query([])?;
+            drop(rows);
+        }
+
+        assert_eq!(3000, stmt.row_count());
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_arrow_large_result() -> Result<()> {
+        use std::sync::Arc;
+
+        use arrow::{
+            array::Int64Array,
+            datatypes::{DataType, Field, Schema},
+        };
+
+        let db = Connection::open_in_memory()?;
+        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
+        let batches = db
+            .prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?
+            .stream_arrow([], schema)?
+            .collect::<Vec<_>>();
+
+        assert!(batches.len() > 1);
+        assert_eq!(3000, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
+
+        let values = batches
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .iter()
+                    .map(Option::unwrap)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(0, values[0]);
+        assert_eq!(2048, values[2048]);
+        assert_eq!(2999, values[2999]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_bind_date32() -> Result<()> {
         use crate::types::Value;
 
@@ -1850,6 +1921,45 @@ mod test {
         };
 
         assert_variant_decode_error(err, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_returning_execute_rejected_before_mutation() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE t(id INTEGER, v VARIANT);")?;
+
+        let err = match db.execute("INSERT INTO t VALUES (1, {'a': 42}::VARIANT) RETURNING v", []) {
+            Ok(_) => panic!("expected Variant RETURNING execute to fail"),
+            Err(err) => err,
+        };
+
+        assert_variant_decode_error(err, 0);
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
+        assert_eq!(0, count);
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_returning_streaming_rejected_before_mutation() -> Result<()> {
+        use std::sync::Arc;
+
+        use arrow::datatypes::Schema;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE t(id INTEGER, v VARIANT);")?;
+
+        let err = match db
+            .prepare("INSERT INTO t VALUES (1, {'a': 42}::VARIANT) RETURNING v")?
+            .stream_arrow([], Arc::new(Schema::empty()))
+        {
+            Ok(_) => panic!("expected Variant RETURNING streaming execute to fail"),
+            Err(err) => err,
+        };
+
+        assert_variant_decode_error(err, 0);
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
+        assert_eq!(0, count);
         Ok(())
     }
 

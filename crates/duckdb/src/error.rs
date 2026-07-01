@@ -295,17 +295,21 @@ pub fn result_from_duckdb_prepare(code: ffi::duckdb_state, mut prepare: ffi::duc
 
 #[cold]
 #[inline]
-pub fn result_from_duckdb_arrow(code: ffi::duckdb_state, mut out: ffi::duckdb_arrow) -> Result<()> {
+pub fn result_from_duckdb_result(code: ffi::duckdb_state, result: *mut ffi::duckdb_result) -> Result<()> {
     if code == ffi::DuckDBSuccess {
         return Ok(());
     }
     unsafe {
-        let message = if out.is_null() {
-            Some("out is null".to_string())
+        let message = if result.is_null() {
+            Some("result is null".to_string())
         } else {
-            let c_err = ffi::duckdb_query_arrow_error(out);
-            let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
-            ffi::duckdb_destroy_arrow(&mut out);
+            let c_err = ffi::duckdb_result_error(result);
+            let message = if c_err.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+            };
+            ffi::duckdb_destroy_result(result);
             message
         };
         error_from_duckdb_code(code, message)

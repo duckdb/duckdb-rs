@@ -20,14 +20,12 @@ pub struct Rows<'stmt> {
     pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
     arr: Arc<Option<StructArray>>,
     row: Option<Row<'stmt>>,
-    current_row: usize,
     current_batch_row: usize,
 }
 
 impl<'stmt> Rows<'stmt> {
     #[inline]
     fn reset(&mut self) {
-        self.current_row = 0;
         self.current_batch_row = 0;
         self.arr = Arc::new(None);
     }
@@ -139,7 +137,6 @@ impl<'stmt> Rows<'stmt> {
             stmt: Some(stmt),
             arr: Arc::new(None),
             row: None,
-            current_row: 0,
             current_batch_row: 0,
         }
     }
@@ -251,28 +248,23 @@ impl<'stmt> FallibleStreamingIterator for Rows<'stmt> {
     fn advance(&mut self) -> Result<()> {
         match self.stmt {
             Some(stmt) => {
-                if self.current_row < stmt.row_count() {
-                    if self.current_batch_row >= self.batch_row_count() {
-                        self.arr = Arc::new(stmt.step());
-                        if self.arr.is_none() {
-                            self.row = None;
-                            return Ok(());
-                        }
-                        self.current_batch_row = 0;
+                while self.current_batch_row >= self.batch_row_count() {
+                    self.arr = Arc::new(stmt.step()?);
+                    if self.arr.is_none() {
+                        self.reset();
+                        self.row = None;
+                        return Ok(());
                     }
-                    self.row = Some(Row {
-                        stmt,
-                        arr: self.arr.clone(),
-                        current_row: self.current_batch_row,
-                    });
-                    self.current_row += 1;
-                    self.current_batch_row += 1;
-                    Ok(())
-                } else {
-                    self.reset();
-                    self.row = None;
-                    Ok(())
+                    self.current_batch_row = 0;
                 }
+
+                self.row = Some(Row {
+                    stmt,
+                    arr: self.arr.clone(),
+                    current_row: self.current_batch_row,
+                });
+                self.current_batch_row += 1;
+                Ok(())
             }
             None => {
                 self.row = None;
@@ -907,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_arrow_decimal_metadata_keeps_hugeint_fallback() -> Result<()> {
+    fn ambiguous_decimal_expression_uses_executed_metadata() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
         let byte = 255_i128;
@@ -921,7 +913,7 @@ mod tests {
         let decimal = db.query_row("SELECT ? + 0::DECIMAL(38,0)", [&value], |row| {
             row.get_ref(0).map(|value| value.to_owned())
         })?;
-        assert_eq!(decimal, Value::HugeInt(5));
+        assert_eq!(decimal, Value::Decimal(Decimal::new(38, 0, 5)?));
 
         Ok(())
     }
@@ -1091,6 +1083,41 @@ mod tests {
         assert_eq!(values[2048], Value::UHugeInt(2048));
         assert_eq!(values[2500], Value::Null);
         assert_eq!(values[2999], Value::UHugeInt(2999));
+
+        Ok(())
+    }
+
+    #[test]
+    fn zero_row_query_returns_none() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT 1 AS x WHERE false")?;
+        let mut rows = stmt.query([])?;
+
+        assert!(rows.next()?.is_none());
+        assert!(rows.next()?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn wide_multichunk_query_iterates_all_rows() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let columns = (0..64)
+            .map(|idx| format!("i + {idx} AS c{idx}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("SELECT {columns} FROM range(3000) AS t(i) ORDER BY i");
+        let mut stmt = db.prepare(&sql)?;
+        let mut rows = stmt.query([])?;
+        let mut count = 0_i64;
+
+        while let Some(row) = rows.next()? {
+            assert_eq!(row.get::<_, i64>(0)?, count);
+            assert_eq!(row.get::<_, i64>(63)?, count + 63);
+            count += 1;
+        }
+
+        assert_eq!(count, 3000);
 
         Ok(())
     }
