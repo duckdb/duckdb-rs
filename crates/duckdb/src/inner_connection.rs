@@ -9,8 +9,8 @@ use std::{
 use super::{Appender, Config, Connection, Result, ffi};
 use crate::{
     error::{
-        Error, result_from_duckdb_appender, result_from_duckdb_arrow, result_from_duckdb_extract,
-        result_from_duckdb_prepare,
+        Error, result_from_duckdb_appender, result_from_duckdb_extract, result_from_duckdb_prepare,
+        result_from_duckdb_result,
     },
     raw_statement::RawStatement,
     statement::Statement,
@@ -125,9 +125,9 @@ impl InnerConnection {
         let c_str = CString::new(sql)?;
         unsafe {
             let mut out = mem::zeroed();
-            let r = ffi::duckdb_query_arrow(self.con, c_str.as_ptr() as *const c_char, &mut out);
-            result_from_duckdb_arrow(r, out)?;
-            ffi::duckdb_destroy_arrow(&mut out);
+            let r = ffi::duckdb_query(self.con, c_str.as_ptr() as *const c_char, &mut out);
+            result_from_duckdb_result(r, &mut out)?;
+            ffi::duckdb_destroy_result(&mut out);
             Ok(())
         }
     }
