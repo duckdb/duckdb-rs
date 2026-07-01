@@ -45,9 +45,9 @@ flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
 prettyplease = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
     "blocking",
-    "rustls-tls",
+    "rustls",
 ] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
