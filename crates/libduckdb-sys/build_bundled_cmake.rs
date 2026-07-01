@@ -144,6 +144,27 @@ pub fn main(out_dir: &str, out_path: &Path) {
     }
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
+
+    // Compile the zero-copy Arrow registration shim under the cmake backend.
+    // The amalgamation's headers are available via `include_path`; the shim links
+    // against the same DuckDB API surface as the cc-backend path.
+    // Compiled unconditionally (no vtab-arrow gate), mirroring the cc backend.
+    {
+        let mut shim = cc::Build::new();
+        shim.file("src/arrow_zerocopy_shim.cpp")
+            .include(&include_path)
+            .cpp(true)
+            .flag_if_supported("-std=c++11")
+            .flag_if_supported("/utf-8")
+            .warnings(false)
+            .flag_if_supported("-w");
+        if win_target() && is_compiler("msvc") {
+            shim.flag("/EHsc");
+        }
+        shim.compile("arrow_zerocopy_shim");
+        println!("cargo:rerun-if-changed=src/arrow_zerocopy_shim.cpp");
+    }
+
     println!("cargo:lib_dir={}", lib_dir.display());
 }
 
