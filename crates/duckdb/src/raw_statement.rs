@@ -1,4 +1,10 @@
-use std::{cell::OnceCell, collections::HashMap, ffi::CStr, ops::Deref, ptr, rc::Rc, sync::Arc};
+use std::{
+    cell::{Cell, OnceCell},
+    collections::HashMap,
+    ffi::CStr,
+    ops::Deref,
+    sync::Arc,
+};
 
 use arrow::{
     array::StructArray,
@@ -10,7 +16,7 @@ use super::{Result, ffi};
 use crate::{
     Error,
     core::{LogicalTypeHandle, LogicalTypeId},
-    error::result_from_duckdb_arrow,
+    error::result_from_duckdb_result,
     types::Type,
 };
 #[cfg(feature = "polars")]
@@ -26,12 +32,15 @@ use polars_core::utils::arrow as polars_arrow;
 #[derive(Debug)]
 pub struct RawStatement {
     ptr: ffi::duckdb_prepared_statement,
-    result: Option<ffi::duckdb_arrow>,
     duckdb_result: Option<ffi::duckdb_result>,
     schema: Option<SchemaRef>,
     // Cached DuckDB logical ids for result columns. Arrow reports HUGEINT,
-    // UHUGEINT, and scale-zero DECIMAL through the same decimal shape.
+    // UHUGEINT, and DECIMAL(38,0) through the same decimal shape.
     result_column_logical_ids: Option<Box<[LogicalTypeId]>>,
+    #[cfg(feature = "polars")]
+    polars_arrow_field: OnceCell<polars_arrow::datatypes::Field>,
+    result_chunk_idx: Cell<usize>,
+    arrow_options: Cell<ffi::duckdb_arrow_options>,
     column_name_cache: OnceCell<HashMap<Box<str>, usize>>,
     // Tracks whether the duckdb_result is truly streaming or materialized.
     // This is needed because some statements (like CALL) return materialized
@@ -55,9 +64,12 @@ impl RawStatement {
     pub unsafe fn new(stmt: ffi::duckdb_prepared_statement) -> Self {
         Self {
             ptr: stmt,
-            result: None,
             schema: None,
             result_column_logical_ids: None,
+            #[cfg(feature = "polars")]
+            polars_arrow_field: OnceCell::new(),
+            result_chunk_idx: Cell::new(0),
+            arrow_options: Cell::new(std::ptr::null_mut()),
             column_name_cache: OnceCell::new(),
             duckdb_result: None,
             is_streaming: false,
@@ -91,143 +103,100 @@ impl RawStatement {
     }
 
     #[inline]
-    pub fn result_unwrap(&self) -> ffi::duckdb_arrow {
-        self.result.expect("The statement was not executed yet")
-    }
-
-    #[inline]
     pub fn row_count(&self) -> usize {
-        unsafe { ffi::duckdb_arrow_row_count(self.result_unwrap()) as usize }
-    }
-
-    #[inline]
-    pub fn step(&self) -> Option<StructArray> {
-        let out = self.result?;
         unsafe {
-            let mut arrays = FFI_ArrowArray::empty();
-            if ffi::duckdb_query_arrow_array(
-                out,
-                &mut std::ptr::addr_of_mut!(arrays) as *mut _ as *mut ffi::duckdb_arrow_array,
-            )
-            .ne(&ffi::DuckDBSuccess)
-            {
-                return None;
-            }
-
-            if arrays.is_empty() {
-                return None;
-            }
-
-            let mut schema = FFI_ArrowSchema::empty();
-            if ffi::duckdb_query_arrow_schema(
-                out,
-                &mut std::ptr::addr_of_mut!(schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
-            ) != ffi::DuckDBSuccess
-            {
-                return None;
-            }
-
-            let array_data = from_ffi(arrays, &schema).expect("ok");
-            let struct_array = StructArray::from(array_data);
-            Some(struct_array)
+            let mut result = self.duckdb_result.expect("The statement was not executed yet");
+            ffi::duckdb_row_count(&mut result) as usize
         }
     }
 
     #[inline]
-    pub fn streaming_step(&self, schema: SchemaRef) -> Option<StructArray> {
+    pub fn step(&self) -> Result<Option<StructArray>> {
+        let Some(result) = self.duckdb_result else {
+            return Ok(None);
+        };
+        let Some(schema) = self.schema.clone() else {
+            return Ok(None);
+        };
+        unsafe {
+            let Some(chunk) = self.next_result_chunk(result)? else {
+                return Ok(None);
+            };
+            self.data_chunk_to_struct_array(result, chunk, schema)
+        }
+    }
+
+    #[inline]
+    pub fn streaming_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
         if let Some(result) = self.duckdb_result {
             unsafe {
                 // Use duckdb_stream_fetch_chunk for truly streaming results,
                 // or duckdb_fetch_chunk for materialized results (e.g., from CALL statements)
-                let mut out = if self.is_streaming {
+                let out = if self.is_streaming {
                     ffi::duckdb_stream_fetch_chunk(result)
                 } else {
                     ffi::duckdb_fetch_chunk(result)
                 };
 
                 if out.is_null() {
-                    return None;
+                    return Ok(None);
                 }
 
-                let mut arrays = FFI_ArrowArray::empty();
-                ffi::duckdb_result_arrow_array(
-                    result,
-                    out,
-                    &mut std::ptr::addr_of_mut!(arrays) as *mut _ as *mut ffi::duckdb_arrow_array,
-                );
-
-                ffi::duckdb_destroy_data_chunk(&mut out);
-
-                if arrays.is_empty() {
-                    return None;
-                }
-
-                let schema = FFI_ArrowSchema::try_from(schema.deref()).ok()?;
-                let array_data = from_ffi(arrays, &schema).expect("ok");
-                let struct_array = StructArray::from(array_data);
-                return Some(struct_array);
+                return self.data_chunk_to_struct_array(result, out, schema);
             }
         }
 
-        None
+        Ok(None)
     }
 
     #[cfg(feature = "polars")]
     #[inline]
-    pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
-        let result = self.result?;
+    pub(crate) fn step_polars(&self) -> Result<Option<polars_arrow::array::StructArray>> {
+        let Some(result) = self.duckdb_result else {
+            return Ok(None);
+        };
 
         unsafe {
+            let Some(chunk) = self.next_result_chunk(result)? else {
+                return Ok(None);
+            };
+
             let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
+            self.chunk_to_arrow(result, chunk, &mut ffi_arrow_array as *mut _ as *mut ffi::ArrowArray)?;
 
-            if ffi::duckdb_query_arrow_array(
-                result,
-                &mut std::ptr::addr_of_mut!(ffi_arrow_array) as *mut _ as *mut ffi::duckdb_arrow_array,
-            )
-            .ne(&ffi::DuckDBSuccess)
-            {
-                return None;
-            }
-
-            let mut ffi_arrow_schema = polars_arrow::ffi::ArrowSchema::empty();
-
-            if ffi::duckdb_query_arrow_schema(
-                result,
-                &mut std::ptr::addr_of_mut!(ffi_arrow_schema) as *mut _ as *mut ffi::duckdb_arrow_schema,
-            )
-            .ne(&ffi::DuckDBSuccess)
-            {
-                return None;
-            }
-
-            let field =
-                polars_arrow::ffi::import_field_from_c(&ffi_arrow_schema).expect("Failed to import Polars Arrow field");
-            let import_array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype);
+            let field = self.polars_arrow_field(result)?;
+            let import_array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype.clone());
 
             let array = match import_array {
                 Ok(array) => array,
                 // When array is empty, import_array_from_c returns ComputeError with message
                 // "An ArrowArray of type X must have non-null children".
                 Err(polars::error::PolarsError::ComputeError(msg)) if msg.to_string().contains("non-null children") => {
-                    return None;
+                    return Ok(None);
                 }
-                Err(err) => panic!("Failed to import Polars Arrow array from C: {err}"),
+                Err(err) => {
+                    return Err(Self::duckdb_failure(format!(
+                        "Failed to import Polars Arrow array from C: {err}"
+                    )));
+                }
             };
             let struct_array = array
                 .as_any()
                 .downcast_ref::<polars_arrow::array::StructArray>()
-                .expect("Failed to downcast Polars Arrow array to StructArray")
+                .ok_or_else(|| Self::duckdb_failure("Failed to downcast Polars Arrow array to StructArray"))?
                 .to_owned();
 
-            Some(struct_array)
+            Ok(Some(struct_array))
         }
     }
 
-    // FIXME(mlafeldt): This currently panics if the query has not been executed yet.
-    // The C API doesn't have a function to get the column count without executing the query first.
     #[inline]
     pub fn column_count(&self) -> usize {
-        unsafe { ffi::duckdb_arrow_column_count(self.result_unwrap()) as usize }
+        self.schema
+            .as_ref()
+            .expect("The statement was not executed yet")
+            .fields()
+            .len()
     }
 
     #[inline]
@@ -243,6 +212,10 @@ impl RawStatement {
 
     #[inline]
     pub(crate) fn try_column_logical_type(&self, idx: usize) -> Result<LogicalTypeHandle> {
+        if let Some(mut result) = self.duckdb_result {
+            return unsafe { Self::try_result_column_logical_type(&mut result, idx) };
+        }
+
         unsafe {
             let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
             if ptr.is_null() {
@@ -300,23 +273,24 @@ impl RawStatement {
     /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
         self.reset_result();
-        let result_column_logical_ids = self.validate_and_load_result_column_logical_ids()?;
+        self.reject_unsupported_prepared_result_columns_for_dml()?;
         unsafe {
-            let mut out: ffi::duckdb_arrow = ptr::null_mut();
-            let rc = ffi::duckdb_execute_prepared_arrow(self.ptr, &mut out);
-            result_from_duckdb_arrow(rc, out)?;
+            let mut out: ffi::duckdb_result = std::mem::zeroed();
+            let rc = ffi::duckdb_execute_prepared(self.ptr, &mut out);
+            result_from_duckdb_result(rc, &mut out)?;
 
-            let rows_changed = ffi::duckdb_arrow_rows_changed(out);
-            let mut c_schema = Rc::into_raw(Rc::new(FFI_ArrowSchema::empty()));
-            let rc = ffi::duckdb_query_arrow_schema(out, &mut c_schema as *mut _ as *mut ffi::duckdb_arrow_schema);
-            if rc != ffi::DuckDBSuccess {
-                Rc::from_raw(c_schema);
-                result_from_duckdb_arrow(rc, out)?;
-            }
-            self.schema = Some(Arc::new(Schema::try_from(&*c_schema).unwrap()));
-            Rc::from_raw(c_schema);
+            let rows_changed = ffi::duckdb_rows_changed(&mut out);
+            let (schema, result_column_logical_ids) = match self.load_result_schema_and_logical_ids(&mut out) {
+                Ok(result) => result,
+                Err(err) => {
+                    self.destroy_arrow_options();
+                    ffi::duckdb_destroy_result(&mut out);
+                    return Err(err);
+                }
+            };
 
-            self.result = Some(out);
+            self.schema = Some(schema);
+            self.duckdb_result = Some(out);
             self.result_column_logical_ids = Some(result_column_logical_ids);
             Ok(rows_changed as usize)
         }
@@ -324,32 +298,28 @@ impl RawStatement {
 
     pub fn execute_streaming(&mut self) -> Result<()> {
         self.reset_result();
-        let result_column_logical_ids = self.validate_and_load_result_column_logical_ids()?;
+        self.reject_unsupported_prepared_result_columns_for_dml()?;
         unsafe {
             let mut out: ffi::duckdb_result = std::mem::zeroed();
 
             let rc = ffi::duckdb_execute_prepared_streaming(self.ptr, &mut out);
-            if rc != ffi::DuckDBSuccess {
-                let msg = {
-                    let c_err = ffi::duckdb_result_error(&mut out);
-                    if c_err.is_null() {
-                        None
-                    } else {
-                        Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
-                    }
-                };
-                ffi::duckdb_destroy_result(&mut out);
-                return Err(Error::DuckDBFailure(ffi::Error::new(rc), msg));
-            }
+            result_from_duckdb_result(rc, &mut out)?;
+            let result_column_logical_ids = match Self::load_result_column_logical_ids(&mut out) {
+                Ok(result) => result,
+                Err(err) => {
+                    self.destroy_arrow_options();
+                    ffi::duckdb_destroy_result(&mut out);
+                    return Err(err);
+                }
+            };
 
             // Check if the result is truly streaming or materialized
             // Some statements (like CALL) return materialized results even when streaming is requested
             self.is_streaming = ffi::duckdb_result_is_streaming(out);
 
             self.duckdb_result = Some(out);
-            // Row decoding consumes this cache only for the non-streaming path
-            // today. Keep streaming execution state symmetrical for callers
-            // that inspect statement metadata after execution.
+            // Streaming does not use the ids directly, but loading them
+            // rejects unsupported Variant columns before streaming begins.
             self.result_column_logical_ids = Some(result_column_logical_ids);
 
             Ok(())
@@ -360,14 +330,14 @@ impl RawStatement {
     pub fn reset_result(&mut self) {
         self.schema = None;
         self.result_column_logical_ids = None;
+        #[cfg(feature = "polars")]
+        {
+            self.polars_arrow_field = OnceCell::new();
+        }
+        self.result_chunk_idx.set(0);
+        self.destroy_arrow_options();
         self.column_name_cache = OnceCell::new();
         self.is_streaming = false;
-        if self.result.is_some() {
-            unsafe {
-                ffi::duckdb_destroy_arrow(&mut self.result_unwrap());
-            }
-            self.result = None;
-        }
         if let Some(mut result) = self.duckdb_result {
             unsafe {
                 ffi::duckdb_destroy_result(&mut result);
@@ -404,22 +374,283 @@ impl RawStatement {
         }
     }
 
-    fn validate_and_load_result_column_logical_ids(&self) -> Result<Box<[LogicalTypeId]>> {
-        let column_count = unsafe { ffi::duckdb_prepared_statement_column_count(self.ptr) as usize };
-        let mut logical_ids = Vec::with_capacity(column_count);
-        for idx in 0..column_count {
-            let logical_type = self.try_column_logical_type(idx)?;
-            if logical_type.contains_type_id(LogicalTypeId::Variant) {
-                return Err(Error::FromSqlConversionFailure(
-                    idx,
-                    Type::Variant,
-                    "decoding Variant columns is not supported".into(),
-                ));
-            }
-            logical_ids.push(logical_type.id());
+    fn reject_unsupported_prepared_result_columns_for_dml(&self) -> Result<()> {
+        if !self.is_dml_statement() {
+            return Ok(());
         }
 
-        Ok(logical_ids.into_boxed_slice())
+        // This uses prepared metadata only as a pre-execution side-effect
+        // barrier for DML RETURNING. Executed result metadata remains the
+        // authoritative source for decoding after execution.
+        let column_count = unsafe { ffi::duckdb_prepared_statement_column_count(self.ptr) as usize };
+        for idx in 0..column_count {
+            let logical_type = self.try_column_logical_type(idx)?;
+            Self::reject_unsupported_result_logical_type(idx, &logical_type)?;
+        }
+
+        Ok(())
+    }
+
+    fn is_dml_statement(&self) -> bool {
+        matches!(
+            unsafe { ffi::duckdb_prepared_statement_type(self.ptr) },
+            ffi::duckdb_statement_type_DUCKDB_STATEMENT_TYPE_INSERT
+                | ffi::duckdb_statement_type_DUCKDB_STATEMENT_TYPE_UPDATE
+                | ffi::duckdb_statement_type_DUCKDB_STATEMENT_TYPE_DELETE
+        )
+    }
+
+    unsafe fn load_result_schema_and_logical_ids(
+        &self,
+        result: *mut ffi::duckdb_result,
+    ) -> Result<(SchemaRef, Box<[LogicalTypeId]>)> {
+        unsafe {
+            let mut c_schema = FFI_ArrowSchema::empty();
+            let logical_ids = self.result_to_arrow_schema(result, &mut c_schema as *mut _ as *mut ffi::ArrowSchema)?;
+            let schema = Arc::new(
+                Schema::try_from(&c_schema)
+                    .map_err(|err| Self::arrow_failure("Could not import DuckDB Arrow schema", err))?,
+            );
+            debug_assert_eq!(
+                schema.fields().len(),
+                logical_ids.len(),
+                "result schema and logical-id cache are built from the same DuckDB column count"
+            );
+
+            Ok((schema, logical_ids))
+        }
+    }
+
+    unsafe fn load_result_column_logical_ids(result: *mut ffi::duckdb_result) -> Result<Box<[LogicalTypeId]>> {
+        unsafe {
+            let logical_ids = Self::result_column_logical_types(result)?
+                .iter()
+                .map(LogicalTypeHandle::id)
+                .collect::<Vec<_>>();
+            Ok(logical_ids.into_boxed_slice())
+        }
+    }
+
+    unsafe fn result_column_logical_types(result: *mut ffi::duckdb_result) -> Result<Vec<LogicalTypeHandle>> {
+        unsafe {
+            let column_count = ffi::duckdb_column_count(result) as usize;
+            let mut logical_types = Vec::with_capacity(column_count);
+
+            for idx in 0..column_count {
+                let logical_type = Self::try_result_column_logical_type(result, idx)?;
+                Self::reject_unsupported_result_logical_type(idx, &logical_type)?;
+                logical_types.push(logical_type);
+            }
+
+            Ok(logical_types)
+        }
+    }
+
+    fn reject_unsupported_result_logical_type(idx: usize, logical_type: &LogicalTypeHandle) -> Result<()> {
+        if logical_type.contains_type_id(LogicalTypeId::Variant) {
+            return Err(Error::FromSqlConversionFailure(
+                idx,
+                Type::Variant,
+                "decoding Variant columns is not supported".into(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    unsafe fn try_result_column_logical_type(result: *mut ffi::duckdb_result, idx: usize) -> Result<LogicalTypeHandle> {
+        unsafe {
+            let ptr = ffi::duckdb_column_logical_type(result, idx as u64);
+            if ptr.is_null() {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(ffi::DuckDBError),
+                    Some(format!(
+                        "Could not retrieve logical type for result column at index {idx}"
+                    )),
+                ));
+            }
+            Ok(LogicalTypeHandle::new(ptr))
+        }
+    }
+
+    unsafe fn result_to_arrow_schema(
+        &self,
+        result: *mut ffi::duckdb_result,
+        dst: *mut ffi::ArrowSchema,
+    ) -> Result<Box<[LogicalTypeId]>> {
+        unsafe {
+            let column_count = ffi::duckdb_column_count(result) as usize;
+            let logical_types = Self::result_column_logical_types(result)?;
+            let logical_ids = logical_types.iter().map(LogicalTypeHandle::id).collect::<Vec<_>>();
+            let mut names = Vec::with_capacity(column_count);
+
+            for idx in 0..column_count {
+                let name = ffi::duckdb_column_name(result, idx as u64);
+                if name.is_null() {
+                    return Err(Error::DuckDBFailure(
+                        ffi::Error::new(ffi::DuckDBError),
+                        Some(format!("Could not retrieve name for result column at index {idx}")),
+                    ));
+                }
+                names.push(name);
+            }
+
+            let mut type_ptrs = logical_types
+                .iter()
+                .map(|logical_type| logical_type.ptr)
+                .collect::<Vec<_>>();
+            let arrow_options = self.arrow_options_for_result(*result)?;
+            let error_data = ffi::duckdb_to_arrow_schema(
+                arrow_options,
+                type_ptrs.as_mut_ptr(),
+                names.as_mut_ptr(),
+                column_count as u64,
+                dst,
+            );
+            Self::result_from_duckdb_error_data(error_data)?;
+
+            Ok(logical_ids.into_boxed_slice())
+        }
+    }
+
+    unsafe fn next_result_chunk(&self, result: ffi::duckdb_result) -> Result<Option<ffi::duckdb_data_chunk>> {
+        unsafe {
+            let chunk_idx = self.result_chunk_idx.get();
+            if chunk_idx >= ffi::duckdb_result_chunk_count(result) as usize {
+                return Ok(None);
+            }
+            let chunk = ffi::duckdb_result_get_chunk(result, chunk_idx as u64);
+            self.result_chunk_idx.set(chunk_idx + 1);
+            if chunk.is_null() {
+                Err(Self::duckdb_failure(format!(
+                    "Could not fetch result chunk at index {chunk_idx}"
+                )))
+            } else {
+                Ok(Some(chunk))
+            }
+        }
+    }
+
+    unsafe fn data_chunk_to_struct_array(
+        &self,
+        result: ffi::duckdb_result,
+        chunk: ffi::duckdb_data_chunk,
+        schema: SchemaRef,
+    ) -> Result<Option<StructArray>> {
+        unsafe {
+            let mut arrays = FFI_ArrowArray::empty();
+            self.chunk_to_arrow(result, chunk, &mut arrays as *mut _ as *mut ffi::ArrowArray)?;
+
+            if arrays.is_empty() {
+                return Ok(None);
+            }
+
+            let schema = FFI_ArrowSchema::try_from(schema.deref())
+                .map_err(|err| Self::arrow_failure("Could not export Arrow schema", err))?;
+            let array_data = from_ffi(arrays, &schema)
+                .map_err(|err| Self::arrow_failure("Could not import DuckDB Arrow array", err))?;
+            Ok(Some(StructArray::from(array_data)))
+        }
+    }
+
+    unsafe fn chunk_to_arrow(
+        &self,
+        result: ffi::duckdb_result,
+        mut chunk: ffi::duckdb_data_chunk,
+        dst: *mut ffi::ArrowArray,
+    ) -> Result<()> {
+        unsafe {
+            let arrow_options = match self.arrow_options_for_result(result) {
+                Ok(arrow_options) => arrow_options,
+                Err(err) => {
+                    ffi::duckdb_destroy_data_chunk(&mut chunk);
+                    return Err(err);
+                }
+            };
+            let error_data = ffi::duckdb_data_chunk_to_arrow(arrow_options, chunk, dst);
+            ffi::duckdb_destroy_data_chunk(&mut chunk);
+            Self::result_from_duckdb_error_data(error_data)
+        }
+    }
+
+    unsafe fn arrow_options_for_result(&self, mut result: ffi::duckdb_result) -> Result<ffi::duckdb_arrow_options> {
+        unsafe {
+            let arrow_options = self.arrow_options.get();
+            if !arrow_options.is_null() {
+                return Ok(arrow_options);
+            }
+
+            let arrow_options = ffi::duckdb_result_get_arrow_options(&mut result);
+            if arrow_options.is_null() {
+                return Err(Self::duckdb_failure("Could not retrieve Arrow options for result"));
+            }
+            self.arrow_options.set(arrow_options);
+            Ok(arrow_options)
+        }
+    }
+
+    fn destroy_arrow_options(&self) {
+        let mut arrow_options = self.arrow_options.replace(std::ptr::null_mut());
+        if !arrow_options.is_null() {
+            unsafe {
+                ffi::duckdb_destroy_arrow_options(&mut arrow_options);
+            }
+        }
+    }
+
+    unsafe fn result_from_duckdb_error_data(mut error_data: ffi::duckdb_error_data) -> Result<()> {
+        unsafe {
+            if error_data.is_null() {
+                return Ok(());
+            }
+            if !ffi::duckdb_error_data_has_error(error_data) {
+                ffi::duckdb_destroy_error_data(&mut error_data);
+                return Ok(());
+            }
+
+            let msg = {
+                let c_err = ffi::duckdb_error_data_message(error_data);
+                if c_err.is_null() {
+                    None
+                } else {
+                    Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+                }
+            };
+            ffi::duckdb_destroy_error_data(&mut error_data);
+            Err(Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), msg))
+        }
+    }
+
+    #[cfg(feature = "polars")]
+    fn polars_arrow_field(&self, result: ffi::duckdb_result) -> Result<&polars_arrow::datatypes::Field> {
+        if self.polars_arrow_field.get().is_none() {
+            let field = unsafe { self.load_polars_arrow_field(result)? };
+            let _ = self.polars_arrow_field.set(field);
+        }
+        Ok(self
+            .polars_arrow_field
+            .get()
+            .expect("polars Arrow field cache was just initialized"))
+    }
+
+    #[cfg(feature = "polars")]
+    unsafe fn load_polars_arrow_field(&self, result: ffi::duckdb_result) -> Result<polars_arrow::datatypes::Field> {
+        unsafe {
+            let mut result = result;
+            let mut schema = polars_arrow::ffi::ArrowSchema::empty();
+            let _ = self.result_to_arrow_schema(&mut result, &mut schema as *mut _ as *mut ffi::ArrowSchema)?;
+
+            polars_arrow::ffi::import_field_from_c(&schema)
+                .map_err(|err| Self::duckdb_failure(format!("Failed to import Polars Arrow field: {err}")))
+        }
+    }
+
+    fn arrow_failure(context: &str, err: impl std::fmt::Display) -> Error {
+        Self::duckdb_failure(format!("{context}: {err}"))
+    }
+
+    fn duckdb_failure(message: impl Into<String>) -> Error {
+        Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(message.into()))
     }
     #[inline]
     pub fn sql(&self) -> Option<&CStr> {
