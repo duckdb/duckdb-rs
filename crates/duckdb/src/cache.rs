@@ -311,6 +311,44 @@ mod test {
     }
 
     #[test]
+    fn test_ddl_with_trailing_geometry_uses_executed_metadata() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch(
+            r#"
+            CREATE TABLE foo (x INT);
+            INSERT INTO foo VALUES (1);
+        "#,
+        )?;
+
+        let sql = "SELECT * FROM foo";
+
+        {
+            let mut stmt = db.prepare_cached(sql)?;
+            assert_eq!(Ok(Some(1i32)), stmt.query([])?.map(|r| r.get(0)).next());
+        }
+
+        db.execute_batch(
+            r#"
+            ALTER TABLE foo ADD COLUMN geom GEOMETRY;
+            UPDATE foo SET geom = 'POINT EMPTY'::GEOMETRY;
+        "#,
+        )?;
+
+        {
+            let mut stmt = db.prepare_cached(sql)?;
+            let got = stmt.query([])?.map(|r| r.get_ref(1).map(|v| v.to_owned())).next()?;
+            let point_empty_wkb = vec![
+                0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F,
+            ];
+            match got {
+                Some(Value::Geometry(wkb)) => assert_eq!(wkb, point_empty_wkb),
+                other => panic!("expected trailing geometry column, got {other:?}"),
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_ddl_with_trailing_ambiguous_decimal_uses_executed_metadata() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch(

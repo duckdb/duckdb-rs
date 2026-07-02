@@ -56,6 +56,16 @@ pub enum Value {
     Text(String),
     /// The value is a blob of data
     Blob(Vec<u8>),
+    /// The value is a `GEOMETRY`, represented as WKB bytes.
+    ///
+    /// As of the bundled DuckDB version, DuckDB does not expose a dedicated
+    /// geometry bind or appender helper. Binding this variant routes its WKB
+    /// bytes through the BLOB APIs. Use spatial SQL such as `ST_GeomFromWKB(?)`
+    /// when binding WKB bytes into a `GEOMETRY` SQL context. Appender writes
+    /// can stage these bytes in BLOB columns; appending directly to GEOMETRY
+    /// columns is not supported. See [`ValueRef::Geometry`](super::ValueRef::Geometry)
+    /// for borrowed geometry values.
+    Geometry(Vec<u8>),
     /// The value is a date32
     ///
     /// The `i32` represents the number of days since the Unix epoch (1970-01-01).
@@ -264,6 +274,7 @@ impl Value {
             Self::Timestamp(_, _) => Type::Timestamp,
             Self::Text(_) => Type::Text,
             Self::Blob(_) => Type::Blob,
+            Self::Geometry(_) => Type::Geometry,
             Self::Date32(_) => Type::Date32,
             Self::Time64(..) => Type::Time64,
             Self::Interval { .. } => Type::Interval,

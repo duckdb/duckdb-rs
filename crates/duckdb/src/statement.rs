@@ -612,7 +612,7 @@ impl Statement<'_> {
             ValueRef::Text(s) => unsafe {
                 ffi::duckdb_bind_varchar_length(ptr, col as u64, s.as_ptr() as *const c_char, s.len() as u64)
             },
-            ValueRef::Blob(b) => unsafe {
+            ValueRef::Blob(b) | ValueRef::Geometry(b) => unsafe {
                 ffi::duckdb_bind_blob(ptr, col as u64, b.as_ptr() as *const c_void, b.len() as u64)
             },
             ValueRef::Timestamp(u, i) => unsafe {
@@ -1876,6 +1876,32 @@ mod test {
         assert_eq!(logical_type.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT);
         assert_eq!(logical_type.num_children(), 0);
         assert_eq!(format!("{logical_type:?}"), "Variant");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_geometry_column_logical_type_metadata() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let stmt = db.prepare("SELECT NULL::GEOMETRY AS geom")?;
+
+        let logical_type = stmt.column_logical_type(0);
+        assert_eq!(logical_type.id(), LogicalTypeId::Geometry);
+        assert_eq!(logical_type.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY);
+        assert_eq!(logical_type.geometry_crs(), None);
+        assert_eq!(format!("{logical_type:?}"), "Geometry");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_geometry_column_logical_type_crs_metadata() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let stmt = db.prepare("SELECT ST_SetCRS('POINT EMPTY'::GEOMETRY, 'EPSG:4326') AS geom")?;
+
+        let logical_type = stmt.column_logical_type(0);
+        assert_eq!(logical_type.id(), LogicalTypeId::Geometry);
+        assert_eq!(logical_type.geometry_crs(), Some("EPSG:4326".to_string()));
 
         Ok(())
     }
