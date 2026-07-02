@@ -91,6 +91,12 @@ pub enum ValueRef<'a> {
     Text(&'a [u8]),
     /// The value is a blob of data
     Blob(&'a [u8]),
+    /// The value is a top-level `GEOMETRY`, represented as WKB bytes.
+    ///
+    /// Nested `GEOMETRY` values currently materialize through their Arrow
+    /// binary carrier as `Blob` values. See [`Value::Geometry`] for binding
+    /// and appender guidance.
+    Geometry(&'a [u8]),
     /// The value is a date32
     Date32(i32),
     /// The value is a time64
@@ -161,6 +167,7 @@ impl ValueRef<'_> {
             ValueRef::Timestamp(..) => Type::Timestamp,
             ValueRef::Text(_) => Type::Text,
             ValueRef::Blob(_) => Type::Blob,
+            ValueRef::Geometry(_) => Type::Geometry,
             ValueRef::Date32(_) => Type::Date32,
             ValueRef::Time64(..) => Type::Time64,
             ValueRef::Interval { .. } => Type::Interval,
@@ -183,8 +190,8 @@ impl ValueRef<'_> {
 }
 
 impl<'a> ValueRef<'a> {
-    /// If `self` is case `Text`, returns the string value. Otherwise, returns
-    /// [`Err(Error::InvalidColumnType)`](crate::Error::InvalidColumnType).
+    /// If `self` is `Text` or `Enum`, returns the string value. Otherwise,
+    /// returns `Err(FromSqlError::InvalidType)`.
     #[inline]
     pub fn as_str(&self) -> FromSqlResult<&'a str> {
         match *self {
@@ -211,13 +218,22 @@ impl<'a> ValueRef<'a> {
         }
     }
 
-    /// If `self` is case `Blob`, returns the byte slice. Otherwise, returns
-    /// [`Err(Error::InvalidColumnType)`](crate::Error::InvalidColumnType).
+    /// If `self` is `Blob`, `Text`, or `Geometry`, returns the byte slice.
+    /// Otherwise, returns `Err(FromSqlError::InvalidType)`.
     #[inline]
     pub fn as_blob(&self) -> FromSqlResult<&'a [u8]> {
         match *self {
-            ValueRef::Blob(b) => Ok(b),
-            ValueRef::Text(t) => Ok(t),
+            ValueRef::Blob(b) | ValueRef::Text(b) | ValueRef::Geometry(b) => Ok(b),
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+
+    /// If `self` is `Geometry`, returns the WKB byte slice. Otherwise, returns
+    /// `Err(FromSqlError::InvalidType)`.
+    #[inline]
+    pub fn as_geometry_wkb(&self) -> FromSqlResult<&'a [u8]> {
+        match *self {
+            ValueRef::Geometry(wkb) => Ok(wkb),
             _ => Err(FromSqlError::InvalidType),
         }
     }
@@ -248,6 +264,7 @@ impl From<ValueRef<'_>> for Value {
                 Self::Text(s.to_string())
             }
             ValueRef::Blob(b) => Self::Blob(b.to_vec()),
+            ValueRef::Geometry(wkb) => Self::Geometry(wkb.to_vec()),
             ValueRef::Date32(d) => Self::Date32(d),
             ValueRef::Time64(t, d) => Self::Time64(t, d),
             ValueRef::Interval { months, days, nanos } => Self::Interval { months, days, nanos },
@@ -409,6 +426,7 @@ fn unsupported_value_variant(value: &Value) -> Option<&'static str> {
         | Value::Timestamp(_, _)
         | Value::Text(_)
         | Value::Blob(_)
+        | Value::Geometry(_)
         | Value::Date32(_)
         | Value::Time64(_, _)
         | Value::Interval { .. } => None,
@@ -450,6 +468,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Timestamp(tu, t) => ValueRef::Timestamp(tu, t),
             Value::Text(ref s) => ValueRef::Text(s.as_bytes()),
             Value::Blob(ref b) => ValueRef::Blob(b),
+            Value::Geometry(ref wkb) => ValueRef::Geometry(wkb),
             Value::Date32(d) => ValueRef::Date32(d),
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
@@ -489,6 +508,33 @@ mod tests {
     fn value_ref_from_list_value_panics() {
         let value = Value::List(vec![Value::Int(1)]);
         let _ = ValueRef::from(&value);
+    }
+
+    #[test]
+    fn test_geometry_ref_is_wkb_bytes() {
+        use crate::types::FromSql;
+
+        let wkb = &[1_u8, 1, 0, 0, 0];
+        let geometry = ValueRef::Geometry(wkb);
+
+        assert_eq!(geometry.data_type(), Type::Geometry);
+        assert_eq!(geometry.as_geometry_wkb().unwrap(), wkb);
+        assert_eq!(geometry.as_blob().unwrap(), wkb);
+        assert!(geometry.as_str().is_err());
+        assert!(ValueRef::Blob(wkb).as_geometry_wkb().is_err());
+        assert_eq!(ValueRef::Blob(wkb).as_blob().unwrap(), wkb);
+        assert_eq!(Vec::<u8>::column_result(geometry).unwrap(), wkb.to_vec());
+        assert_eq!(geometry.to_owned(), Value::Geometry(wkb.to_vec()));
+    }
+
+    #[test]
+    fn test_text_ref_is_convertible_to_bytes() {
+        use crate::types::FromSql;
+
+        let text = ValueRef::Text(b"goose");
+
+        assert_eq!(text.as_blob().unwrap(), b"goose");
+        assert_eq!(Vec::<u8>::column_result(text).unwrap(), b"goose".to_vec());
     }
 
     #[test]

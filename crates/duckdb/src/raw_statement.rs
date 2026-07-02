@@ -35,7 +35,8 @@ pub struct RawStatement {
     duckdb_result: Option<ffi::duckdb_result>,
     schema: Option<SchemaRef>,
     // Cached DuckDB logical ids for result columns. Arrow reports HUGEINT,
-    // UHUGEINT, and DECIMAL(38,0) through the same decimal shape.
+    // UHUGEINT, and DECIMAL(38,0) through the same decimal shape, and
+    // GEOMETRY through a binary shape.
     result_column_logical_ids: Option<Box<[LogicalTypeId]>>,
     #[cfg(feature = "polars")]
     polars_arrow_field: OnceCell<polars_arrow::datatypes::Field>,

@@ -91,6 +91,8 @@ pub enum LogicalTypeId {
     IntegerLiteral = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL,
     /// Time NS
     TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS,
+    /// Geometry
+    Geometry = DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY,
     /// VARIANT.
     ///
     /// This type is exposed for metadata. Decoding VARIANT result columns is
@@ -145,6 +147,7 @@ impl From<u32> for LogicalTypeId {
             DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL => Self::StringLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL => Self::IntegerLiteral,
             DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS => Self::TimeNs,
+            DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY => Self::Geometry,
             DUCKDB_TYPE_DUCKDB_TYPE_VARIANT => Self::Variant,
             // Unknown / forward compatible types
             _ => Self::Unsupported,
@@ -269,6 +272,17 @@ impl LogicalTypeHandle {
     /// Returns 0 if the LogicalType is not a decimal
     pub fn decimal_scale(&self) -> u8 {
         unsafe { duckdb_decimal_scale(self.ptr) }
+    }
+
+    /// Returns the CRS metadata for a `GEOMETRY` logical type.
+    ///
+    /// Returns `None` when this logical type is not `GEOMETRY` or DuckDB does
+    /// not carry CRS metadata for the geometry type.
+    pub fn geometry_crs(&self) -> Option<String> {
+        unsafe {
+            DuckDbString::from_nullable_ptr(duckdb_geometry_type_get_crs(self.ptr))
+                .map(|c_str| c_str.to_string_lossy().into_owned())
+        }
     }
 
     /// Make a `LogicalType` for `struct`
@@ -481,6 +495,23 @@ mod test {
 
         assert_eq!(typ.decimal_width(), 0);
         assert_eq!(typ.decimal_scale(), 0);
+    }
+
+    #[test]
+    fn test_geometry_type() {
+        let typ = LogicalTypeHandle::from(LogicalTypeId::Geometry);
+
+        assert_eq!(typ.id(), LogicalTypeId::Geometry);
+        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY);
+        assert_eq!(typ.geometry_crs(), None);
+        assert_eq!(format!("{typ:?}"), "Geometry");
+    }
+
+    #[test]
+    fn test_geometry_crs_returns_none_for_non_geometry_type() {
+        let typ = LogicalTypeHandle::from(LogicalTypeId::Varchar);
+
+        assert_eq!(typ.geometry_crs(), None);
     }
 
     #[test]

@@ -44,6 +44,15 @@
 //! expressions where DuckDB reports `Invalid` metadata, and nested container
 //! children where the borrowed container API does not carry DuckDB child
 //! logical metadata.
+//!
+//! DuckDB `GEOMETRY` values use [`Value::Geometry`] and
+//! [`ValueRef::Geometry`], backed by WKB bytes. CRS data is exposed as logical
+//! type metadata through [`crate::core::LogicalTypeHandle::geometry_crs`]
+//! rather than on each value.
+//! Nested `GEOMETRY` values inside lists, structs, maps, arrays, and unions do
+//! not currently carry DuckDB child logical type metadata through the borrowed
+//! container API, so they materialize through their Arrow binary carrier as
+//! [`Value::Blob`] values.
 
 pub use self::{
     decimal::{Decimal, DecimalError},
@@ -147,6 +156,8 @@ pub enum Type {
     Text,
     /// BLOB
     Blob,
+    /// GEOMETRY
+    Geometry,
     /// DATE32
     Date32,
     /// TIME64
@@ -258,6 +269,7 @@ impl fmt::Display for Type {
             Self::Timestamp => f.pad("Timestamp"),
             Self::Text => f.pad("Text"),
             Self::Blob => f.pad("Blob"),
+            Self::Geometry => f.pad("Geometry"),
             Self::Date32 => f.pad("Date32"),
             Self::Time64 => f.pad("Time64"),
             Self::Interval => f.pad("Interval"),
@@ -305,6 +317,32 @@ mod test {
 
         let v: Vec<u8> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
         assert_eq!(v, empty);
+        Ok(())
+    }
+
+    #[test]
+    fn test_geometry_value_binds_as_wkb_blob() -> Result<()> {
+        let db = checked_memory_handle()?;
+        let wkb = vec![1_u8, 1, 0, 0, 0];
+
+        let value = Value::Geometry(wkb.clone());
+        let bound: Vec<u8> = db.query_row("SELECT ?::BLOB", [value], |r| r.get(0))?;
+
+        assert_eq!(bound, wkb);
+        Ok(())
+    }
+
+    #[test]
+    fn test_geometry_value_binds_through_st_geomfromwkb() -> Result<()> {
+        let db = checked_memory_handle()?;
+        let wkb = vec![
+            0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F,
+        ];
+
+        let value = Value::Geometry(wkb.clone());
+        let bound: Value = db.query_row("SELECT ST_GeomFromWKB(?)", [value], |r| r.get(0))?;
+
+        assert_eq!(bound, Value::Geometry(wkb));
         Ok(())
     }
 
