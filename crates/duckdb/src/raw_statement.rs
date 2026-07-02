@@ -233,11 +233,11 @@ impl RawStatement {
     #[inline]
     pub(crate) fn result_column_logical_id(&self, idx: usize) -> Option<LogicalTypeId> {
         let logical_ids = self.result_column_logical_ids.as_ref()?;
-        debug_assert!(
+        assert!(
             idx < logical_ids.len(),
             "result column logical-id cache is shorter than the result schema"
         );
-        logical_ids.get(idx).copied()
+        Some(logical_ids[idx])
     }
 
     #[inline]

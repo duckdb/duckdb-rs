@@ -255,6 +255,26 @@ fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> R
     Err(Error::DuckDBFailure(ffi::Error::new(code), message))
 }
 
+#[inline]
+fn appender_error_message(appender: ffi::duckdb_appender) -> Option<String> {
+    if appender.is_null() {
+        return Some("appender is null".to_string());
+    }
+    unsafe {
+        let c_err = ffi::duckdb_appender_error(appender);
+        if c_err.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(c_err).to_string_lossy().into_owned())
+        }
+    }
+}
+
+#[inline]
+pub(crate) fn error_from_appender_code(code: ffi::duckdb_state, appender: ffi::duckdb_appender) -> Error {
+    Error::DuckDBFailure(ffi::Error::new(code), appender_error_message(appender))
+}
+
 #[cold]
 #[inline]
 pub fn result_from_duckdb_appender(code: ffi::duckdb_state, appender: *mut ffi::duckdb_appender) -> Result<()> {
@@ -262,14 +282,10 @@ pub fn result_from_duckdb_appender(code: ffi::duckdb_state, appender: *mut ffi::
         return Ok(());
     }
     unsafe {
-        let message = if (*appender).is_null() {
-            Some("appender is null".to_string())
-        } else {
-            let c_err = ffi::duckdb_appender_error(*appender);
-            let message = Some(CStr::from_ptr(c_err).to_string_lossy().to_string());
+        let message = appender_error_message(*appender);
+        if !(*appender).is_null() {
             ffi::duckdb_appender_destroy(appender);
-            message
-        };
+        }
         error_from_duckdb_code(code, message)
     }
 }

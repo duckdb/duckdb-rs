@@ -3,7 +3,7 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 
 use crate::{
     Error,
-    error::result_from_duckdb_appender,
+    error::{error_from_appender_code, result_from_duckdb_appender},
     types::{ToSql, ToSqlOutput, to_duckdb_hugeint, to_duckdb_uhugeint, value_ref_from_value},
 };
 
@@ -123,8 +123,8 @@ impl Appender<'_> {
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
         // AppenderParams normalizes arrays, tuples, slices, and iterators into
-        // append_parameter_row, which validates up-front, then wraps binding
-        // with begin_row/end_row.
+        // append_parameter_row, which validates up-front, then ends the row
+        // after binding.
         params.__bind_in(self)
     }
 
@@ -142,14 +142,18 @@ impl Appender<'_> {
 
         self.validate_parameter_values(&values)?;
 
-        let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
         if let Err(err) = self.bind_parameter_values(&values) {
-            // validate_parameter_values catches unsupported types up-front; this guards
-            // against an unmapped variant slipping through bind_parameter.
-            let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
-            // Prefer cleanup failure here: result_from_duckdb_appender destroys
-            // an appender that DuckDB reports as invalid after a partial row.
-            result_from_duckdb_appender(rc, &mut self.app)?;
+            // A failed bind can leave DuckDB with a partial row. End the row
+            // only to let DuckDB mark the appender invalid, then preserve the
+            // original bind error; the cleanup failure is usually less useful.
+            if !self.app.is_null() {
+                let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
+                if rc != ffi::DuckDBSuccess {
+                    unsafe {
+                        ffi::duckdb_appender_destroy(&mut self.app);
+                    }
+                }
+            }
             return Err(err);
         }
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
@@ -223,7 +227,7 @@ impl Appender<'_> {
             }
         };
         if rc != 0 {
-            return Err(Error::AppendError);
+            return Err(error_from_appender_code(rc, self.app));
         }
         Ok(())
     }
@@ -476,7 +480,7 @@ mod test {
     }
 
     #[test]
-    fn test_append_bind_failure_prefers_cleanup_error() -> Result<()> {
+    fn test_append_bind_failure_preserves_bind_error() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(id INTEGER, value UUID)")?;
 
@@ -485,12 +489,12 @@ mod test {
 
         match err {
             Error::DuckDBFailure(_, Some(msg)) => {
-                assert!(
-                    msg.contains("Call to EndRow before all columns have been appended to"),
-                    "unexpected message: {msg}"
+                assert_eq!(
+                    msg,
+                    "Failed to cast value: Unimplemented type for cast (INTEGER -> UUID)"
                 );
             }
-            other => panic!("expected DuckDBFailure from appender cleanup, got {other:?}"),
+            other => panic!("expected DuckDBFailure from appender bind, got {other:?}"),
         }
         assert!(app.app.is_null());
         Ok(())
