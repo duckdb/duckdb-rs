@@ -35,7 +35,8 @@ pub struct RawStatement {
     duckdb_result: Option<ffi::duckdb_result>,
     schema: Option<SchemaRef>,
     // Cached DuckDB logical ids for result columns. Arrow reports HUGEINT,
-    // UHUGEINT, and DECIMAL(38,0) through the same decimal shape.
+    // UHUGEINT, and DECIMAL(38,0) through the same decimal shape, and
+    // GEOMETRY through a binary shape.
     result_column_logical_ids: Option<Box<[LogicalTypeId]>>,
     #[cfg(feature = "polars")]
     polars_arrow_field: OnceCell<polars_arrow::datatypes::Field>,
@@ -233,11 +234,11 @@ impl RawStatement {
     #[inline]
     pub(crate) fn result_column_logical_id(&self, idx: usize) -> Option<LogicalTypeId> {
         let logical_ids = self.result_column_logical_ids.as_ref()?;
-        debug_assert!(
+        assert!(
             idx < logical_ids.len(),
             "result column logical-id cache is shorter than the result schema"
         );
-        logical_ids.get(idx).copied()
+        Some(logical_ids[idx])
     }
 
     #[inline]

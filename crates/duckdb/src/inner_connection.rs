@@ -197,61 +197,52 @@ impl InnerConnection {
         error.map_or(Ok(()), Err)
     }
 
-    pub fn appender<'a>(&mut self, conn: &'a Connection, table: &str, schema: &str) -> Result<Appender<'a>> {
-        let mut c_app: ffi::duckdb_appender = ptr::null_mut();
-        let c_table = CString::new(table)?;
-        let c_schema = CString::new(schema)?;
-        let r = unsafe {
-            ffi::duckdb_appender_create(
-                self.con,
-                c_schema.as_ptr() as *const c_char,
-                c_table.as_ptr() as *const c_char,
-                &mut c_app,
-            )
-        };
-        result_from_duckdb_appender(r, &mut c_app)?;
+    pub fn appender<'a>(
+        &mut self,
+        conn: &'a Connection,
+        catalog: Option<&str>,
+        schema: &str,
+        table: &str,
+    ) -> Result<Appender<'a>> {
+        let c_app = self.create_table_appender(catalog, schema, table)?;
         Ok(Appender::new(conn, c_app))
     }
 
-    pub fn appender_to_catalog_and_db<'a>(
+    fn create_table_appender(
         &mut self,
-        conn: &'a Connection,
-        table: &str,
-        catalog: &str,
+        catalog: Option<&str>,
         schema: &str,
-    ) -> Result<Appender<'a>> {
+        table: &str,
+    ) -> Result<ffi::duckdb_appender> {
         let mut c_app: ffi::duckdb_appender = ptr::null_mut();
+        let c_catalog = catalog.map(CString::new).transpose()?;
         let c_table = CString::new(table)?;
-        let c_catalog = CString::new(catalog)?;
         let c_schema = CString::new(schema)?;
-
         let r = unsafe {
             ffi::duckdb_appender_create_ext(
                 self.con,
-                c_catalog.as_ptr() as *const c_char,
+                c_catalog.as_ref().map_or(ptr::null(), |c| c.as_ptr() as *const c_char),
                 c_schema.as_ptr() as *const c_char,
                 c_table.as_ptr() as *const c_char,
                 &mut c_app,
             )
         };
         result_from_duckdb_appender(r, &mut c_app)?;
-        Ok(Appender::new(conn, c_app))
+        Ok(c_app)
     }
 
     pub fn appender_with_columns<'a>(
         &mut self,
         conn: &'a Connection,
-        table: &str,
-        schema: &str,
         catalog: Option<&str>,
+        schema: &str,
+        table: &str,
         columns: &[&str],
     ) -> Result<Appender<'a>> {
         // The C API only supports narrowing columns after the appender is created.
         // Create the appender first, then activate the requested column subset.
-        let mut appender = match catalog {
-            Some(catalog) => self.appender_to_catalog_and_db(conn, table, catalog, schema)?,
-            None => self.appender(conn, table, schema)?,
-        };
+        let c_app = self.create_table_appender(catalog, schema, table)?;
+        let mut appender = Appender::new(conn, c_app);
         for column in columns {
             appender.add_column(column)?;
         }
