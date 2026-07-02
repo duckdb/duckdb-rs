@@ -1,5 +1,9 @@
 use super::{AppenderParams, Connection, Result, ValueRef, ffi};
-use std::{ffi::c_void, fmt, os::raw::c_char};
+use std::{
+    ffi::{CStr, c_void},
+    fmt,
+    os::raw::c_char,
+};
 
 use crate::{
     Error,
@@ -123,8 +127,8 @@ impl Appender<'_> {
     #[inline]
     pub fn append_row<P: AppenderParams>(&mut self, params: P) -> Result<()> {
         // AppenderParams normalizes arrays, tuples, slices, and iterators into
-        // append_parameter_row, which validates up-front, then wraps binding
-        // with begin_row/end_row.
+        // append_parameter_row, which validates up-front, then ends the row
+        // after binding.
         params.__bind_in(self)
     }
 
@@ -142,14 +146,16 @@ impl Appender<'_> {
 
         self.validate_parameter_values(&values)?;
 
-        let _ = unsafe { ffi::duckdb_appender_begin_row(self.app) };
         if let Err(err) = self.bind_parameter_values(&values) {
-            // validate_parameter_values catches unsupported types up-front; this guards
-            // against an unmapped variant slipping through bind_parameter.
+            // A failed bind can leave DuckDB with a partial row. End the row
+            // only to let DuckDB mark the appender invalid, then preserve the
+            // original bind error; the cleanup failure is usually less useful.
             let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
-            // Prefer cleanup failure here: result_from_duckdb_appender destroys
-            // an appender that DuckDB reports as invalid after a partial row.
-            result_from_duckdb_appender(rc, &mut self.app)?;
+            if rc != ffi::DuckDBSuccess {
+                unsafe {
+                    ffi::duckdb_appender_destroy(&mut self.app);
+                }
+            }
             return Err(err);
         }
         let rc = unsafe { ffi::duckdb_appender_end_row(self.app) };
@@ -197,7 +203,9 @@ impl Appender<'_> {
             ValueRef::Timestamp(u, i) => unsafe {
                 ffi::duckdb_append_timestamp(ptr, ffi::duckdb_timestamp { micros: u.to_micros(i) })
             },
-            ValueRef::Blob(b) => unsafe { ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64) },
+            ValueRef::Blob(b) | ValueRef::Geometry(b) => unsafe {
+                ffi::duckdb_append_blob(ptr, b.as_ptr() as *const c_void, b.len() as u64)
+            },
             ValueRef::Date32(d) => unsafe { ffi::duckdb_append_date(ptr, ffi::duckdb_date { days: d }) },
             ValueRef::Time64(u, v) => unsafe {
                 ffi::duckdb_append_time(ptr, ffi::duckdb_time { micros: u.to_micros(v) })
@@ -223,9 +231,26 @@ impl Appender<'_> {
             }
         };
         if rc != 0 {
-            return Err(Error::AppendError);
+            return Err(self.appender_error());
         }
         Ok(())
+    }
+
+    fn appender_error(&self) -> Error {
+        let message = if self.app.is_null() {
+            Some("appender is null".to_string())
+        } else {
+            unsafe {
+                let c_err = ffi::duckdb_appender_error(self.app);
+                if c_err.is_null() {
+                    None
+                } else {
+                    Some(CStr::from_ptr(c_err).to_string_lossy().into_owned())
+                }
+            }
+        };
+
+        Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), message)
     }
 
     #[inline]
@@ -329,6 +354,7 @@ fn validate_appender_value_ref(value: ValueRef<'_>) -> Result<()> {
         | ValueRef::Text(_)
         | ValueRef::Timestamp(_, _)
         | ValueRef::Blob(_)
+        | ValueRef::Geometry(_)
         | ValueRef::Date32(_)
         | ValueRef::Time64(_, _)
         | ValueRef::Interval { .. }
@@ -366,6 +392,37 @@ mod test {
 
         let val = db.query_row("SELECT x FROM foo", [], |row| <(i32,)>::try_from(row))?;
         assert_eq!(val, (42,));
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_geometry_value_as_wkb_blob() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(wkb BLOB)")?;
+
+        let wkb: Vec<u8> = db.query_row("SELECT ST_AsWKB('POINT EMPTY'::GEOMETRY)", [], |row| row.get(0))?;
+        let mut app = db.appender("foo")?;
+        app.append_row([Value::Geometry(wkb.clone())])?;
+        app.flush()?;
+
+        let got: Vec<u8> = db.query_row("SELECT wkb FROM foo", [], |row| row.get(0))?;
+        assert_eq!(got, wkb);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_geometry_value_to_geometry_column_fails() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(geom GEOMETRY)")?;
+
+        let wkb: Vec<u8> = db.query_row("SELECT ST_AsWKB('POINT EMPTY'::GEOMETRY)", [], |row| row.get(0))?;
+        let mut app = db.appender("foo")?;
+        let err = app.append_row([Value::Geometry(wkb)]).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("BLOB") && message.contains("GEOMETRY"),
+            "expected BLOB/GEOMETRY type mismatch, got: {message}"
+        );
         Ok(())
     }
 
@@ -476,7 +533,7 @@ mod test {
     }
 
     #[test]
-    fn test_append_bind_failure_prefers_cleanup_error() -> Result<()> {
+    fn test_append_bind_failure_preserves_bind_error() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(id INTEGER, value UUID)")?;
 
@@ -485,12 +542,12 @@ mod test {
 
         match err {
             Error::DuckDBFailure(_, Some(msg)) => {
-                assert!(
-                    msg.contains("Call to EndRow before all columns have been appended to"),
-                    "unexpected message: {msg}"
+                assert_eq!(
+                    msg,
+                    "Failed to cast value: Unimplemented type for cast (INTEGER -> UUID)"
                 );
             }
-            other => panic!("expected DuckDBFailure from appender cleanup, got {other:?}"),
+            other => panic!("expected DuckDBFailure from appender bind, got {other:?}"),
         }
         assert!(app.app.is_null());
         Ok(())

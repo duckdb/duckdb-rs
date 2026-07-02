@@ -483,7 +483,10 @@ pub fn flat_vector_to_arrow_array(
                 }))),
             )))
         }
-        LogicalTypeId::Blob => {
+        LogicalTypeId::Blob | LogicalTypeId::Geometry => {
+            // DuckDB currently stores GEOMETRY vectors as WKB-backed string_t
+            // bytes. Treating GEOMETRY like BLOB here relies on that internal
+            // representation staying WKB-compatible.
             let mut data = unsafe { vector.as_slice_with_len::<duckdb_string_t>(len) }.to_vec();
 
             let duck_strings = data.iter_mut().enumerate().map(|(i, ptr)| {
@@ -1268,9 +1271,12 @@ fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) 
 mod test {
     use super::{
         ArrowInitData, ArrowVTab, RowSlice, arrow_arraydata_to_query_params, arrow_ffi_to_query_params,
-        arrow_recordbatch_to_query_params,
+        arrow_recordbatch_to_query_params, data_chunk_to_arrow,
     };
-    use crate::{Connection, Result};
+    use crate::{
+        Connection, Result,
+        core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
+    };
     use arrow::{
         array::{
             Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Date64Array,
@@ -2210,6 +2216,23 @@ mod test {
         let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
         assert_eq!(column.len(), 1);
         assert_eq!(column.value(0), b"test");
+    }
+
+    #[test]
+    fn test_geometry_data_chunk_to_arrow_uses_wkb_bytes() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        let wkb: Vec<u8> = db.query_row("SELECT ST_AsWKB('POINT EMPTY'::GEOMETRY)", [], |row| row.get(0))?;
+
+        let chunk = DataChunkHandle::new(&[LogicalTypeHandle::from(LogicalTypeId::Geometry)]);
+        chunk.flat_vector(0).insert(0, wkb.as_slice());
+        chunk.set_len(1);
+
+        let rb = data_chunk_to_arrow(&chunk)?;
+        let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
+
+        assert_eq!(column.len(), 1);
+        assert_eq!(column.value(0), wkb);
+        Ok(())
     }
 
     #[test]

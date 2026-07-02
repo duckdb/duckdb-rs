@@ -365,25 +365,32 @@ impl<'stmt> Row<'stmt> {
         let column = self.arr.as_ref().as_ref().unwrap().column(col);
         let value = Self::value_ref_internal(row, column);
 
-        // Arrow gives HUGEINT, UHUGEINT, and DECIMAL(38,0) the same
-        // Decimal128(38,0) physical shape. value_ref_internal keeps that
-        // ambiguous shape in the signed HugeInt carrier. Top-level result
-        // metadata recovers UHUGEINT and DECIMAL; otherwise preserve the
-        // existing HugeInt fallback for parameter-derived or metadata-less
-        // results.
-        if let ValueRef::HugeInt(value) = value {
-            match self.stmt.result_column_logical_id(col) {
-                Some(LogicalTypeId::UHugeint) => return ValueRef::UHugeInt(value as u128),
+        // Some DuckDB logical types share Arrow physical carriers. Executed
+        // result metadata recovers those DuckDB type tags.
+        match value {
+            ValueRef::Blob(bytes) => match self.stmt.result_column_logical_id(col) {
+                Some(LogicalTypeId::Geometry) => ValueRef::Geometry(bytes),
+                _ => ValueRef::Blob(bytes),
+            },
+            // Arrow gives HUGEINT, UHUGEINT, and DECIMAL(38,0) the same
+            // Decimal128(38,0) physical shape. value_ref_internal keeps that
+            // ambiguous shape in the signed HugeInt carrier. Top-level result
+            // metadata recovers UHUGEINT and DECIMAL; otherwise preserve the
+            // existing HugeInt fallback for parameter-derived or metadata-less
+            // results.
+            ValueRef::HugeInt(value) => match self.stmt.result_column_logical_id(col) {
+                Some(LogicalTypeId::UHugeint) => ValueRef::UHugeInt(value as u128),
                 Some(LogicalTypeId::Decimal) => {
                     if let DataType::Decimal128(width, 0) = column.data_type() {
-                        return ValueRef::Decimal(Decimal::from_chunk(*width, 0, value));
+                        ValueRef::Decimal(Decimal::from_chunk(*width, 0, value))
+                    } else {
+                        ValueRef::HugeInt(value)
                     }
                 }
-                _ => {}
-            }
+                _ => ValueRef::HugeInt(value),
+            },
+            value => value,
         }
-
-        value
     }
 
     pub(crate) fn value_ref_internal<'a>(row: usize, column: &'a ArrayRef) -> ValueRef<'a> {
@@ -1056,6 +1063,25 @@ mod tests {
 
         assert_eq!(list, Value::List(vec![Value::HugeInt(3)]));
 
+        Ok(())
+    }
+
+    #[test]
+    fn nested_geometry_uses_metadata_less_blob_carrier() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+
+        let top_level = db.query_row("SELECT 'POINT EMPTY'::GEOMETRY", [], |row| {
+            Ok(row.get_ref(0)?.to_owned())
+        })?;
+        assert!(matches!(top_level, Value::Geometry(_)));
+
+        let list = db.query_row("SELECT ['POINT EMPTY'::GEOMETRY]", [], |row| {
+            let value = row.get_ref(0)?;
+            assert!(matches!(value.data_type(), Type::List(ref inner) if **inner == Type::Blob));
+            Ok(value.to_owned())
+        })?;
+
+        assert!(matches!(list, Value::List(ref values) if matches!(values.as_slice(), [Value::Blob(_)])));
         Ok(())
     }
 

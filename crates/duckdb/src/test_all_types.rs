@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 
 use crate::{
     Connection,
-    types::{Decimal, OrderedMap, TimeUnit, Type, Value, ValueRef},
+    types::{Decimal, FromSql, OrderedMap, TimeUnit, Type, Value, ValueRef},
 };
 
 #[test]
@@ -19,7 +19,7 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    let excluded = ["time_tz", "time_ns", "bignum", "geometry"];
+    let excluded = ["time_tz", "time_ns", "bignum"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
@@ -204,6 +204,34 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
                 ])
             ),
             1 => assert_eq!(value, ValueRef::Blob(&[0, 0, 0, 97])),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "geometry" => match idx {
+            0 => {
+                assert_eq!(value.data_type(), Type::Geometry);
+                let point_empty_wkb = &[
+                    0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F,
+                ];
+                assert_eq!(value.as_geometry_wkb().unwrap(), point_empty_wkb);
+                assert_eq!(value.as_blob().unwrap(), point_empty_wkb);
+                assert_eq!(Vec::<u8>::column_result(value).unwrap(), point_empty_wkb);
+                match value.to_owned() {
+                    Value::Geometry(wkb) => assert_eq!(wkb, point_empty_wkb),
+                    other => panic!("expected Geometry value, got {other:?}"),
+                }
+            }
+            1 => {
+                assert_eq!(value.data_type(), Type::Geometry);
+                assert_eq!(value.as_blob().unwrap(), value.as_geometry_wkb().unwrap());
+                assert_eq!(
+                    value.as_geometry_wkb().unwrap(),
+                    Vec::<u8>::column_result(value).unwrap()
+                );
+                match value.to_owned() {
+                    Value::Geometry(wkb) => assert!(!wkb.is_empty()),
+                    other => panic!("expected Geometry value, got {other:?}"),
+                }
+            }
             _ => assert_eq!(value, ValueRef::Null),
         },
         "int_array" => match idx {
