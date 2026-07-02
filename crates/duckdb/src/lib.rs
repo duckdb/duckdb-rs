@@ -569,7 +569,7 @@ impl Connection {
     ///
     /// Will return `Err` if `table` not exists
     pub fn appender_to_db(&self, table: &str, schema: &str) -> Result<Appender<'_>> {
-        self.db.borrow_mut().appender(self, table, schema)
+        self.db.borrow_mut().appender(self, None, schema, table)
     }
 
     /// Create an Appender for fast import data with provided catalog, schema and table
@@ -589,9 +589,7 @@ impl Connection {
     ///
     /// Will return `Err` if `catalog` or `schema` not exists
     pub fn appender_to_catalog_and_db(&self, table: &str, catalog: &str, schema: &str) -> Result<Appender<'_>> {
-        self.db
-            .borrow_mut()
-            .appender_to_catalog_and_db(self, table, catalog, schema)
+        self.db.borrow_mut().appender(self, Some(catalog), schema, table)
     }
 
     /// Create an Appender that only provides values for specific columns.
@@ -627,7 +625,7 @@ impl Connection {
     pub fn appender_with_columns_to_db(&self, table: &str, schema: &str, columns: &[&str]) -> Result<Appender<'_>> {
         self.db
             .borrow_mut()
-            .appender_with_columns(self, table, schema, None, columns)
+            .appender_with_columns(self, None, schema, table, columns)
     }
 
     /// Create an Appender that only provides values for specific columns, with catalog and schema.
@@ -642,7 +640,7 @@ impl Connection {
     ) -> Result<Appender<'_>> {
         self.db
             .borrow_mut()
-            .appender_with_columns(self, table, schema, Some(catalog), columns)
+            .appender_with_columns(self, Some(catalog), schema, table, columns)
     }
 
     /// Get a handle to interrupt long-running queries.
