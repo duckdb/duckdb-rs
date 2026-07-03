@@ -1317,6 +1317,42 @@ mod test {
         .expect("failed to create record batch")
     }
 
+    #[test]
+    fn test_query_record_batch_with_arrow_vtab() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let params = arrow_recordbatch_to_query_params(example_record_batch());
+        let batches: Vec<RecordBatch> = db
+            .prepare(
+                "
+                SELECT id, upper(name) AS name, is_odd
+                FROM arrow(?, ?)
+                WHERE is_odd
+                ORDER BY id
+                ",
+            )?
+            .query_arrow(params)?
+            .collect();
+
+        assert_eq!(batches.len(), 1);
+        let batch = &batches[0];
+        assert_eq!(batch.num_rows(), 2);
+
+        let ids = batch.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        let names = batch.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let predicates = batch.column(2).as_any().downcast_ref::<BooleanArray>().unwrap();
+
+        assert_eq!(ids.value(0), 1);
+        assert_eq!(ids.value(1), 3);
+        assert_eq!(names.value(0), "APPLE");
+        assert_eq!(names.value(1), "CHERRY");
+        assert!(predicates.value(0));
+        assert!(predicates.value(1));
+
+        Ok(())
+    }
+
     // Mark rows straddling vector-size slice boundaries as NULL so bitmap offsets
     // are exercised when the source batch is sliced.
     fn boundary_null(i: usize, vector_size: usize) -> bool {

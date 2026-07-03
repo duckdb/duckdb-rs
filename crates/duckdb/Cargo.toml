@@ -102,3 +102,7 @@ required-features = ["vscalar"]
 [[example]]
 name = "vtab"
 required-features = ["vtab"]
+
+[[example]]
+name = "arrow_vtab"
+required-features = ["vtab-arrow"]
