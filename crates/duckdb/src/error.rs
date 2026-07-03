@@ -251,8 +251,28 @@ impl error::Error for Error {
 // These are public but not re-exported by lib.rs, so only visible within crate.
 
 #[inline]
-fn error_from_duckdb_code(code: ffi::duckdb_state, message: Option<String>) -> Result<()> {
-    Err(Error::DuckDBFailure(ffi::Error::new(code), message))
+fn result_from_duckdb_state(code: ffi::duckdb_state, message: Option<String>) -> Result<()> {
+    Err(duckdb_failure_from_state(code, message))
+}
+
+#[inline]
+pub(crate) fn duckdb_failure_from_state(code: ffi::duckdb_state, message: Option<String>) -> Error {
+    Error::DuckDBFailure(ffi::Error::new(code), message)
+}
+
+#[inline]
+fn duckdb_failure_from_error_type(error_type: ffi::duckdb_error_type, message: Option<String>) -> Error {
+    Error::DuckDBFailure(ffi::Error::new(error_type as ffi::duckdb_state), message)
+}
+
+#[inline]
+pub(crate) fn duckdb_failure_from_message(message: impl Into<String>) -> Error {
+    duckdb_failure_from_state(ffi::DuckDBError, Some(message.into()))
+}
+
+#[inline]
+pub(crate) fn arrow_conversion_failure(context: &str, err: impl fmt::Display) -> Error {
+    duckdb_failure_from_message(format!("{context}: {err}"))
 }
 
 #[inline]
@@ -286,7 +306,7 @@ pub fn result_from_duckdb_appender(code: ffi::duckdb_state, appender: *mut ffi::
         if !(*appender).is_null() {
             ffi::duckdb_appender_destroy(appender);
         }
-        error_from_duckdb_code(code, message)
+        result_from_duckdb_state(code, message)
     }
 }
 
@@ -305,7 +325,7 @@ pub fn result_from_duckdb_prepare(code: ffi::duckdb_state, mut prepare: ffi::duc
             ffi::duckdb_destroy_prepare(&mut prepare);
             message
         };
-        error_from_duckdb_code(code, message)
+        result_from_duckdb_state(code, message)
     }
 }
 
@@ -316,19 +336,62 @@ pub fn result_from_duckdb_result(code: ffi::duckdb_state, result: *mut ffi::duck
         return Ok(());
     }
     unsafe {
-        let message = if result.is_null() {
-            Some("result is null".to_string())
+        if result.is_null() {
+            result_from_duckdb_state(code, Some("result is null".to_string()))
         } else {
-            let c_err = ffi::duckdb_result_error(result);
-            let message = if c_err.is_null() {
+            let message = result_error_message(result);
+            ffi::duckdb_destroy_result(result);
+            result_from_duckdb_state(code, message)
+        }
+    }
+}
+
+/// Returns the current DuckDB error message for a result handle.
+///
+/// # Safety
+///
+/// `result` must be a live DuckDB result handle.
+pub(crate) unsafe fn result_error_message(result: *mut ffi::duckdb_result) -> Option<String> {
+    unsafe {
+        debug_assert!(!result.is_null());
+        let c_err = ffi::duckdb_result_error(result);
+        if c_err.is_null() {
+            None
+        } else {
+            Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+        }
+    }
+}
+
+/// Converts a DuckDB error-data handle into this crate's `Result`.
+///
+/// # Safety
+///
+/// `error_data` must be null or a valid handle allocated by DuckDB. This
+/// function takes ownership of non-null handles and always destroys them before
+/// returning.
+#[inline]
+pub(crate) unsafe fn result_from_duckdb_error_data(mut error_data: ffi::duckdb_error_data) -> Result<()> {
+    unsafe {
+        if error_data.is_null() {
+            return Ok(());
+        }
+        if !ffi::duckdb_error_data_has_error(error_data) {
+            ffi::duckdb_destroy_error_data(&mut error_data);
+            return Ok(());
+        }
+
+        let error_type = ffi::duckdb_error_data_error_type(error_data);
+        let message = {
+            let c_err = ffi::duckdb_error_data_message(error_data);
+            if c_err.is_null() {
                 None
             } else {
                 Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
-            };
-            ffi::duckdb_destroy_result(result);
-            message
+            }
         };
-        error_from_duckdb_code(code, message)
+        ffi::duckdb_destroy_error_data(&mut error_data);
+        Err(duckdb_failure_from_error_type(error_type, message))
     }
 }
 
@@ -354,6 +417,74 @@ pub fn result_from_duckdb_extract(
             ffi::duckdb_destroy_extracted(&mut extracted);
             message
         };
-        error_from_duckdb_code(ffi::DuckDBError, message)
+        result_from_duckdb_state(ffi::DuckDBError, message)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{ffi::CString, ptr};
+
+    use super::{Error, result_from_duckdb_error_data};
+    use crate::ffi;
+
+    #[test]
+    fn result_from_duckdb_error_data_accepts_null() {
+        unsafe {
+            result_from_duckdb_error_data(ptr::null_mut()).unwrap();
+        }
+    }
+
+    #[test]
+    fn result_from_duckdb_error_data_accepts_no_error_handle() {
+        unsafe {
+            let mut db = ptr::null_mut();
+            assert_eq!(ffi::DuckDBSuccess, ffi::duckdb_open(ptr::null(), &mut db));
+
+            let mut con = ptr::null_mut();
+            assert_eq!(ffi::DuckDBSuccess, ffi::duckdb_connect(db, &mut con));
+
+            let sql = CString::new("CREATE TABLE t(i INTEGER)").unwrap();
+            let mut result: ffi::duckdb_result = std::mem::zeroed();
+            assert_eq!(ffi::DuckDBSuccess, ffi::duckdb_query(con, sql.as_ptr(), &mut result));
+            ffi::duckdb_destroy_result(&mut result);
+
+            let table = CString::new("t").unwrap();
+            let mut appender = ptr::null_mut();
+            assert_eq!(
+                ffi::DuckDBSuccess,
+                ffi::duckdb_appender_create(con, ptr::null(), table.as_ptr(), &mut appender)
+            );
+
+            let error_data = ffi::duckdb_appender_error_data(appender);
+            assert!(!error_data.is_null());
+            assert!(!ffi::duckdb_error_data_has_error(error_data));
+
+            result_from_duckdb_error_data(error_data).unwrap();
+
+            assert_eq!(ffi::DuckDBSuccess, ffi::duckdb_appender_destroy(&mut appender));
+            ffi::duckdb_disconnect(&mut con);
+            ffi::duckdb_close(&mut db);
+        }
+    }
+
+    #[test]
+    fn result_from_duckdb_error_data_returns_error_message() {
+        let message = CString::new("synthetic error").unwrap();
+        let error_data =
+            unsafe { ffi::duckdb_create_error_data(ffi::duckdb_error_type_DUCKDB_ERROR_INTERNAL, message.as_ptr()) };
+
+        let err = unsafe { result_from_duckdb_error_data(error_data) }.unwrap_err();
+
+        match err {
+            Error::DuckDBFailure(err, Some(message)) => {
+                assert_eq!(
+                    err.extended_code,
+                    ffi::duckdb_error_type_DUCKDB_ERROR_INTERNAL as ffi::duckdb_state
+                );
+                assert_eq!(message, "synthetic error");
+            }
+            err => panic!("unexpected error: {err:?}"),
+        }
     }
 }
