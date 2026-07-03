@@ -22,7 +22,10 @@ impl<'stmt> Arrow<'stmt> {
     /// Return the Arrow schema reported by DuckDB after execution.
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
-        self.stmt.unwrap().stmt.schema()
+        self.stmt
+            .expect("Arrow iterator always holds a statement")
+            .stmt
+            .schema()
     }
 }
 
@@ -59,7 +62,10 @@ impl<'stmt> ArrowStream<'stmt> {
     /// Return the Arrow schema reported by DuckDB after execution.
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
-        self.stmt.unwrap().stmt.schema()
+        self.stmt
+            .expect("ArrowStream iterator always holds a statement")
+            .stmt
+            .schema()
     }
 }
 
