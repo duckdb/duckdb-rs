@@ -5,7 +5,8 @@ use super::{
 
 /// A handle for the resulting RecordBatch of a query.
 ///
-/// The iterator panics if DuckDB fails to convert a result chunk to Arrow.
+/// The iterator panics if DuckDB fails to fetch a result chunk or convert it
+/// to Arrow.
 #[must_use = "Arrow is lazy and will do nothing unless consumed"]
 pub struct Arrow<'stmt> {
     pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
@@ -40,7 +41,8 @@ impl<'stmt> Iterator for Arrow<'stmt> {
 
 /// A handle for the resulting RecordBatch of a query in streaming.
 ///
-/// The iterator panics if DuckDB fails to convert a result chunk to Arrow.
+/// The iterator panics if DuckDB fails to fetch a result chunk or convert it
+/// to Arrow.
 #[must_use = "Arrow stream is lazy and will not fetch data unless consumed"]
 #[allow(clippy::needless_lifetimes)]
 pub struct ArrowStream<'stmt> {
@@ -54,7 +56,7 @@ impl<'stmt> ArrowStream<'stmt> {
         ArrowStream { stmt: Some(stmt) }
     }
 
-    /// return arrow schema
+    /// Return the Arrow schema reported by DuckDB after execution.
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
         self.stmt.unwrap().stmt.schema()

@@ -261,6 +261,11 @@ pub(crate) fn duckdb_failure_from_state(code: ffi::duckdb_state, message: Option
 }
 
 #[inline]
+fn duckdb_failure_from_error_type(error_type: ffi::duckdb_error_type, message: Option<String>) -> Error {
+    Error::DuckDBFailure(ffi::Error::new(error_type as ffi::duckdb_state), message)
+}
+
+#[inline]
 pub(crate) fn duckdb_failure_from_message(message: impl Into<String>) -> Error {
     duckdb_failure_from_state(ffi::DuckDBError, Some(message.into()))
 }
@@ -378,6 +383,7 @@ pub(crate) unsafe fn result_from_duckdb_error_data(mut error_data: ffi::duckdb_e
             return Ok(());
         }
 
+        let error_type = ffi::duckdb_error_data_error_type(error_data);
         let message = {
             let c_err = ffi::duckdb_error_data_message(error_data);
             if c_err.is_null() {
@@ -387,7 +393,7 @@ pub(crate) unsafe fn result_from_duckdb_error_data(mut error_data: ffi::duckdb_e
             }
         };
         ffi::duckdb_destroy_error_data(&mut error_data);
-        result_from_duckdb_state(ffi::DuckDBError, message)
+        Err(duckdb_failure_from_error_type(error_type, message))
     }
 }
 
@@ -473,7 +479,13 @@ mod tests {
         let err = unsafe { result_from_duckdb_error_data(error_data) }.unwrap_err();
 
         match err {
-            Error::DuckDBFailure(_, Some(message)) => assert_eq!(message, "synthetic error"),
+            Error::DuckDBFailure(err, Some(message)) => {
+                assert_eq!(
+                    err.extended_code,
+                    ffi::duckdb_error_type_DUCKDB_ERROR_INTERNAL as ffi::duckdb_state
+                );
+                assert_eq!(message, "synthetic error");
+            }
             err => panic!("unexpected error: {err:?}"),
         }
     }

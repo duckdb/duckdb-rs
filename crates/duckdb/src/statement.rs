@@ -142,7 +142,11 @@ impl Statement<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if binding parameters fails.
+    /// Will return `Err` if binding parameters fails, execution fails, or
+    /// DuckDB reports unsupported executed-result metadata.
+    ///
+    /// The returned iterator panics if fetching or Arrow conversion fails
+    /// after execution has started.
     #[inline]
     pub fn stream_arrow<P: Params>(&mut self, params: P, schema: SchemaRef) -> Result<ArrowStream<'_>> {
         // Kept for API compatibility; executed result metadata is authoritative.
@@ -1661,6 +1665,84 @@ mod test {
         assert_eq!(0, values[0]);
         assert_eq!(2048, values[2048]);
         assert_eq!(2999, values[2999]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_streaming_step_surfaces_fetch_error_after_interrupt() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let interrupt = db.interrupt_handle();
+        let mut stmt = db.prepare("SELECT i FROM range(100000000) AS t(i)")?;
+
+        stmt.stmt.execute_streaming()?;
+        assert!(stmt.stmt.step()?.is_some());
+        interrupt.interrupt();
+
+        let err = stmt.stmt.step().unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("Interrupted"),
+            "expected interrupted fetch error, got: {message}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_arrow_empty_result_reaches_clean_eof() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT 1 AS x WHERE false")?;
+        let mut stream = stmt.stream_arrow([], std::sync::Arc::new(arrow::datatypes::Schema::empty()))?;
+
+        assert_eq!(1, stream.get_schema().fields().len());
+        assert!(stream.next().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_arrow_then_query_arrow_replaces_result() -> Result<()> {
+        use std::sync::Arc;
+
+        use arrow::{array::Int64Array, datatypes::Schema};
+
+        fn assert_range_batches(batches: &[arrow::record_batch::RecordBatch]) {
+            assert!(batches.len() > 1);
+            assert_eq!(3000, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
+
+            let values = batches
+                .iter()
+                .flat_map(|batch| {
+                    batch
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .iter()
+                        .map(Option::unwrap)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(0, values[0]);
+            assert_eq!(2048, values[2048]);
+            assert_eq!(2999, values[2999]);
+        }
+
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?;
+
+        {
+            let batches = stmt.stream_arrow([], Arc::new(Schema::empty()))?.collect::<Vec<_>>();
+            assert_range_batches(&batches);
+        }
+
+        {
+            let batches = stmt.query_arrow([])?.collect::<Vec<_>>();
+            assert_range_batches(&batches);
+        }
+
+        {
+            let batches = stmt.stream_arrow([], Arc::new(Schema::empty()))?.collect::<Vec<_>>();
+            assert_range_batches(&batches);
+        }
 
         Ok(())
     }
