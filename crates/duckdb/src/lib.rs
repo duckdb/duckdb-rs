@@ -107,6 +107,7 @@ mod arrow_batch;
 mod cache;
 mod column;
 mod config;
+mod executed_result;
 mod inner_connection;
 mod params;
 

@@ -125,6 +125,10 @@ impl Statement<'_> {
     /// Execute the prepared statement, returning a handle to the resulting
     /// vector of arrow RecordBatch in streaming way
     ///
+    /// The `schema` argument is kept for source compatibility. Decoding uses
+    /// the schema reported by DuckDB after execution, so callers do not need to
+    /// pass a matching schema.
+    ///
     /// ## Example
     ///
     /// ```rust,no_run
@@ -141,9 +145,11 @@ impl Statement<'_> {
     /// Will return `Err` if binding parameters fails.
     #[inline]
     pub fn stream_arrow<P: Params>(&mut self, params: P, schema: SchemaRef) -> Result<ArrowStream<'_>> {
+        // Kept for API compatibility; executed result metadata is authoritative.
+        let _ = schema;
         params.__bind_in(self)?;
         self.stmt.execute_streaming()?;
-        Ok(ArrowStream::new(self, schema))
+        Ok(ArrowStream::new(self))
     }
 
     /// Execute the prepared statement, returning a handle to the resulting
@@ -401,14 +407,6 @@ impl Statement<'_> {
     #[inline]
     pub fn step(&self) -> Result<Option<StructArray>> {
         self.stmt.step()
-    }
-
-    /// Get next batch records in arrow-rs in a streaming way.
-    ///
-    /// Returns `Err` if DuckDB cannot convert the next result chunk to Arrow.
-    #[inline]
-    pub fn stream_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
-        self.stmt.streaming_step(schema)
     }
 
     #[cfg(feature = "polars")]
@@ -1156,7 +1154,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "called `Option::unwrap()` on a `None` value")]
+    #[should_panic(expected = "The statement was not executed yet")]
     fn test_unexecuted_schema_panics() {
         let db = Connection::open_in_memory().unwrap();
         let sql = "BEGIN;
@@ -1597,7 +1595,9 @@ mod test {
     }
 
     #[test]
-    fn test_step_after_streaming_materialized_result_returns_none() -> Result<()> {
+    fn test_step_after_streaming_materialized_result_fetches_data() -> Result<()> {
+        use arrow::array::Int32Array;
+
         let db = Connection::open_in_memory()?;
         db.execute_batch(
             "CREATE TABLE test_data(id INTEGER);
@@ -1608,7 +1608,9 @@ mod test {
         let mut stmt = db.prepare("CALL test_func()")?;
         stmt.stmt.execute_streaming()?;
 
-        assert!(stmt.stmt.step()?.is_none());
+        let batch = stmt.stmt.step()?.expect("expected result batch");
+        let values = batch.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+        assert_eq!(1, values.value(0));
         Ok(())
     }
 

@@ -45,23 +45,19 @@ impl<'stmt> Iterator for Arrow<'stmt> {
 #[allow(clippy::needless_lifetimes)]
 pub struct ArrowStream<'stmt> {
     pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
-    pub(crate) schema: SchemaRef,
 }
 
 #[allow(clippy::needless_lifetimes)]
 impl<'stmt> ArrowStream<'stmt> {
     #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>, schema: SchemaRef) -> Self {
-        ArrowStream {
-            stmt: Some(stmt),
-            schema,
-        }
+    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
+        ArrowStream { stmt: Some(stmt) }
     }
 
     /// return arrow schema
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
-        self.schema.clone()
+        self.stmt.unwrap().stmt.schema()
     }
 }
 
@@ -70,7 +66,7 @@ impl<'stmt> Iterator for ArrowStream<'stmt> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.stmt?.stream_step(self.get_schema()) {
+        match self.stmt?.step() {
             Ok(Some(array)) => Some(RecordBatch::from(&array)),
             Ok(None) => None,
             Err(err) => panic!("Failed to fetch streaming Arrow record batch: {err}"),
