@@ -9,6 +9,20 @@ use crate::{
 
 /// Appender for fast import data
 ///
+/// # Error Reporting
+///
+/// DuckDB buffers appended rows and checks constraints (`NOT NULL`, foreign
+/// keys, ...) when the buffered data is flushed to the table. That can happen
+/// through an explicit [`flush`](Appender::flush), through DuckDB's internal
+/// appender flush while appending many rows, or when the appender is dropped.
+/// As a result, [`append_row`](Appender::append_row) may return `Ok` for a row
+/// that later fails a constraint check.
+///
+/// Always call `flush` explicitly and check its result before dropping the
+/// appender. Dropping an appender flushes any remaining rows, but errors
+/// raised during that implicit flush are discarded because `Drop` cannot
+/// report them.
+///
 /// # Thread Safety
 ///
 /// `Appender` is `Sync` but not `Send`:
@@ -239,7 +253,20 @@ impl Appender<'_> {
         Appender { conn, app }
     }
 
-    /// Flush data into DB
+    /// Flush buffered rows into the table.
+    ///
+    /// Constraint violations (e.g. `NOT NULL`) in previously appended rows are
+    /// reported when buffered rows are flushed. This method is the explicit way
+    /// to observe those errors, although DuckDB may also surface them from an
+    /// internal appender flush during append. Call this explicitly and check the
+    /// result before dropping the appender: the implicit flush on drop discards
+    /// any error.
+    ///
+    /// # Failure
+    ///
+    /// Returns `Err` if the buffered rows cannot be written, e.g. because a
+    /// row violates a table constraint. The appender is invalidated and the
+    /// buffered rows are lost.
     #[inline]
     pub fn flush(&mut self) -> Result<()> {
         unsafe {
