@@ -80,6 +80,7 @@ The following [examples](crates/duckdb/examples) demonstrate various features an
 
 - **basic** - Basic usage including creating tables, inserting data, and querying with and without Arrow.
 - **appender** - Bulk data insertion using the appender API with transactions.
+- **arrow_vtab** - Querying an in-memory Arrow RecordBatch from DuckDB SQL (requires the `vtab-arrow` feature).
 - **parquet** - Reading Parquet files directly using DuckDB's Parquet extension.
 - **vscalar** - Defining and registering a custom scalar function (requires the `vscalar` feature).
 - **vtab** - Defining a custom table function returning primitive, LIST, and STRUCT columns (requires the `vtab` feature).
