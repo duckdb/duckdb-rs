@@ -336,15 +336,13 @@ pub fn result_from_duckdb_result(code: ffi::duckdb_state, result: *mut ffi::duck
         return Ok(());
     }
     unsafe {
-        let message = if result.is_null() {
-            Some("result is null".to_string())
+        if result.is_null() {
+            result_from_duckdb_state(code, Some("result is null".to_string()))
         } else {
-            result_error_message(result)
-        };
-        if !result.is_null() {
+            let message = result_error_message(result);
             ffi::duckdb_destroy_result(result);
+            result_from_duckdb_state(code, message)
         }
-        result_from_duckdb_state(code, message)
     }
 }
 

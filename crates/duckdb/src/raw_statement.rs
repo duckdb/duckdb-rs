@@ -9,8 +9,8 @@ use super::{Result, ffi};
 use crate::{
     Error,
     core::{LogicalTypeHandle, LogicalTypeId},
-    error::{duckdb_failure_from_message, result_from_duckdb_result},
-    executed_result::{ExecutedResult, reject_unsupported_result_logical_type},
+    error::result_from_duckdb_result,
+    executed_result::{ExecutedResult, logical_type_from_duckdb_column, reject_unsupported_result_logical_type},
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -114,12 +114,7 @@ impl RawStatement {
 
         unsafe {
             let ptr = ffi::duckdb_prepared_statement_column_logical_type(self.ptr, idx as u64);
-            if ptr.is_null() {
-                return Err(duckdb_failure_from_message(format!(
-                    "Could not retrieve logical type for result column at index {idx}"
-                )));
-            }
-            Ok(LogicalTypeHandle::new(ptr))
+            logical_type_from_duckdb_column(ptr, idx)
         }
     }
 

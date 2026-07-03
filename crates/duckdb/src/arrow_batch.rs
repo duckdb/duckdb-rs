@@ -19,7 +19,7 @@ impl<'stmt> Arrow<'stmt> {
         Arrow { stmt: Some(stmt) }
     }
 
-    /// return arrow schema
+    /// Return the Arrow schema reported by DuckDB after execution.
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
         self.stmt.unwrap().stmt.schema()

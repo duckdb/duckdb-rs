@@ -1,8 +1,7 @@
 use std::{
-    cell::{OnceCell, UnsafeCell},
+    cell::{Cell, OnceCell, UnsafeCell},
     collections::HashMap,
     ffi::{CStr, CString},
-    ops::Deref,
     os::raw::c_char,
     ptr::NonNull,
     sync::Arc,
@@ -28,31 +27,28 @@ use polars_core::utils::arrow as polars_arrow;
 
 #[derive(Debug)]
 pub(crate) struct ExecutedResult {
-    // Keep Arrow options before the result to match the old manual teardown
-    // order, even though DuckDB returns an independent options handle.
     arrow_options: ArrowOptionsHandle,
     result: DuckdbResultHandle,
     schema: SchemaRef,
     columns: Box<[ResultColumn]>,
-    arrow_schema: OnceCell<FFI_ArrowSchema>,
+    arrow_schema: FFI_ArrowSchema,
+    exhausted: Cell<bool>,
     column_name_cache: OnceCell<HashMap<Box<str>, usize>>,
     #[cfg(feature = "polars")]
     polars_arrow_field: OnceCell<polars_arrow::datatypes::Field>,
 }
 
-// SAFETY: `ExecutedResult` is Send but not Sync. It owns its DuckDB result and
-// Arrow options handles, and OnceCell keeps cache mutation local to the
-// statement. Moving the owner to another thread transfers the only access path
-// to those handles; concurrent access is not promised.
+// SAFETY: `ExecutedResult` is Send but not Sync. It owns its DuckDB result in an
+// UnsafeCell because fetching mutates DuckDB's result cursor through `&self`.
+// Cell and OnceCell keep cache/cursor mutation local to the statement. Moving
+// the owner to another thread transfers the only access path to the result and
+// Arrow options handles; concurrent access is not promised.
 unsafe impl Send for ExecutedResult {}
 
 #[derive(Debug)]
 struct ResultColumn {
     name: CString,
     logical_type: LogicalTypeHandle,
-    // DuckDB logical metadata disambiguates Arrow carrier types that are shared
-    // by GEOMETRY/BLOB and HUGEINT/UHUGEINT/DECIMAL.
-    logical_id: LogicalTypeId,
 }
 
 impl ExecutedResult {
@@ -66,13 +62,14 @@ impl ExecutedResult {
     pub(crate) unsafe fn new(result: ffi::duckdb_result) -> Result<Self> {
         let result = DuckdbResultHandle::new(result);
         let arrow_options = unsafe { ArrowOptionsHandle::new(&result)? };
-        let (schema, columns) = unsafe { Self::load_schema_and_columns(&result, &arrow_options)? };
+        let (schema, columns, arrow_schema) = unsafe { Self::load_schema_and_columns(&result, &arrow_options)? };
         Ok(Self {
             arrow_options,
             result,
             schema,
             columns,
-            arrow_schema: OnceCell::new(),
+            arrow_schema,
+            exhausted: Cell::new(false),
             column_name_cache: OnceCell::new(),
             #[cfg(feature = "polars")]
             polars_arrow_field: OnceCell::new(),
@@ -88,7 +85,7 @@ impl ExecutedResult {
             let Some(chunk) = self.next_chunk()? else {
                 return Ok(None);
             };
-            self.data_chunk_to_struct_array(chunk)
+            self.data_chunk_to_struct_array(chunk).map(Some)
         }
     }
 
@@ -101,15 +98,10 @@ impl ExecutedResult {
 
             let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
             self.chunk_to_arrow(chunk, &mut ffi_arrow_array as *mut _ as *mut ffi::ArrowArray)?;
-            if Self::polars_arrow_array_is_empty(&ffi_arrow_array) {
-                return Ok(None);
-            }
 
             let field = self.polars_arrow_field()?;
-            let array =
-                polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype.clone()).map_err(|err| {
-                    duckdb_failure_from_message(format!("Failed to import Polars Arrow array from C: {err}"))
-                })?;
+            let array = polars_arrow::ffi::import_array_from_c(ffi_arrow_array, field.dtype.clone())
+                .map_err(|err| arrow_conversion_failure("Could not import Polars Arrow array from C", err))?;
             let struct_array = array
                 .as_any()
                 .downcast_ref::<polars_arrow::array::StructArray>()
@@ -120,24 +112,16 @@ impl ExecutedResult {
         }
     }
 
-    #[cfg(feature = "polars")]
-    fn polars_arrow_array_is_empty(array: &polars_arrow::ffi::ArrowArray) -> bool {
-        // Polars and libduckdb-sys both use the Arrow C Data Interface layout;
-        // the release callback being null is the structural empty marker.
-        let array = unsafe { &*(array as *const _ as *const ffi::ArrowArray) };
-        array.release.is_none()
-    }
-
     pub(crate) fn schema_ref(&self) -> &SchemaRef {
         &self.schema
     }
 
     pub(crate) fn result_column_logical_id(&self, idx: usize) -> LogicalTypeId {
-        assert!(
-            idx < self.columns.len(),
-            "result column logical-id cache is shorter than the result schema"
-        );
-        self.columns[idx].logical_id
+        self.columns
+            .get(idx)
+            .unwrap_or_else(|| panic!("result column logical-type index {idx} is out of bounds"))
+            .logical_type
+            .id()
     }
 
     pub(crate) fn try_column_logical_type(&self, idx: usize) -> Result<LogicalTypeHandle> {
@@ -167,17 +151,17 @@ impl ExecutedResult {
     unsafe fn load_schema_and_columns(
         result: &DuckdbResultHandle,
         arrow_options: &ArrowOptionsHandle,
-    ) -> Result<(SchemaRef, Box<[ResultColumn]>)> {
+    ) -> Result<(SchemaRef, Box<[ResultColumn]>, FFI_ArrowSchema)> {
         unsafe {
-            let mut c_schema = FFI_ArrowSchema::empty();
+            let mut arrow_schema = FFI_ArrowSchema::empty();
             let columns = Self::load_result_columns(result.as_mut_ptr())?;
             Self::export_arrow_schema(
                 arrow_options,
                 &columns,
-                &mut c_schema as *mut _ as *mut ffi::ArrowSchema,
+                &mut arrow_schema as *mut _ as *mut ffi::ArrowSchema,
             )?;
             let schema = Arc::new(
-                Schema::try_from(&c_schema)
+                Schema::try_from(&arrow_schema)
                     .map_err(|err| arrow_conversion_failure("Could not import DuckDB Arrow schema", err))?,
             );
             debug_assert_eq!(
@@ -186,7 +170,7 @@ impl ExecutedResult {
                 "result schema and column cache are built from the same DuckDB column count"
             );
 
-            Ok((schema, columns))
+            Ok((schema, columns, arrow_schema))
         }
     }
 
@@ -198,7 +182,6 @@ impl ExecutedResult {
             for idx in 0..column_count {
                 let logical_type = Self::try_result_column_logical_type(result, idx)?;
                 reject_unsupported_result_logical_type(idx, &logical_type)?;
-                let logical_id = logical_type.id();
 
                 let name = ffi::duckdb_column_name(result, idx as u64);
                 if name.is_null() {
@@ -208,11 +191,7 @@ impl ExecutedResult {
                 }
                 let name = CStr::from_ptr(name).to_owned();
 
-                columns.push(ResultColumn {
-                    name,
-                    logical_type,
-                    logical_id,
-                });
+                columns.push(ResultColumn { name, logical_type });
             }
 
             Ok(columns.into_boxed_slice())
@@ -222,12 +201,7 @@ impl ExecutedResult {
     unsafe fn try_result_column_logical_type(result: *mut ffi::duckdb_result, idx: usize) -> Result<LogicalTypeHandle> {
         unsafe {
             let ptr = ffi::duckdb_column_logical_type(result, idx as u64);
-            if ptr.is_null() {
-                return Err(duckdb_failure_from_message(format!(
-                    "Could not retrieve logical type for result column at index {idx}"
-                )));
-            }
-            Ok(LogicalTypeHandle::new(ptr))
+            logical_type_from_duckdb_column(ptr, idx)
         }
     }
 
@@ -255,13 +229,29 @@ impl ExecutedResult {
 
     unsafe fn next_chunk(&self) -> Result<Option<ffi::duckdb_data_chunk>> {
         unsafe {
-            let chunk = ffi::duckdb_fetch_chunk(self.result.as_handle());
-            if !chunk.is_null() {
-                Ok(Some(chunk))
-            } else {
-                self.check_result_error()?;
-                Ok(None)
+            if self.exhausted.get() {
+                return Ok(None);
             }
+
+            // duckdb_fetch_chunk is the non-deprecated fetcher for both
+            // materialized and streaming results. That matters for CALL, which
+            // can produce a materialized result even after execute_streaming.
+            let chunk = ffi::duckdb_fetch_chunk(self.result.as_handle());
+            if chunk.is_null() {
+                self.check_result_error()?;
+                self.exhausted.set(true);
+                return Ok(None);
+            }
+
+            if ffi::duckdb_data_chunk_get_size(chunk) == 0 {
+                let mut chunk = chunk;
+                ffi::duckdb_destroy_data_chunk(&mut chunk);
+                self.check_result_error()?;
+                self.exhausted.set(true);
+                return Ok(None);
+            }
+
+            Ok(Some(chunk))
         }
     }
 
@@ -274,32 +264,15 @@ impl ExecutedResult {
         }
     }
 
-    unsafe fn data_chunk_to_struct_array(&self, chunk: ffi::duckdb_data_chunk) -> Result<Option<StructArray>> {
+    unsafe fn data_chunk_to_struct_array(&self, chunk: ffi::duckdb_data_chunk) -> Result<StructArray> {
         unsafe {
             let mut arrays = FFI_ArrowArray::empty();
             self.chunk_to_arrow(chunk, &mut arrays as *mut _ as *mut ffi::ArrowArray)?;
 
-            if arrays.is_empty() {
-                return Ok(None);
-            }
-
-            let schema = self.arrow_schema()?;
-            let array_data = from_ffi(arrays, schema)
+            let array_data = from_ffi(arrays, &self.arrow_schema)
                 .map_err(|err| arrow_conversion_failure("Could not import DuckDB Arrow array", err))?;
-            Ok(Some(StructArray::from(array_data)))
+            Ok(StructArray::from(array_data))
         }
-    }
-
-    fn arrow_schema(&self) -> Result<&FFI_ArrowSchema> {
-        if self.arrow_schema.get().is_none() {
-            let schema = FFI_ArrowSchema::try_from(self.schema.deref())
-                .map_err(|err| arrow_conversion_failure("Could not export Arrow schema", err))?;
-            let _ = self.arrow_schema.set(schema);
-        }
-        Ok(self
-            .arrow_schema
-            .get()
-            .expect("Arrow schema cache was just initialized"))
     }
 
     unsafe fn chunk_to_arrow(&self, mut chunk: ffi::duckdb_data_chunk, dst: *mut ffi::ArrowArray) -> Result<()> {
@@ -333,9 +306,21 @@ impl ExecutedResult {
             )?;
 
             polars_arrow::ffi::import_field_from_c(&schema)
-                .map_err(|err| duckdb_failure_from_message(format!("Failed to import Polars Arrow field: {err}")))
+                .map_err(|err| arrow_conversion_failure("Could not import Polars Arrow field", err))
         }
     }
+}
+
+pub(crate) unsafe fn logical_type_from_duckdb_column(
+    ptr: ffi::duckdb_logical_type,
+    idx: usize,
+) -> Result<LogicalTypeHandle> {
+    if ptr.is_null() {
+        return Err(duckdb_failure_from_message(format!(
+            "Could not retrieve logical type for result column at index {idx}"
+        )));
+    }
+    Ok(unsafe { LogicalTypeHandle::new(ptr) })
 }
 
 pub(crate) fn reject_unsupported_result_logical_type(idx: usize, logical_type: &LogicalTypeHandle) -> Result<()> {
@@ -350,6 +335,11 @@ pub(crate) fn reject_unsupported_result_logical_type(idx: usize, logical_type: &
     Ok(())
 }
 
+/// Owned DuckDB result handle.
+///
+/// DuckDB advances result state while fetching chunks, so the raw result lives
+/// in an `UnsafeCell` and fetch methods take `&self`. The owner is `Send` but
+/// not `Sync`, which keeps that interior mutation single-threaded.
 #[derive(Debug)]
 struct DuckdbResultHandle {
     result: UnsafeCell<ffi::duckdb_result>,

@@ -407,9 +407,24 @@ impl Statement<'_> {
 
     /// Get next batch records in arrow-rs.
     ///
-    /// Returns `Err` if DuckDB cannot convert the next result chunk to Arrow.
+    /// Returns `Err` if DuckDB cannot fetch the next result chunk or convert
+    /// it to Arrow.
     #[inline]
     pub fn step(&self) -> Result<Option<StructArray>> {
+        self.stmt.step()
+    }
+
+    /// Get next batch records in arrow-rs in a streaming way.
+    ///
+    /// The `schema` argument is kept for source compatibility. Decoding uses
+    /// the schema reported by DuckDB after execution.
+    ///
+    /// Returns `Err` if DuckDB cannot fetch the next result chunk or convert
+    /// it to Arrow.
+    #[deprecated(note = "use step(); result decoding now uses DuckDB's executed schema")]
+    #[inline]
+    pub fn stream_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
+        let _ = schema;
         self.stmt.step()
     }
 
@@ -1642,10 +1657,9 @@ mod test {
 
         let db = Connection::open_in_memory()?;
         let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
-        let batches = db
-            .prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?
-            .stream_arrow([], schema)?
-            .collect::<Vec<_>>();
+        let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?;
+        let mut stream = stmt.stream_arrow([], schema)?;
+        let batches = stream.by_ref().collect::<Vec<_>>();
 
         assert!(batches.len() > 1);
         assert_eq!(3000, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
@@ -1665,6 +1679,8 @@ mod test {
         assert_eq!(0, values[0]);
         assert_eq!(2048, values[2048]);
         assert_eq!(2999, values[2999]);
+        assert!(stream.next().is_none());
+        assert!(stream.next().is_none());
 
         Ok(())
     }
@@ -1695,6 +1711,7 @@ mod test {
         let mut stream = stmt.stream_arrow([], std::sync::Arc::new(arrow::datatypes::Schema::empty()))?;
 
         assert_eq!(1, stream.get_schema().fields().len());
+        assert!(stream.next().is_none());
         assert!(stream.next().is_none());
         Ok(())
     }
