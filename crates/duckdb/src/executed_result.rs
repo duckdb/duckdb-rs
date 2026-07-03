@@ -101,6 +101,9 @@ impl ExecutedResult {
 
             let mut ffi_arrow_array = polars_arrow::ffi::ArrowArray::empty();
             self.chunk_to_arrow(chunk, &mut ffi_arrow_array as *mut _ as *mut ffi::ArrowArray)?;
+            if Self::polars_arrow_array_is_empty(&ffi_arrow_array) {
+                return Ok(None);
+            }
 
             let field = self.polars_arrow_field()?;
             let array =
@@ -115,6 +118,14 @@ impl ExecutedResult {
 
             Ok(Some(struct_array))
         }
+    }
+
+    #[cfg(feature = "polars")]
+    fn polars_arrow_array_is_empty(array: &polars_arrow::ffi::ArrowArray) -> bool {
+        // Polars and libduckdb-sys both use the Arrow C Data Interface layout;
+        // the release callback being null is the structural empty marker.
+        let array = unsafe { &*(array as *const _ as *const ffi::ArrowArray) };
+        array.release.is_none()
     }
 
     pub(crate) fn schema_ref(&self) -> &SchemaRef {

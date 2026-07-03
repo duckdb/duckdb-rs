@@ -94,6 +94,17 @@ mod tests {
     }
 
     #[test]
+    fn test_query_polars_empty_result() -> Result<()> {
+        let db = checked_memory_handle();
+        let mut stmt = db.prepare("SELECT 1 AS x WHERE false")?;
+        let mut polars = stmt.query_polars([])?;
+
+        assert!(polars.next().is_none());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_query_polars_cached_ddl_uses_executed_metadata() -> Result<()> {
         let db = checked_memory_handle();
         db.execute_batch(
