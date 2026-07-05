@@ -106,6 +106,12 @@ impl Decimal {
         Ok(Self { width, scale, value })
     }
 
+    pub(crate) fn validate_signed_scale(width: u8, scale: i8) -> std::result::Result<u8, String> {
+        let scale = u8::try_from(scale).map_err(|_| format!("negative decimal scale is not supported: {scale}"))?;
+        Self::new(width, scale, 0).map_err(|err| err.to_string())?;
+        Ok(scale)
+    }
+
     /// Builds a decimal value from trusted DuckDB output.
     ///
     /// The caller must ensure `width`, `scale`, and `value` are a valid DuckDB
@@ -427,6 +433,19 @@ mod test {
         assert_eq!(
             Decimal::new(38, 0, i128::MAX).unwrap_err(),
             DecimalError::ValueExceedsWidth { digits: 39, width: 38 }
+        );
+    }
+
+    #[test]
+    fn decimal_signed_scale_helper_validates_arrow_metadata() {
+        assert_eq!(Decimal::validate_signed_scale(9, 2).unwrap(), 2);
+        assert_eq!(
+            Decimal::validate_signed_scale(9, -1).unwrap_err(),
+            "negative decimal scale is not supported: -1"
+        );
+        assert_eq!(
+            Decimal::validate_signed_scale(9, 10).unwrap_err(),
+            "decimal scale 10 exceeds width 9"
         );
     }
 

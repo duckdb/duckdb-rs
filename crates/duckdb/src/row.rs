@@ -286,6 +286,12 @@ pub struct Row<'stmt> {
     current_row: usize,
 }
 
+fn decimal_value_ref(width: u8, scale: i8, value: i128) -> ValueRef<'static> {
+    let scale = Decimal::validate_signed_scale(width, scale)
+        .unwrap_or_else(|err| panic!("Invalid Arrow decimal metadata for width {width} scale {scale}: {err}"));
+    ValueRef::Decimal(Decimal::from_chunk(width, scale, value))
+}
+
 #[allow(clippy::needless_lifetimes)]
 impl<'stmt> Row<'stmt> {
     /// Get the value of a particular column of the result row.
@@ -382,7 +388,7 @@ impl<'stmt> Row<'stmt> {
                 Some(LogicalTypeId::UHugeint) => ValueRef::UHugeInt(value as u128),
                 Some(LogicalTypeId::Decimal) => {
                     if let DataType::Decimal128(width, 0) = column.data_type() {
-                        ValueRef::Decimal(Decimal::from_chunk(*width, 0, value))
+                        decimal_value_ref(*width, 0, value)
                     } else {
                         ValueRef::HugeInt(value)
                     }
@@ -468,14 +474,23 @@ impl<'stmt> Row<'stmt> {
                 let array = column.as_any().downcast_ref::<array::Float64Array>().unwrap();
                 ValueRef::Double(array.value(row))
             }
+            DataType::Decimal32(width, scale) => {
+                let array = column.as_any().downcast_ref::<array::Decimal32Array>().unwrap();
+                let value = i128::from(array.value(row));
+                decimal_value_ref(*width, *scale, value)
+            }
+            DataType::Decimal64(width, scale) => {
+                let array = column.as_any().downcast_ref::<array::Decimal64Array>().unwrap();
+                let value = i128::from(array.value(row));
+                decimal_value_ref(*width, *scale, value)
+            }
             DataType::Decimal128(width, scale) => {
                 let array = column.as_any().downcast_ref::<array::Decimal128Array>().unwrap();
                 let value = array.value(row);
-                let scale = u8::try_from(*scale).expect("Arrow decimal scale must be non-negative");
-                if scale == 0 && *width == Decimal::MAX_WIDTH {
+                if *scale == 0 && *width == Decimal::MAX_WIDTH {
                     ValueRef::HugeInt(value)
                 } else {
-                    ValueRef::Decimal(Decimal::from_chunk(*width, scale, value))
+                    decimal_value_ref(*width, *scale, value)
                 }
             }
             DataType::Timestamp(unit, _) if *unit == TimeUnit::Second => {
@@ -953,6 +968,33 @@ mod tests {
             row.get::<_, Decimal>(0)
         })?;
         assert_eq!(decimal, Decimal::new(38, 2, WIDE_DECIMAL_MANTISSA)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn narrow_arrow_decimal_columns_use_native_decimal_carrier() -> Result<()> {
+        use arrow::datatypes::DataType;
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("SET arrow_output_version = '1.5'")?;
+
+        {
+            let mut stmt = db.prepare("SELECT 1.23::DECIMAL(9,2) AS d32, 1.23::DECIMAL(18,2) AS d64")?;
+            let batch = stmt.query_arrow([])?.next().expect("no record batch");
+            assert_eq!(batch.column(0).data_type(), &DataType::Decimal32(9, 2));
+            assert_eq!(batch.column(1).data_type(), &DataType::Decimal64(18, 2));
+        }
+
+        let value = db.query_row("SELECT 1.23::DECIMAL(9,2)", [], |row| {
+            row.get_ref(0).map(|value| value.to_owned())
+        })?;
+        assert_eq!(value, Value::Decimal(Decimal::new(9, 2, 123)?));
+
+        let value = db.query_row("SELECT 1.23::DECIMAL(18,2)", [], |row| {
+            row.get_ref(0).map(|value| value.to_owned())
+        })?;
+        assert_eq!(value, Value::Decimal(Decimal::new(18, 2, 123)?));
 
         Ok(())
     }

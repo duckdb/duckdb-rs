@@ -225,8 +225,11 @@ impl From<&DataType> for Type {
             }
             DataType::LargeList(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
             DataType::Union(_, _) => Self::Union,
-            DataType::Decimal128(..) => Self::Decimal,
-            DataType::Decimal256(..) => Self::Decimal,
+            // Type is a broad value category: Decimal256 is decimal-shaped
+            // metadata, even though DuckDB value paths only carry widths <= 38.
+            DataType::Decimal32(..) | DataType::Decimal64(..) | DataType::Decimal128(..) | DataType::Decimal256(..) => {
+                Self::Decimal
+            }
             DataType::Map(field, ..) => {
                 let data_type = field.data_type();
                 match data_type {
@@ -287,8 +290,9 @@ impl fmt::Display for Type {
 
 #[cfg(test)]
 mod test {
-    use super::Value;
+    use super::{Type, Value};
     use crate::{Connection, Result};
+    use arrow::datatypes::DataType;
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
@@ -381,6 +385,14 @@ mod test {
 
         assert_eq!(10i64, db.query_row::<i64, _, _>("SELECT i FROM foo", [], |r| r.get(0))?);
         Ok(())
+    }
+
+    #[test]
+    fn arrow_decimal_types_match_duckdb_decimal_classification() {
+        assert_eq!(Type::from(&DataType::Decimal32(9, 2)), Type::Decimal);
+        assert_eq!(Type::from(&DataType::Decimal64(18, 2)), Type::Decimal);
+        assert_eq!(Type::from(&DataType::Decimal128(38, 2)), Type::Decimal);
+        assert_eq!(Type::from(&DataType::Decimal256(76, 10)), Type::Decimal);
     }
 
     #[test]
