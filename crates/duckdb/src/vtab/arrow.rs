@@ -8,12 +8,11 @@ use crate::{
 
 use arrow::{
     array::{
-        Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Decimal128Array,
-        FixedSizeBinaryArray, FixedSizeListArray, GenericBinaryBuilder, GenericListArray, GenericStringArray,
-        IntervalMonthDayNanoArray, LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StringArray,
-        StringViewArray, StructArray, TimestampMicrosecondArray, TimestampNanosecondArray, as_boolean_array,
-        as_generic_binary_array, as_large_list_array, as_list_array, as_map_array, as_primitive_array, as_string_array,
-        as_struct_array,
+        Array, ArrayData, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, FixedSizeBinaryArray,
+        FixedSizeListArray, GenericBinaryBuilder, GenericListArray, GenericStringArray, IntervalMonthDayNanoArray,
+        LargeBinaryArray, LargeStringArray, OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray,
+        TimestampMicrosecondArray, TimestampNanosecondArray, as_boolean_array, as_generic_binary_array,
+        as_large_list_array, as_list_array, as_map_array, as_primitive_array, as_string_array, as_struct_array,
     },
     buffer::{BooleanBuffer, NullBuffer},
     compute::cast,
@@ -258,7 +257,9 @@ pub fn to_duckdb_type_id(data_type: &DataType) -> Result<LogicalTypeId, Box<dyn 
         DataType::Struct(_) => Struct,
         DataType::Union(_, _) => Union,
         // DataType::Dictionary(_, _) => todo!(),
-        DataType::Decimal128(_, _) => Decimal,
+        DataType::Decimal32(_, _) | DataType::Decimal64(_, _) | DataType::Decimal128(_, _) => Decimal,
+        // Decimal256 binds as DOUBLE, but primitive_array_to_vector rejects it
+        // at execution because ArrowVTab has no Decimal256 write path.
         DataType::Decimal256(_, _) => Double,
         DataType::Map(_, _) => Map,
         _ => {
@@ -302,17 +303,9 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
             &to_duckdb_logical_type(child.data_type())?,
             *array_size as u64,
         )),
-        DataType::Decimal128(width, scale) => {
-            if *scale < 0 {
-                return Err(
-                    format!("Unsupported data type: {data_type}, negative decimal scale is not supported").into(),
-                );
-            }
-            let scale = (*scale).try_into().unwrap();
-            Decimal::new(*width, scale, 0)
-                .map_err(|err| format!("Unsupported data type: {data_type}, invalid decimal type: {err}"))?;
-            Ok(LogicalTypeHandle::decimal(*width, scale))
-        }
+        DataType::Decimal32(width, scale) => to_duckdb_decimal_logical_type::<Decimal32Type>(*width, *scale),
+        DataType::Decimal64(width, scale) => to_duckdb_decimal_logical_type::<Decimal64Type>(*width, *scale),
+        DataType::Decimal128(width, scale) => to_duckdb_decimal_logical_type::<Decimal128Type>(*width, *scale),
         DataType::Map(field, _) => arrow_map_to_duckdb_logical_type(field),
         DataType::Boolean
         | DataType::Utf8
@@ -328,6 +321,30 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
         )
         .into()),
     }
+}
+
+fn to_duckdb_decimal_logical_type<T>(width: u8, scale: i8) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>>
+where
+    T: DecimalType,
+{
+    let scale = validate_arrow_decimal_metadata::<T>(width, scale)?;
+    Ok(LogicalTypeHandle::decimal(width, scale))
+}
+
+fn validate_arrow_decimal_metadata<T>(width: u8, scale: i8) -> Result<u8, Box<dyn std::error::Error>>
+where
+    T: DecimalType,
+{
+    let data_type = T::TYPE_CONSTRUCTOR(width, scale);
+    if width > T::MAX_PRECISION {
+        return Err(format!(
+            "Unsupported data type: {data_type}, decimal width {width} exceeds {}",
+            T::MAX_PRECISION
+        )
+        .into());
+    }
+    Decimal::validate_signed_scale(width, scale)
+        .map_err(|err| format!("Unsupported data type: {data_type}, invalid decimal type: {err}").into())
 }
 
 fn arrow_map_to_duckdb_logical_type(field: &FieldRef) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
@@ -842,8 +859,14 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Res
         DataType::Float64 => {
             primitive_array_to_flat_vector::<Float64Type>(as_primitive_array(array), out);
         }
+        DataType::Decimal32(width, scale) => {
+            decimal_array_to_vector::<Decimal32Type>(as_primitive_array(array), out, *width, *scale)?;
+        }
+        DataType::Decimal64(width, scale) => {
+            decimal_array_to_vector::<Decimal64Type>(as_primitive_array(array), out, *width, *scale)?;
+        }
         DataType::Decimal128(width, scale) => {
-            decimal_array_to_vector(as_primitive_array(array), out, *width, *scale)?;
+            decimal_array_to_vector::<Decimal128Type>(as_primitive_array(array), out, *width, *scale)?;
         }
         DataType::Interval(_) | DataType::Duration(_) => {
             let array = IntervalMonthDayNanoArray::from(
@@ -890,20 +913,20 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Res
     Ok(())
 }
 
-/// Convert Arrow [Decimal128Array] to a duckdb vector.
-fn decimal_array_to_vector(
-    array: &Decimal128Array,
+/// Convert Arrow decimal arrays to a DuckDB vector.
+fn decimal_array_to_vector<T>(
+    array: &PrimitiveArray<T>,
     out: &mut FlatVector<'_>,
     width: u8,
     scale: i8,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let scale = u8::try_from(scale).map_err(|_| {
-        format!(
-            "Unsupported data type: {}, negative decimal scale is not supported",
-            array.data_type()
-        )
-    })?;
-    Decimal::new(width, scale, 0).map_err(|err| format!("invalid Arrow decimal type {}: {err}", array.data_type()))?;
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: DecimalType,
+    T::Native: Into<i128>,
+{
+    assert!(array.len() <= out.capacity());
+
+    let scale = validate_arrow_decimal_metadata::<T>(width, scale)?;
 
     match width {
         1..=4 => {
@@ -943,17 +966,22 @@ fn decimal_array_to_vector(
     Ok(())
 }
 
-fn arrow_decimal_value(
-    array: &Decimal128Array,
+fn arrow_decimal_value<T>(
+    array: &PrimitiveArray<T>,
     width: u8,
     scale: u8,
     row: usize,
-) -> Result<i128, Box<dyn std::error::Error>> {
+) -> Result<i128, Box<dyn std::error::Error>>
+where
+    T: DecimalType,
+    T::Native: Into<i128>,
+{
     if array.is_null(row) {
+        // Placeholder only; decimal_array_to_vector applies the validity mask.
         return Ok(0);
     }
 
-    let value = array.value(row);
+    let value: i128 = array.value(row).into();
     Decimal::new(width, scale, value).map_err(|err| format!("invalid Arrow decimal value at row {row}: {err}"))?;
     Ok(value)
 }
@@ -1271,7 +1299,7 @@ fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) 
 mod test {
     use super::{
         ArrowInitData, ArrowVTab, RowSlice, arrow_arraydata_to_query_params, arrow_ffi_to_query_params,
-        arrow_recordbatch_to_query_params, data_chunk_to_arrow,
+        arrow_recordbatch_to_query_params, data_chunk_to_arrow, to_duckdb_logical_type,
     };
     use crate::{
         Connection, Result,
@@ -1280,17 +1308,17 @@ mod test {
     use arrow::{
         array::{
             Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Date64Array,
-            Decimal128Array, Decimal256Array, DurationSecondArray, FixedSizeBinaryArray, FixedSizeListArray,
-            FixedSizeListBuilder, GenericByteArray, GenericListArray, Int32Array, Int32Builder, IntervalDayTimeArray,
-            IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeStringArray, ListArray, ListBuilder, MapArray,
-            OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray, Time32SecondArray,
-            Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-            TimestampSecondArray, UInt32Array,
+            Decimal32Array, Decimal64Array, Decimal128Array, Decimal256Array, DurationSecondArray,
+            FixedSizeBinaryArray, FixedSizeListArray, FixedSizeListBuilder, GenericByteArray, GenericListArray,
+            Int32Array, Int32Builder, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
+            LargeStringArray, ListArray, ListBuilder, MapArray, OffsetSizeTrait, PrimitiveArray, StringArray,
+            StringViewArray, StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
+            TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray, UInt32Array,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
-            ArrowPrimitiveType, ByteArrayType, DataType, DurationSecondType, Field, IntervalDayTimeType,
-            IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
+            ArrowPrimitiveType, ByteArrayType, DataType, Decimal32Type, Decimal64Type, DurationSecondType, Field,
+            IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
         },
         ffi::{FFI_ArrowArray, FFI_ArrowSchema},
         record_batch::RecordBatch,
@@ -2092,6 +2120,78 @@ mod test {
         check_rust_primitive_array_roundtrip(array.clone(), array)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_decimal32_roundtrip() -> Result<(), Box<dyn Error>> {
+        let array: PrimitiveArray<Decimal32Type> =
+            Decimal32Array::from(vec![1234, -1234]).with_data_type(DataType::Decimal32(4, 2));
+        let expected = Decimal128Array::from(vec![1234_i128, -1234]).with_data_type(DataType::Decimal128(4, 2));
+        check_rust_primitive_array_roundtrip(array, expected)?;
+
+        let array: PrimitiveArray<Decimal32Type> =
+            Decimal32Array::from(vec![Some(123456789_i32), None, Some(-123456789_i32)])
+                .with_data_type(DataType::Decimal32(9, 2));
+        let expected = Decimal128Array::from(vec![Some(123456789_i128), None, Some(-123456789_i128)])
+            .with_data_type(DataType::Decimal128(9, 2));
+        check_rust_primitive_array_roundtrip(array, expected)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decimal64_roundtrip() -> Result<(), Box<dyn Error>> {
+        let array: PrimitiveArray<Decimal64Type> =
+            Decimal64Array::from(vec![1234, -1234]).with_data_type(DataType::Decimal64(4, 2));
+        let expected = Decimal128Array::from(vec![1234_i128, -1234]).with_data_type(DataType::Decimal128(4, 2));
+        check_rust_primitive_array_roundtrip(array, expected)?;
+
+        let array: PrimitiveArray<Decimal64Type> =
+            Decimal64Array::from(vec![123456789, -123456789]).with_data_type(DataType::Decimal64(9, 2));
+        let expected =
+            Decimal128Array::from(vec![123456789_i128, -123456789]).with_data_type(DataType::Decimal128(9, 2));
+        check_rust_primitive_array_roundtrip(array, expected)?;
+
+        let array: PrimitiveArray<Decimal64Type> =
+            Decimal64Array::from(vec![Some(123456789012345678_i64), None, Some(-123456789012345678_i64)])
+                .with_data_type(DataType::Decimal64(18, 2));
+        let expected = Decimal128Array::from(vec![
+            Some(123456789012345678_i128),
+            None,
+            Some(-123456789012345678_i128),
+        ])
+        .with_data_type(DataType::Decimal128(18, 2));
+        check_rust_primitive_array_roundtrip(array, expected)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_narrow_decimal_logical_type_rejects_invalid_width_and_scale() {
+        fn logical_type_error(data_type: DataType) -> String {
+            match to_duckdb_logical_type(&data_type) {
+                Ok(_) => panic!("expected {data_type} to be rejected"),
+                Err(err) => err.to_string(),
+            }
+        }
+
+        let err = logical_type_error(DataType::Decimal32(10, 2));
+        assert!(err.contains("decimal width 10 exceeds 9"), "unexpected error: {err}");
+
+        let err = logical_type_error(DataType::Decimal64(19, 2));
+        assert!(err.contains("decimal width 19 exceeds 18"), "unexpected error: {err}");
+
+        let err = logical_type_error(DataType::Decimal32(4, -1));
+        assert!(
+            err.contains("negative decimal scale is not supported"),
+            "unexpected error: {err}"
+        );
+
+        let err = logical_type_error(DataType::Decimal64(4, -1));
+        assert!(
+            err.contains("negative decimal scale is not supported"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
