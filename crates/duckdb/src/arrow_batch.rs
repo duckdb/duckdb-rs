@@ -3,7 +3,13 @@ use super::{
     arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
 };
 
-/// A handle for the resulting RecordBatch of a query.
+/// A handle for iterating the [`RecordBatch`]es of a query result.
+///
+/// The iterator is lazy: each batch is fetched only as the iterator is
+/// advanced. Whether the full result is materialized up front or fetched
+/// lazily in chunks depends on how the statement was executed — see
+/// [`query_arrow`](Statement::query_arrow) and
+/// [`stream_arrow`](Statement::stream_arrow).
 ///
 /// The iterator panics if DuckDB fails to fetch a result chunk or convert it
 /// to Arrow.
@@ -42,42 +48,8 @@ impl<'stmt> Iterator for Arrow<'stmt> {
     }
 }
 
-/// A handle for the resulting RecordBatch of a query in streaming.
+/// A handle for the resulting RecordBatch of a streaming query.
 ///
-/// The iterator panics if DuckDB fails to fetch a result chunk or convert it
-/// to Arrow.
-#[must_use = "Arrow stream is lazy and will not fetch data unless consumed"]
-#[allow(clippy::needless_lifetimes)]
-pub struct ArrowStream<'stmt> {
-    pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
-}
-
-#[allow(clippy::needless_lifetimes)]
-impl<'stmt> ArrowStream<'stmt> {
-    #[inline]
-    pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
-        ArrowStream { stmt: Some(stmt) }
-    }
-
-    /// Return the Arrow schema reported by DuckDB after execution.
-    #[inline]
-    pub fn get_schema(&self) -> SchemaRef {
-        self.stmt
-            .expect("ArrowStream iterator always holds a statement")
-            .stmt
-            .schema()
-    }
-}
-
-#[allow(clippy::needless_lifetimes)]
-impl<'stmt> Iterator for ArrowStream<'stmt> {
-    type Item = RecordBatch;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.stmt?.step() {
-            Ok(Some(array)) => Some(RecordBatch::from(&array)),
-            Ok(None) => None,
-            Err(err) => panic!("Failed to fetch streaming Arrow record batch: {err}"),
-        }
-    }
-}
+/// Identical to [`Arrow`]: the streaming behavior comes from how the
+/// statement was executed, not from the iterator type.
+pub type ArrowStream<'stmt> = Arrow<'stmt>;
