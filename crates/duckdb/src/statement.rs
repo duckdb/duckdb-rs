@@ -125,18 +125,19 @@ impl Statement<'_> {
     /// Execute the prepared statement, returning a handle to the resulting
     /// vector of arrow RecordBatch in streaming way
     ///
-    /// The `schema` argument is kept for source compatibility. Decoding uses
-    /// the schema reported by DuckDB after execution, so callers do not need to
-    /// pass a matching schema.
+    /// Unlike [`query_arrow`](Self::query_arrow), chunks are fetched lazily
+    /// as the iterator is consumed instead of buffering the full result on
+    /// the client side. Note that DuckDB may still materialize the result
+    /// internally for some statements (e.g. CALL). The schema is available
+    /// via [`ArrowStream::get_schema`].
     ///
     /// ## Example
     ///
     /// ```rust,no_run
     /// # use duckdb::{Result, Connection};
     /// # use arrow::record_batch::RecordBatch;
-    /// # use arrow::datatypes::SchemaRef;
-    /// fn get_arrow_data(conn: &Connection, schema: SchemaRef) -> Result<Vec<RecordBatch>> {
-    ///     Ok(conn.prepare("SELECT * FROM test")?.stream_arrow([], schema)?.collect())
+    /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
+    ///     Ok(conn.prepare("SELECT * FROM test")?.stream_arrow([])?.collect())
     /// }
     /// ```
     ///
@@ -148,9 +149,7 @@ impl Statement<'_> {
     /// The returned iterator panics if fetching or Arrow conversion fails
     /// after execution has started.
     #[inline]
-    pub fn stream_arrow<P: Params>(&mut self, params: P, schema: SchemaRef) -> Result<ArrowStream<'_>> {
-        // Kept for API compatibility; executed result metadata is authoritative.
-        let _ = schema;
+    pub fn stream_arrow<P: Params>(&mut self, params: P) -> Result<ArrowStream<'_>> {
         params.__bind_in(self)?;
         self.stmt.execute_streaming()?;
         Ok(ArrowStream::new(self))
@@ -411,20 +410,6 @@ impl Statement<'_> {
     /// it to Arrow.
     #[inline]
     pub fn step(&self) -> Result<Option<StructArray>> {
-        self.stmt.step()
-    }
-
-    /// Get next batch records in arrow-rs in a streaming way.
-    ///
-    /// The `schema` argument is kept for source compatibility. Decoding uses
-    /// the schema reported by DuckDB after execution.
-    ///
-    /// Returns `Err` if DuckDB cannot fetch the next result chunk or convert
-    /// it to Arrow.
-    #[deprecated(note = "use step(); result decoding now uses DuckDB's executed schema")]
-    #[inline]
-    pub fn stream_step(&self, schema: SchemaRef) -> Result<Option<StructArray>> {
-        let _ = schema;
         self.stmt.step()
     }
 
@@ -1648,17 +1633,11 @@ mod test {
 
     #[test]
     fn test_stream_arrow_large_result() -> Result<()> {
-        use std::sync::Arc;
-
-        use arrow::{
-            array::Int64Array,
-            datatypes::{DataType, Field, Schema},
-        };
+        use arrow::array::Int64Array;
 
         let db = Connection::open_in_memory()?;
-        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
         let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?;
-        let mut stream = stmt.stream_arrow([], schema)?;
+        let mut stream = stmt.stream_arrow([])?;
         let batches = stream.by_ref().collect::<Vec<_>>();
 
         assert!(batches.len() > 1);
@@ -1686,6 +1665,17 @@ mod test {
     }
 
     #[test]
+    fn test_stream_arrow_with_params() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) WHERE i < ? ORDER BY i")?;
+        let batches = stmt.stream_arrow([2500_i64])?.collect::<Vec<_>>();
+
+        assert!(batches.len() > 1);
+        assert_eq!(2500, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
+        Ok(())
+    }
+
+    #[test]
     fn test_streaming_step_surfaces_fetch_error_after_interrupt() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let interrupt = db.interrupt_handle();
@@ -1708,9 +1698,12 @@ mod test {
     fn test_stream_arrow_empty_result_reaches_clean_eof() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let mut stmt = db.prepare("SELECT 1 AS x WHERE false")?;
-        let mut stream = stmt.stream_arrow([], std::sync::Arc::new(arrow::datatypes::Schema::empty()))?;
+        let mut stream = stmt.stream_arrow([])?;
 
-        assert_eq!(1, stream.get_schema().fields().len());
+        let schema = stream.get_schema();
+        assert_eq!(1, schema.fields().len());
+        assert_eq!("x", schema.field(0).name());
+        assert_eq!(&arrow::datatypes::DataType::Int32, schema.field(0).data_type());
         assert!(stream.next().is_none());
         assert!(stream.next().is_none());
         Ok(())
@@ -1718,9 +1711,7 @@ mod test {
 
     #[test]
     fn test_stream_arrow_then_query_arrow_replaces_result() -> Result<()> {
-        use std::sync::Arc;
-
-        use arrow::{array::Int64Array, datatypes::Schema};
+        use arrow::array::Int64Array;
 
         fn assert_range_batches(batches: &[arrow::record_batch::RecordBatch]) {
             assert!(batches.len() > 1);
@@ -1747,7 +1738,7 @@ mod test {
         let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?;
 
         {
-            let batches = stmt.stream_arrow([], Arc::new(Schema::empty()))?.collect::<Vec<_>>();
+            let batches = stmt.stream_arrow([])?.collect::<Vec<_>>();
             assert_range_batches(&batches);
         }
 
@@ -1757,7 +1748,7 @@ mod test {
         }
 
         {
-            let batches = stmt.stream_arrow([], Arc::new(Schema::empty()))?.collect::<Vec<_>>();
+            let batches = stmt.stream_arrow([])?.collect::<Vec<_>>();
             assert_range_batches(&batches);
         }
 
@@ -2034,14 +2025,10 @@ mod test {
 
     #[test]
     fn test_variant_streaming_result_decode_unsupported() -> Result<()> {
-        use std::sync::Arc;
-
-        use arrow::datatypes::Schema;
-
         let db = Connection::open_in_memory()?;
         let err = match db
             .prepare("SELECT 1 AS id, {'a': 42}::VARIANT AS variant_col")?
-            .stream_arrow([], Arc::new(Schema::empty()))
+            .stream_arrow([])
         {
             Ok(_) => panic!("expected Variant streaming query to fail"),
             Err(err) => err,
@@ -2069,16 +2056,12 @@ mod test {
 
     #[test]
     fn test_variant_returning_streaming_rejected_before_mutation() -> Result<()> {
-        use std::sync::Arc;
-
-        use arrow::datatypes::Schema;
-
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE t(id INTEGER, v VARIANT);")?;
 
         let err = match db
             .prepare("INSERT INTO t VALUES (1, {'a': 42}::VARIANT) RETURNING v")?
-            .stream_arrow([], Arc::new(Schema::empty()))
+            .stream_arrow([])
         {
             Ok(_) => panic!("expected Variant RETURNING streaming execute to fail"),
             Err(err) => err,

@@ -176,12 +176,8 @@ impl StatementCache {
 mod test {
     use super::StatementCache;
     use crate::{Connection, Result, core::LogicalTypeId, types::Value};
-    use arrow::{
-        array::Int32Array,
-        datatypes::{DataType, Field, Schema},
-    };
+    use arrow::array::Int32Array;
     use fallible_iterator::FallibleIterator;
-    use std::sync::Arc;
 
     impl StatementCache {
         fn clear(&self) {
@@ -486,8 +482,7 @@ mod test {
 
         {
             let mut stmt = db.prepare_cached(sql)?;
-            let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int32, true)]));
-            let batches = stmt.stream_arrow([], schema)?.collect::<Vec<_>>();
+            let batches = stmt.stream_arrow([])?.collect::<Vec<_>>();
             assert_eq!(1, batches.len());
 
             let values = batches[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();

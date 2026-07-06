@@ -1511,9 +1511,6 @@ mod test {
 
     #[test]
     fn test_stream_arrow_with_call() -> Result<()> {
-        use arrow::datatypes::{DataType, Field, Schema};
-        use std::sync::Arc;
-
         let db = checked_memory_handle();
 
         db.execute_batch(
@@ -1523,13 +1520,8 @@ mod test {
 
         db.execute_batch("CREATE MACRO test_func() AS TABLE SELECT * FROM test_data;")?;
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int32, true),
-            Field::new("name", DataType::Utf8, true),
-        ]));
-
         let mut stmt = db.prepare("CALL test_func()")?;
-        let rbs: Vec<RecordBatch> = stmt.stream_arrow([], schema)?.collect();
+        let rbs: Vec<RecordBatch> = stmt.stream_arrow([])?.collect();
 
         // Verify we got results
         assert!(!rbs.is_empty(), "Expected at least one record batch");
