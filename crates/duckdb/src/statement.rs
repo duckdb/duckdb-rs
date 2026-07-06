@@ -103,6 +103,10 @@ impl Statement<'_> {
     /// Execute the prepared statement, returning a handle to the resulting
     /// vector of arrow RecordBatch
     ///
+    /// The result is fully materialized on execution, so memory usage is
+    /// proportional to the size of the result set. For large results, see
+    /// [`stream_arrow`](Self::stream_arrow).
+    ///
     /// ## Example
     ///
     /// ```rust,no_run
@@ -115,7 +119,8 @@ impl Statement<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if binding parameters fails.
+    /// Will return `Err` if binding parameters fails, execution fails, or
+    /// DuckDB reports unsupported executed-result metadata.
     #[inline]
     pub fn query_arrow<P: Params>(&mut self, params: P) -> Result<Arrow<'_>> {
         self.execute(params)?;
@@ -143,10 +148,8 @@ impl Statement<'_> {
     ///
     /// # Failure
     ///
-    /// Will return `Err` if binding parameters fails, execution fails, or
-    /// DuckDB reports unsupported executed-result metadata.
-    ///
-    /// The returned iterator panics if fetching or Arrow conversion fails
+    /// Same failure modes as [`query_arrow`](Self::query_arrow). In addition,
+    /// the returned iterator panics if fetching or Arrow conversion fails
     /// after execution has started.
     #[inline]
     pub fn stream_arrow<P: Params>(&mut self, params: P) -> Result<ArrowStream<'_>> {
