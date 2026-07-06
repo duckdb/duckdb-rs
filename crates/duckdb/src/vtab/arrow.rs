@@ -1081,8 +1081,7 @@ fn fixed_size_binary_array_to_vector(
         let s = array.value(i);
         out.insert(i, s);
     }
-    // Put this back once the other PR #
-    // set_nulls_in_flat_vector(array, out);
+    set_nulls_in_flat_vector(array, out);
     Ok(())
 }
 
@@ -1117,8 +1116,7 @@ fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector<'
         let s = array.value(i);
         out.insert(i, s);
     }
-    // Put this back once the other PR #
-    // set_nulls_in_flat_vector(array, out);
+    set_nulls_in_flat_vector(array, out);
 }
 
 fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
@@ -1413,9 +1411,10 @@ mod test {
             Decimal32Array, Decimal64Array, Decimal128Array, Decimal256Array, DurationSecondArray,
             FixedSizeBinaryArray, FixedSizeListArray, FixedSizeListBuilder, GenericByteArray, GenericListArray,
             Int32Array, Int32Builder, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
-            LargeStringArray, ListArray, ListBuilder, MapArray, OffsetSizeTrait, PrimitiveArray, StringArray,
-            StringViewArray, StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
-            TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray, UInt32Array,
+            LargeBinaryArray, LargeStringArray, ListArray, ListBuilder, MapArray, OffsetSizeTrait, PrimitiveArray,
+            StringArray, StringViewArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
+            TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+            UInt32Array,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
@@ -2849,6 +2848,35 @@ mod test {
     }
 
     #[test]
+    fn test_large_binary_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let array = LargeBinaryArray::from_opt_vec(vec![Some(&b"hello"[..]), None, Some(&b"!"[..])]);
+        let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_array = rb
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("Expected BinaryArray");
+
+        assert_eq!(output_array.len(), 3);
+        assert!(output_array.is_valid(0));
+        assert!(!output_array.is_valid(1));
+        assert!(output_array.is_valid(2));
+        assert_eq!(output_array.value(0), b"hello");
+        assert_eq!(output_array.value(2), b"!");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_list_of_fixed_size_lists_roundtrip() -> Result<(), Box<dyn Error>> {
         // field name must be empty to match `query_arrow` behavior, otherwise record batches will not match
         let field = Field::new("", DataType::Int32, true);
@@ -3111,6 +3139,42 @@ mod test {
     }
 
     #[test]
+    fn test_fixed_size_binary_with_nulls_in_list() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let values = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+            vec![Some(vec![1u8, 2, 3, 4]), None, Some(vec![5u8, 6, 7, 8])].into_iter(),
+            4,
+        )
+        .unwrap();
+
+        let list_array = ListArray::new(
+            Arc::new(Field::new("item", DataType::FixedSizeBinary(4), true)),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 3])),
+            Arc::new(values),
+            None,
+        );
+        let schema = Schema::new(vec![Field::new("list_col", list_array.data_type().clone(), false)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_array) as ArrayRef])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("SELECT list_col FROM arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let list_column = rb.column(0).as_any().downcast_ref::<ListArray>().unwrap();
+        let first_list = list_column.value(0);
+        let binary_field = first_list.as_any().downcast_ref::<BinaryArray>().unwrap();
+
+        assert_eq!(binary_field.len(), 3);
+        assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4]);
+        assert!(binary_field.is_null(1));
+        assert_eq!(binary_field.value(2), &[5u8, 6, 7, 8]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_fixed_size_binary_with_nulls_in_struct() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ArrowVTab>("arrow")?;
@@ -3138,12 +3202,9 @@ mod test {
         let struct_column = rb.column(0).as_any().downcast_ref::<StructArray>().unwrap();
         let binary_field = struct_column.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
 
-        // NOTE: Null handling for FixedSizeBinary is not fully implemented
-        // (see fixed_size_binary_array_to_vector, line 925-926)
-        // Nulls are currently converted to zero bytes
         assert_eq!(binary_field.len(), 3);
         assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4]);
-        assert_eq!(binary_field.value(1), &[0u8, 0, 0, 0]); // Should be null
+        assert!(binary_field.is_null(1));
         assert_eq!(binary_field.value(2), &[5u8, 6, 7, 8]);
 
         Ok(())

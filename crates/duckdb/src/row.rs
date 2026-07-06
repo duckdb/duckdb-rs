@@ -1289,18 +1289,12 @@ mod tests {
         let mut arr = stmt.query_arrow(arrow_recordbatch_to_query_params(batch))?;
         let rb = arr.next().expect("no record batch");
 
-        // NOTE: Currently, null handling for FixedSizeBinary is not fully implemented
-        // (see vtab/arrow.rs fixed_size_binary_array_to_vector, line 925-926)
-        // Nulls are converted to zero bytes instead of actual nulls
         let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
         assert_eq!(column.len(), 3);
         assert!(column.is_valid(0));
-        // This should be false when null handling is implemented
-        // assert!(!column.is_valid(1));
+        assert!(!column.is_valid(1));
         assert!(column.is_valid(2));
         assert_eq!(column.value(0), &[1u8, 2, 3, 4, 5, 6, 7, 8]);
-        // The null value is currently represented as zero bytes
-        assert_eq!(column.value(1), &[0u8, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(column.value(2), &[9u8, 10, 11, 12, 13, 14, 15, 16]);
 
         Ok(())
@@ -1374,17 +1368,12 @@ mod tests {
             _ => panic!("Expected Blob ValueRef, got {:?}", value_ref),
         }
 
-        // Second row - should be null, but currently null handling is not implemented
-        // (see vtab/arrow.rs fixed_size_binary_array_to_vector, line 925-926)
-        // so it's represented as zero bytes
+        // Second row - null
         let row = rows.next()?.unwrap();
         let value_ref = row.get_ref(0)?;
         match value_ref {
-            ValueRef::Blob(bytes) => {
-                // This should be ValueRef::Null when null handling is implemented
-                assert_eq!(bytes, &[0u8, 0, 0, 0]);
-            }
-            _ => panic!("Expected Blob ValueRef with zero bytes, got {:?}", value_ref),
+            ValueRef::Null => {}
+            _ => panic!("Expected Null ValueRef, got {:?}", value_ref),
         }
 
         Ok(())
