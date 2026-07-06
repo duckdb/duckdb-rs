@@ -684,10 +684,14 @@ impl Statement<'_> {
 
 #[cfg(test)]
 mod test {
-    use arrow::{array::ListArray, datatypes::Int32Type};
+    use arrow::{
+        array::ListArray,
+        datatypes::{DataType, Int32Type, Schema, SchemaRef},
+        record_batch::RecordBatch,
+    };
 
     use crate::{
-        Connection, Error, Result,
+        Connection, Error, Result, Statement,
         core::LogicalTypeId,
         params_from_iter,
         types::{Decimal, ListType, ToSql, ToSqlOutput, Type, ValueRef},
@@ -1676,6 +1680,71 @@ mod test {
         assert!(batches.len() > 1);
         assert_eq!(2500, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
         Ok(())
+    }
+
+    const ARROW_EXTENSION_NAME_KEY: &str = "ARROW:extension:name";
+    const UUID_EXTENSION_NAME: &str = "arrow.uuid";
+    const UUID_BYTE_WIDTH: i32 = 16;
+
+    fn assert_default_uuid_arrow_schema(schema: &Schema) {
+        let field = schema.field(0);
+        assert_eq!(field.name(), "id");
+        assert_eq!(field.data_type(), &DataType::Utf8);
+        assert!(
+            !field.metadata().contains_key(ARROW_EXTENSION_NAME_KEY),
+            "default UUID Arrow export should not carry extension metadata"
+        );
+    }
+
+    fn assert_lossless_uuid_arrow_schema(schema: &Schema) {
+        let field = schema.field(0);
+        assert_eq!(field.name(), "id");
+        assert_eq!(field.data_type(), &DataType::FixedSizeBinary(UUID_BYTE_WIDTH));
+        assert_eq!(
+            field.metadata().get(ARROW_EXTENSION_NAME_KEY).map(String::as_str),
+            Some(UUID_EXTENSION_NAME)
+        );
+    }
+
+    fn check_uuid_arrow_schemas(query: impl Fn(&mut Statement<'_>) -> Result<(SchemaRef, RecordBatch)>) -> Result<()> {
+        for lossless in [false, true] {
+            let db = Connection::open_in_memory()?;
+            if lossless {
+                db.execute_batch("SET arrow_lossless_conversion = true")?;
+            }
+            let assert_schema: fn(&Schema) = if lossless {
+                assert_lossless_uuid_arrow_schema
+            } else {
+                assert_default_uuid_arrow_schema
+            };
+
+            let mut stmt = db.prepare("SELECT 'a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8'::UUID AS id")?;
+            let (schema, batch) = query(&mut stmt)?;
+            assert_schema(schema.as_ref());
+            assert_schema(batch.schema().as_ref());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_arrow_uuid_schema_with_and_without_lossless_conversion() -> Result<()> {
+        check_uuid_arrow_schemas(|stmt| {
+            let arrow = stmt.query_arrow([])?;
+            let schema = arrow.get_schema();
+            let batch = arrow.into_iter().next().expect("expected one batch");
+            Ok((schema, batch))
+        })
+    }
+
+    #[test]
+    fn test_stream_arrow_uuid_schema_with_and_without_lossless_conversion() -> Result<()> {
+        check_uuid_arrow_schemas(|stmt| {
+            let stream = stmt.stream_arrow([])?;
+            let schema = stream.get_schema();
+            let batch = stream.into_iter().next().expect("expected one batch");
+            Ok((schema, batch))
+        })
     }
 
     #[test]
