@@ -129,7 +129,7 @@ impl Statement<'_> {
     /// as the iterator is consumed instead of buffering the full result on
     /// the client side. Note that DuckDB may still materialize the result
     /// internally for some statements (e.g. CALL). The schema is available
-    /// via [`ArrowStream::get_schema`].
+    /// via [`Arrow::get_schema`].
     ///
     /// ## Example
     ///
