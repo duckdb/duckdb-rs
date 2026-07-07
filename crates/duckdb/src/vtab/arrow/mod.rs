@@ -10,10 +10,7 @@ use arrow::{
     record_batch::RecordBatch,
 };
 
-pub use crate::arrow_interop::{
-    WritableVector, data_chunk_to_arrow, flat_vector_to_arrow_array, record_batch_to_duckdb_data_chunk,
-    to_duckdb_logical_type, to_duckdb_logical_type_for_field, to_duckdb_type_id, write_arrow_array_to_vector,
-};
+pub use crate::arrow_interop::*;
 use crate::core::LogicalTypeId;
 
 /// The Arrow record batch for the table function.
