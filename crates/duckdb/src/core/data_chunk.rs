@@ -12,7 +12,7 @@ pub struct DataChunkHandle {
     /// Pointer to the DataChunk in duckdb C API.
     ptr: duckdb_data_chunk,
 
-    /// Whether this [DataChunkHandle] own the [DataChunk::ptr].
+    /// Whether this `DataChunkHandle` owns `ptr`.
     owned: bool,
 }
 
