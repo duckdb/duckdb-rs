@@ -243,7 +243,8 @@ impl Statement<'_> {
     /// }
     /// ```
     ///
-    /// Or, equivalently (but without the [`params!`] macro).
+    /// Or, equivalently (but without the [`duckdb::params!`](crate::params!)
+    /// macro).
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};

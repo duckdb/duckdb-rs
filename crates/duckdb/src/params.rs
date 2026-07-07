@@ -354,17 +354,10 @@ impl_params_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T
 /// That is fairly complex, and even so would need even more work to be fully
 /// production-ready:
 ///
-/// - production code should ensure `usernames` isn't so large that it will
-///   surpass [`conn.limit(Limit::SQLITE_LIMIT_VARIABLE_NUMBER)`][limits]),
-///   chunking if too large. (Note that the limits api requires duckdb to have
-///   the "limits" feature).
-///
 /// - `repeat_vars` can be implemented in a way that avoids needing to allocate
 ///   a String.
 ///
 /// - Etc...
-///
-/// [limits]: crate::Connection::limit
 ///
 /// This complexity reflects the fact that `ParamsFromIter` is mainly intended
 /// for advanced use cases — most of the time you should know how many

@@ -53,7 +53,8 @@ pub enum Error {
     QueryReturnedNoRows,
 
     /// Error when a query that was expected to return only one row (e.g.,
-    /// for [`query_one`](crate::Connection::query_one)) did return more than one.
+    /// for [`Statement::query_one`](crate::Statement::query_one)) did return
+    /// more than one.
     QueryReturnedMoreThanOneRow,
 
     /// Error when the value of a particular column is requested, but the index

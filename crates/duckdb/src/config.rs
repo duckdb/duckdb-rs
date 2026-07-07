@@ -60,7 +60,7 @@ impl Config {
         Ok(self)
     }
 
-    /// Access mode of the database ([AUTOMATIC], READ_ONLY or READ_WRITE)
+    /// Access mode of the database (`AUTOMATIC`, `READ_ONLY` or `READ_WRITE`)
     pub fn access_mode(mut self, mode: AccessMode) -> Result<Self> {
         self.set("access_mode", mode)?;
         Ok(self)
@@ -72,13 +72,13 @@ impl Config {
         Ok(self)
     }
 
-    /// The order type used when none is specified ([ASC] or DESC)
+    /// The order type used when none is specified (`ASC` or `DESC`)
     pub fn default_order(mut self, order: DefaultOrder) -> Result<Self> {
         self.set("default_order", order)?;
         Ok(self)
     }
 
-    /// Null ordering used when none is specified ([NULLS_FIRST] or NULLS_LAST)
+    /// Null ordering used when none is specified (`NULLS_FIRST` or `NULLS_LAST`)
     pub fn default_null_order(mut self, null_order: DefaultNullOrder) -> Result<Self> {
         self.set("default_null_order", null_order)?;
         Ok(self)

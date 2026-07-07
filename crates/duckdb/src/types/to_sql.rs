@@ -72,7 +72,8 @@ impl ToSql for ToSqlOutput<'_> {
 }
 
 /// A trait for types that can be converted into DuckDB values. Returns
-/// [`Error::ToSqlConversionFailure`] if the conversion fails.
+/// [`Error::ToSqlConversionFailure`](crate::Error::ToSqlConversionFailure) if
+/// the conversion fails.
 pub trait ToSql {
     /// Converts Rust value to DuckDB value
     fn to_sql(&self) -> Result<ToSqlOutput<'_>>;
