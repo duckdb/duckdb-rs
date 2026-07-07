@@ -8,9 +8,9 @@ use libduckdb_sys::{
 
 use crate::{
     Connection,
+    arrow_interop::WritableVector,
     core::{DataChunkHandle, LogicalTypeHandle},
     inner_connection::InnerConnection,
-    vtab::arrow::WritableVector,
 };
 mod function;
 
@@ -225,9 +225,9 @@ mod test {
 
     use crate::{
         Connection,
+        arrow_interop::WritableVector,
         core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
         types::DuckString,
-        vtab::arrow::WritableVector,
     };
 
     use super::{ScalarFunctionSignature, VScalar};

@@ -6,8 +6,8 @@ use arrow::{
 };
 
 use crate::{
+    arrow_interop::{WritableVector, data_chunk_to_arrow, to_duckdb_logical_type, write_arrow_array_to_vector},
     core::DataChunkHandle,
-    vtab::arrow::{WritableVector, data_chunk_to_arrow, to_duckdb_logical_type, write_arrow_array_to_vector},
 };
 
 use super::{ScalarFunctionSignature, ScalarParams, VScalar};

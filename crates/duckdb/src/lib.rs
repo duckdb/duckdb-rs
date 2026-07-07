@@ -104,6 +104,8 @@ mod error;
 mod appender;
 mod appender_params;
 mod arrow_batch;
+#[cfg(feature = "vtab-arrow")]
+mod arrow_interop;
 mod cache;
 mod column;
 mod config;

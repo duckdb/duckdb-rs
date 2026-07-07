@@ -4,9 +4,9 @@
 //! [`DataChunkHandle`][crate::core::DataChunkHandle] accessor, `'a` is
 //! bound to the chunk so the wrapper cannot outlive it. When built via
 //! one of the `unsafe fn from_raw` constructors (including the raw
-//! `duckdb_vector` path used by `vtab::arrow`), `'a` is caller-chosen and
-//! must not exceed the DuckDB vector's actual validity — that path does not
-//! track liveness in the type system.
+//! `duckdb_vector` path used by the Arrow interop layer), `'a` is
+//! caller-chosen and must not exceed the DuckDB vector's actual validity —
+//! that path does not track liveness in the type system.
 
 use std::{ffi::CString, marker::PhantomData, slice};
 

@@ -1,9 +1,9 @@
 use super::{Appender, Result, ffi};
 use crate::{
     Error,
+    arrow_interop::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type_for_field},
     core::DataChunkHandle,
     error::{arrow_conversion_failure, result_from_duckdb_appender},
-    vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type_for_field},
 };
 use arrow::record_batch::RecordBatch;
 use ffi::{duckdb_append_data_chunk, duckdb_vector_size};
@@ -66,7 +66,7 @@ impl Appender<'_> {
 mod test {
     use crate::{
         Connection, Error, Result,
-        vtab::arrow::{
+        arrow_interop::{
             UUID_BYTE_WIDTH, UUID_EXTENSION_NAME,
             test_support::{uuid_array, uuid_field, uuid_metadata},
         },
