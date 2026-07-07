@@ -257,9 +257,8 @@ pub fn data_chunk_to_arrow(chunk: &DataChunkHandle) -> Result<RecordBatch, Box<d
     let columns = (0..chunk.num_columns())
         .map(|i| {
             let mut vector = chunk.flat_vector(i);
-            flat_vector_to_arrow_array(&mut vector, len).map(|array_data| {
-                assert_eq!(array_data.len(), chunk.len());
-                let array: Arc<dyn Array> = Arc::new(array_data);
+            flat_vector_to_arrow_array(&mut vector, len).map(|array| {
+                assert_eq!(array.len(), chunk.len());
                 (i.to_string(), array)
             })
         })
