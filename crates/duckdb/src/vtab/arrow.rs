@@ -92,6 +92,8 @@ impl ArrowInitData {
 pub struct ArrowVTab;
 
 const ARROW_QUERY_PARAMS_MARKER: usize = 0x4152_5257; // "ARRW"
+pub(crate) const UUID_EXTENSION_NAME: &str = "arrow.uuid";
+pub(crate) const UUID_BYTE_WIDTH: i32 = 16;
 
 fn arrow_record_batch_store() -> &'static Mutex<Vec<Arc<RecordBatch>>> {
     static STORE: OnceLock<Mutex<Vec<Arc<RecordBatch>>>> = OnceLock::new();
@@ -177,8 +179,7 @@ impl VTab for ArrowVTab {
         let rb = unsafe { address_to_arrow_record_batch(address, marker)? };
         for f in rb.schema().fields() {
             let name = f.name();
-            let data_type = f.data_type();
-            let logical_type = to_duckdb_logical_type(data_type)?;
+            let logical_type = to_duckdb_logical_type_for_field(f)?;
             bind.add_result_column(name, logical_type);
         }
 
@@ -285,22 +286,25 @@ impl TryFrom<DataType> for LogicalTypeId {
     }
 }
 
-/// Convert arrow DataType to DuckDB logical type
+/// Convert an Arrow [`DataType`] to a DuckDB logical type.
+///
+/// Nested child fields are converted with [`to_duckdb_logical_type_for_field`],
+/// so extension metadata on nested fields is honored.
 pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
     match data_type {
         DataType::Dictionary(_, value_type) => to_duckdb_logical_type(value_type),
         DataType::Struct(fields) => {
             let mut shape = vec![];
             for field in fields.iter() {
-                shape.push((field.name().as_str(), to_duckdb_logical_type(field.data_type())?));
+                shape.push((field.name().as_str(), to_duckdb_logical_type_for_field(field)?));
             }
             Ok(LogicalTypeHandle::struct_type(shape.as_slice()))
         }
         DataType::List(child) | DataType::LargeList(child) => {
-            Ok(LogicalTypeHandle::list(&to_duckdb_logical_type(child.data_type())?))
+            Ok(LogicalTypeHandle::list(&to_duckdb_logical_type_for_field(child)?))
         }
         DataType::FixedSizeList(child, array_size) => Ok(LogicalTypeHandle::array(
-            &to_duckdb_logical_type(child.data_type())?,
+            &to_duckdb_logical_type_for_field(child)?,
             *array_size as u64,
         )),
         DataType::Decimal32(width, scale) => to_duckdb_decimal_logical_type::<Decimal32Type>(*width, *scale),
@@ -321,6 +325,32 @@ pub fn to_duckdb_logical_type(data_type: &DataType) -> Result<LogicalTypeHandle,
         )
         .into()),
     }
+}
+
+/// Convert an Arrow field to a DuckDB logical type.
+///
+/// This preserves field-local metadata while recursing through Arrow nested
+/// types. Recognized extension types are mapped to their DuckDB logical type;
+/// recognized extensions with invalid storage return an error. Unknown
+/// extension types fall back to their Arrow storage type.
+pub fn to_duckdb_logical_type_for_field(field: &Field) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
+    match field.extension_type_name() {
+        Some(UUID_EXTENSION_NAME) => arrow_uuid_logical_type(field),
+        _ => to_duckdb_logical_type(field.data_type()),
+    }
+}
+
+fn arrow_uuid_logical_type(field: &Field) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>> {
+    match field.data_type() {
+        DataType::FixedSizeBinary(length) if *length == UUID_BYTE_WIDTH => {
+            Ok(LogicalTypeHandle::from(LogicalTypeId::Uuid))
+        }
+        data_type => Err(invalid_uuid_storage_error(data_type)),
+    }
+}
+
+fn invalid_uuid_storage_error(got: &DataType) -> Box<dyn std::error::Error> {
+    format!("{UUID_EXTENSION_NAME} requires FixedSizeBinary({UUID_BYTE_WIDTH}), got {got}").into()
 }
 
 fn to_duckdb_decimal_logical_type<T>(width: u8, scale: i8) -> Result<LogicalTypeHandle, Box<dyn std::error::Error>>
@@ -370,10 +400,10 @@ fn arrow_map_to_duckdb_logical_type(field: &FieldRef) -> Result<LogicalTypeHandl
         unreachable!()
     };
 
-    Ok(LogicalTypeHandle::map(
-        &LogicalTypeHandle::from(to_duckdb_type_id(key_field.data_type())?),
-        &LogicalTypeHandle::from(to_duckdb_type_id(value_field.data_type())?),
-    ))
+    let key_type = to_duckdb_logical_type_for_field(key_field)?;
+    let value_type = to_duckdb_logical_type_for_field(value_field)?;
+
+    Ok(LogicalTypeHandle::map(&key_type, &value_type))
 }
 
 // FIXME: flat vectors don't have all of thsese types. I think they only
@@ -705,7 +735,7 @@ pub fn write_arrow_array_to_vector(
             binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector());
         }
         DataType::FixedSizeBinary(_) => {
-            fixed_size_binary_array_to_vector(col.as_ref().as_fixed_size_binary(), &mut chunk.flat_vector());
+            fixed_size_binary_array_to_vector(col.as_ref().as_fixed_size_binary(), &mut chunk.flat_vector())?;
         }
         DataType::LargeBinary => {
             large_binary_array_to_vector(
@@ -1037,15 +1067,46 @@ fn binary_view_array_to_vector(array: &BinaryViewArray, out: &mut FlatVector<'_>
     set_nulls_in_flat_vector(array, out);
 }
 
-fn fixed_size_binary_array_to_vector(array: &FixedSizeBinaryArray, out: &mut FlatVector<'_>) {
+fn fixed_size_binary_array_to_vector(
+    array: &FixedSizeBinaryArray,
+    out: &mut FlatVector<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
     assert!(array.len() <= out.capacity());
+
+    if out.logical_type().id() == LogicalTypeId::Uuid {
+        return uuid_array_to_vector(array, out);
+    }
 
     for i in 0..array.len() {
         let s = array.value(i);
         out.insert(i, s);
     }
-    // Put this back once the other PR #
-    // set_nulls_in_flat_vector(array, out);
+    set_nulls_in_flat_vector(array, out);
+    Ok(())
+}
+
+fn uuid_array_to_vector(
+    array: &FixedSizeBinaryArray,
+    out: &mut FlatVector<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if array.value_length() != UUID_BYTE_WIDTH {
+        return Err(invalid_uuid_storage_error(&DataType::FixedSizeBinary(
+            array.value_length(),
+        )));
+    }
+
+    let out_data = unsafe { out.as_mut_slice_with_len::<i128>(array.len()) };
+    for (i, slot) in out_data.iter_mut().enumerate() {
+        let bytes: [u8; UUID_BYTE_WIDTH as usize] = array
+            .value(i)
+            .try_into()
+            .expect("FixedSizeBinary value length was validated for UUID");
+        // DuckDB stores UUIDs as HUGEINT with the MSB flipped so they
+        // sort correctly as signed i128.
+        *slot = i128::from_be_bytes(bytes) ^ i128::MIN;
+    }
+    set_nulls_in_flat_vector(array, out);
+    Ok(())
 }
 
 fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector<'_>) {
@@ -1055,8 +1116,7 @@ fn large_binary_array_to_vector(array: &LargeBinaryArray, out: &mut FlatVector<'
         let s = array.value(i);
         out.insert(i, s);
     }
-    // Put this back once the other PR #
-    // set_nulls_in_flat_vector(array, out);
+    set_nulls_in_flat_vector(array, out);
 }
 
 fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
@@ -1086,6 +1146,12 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
                 as_generic_binary_array(value_array.as_ref()),
                 &mut out.child(value_array.len()),
             );
+        }
+        DataType::FixedSizeBinary(_) => {
+            fixed_size_binary_array_to_vector(
+                value_array.as_ref().as_fixed_size_binary(),
+                &mut out.child(value_array.len()),
+            )?;
         }
         DataType::BinaryView => {
             binary_view_array_to_vector(
@@ -1145,7 +1211,7 @@ fn fixed_size_list_array_to_vector(
             binary_array_to_vector(as_generic_binary_array(value_array.as_ref()), &mut child);
         }
         DataType::FixedSizeBinary(_) => {
-            fixed_size_binary_array_to_vector(value_array.as_ref().as_fixed_size_binary(), &mut child);
+            fixed_size_binary_array_to_vector(value_array.as_ref().as_fixed_size_binary(), &mut child)?;
         }
         _ => {
             return Err("Nested array is not supported yet.".into());
@@ -1180,7 +1246,7 @@ fn struct_array_to_vector(array: &StructArray, out: &mut StructVector<'_>) -> Re
                 fixed_size_binary_array_to_vector(
                     column.as_ref().as_fixed_size_binary(),
                     &mut out.child(i, array.len()),
-                );
+                )?;
             }
             DataType::List(_) => {
                 list_array_to_vector(as_list_array(column.as_ref()), &mut out.list_vector_child(i))?;
@@ -1296,10 +1362,44 @@ fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) 
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use super::{UUID_BYTE_WIDTH, UUID_EXTENSION_NAME};
+    use arrow::{
+        array::FixedSizeBinaryArray,
+        buffer::{Buffer, NullBuffer},
+        datatypes::{DataType, Field},
+    };
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    pub(crate) const ARROW_EXTENSION_NAME_KEY: &str = "ARROW:extension:name";
+
+    pub(crate) fn uuid_metadata() -> HashMap<String, String> {
+        HashMap::from([(ARROW_EXTENSION_NAME_KEY.to_string(), UUID_EXTENSION_NAME.to_string())])
+    }
+
+    pub(crate) fn uuid_field(name: &str) -> Field {
+        Field::new(name, DataType::FixedSizeBinary(UUID_BYTE_WIDTH), true).with_metadata(uuid_metadata())
+    }
+
+    pub(crate) fn uuid_array(values: &[Uuid], nulls: Option<Vec<bool>>) -> FixedSizeBinaryArray {
+        let buffer = Buffer::from_vec(
+            values
+                .iter()
+                .flat_map(|uuid| uuid.as_bytes().iter().copied())
+                .collect::<Vec<_>>(),
+        );
+        FixedSizeBinaryArray::new(UUID_BYTE_WIDTH, buffer, nulls.map(NullBuffer::from))
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::{
-        ArrowInitData, ArrowVTab, RowSlice, arrow_arraydata_to_query_params, arrow_ffi_to_query_params,
-        arrow_recordbatch_to_query_params, data_chunk_to_arrow, to_duckdb_logical_type,
+        ArrowInitData, ArrowVTab, RowSlice, UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, arrow_arraydata_to_query_params,
+        arrow_ffi_to_query_params, arrow_recordbatch_to_query_params, data_chunk_to_arrow,
+        test_support::{ARROW_EXTENSION_NAME_KEY, uuid_array, uuid_field, uuid_metadata},
+        to_duckdb_logical_type, to_duckdb_logical_type_for_field,
     };
     use crate::{
         Connection, Result,
@@ -1311,22 +1411,25 @@ mod test {
             Decimal32Array, Decimal64Array, Decimal128Array, Decimal256Array, DurationSecondArray,
             FixedSizeBinaryArray, FixedSizeListArray, FixedSizeListBuilder, GenericByteArray, GenericListArray,
             Int32Array, Int32Builder, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
-            LargeStringArray, ListArray, ListBuilder, MapArray, OffsetSizeTrait, PrimitiveArray, StringArray,
-            StringViewArray, StructArray, Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray,
-            TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray, UInt32Array,
+            LargeBinaryArray, LargeStringArray, ListArray, ListBuilder, MapArray, OffsetSizeTrait, PrimitiveArray,
+            StringArray, StringViewArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
+            TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+            UInt32Array,
         },
         buffer::{OffsetBuffer, ScalarBuffer},
         datatypes::{
             ArrowPrimitiveType, ByteArrayType, DataType, Decimal32Type, Decimal64Type, DurationSecondType, Field,
-            IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
+            Fields, IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
         },
         ffi::{FFI_ArrowArray, FFI_ArrowSchema},
         record_batch::RecordBatch,
     };
     use std::{
+        collections::HashMap,
         error::Error,
         sync::{Arc, Barrier, atomic::AtomicUsize},
     };
+    use uuid::Uuid;
 
     fn example_record_batch() -> RecordBatch {
         let schema = Schema::new(vec![
@@ -1343,6 +1446,263 @@ mod test {
             ],
         )
         .expect("failed to create record batch")
+    }
+
+    #[test]
+    fn test_field_aware_logical_type_preserves_nested_shape() -> Result<(), Box<dyn Error>> {
+        let field = Field::new(
+            "payload",
+            DataType::Struct(Fields::from(vec![
+                Field::new(
+                    "ids",
+                    DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
+                    true,
+                ),
+                Field::new("label", DataType::Utf8, true),
+            ])),
+            true,
+        );
+
+        let logical_type = to_duckdb_logical_type_for_field(&field)?;
+        assert_eq!(logical_type.id(), LogicalTypeId::Struct);
+        assert_eq!(logical_type.child_name(0), "ids");
+        assert_eq!(logical_type.child_name(1), "label");
+
+        let ids_type = logical_type.child(0);
+        assert_eq!(ids_type.id(), LogicalTypeId::List);
+        assert_eq!(ids_type.child(0).id(), LogicalTypeId::Integer);
+        assert_eq!(logical_type.child(1).id(), LogicalTypeId::Varchar);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_uuid_extension_logical_type_preserves_nested_metadata() -> Result<(), Box<dyn Error>> {
+        let top_level = to_duckdb_logical_type_for_field(&uuid_field("id"))?;
+        assert_eq!(top_level.id(), LogicalTypeId::Uuid);
+
+        let struct_type = to_duckdb_logical_type_for_field(&Field::new(
+            "payload",
+            DataType::Struct(Fields::from(vec![
+                uuid_field("id"),
+                Field::new("label", DataType::Utf8, true),
+            ])),
+            true,
+        ))?;
+        assert_eq!(struct_type.id(), LogicalTypeId::Struct);
+        assert_eq!(struct_type.child(0).id(), LogicalTypeId::Uuid);
+
+        let list_type =
+            to_duckdb_logical_type_for_field(&Field::new("ids", DataType::List(Arc::new(uuid_field("item"))), true))?;
+        assert_eq!(list_type.id(), LogicalTypeId::List);
+        assert_eq!(list_type.child(0).id(), LogicalTypeId::Uuid);
+
+        let map_type = to_duckdb_logical_type_for_field(&Field::new(
+            "lookup",
+            DataType::Map(
+                Arc::new(Field::new(
+                    "entries",
+                    DataType::Struct(Fields::from(vec![
+                        Field::new("keys", DataType::Utf8, false),
+                        uuid_field("values"),
+                    ])),
+                    false,
+                )),
+                false,
+            ),
+            true,
+        ))?;
+        assert_eq!(map_type.id(), LogicalTypeId::Map);
+        assert_eq!(map_type.child(0).id(), LogicalTypeId::Varchar);
+        assert_eq!(map_type.child(1).id(), LogicalTypeId::Uuid);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_uuid_extension_rejects_invalid_storage() {
+        let field = Field::new("id", DataType::FixedSizeBinary(8), true).with_metadata(uuid_metadata());
+        let err = to_duckdb_logical_type_for_field(&field).unwrap_err();
+        let expected = format!("{UUID_EXTENSION_NAME} requires FixedSizeBinary({UUID_BYTE_WIDTH})");
+        assert!(
+            err.to_string().contains(&expected) && err.to_string().contains("FixedSizeBinary(8)"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_arrow_unknown_extension_falls_back_to_storage_type() -> Result<(), Box<dyn Error>> {
+        let field = Field::new("payload", DataType::Utf8, true).with_metadata(HashMap::from([(
+            ARROW_EXTENSION_NAME_KEY.to_string(),
+            "arrow.json".to_string(),
+        )]));
+
+        let logical_type = to_duckdb_logical_type_for_field(&field)?;
+        assert_eq!(logical_type.id(), LogicalTypeId::Varchar);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_uuid_extension_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let uuids = vec![
+            Uuid::from_u128(0xa1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+            Uuid::from_u128(0xb1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+            Uuid::from_u128(0),
+            Uuid::from_u128(0x42),
+        ];
+        let schema = Schema::new(vec![uuid_field("id")]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![Arc::new(uuid_array(&uuids, Some(vec![true, true, false, true]))) as ArrayRef],
+        )?;
+        let param = arrow_recordbatch_to_query_params(batch);
+
+        let mut stmt = db.prepare("SELECT id::VARCHAR, typeof(id) FROM arrow(?, ?)")?;
+        let rows = stmt.query_map(param, |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let observed: std::result::Result<Vec<_>, _> = rows.collect();
+
+        assert_eq!(
+            observed?,
+            vec![
+                (Some(uuids[0].to_string()), "UUID".to_string()),
+                (Some(uuids[1].to_string()), "UUID".to_string()),
+                (None, "UUID".to_string()),
+                (Some(uuids[3].to_string()), "UUID".to_string()),
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_uuid_extension_roundtrip_in_struct() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let uuids = vec![
+            Uuid::from_u128(0xa1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+            Uuid::from_u128(0x42),
+        ];
+        let struct_array = StructArray::from(vec![
+            (
+                Arc::new(uuid_field("id")),
+                Arc::new(uuid_array(&uuids, None)) as ArrayRef,
+            ),
+            (
+                Arc::new(Field::new("label", DataType::Utf8, true)),
+                Arc::new(StringArray::from(vec!["alpha", "beta"])) as ArrayRef,
+            ),
+        ]);
+        let schema = Schema::new(vec![Field::new(
+            "payload",
+            DataType::Struct(Fields::from(vec![
+                uuid_field("id"),
+                Field::new("label", DataType::Utf8, true),
+            ])),
+            true,
+        )]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(struct_array) as ArrayRef])?;
+        let param = arrow_recordbatch_to_query_params(batch);
+
+        let mut stmt = db.prepare("SELECT payload.id::VARCHAR, typeof(payload.id) FROM arrow(?, ?)")?;
+        let rows = stmt.query_map(param, |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let observed: std::result::Result<Vec<_>, _> = rows.collect();
+
+        assert_eq!(
+            observed?,
+            vec![
+                (uuids[0].to_string(), "UUID".to_string()),
+                (uuids[1].to_string(), "UUID".to_string()),
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_uuid_extension_roundtrip_in_list() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let uuids = vec![
+            Uuid::from_u128(0xa1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+            Uuid::from_u128(0xb1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+            Uuid::from_u128(0x42),
+        ];
+        let list_array = ListArray::new(
+            Arc::new(uuid_field("item")),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 2, 3])),
+            Arc::new(uuid_array(&uuids, None)),
+            None,
+        );
+        let schema = Schema::new(vec![Field::new("ids", list_array.data_type().clone(), true)]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_array) as ArrayRef])?;
+        let param = arrow_recordbatch_to_query_params(batch);
+
+        let mut stmt = db.prepare("SELECT ids[1]::VARCHAR, typeof(ids[1]) FROM arrow(?, ?)")?;
+        let rows = stmt.query_map(param, |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let observed: std::result::Result<Vec<_>, _> = rows.collect();
+
+        assert_eq!(
+            observed?,
+            vec![
+                (uuids[0].to_string(), "UUID".to_string()),
+                (uuids[2].to_string(), "UUID".to_string()),
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_uuid_extension_roundtrip_in_map() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let uuids = vec![
+            Uuid::from_u128(0xa1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+            Uuid::from_u128(0xb1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8),
+        ];
+        let entries = StructArray::from(vec![
+            (
+                Arc::new(Field::new("keys", DataType::Utf8, false)),
+                Arc::new(StringArray::from(vec!["alpha", "beta"])) as ArrayRef,
+            ),
+            (
+                Arc::new(uuid_field("values")),
+                Arc::new(uuid_array(&uuids, None)) as ArrayRef,
+            ),
+        ]);
+        let entries_field = Arc::new(Field::new("entries", entries.data_type().clone(), false));
+        let map_array = MapArray::new(
+            entries_field,
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 1, 2])),
+            entries,
+            None,
+            false,
+        );
+        let schema = Schema::new(vec![Field::new("lookup", map_array.data_type().clone(), true)]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(map_array) as ArrayRef])?;
+        let param = arrow_recordbatch_to_query_params(batch);
+
+        let mut stmt = db.prepare("SELECT lookup['alpha']::VARCHAR, lookup['beta']::VARCHAR FROM arrow(?, ?)")?;
+        let rows = stmt.query_map(param, |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        let observed: std::result::Result<Vec<_>, _> = rows.collect();
+
+        assert_eq!(
+            observed?,
+            vec![(Some(uuids[0].to_string()), None), (None, Some(uuids[1].to_string())),]
+        );
+
+        Ok(())
     }
 
     #[test]
@@ -2488,6 +2848,35 @@ mod test {
     }
 
     #[test]
+    fn test_large_binary_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let array = LargeBinaryArray::from_opt_vec(vec![Some(&b"hello"[..]), None, Some(&b"!"[..])]);
+        let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let output_array = rb
+            .column(0)
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .expect("Expected BinaryArray");
+
+        assert_eq!(output_array.len(), 3);
+        assert!(output_array.is_valid(0));
+        assert!(!output_array.is_valid(1));
+        assert!(output_array.is_valid(2));
+        assert_eq!(output_array.value(0), b"hello");
+        assert_eq!(output_array.value(2), b"!");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_list_of_fixed_size_lists_roundtrip() -> Result<(), Box<dyn Error>> {
         // field name must be empty to match `query_arrow` behavior, otherwise record batches will not match
         let field = Field::new("", DataType::Int32, true);
@@ -2750,6 +3139,42 @@ mod test {
     }
 
     #[test]
+    fn test_fixed_size_binary_with_nulls_in_list() -> Result<(), Box<dyn Error>> {
+        let db = Connection::open_in_memory()?;
+        db.register_table_function::<ArrowVTab>("arrow")?;
+
+        let values = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+            vec![Some(vec![1u8, 2, 3, 4]), None, Some(vec![5u8, 6, 7, 8])].into_iter(),
+            4,
+        )
+        .unwrap();
+
+        let list_array = ListArray::new(
+            Arc::new(Field::new("item", DataType::FixedSizeBinary(4), true)),
+            OffsetBuffer::new(ScalarBuffer::from(vec![0, 3])),
+            Arc::new(values),
+            None,
+        );
+        let schema = Schema::new(vec![Field::new("list_col", list_array.data_type().clone(), false)]);
+        let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_array) as ArrayRef])?;
+
+        let param = arrow_recordbatch_to_query_params(rb);
+        let mut stmt = db.prepare("SELECT list_col FROM arrow(?, ?)")?;
+        let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+        let list_column = rb.column(0).as_any().downcast_ref::<ListArray>().unwrap();
+        let first_list = list_column.value(0);
+        let binary_field = first_list.as_any().downcast_ref::<BinaryArray>().unwrap();
+
+        assert_eq!(binary_field.len(), 3);
+        assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4]);
+        assert!(binary_field.is_null(1));
+        assert_eq!(binary_field.value(2), &[5u8, 6, 7, 8]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_fixed_size_binary_with_nulls_in_struct() -> Result<(), Box<dyn Error>> {
         let db = Connection::open_in_memory()?;
         db.register_table_function::<ArrowVTab>("arrow")?;
@@ -2777,12 +3202,9 @@ mod test {
         let struct_column = rb.column(0).as_any().downcast_ref::<StructArray>().unwrap();
         let binary_field = struct_column.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
 
-        // NOTE: Null handling for FixedSizeBinary is not fully implemented
-        // (see fixed_size_binary_array_to_vector, line 925-926)
-        // Nulls are currently converted to zero bytes
         assert_eq!(binary_field.len(), 3);
         assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4]);
-        assert_eq!(binary_field.value(1), &[0u8, 0, 0, 0]); // Should be null
+        assert!(binary_field.is_null(1));
         assert_eq!(binary_field.value(2), &[5u8, 6, 7, 8]);
 
         Ok(())

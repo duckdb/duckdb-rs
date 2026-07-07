@@ -2,8 +2,8 @@ use super::{Appender, Result, ffi};
 use crate::{
     Error,
     core::DataChunkHandle,
-    error::result_from_duckdb_appender,
-    vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type},
+    error::{arrow_conversion_failure, result_from_duckdb_appender},
+    vtab::{record_batch_to_duckdb_data_chunk, to_duckdb_logical_type_for_field},
 };
 use arrow::record_batch::RecordBatch;
 use ffi::{duckdb_append_data_chunk, duckdb_vector_size};
@@ -33,10 +33,9 @@ impl Appender<'_> {
         let capacity = fields.len();
         let mut logical_types = Vec::with_capacity(capacity);
         for field in fields.iter() {
-            logical_types.push(
-                to_duckdb_logical_type(field.data_type())
-                    .map_err(|_op| Error::ArrowTypeToDuckdbType(field.to_string(), field.data_type().clone()))?,
-            );
+            logical_types.push(to_duckdb_logical_type_for_field(field).map_err(|err| {
+                Error::ArrowTypeToDuckdbType(format!("{}: {err}", field.name()), field.data_type().clone())
+            })?);
         }
 
         let vector_size = unsafe { duckdb_vector_size() } as usize;
@@ -49,7 +48,9 @@ impl Appender<'_> {
             let slice = record_batch.slice(offset, slice_len);
 
             let mut data_chunk = DataChunkHandle::new(&logical_types);
-            record_batch_to_duckdb_data_chunk(&slice, &mut data_chunk).map_err(|_op| Error::AppendError)?;
+            record_batch_to_duckdb_data_chunk(&slice, &mut data_chunk).map_err(|err| {
+                arrow_conversion_failure("Could not convert Arrow record batch to DuckDB data chunk", err)
+            })?;
 
             let rc = unsafe { duckdb_append_data_chunk(self.app, data_chunk.get_ptr()) };
             result_from_duckdb_appender(rc, &mut self.app)?;
@@ -63,13 +64,21 @@ impl Appender<'_> {
 
 #[cfg(test)]
 mod test {
-    use crate::{Connection, Result};
+    use crate::{
+        Connection, Error, Result,
+        vtab::arrow::{
+            UUID_BYTE_WIDTH, UUID_EXTENSION_NAME,
+            test_support::{uuid_array, uuid_field, uuid_metadata},
+        },
+    };
     use arrow::{
-        array::{Int8Array, Int32Array, StringArray},
+        array::{ArrayRef, FixedSizeBinaryArray, Int8Array, Int32Array, StringArray},
+        buffer::Buffer,
         datatypes::{DataType, Field, Schema},
         record_batch::RecordBatch,
     };
     use std::sync::Arc;
+    use uuid::Uuid;
 
     #[test]
     fn test_append_record_batch() -> Result<()> {
@@ -95,6 +104,88 @@ mod test {
         let mut stmt = db.prepare("SELECT id, area, name FROM foo")?;
         let rbs: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
         assert_eq!(rbs.iter().map(|op| op.num_rows()).sum::<usize>(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_record_batch_uuid_extension() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(pos INTEGER, id UUID)")?;
+
+        let vector_size = unsafe { crate::ffi::duckdb_vector_size() } as usize;
+        let record_count = vector_size + 3;
+        let uuids = (0..record_count)
+            .map(|i| Uuid::from_u128(0xa1a2a3a4b1b2c1c2d1d2d3d4d5d60000 + i as u128))
+            .collect::<Vec<_>>();
+        let nulls = (0..record_count)
+            .map(|i| i != 1 && i != vector_size)
+            .collect::<Vec<_>>();
+        let schema = Schema::new(vec![Field::new("pos", DataType::Int32, false), uuid_field("id")]);
+        let record_batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![
+                Arc::new(Int32Array::from((0..record_count as i32).collect::<Vec<_>>())) as ArrayRef,
+                Arc::new(uuid_array(&uuids, Some(nulls))) as ArrayRef,
+            ],
+        )
+        .unwrap();
+
+        {
+            let mut app = db.appender("foo")?;
+            app.append_record_batch(record_batch)?;
+        }
+
+        let count: usize = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
+        assert_eq!(count, record_count);
+
+        let non_null_count: usize = db.query_row("SELECT COUNT(id) FROM foo", [], |row| row.get(0))?;
+        assert_eq!(non_null_count, record_count - 2);
+
+        let first: String = db.query_row("SELECT id::VARCHAR FROM foo WHERE pos = 0", [], |row| row.get(0))?;
+        assert_eq!(first, uuids[0].to_string());
+
+        let null_id: Option<String> =
+            db.query_row("SELECT id::VARCHAR FROM foo WHERE pos = 1", [], |row| row.get(0))?;
+        assert_eq!(null_id, None);
+
+        let after_boundary_pos = (vector_size + 1) as i32;
+        let after_boundary: String = db.query_row(
+            "SELECT id::VARCHAR FROM foo WHERE pos = ?",
+            [after_boundary_pos],
+            |row| row.get(0),
+        )?;
+        assert_eq!(after_boundary, uuids[after_boundary_pos as usize].to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_record_batch_uuid_extension_rejects_invalid_storage() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id UUID)")?;
+
+        let schema = Schema::new(vec![
+            Field::new("id", DataType::FixedSizeBinary(8), true).with_metadata(uuid_metadata()),
+        ]);
+        let record_batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![Arc::new(FixedSizeBinaryArray::new(
+                8,
+                Buffer::from_vec(vec![0; 8]),
+                None,
+            ))],
+        )
+        .unwrap();
+
+        let mut app = db.appender("foo")?;
+        let err = app.append_record_batch(record_batch).unwrap_err();
+        assert!(matches!(&err, Error::ArrowTypeToDuckdbType(..)));
+        let expected = format!("{UUID_EXTENSION_NAME} requires FixedSizeBinary({UUID_BYTE_WIDTH})");
+        assert!(
+            err.to_string().contains(&expected) && err.to_string().contains("FixedSizeBinary(8)"),
+            "unexpected error: {err}"
+        );
+
         Ok(())
     }
 
