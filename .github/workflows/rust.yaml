@@ -76,6 +76,13 @@ jobs:
           CXX: "sccache c++"
         run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full" --locked -- -D warnings
 
+      - name: Check rustdoc
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        # Keep this feature list in sync with crates/duckdb/Cargo.toml [package.metadata.docs.rs].
+        run: cargo doc --workspace --no-deps --features "modern-full vscalar vscalar-arrow vtab-full"
+
       - name: Dry-run release of crates
         if: matrix.os == 'ubuntu-latest'
         run: cargo publish --workspace --dry-run

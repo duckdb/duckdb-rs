@@ -81,10 +81,11 @@ tempfile = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [package.metadata.docs.rs]
-features = ["vtab-full", "modern-full", "vscalar", "vscalar-arrow", "rust_decimal"]
+features = ["modern-full", "vscalar", "vscalar-arrow", "vtab-full"]
 all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"
+targets = []
 
 [package.metadata.playground]
 features = []
