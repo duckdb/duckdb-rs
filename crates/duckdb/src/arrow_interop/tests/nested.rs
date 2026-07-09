@@ -532,8 +532,27 @@ fn test_sliced_fixed_size_list_roundtrip_uses_sliced_values() -> Result<(), Box<
 }
 
 #[test]
-fn test_list_child_reserves_capacity_for_large_nested_children() -> Result<(), Box<dyn Error>> {
+fn test_large_list_children_cross_standard_vector_size() -> Result<(), Box<dyn Error>> {
     let child_count: i32 = 3000;
+
+    let struct_values = StructArray::from(vec![(
+        Arc::new(Field::new("value", DataType::Int32, true)),
+        Arc::new(Int32Array::from((0..child_count).collect::<Vec<_>>())) as ArrayRef,
+    )]);
+    let list_of_structs = ListArray::new(
+        Arc::new(Field::new("item", struct_values.data_type().clone(), true)),
+        OffsetBuffer::new(ScalarBuffer::from(vec![0, child_count])),
+        Arc::new(struct_values),
+        None,
+    );
+
+    let output = roundtrip_single_array(Arc::new(list_of_structs))?;
+    let output = output.as_any().downcast_ref::<ListArray>().unwrap();
+    let nested_output = output.value(0);
+    let nested_output = nested_output.as_any().downcast_ref::<StructArray>().unwrap();
+    assert_eq!(nested_output.len(), child_count as usize);
+    let values = nested_output.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+    assert_eq!(values.value((child_count - 1) as usize), child_count - 1);
 
     let nested_offsets = (0..=child_count).collect::<Vec<_>>();
     let nested_lists = ListArray::new(
@@ -856,24 +875,12 @@ fn test_list_of_structs_roundtrip() -> Result<(), Box<dyn Error>> {
 fn check_map_array_roundtrip(array: MapArray) -> Result<(), Box<dyn Error>> {
     let expected = array.clone();
 
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    // Roundtrip a record batch from Rust to DuckDB and back to Rust
-    let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
-
-    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
-    let param = arrow_recordbatch_to_query_params(rb.clone());
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
-    let output_array = rb
-        .column(0)
-        .as_any()
-        .downcast_ref::<MapArray>()
-        .expect("Expected MapArray");
+    let output = roundtrip_single_array(Arc::new(array))?;
+    let output_array = output.as_any().downcast_ref::<MapArray>().expect("Expected MapArray");
 
     assert_eq!(output_array.keys(), expected.keys());
     assert_eq!(output_array.values(), expected.values());
+    assert_eq!(output_array.value_offsets(), expected.value_offsets());
 
     Ok(())
 }

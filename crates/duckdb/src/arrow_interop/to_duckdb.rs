@@ -7,6 +7,7 @@ use arrow::{
         OffsetSizeTrait, PrimitiveArray, StringViewArray, StructArray, as_boolean_array, as_generic_binary_array,
         as_large_list_array, as_list_array, as_map_array, as_primitive_array, as_string_array, as_struct_array,
     },
+    buffer::NullBuffer,
     compute::cast,
     datatypes::*,
     record_batch::RecordBatch,
@@ -69,8 +70,9 @@ pub trait WritableVector {
 /// Borrowed child vector handle used while writing one nested Arrow child array.
 struct ChildVector<'a> {
     ptr: duckdb_vector,
-    /// Arrow row count for this child; flat children use it as physical slots,
-    /// and list children use it as list-entry rows.
+    /// Writable span for this child. Flat children use it as physical slots,
+    /// list children use it as list-entry rows, and array/struct routes ignore
+    /// it because their descendants re-derive their own spans.
     capacity: usize,
     _phantom: PhantomData<&'a mut ()>,
 }
@@ -105,30 +107,22 @@ impl<'a> ChildVector<'a> {
     }
 }
 
-#[cfg(debug_assertions)]
-fn debug_assert_child_type<F>(ptr: duckdb_vector, expected: &str, matches_expected: F)
+fn assert_child_type<F>(ptr: duckdb_vector, expected: &str, matches_expected: F)
 where
     F: FnOnce(LogicalTypeId) -> bool,
 {
     let logical_type =
         unsafe { crate::core::LogicalTypeHandle::new(libduckdb_sys::duckdb_vector_get_column_type(ptr)) };
     let actual = logical_type.id();
-    debug_assert!(
+    assert!(
         matches_expected(actual),
         "expected {expected} child vector, got {actual:?}"
     );
 }
 
-#[cfg(not(debug_assertions))]
-fn debug_assert_child_type<F>(_ptr: duckdb_vector, _expected: &str, _matches_expected: F)
-where
-    F: FnOnce(LogicalTypeId) -> bool,
-{
-}
-
 impl WritableVector for ChildVector<'_> {
     fn flat_vector(&mut self) -> FlatVector<'_> {
-        debug_assert_child_type(self.ptr, "scalar", |id| {
+        assert_child_type(self.ptr, "scalar", |id| {
             !matches!(
                 id,
                 LogicalTypeId::List | LogicalTypeId::Array | LogicalTypeId::Struct | LogicalTypeId::Map
@@ -142,7 +136,7 @@ impl WritableVector for ChildVector<'_> {
     }
 
     fn list_vector(&mut self) -> ListVector<'_> {
-        debug_assert_child_type(self.ptr, "list or map", |id| {
+        assert_child_type(self.ptr, "list or map", |id| {
             matches!(id, LogicalTypeId::List | LogicalTypeId::Map)
         });
         // SAFETY: ChildVector mutably borrows the parent while this wrapper
@@ -153,7 +147,7 @@ impl WritableVector for ChildVector<'_> {
     }
 
     fn array_vector(&mut self) -> ArrayVector<'_> {
-        debug_assert_child_type(self.ptr, "array", |id| matches!(id, LogicalTypeId::Array));
+        assert_child_type(self.ptr, "array", |id| matches!(id, LogicalTypeId::Array));
         // SAFETY: ChildVector mutably borrows the parent while this wrapper
         // exists, keeping `ptr` live and uniquely reached through this view.
         // The recursive dispatcher calls this only for logical fixed-size-list
@@ -162,7 +156,7 @@ impl WritableVector for ChildVector<'_> {
     }
 
     fn struct_vector(&mut self) -> StructVector<'_> {
-        debug_assert_child_type(self.ptr, "struct", |id| matches!(id, LogicalTypeId::Struct));
+        assert_child_type(self.ptr, "struct", |id| matches!(id, LogicalTypeId::Struct));
         // SAFETY: ChildVector mutably borrows the parent while this wrapper
         // exists, keeping `ptr` live and uniquely reached through this view.
         // The recursive dispatcher calls this only for logical struct children.
@@ -245,7 +239,12 @@ fn write_arrow_array_to_vector_ref(
             // [`MapArray`] is physically a [`ListArray`] of key values pairs stored as an `entries` [`StructArray`] with 2 child fields.
             let map_array = as_map_array(col);
             let mut out = chunk.list_vector();
-            list_like_array_to_vector(map_array.entries(), map_array.value_offsets(), map_array, &mut out)?;
+            list_like_array_to_vector(
+                map_array.entries(),
+                map_array.value_offsets(),
+                map_array.nulls(),
+                &mut out,
+            )?;
         }
         dt => {
             return Err(format!(
@@ -591,16 +590,19 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     out: &mut ListVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
-    list_like_array_to_vector(value_array.as_ref(), array.value_offsets(), array, out)
+    list_like_array_to_vector(value_array.as_ref(), array.value_offsets(), array.nulls(), out)
 }
 
 fn list_like_array_to_vector<O: Copy + AsPrimitive<usize>>(
     values: &dyn Array,
     offsets: &[O],
-    parent: &dyn Array,
+    nulls: Option<&NullBuffer>,
     out: &mut ListVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    debug_assert_eq!(offsets.len(), parent.len() + 1);
+    debug_assert!(!offsets.is_empty());
+    if let Some(nulls) = nulls {
+        debug_assert_eq!(offsets.len(), nulls.len() + 1);
+    }
 
     let mut child = ChildVector::of_list(out, values.len())?;
     write_arrow_array_to_vector_ref(values, &mut child)?;
@@ -609,7 +611,7 @@ fn list_like_array_to_vector<O: Copy + AsPrimitive<usize>>(
         let offset = window[0].as_();
         out.set_entry(i, offset, window[1].as_() - offset);
     }
-    set_nulls_in_list_vector(parent, out);
+    set_nulls_in_list_vector(nulls, out);
 
     Ok(())
 }
@@ -676,8 +678,8 @@ fn set_nulls_in_array_vector(array: &dyn Array, out_vector: &mut ArrayVector<'_>
     }
 }
 
-fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) {
-    if let Some(nulls) = array.nulls() {
+fn set_nulls_in_list_vector(nulls: Option<&NullBuffer>, out_vector: &mut ListVector<'_>) {
+    if let Some(nulls) = nulls {
         for (i, null) in nulls.into_iter().enumerate() {
             if !null {
                 out_vector.set_null(i);

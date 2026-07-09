@@ -337,13 +337,8 @@ impl<'a> ListVector<'a> {
     /// The caller must ensure `T` matches the child vector's physical storage
     /// and no other references to the same storage exist during the copy.
     pub unsafe fn set_child<T: Copy>(&self, data: &[T]) {
-        // Reserve and write child storage before committing the list size.
-        let ptr = self
-            .try_child_ptr_with_capacity(data.len())
-            .unwrap_or_else(|err| panic!("{err}"));
-        // SAFETY: DuckDB accepted the reserve for `data.len()` child values.
-        unsafe { FlatVector::with_capacity(ptr, data.len()).copy(data) };
-        self.try_set_len(data.len()).unwrap_or_else(|err| panic!("{err}"));
+        unsafe { self.child(data.len()).copy(data) };
+        self.set_len(data.len());
     }
 
     /// Set offset and length to the entry.
@@ -459,12 +454,6 @@ impl<'a> ArrayVector<'a> {
     /// `data` elements; nested callers can arrange this by reserving capacity
     /// on the parent list vector before taking the array child.
     pub unsafe fn set_child<T: Copy>(&self, data: &[T]) {
-        let array_size = self.get_array_size() as usize;
-        assert_eq!(
-            data.len() % array_size,
-            0,
-            "array child data length must be a multiple of the fixed array size"
-        );
         unsafe { self.child(data.len()).copy(data) };
     }
 
