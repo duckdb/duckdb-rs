@@ -645,6 +645,128 @@ fn test_irregular_nested_list_cast_uses_recorded_child_counts() -> Result<(), Bo
 }
 
 #[test]
+fn test_array_of_structs() -> Result<(), Box<dyn Error>> {
+    let db = Connection::open_in_memory()?;
+    db.register_table_function::<ArrowVTab>("arrow")?;
+
+    // Create the inner struct field
+    let struct_field = Field::new("foo", DataType::Int64, true);
+    let struct_type = DataType::Struct(Fields::from(vec![struct_field]));
+
+    // Create values for the struct field.
+    let mut int_builder = Int64Array::builder(6);
+    int_builder.append_value(1);
+    int_builder.append_value(2);
+    int_builder.append_value(3);
+    int_builder.append_value(4);
+    int_builder.append_null();
+    int_builder.append_value(5);
+
+    let struct_array = StructArray::new(
+        Fields::from(vec![Field::new("foo", DataType::Int64, true)]),
+        vec![Arc::new(int_builder.finish())],
+        None,
+    );
+
+    // Create fixed size list array of structs
+    let array = FixedSizeListArray::new(
+        Arc::new(Field::new("item", struct_type, true)),
+        2,
+        Arc::new(struct_array),
+        Some(NullBuffer::from([true, false, true].as_slice())),
+    );
+
+    // Create record batch
+    let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)])?;
+
+    let param = arrow_recordbatch_to_query_params(rb);
+    let mut stmt = db.prepare("SELECT a[1].foo, a[2].foo FROM arrow(?, ?)")?;
+    let mut arr = stmt.query_arrow(param)?;
+    let rb = arr.next().expect("no record batch");
+
+    let first_item = rb.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(first_item.len(), 3);
+    assert_eq!(first_item.value(0), 1);
+    assert!(first_item.is_null(1));
+    assert!(first_item.is_null(2));
+
+    let second_item = rb.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(second_item.len(), 3);
+    assert_eq!(second_item.value(0), 2);
+    assert!(second_item.is_null(1));
+    assert_eq!(second_item.value(2), 5);
+
+    Ok(())
+}
+
+#[test]
+fn test_list_array_of_structs() -> Result<(), Box<dyn Error>> {
+    // Create the inner struct field
+    let struct_field = Field::new("foo", DataType::Int64, true);
+    let struct_type = DataType::Struct(Fields::from(vec![struct_field]));
+
+    // Create values for the struct field.
+    let mut int_builder = Int64Array::builder(6);
+    int_builder.append_value(1);
+    int_builder.append_value(2);
+    int_builder.append_value(3);
+    int_builder.append_value(4);
+    int_builder.append_null();
+    int_builder.append_value(5);
+
+    let struct_array = StructArray::new(
+        Fields::from(vec![Field::new("foo", DataType::Int64, true)]),
+        vec![Arc::new(int_builder.finish())],
+        None,
+    );
+
+    // Create list array of structs.
+    let array = ListArray::new(
+        Arc::new(Field::new("item", struct_type, true)),
+        OffsetBuffer::from_lengths([1, 2, 0, 1, 0, 2]),
+        Arc::new(struct_array),
+        Some(NullBuffer::from([true, true, false, true, true, true].as_slice())),
+    );
+
+    let output = roundtrip_single_array(Arc::new(array))?;
+    let lists = output.as_any().downcast_ref::<ListArray>().unwrap();
+    assert_eq!(lists.len(), 6);
+    assert!(lists.is_valid(0));
+    assert!(lists.is_valid(1));
+    assert!(lists.is_null(2));
+    assert!(lists.is_valid(3));
+    assert!(lists.is_valid(4));
+    assert!(lists.is_valid(5));
+
+    let first_list = lists.value(0);
+    let first_structs = first_list.as_any().downcast_ref::<StructArray>().unwrap();
+    let first_values = first_structs.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(first_values.value(0), 1);
+
+    let second_list = lists.value(1);
+    let second_structs = second_list.as_any().downcast_ref::<StructArray>().unwrap();
+    let second_values = second_structs.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(second_values.value(0), 2);
+    assert_eq!(second_values.value(1), 3);
+
+    let fourth_list = lists.value(3);
+    let fourth_structs = fourth_list.as_any().downcast_ref::<StructArray>().unwrap();
+    let fourth_values = fourth_structs.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert_eq!(fourth_values.value(0), 4);
+
+    assert_eq!(lists.value(4).len(), 0);
+
+    let sixth_list = lists.value(5);
+    let sixth_structs = sixth_list.as_any().downcast_ref::<StructArray>().unwrap();
+    let sixth_values = sixth_structs.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
+    assert!(sixth_values.is_null(0));
+    assert_eq!(sixth_values.value(1), 5);
+
+    Ok(())
+}
+
+#[test]
 fn test_list_of_fixed_size_lists_roundtrip() -> Result<(), Box<dyn Error>> {
     // field name must be empty to match `query_arrow` behavior, otherwise record batches will not match
     let field = Field::new("", DataType::Int32, true);
