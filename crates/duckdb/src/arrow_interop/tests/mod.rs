@@ -1,5 +1,6 @@
 use super::{
-    UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, data_chunk_to_arrow, to_duckdb_logical_type, to_duckdb_logical_type_for_field,
+    UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, data_chunk_to_arrow, record_batch_to_duckdb_data_chunk,
+    to_duckdb_logical_type, to_duckdb_logical_type_for_field,
 };
 use crate::{
     Connection, Result,
@@ -10,21 +11,25 @@ use crate::{
 use arrow::{
     array::{
         Array, ArrayRef, AsArray, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Date64Array, Decimal32Array,
-        Decimal64Array, Decimal128Array, Decimal256Array, DurationSecondArray, FixedSizeBinaryArray,
-        FixedSizeListArray, FixedSizeListBuilder, GenericByteArray, GenericListArray, Int32Array, Int32Builder,
-        IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray, LargeBinaryArray, LargeStringArray,
-        ListArray, ListBuilder, MapArray, OffsetSizeTrait, PrimitiveArray, StringArray, StringViewArray, StructArray,
-        Time32SecondArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
-        TimestampNanosecondArray, TimestampSecondArray, UInt32Array,
+        Decimal64Array, Decimal128Array, Decimal256Array, DictionaryArray, DurationSecondArray, FixedSizeBinaryArray,
+        FixedSizeListArray, FixedSizeListBuilder, GenericByteArray, GenericListArray, Int8Array, Int32Array,
+        Int32Builder, Int64Array, IntervalDayTimeArray, IntervalMonthDayNanoArray, IntervalYearMonthArray,
+        LargeBinaryArray, LargeListArray, LargeStringArray, ListArray, ListBuilder, MapArray, OffsetSizeTrait,
+        PrimitiveArray, StringArray, StringViewArray, StructArray, Time32SecondArray, Time64MicrosecondArray,
+        TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray,
+        UInt32Array,
     },
-    buffer::{OffsetBuffer, ScalarBuffer},
+    buffer::{NullBuffer, OffsetBuffer, ScalarBuffer},
     datatypes::{
         ArrowPrimitiveType, ByteArrayType, DataType, Decimal32Type, Decimal64Type, DurationSecondType, Field, Fields,
-        IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
+        Int8Type, IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, Schema, i256,
     },
     record_batch::RecordBatch,
 };
 use std::{collections::HashMap, error::Error, sync::Arc};
+
+mod fixed_size_binary;
+mod nested;
 
 #[test]
 fn test_field_aware_logical_type_preserves_nested_shape() -> Result<(), Box<dyn Error>> {
@@ -328,6 +333,19 @@ where
     }
 
     Ok(())
+}
+
+fn roundtrip_single_array(array: ArrayRef) -> Result<ArrayRef, Box<dyn Error>> {
+    let db = Connection::open_in_memory()?;
+    db.register_table_function::<ArrowVTab>("arrow")?;
+
+    let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+    let rb = RecordBatch::try_new(Arc::new(schema), vec![array])?;
+    let param = arrow_recordbatch_to_query_params(rb);
+    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
+    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+
+    Ok(rb.column(0).clone())
 }
 
 #[test]
@@ -944,339 +962,6 @@ fn test_large_binary_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
     assert!(output_array.is_valid(2));
     assert_eq!(output_array.value(0), b"hello");
     assert_eq!(output_array.value(2), b"!");
-
-    Ok(())
-}
-
-#[test]
-fn test_list_of_fixed_size_lists_roundtrip() -> Result<(), Box<dyn Error>> {
-    // field name must be empty to match `query_arrow` behavior, otherwise record batches will not match
-    let field = Field::new("", DataType::Int32, true);
-    let mut list_builder = ListBuilder::new(FixedSizeListBuilder::new(Int32Builder::new(), 2).with_field(field));
-
-    // Append first list of FixedSizeList items
-    {
-        let fixed_size_list_builder = list_builder.values();
-        fixed_size_list_builder.values().append_value(1);
-        fixed_size_list_builder.values().append_value(2);
-        fixed_size_list_builder.append(true);
-
-        // Append NULL fixed-size list item
-        fixed_size_list_builder.values().append_null();
-        fixed_size_list_builder.values().append_null();
-        fixed_size_list_builder.append(false);
-
-        fixed_size_list_builder.values().append_value(3);
-        fixed_size_list_builder.values().append_value(4);
-        fixed_size_list_builder.append(true);
-
-        list_builder.append(true);
-    }
-
-    // Append NULL list
-    list_builder.append_null();
-
-    check_generic_array_roundtrip(list_builder.finish())?;
-
-    Ok(())
-}
-
-#[test]
-fn test_list_of_lists_roundtrip() -> Result<(), Box<dyn Error>> {
-    // field name must be 'l' to match `query_arrow` behavior, otherwise record batches will not match
-    let field = Field::new("l", DataType::Int32, true);
-    let mut list_builder = ListBuilder::new(ListBuilder::new(Int32Builder::new()).with_field(field.clone()));
-
-    // Append first list of items
-    {
-        let list_item_builder = list_builder.values();
-        list_item_builder.append_value(vec![Some(1), Some(2)]);
-
-        // Append NULL list item
-        list_item_builder.append_null();
-
-        list_item_builder.append_value(vec![Some(3), None, Some(5)]);
-
-        list_builder.append(true);
-    }
-
-    // Append NULL list
-    list_builder.append_null();
-
-    check_generic_array_roundtrip(list_builder.finish())?;
-
-    Ok(())
-}
-
-#[test]
-fn test_list_of_structs_roundtrip() -> Result<(), Box<dyn Error>> {
-    let field_i = Arc::new(Field::new("i", DataType::Int32, true));
-    let field_s = Arc::new(Field::new("s", DataType::Utf8, true));
-
-    let int32_array = Int32Array::from(vec![Some(1), Some(2), Some(3), Some(4), Some(5)]);
-    let string_array = StringArray::from(vec![Some("foo"), Some("baz"), Some("bar"), Some("foo"), Some("baz")]);
-
-    let struct_array = StructArray::from(vec![
-        (field_i.clone(), Arc::new(int32_array) as Arc<dyn Array>),
-        (field_s.clone(), Arc::new(string_array) as Arc<dyn Array>),
-    ]);
-
-    check_generic_array_roundtrip(ListArray::new(
-        Arc::new(Field::new(
-            "item",
-            DataType::Struct(vec![field_i, field_s].into()),
-            true,
-        )),
-        OffsetBuffer::new(ScalarBuffer::from(vec![0, 3, 4, 5])),
-        Arc::new(struct_array),
-        Some(vec![true, false, true].into()),
-    ))?;
-
-    Ok(())
-}
-
-fn check_map_array_roundtrip(array: MapArray) -> Result<(), Box<dyn Error>> {
-    let expected = array.clone();
-
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    // Roundtrip a record batch from Rust to DuckDB and back to Rust
-    let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
-
-    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
-    let param = arrow_recordbatch_to_query_params(rb.clone());
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
-    let output_array = rb
-        .column(0)
-        .as_any()
-        .downcast_ref::<MapArray>()
-        .expect("Expected MapArray");
-
-    assert_eq!(output_array.keys(), expected.keys());
-    assert_eq!(output_array.values(), expected.values());
-
-    Ok(())
-}
-
-#[test]
-fn test_map_roundtrip() -> Result<(), Box<dyn Error>> {
-    // Test 1 - simple MapArray
-    let keys = vec!["a", "b", "c", "d", "e", "f", "g", "h"];
-    let values_data = UInt32Array::from(vec![
-        Some(0u32),
-        None,
-        Some(20),
-        Some(30),
-        None,
-        Some(50),
-        Some(60),
-        Some(70),
-    ]);
-    // Construct a buffer for value offsets, for the nested array:
-    //  [[a, b, c], [d, e, f], [g, h]]
-    let entry_offsets = [0, 3, 6, 8];
-    let map_array = MapArray::new_from_strings(keys.clone().into_iter(), &values_data, &entry_offsets).unwrap();
-    check_map_array_roundtrip(map_array)?;
-
-    // Test 2 - large MapArray of 4000 elements to test buffers capacity adjustment
-    let keys: Vec<String> = (0..4000).map(|i| format!("key-{i}")).collect();
-    let values_data = UInt32Array::from(
-        (0..4000)
-            .map(|i| if i % 5 == 0 { None } else { Some(i as u32) })
-            .collect::<Vec<_>>(),
-    );
-    let mut entry_offsets: Vec<u32> = (0..=4000).step_by(3).collect();
-    entry_offsets.push(4000);
-    let map_array =
-        MapArray::new_from_strings(keys.iter().map(String::as_str), &values_data, entry_offsets.as_slice()).unwrap();
-    check_map_array_roundtrip(map_array)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_fixed_size_binary_in_struct() -> Result<(), Box<dyn Error>> {
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    let fixed_size_binary_data = FixedSizeBinaryArray::try_from_iter(
-        vec![
-            vec![1u8, 2, 3, 4, 5, 6, 7, 8],
-            vec![9u8, 10, 11, 12, 13, 14, 15, 16],
-            vec![17u8, 18, 19, 20, 21, 22, 23, 24],
-        ]
-        .into_iter(),
-    )
-    .unwrap();
-
-    let int_data = Int32Array::from(vec![100, 200, 300]);
-
-    let struct_array = StructArray::from(vec![
-        (
-            Arc::new(Field::new("binary_field", DataType::FixedSizeBinary(8), false)),
-            Arc::new(fixed_size_binary_data) as ArrayRef,
-        ),
-        (
-            Arc::new(Field::new("int_field", DataType::Int32, false)),
-            Arc::new(int_data) as ArrayRef,
-        ),
-    ]);
-
-    let schema = Schema::new(vec![Field::new("struct_col", struct_array.data_type().clone(), false)]);
-    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(struct_array)])?;
-
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("SELECT struct_col FROM arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
-    let rb = arr.next().expect("no record batch");
-
-    assert_eq!(rb.num_columns(), 1);
-    let struct_column = rb.column(0).as_any().downcast_ref::<StructArray>().unwrap();
-    assert_eq!(struct_column.len(), 3);
-
-    // Verify the binary field
-    let binary_field = struct_column.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
-    assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4, 5, 6, 7, 8]);
-    assert_eq!(binary_field.value(1), &[9u8, 10, 11, 12, 13, 14, 15, 16]);
-    assert_eq!(binary_field.value(2), &[17u8, 18, 19, 20, 21, 22, 23, 24]);
-
-    // Verify the int field
-    let int_field = struct_column.column(1).as_any().downcast_ref::<Int32Array>().unwrap();
-    assert_eq!(int_field.value(0), 100);
-    assert_eq!(int_field.value(1), 200);
-    assert_eq!(int_field.value(2), 300);
-
-    Ok(())
-}
-
-#[test]
-fn test_fixed_size_binary_in_fixed_size_list() -> Result<(), Box<dyn Error>> {
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    let values = FixedSizeBinaryArray::try_from_iter(
-        vec![
-            vec![1u8, 2, 3, 4],
-            vec![5u8, 6, 7, 8],
-            vec![9u8, 10, 11, 12],
-            vec![13u8, 14, 15, 16],
-        ]
-        .into_iter(),
-    )
-    .unwrap();
-
-    let field = Arc::new(Field::new("item", DataType::FixedSizeBinary(4), false));
-    let fixed_size_list = FixedSizeListArray::new(field, 2, Arc::new(values), None);
-
-    let schema = Schema::new(vec![Field::new("list_col", fixed_size_list.data_type().clone(), false)]);
-    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(fixed_size_list)])?;
-
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("SELECT list_col FROM arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
-    let rb = arr.next().expect("no record batch");
-
-    assert_eq!(rb.num_columns(), 1);
-
-    // NOTE: FixedSizeBinary inside FixedSizeList is not yet fully supported in the roundtrip
-    // DuckDB keeps it as FixedSizeListArray but the nested conversion doesn't work yet
-    // This test documents the current limitation
-    if rb.column(0).as_any().downcast_ref::<FixedSizeListArray>().is_some() {
-        // Early return - this case isn't fully supported yet
-        return Ok(());
-    }
-
-    // If it was converted to a regular ListArray, verify it works
-    let list_column = rb.column(0).as_any().downcast_ref::<ListArray>().unwrap();
-    assert_eq!(list_column.len(), 2);
-
-    // Verify first list element [1,2,3,4], [5,6,7,8]
-    let first_list = list_column.value(0);
-    let first_binary = first_list.as_any().downcast_ref::<BinaryArray>().unwrap();
-    assert_eq!(first_binary.len(), 2);
-    assert_eq!(first_binary.value(0), &[1u8, 2, 3, 4]);
-    assert_eq!(first_binary.value(1), &[5u8, 6, 7, 8]);
-
-    // Verify second list element [9,10,11,12], [13,14,15,16]
-    let second_list = list_column.value(1);
-    let second_binary = second_list.as_any().downcast_ref::<BinaryArray>().unwrap();
-    assert_eq!(second_binary.len(), 2);
-    assert_eq!(second_binary.value(0), &[9u8, 10, 11, 12]);
-    assert_eq!(second_binary.value(1), &[13u8, 14, 15, 16]);
-
-    Ok(())
-}
-
-#[test]
-fn test_fixed_size_binary_with_nulls_in_list() -> Result<(), Box<dyn Error>> {
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    let values = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-        vec![Some(vec![1u8, 2, 3, 4]), None, Some(vec![5u8, 6, 7, 8])].into_iter(),
-        4,
-    )
-    .unwrap();
-
-    let list_array = ListArray::new(
-        Arc::new(Field::new("item", DataType::FixedSizeBinary(4), true)),
-        OffsetBuffer::new(ScalarBuffer::from(vec![0, 3])),
-        Arc::new(values),
-        None,
-    );
-    let schema = Schema::new(vec![Field::new("list_col", list_array.data_type().clone(), false)]);
-    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_array) as ArrayRef])?;
-
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("SELECT list_col FROM arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
-
-    let list_column = rb.column(0).as_any().downcast_ref::<ListArray>().unwrap();
-    let first_list = list_column.value(0);
-    let binary_field = first_list.as_any().downcast_ref::<BinaryArray>().unwrap();
-
-    assert_eq!(binary_field.len(), 3);
-    assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4]);
-    assert!(binary_field.is_null(1));
-    assert_eq!(binary_field.value(2), &[5u8, 6, 7, 8]);
-
-    Ok(())
-}
-
-#[test]
-fn test_fixed_size_binary_with_nulls_in_struct() -> Result<(), Box<dyn Error>> {
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    // Create a struct with nullable FixedSizeBinary field
-    let fixed_size_binary_data = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-        vec![Some(vec![1u8, 2, 3, 4]), None, Some(vec![5u8, 6, 7, 8])].into_iter(),
-        4,
-    )
-    .unwrap();
-
-    let struct_array = StructArray::from(vec![(
-        Arc::new(Field::new("binary_field", DataType::FixedSizeBinary(4), true)),
-        Arc::new(fixed_size_binary_data) as ArrayRef,
-    )]);
-
-    let schema = Schema::new(vec![Field::new("struct_col", struct_array.data_type().clone(), false)]);
-    let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(struct_array)])?;
-
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("SELECT struct_col FROM arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
-    let rb = arr.next().expect("no record batch");
-
-    let struct_column = rb.column(0).as_any().downcast_ref::<StructArray>().unwrap();
-    let binary_field = struct_column.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
-
-    assert_eq!(binary_field.len(), 3);
-    assert_eq!(binary_field.value(0), &[1u8, 2, 3, 4]);
-    assert!(binary_field.is_null(1));
-    assert_eq!(binary_field.value(2), &[5u8, 6, 7, 8]);
 
     Ok(())
 }

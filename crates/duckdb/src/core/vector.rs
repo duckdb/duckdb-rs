@@ -15,14 +15,28 @@ use libduckdb_sys::{
 };
 
 use super::LogicalTypeHandle;
-use crate::ffi::{
-    duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size, duckdb_list_vector_reserve,
-    duckdb_list_vector_set_size, duckdb_struct_type_child_count, duckdb_struct_type_child_name,
-    duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
-    duckdb_vector_assign_string_element, duckdb_vector_assign_string_element_len,
-    duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
-    duckdb_vector_get_validity, duckdb_vector_size,
+use crate::{
+    Result,
+    error::duckdb_failure_from_message,
+    ffi::{
+        DuckDBSuccess, duckdb_list_entry, duckdb_list_vector_get_child, duckdb_list_vector_get_size,
+        duckdb_list_vector_reserve, duckdb_list_vector_set_size, duckdb_state, duckdb_struct_type_child_count,
+        duckdb_struct_type_child_name, duckdb_struct_vector_get_child, duckdb_validity_set_row_invalid, duckdb_vector,
+        duckdb_vector_assign_string_element, duckdb_vector_assign_string_element_len,
+        duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type, duckdb_vector_get_data,
+        duckdb_vector_get_validity, duckdb_vector_size,
+    },
 };
+
+fn list_vector_state_result(state: duckdb_state, action: &str, size: usize) -> Result<()> {
+    if state == DuckDBSuccess {
+        Ok(())
+    } else {
+        Err(duckdb_failure_from_message(format!(
+            "failed to {action} {size} elements in DuckDB list vector"
+        )))
+    }
+}
 
 /// A flat (contiguous, scalar-row) vector borrowed from a
 /// [`DataChunkHandle`][crate::core::DataChunkHandle].
@@ -45,7 +59,14 @@ impl<'a> FlatVector<'a> {
         }
     }
 
-    fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
+    /// Wrap a raw vector pointer with a caller-supplied element capacity.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
+    /// The caller must ensure `capacity` matches the backing allocation for the
+    /// logical view being exposed. Later typed slice and copy methods trust this
+    /// value for bounds checks.
+    pub(crate) unsafe fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
         Self {
             ptr,
             capacity,
@@ -241,6 +262,19 @@ impl<'a> ListVector<'a> {
         }
     }
 
+    /// Wrap a raw list vector pointer with a caller-supplied capacity.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid list `duckdb_vector` that remains valid for all of
+    /// `'a`, and `capacity` must not exceed the backing allocation available for
+    /// this vector's list entries.
+    #[cfg(feature = "vtab-arrow")]
+    pub(crate) unsafe fn from_raw_with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
+        Self {
+            entries: unsafe { FlatVector::with_capacity(ptr, capacity) },
+        }
+    }
+
     /// Returns the number of entries in the list vector.
     pub fn len(&self) -> usize {
         unsafe { duckdb_list_vector_get_size(self.entries.ptr) as usize }
@@ -251,17 +285,30 @@ impl<'a> ListVector<'a> {
         self.len() == 0
     }
 
-    /// Returns the child vector.
+    /// Returns the child vector, reserving space for `capacity` child values.
+    ///
+    /// # Panics
+    /// Panics if DuckDB rejects the reserve.
     // TODO: not ideal interface. Where should we keep capacity.
     pub fn child(&self, capacity: usize) -> FlatVector<'a> {
-        self.reserve(capacity);
-        FlatVector::with_capacity(unsafe { duckdb_list_vector_get_child(self.entries.ptr) }, capacity)
+        let ptr = self
+            .try_child_ptr_with_capacity(capacity)
+            .unwrap_or_else(|err| panic!("{err}"));
+        // SAFETY: DuckDB accepted the reserve for `capacity` child values.
+        unsafe { FlatVector::with_capacity(ptr, capacity) }
     }
 
-    /// Take the child as [StructVector].
+    /// Take the child as [StructVector], reserving space for `capacity` child
+    /// values.
+    ///
+    /// # Panics
+    /// Panics if DuckDB rejects the reserve.
     pub fn struct_child(&self, capacity: usize) -> StructVector<'a> {
-        self.reserve(capacity);
-        unsafe { StructVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
+        let ptr = self
+            .try_child_ptr_with_capacity(capacity)
+            .unwrap_or_else(|err| panic!("{err}"));
+        // SAFETY: DuckDB accepted the reserve for `capacity` child values.
+        unsafe { StructVector::from_raw(ptr) }
     }
 
     /// Take the child as [ArrayVector].
@@ -274,7 +321,17 @@ impl<'a> ListVector<'a> {
         unsafe { ListVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
     }
 
+    pub(crate) fn try_child_ptr_with_capacity(&self, capacity: usize) -> Result<duckdb_vector> {
+        self.try_reserve(capacity)?;
+        Ok(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    }
+
     /// Set primitive data to the child node.
+    ///
+    /// Reserves child storage and commits the list length to `data.len()`.
+    ///
+    /// # Panics
+    /// Panics if DuckDB rejects the reserve or size update.
     ///
     /// # Safety
     /// The caller must ensure `T` matches the child vector's physical storage
@@ -306,18 +363,27 @@ impl<'a> ListVector<'a> {
         }
     }
 
-    /// Reserve the capacity for its child node.
-    fn reserve(&self, capacity: usize) {
-        unsafe {
-            duckdb_list_vector_reserve(self.entries.ptr, capacity as u64);
-        }
+    /// Reserve space for `capacity` child values.
+    ///
+    /// This is public so callers can surface DuckDB allocation errors without
+    /// using the panic-based convenience methods.
+    pub fn try_reserve(&self, capacity: usize) -> Result<()> {
+        let state = unsafe { duckdb_list_vector_reserve(self.entries.ptr, capacity as u64) };
+        list_vector_state_result(state, "reserve child storage for", capacity)
     }
 
     /// Set the length of the list vector.
+    ///
+    /// Panics if DuckDB rejects the size update. Use [`Self::try_set_len`] to
+    /// handle that error explicitly.
     pub fn set_len(&self, new_len: usize) {
-        unsafe {
-            duckdb_list_vector_set_size(self.entries.ptr, new_len as u64);
-        }
+        self.try_set_len(new_len).unwrap_or_else(|err| panic!("{err}"));
+    }
+
+    /// Set the length of the list vector.
+    pub fn try_set_len(&self, new_len: usize) -> Result<()> {
+        let state = unsafe { duckdb_list_vector_set_size(self.entries.ptr, new_len as u64) };
+        list_vector_state_result(state, "set size to", new_len)
     }
 }
 
@@ -355,16 +421,38 @@ impl<'a> ArrayVector<'a> {
 
     /// Returns the child vector.
     /// capacity should be a multiple of the array size.
+    ///
+    /// # Panics
+    /// Panics if `capacity` is not a multiple of the fixed array size.
     // TODO: not ideal interface. Where should we keep count.
     pub fn child(&self, capacity: usize) -> FlatVector<'a> {
-        FlatVector::with_capacity(unsafe { duckdb_array_vector_get_child(self.ptr) }, capacity)
+        let array_size = self.get_array_size() as usize;
+        assert_eq!(
+            capacity % array_size,
+            0,
+            "array child capacity must be a multiple of the fixed array size"
+        );
+        // SAFETY: callers must pass a capacity covered by the array child
+        // backing allocation. The multiple-of-array-size assertion checks only
+        // fixed-size-list shape, not allocation size.
+        unsafe { FlatVector::with_capacity(self.child_ptr(), capacity) }
+    }
+
+    pub(crate) fn child_ptr(&self) -> duckdb_vector {
+        unsafe { duckdb_array_vector_get_child(self.ptr) }
     }
 
     /// Set primitive data to the child node.
     ///
+    /// # Panics
+    /// Panics if `data.len()` is not a multiple of the fixed array size.
+    ///
     /// # Safety
     /// The caller must ensure `T` matches the child vector's physical storage
-    /// and no other references to the same storage exist during the copy.
+    /// and no other references to the same storage exist during the copy. The
+    /// caller must also ensure the child backing allocation has space for all
+    /// `data` elements; nested callers can arrange this by reserving capacity
+    /// on the parent list vector before taking the array child.
     pub unsafe fn set_child<T: Copy>(&self, data: &[T]) {
         unsafe { self.child(data.len()).copy(data) };
     }
@@ -399,27 +487,33 @@ impl<'a> StructVector<'a> {
         }
     }
 
-    /// Returns the child by idx in the list vector.
+    /// Returns the child by idx in the struct vector.
     pub fn child(&self, idx: usize, capacity: usize) -> FlatVector<'a> {
-        FlatVector::with_capacity(
-            unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) },
-            capacity,
-        )
+        // SAFETY: struct children share the parent allocation, and callers pass
+        // the row capacity for the child view they are exposing.
+        unsafe { FlatVector::with_capacity(self.child_ptr(idx), capacity) }
     }
+
+    // Legacy typed child accessors remain public for callers that need nested
+    // vector views.
 
     /// Take the child as [StructVector].
     pub fn struct_vector_child(&self, idx: usize) -> StructVector<'a> {
-        unsafe { StructVector::from_raw(duckdb_struct_vector_get_child(self.ptr, idx as u64)) }
+        unsafe { StructVector::from_raw(self.child_ptr(idx)) }
     }
 
     /// Take the child as [ListVector].
     pub fn list_vector_child(&self, idx: usize) -> ListVector<'a> {
-        unsafe { ListVector::from_raw(duckdb_struct_vector_get_child(self.ptr, idx as u64)) }
+        unsafe { ListVector::from_raw(self.child_ptr(idx)) }
     }
 
     /// Take the child as [ArrayVector].
     pub fn array_vector_child(&self, idx: usize) -> ArrayVector<'a> {
-        unsafe { ArrayVector::from_raw(duckdb_struct_vector_get_child(self.ptr, idx as u64)) }
+        unsafe { ArrayVector::from_raw(self.child_ptr(idx)) }
+    }
+
+    pub(crate) fn child_ptr(&self, idx: usize) -> duckdb_vector {
+        unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) }
     }
 
     /// Get the logical type of this struct vector.
@@ -503,5 +597,60 @@ mod tests {
         assert_eq!(list_vector.get_entry(0), (0, 2));
         assert_eq!(list_vector.get_entry(1), (2, 1));
         assert_eq!(list_vector.get_entry(2), (3, 2));
+    }
+
+    #[test]
+    fn test_struct_vector_typed_child_accessors_smoke() {
+        let int_type = LogicalTypeHandle::from(LogicalTypeId::Integer);
+        let list_type = LogicalTypeHandle::list(&int_type);
+        let array_type = LogicalTypeHandle::array(&int_type, 2);
+        let nested_struct_type =
+            LogicalTypeHandle::struct_type(&[("value", LogicalTypeHandle::from(LogicalTypeId::Integer))]);
+        let struct_type = LogicalTypeHandle::struct_type(&[
+            ("items", list_type),
+            ("pair", array_type),
+            ("nested", nested_struct_type),
+        ]);
+        let chunk = DataChunkHandle::new(&[struct_type]);
+        let vector = chunk.struct_vector(0);
+
+        let list_child = vector.list_vector_child(0);
+        assert!(list_child.is_empty());
+        let array_child = vector.array_vector_child(1);
+        assert_eq!(array_child.get_array_size(), 2);
+        let struct_child = vector.struct_vector_child(2);
+        assert_eq!(struct_child.num_children(), 1);
+        assert_eq!(struct_child.child_name(0).to_str().unwrap(), "value");
+
+        let flat_child = vector.child(1, 2);
+        assert_eq!(flat_child.capacity(), 2);
+
+        let child_count = unsafe { duckdb_vector_size() as usize } + 1;
+        let struct_type = LogicalTypeHandle::struct_type(&[("value", LogicalTypeHandle::from(LogicalTypeId::Integer))]);
+        let list_type = LogicalTypeHandle::list(&struct_type);
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+        let child = list.struct_child(child_count);
+        assert_eq!(child.num_children(), 1);
+    }
+
+    #[test]
+    fn test_array_vector_set_child_uses_reserved_nested_capacity() -> Result<()> {
+        let item_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
+        let list_type = LogicalTypeHandle::list(&item_type);
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+        let child_count = unsafe { duckdb_vector_size() as usize } + 1;
+        list.try_reserve(child_count)?;
+
+        let array = list.array_child();
+        let data = (0..(child_count * 2) as i32).collect::<Vec<_>>();
+        unsafe { array.set_child(&data) };
+        let child = array.child(data.len());
+        let output = unsafe { child.as_slice_with_len::<i32>(data.len()) };
+
+        assert_eq!(output[data.len() - 1], data[data.len() - 1]);
+
+        Ok(())
     }
 }

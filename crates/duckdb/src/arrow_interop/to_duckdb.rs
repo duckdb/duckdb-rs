@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use arrow::{
     array::{
@@ -7,6 +7,7 @@ use arrow::{
         OffsetSizeTrait, PrimitiveArray, StringViewArray, StructArray, as_boolean_array, as_generic_binary_array,
         as_large_list_array, as_list_array, as_map_array, as_primitive_array, as_string_array, as_struct_array,
     },
+    buffer::NullBuffer,
     compute::cast,
     datatypes::*,
     record_batch::RecordBatch,
@@ -66,9 +67,113 @@ pub trait WritableVector {
     fn struct_vector(&mut self) -> StructVector<'_>;
 }
 
+/// Borrowed child vector handle used while writing one nested Arrow child array.
+struct ChildVector<'a> {
+    ptr: duckdb_vector,
+    /// Writable span for this child. Flat children use it as physical slots,
+    /// list children use it as list-entry rows, and array/struct routes ignore
+    /// it because their descendants re-derive their own spans.
+    capacity: usize,
+    _phantom: PhantomData<&'a mut ()>,
+}
+
+impl<'a> ChildVector<'a> {
+    fn of_list(parent: &'a mut ListVector<'_>, capacity: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        let ptr = parent.try_child_ptr_with_capacity(capacity)?;
+        // Commit the child row count before recursing so nested list children
+        // observe the correct size while their entries are written.
+        parent.try_set_len(capacity)?;
+        Ok(Self {
+            ptr,
+            capacity,
+            _phantom: PhantomData,
+        })
+    }
+
+    fn of_array(parent: &'a mut ArrayVector<'_>, capacity: usize) -> Self {
+        Self {
+            ptr: parent.child_ptr(),
+            capacity,
+            _phantom: PhantomData,
+        }
+    }
+
+    fn of_struct(parent: &'a mut StructVector<'_>, index: usize, capacity: usize) -> Self {
+        Self {
+            ptr: parent.child_ptr(index),
+            capacity,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+fn assert_child_type<F>(ptr: duckdb_vector, expected: &str, matches_expected: F)
+where
+    F: FnOnce(LogicalTypeId) -> bool,
+{
+    let logical_type =
+        unsafe { crate::core::LogicalTypeHandle::new(libduckdb_sys::duckdb_vector_get_column_type(ptr)) };
+    let actual = logical_type.id();
+    assert!(
+        matches_expected(actual),
+        "expected {expected} child vector, got {actual:?}"
+    );
+}
+
+impl WritableVector for ChildVector<'_> {
+    fn flat_vector(&mut self) -> FlatVector<'_> {
+        assert_child_type(self.ptr, "scalar", |id| {
+            !matches!(
+                id,
+                LogicalTypeId::List | LogicalTypeId::Array | LogicalTypeId::Struct | LogicalTypeId::Map
+            )
+        });
+        // SAFETY: ChildVector mutably borrows the parent while this wrapper
+        // exists, keeping `ptr` live and uniquely reached through this view.
+        // The recursive dispatcher calls this only for scalar logical
+        // children, and `capacity` is that child vector's physical slot count.
+        unsafe { FlatVector::with_capacity(self.ptr, self.capacity) }
+    }
+
+    fn list_vector(&mut self) -> ListVector<'_> {
+        assert_child_type(self.ptr, "list or map", |id| {
+            matches!(id, LogicalTypeId::List | LogicalTypeId::Map)
+        });
+        // SAFETY: ChildVector mutably borrows the parent while this wrapper
+        // exists, keeping `ptr` live and uniquely reached through this view.
+        // The recursive dispatcher calls this only for logical list/map
+        // children, and `capacity` is that child list/map's row count.
+        unsafe { ListVector::from_raw_with_capacity(self.ptr, self.capacity) }
+    }
+
+    fn array_vector(&mut self) -> ArrayVector<'_> {
+        assert_child_type(self.ptr, "array", |id| matches!(id, LogicalTypeId::Array));
+        // SAFETY: ChildVector mutably borrows the parent while this wrapper
+        // exists, keeping `ptr` live and uniquely reached through this view.
+        // The recursive dispatcher calls this only for logical fixed-size-list
+        // children.
+        unsafe { ArrayVector::from_raw(self.ptr) }
+    }
+
+    fn struct_vector(&mut self) -> StructVector<'_> {
+        assert_child_type(self.ptr, "struct", |id| matches!(id, LogicalTypeId::Struct));
+        // SAFETY: ChildVector mutably borrows the parent while this wrapper
+        // exists, keeping `ptr` live and uniquely reached through this view.
+        // The recursive dispatcher calls this only for logical struct children.
+        unsafe { StructVector::from_raw(self.ptr) }
+    }
+}
+
 /// Writes an Arrow array to a `WritableVector`.
 pub fn write_arrow_array_to_vector(
     col: &Arc<dyn Array>,
+    chunk: &mut dyn WritableVector,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_arrow_array_to_vector_ref(col.as_ref(), chunk)
+}
+
+fn write_arrow_array_to_vector_ref(
+    col: &dyn Array,
     chunk: &mut dyn WritableVector,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match col.data_type() {
@@ -76,12 +181,11 @@ pub fn write_arrow_array_to_vector(
             primitive_array_to_vector(col, &mut chunk.flat_vector())?;
         }
         DataType::Utf8 => {
-            string_array_to_vector(as_string_array(col.as_ref()), &mut chunk.flat_vector());
+            string_array_to_vector(as_string_array(col), &mut chunk.flat_vector());
         }
         DataType::LargeUtf8 => {
             string_array_to_vector(
-                col.as_ref()
-                    .as_any()
+                col.as_any()
                     .downcast_ref::<LargeStringArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeStringArray"))?,
                 &mut chunk.flat_vector(),
@@ -89,23 +193,21 @@ pub fn write_arrow_array_to_vector(
         }
         DataType::Utf8View => {
             string_view_array_to_vector(
-                col.as_ref()
-                    .as_any()
+                col.as_any()
                     .downcast_ref::<StringViewArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
                 &mut chunk.flat_vector(),
             );
         }
         DataType::Binary => {
-            binary_array_to_vector(as_generic_binary_array(col.as_ref()), &mut chunk.flat_vector());
+            binary_array_to_vector(as_generic_binary_array(col), &mut chunk.flat_vector());
         }
         DataType::FixedSizeBinary(_) => {
-            fixed_size_binary_array_to_vector(col.as_ref().as_fixed_size_binary(), &mut chunk.flat_vector())?;
+            fixed_size_binary_array_to_vector(col.as_fixed_size_binary(), &mut chunk.flat_vector())?;
         }
         DataType::LargeBinary => {
             large_binary_array_to_vector(
-                col.as_ref()
-                    .as_any()
+                col.as_any()
                     .downcast_ref::<LargeBinaryArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to LargeBinaryArray"))?,
                 &mut chunk.flat_vector(),
@@ -113,39 +215,36 @@ pub fn write_arrow_array_to_vector(
         }
         DataType::BinaryView => {
             binary_view_array_to_vector(
-                col.as_ref()
-                    .as_any()
+                col.as_any()
                     .downcast_ref::<BinaryViewArray>()
                     .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
                 &mut chunk.flat_vector(),
             );
         }
         DataType::List(_) => {
-            list_array_to_vector(as_list_array(col.as_ref()), &mut chunk.list_vector())?;
+            list_array_to_vector(as_list_array(col), &mut chunk.list_vector())?;
         }
         DataType::LargeList(_) => {
-            list_array_to_vector(as_large_list_array(col.as_ref()), &mut chunk.list_vector())?;
+            list_array_to_vector(as_large_list_array(col), &mut chunk.list_vector())?;
         }
         DataType::FixedSizeList(_, _) => {
-            fixed_size_list_array_to_vector(as_fixed_size_list_array(col.as_ref()), &mut chunk.array_vector())?;
+            fixed_size_list_array_to_vector(as_fixed_size_list_array(col), &mut chunk.array_vector())?;
         }
         DataType::Struct(_) => {
-            let struct_array = as_struct_array(col.as_ref());
+            let struct_array = as_struct_array(col);
             let mut struct_vector = chunk.struct_vector();
             struct_array_to_vector(struct_array, &mut struct_vector)?;
         }
         DataType::Map(_, _) => {
             // [`MapArray`] is physically a [`ListArray`] of key values pairs stored as an `entries` [`StructArray`] with 2 child fields.
-            let map_array = as_map_array(col.as_ref());
-            let out = &mut chunk.list_vector();
-            struct_array_to_vector(map_array.entries(), &mut out.struct_child(map_array.entries().len()))?;
-
-            for i in 0..map_array.len() {
-                let offset = map_array.value_offsets()[i];
-                let length = map_array.value_length(i);
-                out.set_entry(i, offset.as_(), length.as_());
-            }
-            set_nulls_in_list_vector(map_array, out);
+            let map_array = as_map_array(col);
+            let mut out = chunk.list_vector();
+            list_like_array_to_vector(
+                map_array.entries(),
+                map_array.value_offsets(),
+                map_array.nulls(),
+                &mut out,
+            )?;
         }
         dt => {
             return Err(format!(
@@ -491,72 +590,28 @@ fn list_array_to_vector<O: OffsetSizeTrait + AsPrimitive<usize>>(
     out: &mut ListVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
-    match value_array.data_type() {
-        dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
-            primitive_array_to_vector(value_array.as_ref(), &mut out.child(value_array.len()))?;
-        }
-        DataType::Utf8 => {
-            string_array_to_vector(as_string_array(value_array.as_ref()), &mut out.child(value_array.len()));
-        }
-        DataType::Utf8View => {
-            string_view_array_to_vector(
-                value_array
-                    .as_ref()
-                    .as_any()
-                    .downcast_ref::<StringViewArray>()
-                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to StringViewArray"))?,
-                &mut out.child(value_array.len()),
-            );
-        }
-        DataType::Binary => {
-            binary_array_to_vector(
-                as_generic_binary_array(value_array.as_ref()),
-                &mut out.child(value_array.len()),
-            );
-        }
-        DataType::FixedSizeBinary(_) => {
-            fixed_size_binary_array_to_vector(
-                value_array.as_ref().as_fixed_size_binary(),
-                &mut out.child(value_array.len()),
-            )?;
-        }
-        DataType::BinaryView => {
-            binary_view_array_to_vector(
-                value_array
-                    .as_ref()
-                    .as_any()
-                    .downcast_ref::<BinaryViewArray>()
-                    .ok_or_else(|| Box::<dyn std::error::Error>::from("Unable to downcast to BinaryViewArray"))?,
-                &mut out.child(value_array.len()),
-            );
-        }
-        DataType::List(_) => {
-            list_array_to_vector(as_list_array(value_array.as_ref()), &mut out.list_child())?;
-        }
-        DataType::FixedSizeList(_, _) => {
-            fixed_size_list_array_to_vector(as_fixed_size_list_array(value_array.as_ref()), &mut out.array_child())?;
-        }
-        DataType::Struct(_) => {
-            struct_array_to_vector(
-                as_struct_array(value_array.as_ref()),
-                &mut out.struct_child(value_array.len()),
-            )?;
-        }
-        _ => {
-            return Err(format!(
-                "List with elements of type '{}' are not currently supported.",
-                value_array.data_type()
-            )
-            .into());
-        }
+    list_like_array_to_vector(value_array.as_ref(), array.value_offsets(), array.nulls(), out)
+}
+
+fn list_like_array_to_vector<O: Copy + AsPrimitive<usize>>(
+    values: &dyn Array,
+    offsets: &[O],
+    nulls: Option<&NullBuffer>,
+    out: &mut ListVector<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    debug_assert!(!offsets.is_empty());
+    if let Some(nulls) = nulls {
+        debug_assert_eq!(offsets.len(), nulls.len() + 1);
     }
 
-    for i in 0..array.len() {
-        let offset = array.value_offsets()[i];
-        let length = array.value_length(i);
-        out.set_entry(i, offset.as_(), length.as_());
+    let mut child = ChildVector::of_list(out, values.len())?;
+    write_arrow_array_to_vector_ref(values, &mut child)?;
+
+    for (i, window) in offsets.windows(2).enumerate() {
+        let offset = window[0].as_();
+        out.set_entry(i, offset, window[1].as_() - offset);
     }
-    set_nulls_in_list_vector(array, out);
+    set_nulls_in_list_vector(nulls, out);
 
     Ok(())
 }
@@ -566,24 +621,11 @@ fn fixed_size_list_array_to_vector(
     out: &mut ArrayVector<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let value_array = array.values();
-    let mut child = out.child(value_array.len());
-    match value_array.data_type() {
-        dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
-            primitive_array_to_vector(value_array.as_ref(), &mut child)?;
-        }
-        DataType::Utf8 => {
-            string_array_to_vector(as_string_array(value_array.as_ref()), &mut child);
-        }
-        DataType::Binary => {
-            binary_array_to_vector(as_generic_binary_array(value_array.as_ref()), &mut child);
-        }
-        DataType::FixedSizeBinary(_) => {
-            fixed_size_binary_array_to_vector(value_array.as_ref().as_fixed_size_binary(), &mut child)?;
-        }
-        _ => {
-            return Err("Nested array is not supported yet.".into());
-        }
-    }
+    // arrow-rs normalizes FixedSizeListArray slices by slicing the child
+    // values array, so this is already the exact row count * fixed width span.
+    debug_assert_eq!(value_array.len(), array.len() * array.value_length() as usize);
+    let mut child = ChildVector::of_array(out, value_array.len());
+    write_arrow_array_to_vector_ref(value_array.as_ref(), &mut child)?;
 
     set_nulls_in_array_vector(array, out);
 
@@ -599,46 +641,8 @@ fn as_fixed_size_list_array(arr: &dyn Array) -> &FixedSizeListArray {
 fn struct_array_to_vector(array: &StructArray, out: &mut StructVector<'_>) -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..array.num_columns() {
         let column = array.column(i);
-        match column.data_type() {
-            dt if dt.is_primitive() || matches!(dt, DataType::Boolean) => {
-                primitive_array_to_vector(column, &mut out.child(i, array.len()))?;
-            }
-            DataType::Utf8 => {
-                string_array_to_vector(as_string_array(column.as_ref()), &mut out.child(i, array.len()));
-            }
-            DataType::Binary => {
-                binary_array_to_vector(as_generic_binary_array(column.as_ref()), &mut out.child(i, array.len()));
-            }
-            DataType::FixedSizeBinary(_) => {
-                fixed_size_binary_array_to_vector(
-                    column.as_ref().as_fixed_size_binary(),
-                    &mut out.child(i, array.len()),
-                )?;
-            }
-            DataType::List(_) => {
-                list_array_to_vector(as_list_array(column.as_ref()), &mut out.list_vector_child(i))?;
-            }
-            DataType::LargeList(_) => {
-                list_array_to_vector(as_large_list_array(column.as_ref()), &mut out.list_vector_child(i))?;
-            }
-            DataType::FixedSizeList(_, _) => {
-                fixed_size_list_array_to_vector(
-                    as_fixed_size_list_array(column.as_ref()),
-                    &mut out.array_vector_child(i),
-                )?;
-            }
-            DataType::Struct(_) => {
-                let struct_array = as_struct_array(column.as_ref());
-                let mut struct_vector = out.struct_vector_child(i);
-                struct_array_to_vector(struct_array, &mut struct_vector)?;
-            }
-            _ => {
-                unimplemented!(
-                    "Unsupported data type: {}, please file an issue https://github.com/duckdb/duckdb-rs",
-                    column.data_type()
-                );
-            }
-        }
+        let mut child = ChildVector::of_struct(out, i, array.len());
+        write_arrow_array_to_vector_ref(column.as_ref(), &mut child)?;
     }
     set_nulls_in_struct_vector(array, out);
     Ok(())
@@ -674,8 +678,8 @@ fn set_nulls_in_array_vector(array: &dyn Array, out_vector: &mut ArrayVector<'_>
     }
 }
 
-fn set_nulls_in_list_vector(array: &dyn Array, out_vector: &mut ListVector<'_>) {
-    if let Some(nulls) = array.nulls() {
+fn set_nulls_in_list_vector(nulls: Option<&NullBuffer>, out_vector: &mut ListVector<'_>) {
+    if let Some(nulls) = nulls {
         for (i, null) in nulls.into_iter().enumerate() {
             if !null {
                 out_vector.set_null(i);
