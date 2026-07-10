@@ -145,7 +145,7 @@ mod build_linked {
     #[cfg(feature = "buildtime_bindgen")]
     use super::bindings;
 
-    use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
+    use super::{HeaderLocation, header_filename, is_compiler, is_loadable_extension, win_target};
     use std::{
         env, fs, io,
         path::{Path, PathBuf},
@@ -328,9 +328,57 @@ mod build_linked {
 
         configure_link_search(&download_dir);
 
+        ensure_header(&download_dir)?;
+
         copy_libduckdb(&download_dir, archive.dynamic_lib, out_dir)?;
 
         Ok(HeaderLocation::IncludeDir(download_dir))
+    }
+
+    fn ensure_header(download_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let header_path = download_dir.join(header_filename());
+        if header_path.exists() {
+            return Ok(());
+        }
+
+        copy_header_from_bundled_archive(&header_path)
+    }
+
+    // duckdb.tar.gz is version-matched to the downloaded release by construction.
+    fn copy_header_from_bundled_archive(destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let header = header_filename();
+        let source_path = format!("duckdb/src/include/{header}");
+        let archive_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("duckdb.tar.gz");
+        let archive_file = fs::File::open(&archive_path)
+            .map_err(|err| format!("could not open {} to extract {header}: {err}", archive_path.display()))?;
+        let tar = flate2::read::GzDecoder::new(archive_file);
+        let mut archive = tar::Archive::new(tar);
+        let extraction_error =
+            |err: io::Error| format!("could not extract {header} from {}: {err}", archive_path.display());
+
+        for entry in archive.entries().map_err(&extraction_error)? {
+            let mut entry = entry.map_err(&extraction_error)?;
+            if entry.path().map_err(&extraction_error)?.as_ref() != Path::new(&source_path) {
+                continue;
+            }
+
+            let tmp_path = destination.with_extension("download");
+            let mut tmp_file = fs::File::create(&tmp_path)?;
+            io::copy(&mut entry, &mut tmp_file).map_err(&extraction_error)?;
+            fs::rename(&tmp_path, destination)?;
+            println!(
+                "cargo:warning=Copied {header} from {} to {}",
+                archive_path.display(),
+                destination.display()
+            );
+            return Ok(());
+        }
+
+        Err(format!(
+            "{} did not contain required header {source_path}",
+            archive_path.display()
+        )
+        .into())
     }
 
     fn configure_link_search(lib_dir: &Path) {
