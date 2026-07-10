@@ -145,7 +145,7 @@ mod build_linked {
     #[cfg(feature = "buildtime_bindgen")]
     use super::bindings;
 
-    use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
+    use super::{HeaderLocation, header_filename, is_compiler, is_loadable_extension, win_target};
     use std::{
         env, fs, io,
         path::{Path, PathBuf},
@@ -328,9 +328,48 @@ mod build_linked {
 
         configure_link_search(&download_dir);
 
+        ensure_header(&download_dir)?;
+
         copy_libduckdb(&download_dir, archive.dynamic_lib, out_dir)?;
 
         Ok(HeaderLocation::IncludeDir(download_dir))
+    }
+
+    fn ensure_header(download_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let header_path = download_dir.join(header_filename());
+        if header_path.exists() {
+            return Ok(());
+        }
+
+        copy_header_from_bundled_archive(header_filename(), &header_path)
+    }
+
+    // duckdb.tar.gz is version-matched to the downloaded release by construction.
+    fn copy_header_from_bundled_archive(header: &str, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let source_path = format!("duckdb/src/include/{header}");
+        let archive_file = fs::File::open("duckdb.tar.gz")
+            .map_err(|err| format!("could not open duckdb.tar.gz to extract {header}: {err}"))?;
+        let tar = flate2::read::GzDecoder::new(archive_file);
+        let mut archive = tar::Archive::new(tar);
+
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            if entry.path()?.as_ref() != Path::new(&source_path) {
+                continue;
+            }
+
+            let tmp_path = destination.with_extension("download");
+            let mut tmp_file = fs::File::create(&tmp_path)?;
+            io::copy(&mut entry, &mut tmp_file)?;
+            fs::rename(&tmp_path, destination)?;
+            println!(
+                "cargo:warning=Copied {header} from duckdb.tar.gz to {}",
+                destination.display()
+            );
+            return Ok(());
+        }
+
+        Err(format!("duckdb.tar.gz did not contain required header {source_path}").into())
     }
 
     fn configure_link_search(lib_dir: &Path) {
