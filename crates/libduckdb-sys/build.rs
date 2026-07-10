@@ -341,35 +341,44 @@ mod build_linked {
             return Ok(());
         }
 
-        copy_header_from_bundled_archive(header_filename(), &header_path)
+        copy_header_from_bundled_archive(&header_path)
     }
 
     // duckdb.tar.gz is version-matched to the downloaded release by construction.
-    fn copy_header_from_bundled_archive(header: &str, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    fn copy_header_from_bundled_archive(destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let header = header_filename();
         let source_path = format!("duckdb/src/include/{header}");
-        let archive_file = fs::File::open("duckdb.tar.gz")
-            .map_err(|err| format!("could not open duckdb.tar.gz to extract {header}: {err}"))?;
+        let archive_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("duckdb.tar.gz");
+        let archive_file = fs::File::open(&archive_path)
+            .map_err(|err| format!("could not open {} to extract {header}: {err}", archive_path.display()))?;
         let tar = flate2::read::GzDecoder::new(archive_file);
         let mut archive = tar::Archive::new(tar);
+        let extraction_error =
+            |err: io::Error| format!("could not extract {header} from {}: {err}", archive_path.display());
 
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            if entry.path()?.as_ref() != Path::new(&source_path) {
+        for entry in archive.entries().map_err(&extraction_error)? {
+            let mut entry = entry.map_err(&extraction_error)?;
+            if entry.path().map_err(&extraction_error)?.as_ref() != Path::new(&source_path) {
                 continue;
             }
 
             let tmp_path = destination.with_extension("download");
             let mut tmp_file = fs::File::create(&tmp_path)?;
-            io::copy(&mut entry, &mut tmp_file)?;
+            io::copy(&mut entry, &mut tmp_file).map_err(&extraction_error)?;
             fs::rename(&tmp_path, destination)?;
             println!(
-                "cargo:warning=Copied {header} from duckdb.tar.gz to {}",
+                "cargo:warning=Copied {header} from {} to {}",
+                archive_path.display(),
                 destination.display()
             );
             return Ok(());
         }
 
-        Err(format!("duckdb.tar.gz did not contain required header {source_path}").into())
+        Err(format!(
+            "{} did not contain required header {source_path}",
+            archive_path.display()
+        )
+        .into())
     }
 
     fn configure_link_search(lib_dir: &Path) {
