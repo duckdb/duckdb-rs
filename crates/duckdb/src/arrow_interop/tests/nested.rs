@@ -618,11 +618,7 @@ fn test_nested_list_sizes_are_set_to_child_counts() -> Result<(), Box<dyn Error>
         None,
     );
 
-    let schema = Schema::new(vec![Field::new("a", list_of_lists.data_type().clone(), true)]);
-    let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_of_lists) as ArrayRef])?;
-    let logical_type = to_duckdb_logical_type(batch.column(0).data_type())?;
-    let mut chunk = DataChunkHandle::new(&[logical_type]);
-    record_batch_to_duckdb_data_chunk(&batch, &mut chunk)?;
+    let chunk = single_array_data_chunk(Arc::new(list_of_lists))?;
 
     let outer = chunk.list_vector(0);
     assert_eq!(outer.len(), 3);

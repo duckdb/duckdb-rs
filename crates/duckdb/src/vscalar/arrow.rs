@@ -133,7 +133,7 @@ mod test {
     use std::{error::Error, sync::Arc};
 
     use arrow::{
-        array::{Array, RecordBatch, StringArray},
+        array::{Array, Int32Array, ListArray, RecordBatch, StringArray},
         datatypes::DataType,
     };
 
@@ -397,6 +397,60 @@ mod test {
         assert_eq!(string_values.value(0), "hello");
         assert_eq!(string_values.value(1), "world");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_scalar_reads_filtered_list_vectors() -> Result<(), Box<dyn Error>> {
+        struct ListFirstValueFunction;
+
+        impl VArrowScalar for ListFirstValueFunction {
+            type State = ();
+
+            fn invoke(_: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+                let lists = input.column(0).as_any().downcast_ref::<ListArray>().unwrap();
+                let first_values = lists
+                    .iter()
+                    .map(|value| value.map(|value| value.as_any().downcast_ref::<Int32Array>().unwrap().value(0)))
+                    .collect::<Int32Array>();
+                Ok(Arc::new(first_values))
+            }
+
+            fn signatures() -> Vec<ArrowFunctionSignature> {
+                vec![ArrowFunctionSignature::exact(
+                    vec![DataType::List(Arc::new(arrow::datatypes::Field::new(
+                        "item",
+                        DataType::Int32,
+                        true,
+                    )))],
+                    DataType::Int32,
+                )]
+            }
+        }
+
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<ListFirstValueFunction>("arrow_list_first_value")?;
+        conn.execute_batch(
+            "create table list_input as \
+             select i::integer as id, \
+                    case when i % 7 = 0 then null \
+                         else [i::integer, (i + 1)::integer] end as values \
+             from range(5000) t(i)",
+        )?;
+
+        let first_values = conn
+            .prepare(
+                "select arrow_list_first_value(values) \
+                 from list_input where id % 97 = 0 order by id",
+            )?
+            .query_map([], |row| row.get::<_, Option<i32>>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let expected = (0..5000)
+            .step_by(97)
+            .map(|id| if id % 7 == 0 { None } else { Some(id) })
+            .collect::<Vec<_>>();
+        assert_eq!(first_values, expected);
         Ok(())
     }
 }
