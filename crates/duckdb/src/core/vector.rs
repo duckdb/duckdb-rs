@@ -8,7 +8,7 @@
 //! caller-chosen and must not exceed the DuckDB vector's actual validity —
 //! that path does not track liveness in the type system.
 
-use std::{ffi::CString, marker::PhantomData, slice};
+use std::{cell::Cell, ffi::CString, marker::PhantomData, slice};
 
 use libduckdb_sys::{
     DuckDbString, duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid,
@@ -28,6 +28,14 @@ use crate::{
     },
 };
 
+/// Mirrors DuckDB's `DConstants::MAX_VECTOR_SIZE`, the largest allocation a
+/// single vector can hold (not the per-chunk row count reported by
+/// `duckdb_vector_size()`). `ListVector::Reserve` throws a C++ exception for
+/// larger requests, and `duckdb_list_vector_reserve` does not catch it, so the
+/// exception would cross the non-unwinding C boundary and abort the process.
+/// Rejecting such requests up front keeps them recoverable errors.
+const MAX_VECTOR_SIZE: u64 = 1 << 37;
+
 fn list_vector_state_result(state: duckdb_state, action: &str, size: usize) -> Result<()> {
     if state == DuckDBSuccess {
         Ok(())
@@ -36,6 +44,32 @@ fn list_vector_state_result(state: duckdb_state, action: &str, size: usize) -> R
             "failed to {action} {size} elements in DuckDB list vector"
         )))
     }
+}
+
+fn try_vector_row_is_null(ptr: duckdb_vector, row: u64, capacity: usize) -> Result<bool> {
+    let row_index = usize::try_from(row)
+        .map_err(|_| duckdb_failure_from_message(format!("row index {row} exceeds usize range")))?;
+    if row_index >= capacity {
+        return Err(duckdb_failure_from_message(format!(
+            "row index {row} exceeds vector capacity {capacity}"
+        )));
+    }
+    let valid = unsafe {
+        let validity = duckdb_vector_get_validity(ptr);
+
+        // validity can return a NULL pointer if the entire vector is valid
+        if validity.is_null() {
+            return Ok(false);
+        }
+
+        duckdb_validity_row_is_valid(validity, row)
+    };
+
+    Ok(!valid)
+}
+
+fn vector_row_is_null(ptr: duckdb_vector, row: u64, capacity: usize) -> bool {
+    try_vector_row_is_null(ptr, row, capacity).unwrap_or_else(|err| panic!("{err}"))
 }
 
 /// A flat (contiguous, scalar-row) vector borrowed from a
@@ -63,9 +97,9 @@ impl<'a> FlatVector<'a> {
     ///
     /// # Safety
     /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
-    /// The caller must ensure `capacity` matches the backing allocation for the
-    /// logical view being exposed. Later typed slice and copy methods trust this
-    /// value for bounds checks.
+    /// The caller must ensure `capacity` does not exceed the backing allocation
+    /// for the logical view being exposed. Later typed slice and copy methods
+    /// trust this value for bounds checks.
     pub(crate) unsafe fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
         Self {
             ptr,
@@ -79,22 +113,22 @@ impl<'a> FlatVector<'a> {
         self.capacity
     }
 
+    #[cfg(feature = "vtab-arrow")]
+    pub(crate) fn ptr(&self) -> duckdb_vector {
+        self.ptr
+    }
+
     /// Returns true if the row at the given index is null
+    ///
+    /// # Panics
+    /// Panics if `row` is outside the vector capacity.
     pub fn row_is_null(&self, row: u64) -> bool {
-        // use idx_t entry_idx = row_idx / 64; idx_t idx_in_entry = row_idx % 64; bool is_valid = validity_mask[entry_idx] & (1 « idx_in_entry);
-        // as the row is valid function is slower
-        let valid = unsafe {
-            let validity = duckdb_vector_get_validity(self.ptr);
+        vector_row_is_null(self.ptr, row, self.capacity)
+    }
 
-            // validity can return a NULL pointer if the entire vector is valid
-            if validity.is_null() {
-                return false;
-            }
-
-            duckdb_validity_row_is_valid(validity, row)
-        };
-
-        !valid
+    /// Returns whether the row is null, or an error if it is out of range.
+    pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
+        try_vector_row_is_null(self.ptr, row, self.capacity)
     }
 
     /// Returns a mutable pointer to the vector's backing data cast to `T`.
@@ -249,6 +283,7 @@ impl Inserter<&Vec<u8>> for FlatVector<'_> {
 pub struct ListVector<'a> {
     /// ListVector does not own the vector pointer.
     entries: FlatVector<'a>,
+    reserved_child_capacity: Cell<usize>,
 }
 
 impl<'a> ListVector<'a> {
@@ -259,6 +294,7 @@ impl<'a> ListVector<'a> {
     pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
         Self {
             entries: unsafe { FlatVector::from_raw(ptr) },
+            reserved_child_capacity: Cell::new(0),
         }
     }
 
@@ -267,15 +303,20 @@ impl<'a> ListVector<'a> {
     /// # Safety
     /// `ptr` must be a valid list `duckdb_vector` that remains valid for all of
     /// `'a`, and `capacity` must not exceed the backing allocation available for
-    /// this vector's list entries.
-    #[cfg(feature = "vtab-arrow")]
+    /// this vector's list entries. Any committed child size reported by DuckDB
+    /// must also be covered by the child allocation, as it is when the size was
+    /// committed through this wrapper or produced by DuckDB.
     pub(crate) unsafe fn from_raw_with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
         Self {
             entries: unsafe { FlatVector::with_capacity(ptr, capacity) },
+            reserved_child_capacity: Cell::new(0),
         }
     }
 
-    /// Returns the number of entries in the list vector.
+    /// Returns the number of child elements stored by the list vector.
+    ///
+    /// This is the upper bound for the end of non-empty list entries, not the
+    /// number of parent list rows.
     pub fn len(&self) -> usize {
         unsafe { duckdb_list_vector_get_size(self.entries.ptr) as usize }
     }
@@ -308,22 +349,58 @@ impl<'a> ListVector<'a> {
             .try_child_ptr_with_capacity(capacity)
             .unwrap_or_else(|err| panic!("{err}"));
         // SAFETY: DuckDB accepted the reserve for `capacity` child values.
-        unsafe { StructVector::from_raw(ptr) }
+        unsafe { StructVector::from_raw_with_capacity(ptr, capacity) }
+    }
+
+    /// Capacity of the child vector's backing storage.
+    ///
+    /// DuckDB initializes list children with standard vector capacity. This
+    /// wrapper tracks larger explicit reservations, and larger committed sizes
+    /// must already have been reserved; the safe size setters and
+    /// DuckDB-produced chunks preserve that invariant.
+    fn child_capacity(&self) -> usize {
+        self.len()
+            .max(self.reserved_child_capacity.get())
+            .max(unsafe { duckdb_vector_size() as usize })
     }
 
     /// Take the child as [ArrayVector].
     pub fn array_child(&self) -> ArrayVector<'a> {
-        unsafe { ArrayVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
+        // SAFETY: `child_capacity` is covered by the child's backing storage.
+        unsafe {
+            ArrayVector::from_raw_with_capacity(duckdb_list_vector_get_child(self.entries.ptr), self.child_capacity())
+        }
     }
 
     /// Take the child as [ListVector].
     pub fn list_child(&self) -> ListVector<'a> {
-        unsafe { ListVector::from_raw(duckdb_list_vector_get_child(self.entries.ptr)) }
+        // SAFETY: `child_capacity` is covered by the child's backing storage.
+        unsafe {
+            ListVector::from_raw_with_capacity(duckdb_list_vector_get_child(self.entries.ptr), self.child_capacity())
+        }
     }
 
     pub(crate) fn try_child_ptr_with_capacity(&self, capacity: usize) -> Result<duckdb_vector> {
         self.try_reserve(capacity)?;
         Ok(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
+    }
+
+    #[cfg(feature = "vtab-arrow")]
+    pub(crate) fn child_ptr(&self) -> duckdb_vector {
+        unsafe { duckdb_list_vector_get_child(self.entries.ptr) }
+    }
+
+    /// Returns true if the row at the given index is null.
+    ///
+    /// # Panics
+    /// Panics if `row` is outside the vector capacity.
+    pub fn row_is_null(&self, row: u64) -> bool {
+        self.entries.row_is_null(row)
+    }
+
+    /// Returns whether the row is null, or an error if it is out of range.
+    pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
+        self.entries.try_row_is_null(row)
     }
 
     /// Set primitive data to the child node.
@@ -342,16 +419,64 @@ impl<'a> ListVector<'a> {
     }
 
     /// Set offset and length to the entry.
+    ///
+    /// # Panics
+    /// Panics if `idx` is outside the vector capacity.
     pub fn set_entry(&mut self, idx: usize, offset: usize, length: usize) {
-        let entries = unsafe { self.entries.as_mut_slice::<duckdb_list_entry>() };
-        entries[idx].offset = offset as u64;
-        entries[idx].length = length as u64;
+        assert!(
+            idx < self.entries.capacity(),
+            "list entry row {idx} exceeds vector capacity {}",
+            self.entries.capacity()
+        );
+        // SAFETY: the bounds check above keeps the write inside the entry
+        // allocation, and a single-slot write avoids materializing a slice
+        // over neighboring entries DuckDB may have left uninitialized.
+        unsafe {
+            self.entries
+                .as_mut_ptr::<duckdb_list_entry>()
+                .add(idx)
+                .write(duckdb_list_entry {
+                    offset: offset as u64,
+                    length: length as u64,
+                });
+        }
     }
 
     /// Get offset and length for the entry at index.
+    ///
+    /// # Panics
+    /// Panics if the entry is out of range or its offset or length cannot fit
+    /// in `usize` on the current target.
     pub fn get_entry(&self, idx: usize) -> (usize, usize) {
-        let entry = (unsafe { self.entries.as_slice::<duckdb_list_entry>() })[idx];
-        (entry.offset as usize, entry.length as usize)
+        self.try_get_entry(idx).unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    /// Returns the entry offset and length, or an error if the entry is out of
+    /// range or cannot be represented on the current target.
+    pub fn try_get_entry(&self, idx: usize) -> Result<(usize, usize)> {
+        if idx >= self.entries.capacity() {
+            return Err(duckdb_failure_from_message(format!(
+                "list entry row {idx} exceeds vector capacity {}",
+                self.entries.capacity()
+            )));
+        }
+        // SAFETY: the bounds check above keeps the read inside the entry
+        // allocation, and a single-slot read avoids materializing a slice
+        // over neighboring entries DuckDB may have left uninitialized.
+        let entry = unsafe { self.entries.as_mut_ptr::<duckdb_list_entry>().add(idx).read() };
+        let offset = usize::try_from(entry.offset).map_err(|_| {
+            duckdb_failure_from_message(format!(
+                "DuckDB list entry offset {} at row {idx} exceeds usize range",
+                entry.offset
+            ))
+        })?;
+        let length = usize::try_from(entry.length).map_err(|_| {
+            duckdb_failure_from_message(format!(
+                "DuckDB list entry length {} at row {idx} exceeds usize range",
+                entry.length
+            ))
+        })?;
+        Ok((offset, length))
     }
 
     /// Set row as null
@@ -365,23 +490,36 @@ impl<'a> ListVector<'a> {
 
     /// Reserve space for `capacity` child values.
     ///
-    /// This is public so callers can surface DuckDB allocation errors without
-    /// using the panic-based convenience methods.
+    /// This is public so callers can handle reservation errors without the
+    /// panic-based convenience methods. Requests beyond DuckDB's maximum
+    /// vector size (`2^37` elements) are rejected here as `Err`, because
+    /// DuckDB reports them with a C++ exception the C API does not catch.
+    /// Allocation failure inside DuckDB escapes the same way and aborts the
+    /// process; it cannot be returned as an error through the current C API.
     pub fn try_reserve(&self, capacity: usize) -> Result<()> {
+        if capacity as u64 > MAX_VECTOR_SIZE {
+            return Err(duckdb_failure_from_message(format!(
+                "cannot reserve {capacity} elements in DuckDB list vector: exceeds maximum vector size {MAX_VECTOR_SIZE}"
+            )));
+        }
         let state = unsafe { duckdb_list_vector_reserve(self.entries.ptr, capacity as u64) };
-        list_vector_state_result(state, "reserve child storage for", capacity)
+        list_vector_state_result(state, "reserve child storage for", capacity)?;
+        self.reserved_child_capacity
+            .set(self.reserved_child_capacity.get().max(capacity));
+        Ok(())
     }
 
-    /// Set the length of the list vector.
+    /// Reserve child storage and set the length of the list vector.
     ///
-    /// Panics if DuckDB rejects the size update. Use [`Self::try_set_len`] to
-    /// handle that error explicitly.
+    /// Panics if DuckDB rejects the reserve or size update. Use
+    /// [`Self::try_set_len`] to handle that error explicitly.
     pub fn set_len(&self, new_len: usize) {
         self.try_set_len(new_len).unwrap_or_else(|err| panic!("{err}"));
     }
 
-    /// Set the length of the list vector.
+    /// Reserve child storage and set the length of the list vector.
     pub fn try_set_len(&self, new_len: usize) -> Result<()> {
+        self.try_reserve(new_len)?;
         let state = unsafe { duckdb_list_vector_set_size(self.entries.ptr, new_len as u64) };
         list_vector_state_result(state, "set size to", new_len)
     }
@@ -393,6 +531,7 @@ impl<'a> ListVector<'a> {
 /// Exposes a fixed-width list whose child storage is contiguous across all rows.
 pub struct ArrayVector<'a> {
     ptr: duckdb_vector,
+    capacity: usize,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -402,8 +541,18 @@ impl<'a> ArrayVector<'a> {
     /// # Safety
     /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
     pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+        unsafe { Self::from_raw_with_capacity(ptr, duckdb_vector_size() as usize) }
+    }
+
+    /// Wrap a raw array vector pointer with a caller-supplied row capacity.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid array `duckdb_vector` that remains valid for all
+    /// of `'a`, and `capacity` must not exceed the backing row allocation.
+    pub(crate) unsafe fn from_raw_with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
         Self {
             ptr,
+            capacity,
             _phantom: PhantomData,
         }
     }
@@ -419,11 +568,25 @@ impl<'a> ArrayVector<'a> {
         unsafe { duckdb_array_type_array_size(ty.ptr) as u64 }
     }
 
+    /// Returns true if the row at the given index is null.
+    ///
+    /// # Panics
+    /// Panics if `row` is outside the vector capacity.
+    pub fn row_is_null(&self, row: u64) -> bool {
+        vector_row_is_null(self.ptr, row, self.capacity)
+    }
+
+    /// Returns whether the row is null, or an error if it is out of range.
+    pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
+        try_vector_row_is_null(self.ptr, row, self.capacity)
+    }
+
     /// Returns the child vector.
     /// capacity should be a multiple of the array size.
     ///
     /// # Panics
-    /// Panics if `capacity` is not a multiple of the fixed array size.
+    /// Panics if `capacity` is not a multiple of the fixed array size or exceeds
+    /// the child allocation derived from the parent capacity.
     // TODO: not ideal interface. Where should we keep count.
     pub fn child(&self, capacity: usize) -> FlatVector<'a> {
         let array_size = self.get_array_size() as usize;
@@ -432,9 +595,16 @@ impl<'a> ArrayVector<'a> {
             0,
             "array child capacity must be a multiple of the fixed array size"
         );
-        // SAFETY: callers must pass a capacity covered by the array child
-        // backing allocation. The multiple-of-array-size assertion checks only
-        // fixed-size-list shape, not allocation size.
+        let child_capacity = self
+            .capacity
+            .checked_mul(array_size)
+            .expect("array child capacity overflows usize");
+        assert!(
+            capacity <= child_capacity,
+            "array child capacity {capacity} exceeds backing capacity {child_capacity}"
+        );
+        // SAFETY: fixed-array children contain `array_size` values per parent
+        // row, and the checks above bound `capacity` by that allocation.
         unsafe { FlatVector::with_capacity(self.child_ptr(), capacity) }
     }
 
@@ -472,6 +642,7 @@ impl<'a> ArrayVector<'a> {
 /// Groups one child vector per struct field, all sharing the same row count.
 pub struct StructVector<'a> {
     ptr: duckdb_vector,
+    capacity: usize,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -481,16 +652,34 @@ impl<'a> StructVector<'a> {
     /// # Safety
     /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
     pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
+        unsafe { Self::from_raw_with_capacity(ptr, duckdb_vector_size() as usize) }
+    }
+
+    /// Wrap a raw struct vector pointer with a caller-supplied row capacity.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid struct `duckdb_vector` that remains valid for all
+    /// of `'a`, and `capacity` must not exceed the backing row allocation.
+    pub(crate) unsafe fn from_raw_with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
         Self {
             ptr,
+            capacity,
             _phantom: PhantomData,
         }
     }
 
     /// Returns the child by idx in the struct vector.
+    ///
+    /// # Panics
+    /// Panics if `capacity` exceeds the parent vector capacity.
     pub fn child(&self, idx: usize, capacity: usize) -> FlatVector<'a> {
-        // SAFETY: struct children share the parent allocation, and callers pass
-        // the row capacity for the child view they are exposing.
+        assert!(
+            capacity <= self.capacity,
+            "struct child capacity {capacity} exceeds parent capacity {}",
+            self.capacity
+        );
+        // SAFETY: struct children share the parent allocation, and the check
+        // above bounds the exposed child view by the parent capacity.
         unsafe { FlatVector::with_capacity(self.child_ptr(idx), capacity) }
     }
 
@@ -499,17 +688,17 @@ impl<'a> StructVector<'a> {
 
     /// Take the child as [StructVector].
     pub fn struct_vector_child(&self, idx: usize) -> StructVector<'a> {
-        unsafe { StructVector::from_raw(self.child_ptr(idx)) }
+        unsafe { StructVector::from_raw_with_capacity(self.child_ptr(idx), self.capacity) }
     }
 
     /// Take the child as [ListVector].
     pub fn list_vector_child(&self, idx: usize) -> ListVector<'a> {
-        unsafe { ListVector::from_raw(self.child_ptr(idx)) }
+        unsafe { ListVector::from_raw_with_capacity(self.child_ptr(idx), self.capacity) }
     }
 
     /// Take the child as [ArrayVector].
     pub fn array_vector_child(&self, idx: usize) -> ArrayVector<'a> {
-        unsafe { ArrayVector::from_raw(self.child_ptr(idx)) }
+        unsafe { ArrayVector::from_raw_with_capacity(self.child_ptr(idx), self.capacity) }
     }
 
     pub(crate) fn child_ptr(&self, idx: usize) -> duckdb_vector {
@@ -519,6 +708,19 @@ impl<'a> StructVector<'a> {
     /// Get the logical type of this struct vector.
     pub fn logical_type(&self) -> LogicalTypeHandle {
         unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
+    }
+
+    /// Returns true if the row at the given index is null.
+    ///
+    /// # Panics
+    /// Panics if `row` is outside the vector capacity.
+    pub fn row_is_null(&self, row: u64) -> bool {
+        vector_row_is_null(self.ptr, row, self.capacity)
+    }
+
+    /// Returns whether the row is null, or an error if it is out of range.
+    pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
+        try_vector_row_is_null(self.ptr, row, self.capacity)
     }
 
     /// Get the name of the child by idx.
@@ -600,6 +802,31 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "exceeds vector capacity")]
+    fn test_flat_vector_row_is_null_checks_capacity() {
+        let chunk = DataChunkHandle::new(&[LogicalTypeId::Integer.into()]);
+        let vector = chunk.flat_vector(0);
+
+        vector.row_is_null(unsafe { duckdb_vector_size() });
+    }
+
+    #[test]
+    fn test_vector_try_row_is_null_rejects_row_beyond_capacity() {
+        let row = unsafe { duckdb_vector_size() };
+        let chunk = DataChunkHandle::new(&[
+            LogicalTypeId::Integer.into(),
+            LogicalTypeHandle::list(&LogicalTypeId::Integer.into()),
+            LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2),
+            LogicalTypeHandle::struct_type(&[("value", LogicalTypeId::Integer.into())]),
+        ]);
+
+        assert!(chunk.flat_vector(0).try_row_is_null(row).is_err());
+        assert!(chunk.list_vector(1).try_row_is_null(row).is_err());
+        assert!(chunk.array_vector(2).try_row_is_null(row).is_err());
+        assert!(chunk.struct_vector(3).try_row_is_null(row).is_err());
+    }
+
+    #[test]
     fn test_struct_vector_typed_child_accessors_smoke() {
         let int_type = LogicalTypeHandle::from(LogicalTypeId::Integer);
         let list_type = LogicalTypeHandle::list(&int_type);
@@ -635,6 +862,28 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "exceeds parent capacity")]
+    fn test_struct_vector_child_rejects_capacity_beyond_parent() {
+        let struct_type = LogicalTypeHandle::struct_type(&[("value", LogicalTypeHandle::from(LogicalTypeId::Integer))]);
+        let chunk = DataChunkHandle::new(&[struct_type]);
+        let vector = chunk.struct_vector(0);
+        let capacity = unsafe { duckdb_vector_size() as usize } + 1;
+
+        vector.child(0, capacity);
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds backing capacity")]
+    fn test_array_vector_child_rejects_capacity_beyond_parent() {
+        let array_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
+        let chunk = DataChunkHandle::new(&[array_type]);
+        let vector = chunk.array_vector(0);
+        let capacity = (unsafe { duckdb_vector_size() as usize } + 1) * 2;
+
+        vector.child(capacity);
+    }
+
+    #[test]
     fn test_array_vector_set_child_uses_reserved_nested_capacity() -> Result<()> {
         let item_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
         let list_type = LogicalTypeHandle::list(&item_type);
@@ -652,5 +901,93 @@ mod tests {
         assert_eq!(output[data.len() - 1], data[data.len() - 1]);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_list_vector_set_len_reserves_list_child_storage() {
+        let child_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
+        let list_type = LogicalTypeHandle::list(&child_type);
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+        let child_count = unsafe { duckdb_vector_size() as usize } + 1;
+        list.set_len(child_count);
+
+        let mut child = list.list_child();
+        child.set_entry(child_count - 1, 0, 0);
+
+        assert_eq!(child.get_entry(child_count - 1), (0, 0));
+        assert!(!child.row_is_null((child_count - 1) as u64));
+    }
+
+    #[test]
+    fn test_list_vector_set_len_reserves_array_child_storage() {
+        let child_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
+        let list_type = LogicalTypeHandle::list(&child_type);
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+        let child_count = unsafe { duckdb_vector_size() as usize } + 1;
+        list.set_len(child_count);
+
+        let child = list.array_child();
+
+        assert!(!child.row_is_null((child_count - 1) as u64));
+    }
+
+    #[test]
+    fn test_list_vector_try_get_entry_rejects_row_beyond_capacity() {
+        let list_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+        let row = unsafe { duckdb_vector_size() as usize };
+
+        let err = list.try_get_entry(row).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!("list entry row {row} exceeds vector capacity {row}")
+        );
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn test_list_vector_try_set_len_rejects_oversized_capacity() {
+        let list_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+        let oversized = MAX_VECTOR_SIZE as usize + 1;
+
+        let err = list.try_set_len(oversized).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "cannot reserve {oversized} elements in DuckDB list vector: exceeds maximum vector size {MAX_VECTOR_SIZE}"
+            )
+        );
+    }
+
+    #[test]
+    fn test_list_vector_list_child_retains_default_capacity_before_len() {
+        let child_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
+        let list_type = LogicalTypeHandle::list(&child_type);
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+
+        let mut child = list.list_child();
+        child.set_entry(0, 0, 0);
+
+        assert_eq!(child.get_entry(0), (0, 0));
+    }
+
+    #[test]
+    fn test_list_vector_array_child_retains_default_capacity_before_len() {
+        let child_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
+        let list_type = LogicalTypeHandle::list(&child_type);
+        let chunk = DataChunkHandle::new(&[list_type]);
+        let list = chunk.list_vector(0);
+
+        let child = list.array_child();
+
+        assert!(!child.row_is_null(0));
     }
 }

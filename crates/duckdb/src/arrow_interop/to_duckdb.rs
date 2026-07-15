@@ -70,9 +70,7 @@ pub trait WritableVector {
 /// Borrowed child vector handle used while writing one nested Arrow child array.
 struct ChildVector<'a> {
     ptr: duckdb_vector,
-    /// Writable span for this child. Flat children use it as physical slots,
-    /// list children use it as list-entry rows, and array/struct routes ignore
-    /// it because their descendants re-derive their own spans.
+    /// This child vector's own writable row count.
     capacity: usize,
     _phantom: PhantomData<&'a mut ()>,
 }
@@ -131,7 +129,8 @@ impl WritableVector for ChildVector<'_> {
         // SAFETY: ChildVector mutably borrows the parent while this wrapper
         // exists, keeping `ptr` live and uniquely reached through this view.
         // The recursive dispatcher calls this only for scalar logical
-        // children, and `capacity` is that child vector's physical slot count.
+        // children, and `capacity` is the reserved row span for this child
+        // view.
         unsafe { FlatVector::with_capacity(self.ptr, self.capacity) }
     }
 
@@ -151,16 +150,17 @@ impl WritableVector for ChildVector<'_> {
         // SAFETY: ChildVector mutably borrows the parent while this wrapper
         // exists, keeping `ptr` live and uniquely reached through this view.
         // The recursive dispatcher calls this only for logical fixed-size-list
-        // children.
-        unsafe { ArrayVector::from_raw(self.ptr) }
+        // children, and `capacity` is this child vector's own row count.
+        unsafe { ArrayVector::from_raw_with_capacity(self.ptr, self.capacity) }
     }
 
     fn struct_vector(&mut self) -> StructVector<'_> {
         assert_child_type(self.ptr, "struct", |id| matches!(id, LogicalTypeId::Struct));
         // SAFETY: ChildVector mutably borrows the parent while this wrapper
         // exists, keeping `ptr` live and uniquely reached through this view.
-        // The recursive dispatcher calls this only for logical struct children.
-        unsafe { StructVector::from_raw(self.ptr) }
+        // The recursive dispatcher calls this only for logical struct children,
+        // and `capacity` is this child vector's own row count.
+        unsafe { StructVector::from_raw_with_capacity(self.ptr, self.capacity) }
     }
 }
 
