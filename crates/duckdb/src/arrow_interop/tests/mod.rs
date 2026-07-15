@@ -1,6 +1,6 @@
 use super::{
-    UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, data_chunk_to_arrow, record_batch_to_duckdb_data_chunk,
-    to_duckdb_logical_type, to_duckdb_logical_type_for_field,
+    UUID_BYTE_WIDTH, UUID_EXTENSION_NAME, data_chunk_to_arrow, flat_vector_to_arrow_array,
+    record_batch_to_duckdb_data_chunk, to_duckdb_logical_type, to_duckdb_logical_type_for_field,
 };
 use crate::{
     Connection, Result,
@@ -29,6 +29,7 @@ use arrow::{
 use std::{collections::HashMap, error::Error, sync::Arc};
 
 mod fixed_size_binary;
+mod from_duckdb_nested;
 mod nested;
 
 #[test]
@@ -346,6 +347,17 @@ fn roundtrip_single_array(array: ArrayRef) -> Result<ArrayRef, Box<dyn Error>> {
     let rb = stmt.query_arrow(param)?.next().expect("no record batch");
 
     Ok(rb.column(0).clone())
+}
+
+/// Writes a single-column record batch into a fresh DuckDB data chunk.
+fn single_array_data_chunk(array: ArrayRef) -> Result<DataChunkHandle, Box<dyn Error>> {
+    let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
+    let batch = RecordBatch::try_new(Arc::new(schema), vec![array])?;
+    let logical_type = to_duckdb_logical_type(batch.column(0).data_type())?;
+    let mut chunk = DataChunkHandle::new(&[logical_type]);
+    record_batch_to_duckdb_data_chunk(&batch, &mut chunk)?;
+
+    Ok(chunk)
 }
 
 #[test]

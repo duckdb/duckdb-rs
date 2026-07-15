@@ -356,8 +356,22 @@ impl LogicalTypeHandle {
 
     /// Logical type child name by idx
     ///
+    /// Invalid UTF-8 bytes are replaced with the Unicode replacement character.
+    ///
     /// Panics if the logical type is not a struct or union, or if `idx` is out of range.
     pub fn child_name(&self, idx: usize) -> String {
+        self.child_name_string(idx).to_string_lossy().into_owned()
+    }
+
+    /// Logical type child name by idx, rejecting invalid UTF-8.
+    ///
+    /// Panics if the logical type is not a struct or union, or if `idx` is out
+    /// of range.
+    pub fn try_child_name(&self, idx: usize) -> crate::Result<String> {
+        Ok(self.child_name_string(idx).to_str()?.to_owned())
+    }
+
+    fn child_name_string(&self, idx: usize) -> DuckDbString {
         unsafe {
             let child_name_ptr = match self.id() {
                 LogicalTypeId::Struct => duckdb_struct_type_child_name(self.ptr, idx as u64),
@@ -368,9 +382,7 @@ impl LogicalTypeHandle {
             if child_name_ptr.is_null() {
                 panic!("child index {idx} out of range");
             }
-            let c_str = DuckDbString::from_ptr(child_name_ptr);
-            let name = c_str.to_str().unwrap();
-            name.to_string()
+            DuckDbString::from_ptr(child_name_ptr)
         }
     }
 
@@ -436,7 +448,10 @@ impl LogicalTypeHandle {
 
 #[cfg(test)]
 mod test {
+    use std::ffi::CString;
+
     use crate::core::{LogicalTypeHandle, LogicalTypeId};
+    use crate::ffi::duckdb_create_struct_type;
 
     #[test]
     fn test_struct() {
@@ -446,6 +461,19 @@ mod test {
         assert_eq!(typ.num_children(), 1);
         assert_eq!(typ.child_name(0), "hello");
         assert_eq!(typ.child(0).id(), LogicalTypeId::Boolean);
+    }
+
+    #[test]
+    fn test_struct_child_name_handles_invalid_utf8() {
+        let child = LogicalTypeHandle::from(LogicalTypeId::Integer);
+        let name = CString::from_vec_with_nul(vec![b'f', 0x80, 0]).unwrap();
+        let mut child_types = [child.ptr];
+        let mut child_names = [name.as_ptr()];
+        let ptr = unsafe { duckdb_create_struct_type(child_types.as_mut_ptr(), child_names.as_mut_ptr(), 1) };
+        let typ = unsafe { LogicalTypeHandle::new(ptr) };
+
+        assert_eq!(typ.child_name(0), "f\u{fffd}");
+        assert!(typ.try_child_name(0).is_err());
     }
 
     #[test]
