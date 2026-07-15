@@ -1,3 +1,11 @@
+# Pin one deployment target for all in-repo builds so cc-built deps (e.g.
+# ring) don't stamp the host SDK version and trip ld64.lld warnings under
+# Rust 1.97's linker_messages lint. Must be an env var here (not build.rs)
+# to reach dependencies' build scripts. Matches the bundled-cmake default
+# in build_bundled_cmake.rs.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "11.0"
+
 [target.'cfg(all())']
 rustflags = [
     "-Dclippy::all",

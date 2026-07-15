@@ -231,9 +231,9 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
 
     let target_arch_env =
         env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo should set CARGO_CFG_TARGET_ARCH for macOS builds");
-    let (target_arch, default_deployment_target) = match target_arch_env.as_str() {
-        "aarch64" => ("arm64", "11.0"),
-        "x86_64" => ("x86_64", "10.15"),
+    let target_arch = match target_arch_env.as_str() {
+        "aarch64" => "arm64",
+        "x86_64" => "x86_64",
         other => {
             panic!("bundled-cmake: unsupported macOS CARGO_CFG_TARGET_ARCH `{other}`; expected `aarch64` or `x86_64`")
         }
@@ -241,7 +241,7 @@ fn configure_macos_deployment_target(config: &mut cmake::Config) {
 
     let deployment_target = env_var("MACOSX_DEPLOYMENT_TARGET")
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| default_deployment_target.to_string());
+        .unwrap_or_else(|| "11.0".to_string());
     cargo_warning(&format!(
         "bundled-cmake macOS deployment target: {deployment_target} ({target_arch})"
     ));
