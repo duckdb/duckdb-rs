@@ -374,7 +374,7 @@ fn primitive_array_to_vector(array: &dyn Array, out: &mut FlatVector<'_>) -> Res
             );
             primitive_array_to_flat_vector::<IntervalMonthDayNanoType>(as_primitive_array(&array), out);
         }
-        // DuckDB Only supports timetamp_tz in microsecond precision
+        // DuckDB only supports TIMESTAMP_TZ at microsecond precision.
         DataType::Timestamp(_, Some(tz)) => primitive_array_to_flat_vector_cast::<TimestampMicrosecondType>(
             DataType::Timestamp(TimeUnit::Microsecond, Some(tz.clone())),
             array,
