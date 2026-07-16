@@ -133,8 +133,11 @@ mod test {
     use std::{error::Error, sync::Arc};
 
     use arrow::{
-        array::{Array, Int32Array, ListArray, RecordBatch, StringArray},
-        datatypes::DataType,
+        array::{Array, AsArray, Int32Array, Int64Array, ListArray, RecordBatch, StringArray},
+        datatypes::{
+            ArrowPrimitiveType, DataType, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType,
+            TimestampNanosecondType, TimestampSecondType,
+        },
     };
 
     use crate::{Connection, vscalar::arrow::ArrowFunctionSignature};
@@ -451,6 +454,100 @@ mod test {
             .map(|id| if id % 7 == 0 { None } else { Some(id) })
             .collect::<Vec<_>>();
         assert_eq!(first_values, expected);
+        Ok(())
+    }
+
+    fn timestamp_value<T>(input: &RecordBatch, column: usize, expected_type: &DataType) -> Result<i64, Box<dyn Error>>
+    where
+        T: ArrowPrimitiveType<Native = i64>,
+    {
+        let array = input.column(column);
+        if array.data_type() != expected_type {
+            return Err(format!(
+                "expected timestamp column {column} to have type {expected_type}, got {}",
+                array.data_type()
+            )
+            .into());
+        }
+
+        array
+            .as_primitive_opt::<T>()
+            .map(|timestamps| timestamps.value(0))
+            .ok_or_else(|| format!("timestamp column {column} has an unexpected Arrow array implementation").into())
+    }
+
+    #[test]
+    fn test_arrow_scalar_reads_timestamp_carriers() -> Result<(), Box<dyn Error>> {
+        struct TimestampCarrierProbe;
+
+        impl VArrowScalar for TimestampCarrierProbe {
+            type State = ();
+
+            fn invoke(_: &Self::State, input: RecordBatch) -> Result<Arc<dyn Array>, Box<dyn std::error::Error>> {
+                let timestamp_tz = DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into()));
+                let actual = [
+                    timestamp_value::<TimestampSecondType>(&input, 0, &DataType::Timestamp(TimeUnit::Second, None))?,
+                    timestamp_value::<TimestampMillisecondType>(
+                        &input,
+                        1,
+                        &DataType::Timestamp(TimeUnit::Millisecond, None),
+                    )?,
+                    timestamp_value::<TimestampMicrosecondType>(
+                        &input,
+                        2,
+                        &DataType::Timestamp(TimeUnit::Microsecond, None),
+                    )?,
+                    timestamp_value::<TimestampNanosecondType>(
+                        &input,
+                        3,
+                        &DataType::Timestamp(TimeUnit::Nanosecond, None),
+                    )?,
+                    timestamp_value::<TimestampMicrosecondType>(&input, 4, &timestamp_tz)?,
+                ];
+                let expected = [
+                    1_704_067_200,
+                    1_704_067_200_123,
+                    1_704_067_200_123_456,
+                    1_704_067_200_000_000_123,
+                    1_704_067_200_123_456,
+                ];
+                if actual != expected {
+                    return Err(format!("expected timestamp carriers {expected:?}, got {actual:?}").into());
+                }
+
+                Ok(Arc::new(Int64Array::from_iter_values([actual[3]])))
+            }
+
+            fn signatures() -> Vec<ArrowFunctionSignature> {
+                vec![ArrowFunctionSignature::exact(
+                    vec![
+                        DataType::Timestamp(TimeUnit::Second, None),
+                        DataType::Timestamp(TimeUnit::Millisecond, None),
+                        DataType::Timestamp(TimeUnit::Microsecond, None),
+                        DataType::Timestamp(TimeUnit::Nanosecond, None),
+                        DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+                    ],
+                    DataType::Int64,
+                )]
+            }
+        }
+
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<TimestampCarrierProbe>("arrow_timestamp_carriers_raw")?;
+
+        // 2024-01-01T00:00:00Z in each carrier's resolution.
+        let value = conn.query_row(
+            "select arrow_timestamp_carriers_raw(\
+             TIMESTAMP_S '2024-01-01 00:00:00', \
+             TIMESTAMP_MS '2024-01-01 00:00:00.123', \
+             TIMESTAMP '2024-01-01 00:00:00.123456', \
+             TIMESTAMP_NS '2024-01-01 00:00:00.000000123', \
+             TIMESTAMPTZ '2024-01-01 00:00:00.123456+00')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        assert_eq!(value, 1_704_067_200_000_000_123);
+
         Ok(())
     }
 }

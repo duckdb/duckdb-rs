@@ -9,9 +9,7 @@ use arrow::{
     datatypes::*,
     record_batch::RecordBatch,
 };
-use libduckdb_sys::{
-    duckdb_date, duckdb_string_t, duckdb_time, duckdb_timestamp, duckdb_vector, duckdb_vector_get_column_type,
-};
+use libduckdb_sys::{duckdb_date, duckdb_string_t, duckdb_time, duckdb_vector, duckdb_vector_get_column_type};
 
 use crate::{
     core::{ArrayVector, DataChunkHandle, FlatVector, ListVector, LogicalTypeHandle, LogicalTypeId, StructVector},
@@ -94,28 +92,11 @@ fn fixed_size_rows(rows: &SourceRows, width: usize) -> Result<SourceRows, Box<dy
     Ok(child_rows)
 }
 
-fn primitive_array_from_rows<T, P, F>(
-    vector: &FlatVector<'_>,
-    rows: &SourceRows,
-    convert: F,
-) -> Result<PrimitiveArray<P>, Box<dyn Error>>
+fn primitive_array_from_rows<T, P, F>(vector: &FlatVector<'_>, rows: &SourceRows, convert: F) -> PrimitiveArray<P>
 where
     T: Copy,
     P: ArrowPrimitiveType,
     F: Fn(T) -> P::Native,
-{
-    try_primitive_array_from_rows(vector, rows, |value| Ok(convert(value)))
-}
-
-fn try_primitive_array_from_rows<T, P, F>(
-    vector: &FlatVector<'_>,
-    rows: &SourceRows,
-    convert: F,
-) -> Result<PrimitiveArray<P>, Box<dyn Error>>
-where
-    T: Copy,
-    P: ArrowPrimitiveType,
-    F: Fn(T) -> Result<P::Native, Box<dyn Error>>,
 {
     rows.iter()
         .copied()
@@ -125,21 +106,20 @@ where
                 // type's physical storage, and validity masking already
                 // dropped null rows, so each selected slot is initialized.
                 .map(|row| convert(unsafe { read_row::<T>(vector, row) }))
-                .transpose()
         })
-        .collect::<Result<PrimitiveArray<P>, _>>()
+        .collect()
 }
 
-/// Converts rows whose Arrow native type matches the DuckDB physical storage.
+/// Reads rows whose Arrow native type matches the DuckDB physical storage.
+fn native_rows<P: ArrowPrimitiveType>(vector: &FlatVector<'_>, rows: &SourceRows) -> PrimitiveArray<P> {
+    primitive_array_from_rows::<P::Native, P, _>(vector, rows, |value| value)
+}
+
 fn native_array_from_rows<P: ArrowPrimitiveType>(
     vector: &FlatVector<'_>,
     rows: &SourceRows,
 ) -> Result<Arc<dyn Array>, Box<dyn Error>> {
-    Ok(Arc::new(primitive_array_from_rows::<P::Native, P, _>(
-        vector,
-        rows,
-        |value| value,
-    )?))
+    Ok(Arc::new(native_rows::<P>(vector, rows)))
 }
 
 /// Converts the first `len` rows of a DuckDB vector to an Arrow array.
@@ -171,17 +151,18 @@ fn scalar_vector_rows_to_arrow_array(
         LogicalTypeId::Invalid => Err("Cannot convert invalid logical type returned by DuckDB".into()),
         LogicalTypeId::Unsupported => Err(format!("Unsupported DuckDB logical type ID {raw_type_id}").into()),
         LogicalTypeId::Integer => native_array_from_rows::<Int32Type>(vector, rows),
-        // Preserve the legacy Arrow compatibility behavior for timestamp
-        // physical carriers. This adapter does not distinguish unit-specific
-        // timestamp vector payload layouts.
-        LogicalTypeId::Timestamp
-        | LogicalTypeId::TimestampMs
-        | LogicalTypeId::TimestampS
-        | LogicalTypeId::TimestampTZ => Ok(Arc::new(primitive_array_from_rows::<
-            duckdb_timestamp,
-            TimestampMicrosecondType,
-            _,
-        >(vector, rows, |value| value.micros)?)),
+        // DuckDB's timestamp carriers (duckdb_timestamp_s/_ms/_ns and
+        // duckdb_timestamp) are single-i64 structs, so each unit reads
+        // natively into its Arrow timestamp type.
+        LogicalTypeId::TimestampS => native_array_from_rows::<TimestampSecondType>(vector, rows),
+        LogicalTypeId::TimestampMs => native_array_from_rows::<TimestampMillisecondType>(vector, rows),
+        LogicalTypeId::Timestamp => native_array_from_rows::<TimestampMicrosecondType>(vector, rows),
+        LogicalTypeId::TimestampNs => native_array_from_rows::<TimestampNanosecondType>(vector, rows),
+        // TIMESTAMP_TZ stores UTC microseconds; a data chunk carries no
+        // session display timezone.
+        LogicalTypeId::TimestampTZ => Ok(Arc::new(
+            native_rows::<TimestampMicrosecondType>(vector, rows).with_timezone("UTC"),
+        )),
         LogicalTypeId::Varchar => {
             let values = rows
                 .iter()
@@ -216,12 +197,12 @@ fn scalar_vector_rows_to_arrow_array(
             vector,
             rows,
             |value| value.days,
-        )?)),
+        ))),
         LogicalTypeId::Time => Ok(Arc::new(primitive_array_from_rows::<
             duckdb_time,
             Time64MicrosecondType,
             _,
-        >(vector, rows, |value| value.micros)?)),
+        >(vector, rows, |value| value.micros))),
         LogicalTypeId::Smallint => native_array_from_rows::<Int16Type>(vector, rows),
         LogicalTypeId::USmallint => native_array_from_rows::<UInt16Type>(vector, rows),
         LogicalTypeId::Blob | LogicalTypeId::Geometry => {
@@ -251,23 +232,6 @@ fn scalar_vector_rows_to_arrow_array(
         LogicalTypeId::UBigint => native_array_from_rows::<UInt64Type>(vector, rows),
         LogicalTypeId::UTinyint => native_array_from_rows::<UInt8Type>(vector, rows),
         LogicalTypeId::UInteger => native_array_from_rows::<UInt32Type>(vector, rows),
-        LogicalTypeId::TimestampNs => Ok(Arc::new(try_primitive_array_from_rows::<
-            duckdb_timestamp,
-            TimestampNanosecondType,
-            _,
-        >(
-            vector,
-            rows,
-            // Preserve the existing C API read behavior, which interprets the
-            // payload as microseconds before producing Arrow nanoseconds. The
-            // unit-specific timestamp vector layouts need a separate audit.
-            |value| {
-                value
-                    .micros
-                    .checked_mul(1000)
-                    .ok_or_else(|| "DuckDB nanosecond timestamp exceeds Arrow i64 range".into())
-            },
-        )?)),
         type_id @ (LogicalTypeId::Interval
         | LogicalTypeId::Hugeint
         | LogicalTypeId::Decimal
@@ -485,8 +449,10 @@ fn struct_vector_to_arrow_array(vector: &StructVector<'_>, rows: &SourceRows) ->
 /// names are synthesized as `"0"`, `"1"`, and so on. List
 /// and map child names use Arrow's conventional names, struct children are
 /// nullable, field metadata is not preserved, and lists use 32-bit Arrow
-/// offsets. Timestamp mappings retain this adapter's legacy physical-carrier
-/// behavior and do not provide native unit or timezone fidelity.
+/// offsets. Timestamp mappings preserve DuckDB's seconds, milliseconds,
+/// microseconds, and nanoseconds carriers. Timestamp-with-time-zone values are
+/// emitted as UTC microseconds because a data chunk does not carry a session
+/// display timezone.
 pub fn data_chunk_to_arrow(chunk: &DataChunkHandle) -> Result<RecordBatch, Box<dyn Error>> {
     let len = chunk.len();
 

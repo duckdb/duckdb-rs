@@ -1,5 +1,9 @@
 use super::*;
-use arrow::datatypes::Int32Type;
+use arrow::datatypes::{
+    Int32Type, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
+    TimestampSecondType,
+};
+use libduckdb_sys::{duckdb_timestamp, duckdb_timestamp_ms, duckdb_timestamp_ns, duckdb_timestamp_s};
 
 fn data_chunk_roundtrip_single_array(array: ArrayRef) -> Result<ArrayRef, Box<dyn Error>> {
     let input_data_type = array.data_type().clone();
@@ -394,18 +398,109 @@ fn test_data_chunk_to_arrow_masks_invalid_boolean_payload_under_null() -> Result
 }
 
 #[test]
-fn test_data_chunk_to_arrow_rejects_nanosecond_timestamp_overflow() {
-    let chunk = DataChunkHandle::new(&[LogicalTypeId::TimestampNs.into()]);
-    chunk.set_len(1);
-    let mut vector = chunk.flat_vector(0);
+fn test_data_chunk_to_arrow_preserves_timestamp_carriers() -> Result<(), Box<dyn Error>> {
+    let chunk = DataChunkHandle::new(&[
+        LogicalTypeId::TimestampS.into(),
+        LogicalTypeId::TimestampMs.into(),
+        LogicalTypeId::Timestamp.into(),
+        LogicalTypeId::TimestampNs.into(),
+        LogicalTypeId::TimestampTZ.into(),
+    ]);
+    chunk.set_len(2);
+
+    // 2024-01-01T00:00:00Z plus a unit-specific fractional component.
     unsafe {
-        vector.copy(&[libduckdb_sys::duckdb_timestamp { micros: i64::MAX }]);
+        chunk.flat_vector(0).copy(&[
+            duckdb_timestamp_s { seconds: -1 },
+            duckdb_timestamp_s { seconds: 1_704_067_200 },
+        ]);
+        chunk.flat_vector(1).copy(&[
+            duckdb_timestamp_ms { millis: -1_001 },
+            duckdb_timestamp_ms {
+                millis: 1_704_067_200_123,
+            },
+        ]);
+        chunk.flat_vector(2).copy(&[
+            duckdb_timestamp { micros: -1_000_001 },
+            duckdb_timestamp {
+                micros: 1_704_067_200_123_456,
+            },
+        ]);
+        chunk.flat_vector(3).copy(&[
+            duckdb_timestamp_ns { nanos: -1_000_000_123 },
+            duckdb_timestamp_ns {
+                nanos: 1_704_067_200_000_000_123,
+            },
+        ]);
+        chunk.flat_vector(4).copy(&[
+            duckdb_timestamp { micros: -1_000_001 },
+            duckdb_timestamp {
+                micros: 1_704_067_200_123_456,
+            },
+        ]);
     }
 
-    assert_conversion_err(
-        &chunk,
-        "DuckDB column 0: DuckDB nanosecond timestamp exceeds Arrow i64 range",
+    let output = data_chunk_to_arrow(&chunk)?;
+    let expected_types = [
+        DataType::Timestamp(TimeUnit::Second, None),
+        DataType::Timestamp(TimeUnit::Millisecond, None),
+        DataType::Timestamp(TimeUnit::Microsecond, None),
+        DataType::Timestamp(TimeUnit::Nanosecond, None),
+        DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+    ];
+    for (column, expected) in expected_types.iter().enumerate() {
+        assert_eq!(output.column(column).data_type(), expected, "column {column}");
+    }
+    assert_eq!(
+        output.column(0).as_primitive::<TimestampSecondType>().values(),
+        &[-1, 1_704_067_200]
     );
+    assert_eq!(
+        output.column(1).as_primitive::<TimestampMillisecondType>().values(),
+        &[-1_001, 1_704_067_200_123]
+    );
+    assert_eq!(
+        output.column(2).as_primitive::<TimestampMicrosecondType>().values(),
+        &[-1_000_001, 1_704_067_200_123_456]
+    );
+    assert_eq!(
+        output.column(3).as_primitive::<TimestampNanosecondType>().values(),
+        &[-1_000_000_123, 1_704_067_200_000_000_123]
+    );
+    assert_eq!(
+        output.column(4).as_primitive::<TimestampMicrosecondType>().values(),
+        &[-1_000_001, 1_704_067_200_123_456]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_data_chunk_to_arrow_preserves_nested_nanosecond_timestamp() -> Result<(), Box<dyn Error>> {
+    let chunk = list_chunk(&LogicalTypeId::TimestampNs.into(), 1);
+    let mut list = chunk.list_vector(0);
+    list.set_entry(0, 0, 2);
+    unsafe {
+        list.set_child(&[
+            duckdb_timestamp_ns { nanos: -123 },
+            duckdb_timestamp_ns {
+                nanos: 1_704_067_200_000_000_123,
+            },
+        ]);
+    }
+
+    let output = data_chunk_to_arrow(&chunk)?;
+    let output = output.column(0).as_list::<i32>();
+    assert_eq!(
+        output.values().data_type(),
+        &DataType::Timestamp(TimeUnit::Nanosecond, None)
+    );
+    assert_eq!(
+        output.values().as_primitive::<TimestampNanosecondType>().values(),
+        &[-123, 1_704_067_200_000_000_123]
+    );
+
+    Ok(())
 }
 
 #[test]
