@@ -103,6 +103,10 @@ pub mod core;
 mod error;
 mod appender;
 mod appender_params;
+#[cfg(all(feature = "bundled", feature = "vtab-arrow"))]
+mod arrow_zerocopy;
+#[cfg(all(feature = "bundled", feature = "vtab-arrow"))]
+pub use arrow_zerocopy::ArrowView;
 mod arrow_batch;
 #[cfg(feature = "vtab-arrow")]
 mod arrow_interop;

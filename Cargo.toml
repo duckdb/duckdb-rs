@@ -24,7 +24,7 @@ duckdb = { version = "=1.10504.0", path = "crates/duckdb" }
 duckdb-loadable-macros = { version = "=1.10504.0", path = "crates/duckdb-loadable-macros" }
 libduckdb-sys = { version = "=1.10504.0", path = "crates/libduckdb-sys" }
 
-arrow = { version = "58", default-features = false }
+arrow = { version = "59", default-features = false }
 bindgen = { version = "0.72.1", default-features = false }
 cast = "0.3"
 cc = "1.0"
