@@ -43,7 +43,7 @@ use crate::{
 /// Newtype wrapping a `Serialize`/`Deserialize` value for binding to or reading
 /// from a DuckDB `STRUCT` column.
 ///
-/// See the [module docs](crate::types::serde_struct) for the mapping rules.
+/// See the `serde_struct` module-level docs for the mapping rules.
 #[derive(Debug, Clone)]
 pub struct Struct<T>(pub T);
 
