@@ -870,6 +870,7 @@ dependencies = [
  "rand 0.9.4",
  "rust_decimal",
  "rustyline",
+ "serde",
  "serde_json",
  "strum",
  "tempfile",

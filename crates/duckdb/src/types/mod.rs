@@ -54,6 +54,8 @@
 //! container API, so they materialize through their Arrow binary carrier as
 //! [`Value::Blob`] values.
 
+#[cfg(feature = "serde")]
+pub use self::serde_struct::Struct;
 pub use self::{
     decimal::{Decimal, DecimalError},
     from_sql::{FromSql, FromSqlError, FromSqlResult},
@@ -79,6 +81,8 @@ mod from_sql;
 mod ndarray;
 #[cfg(feature = "serde_json")]
 mod serde_json;
+#[cfg(feature = "serde")]
+mod serde_struct;
 mod to_sql;
 #[cfg(feature = "url")]
 mod url;
