@@ -13,6 +13,14 @@ impl<K: std::cmp::PartialEq, V> OrderedMap<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v)
     }
+    /// Returns the number of entries.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    /// Returns `true` if the map contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
     /// Returns an iterator over the keys in the map.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.0.iter().map(|(k, _)| k)
