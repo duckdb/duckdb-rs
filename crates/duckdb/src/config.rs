@@ -54,7 +54,7 @@ impl Config {
 
     /// enable autoload extensions
     pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Self> {
-        let value = (enabled as u8).to_string();
+        let value = enabled.to_string();
         self.set("autoinstall_known_extensions", &value)?;
         self.set("autoload_known_extensions", &value)?;
         Ok(self)
@@ -126,11 +126,16 @@ impl Config {
         if self.config.is_none() {
             let mut config: ffi::duckdb_config = ptr::null_mut();
             let state = unsafe { ffi::duckdb_create_config(&mut config) };
-            assert_eq!(state, ffi::DuckDBSuccess);
+            if state != ffi::DuckDBSuccess {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(state),
+                    Some("failed to create config".to_string()),
+                ));
+            }
             self.config = Some(config);
         }
-        let c_key = CString::new(key).unwrap();
-        let c_value = CString::new(value).unwrap();
+        let c_key = CString::new(key)?;
+        let c_value = CString::new(value)?;
         let state = unsafe {
             ffi::duckdb_set_config(
                 self.config.unwrap(),
