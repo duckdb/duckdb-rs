@@ -5,7 +5,7 @@
 // integer in `0..count`, across columns of increasing complexity, showing how
 // to populate each vector kind:
 //
-//   - BIGINT / DOUBLE -- write the typed slice directly
+//   - BIGINT / DOUBLE -- write physical values per row
 //   - VARCHAR         -- insert per row; mark rows NULL with `set_null`
 //   - LIST<BIGINT>    -- flatten children into one child vector, point each
 //                        row's entry at its slice
@@ -94,21 +94,19 @@ impl VTab for Numbers {
         }
         let rows = capacity.min(count - start);
 
-        // BIGINT: write straight into the typed slice.
+        // BIGINT: write one initialized value per row.
         {
             let mut v = output.flat_vector(0);
-            let slice = unsafe { v.as_mut_slice_with_len::<i64>(rows) };
-            for (i, slot) in slice.iter_mut().enumerate() {
-                *slot = (start + i) as i64;
+            for i in 0..rows {
+                unsafe { v.write(i, (start + i) as i64) };
             }
         }
 
         // DOUBLE: same pattern, different physical type.
         {
             let mut v = output.flat_vector(1);
-            let slice = unsafe { v.as_mut_slice_with_len::<f64>(rows) };
-            for (i, slot) in slice.iter_mut().enumerate() {
-                *slot = ((start + i) as f64).sqrt();
+            for i in 0..rows {
+                unsafe { v.write(i, ((start + i) as f64).sqrt()) };
             }
         }
 
@@ -126,38 +124,38 @@ impl VTab for Numbers {
             }
         }
 
-        // LIST<BIGINT>: concatenate every row's children into one contiguous
-        // child vector, pointing each row's entry at its slice as we go. Note
-        // that an empty list (e.g. for n = 0) is distinct from a NULL list,
-        // which you'd produce with `list.set_null(i)`.
+        // LIST<BIGINT>: buffer every row's child values and entry range, commit
+        // the contiguous child storage, then point the entries into it. An
+        // empty list (e.g. for n = 0) is distinct from a NULL list, which you'd
+        // produce with `list.set_null(i)`.
         {
             let mut list = output.list_vector(3);
             let mut children: Vec<i64> = Vec::new();
+            let mut entries = Vec::with_capacity(rows);
             for i in 0..rows {
                 let divisors = divisors((start + i) as i64);
-                // This row's slice starts at the current child count. Entries
-                // and child data are independent buffers, so the order of
-                // set_entry / set_child is free.
-                list.set_entry(i, children.len(), divisors.len());
+                entries.push((children.len(), divisors.len()));
                 children.extend_from_slice(&divisors);
             }
-            // Copies the children into the list's child vector and sets its size.
+            // Commit child storage before entries can point into it.
             unsafe { list.set_child(&children) };
+            for (row, (offset, len)) in entries.into_iter().enumerate() {
+                list.set_entry(row, offset, len);
+            }
         }
 
         // STRUCT(is_even BOOLEAN, name VARCHAR): one child vector per field,
         // each sized like the chunk.
         {
-            let parity = output.struct_vector(4);
+            let mut parity = output.struct_vector(4);
             {
                 let mut is_even = parity.child(0, rows);
-                let slice = unsafe { is_even.as_mut_slice_with_len::<bool>(rows) };
-                for (i, slot) in slice.iter_mut().enumerate() {
-                    *slot = (start + i) % 2 == 0;
+                for i in 0..rows {
+                    unsafe { is_even.write(i, (start + i) % 2 == 0) };
                 }
             }
             {
-                let name = parity.child(1, rows);
+                let mut name = parity.child(1, rows);
                 for i in 0..rows {
                     name.insert(i, if (start + i) % 2 == 0 { "even" } else { "odd" });
                 }

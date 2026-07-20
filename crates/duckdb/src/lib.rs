@@ -111,6 +111,7 @@ mod column;
 mod config;
 mod executed_result;
 mod inner_connection;
+mod panic_utils;
 mod params;
 
 #[cfg(feature = "polars")]

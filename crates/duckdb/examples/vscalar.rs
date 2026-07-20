@@ -34,10 +34,8 @@ impl VScalar for AddOne {
 
         // Write the results into the output vector.
         let mut out = output.flat_vector();
-        let dst = unsafe { out.as_mut_slice_with_len::<i64>(len) };
-
-        for (d, s) in dst.iter_mut().zip(src) {
-            *d = s + 1;
+        for (row, value) in src.iter().enumerate() {
+            unsafe { out.write(row, value + 1) };
         }
 
         Ok(())

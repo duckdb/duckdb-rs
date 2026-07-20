@@ -620,7 +620,7 @@ fn test_nested_list_sizes_are_set_to_child_counts() -> Result<(), Box<dyn Error>
 
     let chunk = single_array_data_chunk(Arc::new(list_of_lists))?;
 
-    let outer = chunk.list_vector(0);
+    let mut outer = chunk.list_vector(0);
     assert_eq!(outer.len(), 3);
 
     let inner = outer.list_child();
