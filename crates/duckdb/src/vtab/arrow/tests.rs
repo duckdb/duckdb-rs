@@ -234,6 +234,34 @@ fn test_query_record_batch_with_arrow_vtab() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[test]
+fn test_arrow_vtab_validation_errors_reach_queries() -> Result<(), Box<dyn Error>> {
+    let db = Connection::open_in_memory()?;
+    db.register_table_function::<ArrowVTab>("arrow")?;
+
+    let invalid_address = db
+        .prepare("SELECT * FROM arrow(?, ?)")?
+        .query([0_usize, 0_usize])
+        .err()
+        .unwrap();
+    assert!(
+        invalid_address
+            .to_string()
+            .contains("invalid ArrowVTab record batch address")
+    );
+
+    let mut params = arrow_recordbatch_to_query_params(example_record_batch());
+    params[1] ^= 1;
+    let marker_mismatch = db.prepare("SELECT * FROM arrow(?, ?)")?.query(params).err().unwrap();
+    assert!(
+        marker_mismatch
+            .to_string()
+            .contains("ArrowVTab query parameter marker mismatch")
+    );
+
+    Ok(())
+}
+
 // Mark rows straddling vector-size slice boundaries as NULL so bitmap offsets
 // are exercised when the source batch is sliced.
 fn boundary_null(i: usize, vector_size: usize) -> bool {

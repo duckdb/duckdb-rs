@@ -2,6 +2,12 @@ pub struct ScalarFunctionSet {
     ptr: duckdb_scalar_function_set,
 }
 
+impl Drop for ScalarFunctionSet {
+    fn drop(&mut self) {
+        unsafe { duckdb_destroy_scalar_function_set(&mut self.ptr) };
+    }
+}
+
 impl ScalarFunctionSet {
     pub fn new(name: &str) -> Self {
         let c_name = CString::new(name).expect("name should contain valid utf-8");
@@ -51,13 +57,13 @@ use std::ffi::{CString, c_void};
 use libduckdb_sys::{
     self as ffi, DuckDBSuccess, duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
     duckdb_create_scalar_function_set, duckdb_data_chunk, duckdb_delete_callback_t, duckdb_destroy_scalar_function,
-    duckdb_function_info, duckdb_scalar_function, duckdb_scalar_function_add_parameter, duckdb_scalar_function_set,
-    duckdb_scalar_function_set_extra_info, duckdb_scalar_function_set_function, duckdb_scalar_function_set_name,
-    duckdb_scalar_function_set_return_type, duckdb_scalar_function_set_varargs, duckdb_scalar_function_set_volatile,
-    duckdb_vector,
+    duckdb_destroy_scalar_function_set, duckdb_function_info, duckdb_scalar_function,
+    duckdb_scalar_function_add_parameter, duckdb_scalar_function_set, duckdb_scalar_function_set_extra_info,
+    duckdb_scalar_function_set_function, duckdb_scalar_function_set_name, duckdb_scalar_function_set_return_type,
+    duckdb_scalar_function_set_varargs, duckdb_scalar_function_set_volatile, duckdb_vector,
 };
 
-use crate::{Error, core::LogicalTypeHandle};
+use crate::{Error, callback::catch_drop, core::LogicalTypeHandle};
 
 impl ScalarFunction {
     /// Creates a new empty scalar function.
@@ -161,5 +167,5 @@ impl ScalarFunction {
 }
 
 unsafe extern "C" fn drop_ptr<T>(ptr: *mut c_void) {
-    let _ = unsafe { Box::from_raw(ptr as *mut T) };
+    catch_drop(|| drop(unsafe { Box::from_raw(ptr as *mut T) }));
 }

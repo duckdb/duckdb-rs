@@ -11,6 +11,7 @@ use super::{
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
 };
+use crate::callback::error_c_string;
 use std::{
     ffi::{CString, c_void},
     fmt::Debug,
@@ -42,7 +43,7 @@ impl BindInfo {
     /// # Arguments
     ///  * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
+        let c_str = error_c_string(error);
         unsafe {
             duckdb_bind_set_error(self.ptr, c_str.as_ptr() as *const c_char);
         }
@@ -187,7 +188,7 @@ impl InitInfo {
     /// # Arguments
     /// * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
+        let c_str = error_c_string(error);
         unsafe { duckdb_init_set_error(self.0, c_str.as_ptr()) }
     }
 }
@@ -368,7 +369,7 @@ impl<V: VTab> TableFunctionInfo<V> {
     /// # Arguments
     ///  * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
+        let c_str = error_c_string(error);
         unsafe {
             duckdb_function_set_error(self.ptr, c_str.as_ptr());
         }

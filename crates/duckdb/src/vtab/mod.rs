@@ -2,7 +2,12 @@
 
 use std::ffi::c_void;
 
-use crate::{Connection, Result, error::Error, inner_connection::InnerConnection};
+use crate::{
+    Connection, Result,
+    callback::{catch_boxed_callback, catch_drop},
+    error::Error,
+    inner_connection::InnerConnection,
+};
 
 use super::ffi;
 
@@ -28,7 +33,7 @@ use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init
 /// # Safety
 /// The pointer must be a valid pointer to a `Box<T>` created by `Box::into_raw`.
 unsafe extern "C" fn drop_boxed<T>(v: *mut c_void) {
-    drop(unsafe { Box::from_raw(v.cast::<T>()) });
+    catch_drop(|| drop(unsafe { Box::from_raw(v.cast::<T>()) }));
 }
 
 /// Duckdb table function trait
@@ -84,13 +89,13 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    unsafe {
-        let info = TableFunctionInfo::<T>::from(info);
-        let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
-        let result = T::func(&info, &mut data_chunk_handle);
-        if let Err(e) = result {
-            info.set_error(&e.to_string());
-        }
+    let info = TableFunctionInfo::<T>::from(info);
+    let result = catch_boxed_callback(|| unsafe {
+        let mut data_chunk_handle = DataChunkHandle::new_unowned_output(output);
+        T::func(&info, &mut data_chunk_handle)
+    });
+    if let Err(error) = result {
+        info.set_error(&error);
     }
 }
 
@@ -98,19 +103,16 @@ unsafe extern "C" fn init<T>(info: duckdb_init_info)
 where
     T: VTab,
 {
-    unsafe {
-        let info = InitInfo::from(info);
-        match T::init(&info) {
-            Ok(init_data) => {
-                info.set_init_data(
-                    Box::into_raw(Box::new(init_data)) as *mut c_void,
-                    Some(drop_boxed::<T::InitData>),
-                );
-            }
-            Err(e) => {
-                info.set_error(&e.to_string());
-            }
-        }
+    let info = InitInfo::from(info);
+    let result = catch_boxed_callback(|| T::init(&info));
+    match result {
+        Ok(init_data) => unsafe {
+            info.set_init_data(
+                Box::into_raw(Box::new(init_data)) as *mut c_void,
+                Some(drop_boxed::<T::InitData>),
+            );
+        },
+        Err(error) => info.set_error(&error),
     }
 }
 
@@ -118,19 +120,16 @@ unsafe extern "C" fn bind<T>(info: duckdb_bind_info)
 where
     T: VTab,
 {
-    unsafe {
-        let info = BindInfo::from(info);
-        match T::bind(&info) {
-            Ok(bind_data) => {
-                info.set_bind_data(
-                    Box::into_raw(Box::new(bind_data)) as *mut c_void,
-                    Some(drop_boxed::<T::BindData>),
-                );
-            }
-            Err(e) => {
-                info.set_error(&e.to_string());
-            }
-        }
+    let info = BindInfo::from(info);
+    let result = catch_boxed_callback(|| T::bind(&info));
+    match result {
+        Ok(bind_data) => unsafe {
+            info.set_bind_data(
+                Box::into_raw(Box::new(bind_data)) as *mut c_void,
+                Some(drop_boxed::<T::BindData>),
+            );
+        },
+        Err(error) => info.set_error(&error),
     }
 }
 
@@ -203,7 +202,7 @@ mod test {
     use std::{
         error::Error,
         ffi::CString,
-        sync::atomic::{AtomicBool, Ordering},
+        sync::atomic::{AtomicBool, AtomicU64, Ordering},
     };
 
     struct HelloBindData {
@@ -242,7 +241,7 @@ mod test {
             if init_data.done.swap(true, Ordering::Relaxed) {
                 output.set_len(0);
             } else {
-                let vector = output.flat_vector(0);
+                let mut vector = output.flat_vector(0);
                 let result = CString::new(format!("Hello {}", bind_data.name))?;
                 vector.insert(0, result);
                 output.set_len(1);
@@ -278,7 +277,7 @@ mod test {
             if init_data.done.swap(true, Ordering::Relaxed) {
                 output.set_len(0);
             } else {
-                let vector = output.flat_vector(0);
+                let mut vector = output.flat_vector(0);
                 let result = CString::new(format!("Hello {}", bind_data.name))?;
                 vector.insert(0, result);
                 output.set_len(1);
@@ -291,6 +290,208 @@ mod test {
                 "name".to_string(),
                 LogicalTypeHandle::from(LogicalTypeId::Varchar),
             )])
+        }
+    }
+
+    struct PanickingBindVTab;
+
+    impl VTab for PanickingBindVTab {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(_: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            panic!("table bind callback panic")
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(())
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, _: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            Ok(())
+        }
+    }
+
+    struct PanickingInitVTab;
+
+    impl VTab for PanickingInitVTab {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("value", LogicalTypeId::Bigint.into());
+            Ok(())
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            panic!("table init callback panic")
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, _: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            Ok(())
+        }
+    }
+
+    struct PanickingFuncVTab;
+
+    impl VTab for PanickingFuncVTab {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("value", LogicalTypeId::Bigint.into());
+            Ok(())
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(())
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, _: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            panic!("table execution callback panic")
+        }
+    }
+
+    struct ErrorBindVTab;
+
+    impl VTab for ErrorBindVTab {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(_: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            Err("table bind callback error".into())
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(())
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, _: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            Ok(())
+        }
+    }
+
+    struct ErrorInitVTab;
+
+    impl VTab for ErrorInitVTab {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("value", LogicalTypeId::Bigint.into());
+            Ok(())
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Err("table init callback error".into())
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, _: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            Ok(())
+        }
+    }
+
+    struct ErrorFuncVTab;
+
+    impl VTab for ErrorFuncVTab {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("value", LogicalTypeId::Bigint.into());
+            Ok(())
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(())
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, _: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            Err("table execution callback error".into())
+        }
+    }
+
+    struct NulErrorVTab<const STAGE: u8>;
+
+    impl<const STAGE: u8> VTab for NulErrorVTab<STAGE> {
+        type InitData = ();
+        type BindData = ();
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            if STAGE == 0 {
+                return Err("table bind before\0after".into());
+            }
+            bind.add_result_column("value", LogicalTypeId::Bigint.into());
+            Ok(())
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            if STAGE == 1 {
+                Err("table init before\0after".into())
+            } else {
+                Ok(())
+            }
+        }
+
+        fn func(_: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            if STAGE == 2 {
+                Err("table execution before\0after".into())
+            } else {
+                output.set_len(0);
+                Ok(())
+            }
+        }
+    }
+
+    static TABLE_BIND_DATA_DROPS: AtomicU64 = AtomicU64::new(0);
+    static TABLE_INIT_DATA_DROPS: AtomicU64 = AtomicU64::new(0);
+
+    struct PanickingBindDataDrop;
+
+    impl Drop for PanickingBindDataDrop {
+        fn drop(&mut self) {
+            TABLE_BIND_DATA_DROPS.fetch_add(1, Ordering::SeqCst);
+            panic!("table bind-data destructor panic");
+        }
+    }
+
+    struct PanickingInitDataDrop {
+        done: AtomicBool,
+    }
+
+    impl Drop for PanickingInitDataDrop {
+        fn drop(&mut self) {
+            TABLE_INIT_DATA_DROPS.fetch_add(1, Ordering::SeqCst);
+            panic!("table init-data destructor panic");
+        }
+    }
+
+    struct PanickingDropVTab;
+
+    impl VTab for PanickingDropVTab {
+        type InitData = PanickingInitDataDrop;
+        type BindData = PanickingBindDataDrop;
+
+        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+            bind.add_result_column("value", LogicalTypeId::Bigint.into());
+            Ok(PanickingBindDataDrop)
+        }
+
+        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+            Ok(PanickingInitDataDrop {
+                done: AtomicBool::new(false),
+            })
+        }
+
+        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+            if func.get_init_data().done.swap(true, Ordering::SeqCst) {
+                output.set_len(0);
+            } else {
+                let mut vector = output.flat_vector(0);
+                unsafe { vector.write(0, 42_i64) };
+                output.set_len(1);
+            }
+            Ok(())
         }
     }
 
@@ -315,6 +516,81 @@ mod test {
         })?;
         assert_eq!(val, ("Hello duckdb".to_string(),));
 
+        Ok(())
+    }
+
+    #[test]
+    fn table_panics_become_query_errors() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_table_function::<PanickingBindVTab>("panicking_bind")?;
+        conn.register_table_function::<PanickingInitVTab>("panicking_init")?;
+        conn.register_table_function::<PanickingFuncVTab>("panicking_func")?;
+
+        let bind_error = conn.prepare("SELECT * FROM panicking_bind()").err().unwrap();
+        assert!(bind_error.to_string().contains("table bind callback panic"));
+
+        let init_error = conn.prepare("SELECT * FROM panicking_init()")?.query([]).err().unwrap();
+        assert!(init_error.to_string().contains("table init callback panic"));
+
+        let func_error = conn.prepare("SELECT * FROM panicking_func()")?.query([]).err().unwrap();
+        assert!(func_error.to_string().contains("table execution callback panic"));
+        Ok(())
+    }
+
+    #[test]
+    fn table_errors_become_query_errors() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_table_function::<ErrorBindVTab>("error_bind")?;
+        conn.register_table_function::<ErrorInitVTab>("error_init")?;
+        conn.register_table_function::<ErrorFuncVTab>("error_func")?;
+
+        let bind_error = conn.prepare("SELECT * FROM error_bind()").err().unwrap();
+        assert!(bind_error.to_string().contains("table bind callback error"));
+
+        let init_error = conn.prepare("SELECT * FROM error_init()")?.query([]).err().unwrap();
+        assert!(init_error.to_string().contains("table init callback error"));
+
+        let func_error = conn.prepare("SELECT * FROM error_func()")?.query([]).err().unwrap();
+        assert!(func_error.to_string().contains("table execution callback error"));
+        Ok(())
+    }
+
+    #[test]
+    fn table_errors_escape_interior_nuls_at_every_callback_stage() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_table_function::<NulErrorVTab<0>>("nul_error_bind")?;
+        conn.register_table_function::<NulErrorVTab<1>>("nul_error_init")?;
+        conn.register_table_function::<NulErrorVTab<2>>("nul_error_func")?;
+
+        let bind_error = conn.prepare("SELECT * FROM nul_error_bind()").err().unwrap();
+        let init_error = conn.prepare("SELECT * FROM nul_error_init()")?.query([]).err().unwrap();
+        let func_error = conn.prepare("SELECT * FROM nul_error_func()")?.query([]).err().unwrap();
+
+        for (error, expected) in [
+            (bind_error, "table bind before\\0after"),
+            (init_error, "table init before\\0after"),
+            (func_error, "table execution before\\0after"),
+        ] {
+            let message = error.to_string();
+            assert!(message.contains(expected), "unexpected callback error: {message}");
+            assert!(!message.contains('\0'));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn table_state_destructor_panics_are_contained() -> Result<(), Box<dyn Error>> {
+        TABLE_BIND_DATA_DROPS.store(0, Ordering::SeqCst);
+        TABLE_INIT_DATA_DROPS.store(0, Ordering::SeqCst);
+        {
+            let conn = Connection::open_in_memory()?;
+            conn.register_table_function::<PanickingDropVTab>("panicking_drop")?;
+            let value: i64 = conn.query_row("SELECT * FROM panicking_drop()", [], |row| row.get(0))?;
+            assert_eq!(value, 42);
+        }
+
+        assert!(TABLE_BIND_DATA_DROPS.load(Ordering::SeqCst) > 0);
+        assert!(TABLE_INIT_DATA_DROPS.load(Ordering::SeqCst) > 0);
         Ok(())
     }
 
@@ -345,7 +621,7 @@ mod test {
             if init_data.done.swap(true, Ordering::Relaxed) {
                 output.set_len(0);
             } else {
-                let vector = output.flat_vector(0);
+                let mut vector = output.flat_vector(0);
                 let result = CString::new(format!("{prefix} {}", bind_data.name))?;
                 vector.insert(0, result);
                 output.set_len(1);

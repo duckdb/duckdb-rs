@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use function::{ScalarFunction, ScalarFunctionSet};
 use libduckdb_sys::{
     duckdb_data_chunk, duckdb_function_info, duckdb_scalar_function_get_extra_info, duckdb_scalar_function_set_error,
@@ -8,8 +6,8 @@ use libduckdb_sys::{
 
 use crate::{
     Connection,
-    arrow_interop::WritableVector,
-    core::{DataChunkHandle, LogicalTypeHandle},
+    callback::{catch_boxed_callback, error_c_string},
+    core::{DataChunkHandle, LogicalTypeHandle, WritableVector, WritableVectorRef},
     inner_connection::InnerConnection,
 };
 mod function;
@@ -46,11 +44,15 @@ pub trait VScalar: Sized {
     ///   for this invocation;
     /// - not retain `input`, `output`, or any vector/slice derived from them
     ///   past return;
-    /// - not hold two writable wrappers over the same column at the same
-    ///   time. The column accessors (`flat_vector`, `list_vector`, ...) take
-    ///   `&self`, so safe code can obtain two wrappers over one column and
-    ///   call `as_mut_slice` on each, yielding overlapping `&mut [T]` —
-    ///   undefined behavior.
+    ///
+    /// Native output and child accessors borrow their owner mutably. Legacy
+    /// top-level chunk accessors also lease at most one active view per column,
+    /// so safe implementations cannot create aliased writable views.
+    ///
+    /// Panics are converted to DuckDB query errors. If `State` uses interior
+    /// mutability, implementations must still preserve or restore its
+    /// invariants during unwinding because the same state may serve later
+    /// invocations.
     fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,
@@ -145,8 +147,8 @@ impl ScalarFunctionInfo {
         unsafe { &*(duckdb_scalar_function_get_extra_info(self.0).cast()) }
     }
 
-    pub unsafe fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
+    pub fn set_error(&self, error: &str) {
+        let c_str = error_c_string(error);
         unsafe { duckdb_scalar_function_set_error(self.0, c_str.as_ptr()) };
     }
 }
@@ -155,13 +157,14 @@ unsafe extern "C" fn scalar_func<T>(info: duckdb_function_info, input: duckdb_da
 where
     T: VScalar,
 {
-    unsafe {
-        let info = ScalarFunctionInfo::from(info);
-        let mut input = DataChunkHandle::new_unowned(input);
-        let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
-        if let Err(e) = result {
-            info.set_error(&e.to_string());
-        }
+    let info = ScalarFunctionInfo::from(info);
+    let result = catch_boxed_callback(|| unsafe {
+        let mut input = DataChunkHandle::new_unowned_input(input);
+        let mut output = WritableVectorRef::from_raw(&mut output, input.len())?;
+        T::invoke(info.get_extra_info(), &mut input, &mut output)
+    });
+    if let Err(error) = result {
+        info.set_error(&error);
     }
 }
 
@@ -218,9 +221,19 @@ impl InnerConnection {
 
 #[cfg(test)]
 mod test {
-    use std::error::Error;
+    use std::{
+        error::Error,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+    };
 
-    use arrow::array::Array;
+    use arrow::{
+        array::{Array, Int64Array},
+        datatypes::{DataType, Field, Schema},
+        record_batch::RecordBatch,
+    };
     use libduckdb_sys::duckdb_string_t;
 
     use crate::{
@@ -256,6 +269,133 @@ mod test {
         }
     }
 
+    struct PanickingScalar;
+
+    impl VScalar for PanickingScalar {
+        type State = ();
+
+        fn invoke(
+            _: &Self::State,
+            _: &mut DataChunkHandle,
+            _: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            panic!("scalar callback panic")
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeId::Bigint.into()],
+                LogicalTypeId::Bigint.into(),
+            )]
+        }
+    }
+
+    struct NulErrorScalar;
+
+    impl VScalar for NulErrorScalar {
+        type State = ();
+
+        fn invoke(
+            _: &Self::State,
+            _: &mut DataChunkHandle,
+            _: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            Err("before\0after".into())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeId::Bigint.into()],
+                LogicalTypeId::Bigint.into(),
+            )]
+        }
+    }
+
+    struct InputRewriteScalar;
+
+    impl VScalar for InputRewriteScalar {
+        type State = ();
+
+        fn invoke(
+            _: &Self::State,
+            input: &mut DataChunkHandle,
+            output: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let schema = Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, false)]));
+            let batch = RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![99_i64]))])?;
+            crate::arrow_interop::record_batch_to_duckdb_data_chunk(&batch, input)?;
+
+            let mut output = output.flat_vector();
+            unsafe { output.write(0, 42_i64) };
+            Ok(())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeId::Bigint.into()],
+                LogicalTypeId::Bigint.into(),
+            )]
+        }
+    }
+
+    static SCALAR_STATE_DROPS: AtomicU64 = AtomicU64::new(0);
+
+    #[derive(Default)]
+    struct PanickingDropState;
+
+    impl Drop for PanickingDropState {
+        fn drop(&mut self) {
+            SCALAR_STATE_DROPS.fetch_add(1, Ordering::SeqCst);
+            panic!("scalar state destructor panic");
+        }
+    }
+
+    struct PanickingDropStateScalar;
+
+    impl VScalar for PanickingDropStateScalar {
+        type State = PanickingDropState;
+
+        fn invoke(
+            _: &Self::State,
+            input: &mut DataChunkHandle,
+            output: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let mut output = output.flat_vector();
+            for row in 0..input.len() {
+                unsafe { output.write(row, 42_i64) };
+            }
+            Ok(())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeId::Bigint.into()],
+                LogicalTypeId::Bigint.into(),
+            )]
+        }
+    }
+
+    struct ErrorWithPanickingDropStateScalar;
+
+    impl VScalar for ErrorWithPanickingDropStateScalar {
+        type State = PanickingDropState;
+
+        fn invoke(
+            _: &Self::State,
+            _: &mut DataChunkHandle,
+            _: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            Err("scalar error before state drop".into())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeId::Bigint.into()],
+                LogicalTypeId::Bigint.into(),
+            )]
+        }
+    }
+
     #[derive(Debug, Clone)]
     struct TestState {
         multiplier: usize,
@@ -287,7 +427,7 @@ mod test {
                 .iter()
                 .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string())
                 .take(input.len());
-            let output = output.flat_vector();
+            let mut output = output.flat_vector();
 
             for s in strings {
                 let res = format!("{}: {}", state.prefix, s.repeat(state.multiplier));
@@ -314,7 +454,7 @@ mod test {
             input: &mut DataChunkHandle,
             output: &mut dyn WritableVector,
         ) -> Result<(), Box<dyn std::error::Error>> {
-            let output = output.flat_vector();
+            let mut output = output.flat_vector();
             let counts = input.flat_vector(1);
             let values = input.flat_vector(0);
             let values = unsafe { values.as_slice_with_len::<duckdb_string_t>(input.len()) };
@@ -336,6 +476,109 @@ mod test {
                     LogicalTypeHandle::from(LogicalTypeId::Integer),
                 ],
                 LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            )]
+        }
+    }
+
+    struct CapacityCheckedScalar {}
+
+    impl VScalar for CapacityCheckedScalar {
+        type State = ();
+
+        fn invoke(
+            _: &Self::State,
+            input: &mut DataChunkHandle,
+            output: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let len = input.len();
+            if input.capacity() != len {
+                return Err(format!(
+                    "callback input capacity {} differs from cardinality {len}",
+                    input.capacity()
+                )
+                .into());
+            }
+            let values = {
+                let vector = input.flat_vector(0);
+                if vector.capacity() != len {
+                    return Err(format!(
+                        "callback input vector capacity {} differs from cardinality {len}",
+                        vector.capacity()
+                    )
+                    .into());
+                }
+                unsafe { vector.as_slice_with_len::<i64>(len) }.to_vec()
+            };
+
+            let mut output = output.flat_vector();
+            if output.capacity() != len {
+                return Err(format!(
+                    "callback output capacity {} differs from cardinality {len}",
+                    output.capacity()
+                )
+                .into());
+            }
+            unsafe { output.copy(&values) };
+            Ok(())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeId::Bigint.into()],
+                LogicalTypeId::Bigint.into(),
+            )]
+        }
+    }
+
+    struct NestedListRoundTripScalar;
+
+    impl VScalar for NestedListRoundTripScalar {
+        type State = ();
+
+        fn invoke(
+            _: &Self::State,
+            input: &mut DataChunkHandle,
+            output: &mut dyn WritableVector,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let input_list = input.list_vector(0);
+            let input_child = input_list.read_child()?;
+            let mut values = Vec::new();
+            let mut entries = Vec::with_capacity(input.len());
+
+            for row in 0..input.len() {
+                let Some(range) = input_list.try_get_range(row)? else {
+                    entries.push(None);
+                    continue;
+                };
+                let len = range.len();
+                let output_offset = values.len();
+                for child_row in range {
+                    values.push(unsafe { input_child.read::<i32>(child_row)? });
+                }
+                entries.push(Some((output_offset, len)));
+            }
+            drop(input_child);
+            drop(input_list);
+
+            let mut output_list = output.list_vector();
+            output_list.try_reserve(values.len())?;
+            unsafe { output_list.child(values.len()).copy(&values) };
+            for (row, entry) in entries.into_iter().enumerate() {
+                if let Some((offset, len)) = entry {
+                    output_list.set_entry(row, offset, len);
+                } else {
+                    output_list.set_null(row);
+                }
+            }
+            output_list.try_set_len(values.len())?;
+            Ok(())
+        }
+
+        fn signatures() -> Vec<ScalarFunctionSignature> {
+            let child_type = LogicalTypeHandle::from(LogicalTypeId::Integer);
+            vec![ScalarFunctionSignature::exact(
+                vec![LogicalTypeHandle::list(&child_type)],
+                LogicalTypeHandle::list(&child_type),
             )]
         }
     }
@@ -395,6 +638,75 @@ mod test {
     }
 
     #[test]
+    fn scalar_panics_become_query_errors() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<PanickingScalar>("panicking_scalar")?;
+
+        let error = conn.prepare("SELECT panicking_scalar(42)")?.query([]).err().unwrap();
+
+        assert!(error.to_string().contains("scalar callback panic"));
+        Ok(())
+    }
+
+    #[test]
+    fn scalar_errors_escape_interior_nuls_through_registered_callback() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<NulErrorScalar>("nul_error_scalar")?;
+
+        let error = conn.prepare("SELECT nul_error_scalar(42)")?.query([]).err().unwrap();
+        let message = error.to_string();
+
+        assert!(message.contains("before\\0after"));
+        assert!(!message.contains('\0'));
+        Ok(())
+    }
+
+    #[test]
+    fn scalar_callback_input_cannot_be_rewritten_by_arrow_conversion() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<InputRewriteScalar>("rewrite_input")?;
+
+        let error = conn
+            .query_row("SELECT rewrite_input(1)", [], |row| row.get::<_, i64>(0))
+            .unwrap_err();
+
+        assert!(error.to_string().contains("callback input data chunks are read-only"));
+        Ok(())
+    }
+
+    #[test]
+    fn scalar_state_destructor_panics_are_contained() -> Result<(), Box<dyn Error>> {
+        SCALAR_STATE_DROPS.store(0, Ordering::SeqCst);
+        {
+            let conn = Connection::open_in_memory()?;
+            conn.register_scalar_function::<PanickingDropStateScalar>("panicking_drop_state")?;
+            let value: i64 = conn.query_row("SELECT panicking_drop_state(1)", [], |row| row.get(0))?;
+            assert_eq!(value, 42);
+        }
+
+        assert!(SCALAR_STATE_DROPS.load(Ordering::SeqCst) > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn scalar_errors_survive_panicking_state_destructors() -> Result<(), Box<dyn Error>> {
+        SCALAR_STATE_DROPS.store(0, Ordering::SeqCst);
+        {
+            let conn = Connection::open_in_memory()?;
+            conn.register_scalar_function::<ErrorWithPanickingDropStateScalar>("error_with_panicking_drop")?;
+            let error = conn
+                .prepare("SELECT error_with_panicking_drop(1)")?
+                .query([])
+                .err()
+                .unwrap();
+            assert!(error.to_string().contains("scalar error before state drop"));
+        }
+
+        assert!(SCALAR_STATE_DROPS.load(Ordering::SeqCst) > 0);
+        Ok(())
+    }
+
+    #[test]
     fn test_repeat_scalar() -> Result<(), Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
         conn.register_scalar_function::<Repeat>("nobie_repeat")?;
@@ -415,8 +727,38 @@ mod test {
         Ok(())
     }
 
+    #[test]
+    fn test_callback_vectors_use_exact_invocation_capacity() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<CapacityCheckedScalar>("capacity_checked")?;
+
+        let values = conn
+            .prepare("SELECT capacity_checked(i) FROM range(3) AS values(i)")?
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(values, [0, 1, 2]);
+        Ok(())
+    }
+
+    #[test]
+    fn registered_scalar_round_trips_nested_vectors_through_native_seam() -> Result<(), Box<dyn Error>> {
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<NestedListRoundTripScalar>("native_list_round_trip")?;
+
+        let values = conn
+            .prepare(
+                "SELECT native_list_round_trip(value) = value \
+                 FROM (VALUES ([1, 2]::INTEGER[]), ([]::INTEGER[]), ([3]::INTEGER[])) input(value)",
+            )?
+            .query_map([], |row| row.get::<_, bool>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(values, [true, true, true]);
+        Ok(())
+    }
+
     // Counters for testing volatile functions
-    use std::sync::atomic::{AtomicU64, Ordering};
     static VOLATILE_COUNTER: AtomicU64 = AtomicU64::new(0);
     static NON_VOLATILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -432,10 +774,9 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let len = input.len();
             let mut output_vec = output.flat_vector();
-            let data = unsafe { output_vec.as_mut_slice::<i64>() };
-
-            for item in data.iter_mut().take(len) {
-                *item = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
+            for row in 0..len {
+                let value = NON_VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
+                unsafe { output_vec.write(row, value) };
             }
             Ok(())
         }
@@ -460,10 +801,9 @@ mod test {
         ) -> Result<(), Box<dyn std::error::Error>> {
             let len = input.len();
             let mut output_vec = output.flat_vector();
-            let data = unsafe { output_vec.as_mut_slice::<i64>() };
-
-            for item in data.iter_mut().take(len) {
-                *item = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
+            for row in 0..len {
+                let value = VOLATILE_COUNTER.fetch_add(1, Ordering::SeqCst) as i64;
+                unsafe { output_vec.write(row, value) };
             }
             Ok(())
         }

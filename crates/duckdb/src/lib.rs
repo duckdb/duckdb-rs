@@ -107,6 +107,8 @@ mod arrow_batch;
 #[cfg(feature = "vtab-arrow")]
 mod arrow_interop;
 mod cache;
+#[cfg(any(feature = "vscalar", feature = "vtab"))]
+mod callback;
 mod column;
 mod config;
 mod executed_result;
