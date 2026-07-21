@@ -3,6 +3,7 @@ use std::ffi::CString;
 use crate::core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId};
 use crate::ffi::duckdb_vector_size;
 
+use super::list::MAX_VECTOR_SIZE;
 use super::*;
 
 #[test]

@@ -26,9 +26,6 @@ pub use flat::{FlatVector, Inserter};
 pub use list::ListVector;
 pub use r#struct::StructVector;
 
-#[cfg(test)]
-use list::MAX_VECTOR_SIZE;
-
 fn try_vector_row_is_null(ptr: duckdb_vector, row: u64, capacity: usize) -> Result<bool> {
     let row_index = usize::try_from(row)
         .map_err(|_| duckdb_failure_from_message(format!("row index {row} exceeds usize range")))?;
