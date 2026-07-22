@@ -313,9 +313,8 @@ mod build_linked {
         if lib_marker.exists() {
             println!("cargo:warning=Reusing libduckdb from {}", download_dir.display());
         } else {
-            let client = http_client()?;
             let url = archive.download_url(&version);
-            ensure_libduckdb(&client, &url, &archive_path)?;
+            ensure_libduckdb(&url, &archive_path)?;
             extract_libduckdb(&archive_path, &download_dir)?;
             if !lib_marker.exists() {
                 return Err(format!(
@@ -391,11 +390,7 @@ mod build_linked {
 
     // Ensures the libduckdb archive exists: reuses an existing zip or
     // downloads it into a temp file and atomically renames it into place.
-    fn ensure_libduckdb(
-        client: &reqwest::blocking::Client,
-        url: &str,
-        archive_path: &Path,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn ensure_libduckdb(url: &str, archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if archive_path.exists() {
             println!("cargo:warning=libduckdb already present at {}", archive_path.display());
             return Ok(());
@@ -404,9 +399,9 @@ mod build_linked {
         if let Some(parent) = archive_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut response = client.get(url).send()?.error_for_status()?;
+        let mut response = http_client().get(url).call()?;
         let mut tmp_file = fs::File::create(&tmp_path)?;
-        io::copy(&mut response, &mut tmp_file)?;
+        io::copy(&mut response.body_mut().as_reader(), &mut tmp_file)?;
         fs::rename(&tmp_path, archive_path)?;
         println!("cargo:warning=Downloaded libduckdb from {url}");
         Ok(())
@@ -526,15 +521,17 @@ mod build_linked {
         }
     }
 
-    fn http_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
+    fn http_client() -> ureq::Agent {
         let timeout = env::var("CARGO_HTTP_TIMEOUT")
             .or_else(|_| env::var("HTTP_TIMEOUT"))
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(90);
-        reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(timeout))
-            .build()
+        ureq::Agent::new_with_config(
+            ureq::Agent::config_builder()
+                .timeout_global(Some(std::time::Duration::from_secs(timeout)))
+                .build(),
+        )
     }
 }
 
