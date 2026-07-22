@@ -1,10 +1,16 @@
 # Contributing
-Glad your are interested in this project. Here I'll share how I develop this library, hopefully it will be helpfull for you to get start.
+
+Thank you for your interest in contributing to duckdb-rs. This guide describes how to set up and develop the project.
 
 ## Background
-This repo has two crates: `duckdb` and `libduckdb-sys`, which `libduckdb-sys` is the original binding for [duckdb-c-api](https://github.com/duckdb/duckdb/blob/master/src/include/duckdb.h) and `duckdb` is an ergonomic wrapper on `libduckdb-sys`.
 
-Most user should use `duckdb`, but our development may happen in both of these components.
+This workspace has three crates:
+
+- `libduckdb-sys` provides native bindings for the [DuckDB C API](https://duckdb.org/docs/current/clients/c/api).
+- `duckdb` provides an ergonomic wrapper around `libduckdb-sys`.
+- `duckdb-loadable-macros` provides procedural macros for loadable DuckDB extensions.
+
+Most users should use `duckdb`, but development may involve any of these components.
 
 ## Prerequisites
 
@@ -28,15 +34,18 @@ Install LLVM from [llvm.org](https://releases.llvm.org/) or use the installer, a
 
 ### DuckDB Library and Header Setup
 
-When using `DUCKDB_LIB_DIR` and `DUCKDB_INCLUDE_DIR` environment variables, ensure the following folder structure:
+When using `DUCKDB_LIB_DIR` and `DUCKDB_INCLUDE_DIR`, put the header and the library files for your platform directly in those directories. For example:
 
 ```
 ~/duckdb-lib/
-├── duckdb.h          # Header file (must be directly in the directory, not in a subdirectory)
-└── libduckdb.so      # Library file (or .dylib on macOS, .dll on Windows)
+├── duckdb.h           # All platforms
+├── libduckdb.so       # Linux
+├── libduckdb.dylib    # macOS
+├── duckdb.dll         # Windows runtime library
+└── duckdb.lib         # Windows MSVC import library
 ```
 
-**Important:** The header file `duckdb.h` must be placed directly in the directory specified by `DUCKDB_INCLUDE_DIR`, not in a `duckdb/` subdirectory. The build system expects the header at `{DUCKDB_INCLUDE_DIR}/duckdb.h`.
+Only the files for your platform are required. The header file `duckdb.h` must be directly in `DUCKDB_INCLUDE_DIR`, not in a `duckdb/` subdirectory. Windows MSVC builds require both `duckdb.dll` and its `duckdb.lib` import library.
 
 ## Development
 
@@ -73,13 +82,24 @@ cp src/include/duckdb.h build/debug/src/libduckdb.dylib ~/duckdb-lib/
 cp src/include/duckdb.h build/debug/src/libduckdb.so ~/duckdb-lib/
 
 # Windows:
-cp src/include/duckdb.h build/debug/src/duckdb.dll ~/duckdb-lib/
+cp src/include/duckdb.h build/debug/src/duckdb.dll build/debug/src/duckdb.lib ~/duckdb-lib/
 
 # set lib dir
 export DUCKDB_LIB_DIR=~/duckdb-lib
 
 # set header dir (can be the same as LIB_DIR)
 export DUCKDB_INCLUDE_DIR=~/duckdb-lib
+
+# Make the dynamic library available when tests run. Use the command for your platform.
+
+# Linux:
+export LD_LIBRARY_PATH="$DUCKDB_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# macOS:
+export DYLD_FALLBACK_LIBRARY_PATH="$DUCKDB_LIB_DIR${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+
+# Windows (Git Bash):
+export PATH="$DUCKDB_LIB_DIR:$PATH"
 ```
 
 ### libduckdb-sys
@@ -97,21 +117,22 @@ cargo test --features buildtime_bindgen
 
 **Note:** Make sure `libclang` is installed (see Prerequisites section above) when using the `buildtime_bindgen` feature.
 
-Use the bundled header file:
+Use the bundled DuckDB source and pregenerated bindings:
 ```shell
 cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features bundled
 ```
 
-Currently in [github actions](https://github.com/duckdb/duckdb-rs/actions), we always use the bundled file for testing. So if you change the header in duckdb-cpp repo, you need to make the PR merged and updated the [`duckdb-sources` submodule](https://github.com/duckdb/duckdb-rs/tree/main/crates/libduckdb-sys).
-You can generated the amalgamated file by:
+CI exercises downloaded DuckDB libraries on Linux and Windows, the `bundled` backend through the Linux feature checks, and the `bundled-cmake` backend in its dedicated job.
+
+To test an upstream DuckDB C API change before it is tagged, run the top-level upgrade script with the full upstream commit SHA:
 
 ```shell
-cd ~/github/duckdb
-mkdir -p build/amaldebug
-python scripts/amalgamation.py
-cp src/amalgamation/duckdb.cpp src/include/duckdb.h src/amalgamation/duckdb.hpp ../duckdb-rs/crates/libduckdb-sys/duckdb-sources/
+cd ~/github/duckdb-rs
+./upgrade.sh --sha <COMMIT_SHA>
 ```
+
+This checks out that commit in the `duckdb-sources` submodule, regenerates `duckdb.tar.gz`, and regenerates both sets of pregenerated bindings. It does not run tests; validate the `bundled` and `bundled-cmake` backends afterward.
 
 ### duckdb-rs
 
@@ -128,18 +149,24 @@ cargo test --features buildtime_bindgen -- --nocapture
 
 **Note:** Make sure `libclang` is installed (see Prerequisites section above) when using the `buildtime_bindgen` feature.
 
-Use the bundled header file:
+Use the bundled DuckDB source and pregenerated bindings:
 
 ```shell
 cd ~/github/duckdb-rs
 cargo test --features bundled -- --nocapture
 ```
 
-Detect memory leaks:
+Run AddressSanitizer for Rust code on x86-64 Linux:
 ```shell
 cd ~/github/duckdb-rs
-ASAN_OPTIONS=detect_leaks=1 ASAN_SYMBOLIZER_PATH=/usr/local/opt/llvm/bin/llvm-symbolizer cargo test --features bundled -- --nocapture
+RUSTFLAGS="-Zsanitizer=address -C debuginfo=0" \
+RUSTDOCFLAGS="-Zsanitizer=address" \
+ASAN_OPTIONS="detect_stack_use_after_return=1:detect_leaks=1:symbolize=1" \
+cargo +nightly test --lib --tests --features bundled \
+  --target x86_64-unknown-linux-gnu --package duckdb
 ```
+
+Install a nightly Rust toolchain first if necessary. `RUSTFLAGS` does not instrument the bundled C++ sources compiled by the `cc` crate, so this command covers the Rust side of the integration.
 
 ### Update to a new version
 

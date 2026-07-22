@@ -87,7 +87,33 @@ The following [examples](crates/duckdb/examples) demonstrate various features an
 - **repl** - Interactive SQL REPL.
 - **hello-ext** - A DuckDB extension written in Rust (see [Building and loading extensions](#building-and-loading-extensions)).
 
-Run any example with `cargo run --example <name>`.
+Run an executable example using your configured DuckDB library:
+
+```shell
+cargo run --example basic
+```
+
+Pass each example's required feature when applicable:
+
+```shell
+cargo run --example arrow_vtab --features vtab-arrow
+cargo run --example vscalar --features vscalar
+cargo run --example vtab --features vtab
+cargo run --example parquet --features parquet
+```
+
+If you do not have a system DuckDB library and are not using `DUCKDB_DOWNLOAD_LIB`, add `bundled` to the feature list. For example:
+
+```shell
+cargo run --example basic --features bundled
+cargo run --example arrow_vtab --features "bundled vtab-arrow"
+```
+
+`hello-ext` is a library target rather than an executable, so build it instead of using `cargo run`:
+
+```shell
+cargo build --example hello-ext --features loadable-extension
+```
 
 ## Feature flags
 
@@ -99,7 +125,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 - `vtab-arrow` - Apache Arrow integration for virtual tables. Enables conversion between Arrow RecordBatch and DuckDB data chunks.
 - `vtab-excel` - Deprecated no-op retained for feature compatibility.
 - `vscalar` - Create custom scalar functions that operate on individual values or rows.
-- `vscalar-arrow` - Arrow-optimized scalar functions for vectorized operations.
+- `vscalar-arrow` - Arrow-optimized scalar functions for vectorized operations. Requires `vscalar`.
 
 ### File formats
 
@@ -223,7 +249,7 @@ You can adjust this behavior in a number of ways:
 
 3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
 
-   Linux example:
+   Linux ARM64 example:
 
    ```shell
    wget https://github.com/duckdb/duckdb/releases/download/v1.5.5/libduckdb-linux-arm64.zip
@@ -235,6 +261,8 @@ You can adjust this behavior in a number of ways:
 
    cargo build --examples
    ```
+
+   For x86-64 Linux, replace `arm64` with `amd64` in the archive name and URL.
 
    macOS example:
 
@@ -249,7 +277,7 @@ You can adjust this behavior in a number of ways:
    cargo build --examples
    ```
 
-4. Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This always links against the dynamic library in the archive (setting `DUCKDB_STATIC` has no effect), and it effectively automates the manual steps above. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the DuckDB version encoded in the `libduckdb-sys` crate version.
+4. Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This links against the dynamic library in the archive and effectively automates the manual steps above. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the DuckDB version encoded in the `libduckdb-sys` crate version.
 
    ```shell
    DUCKDB_DOWNLOAD_LIB=1 cargo test
@@ -258,8 +286,8 @@ You can adjust this behavior in a number of ways:
 5. Installing the DuckDB development packages will usually be all that is required, but
    the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)
    and [vcpkg](https://github.com/mcgoo/vcpkg-rs) have some additional configuration
-   options. The default when using vcpkg is to dynamically link,
-   which must be enabled by setting `VCPKGRS_DYNAMIC=1` environment variable before build.
+   options. `vcpkg-rs` uses static libraries by default. To opt into dynamic
+   linking, set the `VCPKGRS_DYNAMIC=1` environment variable before building.
 
 When none of the options above are used, the build script falls back to this discovery path and will emit the appropriate `cargo:rustc-link-lib` directives if DuckDB is found on your system.
 
