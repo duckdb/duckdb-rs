@@ -821,9 +821,10 @@ fn test_geometry_data_chunk_to_arrow_uses_wkb_bytes() -> Result<(), Box<dyn Erro
     let db = Connection::open_in_memory()?;
     let wkb: Vec<u8> = db.query_row("SELECT ST_AsWKB('POINT EMPTY'::GEOMETRY)", [], |row| row.get(0))?;
 
-    let chunk = DataChunkHandle::new(&[LogicalTypeHandle::from(LogicalTypeId::Geometry)]);
+    let mut chunk = DataChunkHandle::new(&[LogicalTypeHandle::from(LogicalTypeId::Geometry)]);
     chunk.flat_vector(0).insert(0, wkb.as_slice());
     chunk.set_len(1);
+    unsafe { chunk.assume_initialized() };
 
     let rb = data_chunk_to_arrow(&chunk)?;
     let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();

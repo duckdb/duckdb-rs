@@ -143,9 +143,9 @@ fn test_array_vector_set_child_uses_reserved_nested_capacity() -> Result<()> {
     let data = (0..(child_count * 2) as i32).collect::<Vec<_>>();
     unsafe { array.set_child(&data) };
     let child = array.child(data.len());
-    let output = unsafe { child.as_slice_with_len::<i32>(data.len()) };
+    let output = unsafe { child.as_mut_ptr::<i32>().add(data.len() - 1).read() };
 
-    assert_eq!(output[data.len() - 1], data[data.len() - 1]);
+    assert_eq!(output, data[data.len() - 1]);
 
     Ok(())
 }

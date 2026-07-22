@@ -155,11 +155,6 @@ impl<'a> ListVector<'a> {
         Ok(unsafe { duckdb_list_vector_get_child(self.entries.ptr) })
     }
 
-    #[cfg(feature = "vtab-arrow")]
-    pub(crate) fn child_ptr(&self) -> duckdb_vector {
-        unsafe { duckdb_list_vector_get_child(self.entries.ptr) }
-    }
-
     /// Returns true if the row at the given index is null.
     ///
     /// # Panics

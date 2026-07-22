@@ -1,4 +1,4 @@
-use std::{ffi::CString, marker::PhantomData, slice};
+use std::{ffi::CString, slice};
 
 use crate::{
     Result,
@@ -10,14 +10,15 @@ use crate::{
     },
 };
 
-use super::{try_vector_row_is_null, vector_row_is_null};
+use super::state::{ReadableSpan, StateRef};
+use super::{VectorRef, VectorState, VectorStateCell, try_vector_row_is_null, vector_row_is_null};
 
 /// A flat (contiguous, scalar-row) vector borrowed from a
 /// [`DataChunkHandle`][crate::core::DataChunkHandle].
 pub struct FlatVector<'a> {
     pub(super) ptr: duckdb_vector,
     capacity: usize,
-    _phantom: PhantomData<&'a ()>,
+    state: StateRef<'a>,
 }
 
 impl<'a> FlatVector<'a> {
@@ -29,7 +30,7 @@ impl<'a> FlatVector<'a> {
         Self {
             ptr,
             capacity: unsafe { duckdb_vector_size() as usize },
-            _phantom: PhantomData,
+            state: StateRef::Owned(VectorStateCell::new(VectorState::UnderConstruction)),
         }
     }
 
@@ -44,8 +45,22 @@ impl<'a> FlatVector<'a> {
         Self {
             ptr,
             capacity,
-            _phantom: PhantomData,
+            state: StateRef::Owned(VectorStateCell::new(VectorState::UnderConstruction)),
         }
+    }
+
+    pub(in crate::core) unsafe fn from_chunk(
+        ptr: duckdb_vector,
+        capacity: usize,
+        state: &'a VectorStateCell,
+    ) -> Result<Self> {
+        let vector = unsafe { VectorRef::initialized_from_chunk(ptr, capacity, state) }?;
+        vector.expect_flat()?;
+        Ok(Self {
+            ptr,
+            capacity,
+            state: StateRef::Borrowed(state),
+        })
     }
 
     /// Returns the capacity of the vector
@@ -54,8 +69,20 @@ impl<'a> FlatVector<'a> {
     }
 
     #[cfg(feature = "vtab-arrow")]
-    pub(crate) fn ptr(&self) -> duckdb_vector {
-        self.ptr
+    pub(crate) fn readable_len(&self) -> Result<usize> {
+        self.native_read_ref()?.readable_len()
+    }
+
+    #[cfg(feature = "vtab-arrow")]
+    pub(crate) fn native_read_ref(&self) -> Result<VectorRef<'_>> {
+        unsafe {
+            VectorRef::from_state(
+                self.ptr,
+                self.capacity,
+                self.state.reborrow(),
+                ReadableSpan::Chunk { multiplier: 1 },
+            )
+        }
     }
 
     /// Returns true if the row at the given index is null
@@ -79,7 +106,8 @@ impl<'a> FlatVector<'a> {
     /// element is initialized, in bounds, and not accessed through another
     /// incompatible or aliased reference.
     pub unsafe fn as_mut_ptr<T>(&self) -> *mut T {
-        unsafe { duckdb_vector_get_data(self.ptr).cast() }
+        self.state.shared().set(VectorState::UnderConstruction);
+        self.raw_data_ptr()
     }
 
     /// Returns a typed slice of the vector.
@@ -90,7 +118,8 @@ impl<'a> FlatVector<'a> {
     /// each returned element is initialized before it is read, and no `&mut`
     /// references to the same storage exist for the returned lifetime.
     pub unsafe fn as_slice<T>(&self) -> &[T] {
-        unsafe { slice::from_raw_parts(self.as_mut_ptr(), self.capacity()) }
+        self.state.readable_len_or_err().unwrap_or_else(|err| panic!("{err}"));
+        unsafe { slice::from_raw_parts(self.raw_data_ptr(), self.capacity()) }
     }
 
     /// Returns a typed slice of the vector up to a certain length.
@@ -101,7 +130,9 @@ impl<'a> FlatVector<'a> {
     /// returned element is initialized before it is read, and no `&mut`
     /// references to the same storage exist for the returned lifetime.
     pub unsafe fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
-        unsafe { slice::from_raw_parts(self.as_mut_ptr(), len) }
+        assert!(len <= self.capacity());
+        self.state.readable_len_or_err().unwrap_or_else(|err| panic!("{err}"));
+        unsafe { slice::from_raw_parts(self.raw_data_ptr(), len) }
     }
 
     /// Returns a typed mutable slice of the vector.
@@ -132,6 +163,7 @@ impl<'a> FlatVector<'a> {
 
     /// Set row as null
     pub fn set_null(&mut self, row: usize) {
+        self.state.shared().set(VectorState::UnderConstruction);
         unsafe {
             duckdb_vector_ensure_validity_writable(self.ptr);
             let idx = duckdb_vector_get_validity(self.ptr);
@@ -148,8 +180,13 @@ impl<'a> FlatVector<'a> {
     /// # Panics
     /// Panics if `data.len()` exceeds the vector capacity.
     pub unsafe fn copy<T: Copy>(&mut self, data: &[T]) {
+        self.state.shared().set(VectorState::UnderConstruction);
         assert!(data.len() <= self.capacity());
         (unsafe { self.as_mut_slice::<T>() })[0..data.len()].copy_from_slice(data);
+    }
+
+    fn raw_data_ptr<T>(&self) -> *mut T {
+        unsafe { duckdb_vector_get_data(self.ptr).cast() }
     }
 }
 
@@ -161,6 +198,7 @@ pub trait Inserter<T> {
 
 impl Inserter<CString> for FlatVector<'_> {
     fn insert(&self, index: usize, value: CString) {
+        self.state.shared().set(VectorState::UnderConstruction);
         unsafe {
             duckdb_vector_assign_string_element(self.ptr, index as u64, value.as_ptr());
         }
@@ -181,6 +219,7 @@ impl Inserter<&String> for FlatVector<'_> {
 
 impl Inserter<&[u8]> for FlatVector<'_> {
     fn insert(&self, index: usize, value: &[u8]) {
+        self.state.shared().set(VectorState::UnderConstruction);
         let value_size = value.len();
         unsafe {
             // This function also works for binary data. https://duckdb.org/docs/api/c/api#duckdb_vector_assign_string_element_len

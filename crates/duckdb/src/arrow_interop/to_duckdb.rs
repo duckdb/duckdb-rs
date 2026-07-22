@@ -299,6 +299,9 @@ pub fn record_batch_to_duckdb_data_chunk(
         write_arrow_array_to_vector(col, &mut DataChunkHandleSlice::new(chunk, i))?;
     }
     chunk.set_len(batch.num_rows());
+    // SAFETY: every column was written for the complete record-batch row
+    // extent, including each committed nested child span.
+    unsafe { chunk.mark_initialized()? };
     Ok(())
 }
 
