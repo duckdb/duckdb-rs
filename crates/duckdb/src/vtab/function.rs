@@ -1,5 +1,5 @@
 use super::{
-    LogicalTypeHandle, VTab, Value, drop_boxed,
+    LogicalTypeHandle, VTab, Value,
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
         duckdb_bind_get_parameter, duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data,
@@ -11,8 +11,9 @@ use super::{
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
 };
+use crate::callback::{CallbackErrorSink, drop_boxed};
 use std::{
-    ffi::{CString, c_void},
+    ffi::{CStr, CString, c_void},
     fmt::Debug,
     marker::PhantomData,
     os::raw::c_char,
@@ -31,21 +32,19 @@ impl BindInfo {
     ///  * `name`: The name of the column
     ///  * `type`: The logical type of the column
     pub fn add_result_column(&self, column_name: &str, column_type: LogicalTypeHandle) {
-        let c_str = CString::new(column_name).unwrap();
+        let c_str = CString::new(column_name).expect("result column name must not contain NUL bytes");
         unsafe {
             duckdb_bind_add_result_column(self.ptr, c_str.as_ptr() as *const c_char, column_type.ptr);
         }
     }
 
     /// Report that an error has occurred while calling bind.
+    /// Interior NUL bytes are reported as the two-character sequence `\0`.
     ///
     /// # Arguments
     ///  * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
-        unsafe {
-            duckdb_bind_set_error(self.ptr, c_str.as_ptr() as *const c_char);
-        }
+        self.report_error(error);
     }
     /// Sets the user-provided bind data in the bind object. This object can be retrieved again during execution.
     ///
@@ -92,7 +91,7 @@ impl BindInfo {
     /// returns: The value of the parameter
     pub fn get_named_parameter(&self, name: &str) -> Option<Value> {
         unsafe {
-            let name = &CString::new(name).unwrap();
+            let name = &CString::new(name).expect("named parameter must not contain NUL bytes");
             let ptr = duckdb_bind_get_named_parameter(self.ptr, name.as_ptr());
             if ptr.is_null() { None } else { Some(Value::from(ptr)) }
         }
@@ -115,6 +114,14 @@ impl BindInfo {
 impl From<duckdb_bind_info> for BindInfo {
     fn from(ptr: duckdb_bind_info) -> Self {
         Self { ptr }
+    }
+}
+
+impl CallbackErrorSink for BindInfo {
+    fn set_c_error(&self, error: &CStr) {
+        unsafe {
+            duckdb_bind_set_error(self.ptr, error.as_ptr());
+        }
     }
 }
 
@@ -183,12 +190,18 @@ impl InitInfo {
     }
 
     /// Report that an error has occurred while calling init.
+    /// Interior NUL bytes are reported as the two-character sequence `\0`.
     ///
     /// # Arguments
     /// * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
-        unsafe { duckdb_init_set_error(self.0, c_str.as_ptr()) }
+        self.report_error(error);
+    }
+}
+
+impl CallbackErrorSink for InitInfo {
+    fn set_c_error(&self, error: &CStr) {
+        unsafe { duckdb_init_set_error(self.0, error.as_ptr()) }
     }
 }
 
@@ -364,14 +377,12 @@ pub struct TableFunctionInfo<V: VTab> {
 
 impl<V: VTab> TableFunctionInfo<V> {
     /// Report that an error has occurred while executing the function.
+    /// Interior NUL bytes are reported as the two-character sequence `\0`.
     ///
     /// # Arguments
     ///  * `error`: The error message
     pub fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
-        unsafe {
-            duckdb_function_set_error(self.ptr, c_str.as_ptr());
-        }
+        self.report_error(error);
     }
 
     /// Gets the bind data set by [`BindInfo::set_bind_data`] during the bind.
@@ -411,6 +422,14 @@ impl<V: VTab> TableFunctionInfo<V> {
     /// * `returns`: The init data object
     pub fn get_local_init_data<T>(&self) -> *mut T {
         unsafe { duckdb_function_get_local_init_data(self.ptr).cast() }
+    }
+}
+
+impl<V: VTab> CallbackErrorSink for TableFunctionInfo<V> {
+    fn set_c_error(&self, error: &CStr) {
+        unsafe {
+            duckdb_function_set_error(self.ptr, error.as_ptr());
+        }
     }
 }
 
