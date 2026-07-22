@@ -7,8 +7,8 @@ use libduckdb_sys::{duckdb_timestamp, duckdb_timestamp_ms, duckdb_timestamp_ns, 
 
 fn data_chunk_roundtrip_single_array(array: ArrayRef) -> Result<ArrayRef, Box<dyn Error>> {
     let input_data_type = array.data_type().clone();
-    let mut chunk = single_array_data_chunk(array)?;
-    let output = manually_initialized_chunk_to_arrow(&mut chunk)?.column(0).clone();
+    let chunk = single_array_data_chunk(array)?;
+    let output = data_chunk_to_arrow(&chunk)?.column(0).clone();
     assert_eq!(output.data_type(), &input_data_type);
 
     Ok(output)
@@ -25,7 +25,7 @@ fn assert_roundtrip_identity(array: ArrayRef) -> Result<(), Box<dyn Error>> {
 
 /// Builds a single-column chunk of `LIST(child)` committed to `rows` rows.
 fn list_chunk(child: &LogicalTypeHandle, rows: usize) -> DataChunkHandle {
-    let mut chunk = DataChunkHandle::new(&[LogicalTypeHandle::list(child)]);
+    let chunk = DataChunkHandle::new(&[LogicalTypeHandle::list(child)]);
     chunk.set_len(rows);
     chunk
 }
@@ -36,11 +36,14 @@ fn single_entry_map_chunk() -> DataChunkHandle {
         &LogicalTypeHandle::from(LogicalTypeId::Varchar),
         &LogicalTypeHandle::from(LogicalTypeId::Integer),
     );
-    let mut chunk = DataChunkHandle::new(&[map_type]);
+    let chunk = DataChunkHandle::new(&[map_type]);
     chunk.set_len(1);
     let mut map = chunk.list_vector(0);
-    map.set_entry(0, 0, 1);
     map.set_len(1);
+    map.set_entry(0, 0, 1);
+    let mut entries = map.struct_child(1);
+    entries.child(0, 1).insert(0, "key");
+    unsafe { entries.child(1, 1).copy(&[1_i32]) };
     chunk
 }
 
@@ -80,7 +83,7 @@ fn test_data_chunk_to_arrow_rejects_payload_under_construction() {
 
     assert_eq!(
         data_chunk_to_arrow(&chunk).unwrap_err().to_string(),
-        "DuckDB payload is still under construction; finish the writable view and call DataChunkHandle::assume_initialized before reading"
+        "DuckDB payload is still under construction; finish writable views, then read through an initialized owner; chunk writers must call DataChunkHandle::assume_initialized"
     );
 }
 
@@ -96,7 +99,7 @@ fn test_data_chunk_to_arrow_rejects_growth_after_initialization() {
 
     assert_eq!(
         data_chunk_to_arrow(&chunk).unwrap_err().to_string(),
-        "DuckDB payload is still under construction; finish the writable view and call DataChunkHandle::assume_initialized before reading"
+        "DuckDB payload is still under construction; finish writable views, then read through an initialized owner; chunk writers must call DataChunkHandle::assume_initialized"
     );
 }
 
@@ -116,10 +119,12 @@ fn test_data_chunk_to_arrow_rejects_list_entry_beyond_child_len() {
     let list_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
     let mut chunk = DataChunkHandle::new(&[LogicalTypeId::Integer.into(), list_type]);
     chunk.set_len(1);
+    chunk.flat_vector(0).set_null(0);
 
     let mut list = chunk.list_vector(1);
-    list.set_entry(0, 0, 2);
     unsafe { list.set_child(&[10_i32]) };
+    drop(list);
+    unsafe { crate::core::set_list_entry_unchecked_for_test(&chunk, 1, 0, 0, 2) };
 
     assert_conversion_err(
         &mut chunk,
@@ -130,7 +135,7 @@ fn test_data_chunk_to_arrow_rejects_list_entry_beyond_child_len() {
 #[test]
 fn test_data_chunk_to_arrow_rejects_overflowing_list_entry() {
     let mut chunk = list_chunk(&LogicalTypeId::Integer.into(), 1);
-    chunk.list_vector(0).set_entry(0, usize::MAX, 1);
+    unsafe { crate::core::set_list_entry_unchecked_for_test(&chunk, 0, 0, usize::MAX, 1) };
 
     assert_conversion_err(
         &mut chunk,
@@ -159,8 +164,10 @@ fn test_data_chunk_to_arrow_rejects_array_in_list_beyond_child_len() {
     let array_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
     let mut chunk = list_chunk(&array_type, 1);
     let mut list = chunk.list_vector(0);
-    list.set_entry(0, 0, 2);
     list.set_len(1);
+    unsafe { list.array_child().set_child(&[0_i32, 0]) };
+    drop(list);
+    unsafe { crate::core::set_list_entry_unchecked_for_test(&chunk, 0, 0, 0, 2) };
 
     assert_conversion_err(
         &mut chunk,
@@ -174,9 +181,10 @@ fn test_data_chunk_to_arrow_reads_list_larger_than_standard_vector() -> Result<(
 
     let mut chunk = list_chunk(&LogicalTypeId::Integer.into(), 1);
     let mut list = chunk.list_vector(0);
-    list.set_entry(0, 0, CHILD_COUNT);
     let values = (0..CHILD_COUNT as i32).collect::<Vec<_>>();
     unsafe { list.set_child(&values) };
+    list.set_entry(0, 0, CHILD_COUNT);
+    drop(list);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_list::<i32>();
@@ -199,14 +207,16 @@ fn test_data_chunk_to_arrow_reads_map_larger_than_standard_vector() -> Result<()
     let mut chunk = DataChunkHandle::new(&[map_type]);
     chunk.set_len(1);
     let mut map = chunk.list_vector(0);
-    map.set_entry(0, 0, ENTRY_COUNT);
     map.set_len(ENTRY_COUNT);
-    let entries = map.struct_child(ENTRY_COUNT);
+    map.set_entry(0, 0, ENTRY_COUNT);
+    let mut entries = map.struct_child(ENTRY_COUNT);
     let values = (0..ENTRY_COUNT as i32).collect::<Vec<_>>();
     unsafe {
         entries.child(0, ENTRY_COUNT).copy(&values);
         entries.child(1, ENTRY_COUNT).copy(&values);
     }
+    drop(entries);
+    drop(map);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_map();
@@ -262,11 +272,12 @@ fn test_data_chunk_to_arrow_preserves_top_level_struct_nulls() -> Result<(), Box
 fn test_data_chunk_to_arrow_ignores_null_list_entries() -> Result<(), Box<dyn Error>> {
     let mut chunk = list_chunk(&LogicalTypeId::Integer.into(), 3);
     let mut list = chunk.list_vector(0);
+    unsafe { list.set_child(&[10_i32, 11, 30]) };
     list.set_entry(0, 0, 2);
-    list.set_entry(1, usize::MAX, usize::MAX);
     list.set_entry(2, 2, 1);
     list.set_null(1);
-    unsafe { list.set_child(&[10_i32, 11, 30]) };
+    list.set_entry(1, usize::MAX, usize::MAX);
+    drop(list);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_list::<i32>();
@@ -281,9 +292,10 @@ fn test_data_chunk_to_arrow_ignores_null_list_entries() -> Result<(), Box<dyn Er
 fn test_data_chunk_to_arrow_gathers_non_contiguous_list_entries() -> Result<(), Box<dyn Error>> {
     let mut chunk = list_chunk(&LogicalTypeId::Integer.into(), 2);
     let mut list = chunk.list_vector(0);
+    unsafe { list.set_child(&[99_i32, 10, 11, 98, 30]) };
     list.set_entry(0, 1, 2);
     list.set_entry(1, 4, 1);
-    unsafe { list.set_child(&[99_i32, 10, 11, 98, 30]) };
+    drop(list);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_list::<i32>();
@@ -298,15 +310,17 @@ fn test_data_chunk_to_arrow_gathers_non_contiguous_nested_lists() -> Result<(), 
     let inner_type = LogicalTypeHandle::list(&LogicalTypeId::Integer.into());
     let mut chunk = list_chunk(&inner_type, 2);
     let mut outer = chunk.list_vector(0);
+    outer.set_len(5);
     outer.set_entry(0, 1, 2);
     outer.set_entry(1, 4, 1);
-    outer.set_len(5);
 
     let mut inner = outer.list_child();
+    unsafe { inner.set_child(&[10_i32, 11, 20, 40, 41]) };
     inner.set_entry(1, 0, 2);
     inner.set_entry(2, 2, 1);
     inner.set_entry(4, 3, 2);
-    unsafe { inner.set_child(&[10_i32, 11, 20, 40, 41]) };
+    drop(inner);
+    drop(outer);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_list::<i32>();
@@ -327,10 +341,12 @@ fn test_data_chunk_to_arrow_masks_array_children_under_null_parents() -> Result<
     chunk.set_len(2);
 
     let mut array = chunk.array_vector(0);
-    let child = array.child(4);
+    let mut child = array.child(4);
     child.insert(0, "one");
     child.insert(1, "two");
+    drop(child);
     array.set_null(1);
+    drop(array);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_fixed_size_list();
@@ -349,11 +365,13 @@ fn test_data_chunk_to_arrow_gathers_sparse_array_rows_in_lists() -> Result<(), B
     let array_type = LogicalTypeHandle::array(&LogicalTypeId::Integer.into(), 2);
     let mut chunk = list_chunk(&array_type, 2);
     let mut list = chunk.list_vector(0);
+    list.set_len(4);
+    let mut arrays = list.array_child();
+    unsafe { arrays.set_child(&[90_i32, 91, 10, 11, 80, 81, 30, 31]) };
+    drop(arrays);
     list.set_entry(0, 1, 1);
     list.set_entry(1, 3, 1);
-    list.set_len(4);
-    let arrays = list.array_child();
-    unsafe { arrays.set_child(&[90_i32, 91, 10, 11, 80, 81, 30, 31]) };
+    drop(list);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_list::<i32>();
@@ -374,6 +392,7 @@ fn test_data_chunk_to_arrow_masks_unwritten_struct_children() -> Result<(), Box<
 
     let mut struct_vector = chunk.struct_vector(0);
     struct_vector.set_null(0);
+    drop(struct_vector);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_struct();
@@ -427,6 +446,7 @@ fn test_data_chunk_to_arrow_masks_invalid_boolean_payload_under_null() -> Result
     // A null slot need not contain a valid Rust `bool` representation.
     unsafe { vector.copy(&[2_u8]) };
     vector.set_null(0);
+    drop(vector);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
 
@@ -517,7 +537,6 @@ fn test_data_chunk_to_arrow_preserves_timestamp_carriers() -> Result<(), Box<dyn
 fn test_data_chunk_to_arrow_preserves_nested_nanosecond_timestamp() -> Result<(), Box<dyn Error>> {
     let mut chunk = list_chunk(&LogicalTypeId::TimestampNs.into(), 1);
     let mut list = chunk.list_vector(0);
-    list.set_entry(0, 0, 2);
     unsafe {
         list.set_child(&[
             duckdb_timestamp_ns { nanos: -123 },
@@ -526,6 +545,8 @@ fn test_data_chunk_to_arrow_preserves_nested_nanosecond_timestamp() -> Result<()
             },
         ]);
     }
+    list.set_entry(0, 0, 2);
+    drop(list);
 
     let output = manually_initialized_chunk_to_arrow(&mut chunk)?;
     let output = output.column(0).as_list::<i32>();

@@ -70,11 +70,8 @@ pub trait VScalar: Sized {
     ///   for this invocation;
     /// - not retain `input`, `output`, or any vector/slice derived from them
     ///   past return;
-    /// - not hold two writable wrappers over the same column at the same
-    ///   time. The column accessors (`flat_vector`, `list_vector`, ...) take
-    ///   `&self`, so safe code can obtain two wrappers over one column and
-    ///   call `as_mut_slice` on each, yielding overlapping `&mut [T]` —
-    ///   undefined behavior.
+    /// - finish one vector view before requesting another view of the same
+    ///   column. The chunk rejects overlapping live views.
     ///
     /// See the callback containment contract in [`crate::vscalar`].
     fn invoke(
@@ -185,6 +182,10 @@ where
     let info = ScalarFunctionInfo::from(info);
     contain_callback(&info, || unsafe {
         let mut input = DataChunkHandle::new_unowned(input);
+        // The temporary scalar callback adapter owns its output vector
+        // separately from the input chunk. Its cardinality is the complete
+        // logical row extent required by the raw adapter's safety contract.
+        let mut output = crate::core::WritableVectorRef::from_raw(&mut output, input.len())?;
         T::invoke(info.get_extra_info(), &mut input, &mut output)
     });
 }

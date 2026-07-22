@@ -1,240 +1,230 @@
-use std::{ffi::CString, slice};
+use std::ffi::CString;
 
-use crate::{
-    Result,
-    core::LogicalTypeHandle,
-    ffi::{
-        duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_assign_string_element,
-        duckdb_vector_assign_string_element_len, duckdb_vector_ensure_validity_writable, duckdb_vector_get_column_type,
-        duckdb_vector_get_data, duckdb_vector_get_validity, duckdb_vector_size,
-    },
-};
+use super::{ResultExt, VectorRef};
+use crate::{Result, core::LogicalTypeHandle, ffi::duckdb_vector};
 
-use super::state::{ReadableSpan, StateRef};
-use super::{VectorRef, VectorState, VectorStateCell, try_vector_row_is_null, vector_row_is_null};
-
-/// A flat (contiguous, scalar-row) vector borrowed from a
-/// [`DataChunkHandle`][crate::core::DataChunkHandle].
+/// A flat vector borrowed from a [`DataChunkHandle`](crate::core::DataChunkHandle).
 pub struct FlatVector<'a> {
-    pub(super) ptr: duckdb_vector,
-    capacity: usize,
-    state: StateRef<'a>,
+    pub(super) vector: VectorRef<'a>,
 }
 
 impl<'a> FlatVector<'a> {
-    /// Wrap a raw `duckdb_vector` pointer.
-    ///
-    /// # Safety
-    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
-    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
-        Self {
-            ptr,
-            capacity: unsafe { duckdb_vector_size() as usize },
-            state: StateRef::Owned(VectorStateCell::new(VectorState::UnderConstruction)),
-        }
-    }
-
-    /// Wrap a raw vector pointer with a caller-supplied element capacity.
-    ///
-    /// # Safety
-    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
-    /// The caller must ensure `capacity` does not exceed the backing allocation
-    /// for the logical view being exposed. Later typed slice and copy methods
-    /// trust this value for bounds checks.
-    pub(crate) unsafe fn with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
-        Self {
-            ptr,
-            capacity,
-            state: StateRef::Owned(VectorStateCell::new(VectorState::UnderConstruction)),
-        }
-    }
-
-    pub(in crate::core) unsafe fn from_chunk(
-        ptr: duckdb_vector,
-        capacity: usize,
-        state: &'a VectorStateCell,
-    ) -> Result<Self> {
-        let vector = unsafe { VectorRef::initialized_from_chunk(ptr, capacity, state) }?;
+    pub(in crate::core) fn from_vector(vector: VectorRef<'a>) -> Result<Self> {
         vector.expect_flat()?;
-        Ok(Self {
-            ptr,
-            capacity,
-            state: StateRef::Borrowed(state),
-        })
+        Ok(Self { vector })
     }
 
-    /// Returns the capacity of the vector
+    /// Returns this vector's explicit effective capacity.
     pub fn capacity(&self) -> usize {
-        self.capacity
+        self.vector.capacity()
     }
 
-    #[cfg(feature = "vtab-arrow")]
-    pub(crate) fn readable_len(&self) -> Result<usize> {
-        self.native_read_ref()?.readable_len()
+    pub(crate) fn ptr(&self) -> duckdb_vector {
+        self.vector.ptr()
     }
 
-    #[cfg(feature = "vtab-arrow")]
-    pub(crate) fn native_read_ref(&self) -> Result<VectorRef<'_>> {
-        unsafe {
-            VectorRef::from_state(
-                self.ptr,
-                self.capacity,
-                self.state.reborrow(),
-                ReadableSpan::Chunk { multiplier: 1 },
-            )
-        }
-    }
-
-    /// Returns true if the row at the given index is null
+    /// Returns true if the row is null.
     ///
     /// # Panics
     /// Panics if `row` is outside the vector capacity.
     pub fn row_is_null(&self, row: u64) -> bool {
-        vector_row_is_null(self.ptr, row, self.capacity)
+        self.vector.row_is_null(row)
     }
 
     /// Returns whether the row is null, or an error if it is out of range.
     pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
-        try_vector_row_is_null(self.ptr, row, self.capacity)
+        self.vector.try_row_is_null(row)
     }
 
     /// Returns a mutable pointer to the vector's backing data cast to `T`.
     ///
     /// # Safety
-    /// The caller must ensure `T` matches the DuckDB vector's physical storage.
-    /// Before dereferencing the pointer, the caller must also ensure the target
-    /// element is initialized, in bounds, and not accessed through another
-    /// incompatible or aliased reference.
-    pub unsafe fn as_mut_ptr<T>(&self) -> *mut T {
-        self.state.shared().set(VectorState::UnderConstruction);
-        self.raw_data_ptr()
+    /// `T` must match DuckDB's physical storage and the caller must initialize
+    /// every slot before it is read.
+    pub unsafe fn as_mut_ptr<T>(&mut self) -> *mut T {
+        self.vector.data_mut_ptr().or_panic()
     }
 
-    /// Returns a typed slice of the vector.
+    /// Returns an initialized typed slice spanning the vector capacity.
     ///
     /// # Safety
-    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
-    /// the backing allocation is sized for `self.capacity()` elements of `T`,
-    /// each returned element is initialized before it is read, and no `&mut`
-    /// references to the same storage exist for the returned lifetime.
-    pub unsafe fn as_slice<T>(&self) -> &[T] {
-        self.state.readable_len_or_err().unwrap_or_else(|err| panic!("{err}"));
-        unsafe { slice::from_raw_parts(self.raw_data_ptr(), self.capacity()) }
-    }
-
-    /// Returns a typed slice of the vector up to a certain length.
-    ///
-    /// # Safety
-    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
-    /// the backing allocation is sized for at least `len` elements of `T`, each
-    /// returned element is initialized before it is read, and no `&mut`
-    /// references to the same storage exist for the returned lifetime.
-    pub unsafe fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
-        assert!(len <= self.capacity());
-        self.state.readable_len_or_err().unwrap_or_else(|err| panic!("{err}"));
-        unsafe { slice::from_raw_parts(self.raw_data_ptr(), len) }
-    }
-
-    /// Returns a typed mutable slice of the vector.
-    ///
-    /// # Safety
-    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
-    /// the backing allocation is sized for `self.capacity()` elements of `T`,
-    /// and no other references to the same storage exist for the returned
-    /// lifetime.
-    pub unsafe fn as_mut_slice<T>(&mut self) -> &mut [T] {
-        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), self.capacity()) }
-    }
-
-    /// Returns a typed mutable slice of the vector up to a certain length.
-    ///
-    /// # Safety
-    /// The caller must ensure `T` matches the DuckDB vector's physical storage,
-    /// the backing allocation is sized for at least `len` elements of `T`, and
-    /// no other references to the same storage exist for the returned lifetime.
-    pub unsafe fn as_mut_slice_with_len<T>(&mut self, len: usize) -> &mut [T] {
-        unsafe { slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
-    }
-
-    /// Returns the logical type of the vector
-    pub fn logical_type(&self) -> LogicalTypeHandle {
-        unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
-    }
-
-    /// Set row as null
-    pub fn set_null(&mut self, row: usize) {
-        self.state.shared().set(VectorState::UnderConstruction);
-        unsafe {
-            duckdb_vector_ensure_validity_writable(self.ptr);
-            let idx = duckdb_vector_get_validity(self.ptr);
-            duckdb_validity_set_row_invalid(idx, row as u64);
-        }
-    }
-
-    /// Copy typed data to the vector.
-    ///
-    /// # Safety
-    /// The caller must ensure `T` matches the DuckDB vector's physical storage
-    /// and no other references to the same storage exist during the copy.
+    /// `T` must match DuckDB's physical storage, every returned slot (including
+    /// null rows) must contain a valid initialized `T`, and no mutable or
+    /// incompatible references to the storage may exist.
     ///
     /// # Panics
-    /// Panics if `data.len()` exceeds the vector capacity.
-    pub unsafe fn copy<T: Copy>(&mut self, data: &[T]) {
-        self.state.shared().set(VectorState::UnderConstruction);
-        assert!(data.len() <= self.capacity());
-        (unsafe { self.as_mut_slice::<T>() })[0..data.len()].copy_from_slice(data);
+    ///
+    /// Panics while the payload remains under construction. Chunk-backed
+    /// writers can finish their views and call
+    /// [`DataChunkHandle::assume_initialized`](crate::core::DataChunkHandle::assume_initialized);
+    /// raw writable adapters must be dropped and read through an initialized
+    /// owner instead.
+    pub unsafe fn as_slice<T>(&self) -> &[T] {
+        unsafe { self.vector.as_slice(self.capacity()) }.or_panic()
     }
 
-    fn raw_data_ptr<T>(&self) -> *mut T {
-        unsafe { duckdb_vector_get_data(self.ptr).cast() }
+    /// Returns an initialized typed slice of `len` elements.
+    ///
+    /// # Safety
+    /// `T` must match DuckDB's physical storage, every returned slot (including
+    /// null rows) must contain a valid initialized `T`, and no mutable or
+    /// incompatible references to the storage may exist.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len` exceeds the vector capacity or while the payload remains
+    /// under construction. Chunk-backed writers can finish their views and
+    /// call [`DataChunkHandle::assume_initialized`](crate::core::DataChunkHandle::assume_initialized);
+    /// raw writable adapters must be dropped and read through an initialized
+    /// owner instead.
+    pub unsafe fn as_slice_with_len<T>(&self, len: usize) -> &[T] {
+        unsafe { self.vector.as_slice(len) }.or_panic()
+    }
+
+    /// Returns a typed mutable slice spanning the vector capacity.
+    ///
+    /// # Safety
+    /// `T` must match DuckDB's physical storage, the returned span must already
+    /// contain valid `T` values, and no other references to that storage may
+    /// exist. Use a typed copy/write interface to initialize new storage.
+    pub unsafe fn as_mut_slice<T>(&mut self) -> &mut [T] {
+        let capacity = self.capacity();
+        unsafe { self.vector.as_mut_slice(capacity) }.or_panic()
+    }
+
+    /// Returns a typed mutable slice of `len` elements.
+    ///
+    /// # Safety
+    /// `T` must match DuckDB's physical storage, the returned span must already
+    /// contain valid `T` values, and no other references to that storage may
+    /// exist. Use a typed copy/write interface to initialize new storage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len` exceeds the vector capacity.
+    pub unsafe fn as_mut_slice_with_len<T>(&mut self, len: usize) -> &mut [T] {
+        unsafe { self.vector.as_mut_slice(len) }.or_panic()
+    }
+
+    /// Returns the logical type of the vector.
+    pub fn logical_type(&self) -> LogicalTypeHandle {
+        self.vector.logical_type_owned()
+    }
+
+    /// Marks one row null.
+    ///
+    /// # Panics
+    /// Panics if `row` is outside the vector capacity.
+    pub fn set_null(&mut self, row: usize) {
+        self.vector.set_null(row);
+    }
+
+    /// Copies typed data into the vector.
+    ///
+    /// # Safety
+    /// `T` must match DuckDB's physical storage.
+    ///
+    /// # Panics
+    /// Panics if `data` exceeds the effective capacity.
+    pub unsafe fn copy<T: Copy>(&mut self, data: &[T]) {
+        self.vector.ensure_writable().or_panic();
+        self.vector.check_slice_len(data.len()).or_panic();
+        if data.is_empty() {
+            return;
+        }
+        let out = self.vector.data_mut_ptr::<T>().or_panic();
+        // SAFETY: the bounds check proves the destination span and `copy`'s
+        // contract requires `T` to match the physical storage.
+        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), out, data.len()) };
+    }
+
+    /// Writes one physical value at `row` without allocating an intermediate
+    /// collection.
+    ///
+    /// # Safety
+    /// `T` must match DuckDB's physical storage for this vector.
+    ///
+    /// # Panics
+    /// Panics if `row` is outside the vector capacity.
+    pub unsafe fn write<T>(&mut self, row: usize, value: T) {
+        unsafe { self.vector.write(row, value) }.or_panic();
     }
 }
 
-/// A trait for inserting data into a vector.
+#[cfg_attr(not(feature = "vtab-arrow"), allow(dead_code))]
+impl FlatVector<'_> {
+    pub(crate) fn readable_len(&self) -> Result<usize> {
+        self.vector.readable_len()
+    }
+
+    pub(crate) fn reborrow_initialized(&self) -> Result<VectorRef<'_>> {
+        self.vector.reborrow_initialized()
+    }
+}
+
+/// A trait for inserting variable-length data into a flat vector.
+///
+/// `BIT` and `BIGNUM` use `string_t`-backed storage with internal encodings, so
+/// generic insertion now rejects them instead of accepting verbatim bytes that
+/// can form malformed values.
+///
+/// Insertions require exclusive access, so an initialized slice cannot remain
+/// live across a write:
+///
+/// ```compile_fail
+/// use duckdb::core::{DataChunkHandle, Inserter, LogicalTypeId};
+///
+/// let chunk = DataChunkHandle::new(&[LogicalTypeId::Varchar.into()]);
+/// let mut vector = chunk.flat_vector(0);
+/// let values = unsafe { vector.as_slice_with_len::<u8>(0) };
+/// vector.insert(0, "value");
+/// dbg!(values);
+/// ```
 pub trait Inserter<T> {
-    /// Insert a value into the vector.
-    fn insert(&self, index: usize, value: T);
+    /// Inserts `value` at `index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` exceeds the vector capacity or the vector is not
+    /// `VARCHAR`, `BLOB`, or WKB-backed `GEOMETRY` storage.
+    fn insert(&mut self, index: usize, value: T);
 }
 
 impl Inserter<CString> for FlatVector<'_> {
-    fn insert(&self, index: usize, value: CString) {
-        self.state.shared().set(VectorState::UnderConstruction);
-        unsafe {
-            duckdb_vector_assign_string_element(self.ptr, index as u64, value.as_ptr());
-        }
+    fn insert(&mut self, index: usize, value: CString) {
+        self.vector.check_variable_length_insert(index).or_panic();
+        unsafe { crate::ffi::duckdb_vector_assign_string_element(self.ptr(), index as u64, value.as_ptr()) };
     }
 }
 
 impl Inserter<&str> for FlatVector<'_> {
-    fn insert(&self, index: usize, value: &str) {
+    fn insert(&mut self, index: usize, value: &str) {
         self.insert(index, value.as_bytes());
     }
 }
 
 impl Inserter<&String> for FlatVector<'_> {
-    fn insert(&self, index: usize, value: &String) {
+    fn insert(&mut self, index: usize, value: &String) {
         self.insert(index, value.as_str());
     }
 }
 
 impl Inserter<&[u8]> for FlatVector<'_> {
-    fn insert(&self, index: usize, value: &[u8]) {
-        self.state.shared().set(VectorState::UnderConstruction);
-        let value_size = value.len();
+    fn insert(&mut self, index: usize, value: &[u8]) {
+        self.vector.check_variable_length_insert(index).or_panic();
         unsafe {
-            // This function also works for binary data. https://duckdb.org/docs/api/c/api#duckdb_vector_assign_string_element_len
-            duckdb_vector_assign_string_element_len(
-                self.ptr,
+            crate::ffi::duckdb_vector_assign_string_element_len(
+                self.ptr(),
                 index as u64,
-                value.as_ptr() as *const ::std::os::raw::c_char,
-                value_size as u64,
+                value.as_ptr().cast(),
+                value.len() as u64,
             );
         }
     }
 }
 
 impl Inserter<&Vec<u8>> for FlatVector<'_> {
-    fn insert(&self, index: usize, value: &Vec<u8>) {
+    fn insert(&mut self, index: usize, value: &Vec<u8>) {
         self.insert(index, value.as_slice());
     }
 }

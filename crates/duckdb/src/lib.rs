@@ -113,6 +113,8 @@ mod column;
 mod config;
 mod executed_result;
 mod inner_connection;
+#[cfg(test)]
+mod panic_utils;
 mod params;
 
 #[cfg(feature = "polars")]

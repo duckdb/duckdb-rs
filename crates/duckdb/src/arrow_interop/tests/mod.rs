@@ -30,6 +30,7 @@ use std::{collections::HashMap, error::Error, sync::Arc};
 
 mod fixed_size_binary;
 mod from_duckdb_nested;
+mod initialization;
 mod nested;
 
 #[test]

@@ -126,29 +126,30 @@ impl VTab for Numbers {
             }
         }
 
-        // LIST<BIGINT>: concatenate every row's children into one contiguous
-        // child vector, pointing each row's entry at its slice as we go. Note
-        // that an empty list (e.g. for n = 0) is distinct from a NULL list,
-        // which you'd produce with `list.set_null(i)`.
+        // LIST<BIGINT>: collect every row's children, commit the contiguous
+        // child vector, then point each row's entry at its slice. An empty list
+        // (e.g. for n = 0) is distinct from a NULL list, which you'd produce
+        // with `list.set_null(i)`.
         {
             let mut list = output.list_vector(3);
             let mut children: Vec<i64> = Vec::new();
+            let mut entries = Vec::with_capacity(rows);
             for i in 0..rows {
                 let divisors = divisors((start + i) as i64);
-                // This row's slice starts at the current child count. Entries
-                // and child data are independent buffers, so the order of
-                // set_entry / set_child is free.
-                list.set_entry(i, children.len(), divisors.len());
+                entries.push((children.len(), divisors.len()));
                 children.extend_from_slice(&divisors);
             }
             // Copies the children into the list's child vector and sets its size.
             unsafe { list.set_child(&children) };
+            for (row, (offset, len)) in entries.into_iter().enumerate() {
+                list.set_entry(row, offset, len);
+            }
         }
 
         // STRUCT(is_even BOOLEAN, name VARCHAR): one child vector per field,
         // each sized like the chunk.
         {
-            let parity = output.struct_vector(4);
+            let mut parity = output.struct_vector(4);
             {
                 let mut is_even = parity.child(0, rows);
                 let slice = unsafe { is_even.as_mut_slice_with_len::<bool>(rows) };
@@ -157,7 +158,7 @@ impl VTab for Numbers {
                 }
             }
             {
-                let name = parity.child(1, rows);
+                let mut name = parity.child(1, rows);
                 for i in 0..rows {
                     name.insert(i, if (start + i) % 2 == 0 { "even" } else { "odd" });
                 }

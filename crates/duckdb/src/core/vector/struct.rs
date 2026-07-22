@@ -1,131 +1,178 @@
-use std::marker::PhantomData;
-
 use libduckdb_sys::DuckDbString;
 
+use super::{FlatVector, ResultExt, VectorAccess, VectorRef, WritableVectorRef, array::ArrayVector, list::ListVector};
 use crate::{
     Result,
     core::LogicalTypeHandle,
-    ffi::{
-        duckdb_struct_type_child_count, duckdb_struct_type_child_name, duckdb_struct_vector_get_child,
-        duckdb_validity_set_row_invalid, duckdb_vector, duckdb_vector_ensure_validity_writable,
-        duckdb_vector_get_column_type, duckdb_vector_get_validity, duckdb_vector_size,
-    },
+    error::duckdb_failure_from_message,
+    ffi::{duckdb_struct_type_child_count, duckdb_struct_vector_get_child},
 };
 
-use super::{ArrayVector, FlatVector, ListVector, try_vector_row_is_null, vector_row_is_null};
+impl VectorRef<'_> {
+    pub(super) fn struct_child_count(&self) -> Result<usize> {
+        self.expect_struct()?;
+        let count = unsafe { duckdb_struct_type_child_count(self.logical_type.ptr) };
+        usize::try_from(count).map_err(|_| duckdb_failure_from_message("DuckDB struct child count exceeds usize range"))
+    }
 
-/// A struct vector borrowed from a [`DataChunkHandle`][crate::core::DataChunkHandle].
+    fn check_struct_child(&self, index: usize) -> Result<()> {
+        let count = self.struct_child_count()?;
+        if index < count {
+            Ok(())
+        } else {
+            Err(duckdb_failure_from_message(format!(
+                "struct child index {index} exceeds child count {count}"
+            )))
+        }
+    }
+
+    pub(super) fn struct_child_mut(&mut self, index: usize, capacity: usize) -> Result<VectorRef<'_>> {
+        self.ensure_writable()?;
+        self.check_struct_child(index)?;
+        if capacity > self.capacity {
+            return Err(duckdb_failure_from_message(format!(
+                "struct child capacity {capacity} exceeds parent capacity {}",
+                self.capacity
+            )));
+        }
+        let ptr = unsafe { duckdb_struct_vector_get_child(self.ptr, index as u64) };
+        // SAFETY: DuckDB keeps each child vector live with its parent, the
+        // explicit capacity is bounded by the parent, and the mutable parent
+        // borrow uniquely reaches this child.
+        unsafe { Self::new(ptr, capacity, self.state.reborrow(), self.readable_span, self.access) }
+    }
+}
+
+#[cfg_attr(not(feature = "vtab-arrow"), allow(dead_code))]
+impl VectorRef<'_> {
+    pub(super) fn struct_child_read(&self, index: usize) -> Result<VectorRef<'_>> {
+        self.ensure_initialized()?;
+        self.check_struct_child(index)?;
+        let ptr = unsafe { duckdb_struct_vector_get_child(self.ptr, index as u64) };
+        // SAFETY: struct children inherit the explicit parent row capacity.
+        unsafe {
+            Self::new(
+                ptr,
+                self.capacity,
+                self.state.reborrow(),
+                self.readable_span,
+                VectorAccess::ReadOnly,
+            )
+        }
+    }
+}
+
+/// A struct-physical vector borrowed from a data chunk.
 ///
-/// Groups one child vector per struct field, all sharing the same row count.
+/// Writable child access requires a mutable borrow of the parent. Each child
+/// remains borrow-scoped so safe code cannot hold overlapping mutable sibling
+/// views. DuckDB represents `STRUCT`, `UNION`, and `VARIANT` with this layout.
+/// Child indices and counts describe that physical layout; they need not match
+/// the logical children reported by [`LogicalTypeHandle`].
 pub struct StructVector<'a> {
-    ptr: duckdb_vector,
-    capacity: usize,
-    _phantom: PhantomData<&'a ()>,
+    pub(super) vector: VectorRef<'a>,
 }
 
 impl<'a> StructVector<'a> {
-    /// Wrap a raw `duckdb_vector` pointer.
-    ///
-    /// # Safety
-    /// `ptr` must be a valid `duckdb_vector` that remains valid for all of `'a`.
-    pub(crate) unsafe fn from_raw(ptr: duckdb_vector) -> Self {
-        unsafe { Self::from_raw_with_capacity(ptr, duckdb_vector_size() as usize) }
+    pub(crate) fn from_vector(vector: VectorRef<'a>) -> Result<Self> {
+        vector.expect_struct()?;
+        Ok(Self { vector })
     }
 
-    /// Wrap a raw struct vector pointer with a caller-supplied row capacity.
-    ///
-    /// # Safety
-    /// `ptr` must be a valid struct `duckdb_vector` that remains valid for all
-    /// of `'a`, and `capacity` must not exceed the backing row allocation.
-    pub(crate) unsafe fn from_raw_with_capacity(ptr: duckdb_vector, capacity: usize) -> Self {
-        Self {
-            ptr,
-            capacity,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Returns the child by idx in the struct vector.
+    /// Returns a flat child with an explicit effective capacity.
     ///
     /// # Panics
-    /// Panics if `capacity` exceeds the parent vector capacity.
-    pub fn child(&self, idx: usize, capacity: usize) -> FlatVector<'a> {
-        assert!(
-            capacity <= self.capacity,
-            "struct child capacity {capacity} exceeds parent capacity {}",
-            self.capacity
-        );
-        // SAFETY: struct children share the parent allocation, and the check
-        // above bounds the exposed child view by the parent capacity.
-        unsafe { FlatVector::with_capacity(self.child_ptr(idx), capacity) }
+    ///
+    /// Panics if `index` or `capacity` is out of range.
+    pub fn child(&mut self, index: usize, capacity: usize) -> FlatVector<'_> {
+        FlatVector::from_vector(self.child_vector(index, capacity)).or_panic()
     }
 
-    // Legacy typed child accessors remain public for callers that need nested
-    // vector views.
-
-    /// Take the child as [StructVector].
-    pub fn struct_vector_child(&self, idx: usize) -> StructVector<'a> {
-        unsafe { StructVector::from_raw_with_capacity(self.child_ptr(idx), self.capacity) }
+    /// Returns a nested struct child.
+    pub fn struct_vector_child(&mut self, index: usize) -> StructVector<'_> {
+        let capacity = self.vector.capacity();
+        StructVector::from_vector(self.child_vector(index, capacity)).or_panic()
     }
 
-    /// Take the child as [ListVector].
-    pub fn list_vector_child(&self, idx: usize) -> ListVector<'a> {
-        unsafe { ListVector::from_raw_with_capacity(self.child_ptr(idx), self.capacity) }
+    /// Returns a nested list child.
+    pub fn list_vector_child(&mut self, index: usize) -> ListVector<'_> {
+        let capacity = self.vector.capacity();
+        ListVector::from_vector(self.child_vector(index, capacity)).or_panic()
     }
 
-    /// Take the child as [ArrayVector].
-    pub fn array_vector_child(&self, idx: usize) -> ArrayVector<'a> {
-        unsafe { ArrayVector::from_raw_with_capacity(self.child_ptr(idx), self.capacity) }
+    /// Returns a nested fixed-array child.
+    pub fn array_vector_child(&mut self, index: usize) -> ArrayVector<'_> {
+        let capacity = self.vector.capacity();
+        ArrayVector::from_vector(self.child_vector(index, capacity)).or_panic()
     }
 
-    pub(crate) fn child_ptr(&self, idx: usize) -> duckdb_vector {
-        unsafe { duckdb_struct_vector_get_child(self.ptr, idx as u64) }
-    }
-
-    /// Get the logical type of this struct vector.
+    /// Returns the logical type.
     pub fn logical_type(&self) -> LogicalTypeHandle {
-        unsafe { LogicalTypeHandle::new(duckdb_vector_get_column_type(self.ptr)) }
+        self.vector.logical_type_owned()
     }
 
-    /// Returns true if the row at the given index is null.
+    /// Returns true if one parent row is null.
+    pub fn row_is_null(&self, row: u64) -> bool {
+        self.vector.row_is_null(row)
+    }
+
+    /// Returns whether one parent row is null, or an out-of-range error.
+    pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
+        self.vector.try_row_is_null(row)
+    }
+
+    /// Returns a physical child field name.
+    ///
+    /// This uses the same physical indexing as [`Self::num_children`]. In
+    /// particular, a `UNION` includes DuckDB's hidden tag child, whose name is
+    /// empty. Do not use these indices to access logical child metadata.
     ///
     /// # Panics
-    /// Panics if `row` is outside the vector capacity.
-    pub fn row_is_null(&self, row: u64) -> bool {
-        vector_row_is_null(self.ptr, row, self.capacity)
-    }
-
-    /// Returns whether the row is null, or an error if it is out of range.
-    pub fn try_row_is_null(&self, row: u64) -> Result<bool> {
-        try_vector_row_is_null(self.ptr, row, self.capacity)
-    }
-
-    /// Get the name of the child by idx.
-    ///
-    /// Panics if `idx` is out of range.
-    pub fn child_name(&self, idx: usize) -> DuckDbString {
+    /// Panics if `index` is out of range.
+    pub fn child_name(&self, index: usize) -> DuckDbString {
+        // DuckDB only debug-asserts this bound, so a release build would read
+        // past the child vector and duplicate whatever it found. The null
+        // check below cannot stand in for the bound: DuckDB never returns null
+        // for an out-of-range index.
+        self.vector.check_struct_child(index).or_panic();
         let logical_type = self.logical_type();
         unsafe {
-            let child_name_ptr = duckdb_struct_type_child_name(logical_type.ptr, idx as u64);
-            if child_name_ptr.is_null() {
-                panic!("child index {idx} out of range");
+            let ptr = crate::ffi::duckdb_struct_type_child_name(logical_type.ptr, index as u64);
+            if ptr.is_null() {
+                panic!("child index {index} out of range");
             }
-            DuckDbString::from_ptr(child_name_ptr)
+            DuckDbString::from_ptr(ptr)
         }
     }
 
-    /// Get the number of children.
+    /// Returns the number of physical struct children.
+    ///
+    /// This may differ from [`LogicalTypeHandle::num_children`]. A `UNION`, for
+    /// example, includes DuckDB's hidden tag child in this count, while its
+    /// logical type reports only the user-declared members.
     pub fn num_children(&self) -> usize {
-        let logical_type = self.logical_type();
-        unsafe { duckdb_struct_type_child_count(logical_type.ptr) as usize }
+        self.vector.struct_child_count().or_panic()
     }
 
-    /// Set row as null
+    /// Marks one parent row null.
     pub fn set_null(&mut self, row: usize) {
-        unsafe {
-            duckdb_vector_ensure_validity_writable(self.ptr);
-            let idx = duckdb_vector_get_validity(self.ptr);
-            duckdb_validity_set_row_invalid(idx, row as u64);
-        }
+        self.vector.set_null(row);
+    }
+
+    fn child_vector(&mut self, index: usize, capacity: usize) -> VectorRef<'_> {
+        self.vector.struct_child_mut(index, capacity).or_panic()
+    }
+}
+
+#[cfg_attr(not(feature = "vtab-arrow"), allow(dead_code))]
+impl StructVector<'_> {
+    pub(crate) fn read_child(&self, index: usize) -> Result<VectorRef<'_>> {
+        self.vector.struct_child_read(index)
+    }
+
+    pub(crate) fn writable_child(&mut self, index: usize, capacity: usize) -> Result<WritableVectorRef<'_>> {
+        Ok(WritableVectorRef::from_vector(
+            self.vector.struct_child_mut(index, capacity)?,
+        ))
     }
 }

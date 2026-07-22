@@ -56,7 +56,7 @@ impl VTab for HelloVTab {
         if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            let vector = output.flat_vector(0);
+            let mut vector = output.flat_vector(0);
             let result = CString::new(format!("Hello {}", bind_data.name))?;
             vector.insert(0, result);
             output.set_len(1);
@@ -92,7 +92,7 @@ impl VTab for HelloWithNamedVTab {
         if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            let vector = output.flat_vector(0);
+            let mut vector = output.flat_vector(0);
             let result = CString::new(format!("Hello {}", bind_data.name))?;
             vector.insert(0, result);
             output.set_len(1);
@@ -515,7 +515,7 @@ impl VTab for PrefixVTab {
         if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            let vector = output.flat_vector(0);
+            let mut vector = output.flat_vector(0);
             let result = CString::new(format!("{prefix} {}", bind_data.name))?;
             vector.insert(0, result);
             output.set_len(1);

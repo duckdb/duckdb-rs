@@ -12,7 +12,7 @@ use arrow::{
 use libduckdb_sys::{duckdb_date, duckdb_string_t, duckdb_time};
 
 use crate::{
-    core::{DataChunkHandle, FlatVector, LogicalTypeId, VectorRef},
+    core::{ArrayVector, DataChunkHandle, FlatVector, ListVector, LogicalTypeId, StructVector, VectorRef},
     types::DuckString,
 };
 
@@ -128,7 +128,7 @@ pub fn flat_vector_to_arrow_array(vector: &FlatVector<'_>, len: usize) -> Result
         return Err(format!("DuckDB vector length {len} exceeds initialized row count {readable_len}").into());
     }
     let rows = (0..len).map(Some).collect();
-    vector_to_arrow_array(vector.native_read_ref()?, &rows)
+    vector_to_arrow_array(vector.reborrow_initialized()?, &rows)
 }
 
 fn scalar_vector_rows_to_arrow_array(
@@ -265,10 +265,10 @@ fn vector_to_arrow_array(vector: VectorRef<'_>, rows: &SourceRows) -> Result<Arr
     let rows = masked_rows(rows, |row| vector.try_row_is_null(row as u64))?;
     let type_id = vector.logical_type().id();
     match type_id {
-        LogicalTypeId::List => list_vector_to_arrow_array(&vector, &rows),
-        LogicalTypeId::Struct => struct_vector_to_arrow_array(&vector, &rows),
-        LogicalTypeId::Map => map_vector_to_arrow_array(&vector, &rows),
-        LogicalTypeId::Array => array_vector_to_arrow_array(&vector, &rows),
+        LogicalTypeId::List => list_vector_to_arrow_array(&ListVector::from_vector(vector)?, &rows),
+        LogicalTypeId::Struct => struct_vector_to_arrow_array(&StructVector::from_vector(vector)?, &rows),
+        LogicalTypeId::Map => map_vector_to_arrow_array(&ListVector::from_vector(vector)?, &rows),
+        LogicalTypeId::Array => array_vector_to_arrow_array(&ArrayVector::from_vector(vector)?, &rows),
         _ => scalar_vector_rows_to_arrow_array(&vector, &rows),
     }
 }
@@ -282,7 +282,7 @@ fn checked_list_output_len(current_len: usize, additional_len: usize) -> Result<
 }
 
 fn list_layout(
-    vector: &VectorRef<'_>,
+    vector: &ListVector<'_>,
     rows: &SourceRows,
 ) -> Result<(OffsetBuffer<i32>, Vec<SourceRow>), Box<dyn Error>> {
     let mut offsets = Vec::with_capacity(rows.len() + 1);
@@ -292,7 +292,7 @@ fn list_layout(
 
     for source_row in rows.iter().copied() {
         if let Some(source_row) = source_row {
-            if let Some(range) = vector.list_range(source_row)? {
+            if let Some(range) = vector.try_get_range(source_row)? {
                 let length = range.len();
                 next_offset = checked_list_output_len(child_rows.len(), length)?;
                 child_rows.extend(range.map(Some));
@@ -305,19 +305,19 @@ fn list_layout(
     Ok((OffsetBuffer::new(ScalarBuffer::from(offsets)), child_rows))
 }
 
-fn list_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
+fn list_vector_to_arrow_array(vector: &ListVector<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
     let (offsets, child_rows) = list_layout(vector, rows)?;
-    let values = vector_to_arrow_array(vector.list_child()?, &child_rows)?;
+    let values = vector_to_arrow_array(vector.read_child()?, &child_rows)?;
     let field = Arc::new(Field::new("item", values.data_type().clone(), true));
     let nulls = null_buffer(rows);
 
     Ok(Arc::new(ListArray::try_new(field, offsets, values, nulls)?))
 }
 
-fn map_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
+fn map_vector_to_arrow_array(vector: &ListVector<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
     let (offsets, child_rows) = list_layout(vector, rows)?;
     let entries_len = child_rows.len();
-    let entries_vector = vector.list_child()?;
+    let entries_vector = StructVector::from_vector(vector.read_child()?)?;
 
     for source_row in child_rows.iter().flatten().copied() {
         if entries_vector.try_row_is_null(source_row as u64)? {
@@ -325,7 +325,7 @@ fn map_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Resul
         }
     }
 
-    let keys = vector_to_arrow_array(entries_vector.struct_child(0)?, &child_rows)?;
+    let keys = vector_to_arrow_array(entries_vector.read_child(0)?, &child_rows)?;
     if keys.null_count() > 0 {
         let source_row = child_rows
             .iter()
@@ -338,7 +338,7 @@ fn map_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Resul
         );
         return Err(message.into());
     }
-    let values = vector_to_arrow_array(entries_vector.struct_child(1)?, &child_rows)?;
+    let values = vector_to_arrow_array(entries_vector.read_child(1)?, &child_rows)?;
     let fields = Fields::from(vec![
         Field::new("keys", keys.data_type().clone(), false),
         Field::new("values", values.data_type().clone(), true),
@@ -350,13 +350,13 @@ fn map_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Resul
     Ok(Arc::new(MapArray::try_new(field, offsets, entries, nulls, false)?))
 }
 
-fn array_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
-    let array_size = vector.array_size()?;
+fn array_vector_to_arrow_array(vector: &ArrayVector<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
+    let array_size = vector.try_get_array_size()?;
     let value_length =
         i32::try_from(array_size).map_err(|_| "DuckDB array size exceeds Arrow i32 value length range")?;
     let child_rows = fixed_size_rows(rows, array_size)?;
 
-    let values = vector_to_arrow_array(vector.array_child()?, &child_rows)?;
+    let values = vector_to_arrow_array(vector.read_child()?, &child_rows)?;
     let field = Arc::new(Field::new("item", values.data_type().clone(), true));
     let nulls = null_buffer(rows);
 
@@ -368,13 +368,13 @@ fn array_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Res
     )?))
 }
 
-fn struct_vector_to_arrow_array(vector: &VectorRef<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
+fn struct_vector_to_arrow_array(vector: &StructVector<'_>, rows: &SourceRows) -> Result<ArrayRef, Box<dyn Error>> {
     let logical_type = vector.logical_type();
     let mut fields = Vec::with_capacity(logical_type.num_children());
     let mut arrays = Vec::with_capacity(logical_type.num_children());
 
     for idx in 0..logical_type.num_children() {
-        let array = vector_to_arrow_array(vector.struct_child(idx)?, rows)?;
+        let array = vector_to_arrow_array(vector.read_child(idx)?, rows)?;
         fields.push(Field::new(
             logical_type.try_child_name(idx)?,
             array.data_type().clone(),

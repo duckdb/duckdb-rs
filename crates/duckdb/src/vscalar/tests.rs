@@ -222,7 +222,7 @@ impl VScalar for EchoScalar {
             .iter()
             .map(|ptr| DuckString::new(&mut { *ptr }).as_str().to_string())
             .take(input.len());
-        let output = output.flat_vector();
+        let mut output = output.flat_vector();
 
         for s in strings {
             let res = format!("{}: {}", state.prefix, s.repeat(state.multiplier));
@@ -249,7 +249,7 @@ impl VScalar for Repeat {
         input: &mut DataChunkHandle,
         output: &mut dyn WritableVector,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output = output.flat_vector();
+        let mut output = output.flat_vector();
         let counts = input.flat_vector(1);
         let values = input.flat_vector(0);
         let values = unsafe { values.as_slice_with_len::<duckdb_string_t>(input.len()) };

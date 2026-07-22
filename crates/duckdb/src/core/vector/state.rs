@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use crate::{Result, error::duckdb_failure_from_message};
 
-pub(super) const UNDER_CONSTRUCTION_MESSAGE: &str = "DuckDB payload is still under construction; finish the writable view and call DataChunkHandle::assume_initialized before reading";
+pub(in crate::core) const UNDER_CONSTRUCTION_MESSAGE: &str = "DuckDB payload is still under construction; finish writable views, then read through an initialized owner; chunk writers must call DataChunkHandle::assume_initialized";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::core) enum VectorState {
@@ -87,7 +87,6 @@ impl VectorStateCell {
 
 pub(super) enum StateRef<'a> {
     Borrowed(&'a VectorStateCell),
-    BorrowedRaw(&'a VectorStateCell),
     Owned(VectorStateCell),
 }
 
@@ -95,35 +94,16 @@ impl StateRef<'_> {
     pub(super) fn shared(&self) -> &VectorStateCell {
         match self {
             Self::Borrowed(state) => state,
-            Self::BorrowedRaw(state) => state,
             Self::Owned(state) => state,
         }
     }
 
     pub(super) fn reborrow(&self) -> StateRef<'_> {
-        match self {
-            Self::Borrowed(state) => StateRef::Borrowed(state),
-            Self::BorrowedRaw(state) => StateRef::BorrowedRaw(state),
-            Self::Owned(state) => StateRef::BorrowedRaw(state),
-        }
+        StateRef::Borrowed(self.shared())
     }
 
     pub(super) fn readable_len_or_err(&self) -> Result<usize> {
-        match self {
-            Self::Borrowed(state) => state.readable_len_or_err(),
-            Self::BorrowedRaw(state) => raw_readable_len_or_err(state),
-            Self::Owned(state) => raw_readable_len_or_err(state),
-        }
-    }
-}
-
-fn raw_readable_len_or_err(state: &VectorStateCell) -> Result<usize> {
-    if let Some(len) = state.get().readable_len() {
-        Ok(len)
-    } else {
-        Err(duckdb_failure_from_message(
-            "raw writable vector payload is under construction; finish the writable adapter and read through its initialized owner",
-        ))
+        self.shared().readable_len_or_err()
     }
 }
 
