@@ -90,6 +90,9 @@ pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_LOGICAL_PLAN: duckdb_state
 pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_ATTACH: duckdb_statement_type = 25;
 pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_DETACH: duckdb_statement_type = 26;
 pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_MULTI: duckdb_statement_type = 27;
+pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_COPY_DATABASE: duckdb_statement_type = 28;
+pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_UPDATE_EXTENSIONS: duckdb_statement_type = 29;
+pub const duckdb_statement_type_DUCKDB_STATEMENT_TYPE_MERGE_INTO: duckdb_statement_type = 30;
 #[doc = "! An enum over DuckDB's different statement types."]
 pub type duckdb_statement_type = ::std::os::raw::c_uint;
 pub const duckdb_error_type_DUCKDB_ERROR_INVALID: duckdb_error_type = 0;
