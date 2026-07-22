@@ -9,11 +9,19 @@ use libduckdb_sys::duckdb_string_t;
 use crate::{
     Connection,
     arrow_interop::WritableVector,
+    callback::test_support::{HazardousPanicPayload, PanickingDisplayError},
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
     types::DuckString,
 };
 
 use super::{ScalarFunctionSignature, VScalar};
+
+fn unary_bigint_signature() -> Vec<ScalarFunctionSignature> {
+    vec![ScalarFunctionSignature::exact(
+        vec![LogicalTypeId::Bigint.into()],
+        LogicalTypeId::Bigint.into(),
+    )]
+}
 
 struct ErrorScalar {}
 
@@ -36,6 +44,150 @@ impl VScalar for ErrorScalar {
             vec![LogicalTypeId::Varchar.into()],
             LogicalTypeId::Varchar.into(),
         )]
+    }
+}
+
+struct PanickingScalar;
+
+impl VScalar for PanickingScalar {
+    type State = ();
+
+    fn invoke(
+        _: &Self::State,
+        _: &mut DataChunkHandle,
+        _: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        panic!("scalar callback panic")
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        unary_bigint_signature()
+    }
+}
+
+struct NulErrorScalar;
+
+impl VScalar for NulErrorScalar {
+    type State = ();
+
+    fn invoke(
+        _: &Self::State,
+        _: &mut DataChunkHandle,
+        _: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Err("before\0after".into())
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        unary_bigint_signature()
+    }
+}
+
+struct PanickingDisplayScalar;
+
+impl VScalar for PanickingDisplayScalar {
+    type State = ();
+
+    fn invoke(
+        _: &Self::State,
+        _: &mut DataChunkHandle,
+        _: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Err(Box::new(PanickingDisplayError))
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        unary_bigint_signature()
+    }
+}
+
+static HAZARDOUS_PANIC_PAYLOADS: AtomicU64 = AtomicU64::new(0);
+static HAZARDOUS_PANIC_PAYLOAD_DROPS: AtomicU64 = AtomicU64::new(0);
+
+struct HazardousPanicPayloadScalar;
+
+impl VScalar for HazardousPanicPayloadScalar {
+    type State = ();
+
+    fn invoke(
+        _: &Self::State,
+        _: &mut DataChunkHandle,
+        _: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        HAZARDOUS_PANIC_PAYLOADS.fetch_add(1, Ordering::SeqCst);
+        HazardousPanicPayload::panic(&HAZARDOUS_PANIC_PAYLOAD_DROPS)
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        unary_bigint_signature()
+    }
+}
+
+static SCALAR_STATE_DROPS: AtomicU64 = AtomicU64::new(0);
+
+struct PanickingDropState {
+    _allocation: Box<[u8]>,
+}
+
+impl Default for PanickingDropState {
+    fn default() -> Self {
+        Self {
+            _allocation: vec![0; 32].into_boxed_slice(),
+        }
+    }
+}
+
+impl Drop for PanickingDropState {
+    fn drop(&mut self) {
+        SCALAR_STATE_DROPS.fetch_add(1, Ordering::SeqCst);
+        panic!("scalar state destructor panic")
+    }
+}
+
+struct ErrorWithPanickingDropStateScalar;
+
+impl VScalar for ErrorWithPanickingDropStateScalar {
+    type State = PanickingDropState;
+
+    fn invoke(
+        _: &Self::State,
+        _: &mut DataChunkHandle,
+        _: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Err("scalar error before state drop".into())
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        unary_bigint_signature()
+    }
+}
+
+struct LatePanickingScalar;
+
+impl VScalar for LatePanickingScalar {
+    type State = ();
+
+    fn invoke(
+        _: &Self::State,
+        input: &mut DataChunkHandle,
+        output: &mut dyn WritableVector,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let input_values = input.flat_vector(0);
+        let input_values = unsafe { input_values.as_slice_with_len::<i64>(input.len()) };
+        let mut output_values = output.flat_vector();
+        let output_values = unsafe { output_values.as_mut_slice::<i64>() };
+
+        for (input, output) in input_values.iter().zip(output_values.iter_mut()).take(input.len()) {
+            if *input == 3_000 {
+                panic!("late scalar callback panic")
+            }
+            *output = *input;
+        }
+        Ok(())
+    }
+
+    fn signatures() -> Vec<ScalarFunctionSignature> {
+        unary_bigint_signature()
     }
 }
 
@@ -174,6 +326,95 @@ fn test_scalar_error() -> Result<(), Box<dyn Error>> {
         panic!("Expected an error");
     }
 
+    Ok(())
+}
+
+#[test]
+fn scalar_panics_and_display_failures_become_query_errors() -> Result<(), Box<dyn Error>> {
+    let conn = Connection::open_in_memory()?;
+    conn.register_scalar_function::<PanickingScalar>("panicking_scalar")?;
+    conn.register_scalar_function::<PanickingDisplayScalar>("panicking_display_scalar")?;
+
+    let panic_error = conn.prepare("SELECT panicking_scalar(42)")?.query([]).err().unwrap();
+    assert!(panic_error.to_string().contains("scalar callback panic"));
+
+    let display_error = conn
+        .prepare("SELECT panicking_display_scalar(42)")?
+        .query([])
+        .err()
+        .unwrap();
+    assert!(display_error.to_string().contains("callback error display panic"));
+
+    let value: i64 = conn.query_row("SELECT 1 + 1", [], |row| row.get(0))?;
+    assert_eq!(value, 2);
+    Ok(())
+}
+
+#[test]
+fn scalar_panics_after_output_and_the_registered_function_remains_usable() -> Result<(), Box<dyn Error>> {
+    let conn = Connection::open_in_memory()?;
+    conn.register_scalar_function::<LatePanickingScalar>("late_panicking_scalar")?;
+
+    let error = conn
+        .prepare("SELECT late_panicking_scalar(i) FROM range(5000) AS t(i)")?
+        .query([])
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("late scalar callback panic"));
+
+    let value: i64 = conn.query_row("SELECT late_panicking_scalar(7)", [], |row| row.get(0))?;
+    assert_eq!(value, 7);
+    Ok(())
+}
+
+#[test]
+fn scalar_errors_escape_interior_nuls_through_registered_callback() -> Result<(), Box<dyn Error>> {
+    let conn = Connection::open_in_memory()?;
+    conn.register_scalar_function::<NulErrorScalar>("nul_error_scalar")?;
+
+    let error = conn.prepare("SELECT nul_error_scalar(42)")?.query([]).err().unwrap();
+    let message = error.to_string();
+
+    assert!(message.contains("before\\0after"));
+    Ok(())
+}
+
+#[test]
+fn scalar_hazardous_panic_payloads_are_contained() -> Result<(), Box<dyn Error>> {
+    HAZARDOUS_PANIC_PAYLOADS.store(0, Ordering::SeqCst);
+    HAZARDOUS_PANIC_PAYLOAD_DROPS.store(0, Ordering::SeqCst);
+
+    let conn = Connection::open_in_memory()?;
+    conn.register_scalar_function::<HazardousPanicPayloadScalar>("hazardous_panic_payload")?;
+
+    let error = conn
+        .prepare("SELECT hazardous_panic_payload(42)")?
+        .query([])
+        .err()
+        .unwrap();
+
+    assert!(error.to_string().contains("non-string panic payload"));
+    let payloads = HAZARDOUS_PANIC_PAYLOADS.load(Ordering::SeqCst);
+    assert!(payloads > 0);
+    assert_eq!(HAZARDOUS_PANIC_PAYLOAD_DROPS.load(Ordering::SeqCst), payloads);
+    Ok(())
+}
+
+#[test]
+fn scalar_errors_survive_panicking_state_destructors() -> Result<(), Box<dyn Error>> {
+    SCALAR_STATE_DROPS.store(0, Ordering::SeqCst);
+    {
+        let conn = Connection::open_in_memory()?;
+        conn.register_scalar_function::<ErrorWithPanickingDropStateScalar>("error_with_panicking_drop")?;
+        let error = conn
+            .prepare("SELECT error_with_panicking_drop(1)")?
+            .query([])
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("scalar error before state drop"));
+    }
+
+    assert_eq!(SCALAR_STATE_DROPS.load(Ordering::SeqCst), 1);
     Ok(())
 }
 
