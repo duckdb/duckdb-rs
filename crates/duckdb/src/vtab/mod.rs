@@ -1,8 +1,34 @@
+//! Registered table functions implemented in Rust.
+//!
+//! DuckDB invokes bind, initialization, execution, and destruction through C
+//! callbacks. A Rust panic must not unwind through that interface: without
+//! containment, a faulty function can abort the host process instead of
+//! failing its query. The registration helpers in this module therefore
+//! convert callback panics and ordinary errors into DuckDB query errors. They
+//! also contain failures while formatting errors or destroying registered
+//! state, allowing later queries to keep using the connection.
+//!
+//! These guarantees apply to functions registered through
+//! [`Connection::register_table_function`] or
+//! [`Connection::register_table_function_with_extra_info`]. A panic can poison
+//! or otherwise damage interior mutable state that later callbacks reuse, so
+//! implementations must preserve or restore state invariants during
+//! unwinding. Panics from state destruction are contained and logged to
+//! standard error because DuckDB's destructor callbacks cannot return errors.
+//! The panic hook runs before containment and may also write to standard error;
+//! applications can customize it with [`std::panic::set_hook`]. These
+//! guarantees require unwinding; a `panic = "abort"` build aborts first.
+
 // #![warn(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::c_void;
 
-use crate::{Connection, Result, error::Error, inner_connection::InnerConnection};
+use crate::{
+    Connection, Result,
+    callback::{contain_callback, drop_boxed},
+    error::Error,
+    inner_connection::InnerConnection,
+};
 
 use super::ffi;
 
@@ -23,18 +49,12 @@ pub use value::Value;
 use crate::core::{DataChunkHandle, LogicalTypeHandle};
 use ffi::{duckdb_bind_info, duckdb_data_chunk, duckdb_function_info, duckdb_init_info};
 
-/// Given a raw pointer to a box, free the box and the data contained within it.
-///
-/// # Safety
-/// The pointer must be a valid pointer to a `Box<T>` created by `Box::into_raw`.
-unsafe extern "C" fn drop_boxed<T>(v: *mut c_void) {
-    drop(unsafe { Box::from_raw(v.cast::<T>()) });
-}
-
 /// Duckdb table function trait
 ///
 /// See to the HelloVTab example for more details
 /// <https://duckdb.org/docs/api/c/table_functions>
+///
+/// See the callback containment contract in [`crate::vtab`].
 pub trait VTab: Sized {
     /// The data type of the init data.
     ///
@@ -84,54 +104,45 @@ unsafe extern "C" fn func<T>(info: duckdb_function_info, output: duckdb_data_chu
 where
     T: VTab,
 {
-    unsafe {
-        let info = TableFunctionInfo::<T>::from(info);
+    let info = TableFunctionInfo::<T>::from(info);
+    contain_callback(&info, || unsafe {
         let mut data_chunk_handle = DataChunkHandle::new_unowned(output);
-        let result = T::func(&info, &mut data_chunk_handle);
-        if let Err(e) = result {
-            info.set_error(&e.to_string());
-        }
-    }
+        T::func(&info, &mut data_chunk_handle)
+    });
 }
 
 unsafe extern "C" fn init<T>(info: duckdb_init_info)
 where
     T: VTab,
 {
-    unsafe {
-        let info = InitInfo::from(info);
-        match T::init(&info) {
-            Ok(init_data) => {
-                info.set_init_data(
-                    Box::into_raw(Box::new(init_data)) as *mut c_void,
-                    Some(drop_boxed::<T::InitData>),
-                );
-            }
-            Err(e) => {
-                info.set_error(&e.to_string());
-            }
+    let info = InitInfo::from(info);
+    contain_callback(&info, || {
+        let init_data = T::init(&info)?;
+        unsafe {
+            info.set_init_data(
+                Box::into_raw(Box::new(init_data)) as *mut c_void,
+                Some(drop_boxed::<T::InitData>),
+            );
         }
-    }
+        Ok(())
+    });
 }
 
 unsafe extern "C" fn bind<T>(info: duckdb_bind_info)
 where
     T: VTab,
 {
-    unsafe {
-        let info = BindInfo::from(info);
-        match T::bind(&info) {
-            Ok(bind_data) => {
-                info.set_bind_data(
-                    Box::into_raw(Box::new(bind_data)) as *mut c_void,
-                    Some(drop_boxed::<T::BindData>),
-                );
-            }
-            Err(e) => {
-                info.set_error(&e.to_string());
-            }
+    let info = BindInfo::from(info);
+    contain_callback(&info, || {
+        let bind_data = T::bind(&info)?;
+        unsafe {
+            info.set_bind_data(
+                Box::into_raw(Box::new(bind_data)) as *mut c_void,
+                Some(drop_boxed::<T::BindData>),
+            );
         }
-    }
+        Ok(())
+    });
 }
 
 impl Connection {
@@ -197,175 +208,4 @@ impl InnerConnection {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-    use crate::core::{Inserter, LogicalTypeId};
-    use std::{
-        error::Error,
-        ffi::CString,
-        sync::atomic::{AtomicBool, Ordering},
-    };
-
-    struct HelloBindData {
-        name: String,
-    }
-
-    struct HelloInitData {
-        done: AtomicBool,
-    }
-
-    struct HelloVTab;
-
-    impl VTab for HelloVTab {
-        type InitData = HelloInitData;
-        type BindData = HelloBindData;
-
-        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            let name = bind.get_parameter(0).to_string();
-            Ok(HelloBindData { name })
-        }
-
-        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
-            Ok(HelloInitData {
-                done: AtomicBool::new(false),
-            })
-        }
-
-        fn func(
-            func: &TableFunctionInfo<Self>,
-            output: &mut DataChunkHandle,
-        ) -> Result<(), Box<dyn std::error::Error>> {
-            let init_data = func.get_init_data();
-            let bind_data = func.get_bind_data();
-
-            if init_data.done.swap(true, Ordering::Relaxed) {
-                output.set_len(0);
-            } else {
-                let vector = output.flat_vector(0);
-                let result = CString::new(format!("Hello {}", bind_data.name))?;
-                vector.insert(0, result);
-                output.set_len(1);
-            }
-            Ok(())
-        }
-
-        fn parameters() -> Option<Vec<LogicalTypeHandle>> {
-            Some(vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)])
-        }
-    }
-
-    struct HelloWithNamedVTab {}
-    impl VTab for HelloWithNamedVTab {
-        type InitData = HelloInitData;
-        type BindData = HelloBindData;
-
-        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
-            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            let name = bind.get_named_parameter("name").unwrap().to_string();
-            assert!(bind.get_named_parameter("unknown_name").is_none());
-            Ok(HelloBindData { name })
-        }
-
-        fn init(init_info: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
-            HelloVTab::init(init_info)
-        }
-
-        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
-            let init_data = func.get_init_data();
-            let bind_data = func.get_bind_data();
-
-            if init_data.done.swap(true, Ordering::Relaxed) {
-                output.set_len(0);
-            } else {
-                let vector = output.flat_vector(0);
-                let result = CString::new(format!("Hello {}", bind_data.name))?;
-                vector.insert(0, result);
-                output.set_len(1);
-            }
-            Ok(())
-        }
-
-        fn named_parameters() -> Option<Vec<(String, LogicalTypeHandle)>> {
-            Some(vec![(
-                "name".to_string(),
-                LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            )])
-        }
-    }
-
-    #[test]
-    fn test_table_function() -> Result<(), Box<dyn Error>> {
-        let conn = Connection::open_in_memory()?;
-        conn.register_table_function::<HelloVTab>("hello")?;
-
-        let val = conn.query_row("select * from hello('duckdb')", [], |row| <(String,)>::try_from(row))?;
-        assert_eq!(val, ("Hello duckdb".to_string(),));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_named_table_function() -> Result<(), Box<dyn Error>> {
-        let conn = Connection::open_in_memory()?;
-        conn.register_table_function::<HelloWithNamedVTab>("hello_named")?;
-
-        let val = conn.query_row("select * from hello_named(name = 'duckdb')", [], |row| {
-            <(String,)>::try_from(row)
-        })?;
-        assert_eq!(val, ("Hello duckdb".to_string(),));
-
-        Ok(())
-    }
-
-    // Test table function with extra info
-    struct PrefixVTab;
-
-    impl VTab for PrefixVTab {
-        type InitData = HelloInitData;
-        type BindData = HelloBindData;
-
-        fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
-            bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
-            let name = bind.get_parameter(0).to_string();
-            Ok(HelloBindData { name })
-        }
-
-        fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
-            Ok(HelloInitData {
-                done: AtomicBool::new(false),
-            })
-        }
-
-        fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
-            let init_data = func.get_init_data();
-            let bind_data = func.get_bind_data();
-            let prefix = unsafe { &*func.get_extra_info::<String>() };
-
-            if init_data.done.swap(true, Ordering::Relaxed) {
-                output.set_len(0);
-            } else {
-                let vector = output.flat_vector(0);
-                let result = CString::new(format!("{prefix} {}", bind_data.name))?;
-                vector.insert(0, result);
-                output.set_len(1);
-            }
-            Ok(())
-        }
-
-        fn parameters() -> Option<Vec<LogicalTypeHandle>> {
-            Some(vec![LogicalTypeHandle::from(LogicalTypeId::Varchar)])
-        }
-    }
-
-    #[test]
-    fn test_table_function_with_extra_info() -> Result<(), Box<dyn Error>> {
-        let conn = Connection::open_in_memory()?;
-        conn.register_table_function_with_extra_info::<PrefixVTab, _>("greet", &"Howdy".to_string())?;
-
-        let val = conn.query_row("select * from greet('partner')", [], |row| <(String,)>::try_from(row))?;
-        assert_eq!(val, ("Howdy partner".to_string(),));
-
-        Ok(())
-    }
-}
+mod tests;

@@ -104,7 +104,7 @@ jobs:
 
       - name: Run cargo-test
         if: matrix.os == 'windows-latest'
-        run: cargo test --features "modern-full vtab-full"
+        run: cargo test --features "modern-full vscalar vtab-full"
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
@@ -204,7 +204,7 @@ jobs:
         env:
           # PRs use a downloaded libduckdb for speed (no bundled C++ ASAN coverage).
           # Pushes to main keep extensions-full/bundled to preserve deeper coverage.
-          ASAN_FEATURES: ${{ github.ref == 'refs/heads/main' && 'serde_json url r2d2 uuid polars extensions-full' || 'serde_json url r2d2 uuid polars' }}
+          ASAN_FEATURES: ${{ github.ref == 'refs/heads/main' && 'serde_json url r2d2 uuid polars vscalar vscalar-arrow extensions-full' || 'serde_json url r2d2 uuid polars vscalar vscalar-arrow' }}
           DUCKDB_DOWNLOAD_LIB: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address

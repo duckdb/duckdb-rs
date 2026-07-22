@@ -1,13 +1,35 @@
-use std::ffi::CString;
+//! Registered scalar functions implemented in Rust.
+//!
+//! DuckDB invokes these functions through C callbacks. A Rust panic must not
+//! unwind through that interface: without containment, a faulty function can
+//! abort the host process instead of failing its query. The registration
+//! helpers in this module therefore convert callback panics and ordinary
+//! errors into DuckDB query errors. They also contain failures while formatting
+//! errors or destroying registered state, allowing later queries to keep using
+//! the connection.
+//!
+//! These guarantees apply to functions registered through
+//! [`Connection::register_scalar_function`] or
+//! [`Connection::register_scalar_function_with_state`]. A panic can poison or
+//! otherwise damage interior mutable [`VScalar::State`](crate::vscalar::VScalar::State),
+//! which is reused by later invocations, so implementations must preserve or
+//! restore its invariants during unwinding. Panics from state destruction are
+//! contained and logged to standard error because DuckDB's destructor callback
+//! cannot return an error. The panic hook runs before containment and may also
+//! write to standard error; applications can customize it with
+//! [`std::panic::set_hook`]. These guarantees require unwinding; a
+//! `panic = "abort"` build aborts first.
 
 use libduckdb_sys::{
     duckdb_data_chunk, duckdb_function_info, duckdb_scalar_function_get_extra_info, duckdb_scalar_function_set_error,
     duckdb_vector,
 };
+use std::ffi::CStr;
 
 use crate::{
     Connection,
     arrow_interop::WritableVector,
+    callback::{CallbackErrorSink, contain_callback},
     core::{DataChunkHandle, LogicalTypeHandle},
     inner_connection::InnerConnection,
 };
@@ -26,7 +48,7 @@ pub use arrow::{ArrowFunctionSignature, ArrowScalarParams, VArrowScalar};
 /// Duckdb scalar function trait
 pub trait VScalar: Sized {
     /// State set at registration time. Persists for the lifetime of the catalog entry.
-    /// Shared across worker threads and invocations — must not be modified during execution.
+    /// Shared across worker threads and invocations; any interior mutation must be synchronized.
     /// Must be `'static` as it is stored in DuckDB and may outlive the current stack frame.
     type State: Sized + Send + Sync + 'static;
     /// The actual function.
@@ -53,6 +75,8 @@ pub trait VScalar: Sized {
     ///   `&self`, so safe code can obtain two wrappers over one column and
     ///   call `as_mut_slice` on each, yielding overlapping `&mut [T]` —
     ///   undefined behavior.
+    ///
+    /// See the callback containment contract in [`crate::vscalar`].
     fn invoke(
         state: &Self::State,
         input: &mut DataChunkHandle,
@@ -146,10 +170,11 @@ impl ScalarFunctionInfo {
     pub unsafe fn get_extra_info<T>(&self) -> &T {
         unsafe { &*(duckdb_scalar_function_get_extra_info(self.0).cast()) }
     }
+}
 
-    pub unsafe fn set_error(&self, error: &str) {
-        let c_str = CString::new(error).unwrap();
-        unsafe { duckdb_scalar_function_set_error(self.0, c_str.as_ptr()) };
+impl CallbackErrorSink for ScalarFunctionInfo {
+    fn set_c_error(&self, error: &CStr) {
+        unsafe { duckdb_scalar_function_set_error(self.0, error.as_ptr()) };
     }
 }
 
@@ -157,14 +182,11 @@ unsafe extern "C" fn scalar_func<T>(info: duckdb_function_info, input: duckdb_da
 where
     T: VScalar,
 {
-    unsafe {
-        let info = ScalarFunctionInfo::from(info);
+    let info = ScalarFunctionInfo::from(info);
+    contain_callback(&info, || unsafe {
         let mut input = DataChunkHandle::new_unowned(input);
-        let result = T::invoke(info.get_extra_info(), &mut input, &mut output);
-        if let Err(e) = result {
-            info.set_error(&e.to_string());
-        }
-    }
+        T::invoke(info.get_extra_info(), &mut input, &mut output)
+    });
 }
 
 impl Connection {
