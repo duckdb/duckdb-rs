@@ -12,7 +12,7 @@ pub(in crate::core) enum VectorState {
     /// callback transport does not select it yet.
     // TODO(native-vector-callback-adapters): Select this state when callback
     // input chunks are wrapped instead of treating `new_unowned` as initialized.
-    #[cfg_attr(not(feature = "vtab"), allow(dead_code))]
+    #[allow(dead_code)]
     CallbackInput { readable_len: usize },
     /// Every non-null payload in the committed top-level and nested child spans
     /// is initialized.

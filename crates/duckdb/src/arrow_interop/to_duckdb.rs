@@ -267,36 +267,36 @@ where
     let scale = validate_arrow_decimal_metadata::<T>(width, scale)?;
 
     match width {
-        1..=4 => {
-            for i in 0..array.len() {
-                let value = arrow_decimal_value(array, width, scale, i)?;
-                unsafe { out.write(i, value.to_i16().unwrap()) };
-            }
-        }
-        5..=9 => {
-            for i in 0..array.len() {
-                let value = arrow_decimal_value(array, width, scale, i)?;
-                unsafe { out.write(i, value.to_i32().unwrap()) };
-            }
-        }
-        10..=18 => {
-            for i in 0..array.len() {
-                let value = arrow_decimal_value(array, width, scale, i)?;
-                unsafe { out.write(i, value.to_i64().unwrap()) };
-            }
-        }
-        19..=38 => {
-            for i in 0..array.len() {
-                let value = arrow_decimal_value(array, width, scale, i)?;
-                unsafe { out.write(i, value.to_i128().unwrap()) };
-            }
-        }
+        1..=4 => write_decimal_values(array, out, width, scale, |value| value.to_i16())?,
+        5..=9 => write_decimal_values(array, out, width, scale, |value| value.to_i32())?,
+        10..=18 => write_decimal_values(array, out, width, scale, |value| value.to_i64())?,
+        19..=38 => write_decimal_values(array, out, width, scale, Some)?,
         // This should never happen, arrow only supports 1-38 decimal digits
         _ => return Err(format!("Invalid decimal width: {width}").into()),
     }
 
     // Set nulls
     set_nulls_in_flat_vector(array, out);
+    Ok(())
+}
+
+fn write_decimal_values<T, V>(
+    array: &PrimitiveArray<T>,
+    out: &mut FlatVector<'_>,
+    width: u8,
+    scale: u8,
+    convert: impl Fn(i128) -> Option<V>,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    T: DecimalType,
+    T::Native: Into<i128>,
+    V: Copy,
+{
+    for row in 0..array.len() {
+        let value = arrow_decimal_value(array, width, scale, row)?;
+        let value = convert(value).expect("validated decimal value fits its DuckDB physical storage");
+        unsafe { out.write(row, value) };
+    }
     Ok(())
 }
 
@@ -443,6 +443,7 @@ fn list_like_array_to_vector<O: Copy + AsPrimitive<usize>>(
 
     let mut child = out.writable_child(values.len())?;
     write_arrow_array_to_vector_ref(values, &mut child)?;
+    drop(child);
 
     for (i, window) in offsets.windows(2).enumerate() {
         let offset = window[0].as_();
@@ -463,6 +464,7 @@ fn fixed_size_list_array_to_vector(
     debug_assert_eq!(value_array.len(), array.len() * array.value_length() as usize);
     let mut child = out.writable_child(value_array.len())?;
     write_arrow_array_to_vector_ref(value_array.as_ref(), &mut child)?;
+    drop(child);
 
     set_nulls_in_array_vector(array, out);
 

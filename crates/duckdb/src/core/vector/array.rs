@@ -98,7 +98,7 @@ impl<'a> ArrayVector<'a> {
 
     /// Returns the logical type.
     pub fn logical_type(&self) -> LogicalTypeHandle {
-        self.vector.logical_type_owned()
+        self.vector.logical_type_owned().or_panic()
     }
 
     /// Returns the fixed array width.

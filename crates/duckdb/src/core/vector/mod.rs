@@ -189,15 +189,16 @@ impl<'a> VectorRef<'a> {
         &self.logical_type
     }
 
-    pub(crate) fn logical_type_owned(&self) -> LogicalTypeHandle {
+    pub(crate) fn logical_type_owned(&self) -> Result<LogicalTypeHandle> {
         let logical_type = unsafe { duckdb_vector_get_column_type(self.ptr) };
-        assert!(
-            !logical_type.is_null(),
-            "DuckDB returned a null logical type for a vector"
-        );
+        if logical_type.is_null() {
+            return Err(duckdb_failure_from_message(
+                "DuckDB returned a null logical type for a vector",
+            ));
+        }
         // SAFETY: `self.ptr` is live for this borrow and DuckDB returns a newly
         // owned logical-type handle.
-        unsafe { LogicalTypeHandle::new(logical_type) }
+        Ok(unsafe { LogicalTypeHandle::new(logical_type) })
     }
 
     pub(super) fn ptr(&self) -> duckdb_vector {
@@ -207,13 +208,17 @@ impl<'a> VectorRef<'a> {
     pub(super) fn reborrow(&mut self) -> Result<VectorRef<'_>> {
         // SAFETY: the mutable borrow keeps the original view inaccessible for
         // the returned view's lifetime and preserves its capacity/state.
+        self.reborrow_with_access(self.access)
+    }
+
+    fn reborrow_with_access(&self, access: VectorAccess) -> Result<VectorRef<'_>> {
         let mut vector = unsafe {
             Self::new(
                 self.ptr,
                 self.capacity,
                 self.state.reborrow(),
                 self.readable_span,
-                self.access,
+                access,
             )
         }?;
         vector.reserved_child_capacity = self.reserved_child_capacity;
@@ -440,17 +445,7 @@ impl VectorRef<'_> {
         self.ensure_initialized()?;
         // SAFETY: the original initialized view keeps the pointer live and
         // shared reads may coexist. The shared state revokes stale reborrows.
-        let mut vector = unsafe {
-            Self::new(
-                self.ptr,
-                self.capacity,
-                self.state.reborrow(),
-                self.readable_span,
-                VectorAccess::ReadOnly,
-            )
-        }?;
-        vector.reserved_child_capacity = self.reserved_child_capacity;
-        Ok(vector)
+        self.reborrow_with_access(VectorAccess::ReadOnly)
     }
 
     /// Reads one initialized physical value.

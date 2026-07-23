@@ -108,7 +108,7 @@ impl<'a> FlatVector<'a> {
 
     /// Returns the logical type of the vector.
     pub fn logical_type(&self) -> LogicalTypeHandle {
-        self.vector.logical_type_owned()
+        self.vector.logical_type_owned().or_panic()
     }
 
     /// Marks one row null.

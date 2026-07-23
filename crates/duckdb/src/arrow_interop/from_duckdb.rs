@@ -81,7 +81,7 @@ where
     P: ArrowPrimitiveType,
     F: Fn(T) -> P::Native,
 {
-    let values = rows
+    Ok(rows
         .iter()
         .copied()
         .map(|source_row| {
@@ -92,8 +92,7 @@ where
                 .map(|row| unsafe { vector.read::<T>(row) }.map(&convert))
                 .transpose()
         })
-        .collect::<crate::Result<Vec<_>>>()?;
-    Ok(values.into_iter().collect())
+        .collect::<crate::Result<PrimitiveArray<P>>>()?)
 }
 
 /// Reads rows whose Arrow native type matches the DuckDB physical storage.
@@ -168,9 +167,9 @@ fn scalar_vector_rows_to_arrow_array(
                         })
                         .transpose()
                 })
-                .collect::<crate::Result<Vec<_>>>()?;
+                .collect::<crate::Result<StringArray>>()?;
 
-            Ok(Arc::new(StringArray::from(values)))
+            Ok(Arc::new(values))
         }
         LogicalTypeId::Boolean => {
             // DuckDB stores booleans in one-byte slots; reading them as bytes
@@ -185,9 +184,9 @@ fn scalar_vector_rows_to_arrow_array(
                         .map(|row| unsafe { vector.read::<u8>(row) }.map(|value| value != 0))
                         .transpose()
                 })
-                .collect::<crate::Result<Vec<_>>>()?;
+                .collect::<crate::Result<BooleanArray>>()?;
 
-            Ok(Arc::new(BooleanArray::from_iter(values)))
+            Ok(Arc::new(values))
         }
         LogicalTypeId::Float => native_array_from_rows::<Float32Type>(vector, rows),
         LogicalTypeId::Double => native_array_from_rows::<Float64Type>(vector, rows),

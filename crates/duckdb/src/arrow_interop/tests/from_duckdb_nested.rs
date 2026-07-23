@@ -44,6 +44,8 @@ fn single_entry_map_chunk() -> DataChunkHandle {
     let mut entries = map.struct_child(1);
     entries.child(0, 1).insert(0, "key");
     unsafe { entries.child(1, 1).copy(&[1_i32]) };
+    drop(entries);
+    drop(map);
     chunk
 }
 
