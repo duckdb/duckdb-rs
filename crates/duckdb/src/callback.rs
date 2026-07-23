@@ -7,7 +7,8 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 
-const NON_STRING_PANIC_PAYLOAD: &str = "non-string panic payload; use a string panic message for details";
+use crate::panic_utils::{NON_STRING_PANIC_PAYLOAD, downcast_panic_message};
+
 const MAX_ERROR_CAUSES: usize = 16;
 
 /// Receives failures from a contained DuckDB callback.
@@ -120,7 +121,7 @@ fn take_destructor_panic_payload(payload: Box<dyn Any + Send>) -> String {
 /// Extracts a panic payload's message, handing non-string payloads to
 /// `dispose_unknown`.
 fn take_payload_message(payload: Box<dyn Any + Send>, dispose_unknown: impl FnOnce(Box<dyn Any + Send>)) -> String {
-    match downcast_message(payload) {
+    match downcast_panic_message(payload) {
         Ok(message) => message,
         Err(payload) => {
             dispose_unknown(payload);
@@ -129,18 +130,11 @@ fn take_payload_message(payload: Box<dyn Any + Send>, dispose_unknown: impl FnOn
     }
 }
 
-fn downcast_message(payload: Box<dyn Any + Send>) -> Result<String, Box<dyn Any + Send>> {
-    payload
-        .downcast::<String>()
-        .map(|message| *message)
-        .or_else(|payload| payload.downcast::<&'static str>().map(|message| (*message).to_owned()))
-}
-
 fn drop_or_forget<T>(value: T) {
     if let Err(payload) = catch_unwind(AssertUnwindSafe(move || drop(value))) {
         // Reclaim known string payloads. An unknown payload may reproduce the
         // destructor panic, so it is deliberately forgotten (and leaked).
-        if let Err(payload) = downcast_message(payload) {
+        if let Err(payload) = downcast_panic_message(payload) {
             mem::forget(payload);
         }
     }

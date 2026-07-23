@@ -113,7 +113,7 @@ mod column;
 mod config;
 mod executed_result;
 mod inner_connection;
-#[cfg(test)]
+#[cfg(any(test, feature = "vscalar", feature = "vtab"))]
 mod panic_utils;
 mod params;
 
