@@ -3,6 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(feature = "bundled"))]
+#[path = "src/build_paths.rs"]
+mod build_paths;
+
 /// Tells whether we're building for Windows. This is more suitable than a plain
 /// `cfg!(windows)`, since the latter does not properly handle cross-compilation
 ///
@@ -146,10 +150,7 @@ mod build_linked {
     use super::bindings;
 
     use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
-    use std::{
-        env, fs, io,
-        path::{Path, PathBuf},
-    };
+    use std::{env, fs, io, path::Path};
 
     pub fn main(out_dir: &str, out_path: &Path) {
         // We need this to config the LD_LIBRARY_PATH
@@ -240,7 +241,7 @@ mod build_linked {
         }
 
         if should_download_libduckdb() {
-            return download_libduckdb(out_dir).unwrap_or_else(|err| panic!("Failed to download libduckdb: {err}"));
+            return download_libduckdb(out_dir).unwrap_or_else(|err| panic!("Failed to set up libduckdb: {err}"));
         }
 
         if let Some(header) = try_vcpkg() {
@@ -303,8 +304,16 @@ mod build_linked {
 
         let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
 
-        // Cache downloads in target/duckdb-download/<target>/<version> so successive builds reuse them
-        let download_dir = workspace_download_dir(out_dir)?.join(&target).join(&version);
+        // Cache downloads beside the profile directory so successive builds reuse them.
+        let download_dir = crate::build_paths::download_root(Path::new(out_dir))
+            .ok_or_else(|| {
+                format!(
+                    "Could not determine DuckDB download directory from Cargo OUT_DIR '{out_dir}'. \
+                     Set DUCKDB_LIB_DIR to use an existing DuckDB library."
+                )
+            })?
+            .join(&target)
+            .join(&version);
         fs::create_dir_all(&download_dir)?;
 
         let archive_path = download_dir.join(archive.archive_name);
@@ -374,8 +383,12 @@ mod build_linked {
         lib_filename: &str,
         out_dir: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(deps_dir) = profile_deps_dir(out_dir) else {
-            return Err("Could not determine target/deps directory for runtime lib copy".into());
+        let Some(deps_dir) = crate::build_paths::profile_deps_dir(Path::new(out_dir)) else {
+            return Err(format!(
+                "Could not determine runtime library directory from Cargo OUT_DIR '{out_dir}'. \
+                 Set DUCKDB_LIB_DIR to use an existing DuckDB library."
+            )
+            .into());
         };
         fs::create_dir_all(&deps_dir)?;
         let source = download_dir.join(lib_filename);
@@ -386,24 +399,6 @@ mod build_linked {
         fs::copy(&source, &dest)?;
         println!("cargo:warning=Copied libduckdb to {}", dest.display());
         Ok(())
-    }
-
-    // Finds target/ so downloads survive rebuilds. Respects CARGO_TARGET_DIR if set.
-    fn workspace_download_dir(out_dir: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        if let Ok(dir) = env::var("CARGO_TARGET_DIR") {
-            return Ok(PathBuf::from(dir).join("duckdb-download"));
-        }
-        let target_root = Path::new(out_dir)
-            .ancestors()
-            .find(|ancestor| {
-                ancestor
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name == "target")
-            })
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("target"));
-        Ok(target_root.join("duckdb-download"))
     }
 
     fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
@@ -418,19 +413,6 @@ mod build_linked {
         let duckdb_minor = (encoded / 100) % 100;
         let duckdb_patch = encoded % 100;
         format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
-    }
-
-    // Mirrors Cargo's actual target/<triple>/<profile>/deps (or target/<profile>/deps)
-    // layout by deriving it from OUT_DIR.
-    fn profile_deps_dir(out_dir: &str) -> Option<PathBuf> {
-        let build_dir = Path::new(out_dir).ancestors().find(|ancestor| {
-            ancestor
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name == "build")
-        })?;
-        let profile_dir = build_dir.parent()?;
-        Some(profile_dir.join("deps"))
     }
 
     struct LibduckdbArchive {
