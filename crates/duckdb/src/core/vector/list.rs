@@ -354,6 +354,14 @@ fn list_entry_end(offset: usize, length: usize, row: usize) -> Result<usize> {
 /// Writable child access requires a mutable borrow of the parent. The returned
 /// child remains borrow-scoped so safe code cannot hold overlapping mutable
 /// sibling views.
+///
+/// Commit child storage with [`Self::set_child`] or [`Self::set_len`] before
+/// writing entries. Calling [`Self::set_entry`] for an uncommitted child range
+/// panics, and shrinking the committed child size resets every parent entry to
+/// the empty list. Code written against earlier releases may need to move its
+/// entry writes after the child-size commit. Child views now keep their parent
+/// borrowed until they are dropped, so reusing the parent in the same scope may
+/// require an explicit `drop(child)` or a nested scope.
 pub struct ListVector<'a> {
     pub(super) vector: VectorRef<'a>,
 }

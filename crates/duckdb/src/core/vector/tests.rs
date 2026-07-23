@@ -29,6 +29,8 @@ pub(crate) unsafe fn set_list_entry_unchecked_for_test(
 fn vector_wrappers_remain_ref_unwind_safe() {
     fn assert_ref_unwind_safe<T: std::panic::RefUnwindSafe>() {}
 
+    assert_ref_unwind_safe::<DataChunkHandle>();
+    assert_ref_unwind_safe::<WritableVectorRef<'static>>();
     assert_ref_unwind_safe::<FlatVector<'static>>();
     assert_ref_unwind_safe::<ListVector<'static>>();
     assert_ref_unwind_safe::<StructVector<'static>>();

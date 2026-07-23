@@ -12,7 +12,6 @@ use crate::ffi::{
     duckdb_data_chunk_get_vector, duckdb_data_chunk_set_size, duckdb_destroy_data_chunk,
 };
 use crate::{Result, error::duckdb_failure_from_message};
-use std::sync::Arc;
 
 /// Handle to the DataChunk in DuckDB.
 pub struct DataChunkHandle {
@@ -29,8 +28,14 @@ pub struct DataChunkHandle {
     state: VectorStateCell,
 
     /// Live vector views owned by this handle.
-    borrows: Arc<BorrowRegistry>,
+    borrows: BorrowRegistry,
 }
+
+// Shared mutations are either conservative state transitions or pointer-lease
+// bookkeeping, and neither leaves the native interface unsound after an
+// unwind. Keep the public owner's compatibility guarantee explicit instead of
+// choosing synchronization primitives solely for their auto traits.
+impl std::panic::RefUnwindSafe for DataChunkHandle {}
 
 impl Drop for DataChunkHandle {
     fn drop(&mut self) {
@@ -60,7 +65,7 @@ impl DataChunkHandle {
             owned: false,
             capacity: standard_vector_capacity(),
             state: VectorStateCell::new(VectorState::Initialized { readable_len }),
-            borrows: Arc::new(BorrowRegistry::default()),
+            borrows: BorrowRegistry::default(),
         }
     }
 
@@ -88,7 +93,7 @@ impl DataChunkHandle {
             owned: true,
             capacity: standard_vector_capacity(),
             state: VectorStateCell::new(VectorState::UnderConstruction),
-            borrows: Arc::new(BorrowRegistry::default()),
+            borrows: BorrowRegistry::default(),
         }
     }
 

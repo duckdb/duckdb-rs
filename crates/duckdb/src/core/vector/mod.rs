@@ -58,9 +58,15 @@ pub(crate) struct VectorRef<'a> {
     readable_span: ReadableSpan,
     access: VectorAccess,
     reserved_child_capacity: usize,
-    borrow_guard: Option<BorrowGuard>,
+    borrow_guard: Option<BorrowGuard<'a>>,
     _owner: PhantomData<&'a ()>,
 }
+
+// Shared mutations are either conservative state transitions or pointer-lease
+// bookkeeping, and neither leaves the native interface unsound after an
+// unwind. Keep that compatibility guarantee explicit instead of choosing
+// synchronization primitives solely for their auto-trait implementations.
+impl std::panic::RefUnwindSafe for VectorRef<'_> {}
 
 impl<'a> VectorRef<'a> {
     /// Wrap a vector whose state is owned by a data chunk.
@@ -164,7 +170,7 @@ impl<'a> VectorRef<'a> {
         })
     }
 
-    pub(in crate::core) fn with_borrow_guard(mut self, guard: BorrowGuard) -> Self {
+    pub(in crate::core) fn with_borrow_guard(mut self, guard: BorrowGuard<'a>) -> Self {
         self.borrow_guard = Some(guard);
         self
     }
