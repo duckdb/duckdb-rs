@@ -54,7 +54,7 @@ impl Config {
 
     /// enable autoload extensions
     pub fn enable_autoload_extension(mut self, enabled: bool) -> Result<Self> {
-        let value = enabled.to_string();
+        let value = (enabled as u8).to_string();
         self.set("autoinstall_known_extensions", &value)?;
         self.set("autoload_known_extensions", &value)?;
         Ok(self)
@@ -234,6 +234,12 @@ mod test {
         assert!(&user_agent.ends_with("rust test_user_agent"));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_null_byte_in_key_returns_error() {
+        let err = Config::default().with("key\0name", "value");
+        assert!(err.is_err(), "expected Config::set to return Err for null byte in key");
     }
 
     #[test]
