@@ -176,6 +176,12 @@ impl Appender<'_> {
 
     fn validate_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
         for value in values {
+            // Containers are validated during FfiValue construction in bind_parameter.
+            if let ToSqlOutput::Owned(v) = value {
+                if crate::types::is_bindable_container(v) {
+                    continue;
+                }
+            }
             let value = to_value_ref(value)?;
             validate_appender_value_ref(value)?;
         }
@@ -191,6 +197,20 @@ impl Appender<'_> {
 
     fn bind_parameter(&mut self, value: &ToSqlOutput<'_>) -> Result<()> {
         let ptr = self.app;
+
+        // Container values (List/Array/Struct/Map) bypass the ValueRef path and
+        // are built recursively into a duckdb_value.
+        if let ToSqlOutput::Owned(v) = value {
+            if crate::types::is_bindable_container(v) {
+                let ffi_value = crate::types::FfiValue::from_value(v)?;
+                let rc = unsafe { ffi::duckdb_append_value(ptr, ffi_value.ptr()) };
+                if rc != 0 {
+                    return Err(error_from_appender_code(rc, self.app));
+                }
+                return Ok(());
+            }
+        }
+
         let value = to_value_ref(value)?;
         // TODO: append more
         let rc = match value {
@@ -465,7 +485,7 @@ mod test {
     }
 
     #[test]
-    fn test_append_unsupported_container_type_returns_error() -> Result<()> {
+    fn test_append_owned_list_succeeds_and_borrowed_list_rejected() -> Result<()> {
         use arrow::{array::ListArray, datatypes::Int32Type};
 
         use crate::{
@@ -495,7 +515,7 @@ mod test {
             }
         }
 
-        fn assert_unsupported_list_error(err: Error) {
+        fn assert_borrowed_list_error(err: Error) {
             match err {
                 Error::ToSqlConversionFailure(e) => {
                     assert!(
@@ -508,35 +528,22 @@ mod test {
         }
 
         let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo(id INTEGER, name TEXT)")?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, numbers INTEGER[])")?;
 
-        let list = OwnedList;
         let mut app = db.appender("foo")?;
-        app.append_row(params![10, "before"])?;
-        app.append_row(params![11, "also before"])?;
-        let err = app.append_row(params![1, list]).unwrap_err();
-        assert_unsupported_list_error(err);
-
-        let borrowed_list = BorrowedList::new();
-        let err = app.append_row(params![3, borrowed_list]).unwrap_err();
-        assert_unsupported_list_error(err);
-        app.append_row(params![2, "ok"])?;
+        // Owned Value::List now appends successfully.
+        app.append_row(params![10, OwnedList])?;
+        // Borrowed ValueRef::List is still rejected.
+        let err = app.append_row(params![3, BorrowedList::new()]).unwrap_err();
+        assert_borrowed_list_error(err);
+        app.append_row(params![2, Value::Null])?;
         app.flush()?;
 
         let rows = db
-            .prepare("SELECT id, name FROM foo ORDER BY id")?
-            .query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)))?
+            .prepare("SELECT id FROM foo ORDER BY id")?
+            .query_map([], |row| row.get::<_, i32>(0))?
             .collect::<Result<Vec<_>>>()?;
-        assert_eq!(
-            rows,
-            vec![
-                (2, "ok".to_string()),
-                (10, "before".to_string()),
-                (11, "also before".to_string())
-            ]
-        );
-        let count: i32 = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
-        assert_eq!(count, 3);
+        assert_eq!(rows, vec![2, 10]);
         Ok(())
     }
 

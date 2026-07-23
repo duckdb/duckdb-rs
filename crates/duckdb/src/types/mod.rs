@@ -54,6 +54,8 @@
 //! container API, so they materialize through their Arrow binary carrier as
 //! [`Value::Blob`] values.
 
+#[cfg(feature = "serde")]
+pub use self::serde_struct::Struct;
 pub use self::{
     decimal::{Decimal, DecimalError},
     from_sql::{FromSql, FromSqlError, FromSqlResult},
@@ -64,6 +66,7 @@ pub use self::{
     value_ref::{EnumType, ListType, TimeUnit, ValueRef},
 };
 pub(crate) use decimal::to_duckdb_decimal;
+pub(crate) use value_ffi::{FfiValue, is_bindable_container};
 pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
 
 use arrow::datatypes::DataType;
@@ -74,8 +77,12 @@ use crate::ffi;
 #[cfg(feature = "chrono")]
 mod chrono;
 mod from_sql;
+#[cfg(feature = "ndarray")]
+mod ndarray;
 #[cfg(feature = "serde_json")]
 mod serde_json;
+#[cfg(feature = "serde")]
+mod serde_struct;
 mod to_sql;
 #[cfg(feature = "url")]
 mod url;
@@ -85,6 +92,7 @@ mod value_ref;
 mod decimal;
 mod ordered_map;
 mod string;
+mod value_ffi;
 
 pub(crate) fn to_duckdb_hugeint(i: i128) -> ffi::duckdb_hugeint {
     ffi::duckdb_hugeint {
@@ -316,7 +324,7 @@ mod test {
     fn test_empty_blob() -> Result<()> {
         let db = checked_memory_handle()?;
 
-        let empty = vec![];
+        let empty: Vec<u8> = vec![];
         db.execute("INSERT INTO foo(b) VALUES (?)", [&empty])?;
 
         let v: Vec<u8> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;

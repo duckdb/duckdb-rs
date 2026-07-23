@@ -573,4 +573,147 @@ mod tests {
 
         Ok(())
     }
+    #[test]
+    fn test_bind_and_read_float_vector() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        let bound = vec![1.5_f32, 2.5, 3.5];
+
+        let read_back: Vec<f32> = conn.query_row("SELECT ?::FLOAT[3]", [bound.clone()], |r| r.get(0))?;
+        assert_eq!(read_back, bound);
+
+        let as_value: Value = conn.query_row("SELECT ?::FLOAT[3]", [bound.clone()], |r| r.get(0))?;
+        assert_eq!(as_value.data_type(), Type::Array(Box::new(Type::Float), 3));
+        match as_value {
+            Value::Array(items) => {
+                assert_eq!(items.len(), 3);
+                assert_eq!(items[0], Value::Float(1.5));
+            }
+            other => panic!("expected Value::Array, got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_fixed_size_array() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        let bound = [1.0_f32, 2.0, 3.0, 4.0];
+
+        let read_back: [f32; 4] = conn.query_row("SELECT ?::FLOAT[4]", [bound], |r| r.get(0))?;
+        assert_eq!(read_back, bound);
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_vec_bind_errors() {
+        use crate::Error;
+
+        let conn = Connection::open_in_memory().unwrap();
+        let empty: Vec<f32> = vec![];
+        let err = conn
+            .query_row::<Value, _, _>("SELECT ?", [empty], |r| r.get(0))
+            .unwrap_err();
+        assert!(matches!(err, Error::ToSqlConversionFailure(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn test_bind_value_struct_and_map() -> Result<()> {
+        use crate::types::OrderedMap;
+
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE s(row STRUCT(x INTEGER, y FLOAT));")?;
+
+        let row = OrderedMap::from(vec![
+            ("x".to_string(), Value::Int(7)),
+            ("y".to_string(), Value::Float(1.5)),
+        ]);
+        conn.execute("INSERT INTO s VALUES (?)", [Value::Struct(row.clone())])?;
+
+        let read: Value = conn.query_row("SELECT row FROM s", [], |r| r.get(0))?;
+        match read {
+            Value::Struct(map) => {
+                assert_eq!(map.get(&"x".to_string()), Some(&Value::Int(7)));
+                assert_eq!(map.get(&"y".to_string()), Some(&Value::Float(1.5)));
+            }
+            other => panic!("expected Value::Struct, got {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_value_list() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        let list = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        let read: Value = conn.query_row("SELECT ?::INT[]", [list.clone()], |r| r.get(0))?;
+        match read {
+            Value::List(items) => assert_eq!(items, vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+            other => panic!("expected Value::List, got {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_vector_search_with_array_distance() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE vecs(id INTEGER, v FLOAT[3]);
+             INSERT INTO vecs VALUES (1, [1.0, 2.0, 3.0]), (2, [4.0, 5.0, 6.0]);",
+        )?;
+
+        let query = vec![3.9_f32, 5.0, 6.0];
+        let mut stmt = conn.prepare("SELECT id FROM vecs ORDER BY array_distance(v, ?::FLOAT[3]) LIMIT 1")?;
+        let id: i32 = stmt.query_row([query], |r| r.get(0))?;
+        assert_eq!(id, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_appender_binds_float_vector() -> Result<()> {
+        use crate::params;
+
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE vecs(id INTEGER, v FLOAT[3]);")?;
+
+        {
+            let mut app = conn.appender("vecs")?;
+            app.append_row(params![1i32, vec![1.0_f32, 2.0, 3.0]])?;
+            app.append_row(params![2i32, vec![4.0_f32, 5.0, 6.0]])?;
+            app.flush()?;
+        }
+
+        let read: Vec<f32> = conn.query_row("SELECT v FROM vecs WHERE id = 1", [], |r| r.get(0))?;
+        assert_eq!(read, vec![1.0, 2.0, 3.0]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_array_of_structs() -> Result<()> {
+        use crate::types::OrderedMap;
+
+        let conn = Connection::open_in_memory()?;
+        let point = OrderedMap::from(vec![("x".to_string(), Value::Int(1)), ("y".to_string(), Value::Int(2))]);
+        let array = Value::Array(vec![Value::Struct(point.clone()), Value::Struct(point)]);
+
+        let read: Value = conn.query_row("SELECT ?::STRUCT(x INTEGER, y INTEGER)[2]", [array.clone()], |r| {
+            r.get(0)
+        })?;
+        match read {
+            Value::Array(items) => {
+                assert_eq!(items.len(), 2);
+                assert!(matches!(items[0], Value::Struct(_)));
+            }
+            other => panic!("expected Value::Array of structs, got {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_double_vector() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        let bound = vec![1.25_f64, 2.5, 3.75];
+
+        let read_back: Vec<f64> = conn.query_row("SELECT ?::DOUBLE[3]", [bound.clone()], |r| r.get(0))?;
+        assert_eq!(read_back, bound);
+        Ok(())
+    }
 }
