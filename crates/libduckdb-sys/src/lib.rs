@@ -8,6 +8,10 @@
 mod arrow_c_data;
 pub use arrow_c_data::{ArrowArray, ArrowSchema};
 
+// Build-script helper mounted here so cargo test runs its unit tests.
+#[cfg(test)]
+mod build_paths;
+
 #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
 mod bindings {
     // Bindgen preserves DuckDB's C API comments verbatim. Some of those comments
