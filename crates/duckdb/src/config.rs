@@ -126,11 +126,16 @@ impl Config {
         if self.config.is_none() {
             let mut config: ffi::duckdb_config = ptr::null_mut();
             let state = unsafe { ffi::duckdb_create_config(&mut config) };
-            assert_eq!(state, ffi::DuckDBSuccess);
+            if state != ffi::DuckDBSuccess {
+                return Err(Error::DuckDBFailure(
+                    ffi::Error::new(state),
+                    Some("failed to create config".to_string()),
+                ));
+            }
             self.config = Some(config);
         }
-        let c_key = CString::new(key).unwrap();
-        let c_value = CString::new(value).unwrap();
+        let c_key = CString::new(key)?;
+        let c_value = CString::new(value)?;
         let state = unsafe {
             ffi::duckdb_set_config(
                 self.config.unwrap(),
@@ -229,6 +234,12 @@ mod test {
         assert!(&user_agent.ends_with("rust test_user_agent"));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_null_byte_in_key_returns_error() {
+        let err = Config::default().with("key\0name", "value");
+        assert!(err.is_err(), "expected Config::set to return Err for null byte in key");
     }
 
     #[test]
