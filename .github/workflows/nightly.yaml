@@ -1,4 +1,5 @@
 name: Nightly
+run-name: Nightly - ${{ inputs.duckdb-sha }}
 
 on:
   # Triggered from DuckDB's NotifyExternalRepositories workflow.
@@ -14,6 +15,9 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.duckdb-sha }}
   cancel-in-progress: true
@@ -23,6 +27,7 @@ jobs:
     name: DuckDB nightly
     runs-on: ubuntu-latest
     env:
+      DUCKDB_SHA: ${{ inputs.duckdb-sha }}
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
       CMAKE_C_COMPILER_LAUNCHER: sccache
@@ -39,8 +44,6 @@ jobs:
 
       - name: Upgrade bundled DuckDB to nightly commit
         id: upgrade
-        env:
-          DUCKDB_SHA: ${{ inputs.duckdb-sha }}
         run: ./upgrade.sh --sha "$DUCKDB_SHA"
 
       - name: Show generated upgrade diff
@@ -61,3 +64,58 @@ jobs:
       - name: Test bundled-cmake backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
         run: cargo test -p duckdb --features bundled-cmake
+
+      - name: Download nightly artifact
+        id: artifact
+        if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+        run: |
+          # Select the matching CI run by SHA. artifacts.duckdb.org does not
+          # support SHA-addressed downloads, and latest can advance to binaries
+          # from a different commit.
+          artifact_name=duckdb-binaries-linux-amd64
+          run_id=
+          candidate_ids=$(gh api --method GET \
+            repos/duckdb/duckdb/actions/workflows/InvokeCI.yml/runs \
+            -f head_sha="${DUCKDB_SHA,,}" \
+            -f status=completed \
+            -f per_page=100 \
+            --jq '.workflow_runs | sort_by(.created_at) | reverse | .[].id')
+          while read -r candidate_id; do
+            [[ -n "$candidate_id" ]] || continue
+            artifact_count=$(gh api --method GET \
+              "repos/duckdb/duckdb/actions/runs/$candidate_id/artifacts" \
+              -f name="$artifact_name" \
+              --jq '[.artifacts[] | select(.expired == false)] | length')
+            if (( artifact_count > 0 )); then
+              run_id=$candidate_id
+              break
+            fi
+          done <<< "$candidate_ids"
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No completed InvokeCI run with $artifact_name found for DuckDB commit $DUCKDB_SHA"
+            exit 1
+          fi
+          gh run download "$run_id" \
+            --repo duckdb/duckdb \
+            --name "$artifact_name" \
+            --dir "$RUNNER_TEMP/duckdb-artifact"
+          unzip -q "$RUNNER_TEMP/duckdb-artifact/libduckdb-linux-amd64.zip" -d "$RUNNER_TEMP/libduckdb"
+          {
+            echo "DUCKDB_LIB_DIR=$RUNNER_TEMP/libduckdb"
+            echo "DUCKDB_INCLUDE_DIR=$RUNNER_TEMP/libduckdb"
+            echo "LD_LIBRARY_PATH=$RUNNER_TEMP/libduckdb${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          } >> "$GITHUB_ENV"
+
+      - name: Test nightly artifact
+        if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
+        run: |
+          cargo test -p duckdb --features buildtime_bindgen \
+            --test nightly links_against_requested_duckdb_commit -- --exact --ignored
+          cargo test -p duckdb --features buildtime_bindgen
+
+      - name: Test nightly extension installation
+        if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
+        run: cargo test -p duckdb --features buildtime_bindgen
+          --test nightly can_install_and_load_httpfs -- --exact --ignored
