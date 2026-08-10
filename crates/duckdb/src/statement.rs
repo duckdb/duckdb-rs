@@ -592,10 +592,22 @@ impl Statement<'_> {
 
     // generic because many of these branches can constant fold away.
     fn bind_parameter<P: ?Sized + ToSql>(&self, param: &P, col: usize) -> Result<()> {
-        let value = param.to_sql()?;
+        let output = param.to_sql()?;
 
         let ptr = unsafe { self.stmt.ptr() };
-        let value = match value {
+
+        // Container values (List/Array/Struct/Map) cannot become ValueRef from
+        // an owned Value. Build a duckdb_value recursively and bind it via the
+        // generic duckdb_bind_value entry point.
+        if let ToSqlOutput::Owned(value) = &output {
+            if crate::types::is_bindable_container(value) {
+                let ffi_value = crate::types::FfiValue::from_value(value)?;
+                let rc = unsafe { ffi::duckdb_bind_value(ptr, col as u64, ffi_value.ptr()) };
+                return result_from_duckdb_prepare(rc, ptr);
+            }
+        }
+
+        let value = match output {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
         };
@@ -2181,9 +2193,11 @@ mod test {
         Ok(())
     }
 
-    // Unsupported Value variants must surface an error instead of panicking.
+    // Owned container `Value`s bind via the duckdb_value API, while borrowed
+    // `ValueRef::List` (built from an Arrow array) is not yet routable through
+    // that path and is rejected at the bind boundary.
     #[test]
-    fn test_bind_unsupported_container_type_returns_error() -> Result<()> {
+    fn test_bind_owned_list_succeeds_and_borrowed_list_rejected() -> Result<()> {
         use crate::types::Value;
 
         struct OwnedList;
@@ -2196,13 +2210,12 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute("CREATE TABLE t (id INTEGER, numbers INTEGER[])", [])?;
 
-        let list = OwnedList;
-        let err = db
-            .execute("INSERT INTO t VALUES (?, ?)", crate::params![1, list])
-            .unwrap_err();
+        // Owned Value::List now binds successfully.
+        db.execute("INSERT INTO t VALUES (?, ?)", crate::params![1, OwnedList])?;
+        let numbers: Value = db.query_row("SELECT numbers FROM t WHERE id = 1", [], |row| row.get(0))?;
+        assert!(matches!(numbers, Value::List(items) if items == vec![Value::Int(1), Value::Int(2)]));
 
-        assert_binding_list_error(err);
-
+        // Borrowed ValueRef::List is still rejected.
         let borrowed_list = BorrowedList::new();
         let err = db
             .execute("INSERT INTO t VALUES (?, ?)", crate::params![2, borrowed_list])
