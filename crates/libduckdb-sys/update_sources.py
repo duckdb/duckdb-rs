@@ -42,6 +42,16 @@ TARGET_DIR.mkdir()
 sys.path.append(str(DUCKDB_SCRIPTS_DIR))
 import package_build
 
+# DuckDB's package_build.py splits source paths on the native separator, but
+# some source lists contain forward-slash directory prefixes. On Windows that
+# can pass a nested path such as extension/loader to os.mkdir before extension
+# exists. Keep the upstream script untouched while making its mkdir calls
+# recursive for this platform.
+if os.name == "nt":
+    from package_build_compat import RecursiveMkdirOS
+
+    package_build.os = RecursiveMkdirOS(package_build.os)
+
 
 def get_sources(extensions, default_linked_extensions=None):
     kwargs = {}
