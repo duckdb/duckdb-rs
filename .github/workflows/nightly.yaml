@@ -69,23 +69,18 @@ jobs:
           git status --short
           git diff --stat
 
-      # DuckDB's CMake build can exceed MAX_PATH under Cargo's default,
-      # deeply nested Windows OUT_DIR.
+      # Fresh upstream sources can have deeper paths than the pinned CMake CI.
+      # Keep nightly's CMake output below Windows MAX_PATH.
       - name: Shorten Windows Cargo target directory
-        if: ${{ runner.os == 'Windows' && steps.upgrade.outcome == 'success' }}
-        run: echo "CARGO_TARGET_DIR=D:/t" >> "$GITHUB_ENV"
+        if: ${{ runner.os == 'Windows' }}
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/t" >> "$GITHUB_ENV"
 
       - name: Test bundled backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
-        shell: bash
-        run: |
-          # cc crate ignores CMAKE_*_COMPILER_LAUNCHER; wrap Unix CC/CXX for
-          # sccache. Keep these step-scoped so they do not leak into CMake.
-          if [[ "$RUNNER_OS" != Windows ]]; then
-            export CC="sccache cc"
-            export CXX="sccache c++"
-          fi
-          cargo test -p duckdb --features bundled
+        env:
+          CC: ${{ runner.os != 'Windows' && 'sccache cc' || '' }}
+          CXX: ${{ runner.os != 'Windows' && 'sccache c++' || '' }}
+        run: cargo test -p duckdb --features bundled
 
       - name: Test bundled-cmake backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
@@ -94,7 +89,6 @@ jobs:
       - name: Download nightly artifact
         id: artifact
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
-        shell: bash
         run: |
           staging_key_length=10
           staging_key=${DUCKDB_SHA:0:$staging_key_length}
@@ -111,13 +105,15 @@ jobs:
             echo "DUCKDB_LIB_DIR=$library_path"
             echo "DUCKDB_INCLUDE_DIR=$library_path"
           } >> "$GITHUB_ENV"
-          echo "$library_path" >> "$GITHUB_PATH"
           case "$RUNNER_OS" in
             Linux)
               echo "LD_LIBRARY_PATH=$library_path${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
               ;;
             macOS)
               echo "DYLD_LIBRARY_PATH=$library_path${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+              ;;
+            Windows)
+              echo "$library_path" >> "$GITHUB_PATH"
               ;;
           esac
 
