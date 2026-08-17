@@ -18,14 +18,31 @@ env:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.duckdb-sha }}
   cancel-in-progress: true
 
 jobs:
   nightly:
-    name: DuckDB nightly
-    runs-on: ubuntu-latest
+    name: DuckDB nightly (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            artifact: libduckdb-linux-amd64.zip
+          - name: macOS
+            os: macos-26
+            artifact: libduckdb-osx-universal.zip
+          - name: Windows
+            os: windows-latest
+            artifact: libduckdb-windows-amd64.zip
+    runs-on: ${{ matrix.os }}
     env:
       DUCKDB_SHA: ${{ inputs.duckdb-sha }}
       SCCACHE_GHA_ENABLED: "true"
@@ -54,12 +71,15 @@ jobs:
 
       - name: Test bundled backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
-        # cc crate ignores CMAKE_*_COMPILER_LAUNCHER; wrap CC/CXX for sccache.
-        # Step-scoped so CC/CXX do not leak into cmake backend steps.
-        env:
-          CC: "sccache cc"
-          CXX: "sccache c++"
-        run: cargo test -p duckdb --features bundled
+        shell: bash
+        run: |
+          # cc crate ignores CMAKE_*_COMPILER_LAUNCHER; wrap Unix CC/CXX for
+          # sccache. Keep these step-scoped so they do not leak into CMake.
+          if [[ "$RUNNER_OS" != Windows ]]; then
+            export CC="sccache cc"
+            export CXX="sccache c++"
+          fi
+          cargo test -p duckdb --features bundled
 
       - name: Test bundled-cmake backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
@@ -68,21 +88,32 @@ jobs:
       - name: Download nightly artifact
         id: artifact
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
+        shell: bash
         run: |
           staging_key_length=10
           staging_key=${DUCKDB_SHA:0:$staging_key_length}
-          artifact_url="https://duckdb-staging.duckdb.org/$staging_key/duckdb/duckdb/github_release/libduckdb-linux-amd64.zip"
-          artifact_path="$RUNNER_TEMP/libduckdb-linux-amd64.zip"
+          artifact_name="${{ matrix.artifact }}"
+          artifact_url="https://duckdb-staging.duckdb.org/$staging_key/duckdb/duckdb/github_release/$artifact_name"
+          artifact_path="$RUNNER_TEMP/$artifact_name"
+          library_path="$RUNNER_TEMP/libduckdb"
           curl --fail --location --retry 5 --output "$artifact_path" "$artifact_url" || {
             echo "::error::No staging artifact at $artifact_url"
             exit 1
           }
-          unzip -q "$artifact_path" -d "$RUNNER_TEMP/libduckdb"
+          unzip -q "$artifact_path" -d "$library_path"
           {
-            echo "DUCKDB_LIB_DIR=$RUNNER_TEMP/libduckdb"
-            echo "DUCKDB_INCLUDE_DIR=$RUNNER_TEMP/libduckdb"
-            echo "LD_LIBRARY_PATH=$RUNNER_TEMP/libduckdb${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            echo "DUCKDB_LIB_DIR=$library_path"
+            echo "DUCKDB_INCLUDE_DIR=$library_path"
           } >> "$GITHUB_ENV"
+          echo "$library_path" >> "$GITHUB_PATH"
+          case "$RUNNER_OS" in
+            Linux)
+              echo "LD_LIBRARY_PATH=$library_path${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+              ;;
+            macOS)
+              echo "DYLD_LIBRARY_PATH=$library_path${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+              ;;
+          esac
 
       - name: Test nightly artifact
         if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
