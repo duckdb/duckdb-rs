@@ -69,6 +69,12 @@ jobs:
           git status --short
           git diff --stat
 
+      # DuckDB's CMake build can exceed MAX_PATH under Cargo's default,
+      # deeply nested Windows OUT_DIR.
+      - name: Shorten Windows Cargo target directory
+        if: ${{ runner.os == 'Windows' && steps.upgrade.outcome == 'success' }}
+        run: echo "CARGO_TARGET_DIR=D:/t" >> "$GITHUB_ENV"
+
       - name: Test bundled backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
         shell: bash

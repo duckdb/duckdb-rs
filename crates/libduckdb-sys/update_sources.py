@@ -10,6 +10,8 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+from package_build_compat import relative_package_path
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 DUCKDB_SCRIPTS_DIR = SCRIPT_DIR / "duckdb-sources" / "scripts"
@@ -63,12 +65,10 @@ def get_sources(extensions, default_linked_extensions=None):
     )
     PACKAGE_BUILD_LOADER_PATH.unlink(missing_ok=True)
 
-    # Remove the absolute prefix on the files (some get generated with it)
-    script_dir_prefix = f"{SCRIPT_DIR}{os.path.sep}"
-    source_list = [
-        x[len(script_dir_prefix) :] if x.startswith(script_dir_prefix) else x
-        for x in source_list
-    ]
+    # Remove the absolute prefix on the files (some get generated with it).
+    # DuckDB returns forward-slash paths even on Windows, so normalize both
+    # sides before comparing them.
+    source_list = [relative_package_path(path, SCRIPT_DIR) for path in source_list]
 
     return set(source_list), set(include_list)
 
