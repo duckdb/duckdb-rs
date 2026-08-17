@@ -530,7 +530,7 @@ mod test {
         let typ = LogicalTypeHandle::from(LogicalTypeId::Geometry);
 
         assert_eq!(typ.id(), LogicalTypeId::Geometry);
-        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY);
+        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY as u32);
         assert_eq!(typ.geometry_crs(), None);
         assert_eq!(format!("{typ:?}"), "Geometry");
     }
@@ -547,7 +547,7 @@ mod test {
         let typ = LogicalTypeHandle::from(LogicalTypeId::Variant);
 
         assert_eq!(typ.id(), LogicalTypeId::Variant);
-        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT);
+        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT as u32);
         assert_eq!(typ.num_children(), 0);
         assert!(typ.contains_type_id(LogicalTypeId::Variant));
         assert_eq!(format!("{typ:?}"), "Variant");
@@ -603,7 +603,7 @@ mod test {
 
         assert_eq!(invalid_type.id(), LogicalTypeId::Invalid);
         assert_eq!(invalid_type.try_id().unwrap(), LogicalTypeId::Invalid);
-        assert_eq!(invalid_type.raw_id(), DUCKDB_TYPE_DUCKDB_TYPE_INVALID);
+        assert_eq!(invalid_type.raw_id(), DUCKDB_TYPE_DUCKDB_TYPE_INVALID as u32);
 
         let debug_str = format!("{invalid_type:?}");
         assert_eq!(debug_str, "Invalid");
