@@ -2038,10 +2038,6 @@ mod test {
 
         let logical_type = stmt.column_logical_type(0);
         assert_eq!(logical_type.id(), LogicalTypeId::Variant);
-        assert_eq!(
-            logical_type.raw_id(),
-            crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT as u32
-        );
         assert_eq!(logical_type.num_children(), 0);
         assert_eq!(format!("{logical_type:?}"), "Variant");
 
@@ -2055,10 +2051,6 @@ mod test {
 
         let logical_type = stmt.column_logical_type(0);
         assert_eq!(logical_type.id(), LogicalTypeId::Geometry);
-        assert_eq!(
-            logical_type.raw_id(),
-            crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY as u32
-        );
         assert_eq!(logical_type.geometry_crs(), None);
         assert_eq!(format!("{logical_type:?}"), "Geometry");
 

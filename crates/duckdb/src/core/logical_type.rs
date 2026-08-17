@@ -5,154 +5,121 @@ use std::{
 
 use crate::ffi::*;
 
-/// Logical Type Id
-/// <https://duckdb.org/docs/api/c/types>
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum LogicalTypeId {
+macro_rules! logical_type_ids {
+    ($( $(#[$meta:meta])* $variant:ident = $raw:path ),* $(,)?) => {
+        /// Logical Type Id
+        /// <https://duckdb.org/docs/api/c/types>
+        #[repr(u32)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum LogicalTypeId {
+            $( $(#[$meta])* $variant = $raw as u32, )*
+            /// DuckDB returned a type that this wrapper does not yet recognize
+            Unsupported = u32::MAX,
+        }
+
+        impl From<u32> for LogicalTypeId {
+            /// Convert from u32 to LogicalTypeId
+            fn from(value: u32) -> Self {
+                match value as duckdb_type {
+                    $( $raw => Self::$variant, )*
+                    // Unknown / forward compatible types
+                    _ => Self::Unsupported,
+                }
+            }
+        }
+    };
+}
+
+logical_type_ids! {
     /// Invalid
-    Invalid = DUCKDB_TYPE_DUCKDB_TYPE_INVALID as u32,
+    Invalid = DUCKDB_TYPE_DUCKDB_TYPE_INVALID,
     /// Boolean
-    Boolean = DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN as u32,
+    Boolean = DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN,
     /// Tinyint
-    Tinyint = DUCKDB_TYPE_DUCKDB_TYPE_TINYINT as u32,
+    Tinyint = DUCKDB_TYPE_DUCKDB_TYPE_TINYINT,
     /// Smallint
-    Smallint = DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT as u32,
+    Smallint = DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT,
     /// Integer
-    Integer = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER as u32,
+    Integer = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER,
     /// Bigint
-    Bigint = DUCKDB_TYPE_DUCKDB_TYPE_BIGINT as u32,
+    Bigint = DUCKDB_TYPE_DUCKDB_TYPE_BIGINT,
     /// Unsigned Tinyint
-    UTinyint = DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT as u32,
+    UTinyint = DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT,
     /// Unsigned Smallint
-    USmallint = DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT as u32,
+    USmallint = DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT,
     /// Unsigned Integer
-    UInteger = DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER as u32,
+    UInteger = DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER,
     /// Unsigned Bigint
-    UBigint = DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT as u32,
+    UBigint = DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT,
     /// Float
-    Float = DUCKDB_TYPE_DUCKDB_TYPE_FLOAT as u32,
+    Float = DUCKDB_TYPE_DUCKDB_TYPE_FLOAT,
     /// Double
-    Double = DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE as u32,
+    Double = DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE,
     /// Timestamp
-    Timestamp = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP as u32,
+    Timestamp = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP,
     /// Date
-    Date = DUCKDB_TYPE_DUCKDB_TYPE_DATE as u32,
+    Date = DUCKDB_TYPE_DUCKDB_TYPE_DATE,
     /// Time
-    Time = DUCKDB_TYPE_DUCKDB_TYPE_TIME as u32,
+    Time = DUCKDB_TYPE_DUCKDB_TYPE_TIME,
     /// Interval
-    Interval = DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL as u32,
+    Interval = DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL,
     /// Hugeint
-    Hugeint = DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT as u32,
+    Hugeint = DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT,
     /// Varchar
-    Varchar = DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR as u32,
+    Varchar = DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR,
     /// Blob
-    Blob = DUCKDB_TYPE_DUCKDB_TYPE_BLOB as u32,
+    Blob = DUCKDB_TYPE_DUCKDB_TYPE_BLOB,
     /// Decimal
-    Decimal = DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL as u32,
+    Decimal = DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL,
     /// Timestamp S
-    TimestampS = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S as u32,
+    TimestampS = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S,
     /// Timestamp MS
-    TimestampMs = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS as u32,
+    TimestampMs = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS,
     /// Timestamp NS
-    TimestampNs = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS as u32,
+    TimestampNs = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS,
     /// Enum
-    Enum = DUCKDB_TYPE_DUCKDB_TYPE_ENUM as u32,
+    Enum = DUCKDB_TYPE_DUCKDB_TYPE_ENUM,
     /// List
-    List = DUCKDB_TYPE_DUCKDB_TYPE_LIST as u32,
+    List = DUCKDB_TYPE_DUCKDB_TYPE_LIST,
     /// Struct
-    Struct = DUCKDB_TYPE_DUCKDB_TYPE_STRUCT as u32,
+    Struct = DUCKDB_TYPE_DUCKDB_TYPE_STRUCT,
     /// Map
-    Map = DUCKDB_TYPE_DUCKDB_TYPE_MAP as u32,
+    Map = DUCKDB_TYPE_DUCKDB_TYPE_MAP,
     /// Uuid
-    Uuid = DUCKDB_TYPE_DUCKDB_TYPE_UUID as u32,
+    Uuid = DUCKDB_TYPE_DUCKDB_TYPE_UUID,
     /// Union
-    Union = DUCKDB_TYPE_DUCKDB_TYPE_UNION as u32,
+    Union = DUCKDB_TYPE_DUCKDB_TYPE_UNION,
     /// Bit
-    Bit = DUCKDB_TYPE_DUCKDB_TYPE_BIT as u32,
+    Bit = DUCKDB_TYPE_DUCKDB_TYPE_BIT,
     /// Time TZ
-    TimeTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ as u32,
+    TimeTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ,
     /// Timestamp TZ
-    TimestampTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ as u32,
+    TimestampTZ = DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ,
     /// Unsigned Hugeint
-    UHugeint = DUCKDB_TYPE_DUCKDB_TYPE_UHUGEINT as u32,
+    UHugeint = DUCKDB_TYPE_DUCKDB_TYPE_UHUGEINT,
     /// Array
-    Array = DUCKDB_TYPE_DUCKDB_TYPE_ARRAY as u32,
+    Array = DUCKDB_TYPE_DUCKDB_TYPE_ARRAY,
     /// Any
-    Any = DUCKDB_TYPE_DUCKDB_TYPE_ANY as u32,
+    Any = DUCKDB_TYPE_DUCKDB_TYPE_ANY,
     /// Bignum
-    Bignum = DUCKDB_TYPE_DUCKDB_TYPE_BIGNUM as u32,
+    Bignum = DUCKDB_TYPE_DUCKDB_TYPE_BIGNUM,
     /// SqlNull
-    SqlNull = DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL as u32,
+    SqlNull = DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL,
     /// String Literal
-    StringLiteral = DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL as u32,
+    StringLiteral = DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL,
     /// Integer Literal
-    IntegerLiteral = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL as u32,
+    IntegerLiteral = DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL,
     /// Time NS
-    TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS as u32,
+    TimeNs = DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS,
     /// Geometry
-    Geometry = DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY as u32,
+    Geometry = DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY,
     /// VARIANT.
     ///
     /// This type is exposed for metadata. Decoding VARIANT result columns is
     /// not supported because DuckDB does not expose C API helpers for decoding
     /// VARIANT values.
-    Variant = DUCKDB_TYPE_DUCKDB_TYPE_VARIANT as u32,
-    /// DuckDB returned a type that this wrapper does not yet recognize
-    Unsupported = u32::MAX,
-}
-
-impl From<u32> for LogicalTypeId {
-    /// Convert from u32 to LogicalTypeId
-    fn from(value: u32) -> Self {
-        match value as duckdb_type {
-            DUCKDB_TYPE_DUCKDB_TYPE_INVALID => Self::Invalid,
-            DUCKDB_TYPE_DUCKDB_TYPE_BOOLEAN => Self::Boolean,
-            DUCKDB_TYPE_DUCKDB_TYPE_TINYINT => Self::Tinyint,
-            DUCKDB_TYPE_DUCKDB_TYPE_SMALLINT => Self::Smallint,
-            DUCKDB_TYPE_DUCKDB_TYPE_INTEGER => Self::Integer,
-            DUCKDB_TYPE_DUCKDB_TYPE_BIGINT => Self::Bigint,
-            DUCKDB_TYPE_DUCKDB_TYPE_UTINYINT => Self::UTinyint,
-            DUCKDB_TYPE_DUCKDB_TYPE_USMALLINT => Self::USmallint,
-            DUCKDB_TYPE_DUCKDB_TYPE_UINTEGER => Self::UInteger,
-            DUCKDB_TYPE_DUCKDB_TYPE_UBIGINT => Self::UBigint,
-            DUCKDB_TYPE_DUCKDB_TYPE_FLOAT => Self::Float,
-            DUCKDB_TYPE_DUCKDB_TYPE_DOUBLE => Self::Double,
-            DUCKDB_TYPE_DUCKDB_TYPE_VARCHAR => Self::Varchar,
-            DUCKDB_TYPE_DUCKDB_TYPE_BLOB => Self::Blob,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP => Self::Timestamp,
-            DUCKDB_TYPE_DUCKDB_TYPE_DATE => Self::Date,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIME => Self::Time,
-            DUCKDB_TYPE_DUCKDB_TYPE_INTERVAL => Self::Interval,
-            DUCKDB_TYPE_DUCKDB_TYPE_HUGEINT => Self::Hugeint,
-            DUCKDB_TYPE_DUCKDB_TYPE_DECIMAL => Self::Decimal,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_S => Self::TimestampS,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_MS => Self::TimestampMs,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_NS => Self::TimestampNs,
-            DUCKDB_TYPE_DUCKDB_TYPE_ENUM => Self::Enum,
-            DUCKDB_TYPE_DUCKDB_TYPE_LIST => Self::List,
-            DUCKDB_TYPE_DUCKDB_TYPE_STRUCT => Self::Struct,
-            DUCKDB_TYPE_DUCKDB_TYPE_MAP => Self::Map,
-            DUCKDB_TYPE_DUCKDB_TYPE_UUID => Self::Uuid,
-            DUCKDB_TYPE_DUCKDB_TYPE_UNION => Self::Union,
-            DUCKDB_TYPE_DUCKDB_TYPE_BIT => Self::Bit,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIME_TZ => Self::TimeTZ,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIMESTAMP_TZ => Self::TimestampTZ,
-            DUCKDB_TYPE_DUCKDB_TYPE_UHUGEINT => Self::UHugeint,
-            DUCKDB_TYPE_DUCKDB_TYPE_ARRAY => Self::Array,
-            DUCKDB_TYPE_DUCKDB_TYPE_ANY => Self::Any,
-            DUCKDB_TYPE_DUCKDB_TYPE_BIGNUM => Self::Bignum,
-            DUCKDB_TYPE_DUCKDB_TYPE_SQLNULL => Self::SqlNull,
-            DUCKDB_TYPE_DUCKDB_TYPE_STRING_LITERAL => Self::StringLiteral,
-            DUCKDB_TYPE_DUCKDB_TYPE_INTEGER_LITERAL => Self::IntegerLiteral,
-            DUCKDB_TYPE_DUCKDB_TYPE_TIME_NS => Self::TimeNs,
-            DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY => Self::Geometry,
-            DUCKDB_TYPE_DUCKDB_TYPE_VARIANT => Self::Variant,
-            // Unknown / forward compatible types
-            _ => Self::Unsupported,
-        }
-    }
+    Variant = DUCKDB_TYPE_DUCKDB_TYPE_VARIANT,
 }
 
 /// DuckDB Logical Type.
@@ -530,7 +497,6 @@ mod test {
         let typ = LogicalTypeHandle::from(LogicalTypeId::Geometry);
 
         assert_eq!(typ.id(), LogicalTypeId::Geometry);
-        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY as u32);
         assert_eq!(typ.geometry_crs(), None);
         assert_eq!(format!("{typ:?}"), "Geometry");
     }
@@ -547,7 +513,6 @@ mod test {
         let typ = LogicalTypeHandle::from(LogicalTypeId::Variant);
 
         assert_eq!(typ.id(), LogicalTypeId::Variant);
-        assert_eq!(typ.raw_id(), crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT as u32);
         assert_eq!(typ.num_children(), 0);
         assert!(typ.contains_type_id(LogicalTypeId::Variant));
         assert_eq!(format!("{typ:?}"), "Variant");
@@ -603,7 +568,6 @@ mod test {
 
         assert_eq!(invalid_type.id(), LogicalTypeId::Invalid);
         assert_eq!(invalid_type.try_id().unwrap(), LogicalTypeId::Invalid);
-        assert_eq!(invalid_type.raw_id(), DUCKDB_TYPE_DUCKDB_TYPE_INVALID as u32);
 
         let debug_str = format!("{invalid_type:?}");
         assert_eq!(debug_str, "Invalid");

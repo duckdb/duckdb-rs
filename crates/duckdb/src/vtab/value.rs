@@ -93,7 +93,7 @@ impl Value {
         unsafe {
             // Borrowed from DuckDB; this type must not be destroyed.
             let logical_type = duckdb_get_value_type(self.ptr);
-            duckdb_get_type_id(logical_type).into()
+            (duckdb_get_type_id(logical_type) as u32).into()
         }
     }
 }
