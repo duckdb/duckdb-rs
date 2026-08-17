@@ -10,8 +10,6 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from package_build_compat import relative_package_path
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 DUCKDB_SCRIPTS_DIR = SCRIPT_DIR / "duckdb-sources" / "scripts"
@@ -44,15 +42,21 @@ TARGET_DIR.mkdir()
 sys.path.append(str(DUCKDB_SCRIPTS_DIR))
 import package_build
 
-# DuckDB's package_build.py splits source paths on the native separator, but
-# some source lists contain forward-slash directory prefixes. On Windows that
-# can pass a nested path such as extension/loader to os.mkdir before extension
-# exists. Keep the upstream script untouched while making its mkdir calls
-# recursive for this platform.
+# DuckDB has a forward-slashed `extension/loader` compile directory. Its
+# recursive walk appends native separators, producing mixed paths on Windows
+# that package_build.py cannot split into individual parent directories.
 if os.name == "nt":
-    from package_build_compat import RecursiveMkdirOS
+    import amalgamation
 
-    package_build.os = RecursiveMkdirOS(package_build.os)
+    amalgamation.compile_directories = [
+        os.path.normpath(path) for path in amalgamation.compile_directories
+    ]
+
+
+def relative_package_path(path):
+    """Remove the package root from DuckDB's forward-slashed source path."""
+    package_root = SCRIPT_DIR.as_posix().rstrip("/")
+    return path.removeprefix(f"{package_root}/")
 
 
 def get_sources(extensions, default_linked_extensions=None):
@@ -68,7 +72,7 @@ def get_sources(extensions, default_linked_extensions=None):
     # Remove the absolute prefix on the files (some get generated with it).
     # DuckDB returns forward-slash paths even on Windows, so normalize both
     # sides before comparing them.
-    source_list = [relative_package_path(path, SCRIPT_DIR) for path in source_list]
+    source_list = [relative_package_path(path) for path in source_list]
 
     return set(source_list), set(include_list)
 
