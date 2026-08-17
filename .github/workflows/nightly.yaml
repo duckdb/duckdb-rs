@@ -70,10 +70,14 @@ jobs:
           git diff --stat
 
       # Fresh upstream sources can have deeper paths than the pinned CMake CI.
-      # Keep nightly's CMake output below Windows MAX_PATH.
+      # Keep the build at the drive root: RUNNER_TEMP is short enough for
+      # MAX_PATH, but DuckDB's unity build generates invalid relative includes
+      # from that sibling directory.
       - name: Shorten Windows Cargo target directory
         if: ${{ runner.os == 'Windows' }}
-        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/t" >> "$GITHUB_ENV"
+        run: |
+          runner_drive=${RUNNER_TEMP%%:*}
+          echo "CARGO_TARGET_DIR=$runner_drive:/t" >> "$GITHUB_ENV"
 
       - name: Test bundled backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
