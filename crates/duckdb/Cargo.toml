@@ -1,109 +1,18 @@
 [package]
-name = "duckdb"
-version = { workspace = true }
-authors = { workspace = true }
-repository = { workspace = true }
-homepage = { workspace = true }
-documentation = { workspace = true }
-readme = { workspace = true }
-keywords = { workspace = true }
-license = { workspace = true }
-categories = { workspace = true }
-description = "Ergonomic wrapper for DuckDB"
-edition = { workspace = true }
-rust-version = { workspace = true }
+name = "duckdb-rs"
+version = "2.0.0"
+edition = "2024"
 
-[lib]
-name = "duckdb"
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = []
+# Forward static linking down to libduckdb-sys.
 bundled = ["libduckdb-sys/bundled"]
-# Warning: experimental feature
-bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake", "parquet"]
-json = ["libduckdb-sys/json", "bundled"]
-parquet = ["libduckdb-sys/parquet", "bundled"]
-autocomplete = ["libduckdb-sys/autocomplete", "bundled-cmake"]
-icu = ["libduckdb-sys/icu", "bundled-cmake"]
-tpcds = ["libduckdb-sys/tpcds", "bundled-cmake"]
-tpch = ["libduckdb-sys/tpch", "bundled-cmake"]
-vscalar = ["vtab-arrow"]
-vscalar-arrow = []
-vtab = []
-# Deprecated: use loadable-extension instead
-vtab-loadable = ["loadable-extension"]
-# Deprecated no-op retained for feature compatibility.
-vtab-excel = ["vtab"]
-vtab-arrow = ["vtab", "num"]
-appender-arrow = ["vtab-arrow"]
-vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
-extensions-full = ["json", "parquet", "vtab-full"]
-buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
-modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars", "rust_decimal"]
-polars = ["dep:polars", "dep:polars-core"]
-rust_decimal = ["dep:rust_decimal"]
-# Warning: experimental feature
-loadable-extension = ["vtab", "duckdb-loadable-macros", "libduckdb-sys/loadable-extension"]
+strict-docs = []
+capi-v2-p2 = []
 
 [dependencies]
-arrow = { workspace = true, features = ["prettyprint", "ffi"] }
-cast = { workspace = true, features = ["std"] }
-chrono = { workspace = true, optional = true }
-duckdb-loadable-macros = { workspace = true, optional = true }
-fallible-iterator = { workspace = true }
-fallible-streaming-iterator = { workspace = true }
-hashlink = { workspace = true }
-libduckdb-sys = { workspace = true }
-num = { workspace = true, features = ["std"], optional = true }
-num-integer = { workspace = true }
-polars = { workspace = true, features = ["dtype-full"], optional = true }
-polars-core = { workspace = true, optional = true }
-r2d2 = { workspace = true, optional = true }
-rust_decimal = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-strum = { workspace = true, features = ["derive"] }
-url = { workspace = true, optional = true }
-uuid = { workspace = true, optional = true }
-
-# Not used directly. Pins the transitive version via arrow-cast so `cargo update`
-# honors our MSRV. comfy-table 7.2+ requires Rust 1.88 (if-let chains) but doesn't
-# declare rust-version, so cargo's MSRV-aware resolver can't filter it out.
-# Drop this pin when MSRV reaches 1.88.
-comfy-table = "~7.1"
-
-[dev-dependencies]
-doc-comment = { workspace = true }
-polars-core = { workspace = true }
-pretty_assertions = { workspace = true }
-rand = { workspace = true }
-rustyline = { version = "15", features = ["case_insensitive_history_search"] }
-tempfile = { workspace = true }
-uuid = { workspace = true, features = ["v4"] }
-
-[package.metadata.docs.rs]
-features = ["modern-full", "vscalar", "vscalar-arrow", "vtab-full"]
-all-features = false
-no-default-features = true
-default-target = "x86_64-unknown-linux-gnu"
-targets = []
-
-[package.metadata.playground]
-features = []
-all-features = false
-
-[[example]]
-name = "hello-ext"
-crate-type = ["cdylib"]
-required-features = ["loadable-extension"]
-
-[[example]]
-name = "vscalar"
-required-features = ["vscalar"]
-
-[[example]]
-name = "vtab"
-required-features = ["vtab"]
-
-[[example]]
-name = "arrow_vtab"
-required-features = ["vtab-arrow"]
+libc = "0.2.186"
+libduckdb-sys = { path = "../libduckdb-sys" }
+paste = "1.0.15"
