@@ -404,6 +404,22 @@ impl Statement<'_> {
         self.stmt.streaming_step(schema)
     }
 
+    /// Check whether a streaming result ended in an error rather than exhaustion.
+    ///
+    /// [`stream_arrow`](Statement::stream_arrow) yields batches until the result
+    /// is exhausted or fails; the iterator ends the same way in both cases, so
+    /// call this once it returns `None`.
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the underlying DuckDB result carries an error.
+    pub fn check_stream(&self) -> Result<()> {
+        match self.stmt.result_error() {
+            None => Ok(()),
+            Some(msg) => Err(Error::DuckDBFailure(ffi::Error::new(ffi::DuckDBError), Some(msg))),
+        }
+    }
+
     #[cfg(feature = "polars")]
     #[inline]
     pub(crate) fn step_polars(&self) -> Option<polars_arrow::array::StructArray> {
@@ -1043,6 +1059,35 @@ mod test {
         let mut stmt = db.prepare("SELECT y FROM foo")?;
         let y: Result<i64> = stmt.query_row([], |r| r.get("y"));
         assert_eq!(3i64, y?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_stream_reports_mid_stream_error() -> Result<()> {
+        use arrow::datatypes::{DataType, Field, Schema};
+        use std::sync::Arc;
+        let db = Connection::open_in_memory()?;
+        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int64, true)]));
+
+        let mut stmt = db.prepare("SELECT i FROM range(10000) t(i)")?;
+        assert_eq!(
+            stmt.stream_arrow([], schema.clone())?
+                .map(|b| b.num_rows())
+                .sum::<usize>(),
+            10000
+        );
+        stmt.check_stream()?;
+
+        // Fails well past the streaming buffer, so `stream_arrow` succeeds and the
+        // iterator yields rows before it ends.
+        let mut stmt =
+            db.prepare("SELECT CASE WHEN i = 5000000 THEN error('boom') ELSE i END AS i FROM range(10000000) t(i)")?;
+        let yielded = stmt.stream_arrow([], schema)?.map(|b| b.num_rows()).sum::<usize>();
+        assert!(yielded > 0 && yielded < 10000000, "yielded {yielded}");
+        match stmt.check_stream() {
+            Err(Error::DuckDBFailure(_, Some(msg))) => assert!(msg.contains("boom"), "{msg}"),
+            other => panic!("expected the stream's error, got {other:?}"),
+        }
         Ok(())
     }
 

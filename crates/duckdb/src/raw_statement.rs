@@ -125,6 +125,19 @@ impl RawStatement {
     }
 
     #[inline]
+    pub fn result_error(&self) -> Option<String> {
+        let mut result = self.duckdb_result?;
+        unsafe {
+            let c_err = ffi::duckdb_result_error(&mut result);
+            if c_err.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_err).to_string_lossy().to_string())
+            }
+        }
+    }
+
+    #[inline]
     pub fn streaming_step(&self, schema: SchemaRef) -> Option<StructArray> {
         if let Some(result) = self.duckdb_result {
             unsafe {
