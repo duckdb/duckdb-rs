@@ -18,14 +18,31 @@ env:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.duckdb-sha }}
   cancel-in-progress: true
 
 jobs:
   nightly:
-    name: DuckDB nightly
-    runs-on: ubuntu-latest
+    name: DuckDB nightly (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            artifact: libduckdb-linux-amd64.zip
+          - name: macOS
+            os: macos-latest
+            artifact: libduckdb-osx-universal.zip
+          - name: Windows
+            os: windows-latest
+            artifact: libduckdb-windows-amd64.zip
+    runs-on: ${{ matrix.os }}
     env:
       DUCKDB_SHA: ${{ inputs.duckdb-sha }}
       SCCACHE_GHA_ENABLED: "true"
@@ -36,6 +53,21 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
+
+      # DuckDB's CMake build emits deep object paths that can exceed MAX_PATH
+      # and fail with C1083. Keep Windows build output at the drive root.
+      - name: Shorten Windows Cargo target directory
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          case "$RUNNER_TEMP" in
+            [A-Za-z]:[\\/]*) runner_drive=${RUNNER_TEMP%%:*} ;;
+            *)
+              echo "::error::Cannot derive a Windows drive from RUNNER_TEMP=$RUNNER_TEMP"
+              exit 1
+              ;;
+          esac
+          echo "CARGO_TARGET_DIR=$runner_drive:/t" >> "$GITHUB_ENV"
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-on-failure: false
@@ -47,7 +79,7 @@ jobs:
         run: ./upgrade.sh --sha "$DUCKDB_SHA"
 
       - name: Show generated upgrade diff
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           git status --short
           git diff --stat
@@ -56,9 +88,10 @@ jobs:
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
         # cc crate ignores CMAKE_*_COMPILER_LAUNCHER; wrap CC/CXX for sccache.
         # Step-scoped so CC/CXX do not leak into cmake backend steps.
+        # cc treats empty CC/CXX values as unset, preserving Windows discovery.
         env:
-          CC: "sccache cc"
-          CXX: "sccache c++"
+          CC: ${{ runner.os != 'Windows' && 'sccache cc' || '' }}
+          CXX: ${{ runner.os != 'Windows' && 'sccache c++' || '' }}
         run: cargo test -p duckdb --features bundled
 
       - name: Test bundled-cmake backend
@@ -71,27 +104,43 @@ jobs:
         run: |
           staging_key_length=10
           staging_key=${DUCKDB_SHA:0:$staging_key_length}
-          artifact_url="https://duckdb-staging.duckdb.org/$staging_key/duckdb/duckdb/github_release/libduckdb-linux-amd64.zip"
-          artifact_path="$RUNNER_TEMP/libduckdb-linux-amd64.zip"
+          artifact_name="${{ matrix.artifact }}"
+          artifact_url="https://duckdb-staging.duckdb.org/$staging_key/duckdb/duckdb/github_release/$artifact_name"
+          artifact_path="$RUNNER_TEMP/$artifact_name"
+          library_path="$RUNNER_TEMP/libduckdb"
           curl --fail --location --retry 5 --output "$artifact_path" "$artifact_url" || {
             echo "::error::No staging artifact at $artifact_url"
             exit 1
           }
-          unzip -q "$artifact_path" -d "$RUNNER_TEMP/libduckdb"
+          unzip -q "$artifact_path" -d "$library_path"
           {
-            echo "DUCKDB_LIB_DIR=$RUNNER_TEMP/libduckdb"
-            echo "DUCKDB_INCLUDE_DIR=$RUNNER_TEMP/libduckdb"
-            echo "LD_LIBRARY_PATH=$RUNNER_TEMP/libduckdb${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            echo "DUCKDB_LIB_DIR=$library_path"
+            echo "DUCKDB_INCLUDE_DIR=$library_path"
           } >> "$GITHUB_ENV"
+          case "$RUNNER_OS" in
+            Linux)
+              echo "LD_LIBRARY_PATH=$library_path${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+              ;;
+            macOS)
+              # SIP strips DYLD_* when /bin/bash starts a step, so GITHUB_ENV
+              # cannot carry a runtime library path here. Bake in an rpath at
+              # link time instead; libduckdb.dylib installs as @rpath/....
+              echo "RUSTFLAGS=-C link-arg=-Wl,-rpath,$library_path${RUSTFLAGS:+ $RUSTFLAGS}" >> "$GITHUB_ENV"
+              ;;
+            Windows)
+              echo "$library_path" >> "$GITHUB_PATH"
+              ;;
+            *)
+              echo "::error::Unsupported runner OS: $RUNNER_OS"
+              exit 1
+              ;;
+          esac
 
-      - name: Test nightly artifact
+      - name: Test nightly artifact and extensions
         if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
+        # tests/nightly.rs holds exactly the ignored tests this workflow exists
+        # to run. Selecting them with --ignored keeps a mistyped name from
+        # passing silently, which is what an --exact filter would do.
         run: |
-          cargo test -p duckdb --features buildtime_bindgen \
-            --test nightly links_against_requested_duckdb_commit -- --exact --ignored
+          cargo test -p duckdb --features buildtime_bindgen --test nightly -- --ignored
           cargo test -p duckdb --features buildtime_bindgen
-
-      - name: Test nightly extension installation
-        if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
-        run: cargo test -p duckdb --features buildtime_bindgen
-          --test nightly can_install_and_load_httpfs -- --exact --ignored

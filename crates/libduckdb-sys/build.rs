@@ -237,6 +237,8 @@ mod build_linked {
                 println!("cargo:rustc-link-search={dir}");
             }
 
+            stage_runtime_lib(Path::new(&dir), out_dir);
+
             return HeaderLocation::from_env(Path::new(&dir));
         }
 
@@ -344,9 +346,6 @@ mod build_linked {
     fn configure_link_search(lib_dir: &Path) {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         emit_link_lib(link_directive());
-        if !win_target() {
-            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
-        }
     }
 
     // Ensures the libduckdb archive exists: reuses an existing zip or
@@ -376,13 +375,44 @@ mod build_linked {
         Ok(())
     }
 
+    // The release archives give libduckdb an @rpath-relative install name, and a
+    // dependency's build script cannot add an rpath to the binaries Cargo links for
+    // the crates above it. Stage the library beside those binaries instead, so the
+    // loader path Cargo sets when it runs them resolves it.
+    //
+    // Best effort: a static or header-only DUCKDB_LIB_DIR has nothing to stage, and
+    // callers who point the loader at the original directory keep working either way.
+    fn stage_runtime_lib(lib_dir: &Path, out_dir: &str) {
+        // Nothing to stage unless we asked rustc to link a shared library.
+        if is_loadable_extension() || !link_directive().starts_with("dylib=") {
+            return;
+        }
+        let Ok(target) = env::var("TARGET") else {
+            return;
+        };
+        let Some(archive) = LibduckdbArchive::for_target(&target) else {
+            return;
+        };
+        let source = lib_dir.join(archive.dynamic_lib);
+        if !source.is_file() {
+            return;
+        }
+
+        // Refresh the copy when the original is rebuilt in place, so the staged
+        // library can never shadow it with stale bytes.
+        println!("cargo:rerun-if-changed={}", source.display());
+
+        if let Err(error) = copy_libduckdb(lib_dir, archive.dynamic_lib, out_dir) {
+            println!(
+                "cargo:warning=Could not stage {} beside the test binaries: {error}",
+                archive.dynamic_lib
+            );
+        }
+    }
+
     // Copy libduckdb into target/<profile>/deps so executables/tests can load it via
-    // the default Cargo rpath, just like when DUCKDB_LIB_DIR is set.
-    fn copy_libduckdb(
-        download_dir: &Path,
-        lib_filename: &str,
-        out_dir: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    // the loader path Cargo sets when it runs them.
+    fn copy_libduckdb(source_dir: &Path, lib_filename: &str, out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         let Some(deps_dir) = crate::build_paths::profile_deps_dir(Path::new(out_dir)) else {
             return Err(format!(
                 "Could not determine runtime library directory from Cargo OUT_DIR '{out_dir}'. \
@@ -391,7 +421,7 @@ mod build_linked {
             .into());
         };
         fs::create_dir_all(&deps_dir)?;
-        let source = download_dir.join(lib_filename);
+        let source = source_dir.join(lib_filename);
         let dest = deps_dir.join(lib_filename);
         if dest.exists() {
             fs::remove_file(&dest)?;

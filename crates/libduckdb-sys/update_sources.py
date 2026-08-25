@@ -42,6 +42,16 @@ TARGET_DIR.mkdir()
 sys.path.append(str(DUCKDB_SCRIPTS_DIR))
 import package_build
 
+# DuckDB has a forward-slashed `extension/loader` compile directory. Its
+# recursive walk appends native separators, producing mixed paths on Windows
+# that package_build.py cannot split into individual parent directories.
+# Every entry is separator-simple, so this is a no-op off Windows.
+import amalgamation
+
+amalgamation.compile_directories = [
+    os.path.normpath(path) for path in amalgamation.compile_directories
+]
+
 
 def get_sources(extensions, default_linked_extensions=None):
     kwargs = {}
@@ -53,8 +63,10 @@ def get_sources(extensions, default_linked_extensions=None):
     )
     PACKAGE_BUILD_LOADER_PATH.unlink(missing_ok=True)
 
-    # Remove the absolute prefix on the files (some get generated with it)
-    script_dir_prefix = f"{SCRIPT_DIR}{os.path.sep}"
+    # Remove the absolute prefix on the files (some get generated with it).
+    # DuckDB returns forward-slash paths even on Windows, so compare against
+    # the package root's forward-slash representation.
+    script_dir_prefix = f"{SCRIPT_DIR.as_posix()}/"
     source_list = [
         x[len(script_dir_prefix) :] if x.startswith(script_dir_prefix) else x
         for x in source_list

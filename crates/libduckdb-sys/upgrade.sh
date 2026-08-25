@@ -5,6 +5,7 @@ set -e -o pipefail
 SCRIPT=$(realpath "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT")
 WORKSPACE_DIR=$(realpath "$SCRIPT_DIR/../..")
+CARGO_OUTPUT_DIR=${CARGO_TARGET_DIR:-"$WORKSPACE_DIR/target"}
 
 echo "$SCRIPT_DIR"
 cd "$SCRIPT_DIR"
@@ -39,12 +40,12 @@ regenerate_bindings() {
     local BINDGEN_RS
     local TMP_OUTPUT
 
-    find "$WORKSPACE_DIR/target" -type f -name bindgen.rs -exec rm {} \;
+    find "$CARGO_OUTPUT_DIR" -type f -name bindgen.rs -exec rm {} \;
     DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb" \
         DUCKDB_INCLUDE_DIR="$SCRIPT_DIR/duckdb/src/include" \
         cargo check -p libduckdb-sys --no-default-features --features "$FEATURES"
 
-    BINDGEN_RS=$(find "$WORKSPACE_DIR/target" -path '*/libduckdb-sys-*/out/bindgen.rs' -print -quit)
+    BINDGEN_RS=$(find "$CARGO_OUTPUT_DIR" -path '*/libduckdb-sys-*/out/bindgen.rs' -print -quit)
     if [ -z "$BINDGEN_RS" ]; then
         echo "ERROR: bindgen.rs was not generated" >&2
         exit 1
@@ -80,7 +81,7 @@ if [ -n "$DUCKDB_SHA" ] && ! [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
     exit 1
 fi
 
-mkdir -p "$WORKSPACE_DIR/target"
+mkdir -p "$CARGO_OUTPUT_DIR"
 
 DUCKDB_VERSION=${POSITIONAL[0]:-$(crate_version_to_duckdb_version "$(current_workspace_version)")}
 DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
