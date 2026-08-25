@@ -1,4 +1,4 @@
-use crate::core::LogicalTypeId;
+use crate::core::{LogicalTypeId, RawLogicalTypeId};
 use crate::ffi::{
     DuckDbString, duckdb_destroy_value, duckdb_get_bool, duckdb_get_double, duckdb_get_float, duckdb_get_int8,
     duckdb_get_int16, duckdb_get_int32, duckdb_get_int64, duckdb_get_list_child, duckdb_get_list_size,
@@ -93,7 +93,7 @@ impl Value {
         unsafe {
             // Borrowed from DuckDB; this type must not be destroyed.
             let logical_type = duckdb_get_value_type(self.ptr);
-            duckdb_get_type_id(logical_type).into()
+            (duckdb_get_type_id(logical_type) as RawLogicalTypeId).into()
         }
     }
 }
