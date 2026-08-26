@@ -1,0 +1,35 @@
+name: Setup DuckDB
+description: Download and extract the DuckDB v2 nightly staging library and configure the build environment.
+
+runs:
+  using: composite
+  steps:
+    - name: Download and extract DuckDB
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux)   artifact="libduckdb-linux-amd64.zip" ;;
+          macOS)   artifact="libduckdb-osx-universal.zip" ;;
+          Windows) artifact="libduckdb-windows-amd64.zip" ;;
+          *) echo "::error::Unsupported runner OS: $RUNNER_OS"; exit 1 ;;
+        esac
+
+        url="https://duckdb-staging.duckdb.org/${DUCKDB_SHA:0:10}/duckdb/duckdb/github_release/$artifact"
+        dir="$RUNNER_TEMP/libduckdb"
+        mkdir -p "$dir"
+
+        curl --fail --location --retry 5 --output "$dir.zip" "$url" || {
+          echo "::error::No staging artifact at $url"
+          exit 1
+        }
+
+        python="$(command -v python3 || command -v python)"
+        "$python" -m zipfile -e "$dir.zip" "$dir"
+
+        {
+          echo "DUCKDB_LIB_DIR=$dir"
+          echo "DUCKDB_INCLUDE_DIR=$dir"
+          echo "LD_LIBRARY_PATH=$dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$dir${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+        } >> "$GITHUB_ENV"
+        echo "$dir" >> "$GITHUB_PATH"
