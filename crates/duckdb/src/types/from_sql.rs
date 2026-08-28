@@ -2,7 +2,8 @@ use std::{error::Error, fmt};
 
 use cast;
 
-use super::{Decimal, TimeUnit, Value, ValueRef};
+use super::{Decimal, ListType, TimeUnit, Value, ValueRef};
+use arrow::array::{Array, Float32Array, Float64Array};
 
 /// Enum listing possible errors from [`FromSql`] trait.
 #[derive(Debug)]
@@ -317,6 +318,76 @@ impl FromSql for Value {
         Ok(value.into())
     }
 }
+
+/// Reads a DuckDB fixed-size `ARRAY` (`FLOAT[N]` / `DOUBLE[N]`) or `LIST` column
+/// into a Rust `Vec<T>` (and, when the length is known, `[T; N]`). Elements must
+/// be non-null; null elements report [`FromSqlError::InvalidType`].
+macro_rules! from_sql_float_array {
+    ($t:ty, $array:ident) => {
+        impl FromSql for Vec<$t> {
+            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                let (start, end, child) = match value {
+                    ValueRef::Array(arr, idx) => {
+                        let width = usize::try_from(arr.value_length()).map_err(|_| FromSqlError::InvalidType)?;
+                        let start = idx.checked_mul(width).ok_or(FromSqlError::InvalidType)?;
+                        let end = start.checked_add(width).ok_or(FromSqlError::InvalidType)?;
+                        (start, end, arr.values())
+                    }
+                    ValueRef::List(ListType::Regular(arr), idx) => {
+                        let offsets = arr.offsets();
+                        let start = offsets
+                            .get(idx)
+                            .and_then(|o| (*o).try_into().ok())
+                            .ok_or(FromSqlError::InvalidType)?;
+                        let end = offsets
+                            .get(idx + 1)
+                            .and_then(|o| (*o).try_into().ok())
+                            .ok_or(FromSqlError::InvalidType)?;
+                        (start, end, arr.values())
+                    }
+                    ValueRef::List(ListType::Large(arr), idx) => {
+                        let offsets = arr.offsets();
+                        let start = offsets
+                            .get(idx)
+                            .and_then(|o| (*o).try_into().ok())
+                            .ok_or(FromSqlError::InvalidType)?;
+                        let end = offsets
+                            .get(idx + 1)
+                            .and_then(|o| (*o).try_into().ok())
+                            .ok_or(FromSqlError::InvalidType)?;
+                        (start, end, arr.values())
+                    }
+                    _ => return Err(FromSqlError::InvalidType),
+                };
+                let floats = child
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<$array>()
+                    .ok_or(FromSqlError::InvalidType)?;
+                for i in start..end {
+                    if !floats.is_valid(i) {
+                        return Err(FromSqlError::InvalidType);
+                    }
+                }
+                Ok(floats
+                    .values()
+                    .get(start..end)
+                    .ok_or(FromSqlError::InvalidType)?
+                    .to_vec())
+            }
+        }
+
+        impl<const N: usize> FromSql for [$t; N] {
+            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                let vec = Vec::<$t>::column_result(value)?;
+                vec.try_into().map_err(|_| FromSqlError::InvalidType)
+            }
+        }
+    };
+}
+
+from_sql_float_array!(f32, Float32Array);
+from_sql_float_array!(f64, Float64Array);
 
 #[cfg(test)]
 mod test {
