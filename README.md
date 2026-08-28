@@ -14,15 +14,16 @@ duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/du
 
 ## Documentation
 
-The **[DuckDB Rust client guide](https://duckdb.org/docs/stable/clients/rust)** is the primary documentation. It covers:
+The **[DuckDB Rust client guide](https://duckdb.org/docs/stable/clients/rust)** is the primary documentation:
 
-- [Installation](https://duckdb.org/docs/stable/clients/rust/overview) and the full list of Cargo [feature flags](https://duckdb.org/docs/stable/clients/rust/overview#feature-flags).
-- [Connecting](https://duckdb.org/docs/stable/clients/rust/connecting), configuration, connection pooling, and thread safety.
-- [Running queries](https://duckdb.org/docs/stable/clients/rust/querying), binding parameters, and mapping rows to Rust types.
-- [Importing data](https://duckdb.org/docs/stable/clients/rust/data_import) with the Appender and file readers.
-- [Handling results](https://duckdb.org/docs/stable/clients/rust/result_handling) as Apache Arrow or Polars.
-- [User-defined functions](https://duckdb.org/docs/stable/clients/rust/functions) and building loadable extensions.
-- [Troubleshooting](https://duckdb.org/docs/stable/clients/rust/troubleshoot), including linking against a system library.
+- [Overview](https://duckdb.org/docs/stable/clients/rust/overview) — installation and the full list of Cargo [feature flags](https://duckdb.org/docs/stable/clients/rust/overview#feature-flags).
+- [Connect](https://duckdb.org/docs/stable/clients/rust/connecting) — configuration, connection pooling, and thread safety.
+- [Import Data](https://duckdb.org/docs/stable/clients/rust/data_import) — the Appender and file readers.
+- [Run Queries](https://duckdb.org/docs/stable/clients/rust/querying) — binding parameters and mapping rows to Rust types.
+- [Handle Results](https://duckdb.org/docs/stable/clients/rust/result_handling) — Apache Arrow and Polars interchange.
+- [Write User Defined Functions](https://duckdb.org/docs/stable/clients/rust/functions) — scalar and table functions, and loadable extensions.
+- [Profile and Monitor](https://duckdb.org/docs/stable/clients/rust/profiling) — query profiling and interrupting long-running queries.
+- [Troubleshoot](https://duckdb.org/docs/stable/clients/rust/troubleshoot) — linking against a system library and other build issues.
 
 The complete API reference is on [docs.rs](https://docs.rs/duckdb).
 
