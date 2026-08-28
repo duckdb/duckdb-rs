@@ -25,6 +25,20 @@ fn is_compiler(compiler_name: &str) -> bool {
     std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == compiler_name)
 }
 
+fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
+    // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
+    let encoded = pkg_version
+        .split('.')
+        .nth(1)
+        .expect("CARGO_PKG_VERSION should use the documented 1.MAJOR_MINOR_PATCH.x format")
+        .parse::<u32>()
+        .expect("CARGO_PKG_VERSION should encode the DuckDB version as an integer in its second component");
+    let duckdb_major = encoded / 10_000;
+    let duckdb_minor = (encoded / 100) % 100;
+    let duckdb_patch = encoded % 100;
+    format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
+}
+
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir).join("bindgen.rs");
@@ -304,7 +318,7 @@ mod build_linked {
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
 
-        let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
+        let version = super::duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
 
         // Cache downloads beside the profile directory so successive builds reuse them.
         let download_dir = crate::build_paths::download_root(Path::new(out_dir))
@@ -429,20 +443,6 @@ mod build_linked {
         fs::copy(&source, &dest)?;
         println!("cargo:warning=Copied libduckdb to {}", dest.display());
         Ok(())
-    }
-
-    fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
-        // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
-        let encoded = pkg_version
-            .split('.')
-            .nth(1)
-            .expect("CARGO_PKG_VERSION should use the documented 1.MAJOR_MINOR_PATCH.x format")
-            .parse::<u32>()
-            .expect("CARGO_PKG_VERSION should encode the DuckDB version as an integer in its second component");
-        let duckdb_major = encoded / 10_000;
-        let duckdb_minor = (encoded / 100) % 100;
-        let duckdb_patch = encoded % 100;
-        format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
     }
 
     struct LibduckdbArchive {
