@@ -212,7 +212,7 @@ macro_rules! create_value_dispatch {
                 create_value!($interval, $link, ffi::duckdb_v2_interval_t { months, days, micros })
             }
             ValueInput::Decimal { value, width, scale } => create_value!($decimal, $link, hugeint(value), width, scale),
-            ValueInput::Uuid(value) => create_value!($uuid, $link, hugeint(value)),
+            ValueInput::Uuid(value) => create_value!($uuid, $link, hugeint(value as i128)),
             ValueInput::Bit(value) => create_value!($bit, $link, bytes(value)),
             ValueInput::BigNum(value) => create_value!($bignum, $link, bytes(value)),
             ValueInput::List { child_type, children } => {

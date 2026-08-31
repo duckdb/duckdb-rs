@@ -9,7 +9,7 @@ use crate::{
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, InternalDecimalType,
         IntervalValue, List, Map, Struct, TString, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
-        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
+        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValueRaw,
         Variant,
     },
 };
@@ -108,7 +108,7 @@ declare_storage_vector_element!(TimestampNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME
 declare_storage_vector_element!(TimestampTzValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ);
 declare_storage_vector_element!(TimestampTzNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS);
 declare_storage_vector_element!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
-declare_storage_vector_element!(UuidValue, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
+declare_storage_vector_element!(UuidValueRaw, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
 
 impl<T> VectorElement for BlobValue<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
