@@ -3,8 +3,8 @@
 use libduckdb_sys as ffi;
 
 use crate::{
-    Connection, Parameters, Result, check_api_call, check_api_call_no_err,
-    qualified_name::QualifiedName, schema::Schema,
+    Connection, Parameters, Result, check_api_call, check_api_call_no_err, qualified_name::QualifiedName,
+    schema::Schema,
 };
 
 /// An owned snapshot of a base table's catalog metadata.
@@ -64,22 +64,14 @@ impl TableDescription {
 
     /// Return the columns in declaration order, including generated columns.
     pub fn schema(&self) -> Result<Schema> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_table_description_get_schema,
-            self.handle,
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_table_description_get_schema, self.handle, RET)?;
 
         Ok(Schema { handle })
     }
 
     /// Return whether the table belongs to a read-only catalog.
     pub fn readonly(&self) -> Result<bool> {
-        check_api_call!(
-            ffi::duckdb_v2_table_description_is_readonly,
-            self.handle,
-            RET
-        )
+        check_api_call!(ffi::duckdb_v2_table_description_is_readonly, self.handle, RET)
     }
 
     /// Return whether a column declares a default expression.
@@ -117,18 +109,15 @@ impl Drop for TableDescription {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::{
-        Environment, StorageLocation, qualified_name::QualifiedName,
-        table_description::TableDescription,
-    };
+    use crate::{Environment, StorageLocation, qualified_name::QualifiedName, table_description::TableDescription};
     #[test]
     fn test_table_description() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let mut statements = conn
-            .parse("CREATE TABLE test (id INTEGER, name VARCHAR DEFAULT \'DEF\', td AS (2*id));")?;
+        let mut statements =
+            conn.parse("CREATE TABLE test (id INTEGER, name VARCHAR DEFAULT \'DEF\', td AS (2*id));")?;
 
         conn.execute(statements.next().unwrap()?, Parameters::None)?;
 

@@ -47,8 +47,7 @@ use crate::{
 
 mod element;
 pub use crate::types::{
-    Array, BigNum, BigNumDecoded, Decimal, InternalDecimalType, List, Map, Struct, TString, Union,
-    Variant,
+    Array, BigNum, BigNumDecoded, Decimal, InternalDecimalType, List, Map, Struct, TString, Union, Variant,
 };
 pub use element::*;
 
@@ -101,20 +100,15 @@ pub struct Vector<'chunk, T = Unknown> {
 impl<'chunk> Vector<'chunk, Unknown> {
     /// # Safety
     /// The caller must ensure that the handle is valid and that the vector's lifetime is tied to the lifetime of the chunk.
-    pub(crate) fn from_handle(
-        handle: &ffi::duckdb_v2_vector_handle,
-        writable: bool,
-    ) -> Result<Self> {
-        let logical_type_handle =
-            check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)?;
+    pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, writable: bool) -> Result<Self> {
+        let logical_type_handle = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)?;
 
         let vector_type: ffi::DUCKDB_V2_VECTOR_TYPE =
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET)?;
 
         let len: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET)?;
 
-        let child_count: ffi::idx_t =
-            check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
+        let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
 
         let kind = StorageKind::from_ffi(vector_type);
         let view = Self::acquire_view(*handle, kind)?;
@@ -122,8 +116,7 @@ impl<'chunk> Vector<'chunk, Unknown> {
 
         let mut children = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
-            let child_handle =
-                check_api_call!(ffi::duckdb_v2_vector_get_child, *handle, index, RET)?;
+            let child_handle = check_api_call!(ffi::duckdb_v2_vector_get_child, *handle, index, RET)?;
             children.push(Self::from_handle(&child_handle, writable)?);
         }
 
@@ -162,8 +155,7 @@ impl<'chunk, T> Vector<'chunk, T> {
             return Ok(None);
         }
 
-        let view: ffi::duckdb_v2_vector_view =
-            check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET)?;
+        let view: ffi::duckdb_v2_vector_view = check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET)?;
         Ok(Some(view))
     }
 
@@ -177,16 +169,14 @@ impl<'chunk, T> Vector<'chunk, T> {
         }
 
         let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, handle, RET)?;
-        let validity =
-            check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
+        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
         Ok((Some(data), Some(validity)))
     }
 
     /// Refresh the vector's view and mutable buffers after a state change, e.g a flatten.
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
-        (self.data_mut, self.validity_mut) =
-            Self::acquire_mutable_buffers(self.handle, self.kind, self.writable)?;
+        (self.data_mut, self.validity_mut) = Self::acquire_mutable_buffers(self.handle, self.kind, self.writable)?;
         self.heap = None;
         Ok(())
     }
@@ -248,16 +238,13 @@ impl<'chunk, T> Vector<'chunk, T> {
         match self.kind {
             StorageKind::Constant => 0,
             StorageKind::Flat if view.sel.is_null() => logical,
-            StorageKind::Flat | StorageKind::Dictionary => unsafe {
-                *view.sel.add(logical) as usize
-            },
+            StorageKind::Flat | StorageKind::Dictionary => unsafe { *view.sel.add(logical) as usize },
             StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
         }
     }
 
     fn is_valid(view: &ffi::duckdb_v2_vector_view, physical: usize) -> bool {
-        view.validity.is_null()
-            || unsafe { *view.validity.add(physical / 64) & (1u64 << (physical % 64)) != 0 }
+        view.validity.is_null() || unsafe { *view.validity.add(physical / 64) & (1u64 << (physical % 64)) != 0 }
     }
 
     /// Return whether a logical row is `NULL`.
@@ -275,10 +262,7 @@ impl<'chunk, T> Vector<'chunk, T> {
     }
 
     /// Make this vector reference another vector's storage.
-    pub fn copy_from<'a, T2: VectorElement>(
-        self,
-        source: &'a Vector<'_, T2>,
-    ) -> Result<Vector<'chunk, T2>> {
+    pub fn copy_from<'a, T2: VectorElement>(self, source: &'a Vector<'_, T2>) -> Result<Vector<'chunk, T2>> {
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
         Ok(self.cast_unchecked::<T2>())
@@ -293,18 +277,14 @@ impl<'chunk, T> Vector<'chunk, T> {
 
         let physical = self.physical_index(index, view);
         // Dictionary selections address the flattened child, while view.count is the parent size.
-        if (self.kind != StorageKind::Dictionary && physical >= view.count as usize)
-            || !Self::is_valid(view, physical)
+        if (self.kind != StorageKind::Dictionary && physical >= view.count as usize) || !Self::is_valid(view, physical)
         {
             return None;
         }
         Some(U::get(self, physical, index))
     }
 
-    pub(crate) fn get_as_checked<U: VectorElement>(
-        &self,
-        index: usize,
-    ) -> Result<Option<U::Ref<'_>>> {
+    pub(crate) fn get_as_checked<U: VectorElement>(&self, index: usize) -> Result<Option<U::Ref<'_>>> {
         self.validate_as::<U>()?;
         Ok(self.get_as_unchecked::<U>(index))
     }
@@ -364,28 +344,16 @@ impl<'chunk, T> Vector<'chunk, T> {
     /// This is the slow path; prefer [`Self::get`] or [`Self::iter`] for typed
     /// vector access.
     pub fn get_value_slow(&self, index: usize) -> Result<Value> {
-        let value_handle = check_api_call!(
-            ffi::duckdb_v2_vector_get_value,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let value_handle = check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET)?;
 
-        Ok(Value {
-            handle: value_handle,
-        })
+        Ok(Value { handle: value_handle })
     }
 
     /// Write one owned [`Value`] through DuckDB's generic value API.
     ///
     /// This is the slow path; prefer [`Self::write`] for typed vector access.
     pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_vector_set_value,
-            self.handle,
-            index as u64,
-            value.handle,
-        )
+        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)
     }
 
     /// Set one row to `NULL` through DuckDB's generic value API.
@@ -485,11 +453,7 @@ impl<'chunk, T> Vector<'chunk, T> {
             value.handle,
             count as u64
         )?;
-        check_api_call!(
-            ffi::duckdb_v2_vector_constant_set_valid,
-            self.handle,
-            is_valid
-        )?;
+        check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, is_valid)?;
         self.kind = StorageKind::Constant;
         self.len = count;
         self.refresh_buffers()
@@ -538,10 +502,7 @@ impl<T: VectorElement> Vector<'_, T> {
             return Err(other_not_readable());
         }
 
-        Ok(VectorIter {
-            vector: self,
-            index: 0,
-        })
+        Ok(VectorIter { vector: self, index: 0 })
     }
 }
 

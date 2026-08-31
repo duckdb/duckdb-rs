@@ -20,11 +20,7 @@ pub struct ReplacementHandle<'a> {
 impl<'a> ReplacementHandle<'a> {
     /// Append a positional table-function parameter.
     pub fn add_parameter(&self, value: Value) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_replacement_scan_add_parameter,
-            *self.info,
-            value.handle,
-        )
+        check_api_call!(ffi::duckdb_v2_replacement_scan_add_parameter, *self.info, value.handle,)
     }
 
     /// Add a named table-function parameter.
@@ -56,11 +52,9 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_replacement_scan_get_user_data, info);
 
-            let catalog =
-                check_api_call!(ffi::duckdb_v2_replacement_scan_get_catalog_name, info, RET)?;
+            let catalog = check_api_call!(ffi::duckdb_v2_replacement_scan_get_catalog_name, info, RET)?;
 
-            let schema =
-                check_api_call!(ffi::duckdb_v2_replacement_scan_get_schema_name, info, RET)?;
+            let schema = check_api_call!(ffi::duckdb_v2_replacement_scan_get_schema_name, info, RET)?;
 
             let table = check_api_call!(ffi::duckdb_v2_replacement_scan_get_table_name, info, RET)?;
 
@@ -224,8 +218,7 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        ReplacementScanBuilder::new(CustomReplacementScan { count: 42 })
-            .register_with_database(&db)?;
+        ReplacementScanBuilder::new(CustomReplacementScan { count: 42 }).register_with_database(&db)?;
 
         ReplacementScanBuilder::new(CustomNamedParameters {}).register_with_database(&db)?;
 
@@ -233,10 +226,7 @@ mod tests {
 
         let chunk = query.next().unwrap()?;
 
-        assert!(
-            chunk.get_vector_at::<i64>(0)?.logical_type().type_id()
-                == DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
-        );
+        assert!(chunk.get_vector_at::<i64>(0)?.logical_type().type_id() == DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
 
         assert_eq!(chunk.row_count()?, 10 + 42);
 
@@ -246,10 +236,7 @@ mod tests {
 
         let chunk = query.next().unwrap()?;
 
-        assert!(
-            chunk.get_vector_at::<bool>(0)?.logical_type().type_id()
-                == DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
-        );
+        assert!(chunk.get_vector_at::<bool>(0)?.logical_type().type_id() == DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
 
         assert_eq!(chunk.vectors_count()?, 59);
 

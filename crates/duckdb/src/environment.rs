@@ -137,8 +137,7 @@ impl Environment {
         options: &[impl Deref<Target = ffi::duckdb_v2_option_handle>],
     ) -> Result<Database> {
         let path: String = path.into();
-        let mut option_handles: Vec<ffi::duckdb_v2_option_handle> =
-            options.iter().map(|opt| **opt).collect();
+        let mut option_handles: Vec<ffi::duckdb_v2_option_handle> = options.iter().map(|opt| **opt).collect();
 
         let handle: ffi::duckdb_v2_database_handle = check_api_call!(
             ffi::duckdb_v2_open,
@@ -171,10 +170,7 @@ mod tests {
 
         let db = env.open_with_options(StorageLocation::InMemory, &[option])?;
 
-        assert_eq!(
-            db.get_option("memory_limit")?.setting()?,
-            "190.7 MiB".to_string()
-        );
+        assert_eq!(db.get_option("memory_limit")?.setting()?, "190.7 MiB".to_string());
         Ok(())
     }
 }

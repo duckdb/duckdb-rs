@@ -57,10 +57,7 @@ impl<'a> Parameters<'a> {
         Self::Named(params)
     }
 
-    pub(crate) fn into_values(
-        self,
-        link: &dyn FFILink,
-    ) -> Result<(Option<Vec<&'a str>>, Vec<ParameterValue<'a>>)> {
+    pub(crate) fn into_values(self, link: &dyn FFILink) -> Result<(Option<Vec<&'a str>>, Vec<ParameterValue<'a>>)> {
         match self {
             Parameters::None => Ok((None, Vec::new())),
             Parameters::Positional(params) => {

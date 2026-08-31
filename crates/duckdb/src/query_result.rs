@@ -123,15 +123,9 @@ impl QueryResult<'_> {
             check_api_call!(ffi::duckdb_v2_result_step, self.handle, RET, &mut step)?;
 
         Ok(match step {
-            ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_WAITING => {
-                QueryResultStep::Waiting
-            }
-            ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_FINISHED => {
-                QueryResultStep::Finished
-            }
-            ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_CANCELLED => {
-                QueryResultStep::Canceled
-            }
+            ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_WAITING => QueryResultStep::Waiting,
+            ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_FINISHED => QueryResultStep::Finished,
+            ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_CANCELLED => QueryResultStep::Canceled,
             ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_CHUNK => {
                 QueryResultStep::Chunk(DataChunk {
                     handle: chunk,

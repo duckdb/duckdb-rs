@@ -8,15 +8,22 @@ pub enum FunctionPropertyStability {
     /// The result may differ for each row, as with `random()`.
     Volatile = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_VOLATILE as u32,
     /// The result is stable within one query but may change between queries.
-    ConsistentWithinQuery = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT_WITHIN_QUERY as u32,
+    ConsistentWithinQuery =
+        ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT_WITHIN_QUERY as u32,
 }
 
 impl From<FunctionPropertyStability> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE {
     fn from(value: FunctionPropertyStability) -> Self {
         match value {
-            FunctionPropertyStability::Consistent => ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT,
-            FunctionPropertyStability::Volatile => ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_VOLATILE,
-            FunctionPropertyStability::ConsistentWithinQuery => ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT_WITHIN_QUERY,
+            FunctionPropertyStability::Consistent => {
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT
+            }
+            FunctionPropertyStability::Volatile => {
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_VOLATILE
+            }
+            FunctionPropertyStability::ConsistentWithinQuery => {
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT_WITHIN_QUERY
+            }
         }
     }
 }
@@ -27,7 +34,8 @@ pub enum FunctionPropertyCollation {
     /// Combine input collations and propagate them to the result.
     Propagate = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PROPAGATE as u32,
     /// Apply combinable collations to inputs before invoking the function.
-    PushCombineable = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE as u32,
+    PushCombineable =
+        ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE as u32,
     /// Ignore argument collations.
     Ignore = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_IGNORE as u32,
 }
@@ -35,9 +43,15 @@ pub enum FunctionPropertyCollation {
 impl From<FunctionPropertyCollation> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE {
     fn from(value: FunctionPropertyCollation) -> Self {
         match value {
-            FunctionPropertyCollation::Propagate => ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PROPAGATE,
-            FunctionPropertyCollation::PushCombineable => ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE,
-            FunctionPropertyCollation::Ignore => ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_IGNORE,
+            FunctionPropertyCollation::Propagate => {
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PROPAGATE
+            }
+            FunctionPropertyCollation::PushCombineable => {
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE
+            }
+            FunctionPropertyCollation::Ignore => {
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_IGNORE
+            }
         }
     }
 }

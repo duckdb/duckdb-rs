@@ -2,10 +2,7 @@
 
 use libduckdb_sys as ffi;
 
-use crate::{
-    Result, builder_helpers::ffi_enum_redeclaration, check_api_call, logical_type::LogicalType,
-    value::Value,
-};
+use crate::{Result, builder_helpers::ffi_enum_redeclaration, check_api_call, logical_type::LogicalType, value::Value};
 
 ffi_enum_redeclaration! {
     /// The concrete implementation class of an expression node.
@@ -154,12 +151,7 @@ pub struct Expression<'a> {
 impl<'a> Expression<'a> {
     /// Return the child at `index` in DuckDB's traversal order.
     pub fn child(&self, index: usize) -> Result<Expression<'a>> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_expression_get_child,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_expression_get_child, self.handle, index as u64, RET)?;
 
         Ok(Expression {
             handle,
@@ -210,11 +202,7 @@ impl<'a> Expression<'a> {
     /// Return the owned value of a bound constant expression.
     pub fn get_constant_value(&self) -> Result<Value> {
         Ok(Value {
-            handle: check_api_call!(
-                ffi::duckdb_v2_expression_get_constant_value,
-                self.handle,
-                RET
-            )?,
+            handle: check_api_call!(ffi::duckdb_v2_expression_get_constant_value, self.handle, RET)?,
         })
     }
 
@@ -224,11 +212,7 @@ impl<'a> Expression<'a> {
     /// `__comparison`; use [`Expression::expression_type`] to distinguish their
     /// semantic operation.
     pub fn function_name(&self) -> Result<String> {
-        let name: ffi::duckdb_v2_str = check_api_call!(
-            ffi::duckdb_v2_expression_get_function_name,
-            self.handle,
-            RET
-        )?;
+        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_expression_get_function_name, self.handle, RET)?;
 
         let name: &str = name.into();
         Ok(name.to_string())
@@ -236,11 +220,7 @@ impl<'a> Expression<'a> {
 
     /// Return the input chunk column index of a physical bound reference.
     pub fn reference_index(&self) -> Result<u64> {
-        let index = check_api_call!(
-            ffi::duckdb_v2_expression_get_reference_index,
-            self.handle,
-            RET
-        )?;
+        let index = check_api_call!(ffi::duckdb_v2_expression_get_reference_index, self.handle, RET)?;
 
         Ok(index)
     }
@@ -281,15 +261,9 @@ mod tests {
             context: Context,
             _metadata: crate::bind_arguments::BindArguments,
             bind_handle: crate::table_function::BindFunctionHandle,
-        ) -> crate::Result<(
-            Self::BindData,
-            Option<crate::table_function::TableFunctionCardinality>,
-        )> {
+        ) -> crate::Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
             for i in 0..3 {
-                bind_handle.add_result_column(
-                    format!("val{}", i).as_str(),
-                    i32::logical_type(&context)?,
-                )?;
+                bind_handle.add_result_column(format!("val{}", i).as_str(), i32::logical_type(&context)?)?;
             }
 
             Ok(((), None))
@@ -325,10 +299,7 @@ mod tests {
             expression_api.function_name()?;
 
             assert_eq!(expression_api.function_name()?, "!=");
-            assert_eq!(
-                expression_api.expression_type()?,
-                ExpressionType::CompareNotEqual,
-            );
+            assert_eq!(expression_api.expression_type()?, ExpressionType::CompareNotEqual,);
             assert_eq!(expression_api.child_count()?, 2);
             assert_eq!(
                 expression_api.child(0)?.expression_type()?,
@@ -348,10 +319,7 @@ mod tests {
             let expected_value = 10_i32.value(&context)?;
 
             assert_eq!(
-                expression_api
-                    .child(1)?
-                    .get_constant_value()?
-                    .dbg_string()?,
+                expression_api.child(1)?.get_constant_value()?.dbg_string()?,
                 expected_value.dbg_string()?,
             );
 
@@ -367,8 +335,7 @@ mod tests {
 
         let signature = SignatureBuilder::without_return_type(vec![]);
 
-        TableFunctionBuilder::new("test_function", signature, TableFunctionTest {})
-            .register_with_connection(&conn)?;
+        TableFunctionBuilder::new("test_function", signature, TableFunctionTest {}).register_with_connection(&conn)?;
 
         use crate::Parameters;
 
@@ -380,9 +347,9 @@ mod tests {
         let err_message = result.as_ref().err().map(|e| e.message.clone());
 
         assert!(
-            err_message.clone().is_some_and(|e| e.starts_with(
-                "INTERNAL Error: Panic occurred: I dont want to return, I want to panic!!"
-            )),
+            err_message.clone().is_some_and(
+                |e| e.starts_with("INTERNAL Error: Panic occurred: I dont want to return, I want to panic!!")
+            ),
             "Expected panic error message, got {:?}",
             err_message
         );

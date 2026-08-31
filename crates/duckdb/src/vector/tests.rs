@@ -8,15 +8,11 @@ use crate::{
     logical_type::LogicalType,
     query_result::QueryResultStep,
     types::{
-        Any, BigNumValue, BitValue, BlobValue, DateValue, DecimalValue, IntervalValue, MapValue,
-        StructSchema, StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
-        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
-        UnionSchema, UnionValue, UuidValue,
+        Any, BigNumValue, BitValue, BlobValue, DateValue, DecimalValue, IntervalValue, MapValue, StructSchema,
+        StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
+        TimestampTzNsValue, TimestampTzValue, TimestampValue, UnionSchema, UnionValue, UuidValue,
     },
-    vector::{
-        Array, Decimal, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union,
-        UnionWriter, Variant,
-    },
+    vector::{Array, Decimal, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
 };
 
 #[cfg(feature = "capi-v2-p2")]
@@ -55,10 +51,7 @@ scalar_callback!(NegateScalar, i32, |input, output, _ctx, _user_data| {
         }
     }
     let written: Vec<_> = output.iter()?.map(|value| value.copied()).collect();
-    assert_eq!(
-        written,
-        vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]
-    );
+    assert_eq!(written, vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]);
     Ok(())
 });
 
@@ -121,10 +114,7 @@ scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
 
     let mut output = output;
     output.set_size(rows.len())?;
-    output
-        .children
-        .iter_mut()
-        .for_each(|v| v.set_size(rows.len()).unwrap());
+    output.children.iter_mut().for_each(|v| v.set_size(rows.len()).unwrap());
 
     for (index, (key, value)) in rows.iter().enumerate() {
         match *key {
@@ -155,11 +145,7 @@ scalar_callback!(StructScalar, Struct, |input, output, _ctx, _user_data| {
     for (index, (key, value)) in rows.iter().enumerate() {
         output.write(
             index,
-            Some(
-                StructWrite::new()
-                    .field::<i32>(Some(*key))
-                    .field::<String>(Some(value)),
-            ),
+            Some(StructWrite::new().field::<i32>(Some(*key)).field::<String>(Some(value))),
         )?;
     }
     for (row, (key, value)) in output.iter()?.zip(rows) {
@@ -183,22 +169,18 @@ scalar_callback!(SequenceScalar, i32, |input, result, _ctx, _user_data| {
     Ok(())
 });
 
-scalar_callback!(
-    CopyStringScalar,
-    String,
-    |input, result, _ctx, _user_data| {
-        let mut vector = input.get_vector_at::<String>(0)?;
-        if vector.storage_kind() == StorageKind::Other {
-            vector.flatten()?;
-        }
-        let mut result = result;
-        result.set_size(vector.len())?;
-        for (i, item) in vector.iter()?.enumerate() {
-            result.write(i, item)?;
-        }
-        Ok(())
+scalar_callback!(CopyStringScalar, String, |input, result, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<String>(0)?;
+    if vector.storage_kind() == StorageKind::Other {
+        vector.flatten()?;
     }
-);
+    let mut result = result;
+    result.set_size(vector.len())?;
+    for (i, item) in vector.iter()?.enumerate() {
+        result.write(i, item)?;
+    }
+    Ok(())
+});
 
 #[test]
 #[cfg(feature = "capi-v2-p2")]
@@ -226,9 +208,7 @@ fn test_vector_read_write() -> crate::Result<()> {
 
     for stmt in statements {
         let stmt = stmt.expect("Failed to get statement");
-        let mut result = conn
-            .query(stmt, Parameters::None)
-            .expect("Failed to execute statement");
+        let mut result = conn.query(stmt, Parameters::None).expect("Failed to execute statement");
 
         loop {
             match result.step().expect("Failed to step result") {
@@ -308,26 +288,21 @@ fn test_vector_string() -> crate::Result<()> {
 #[test]
 #[cfg(feature = "capi-v2-p2")]
 fn test_vector_list() -> crate::Result<()> {
-    scalar_callback!(
-        ListMultScalar,
-        List<i32>,
-        |input, output, _ctx, _user_data| {
-            let input = input.get_vector_at::<List<i32>>(0)?;
-            let mut output = output;
-            output.set_size(input.len())?;
-            for (i, v) in input.iter()?.enumerate() {
-                match v {
-                    Some(list) => {
-                        let new_list: Vec<Option<i32>> =
-                            list.iter().map(|x| x.map(|v| v * 2)).collect();
-                        output.write(i, Some(new_list))?;
-                    }
-                    None => output.write(i, None)?,
+    scalar_callback!(ListMultScalar, List<i32>, |input, output, _ctx, _user_data| {
+        let input = input.get_vector_at::<List<i32>>(0)?;
+        let mut output = output;
+        output.set_size(input.len())?;
+        for (i, v) in input.iter()?.enumerate() {
+            match v {
+                Some(list) => {
+                    let new_list: Vec<Option<i32>> = list.iter().map(|x| x.map(|v| v * 2)).collect();
+                    output.write(i, Some(new_list))?;
                 }
+                None => output.write(i, None)?,
             }
-            Ok(())
         }
-    );
+        Ok(())
+    });
 
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -337,10 +312,7 @@ fn test_vector_list() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "list_mult",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", list_logical_type.clone())],
-            list_logical_type,
-        ),
+        SignatureBuilder::new([Parameter::normal("IN", list_logical_type.clone())], list_logical_type),
         ListMultScalar,
     )
     .register_with_connection(&conn)?;
@@ -437,9 +409,7 @@ pub fn test_vector_array() -> crate::Result<()> {
 
     let reader = vector.iter()?;
 
-    let items: Vec<_> = reader
-        .map(|r| r.map(|v| v.iter().collect::<Vec<_>>()))
-        .collect();
+    let items: Vec<_> = reader.map(|r| r.map(|v| v.iter().collect::<Vec<_>>())).collect();
 
     let expected = [
         Some(vec![Some(&1), None, Some(&3)]),
@@ -484,20 +454,11 @@ pub fn test_vector_union() -> crate::Result<()> {
     assert_eq!(reader.next().unwrap().unwrap().get::<i32>(0)?, Some(&42));
 
     assert!(reader.next().unwrap().is_none());
-    assert_eq!(
-        reader.next().unwrap().unwrap().get::<String>(1)?,
-        Some("two")
-    );
+    assert_eq!(reader.next().unwrap().unwrap().get::<String>(1)?, Some("two"));
 
     // check if failed cast errors
     assert_eq!(
-        reader
-            .next()
-            .unwrap()
-            .unwrap()
-            .get::<i32>(1)
-            .unwrap_err()
-            .code,
+        reader.next().unwrap().unwrap().get::<i32>(1).unwrap_err().code,
         DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID
     );
     Ok(())
@@ -561,7 +522,9 @@ pub fn vector_complex_write() -> crate::Result<()> {
     )
     .register_with_connection(&conn)?;
 
-    let mut statements = conn.parse("SELECT UNNEST([to_map(12, 'AA'), to_map(15, 'BB')]); SELECT to_map(unnest([1,2,3]), unnest(['A', 'B', 'C']))")?;
+    let mut statements = conn.parse(
+        "SELECT UNNEST([to_map(12, 'AA'), to_map(15, 'BB')]); SELECT to_map(unnest([1,2,3]), unnest(['A', 'B', 'C']))",
+    )?;
 
     let statement = statements.next().unwrap()?;
 
@@ -631,9 +594,7 @@ pub fn vector_union_write() -> crate::Result<()> {
     .register_with_connection(&conn)?;
 
     let statement = conn
-        .parse(
-            "SELECT to_union(unnest([1, 2, 2]), unnest(['WWWADWWWAample', 'OPAOPDAOADWADtablesss', NULL]))",
-        )?
+        .parse("SELECT to_union(unnest([1, 2, 2]), unnest(['WWWADWWWAample', 'OPAOPDAOADWADtablesss', NULL]))")?
         .next()
         .unwrap()?;
     for chunk in conn.query(statement, Parameters::None)? {
@@ -999,10 +960,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_variant",
-        SignatureBuilder::new(
-            [Parameter::tail_vararg("in", Any::logical_type(&conn)?)],
-            rt,
-        ),
+        SignatureBuilder::new([Parameter::tail_vararg("in", Any::logical_type(&conn)?)], rt),
         ToVariant,
     )
     .register_with_connection(&conn)?;
@@ -1115,10 +1073,7 @@ fn test_vector_tstring() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let result = conn.query(
-        "SELECT * FROM test_vector_types(NULL::BLOB)",
-        Parameters::None,
-    )?;
+    let result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
 
     let expected = [
         Some("thisisalongblob\x00withnullbytes".to_string()),

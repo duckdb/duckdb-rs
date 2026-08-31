@@ -89,10 +89,7 @@ impl<T: Display> AggregateCallbacks for BasicAggregate<T> {
         result_offset: usize,
     ) -> crate::Result<()> {
         for (index, state) in states.iter().enumerate() {
-            let mut to_write = state
-                .iter()
-                .map(|value| value.to_string())
-                .collect::<String>();
+            let mut to_write = state.iter().map(|value| value.to_string()).collect::<String>();
             to_write += &format!(
                 " + ({:.1} + {:.1}) - {:.1}",
                 bind_data.unwrap()[0],

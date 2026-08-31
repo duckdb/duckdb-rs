@@ -7,10 +7,10 @@ use crate::logical_type::LogicalTypeID;
 use crate::{
     logical_type::LogicalType,
     types::{
-        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue,
-        InternalDecimalType, IntervalValue, List, Map, Struct, TString, TimeNsValue, TimeTzValue,
-        TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue,
-        TimestampTzValue, TimestampValue, Union, UuidValue, Variant,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, InternalDecimalType,
+        IntervalValue, List, Map, Struct, TString, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
+        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
+        Variant,
     },
 };
 
@@ -44,11 +44,7 @@ pub trait WritableVectorElement: VectorElement {
         Self: 'a;
 
     /// Write one value into a writable vector.
-    fn write(
-        vector: &mut Vector<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()>;
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()>;
 }
 
 macro_rules! DeclareVectorElement {
@@ -58,11 +54,7 @@ macro_rules! DeclareVectorElement {
 
             type Ref<'a> = &'a $type;
 
-            fn get<'a, U>(
-                vector: &'a Vector<'_, U>,
-                physical: usize,
-                _logical: usize,
-            ) -> Self::Ref<'a>
+            fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
             where
                 Self: Sized + 'a,
             {
@@ -94,11 +86,7 @@ macro_rules! declare_storage_vector_element {
 
             type Ref<'a> = &'a Self;
 
-            fn get<'a, U>(
-                vector: &'a Vector<'_, U>,
-                physical: usize,
-                _logical: usize,
-            ) -> Self::Ref<'a>
+            fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
             where
                 Self: 'a,
             {
@@ -118,10 +106,7 @@ declare_storage_vector_element!(TimestampSecValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIM
 declare_storage_vector_element!(TimestampMsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS);
 declare_storage_vector_element!(TimestampNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS);
 declare_storage_vector_element!(TimestampTzValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ);
-declare_storage_vector_element!(
-    TimestampTzNsValue,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS
-);
+declare_storage_vector_element!(TimestampTzNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS);
 declare_storage_vector_element!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
 declare_storage_vector_element!(UuidValue, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
 
@@ -159,9 +144,7 @@ impl<T> VectorElement for BitValue<T> {
     }
 }
 
-impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> VectorElement
-    for DecimalValue<T, WIDTH, SCALE>
-{
+impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> VectorElement for DecimalValue<T, WIDTH, SCALE> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
     type Ref<'a>
@@ -302,11 +285,7 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
     where
         T: 'a;
 
-    fn write(
-        vector: &mut Vector<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(values) = value else {
             return vector.write_raw::<List<T>>(index, None);
         };
@@ -576,11 +555,7 @@ impl<'a> StructWrite<'a> {
 impl WritableVectorElement for Struct {
     type Write<'a> = StructWrite<'a>;
 
-    fn write(
-        vector: &mut Vector<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.set_row_validity(index, false);
         };
@@ -701,11 +676,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         K: 'a,
         V: 'a;
 
-    fn write(
-        vector: &mut Vector<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
         };
@@ -713,10 +684,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         let offset = vector.child_write_offset;
         let len = value.entries.len();
         let mut children = std::mem::take(&mut vector.children).into_iter();
-        let mut keys = children
-            .next()
-            .expect("validated map key child")
-            .cast_unchecked::<K>();
+        let mut keys = children.next().expect("validated map key child").cast_unchecked::<K>();
         let mut values = children
             .next()
             .expect("validated map value child")
@@ -865,9 +833,7 @@ pub struct UnionRow<'a> {
 impl<'a> UnionRow<'a> {
     /// Return the active union member index.
     pub fn member(&self) -> u8 {
-        *self.children[0]
-            .get_as_unchecked::<u8>(self.logical)
-            .unwrap()
+        *self.children[0].get_as_unchecked::<u8>(self.logical).unwrap()
     }
 
     /// Return a union member by index after validating its logical type.
@@ -935,11 +901,7 @@ impl<'a> UnionWriter<'a> {
 impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
-    fn write(
-        vector: &mut Vector<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             vector.set_row_validity(index, false)?;
             for child in &mut vector.children {
@@ -964,9 +926,7 @@ impl WritableVectorElement for Union {
         for child in &mut vector.children[1..] {
             child.set_row_validity(index, false)?;
         }
-        value
-            .value
-            .write(&mut vector.children[1 + value.tag as usize], index)
+        value.value.write(&mut vector.children[1 + value.tag as usize], index)
     }
 }
 
@@ -975,11 +935,7 @@ macro_rules! DeclareWritableVectorElement {
         impl WritableVectorElement for $type {
             type Write<'a> = $type;
 
-            fn write(
-                vector: &mut Vector<'_, Self>,
-                index: usize,
-                value: Option<Self::Write<'_>>,
-            ) -> Result<()> {
+            fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                 vector.write_raw(index, value)
             }
         }
@@ -1004,11 +960,7 @@ DeclareWritableVectorElement!(String);
 impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
-    fn write(
-        vector: &mut Vector<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         match value {
             Some(value) => vector.write_value_slow(index, value),
             None => vector.write_raw::<Unknown>(index, None),

@@ -44,14 +44,9 @@ impl<T> Drop for OpaqueHandle<T> {
 }
 
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
-    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code)
-        .expect("Failed to set error code");
-    check_api_call_no_err!(
-        ffi::duckdb_v2_error_info_set_text,
-        *err,
-        (&error.message).into()
-    )
-    .expect("Failed to set error text");
+    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
+    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, (&error.message).into())
+        .expect("Failed to set error text");
 }
 
 pub(crate) unsafe extern "C" fn drop_opaque<T>(ptr: *mut c_void) {

@@ -5,8 +5,8 @@
 //! the resulting [`crate::data_chunk::DataChunk`].
 
 use crate::{
-    Context, Result, check_api_call, check_api_call_no_err, data_chunk::DataChunk, ffi,
-    logical_type::LogicalType, schema::Schema,
+    Context, Result, check_api_call, check_api_call_no_err, data_chunk::DataChunk, ffi, logical_type::LogicalType,
+    schema::Schema,
 };
 
 /// Convert logical types into an owned Arrow C schema.
@@ -15,10 +15,7 @@ use crate::{
 /// name.
 ///
 /// The caller must invoke the returned schema's `release` callback.
-pub fn logical_types_to_arrow_schema(
-    context: &Context,
-    logical_types: &[LogicalType],
-) -> Result<ffi::ArrowSchema> {
+pub fn logical_types_to_arrow_schema(context: &Context, logical_types: &[LogicalType]) -> Result<ffi::ArrowSchema> {
     let names = logical_types
         .iter()
         .map(|v| v.name().unwrap().into())
@@ -52,12 +49,7 @@ impl ConversionPlan {
     /// The schema remains caller-owned and may be released after this call.
     pub fn new(context: &Context, schema: &mut ffi::ArrowSchema) -> Result<Self> {
         Ok(Self {
-            handle: check_api_call!(
-                ffi::duckdb_v2_arrow_conversion_plan_create,
-                **context,
-                schema,
-                RET
-            )?,
+            handle: check_api_call!(ffi::duckdb_v2_arrow_conversion_plan_create, **context, schema, RET)?,
         })
     }
 
@@ -65,11 +57,7 @@ impl ConversionPlan {
     ///
     /// Ownership transfers to the chunk and the array's `release` callback is
     /// cleared; do not release the array afterward.
-    pub fn to_data_chunk(
-        &self,
-        context: &Context,
-        array: &mut ffi::ArrowArray,
-    ) -> Result<DataChunk> {
+    pub fn to_data_chunk(&self, context: &Context, array: &mut ffi::ArrowArray) -> Result<DataChunk> {
         Ok(DataChunk {
             handle: check_api_call!(
                 ffi::duckdb_v2_arrow_array_to_data_chunk,
@@ -86,22 +74,14 @@ impl ConversionPlan {
     /// Return the resolved DuckDB field schema.
     pub fn schema(&self) -> Result<Schema> {
         Ok(Schema {
-            handle: check_api_call!(
-                ffi::duckdb_v2_arrow_conversion_plan_get_schema,
-                self.handle,
-                RET
-            )?,
+            handle: check_api_call!(ffi::duckdb_v2_arrow_conversion_plan_get_schema, self.handle, RET)?,
         })
     }
 }
 
 impl Drop for ConversionPlan {
     fn drop(&mut self) {
-        check_api_call_no_err!(
-            ffi::duckdb_v2_arrow_conversion_plan_destroy,
-            &mut self.handle
-        )
-        .unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_arrow_conversion_plan_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -159,18 +139,11 @@ mod tests {
             let val2 = vec2.get(i)?;
             let val3 = vec3.get(i)?;
 
-            println!(
-                "Row {}: val1={:?}, val2={:?}, val3={:?}",
-                i, val1, val2, val3
-            );
+            println!("Row {}: val1={:?}, val2={:?}, val3={:?}", i, val1, val2, val3);
 
             result.write(
                 i,
-                Some(
-                    *val1.unwrap_or(&0)
-                        + *val2.unwrap_or(&false) as i64
-                        + val3.unwrap_or_default().len() as i64,
-                ),
+                Some(*val1.unwrap_or(&0) + *val2.unwrap_or(&false) as i64 + val3.unwrap_or_default().len() as i64),
             )?;
         }
 

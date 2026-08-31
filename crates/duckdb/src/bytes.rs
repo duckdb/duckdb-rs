@@ -14,21 +14,14 @@ type DuckDBV2BytesPointer = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_1;
 type DuckDBV2BytesInlined = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_2;
 impl DuckDBBytes {
     /// Encode a string in DuckDB's internal byte representation.
-    pub fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(
-        value: &str,
-        mut heap: F,
-    ) -> Result<Self> {
+    pub fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(value: &str, mut heap: F) -> Result<Self> {
         let encoded = if value.len() <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize {
             let mut inlined = DuckDBV2BytesInlined {
                 length: value.len() as u32,
                 inlined: [0; ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize],
             };
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    value.as_ptr(),
-                    inlined.inlined.as_mut_ptr().cast(),
-                    value.len(),
-                );
+                std::ptr::copy_nonoverlapping(value.as_ptr(), inlined.inlined.as_mut_ptr().cast(), value.len());
             }
             DuckDBV2BytesUnion { inlined }
         } else {
@@ -48,11 +41,7 @@ impl DuckDBBytes {
 
             unsafe {
                 // the engine compares and orders on the prefix, so it must mirror the first bytes
-                std::ptr::copy_nonoverlapping(
-                    value.as_ptr(),
-                    pointer.prefix.as_mut_ptr().cast(),
-                    pointer.prefix.len(),
-                );
+                std::ptr::copy_nonoverlapping(value.as_ptr(), pointer.prefix.as_mut_ptr().cast(), pointer.prefix.len());
                 std::ptr::copy_nonoverlapping(value.as_ptr(), pointer.ptr.cast(), value.len());
             }
             DuckDBV2BytesUnion { pointer }

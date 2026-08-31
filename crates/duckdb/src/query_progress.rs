@@ -1,8 +1,6 @@
 //! Point-in-time progress for an executing query.
 
-use crate::{
-    Connection, Result, SettingScope, check_api_call, connection_options::OptionValue, ffi,
-};
+use crate::{Connection, Result, SettingScope, check_api_call, connection_options::OptionValue, ffi};
 
 /// Enables and reads query progress for a connection.
 ///

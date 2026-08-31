@@ -100,10 +100,7 @@ fn execute_statements<'conn>(
         message: "No statements found in SQL string".to_string(),
     })??;
 
-    assert!(
-        statements.next().is_none(),
-        "Multiple statements found in SQL string"
-    );
+    assert!(statements.next().is_none(), "Multiple statements found in SQL string");
 
     conn.execute_statement(statement, names, values)
 }
@@ -136,16 +133,9 @@ impl Connection {
     ///
     /// Execution advances as the result is stepped or iterated. The connection
     /// cannot start another statement while that result remains live.
-    pub fn query(
-        &self,
-        stmt: impl IntoStatement,
-        params: Parameters<'_>,
-    ) -> Result<QueryResult<'_>> {
+    pub fn query(&self, stmt: impl IntoStatement, params: Parameters<'_>) -> Result<QueryResult<'_>> {
         let (names, values) = params.into_values(self)?;
-        let values = values
-            .iter()
-            .map(ParameterValue::as_value)
-            .collect::<Vec<_>>();
+        let values = values.iter().map(ParameterValue::as_value).collect::<Vec<_>>();
 
         stmt.execute_statement(self, names.as_deref(), &values)
     }
@@ -192,8 +182,7 @@ impl Connection {
 
     /// Return the number of options visible to this connection.
     pub fn get_options_count(&self) -> Result<usize> {
-        let count: u64 =
-            check_api_call!(ffi::duckdb_v2_connection_option_get_count, self.handle, RET)?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_option_get_count, self.handle, RET)?;
 
         Ok(count as usize)
     }
@@ -203,12 +192,7 @@ impl Connection {
     /// The setting resolves from this connection's local override, then the
     /// database's global value, then the static default.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_connection_option_get,
-            self.handle,
-            name.into(),
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_connection_option_get, self.handle, name.into(), RET)?;
 
         Ok(ConfigOption { handle })
     }
@@ -287,11 +271,7 @@ pub trait FFILink {
     fn logical_type_create(&self, name: &str, parameters: Parameters<'_>) -> Result<LogicalType>;
 
     /// Create a logical type from its primitive ID using this connection or context.
-    fn logical_type_create_from_id(
-        &self,
-        type_id: LogicalTypeID,
-        parameters: Parameters<'_>,
-    ) -> Result<LogicalType>;
+    fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType>;
 
     /// Create a logical type from its textual representation using this connection or context.
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType>;
@@ -308,11 +288,7 @@ impl FFILink for Connection {
         LogicalType::create_with_connection(self, name, parameters)
     }
 
-    fn logical_type_create_from_id(
-        &self,
-        type_id: LogicalTypeID,
-        parameters: Parameters<'_>,
-    ) -> Result<LogicalType> {
+    fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
         LogicalType::create_from_id_with_connection(self, type_id, parameters)
     }
 
@@ -348,11 +324,7 @@ impl FFILink for Context {
         LogicalType::create_with_context(self, name, parameters)
     }
 
-    fn logical_type_create_from_id(
-        &self,
-        type_id: LogicalTypeID,
-        parameters: Parameters<'_>,
-    ) -> Result<LogicalType> {
+    fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
         LogicalType::create_from_id_with_context(self, type_id, parameters)
     }
 
@@ -375,11 +347,7 @@ impl<T: FFILink + ?Sized> FFILink for &T {
         (*self).logical_type_create(name, parameters)
     }
 
-    fn logical_type_create_from_id(
-        &self,
-        type_id: LogicalTypeID,
-        parameters: Parameters<'_>,
-    ) -> Result<LogicalType> {
+    fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
         (*self).logical_type_create_from_id(type_id, parameters)
     }
 
@@ -405,9 +373,7 @@ mod tests {
 
     #[test]
     fn test_connection_execute() -> crate::Result<()> {
-        let conn = Environment::new()?
-            .open(StorageLocation::InMemory)?
-            .connect()?;
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 
         conn.execute("CREATE TABLE test(x INTEGER)", Parameters::None)?;
 
@@ -423,9 +389,7 @@ mod tests {
 
     #[test]
     fn test_connection_query() -> crate::Result<()> {
-        let conn = Environment::new()?
-            .open(StorageLocation::InMemory)?
-            .connect()?;
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 
         let result = conn.query(
             "SELECT $1::INTEGER WHERE $2 = 'hello'",

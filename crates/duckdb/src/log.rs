@@ -5,8 +5,7 @@ use std::ops::Deref;
 use crate::{
     Context, Result,
     builder_helpers::{
-        OpaqueHandle, context_and_connection_fn, ffi_enum_redeclaration, get_opaque_data_ref,
-        handle_unwind,
+        OpaqueHandle, context_and_connection_fn, ffi_enum_redeclaration, get_opaque_data_ref, handle_unwind,
     },
     check_api_call, check_api_call_no_err,
     database::Database,
@@ -66,12 +65,7 @@ unsafe extern "C" fn log_callback<T: LogStorageCallbacks>(
         || {
             let implementation = unsafe { get_opaque_data_ref::<T>(user_data) }.unwrap();
 
-            implementation.log(
-                log_message.into(),
-                level.try_into()?,
-                timestamp,
-                log_type.into(),
-            )
+            implementation.log(log_message.into(), level.try_into()?, timestamp, log_type.into())
         },
         err,
     );
@@ -140,10 +134,7 @@ impl<T: LogStorageCallbacks> LogStorageBuilder<T> {
     }
 
     fn build(&self) -> Result<LogStorageBuilderHandle> {
-        let handle = LogStorageBuilderHandle(check_api_call!(
-            ffi::duckdb_v2_log_storage_builder_create,
-            RET
-        )?);
+        let handle = LogStorageBuilderHandle(check_api_call!(ffi::duckdb_v2_log_storage_builder_create, RET)?);
 
         check_api_call!(
             ffi::duckdb_v2_log_storage_builder_set_name,
@@ -183,11 +174,7 @@ impl<T: LogStorageCallbacks> LogStorageBuilder<T> {
     pub fn register_with_context(self, ctx: &Context) -> Result<()> {
         let handle = self.build()?;
 
-        check_api_call!(
-            ffi::duckdb_v2_log_storage_builder_register_with_context,
-            **ctx,
-            *handle
-        )?;
+        check_api_call!(ffi::duckdb_v2_log_storage_builder_register_with_context, **ctx, *handle)?;
 
         Ok(())
     }
@@ -196,8 +183,7 @@ impl<T: LogStorageCallbacks> LogStorageBuilder<T> {
 /// Receives records routed to custom log storage.
 pub trait LogStorageCallbacks: Send + Sync + 'static {
     /// Process a record timestamped in microseconds since the Unix epoch.
-    fn log(&self, log_message: &str, level: LogLevel, timestamp: i64, log_type: &str)
-    -> Result<()>;
+    fn log(&self, log_message: &str, level: LogLevel, timestamp: i64, log_type: &str) -> Result<()>;
 }
 
 #[cfg(test)]
@@ -216,13 +202,7 @@ mod tests {
     struct CustomLogger;
 
     impl LogStorageCallbacks for CustomLogger {
-        fn log(
-            &self,
-            log_message: &str,
-            level: LogLevel,
-            _timestamp: i64,
-            log_type: &str,
-        ) -> crate::Result<()> {
+        fn log(&self, log_message: &str, level: LogLevel, _timestamp: i64, log_type: &str) -> crate::Result<()> {
             assert_eq!(log_type, "cpp_api_test");
             assert_ne!(log_message, "wrong message");
             assert_eq!(level, LogLevel::Warn);
@@ -242,10 +222,7 @@ mod tests {
 
         LogStorageBuilder::new("custom_logger", CustomLogger).register_with_database(&db)?;
 
-        conn.set_option(
-            &OptionValue::new("enable_logging", "true")?,
-            Some(SettingScope::Global),
-        )?;
+        conn.set_option(&OptionValue::new("enable_logging", "true")?, Some(SettingScope::Global))?;
 
         conn.set_option(
             &OptionValue::new("logging_storage", "custom_logger")?,

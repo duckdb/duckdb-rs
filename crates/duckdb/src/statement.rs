@@ -2,15 +2,10 @@
 
 use std::marker::PhantomData;
 
-use crate::{
-    Result, check_api_call, check_api_call_no_err, connection::Connection, ffi, schema::Schema,
-};
+use crate::{Result, check_api_call, check_api_call_no_err, connection::Connection, ffi, schema::Schema};
 
 #[cfg(feature = "capi-v2-p2")]
-use crate::{
-    Parameters, column_data_collection::ColumnDataCollection, query_result::QueryResult,
-    value::Value,
-};
+use crate::{Parameters, column_data_collection::ColumnDataCollection, query_result::QueryResult, value::Value};
 
 /// Schemas resolved while binding a statement.
 pub struct SchemaBind {
@@ -48,8 +43,7 @@ pub struct Statements {
 impl Statements {
     /// Parse SQL using a connection's parser configuration.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
-        let query_str =
-            std::ffi::CString::new(sql.as_ref()).expect("Failed to create CString from query");
+        let query_str = std::ffi::CString::new(sql.as_ref()).expect("Failed to create CString from query");
 
         let handle: ffi::duckdb_v2_statement_iterator_handle =
             check_api_call!(ffi::duckdb_v2_parse_sql, **conn, query_str.as_ptr(), RET)?;
@@ -60,8 +54,7 @@ impl Statements {
 
 impl Drop for Statements {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_statement_iterator_destroy, &mut self.handle)
-            .unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_statement_iterator_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -118,9 +111,7 @@ impl<'collection> Statement<'collection> {
 
         Ok(SchemaBind {
             schema: Schema { handle: out_schema },
-            parameters: Schema {
-                handle: out_parameters,
-            },
+            parameters: Schema { handle: out_parameters },
         })
     }
 
@@ -154,9 +145,7 @@ impl<'collection> Statement<'collection> {
         column_names: Option<&[String]>,
     ) -> Result<()> {
         let names = column_names.map_or(vec![], |v| {
-            v.iter()
-                .map(|name| name.into())
-                .collect::<Vec<ffi::duckdb_v2_str>>()
+            v.iter().map(|name| name.into()).collect::<Vec<ffi::duckdb_v2_str>>()
         });
 
         check_api_call!(
@@ -174,11 +163,7 @@ impl<'collection> Statement<'collection> {
     ///
     /// When `require_cacheable` is true, preparation fails unless the compiled
     /// plan can be reused.
-    pub fn prepare<'a>(
-        &self,
-        conn: &'a Connection,
-        require_cacheable: bool,
-    ) -> Result<PreparedStatement<'a>> {
+    pub fn prepare<'a>(&self, conn: &'a Connection, require_cacheable: bool) -> Result<PreparedStatement<'a>> {
         let prepared_handle = check_api_call!(
             ffi::duckdb_v2_statement_prepare,
             **conn,
@@ -225,9 +210,7 @@ impl<'a> PreparedStatement<'a> {
         let result: ffi::duckdb_v2_result_handle = check_api_call!(
             ffi::duckdb_v2_prepared_execute,
             self.handle,
-            param_names
-                .as_ref()
-                .map_or(std::ptr::null(), |names| names.as_ptr()),
+            param_names.as_ref().map_or(std::ptr::null(), |names| names.as_ptr()),
             param_values.as_ptr(),
             param_values.len() as u64,
             RET
@@ -241,8 +224,7 @@ impl<'a> PreparedStatement<'a> {
 
     /// Return whether executions reuse the compiled plan.
     pub fn reuses_plan(&self) -> Result<bool> {
-        let reuses_plan: bool =
-            check_api_call!(ffi::duckdb_v2_prepared_reuses_plan, self.handle, RET)?;
+        let reuses_plan: bool = check_api_call!(ffi::duckdb_v2_prepared_reuses_plan, self.handle, RET)?;
         Ok(reuses_plan)
     }
 }
@@ -250,7 +232,6 @@ impl<'a> PreparedStatement<'a> {
 #[cfg(feature = "capi-v2-p2")]
 impl<'a> Drop for PreparedStatement<'a> {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_prepared_statement_destroy, &mut self.handle)
-            .unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_prepared_statement_destroy, &mut self.handle).unwrap();
     }
 }

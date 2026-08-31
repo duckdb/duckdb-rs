@@ -71,12 +71,7 @@ pub struct ConfigOptionValue {
 impl ConfigOptionValue {
     /// Create an option value from a name and string-encoded setting.
     pub fn new(name: &str, setting: &str) -> Result<ConfigOptionValue> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_option_create,
-            name.into(),
-            setting.into(),
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_option_create, name.into(), setting.into(), RET)?;
 
         Ok(ConfigOptionValue { handle })
     }
@@ -107,8 +102,7 @@ impl Deref for ConfigOption {
 impl ConfigOption {
     /// Return the canonical option name.
     pub fn canonical_name(&self) -> Result<String> {
-        let name: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_option_get_name, self.handle, RET)?;
+        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_name, self.handle, RET)?;
 
         let name: &str = name.into();
         Ok(name.to_string())
@@ -116,8 +110,7 @@ impl ConfigOption {
 
     /// Return the option's string-encoded setting.
     pub fn setting(&self) -> Result<String> {
-        let setting: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_option_get_setting, self.handle, RET)?;
+        let setting: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_setting, self.handle, RET)?;
 
         let setting: &str = setting.into();
         Ok(setting.to_string())
@@ -125,8 +118,7 @@ impl ConfigOption {
 
     /// Return the option's static default setting.
     pub fn default_setting(&self) -> Result<String> {
-        let setting: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_option_get_default_setting, self.handle, RET)?;
+        let setting: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_default_setting, self.handle, RET)?;
 
         let setting: &str = setting.into();
         Ok(setting.to_string())
@@ -134,8 +126,7 @@ impl ConfigOption {
 
     /// Return the option's human-readable description.
     pub fn description(&self) -> Result<String> {
-        let description: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_option_get_description, self.handle, RET)?;
+        let description: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_description, self.handle, RET)?;
 
         let description: &str = description.into();
         Ok(description.to_string())
@@ -159,12 +150,8 @@ impl ConfigOption {
     ///
     /// An out-of-range index returns an error.
     pub fn alias(&self, index: usize) -> Result<String> {
-        let alias: ffi::duckdb_v2_str = check_api_call!(
-            ffi::duckdb_v2_option_get_alias,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let alias: ffi::duckdb_v2_str =
+            check_api_call!(ffi::duckdb_v2_option_get_alias, self.handle, index as u64, RET)?;
 
         let alias: &str = alias.into();
         Ok(alias.to_string())
@@ -215,20 +202,15 @@ mod test {
 
     #[test]
     fn test_connection_option() -> crate::Result<()> {
-        let env = Environment::new().expect("Failed to create environment");
-        let db = env
-            .open(StorageLocation::InMemory)
-            .expect("Failed to open in-memory database");
-        let conn = db.connect().expect("Failed to connect to database");
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
 
-        let option = ConfigOptionValue::new("worker_threads", &12.to_string()).unwrap();
+        let option = ConfigOptionValue::new("worker_threads", &12.to_string())?;
 
-        conn.set_option(&option, None)
-            .expect("Failed to set option");
+        conn.set_option(&option, None)?;
 
-        let option_real = conn
-            .get_option("threads")
-            .expect("Failed to get option by name");
+        let option_real = conn.get_option("threads")?;
 
         assert_eq!(option_real.setting().unwrap(), "12");
         assert_eq!(option_real.alias_count().unwrap(), 1);
@@ -236,10 +218,7 @@ mod test {
         assert_eq!(option_real.target_scope().unwrap(), TargetScope::Unknown);
 
         assert_eq!(
-            conn.get_option("temp_file_encryption")
-                .expect("Failed to get option by name")
-                .default_setting()
-                .unwrap(),
+            conn.get_option("temp_file_encryption")?.default_setting().unwrap(),
             "false"
         );
         Ok(())
@@ -247,7 +226,7 @@ mod test {
 
     #[test]
     fn test_connection_option_from_name() -> crate::Result<()> {
-        let env = Environment::new().expect("Failed to create environment");
+        let env = Environment::new()?;
         let db = env
             .open(StorageLocation::InMemory)
             .expect("Failed to open in-memory database");

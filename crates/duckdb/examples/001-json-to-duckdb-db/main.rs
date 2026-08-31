@@ -62,12 +62,7 @@ fn main() -> Result<()> {
     for customer in customers {
         conn.execute(
             "INSERT INTO customers VALUES ($1, $2, $3, $4);",
-            Parameters::positional(&[
-                &customer.id,
-                &customer.name,
-                &customer.email,
-                &customer.birthday,
-            ]),
+            Parameters::positional(&[&customer.id, &customer.name, &customer.email, &customer.birthday]),
         )?;
     }
 

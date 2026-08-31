@@ -49,15 +49,9 @@ fn test_primitive_logical_types() -> crate::Result<()> {
 
     macro_rules! assert_primitive {
         ($type:ty, $value:expr, $type_id:ident) => {
+            assert_eq!(<$type>::logical_type(&conn)?.type_id(), LogicalTypeID::$type_id);
             assert_eq!(
-                <$type>::logical_type(&conn)?.type_id(),
-                LogicalTypeID::$type_id
-            );
-            assert_eq!(
-                ($value as $type)
-                    .value(&conn)?
-                    .fetch_logical_type()?
-                    .type_id(),
+                ($value as $type).value(&conn)?.fetch_logical_type()?.type_id(),
                 LogicalTypeID::$type_id
             );
         };
@@ -102,17 +96,11 @@ fn test_remaining_value_creators() -> crate::Result<()> {
     assert_type!(TimeNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS);
     assert_type!(TimeTzValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ);
     assert_type!(TimestampValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP);
-    assert_type!(
-        TimestampSecValue(1),
-        DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC
-    );
+    assert_type!(TimestampSecValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC);
     assert_type!(TimestampMsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS);
     assert_type!(TimestampNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS);
     assert_type!(TimestampTzValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ);
-    assert_type!(
-        TimestampTzNsValue(1),
-        DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS
-    );
+    assert_type!(TimestampTzNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS);
     assert_type!(
         IntervalValue {
             months: 1,
@@ -169,18 +157,9 @@ fn test_temporal_value_creators() -> crate::Result<()> {
 
     assert_eq!(DateValue(0).value(&conn)?.dbg_string()?, "1970-01-01");
     assert_eq!(TimeValue(1_000_000).value(&conn)?.dbg_string()?, "00:00:01");
-    assert_eq!(
-        TimeNsValue(1_000_000_000).value(&conn)?.dbg_string()?,
-        "00:00:01"
-    );
-    assert_eq!(
-        TimestampValue(0).value(&conn)?.dbg_string()?,
-        "1970-01-01 00:00:00"
-    );
-    assert_eq!(
-        TimestampSecValue(1).value(&conn)?.dbg_string()?,
-        "1970-01-01 00:00:01"
-    );
+    assert_eq!(TimeNsValue(1_000_000_000).value(&conn)?.dbg_string()?, "00:00:01");
+    assert_eq!(TimestampValue(0).value(&conn)?.dbg_string()?, "1970-01-01 00:00:00");
+    assert_eq!(TimestampSecValue(1).value(&conn)?.dbg_string()?, "1970-01-01 00:00:01");
     assert_eq!(
         TimestampMsValue(1_000).value(&conn)?.dbg_string()?,
         "1970-01-01 00:00:01"
@@ -275,9 +254,7 @@ fn test_raw_value_getters() -> crate::Result<()> {
     let blob = BlobValue(vec![0_u8, 1, 255]);
     assert_eq!(blob.value(&conn)?.get::<BlobValue<Vec<u8>>>()?, blob);
     assert_eq!(
-        BlobValue(Vec::<u8>::new())
-            .value(&conn)?
-            .get::<BlobValue<Vec<u8>>>()?,
+        BlobValue(Vec::<u8>::new()).value(&conn)?.get::<BlobValue<Vec<u8>>>()?,
         BlobValue(Vec::new())
     );
 
@@ -360,10 +337,7 @@ fn test_list_to_value() -> crate::Result<()> {
     let value = values.value(&conn)?;
     let logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
 
-    assert_eq!(
-        logical_type.type_id(),
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST
-    );
+    assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST);
     assert_eq!(
         logical_type.get_param(0)?.1.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
@@ -383,10 +357,7 @@ fn test_array_to_value() -> crate::Result<()> {
     let value = values.value(&conn)?;
     let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
 
-    assert_eq!(
-        logical_type.type_id(),
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
-    );
+    assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
     assert_eq!(logical_type.to_string()?, "INTEGER[3]");
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
 

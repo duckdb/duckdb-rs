@@ -20,11 +20,7 @@ impl ScalarCallbacks for ScalarWithData {
         Ok(vec![1, 2, 3])
     }
 
-    fn init(
-        &self,
-        bind_data: Option<&Self::BindData>,
-        _context: Context,
-    ) -> Result<Self::InitData> {
+    fn init(&self, bind_data: Option<&Self::BindData>, _context: Context) -> Result<Self::InitData> {
         Ok(bind_data.unwrap().iter().sum())
     }
 
@@ -101,9 +97,7 @@ impl ScalarCallbacks for BasicScalarPanicFunction {
 #[test]
 fn test_scalar_bind_init_user_data() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
-    let db = env
-        .open(StorageLocation::InMemory)
-        .expect("Failed to open database");
+    let db = env.open(StorageLocation::InMemory).expect("Failed to open database");
     let conn = db.connect().expect("Failed to connect");
 
     ScalarFunctionBuilder::new(
@@ -125,9 +119,7 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk.expect("Failed to get result chunk");
-        let vector = chunk
-            .get_vector_at::<i32>(0)
-            .expect("Failed to get vector from chunk");
+        let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector from chunk");
         let mut reader = vector.iter().unwrap();
 
         let data = reader
@@ -157,15 +149,11 @@ fn test_scalar_panic() -> crate::Result<()> {
     .register_with_connection(&conn)
     .expect("Failed to register scalar function");
 
-    let statements = conn
-        .parse("SELECT panic_func()")
-        .expect("Failed to parse query");
+    let statements = conn.parse("SELECT panic_func()").expect("Failed to parse query");
     for stmt in statements {
         let stmt = stmt.expect("Failed to get statement");
 
-        let mut result = conn
-            .query(stmt, Parameters::None)
-            .expect("Failed to execute statement");
+        let mut result = conn.query(stmt, Parameters::None).expect("Failed to execute statement");
 
         let error;
 
@@ -176,10 +164,7 @@ fn test_scalar_panic() -> crate::Result<()> {
             }
         }
 
-        assert!(
-            error.is_some(),
-            "Expected error when executing panic function"
-        );
+        assert!(error.is_some(), "Expected error when executing panic function");
     }
     let statements = conn.parse("SELECT 42").unwrap();
 
@@ -252,15 +237,9 @@ fn test_scalar_building() -> crate::Result<()> {
     for chunk in result {
         let chunk = chunk.expect("Failed to get result chunk");
 
-        let vector = chunk
-            .get_vector_at::<i32>(0)
-            .expect("Failed to get vector from chunk");
+        let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector from chunk");
 
-        assert!(
-            vector.len() == 1,
-            "Expected vector size 1, got {}",
-            vector.len()
-        );
+        assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
 
         let value = vector.iter().unwrap().next().unwrap();
 
@@ -292,11 +271,7 @@ fn test_scalar_property() -> crate::Result<()> {
 
         let vector = chunk.get_vector_at::<i32>(0)?;
 
-        assert!(
-            vector.len() == 1,
-            "Expected vector size 1, got {}",
-            vector.len()
-        );
+        assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
 
         let value = vector.iter()?.next().unwrap();
 
@@ -363,11 +338,7 @@ fn test_scalar_override_result() -> crate::Result<()> {
 
         let vector = chunk.get_vector_at::<i8>(0)?;
 
-        assert!(
-            vector.len() == 1,
-            "Expected vector size 1, got {}",
-            vector.len()
-        );
+        assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
 
         let value = vector.iter()?.next().unwrap();
 

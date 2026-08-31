@@ -75,8 +75,7 @@ impl DataChunk {
 
     /// Return the number of rows shared by the chunk's vectors.
     pub fn row_count(&self) -> Result<usize> {
-        let row_count: ffi::idx_t =
-            check_api_call!(ffi::duckdb_v2_data_chunk_get_size, self.handle, RET)?;
+        let row_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_size, self.handle, RET)?;
         Ok(row_count as usize)
     }
 
@@ -88,12 +87,8 @@ impl DataChunk {
 
         let mut vectors = Vec::with_capacity(count);
         for i in 0..count {
-            let vector: ffi::duckdb_v2_vector_handle = check_api_call!(
-                ffi::duckdb_v2_data_chunk_get_vector,
-                self.handle,
-                i as u64,
-                RET
-            )?;
+            let vector: ffi::duckdb_v2_vector_handle =
+                check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, i as u64, RET)?;
             vectors.push(Vector::from_handle(&vector, self.is_writable)?);
         }
         Ok(vectors)
@@ -101,8 +96,7 @@ impl DataChunk {
 
     /// Return the number of vectors, which is the column count.
     pub fn vectors_count(&self) -> Result<usize> {
-        let out_count: ffi::idx_t =
-            check_api_call!(ffi::duckdb_v2_data_chunk_get_vector_count, self.handle, RET)?;
+        let out_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_vector_count, self.handle, RET)?;
         Ok(out_count as usize)
     }
 
@@ -111,12 +105,8 @@ impl DataChunk {
     /// An out-of-range index or a logical type incompatible with `T` returns an
     /// error.
     pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<Vector<'_, T>> {
-        let vector: ffi::duckdb_v2_vector_handle = check_api_call!(
-            ffi::duckdb_v2_data_chunk_get_vector,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let vector: ffi::duckdb_v2_vector_handle =
+            check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, index as u64, RET)?;
         let vec = Vector::from_handle(&vector, self.is_writable)?;
 
         vec.cast::<T>()
@@ -127,12 +117,7 @@ impl DataChunk {
     ///
     /// The caller must invoke the returned array's `release` callback.
     pub fn to_arrow_array(&self, context: &crate::Context) -> Result<ffi::ArrowArray> {
-        check_api_call!(
-            ffi::duckdb_v2_data_chunk_to_arrow_array,
-            **context,
-            self.handle,
-            RET
-        )
+        check_api_call!(ffi::duckdb_v2_data_chunk_to_arrow_array, **context, self.handle, RET)
     }
 }
 

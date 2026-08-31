@@ -1,8 +1,6 @@
 //! File access through DuckDB's file system.
 
-use crate::{
-    Result, builder_helpers::context_and_connection_fn, check_api_call, check_api_call_no_err, ffi,
-};
+use crate::{Result, builder_helpers::context_and_connection_fn, check_api_call, check_api_call_no_err, ffi};
 
 /// A borrowed handle to DuckDB's file system.
 pub struct FileSystem {
@@ -56,31 +54,19 @@ impl<'a> FileBuilder<'a> {
 
     /// Enable or disable write access.
     pub fn write(mut self, write: bool) -> Self {
-        set_flag!(
-            self.flags,
-            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_WRITE,
-            write
-        );
+        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_WRITE, write);
         self
     }
 
     /// Enable or disable read access.
     pub fn read(mut self, read: bool) -> Self {
-        set_flag!(
-            self.flags,
-            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_READ,
-            read
-        );
+        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_READ, read);
         self
     }
 
     /// Enable or disable creating the file when it does not exist.
     pub fn create(mut self, create: bool) -> Self {
-        set_flag!(
-            self.flags,
-            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_CREATE,
-            create
-        );
+        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_CREATE, create);
         self
     }
 
@@ -96,11 +82,7 @@ impl<'a> FileBuilder<'a> {
 
     /// Enable or disable append mode.
     pub fn append(mut self, append: bool) -> Self {
-        set_flag!(
-            self.flags,
-            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_APPEND,
-            append
-        );
+        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_APPEND, append);
         self
     }
 
@@ -155,13 +137,7 @@ impl File {
     /// Open `path` with a bitwise combination of DuckDB file flags.
     pub(crate) fn open(fs: &FileSystem, path: &str, flags: u64) -> crate::Result<Self> {
         Ok(File {
-            handle: check_api_call!(
-                ffi::duckdb_v2_file_system_open,
-                fs.handle,
-                path.into(),
-                flags,
-                RET
-            )?,
+            handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, path.into(), flags, RET)?,
         })
     }
 
@@ -185,11 +161,7 @@ impl File {
 
     /// Set the current position to an absolute byte offset.
     pub fn seek(&self, position: usize) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_file_handle_seek,
-            self.handle,
-            position as u64
-        )
+        check_api_call!(ffi::duckdb_v2_file_handle_seek, self.handle, position as u64)
     }
 
     /// Return the file size in bytes.

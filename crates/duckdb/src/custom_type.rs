@@ -103,10 +103,7 @@ impl CustomType {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::{
-        DuckDBType, Environment, StorageLocation, custom_type::CustomType,
-        logical_type::LogicalTypeID,
-    };
+    use crate::{DuckDBType, Environment, StorageLocation, custom_type::CustomType, logical_type::LogicalTypeID};
 
     #[test]
     fn test_custom_type() -> crate::Result<()> {
@@ -122,10 +119,7 @@ mod tests {
         let temperature = integer.to_alias("TEMPERATURE")?;
 
         assert_eq!(temperature.to_string()?, "TEMPERATURE");
-        assert_eq!(
-            temperature.type_id(),
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-        );
+        assert_eq!(temperature.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
 
         Ok(())
     }

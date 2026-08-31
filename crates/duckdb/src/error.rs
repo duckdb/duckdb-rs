@@ -42,10 +42,7 @@ impl Error {
     /// # Safety
     /// This function crosses the FFI boundary to fetch the text in the error handle.
     /// It is the caller's responsibility to ensure that the handle is valid.
-    pub(crate) unsafe fn from_code_and_handle(
-        code: DuckDBError,
-        handle: ffi::duckdb_v2_error_info_handle,
-    ) -> Self {
+    pub(crate) unsafe fn from_code_and_handle(code: DuckDBError, handle: ffi::duckdb_v2_error_info_handle) -> Self {
         match handle.is_null() {
             true => Error {
                 code,
@@ -60,9 +57,7 @@ impl Error {
                     && text.len > 0
                 {
                     // Borrowed view, valid until we destroy the handle below — copy it out.
-                    let bytes = unsafe {
-                        std::slice::from_raw_parts(text.ptr as *const u8, text.len as usize)
-                    };
+                    let bytes = unsafe { std::slice::from_raw_parts(text.ptr as *const u8, text.len as usize) };
                     String::from_utf8_lossy(bytes).into_owned()
                 } else {
                     "Unknown error".to_string()

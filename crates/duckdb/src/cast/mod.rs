@@ -6,10 +6,7 @@ use libduckdb_sys::{self as ffi};
 
 use crate::{
     Context, Result,
-    builder_helpers::{
-        OpaqueHandle, context_and_connection_fn, ffi_enum_redeclaration, get_user_data,
-        handle_unwind,
-    },
+    builder_helpers::{OpaqueHandle, context_and_connection_fn, ffi_enum_redeclaration, get_user_data, handle_unwind},
     check_api_call, check_api_call_no_err,
     logical_type::LogicalType,
     vector::{Vector, VectorElement},
@@ -82,12 +79,7 @@ pub struct CastFunctionBuilder<T: CastFunctionCallbacks> {
 
 impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
     /// Create a cast builder for a source and target type.
-    pub fn new(
-        source_type: LogicalType,
-        target_type: LogicalType,
-        implicit_cast_cost: i64,
-        implementation: T,
-    ) -> Self {
+    pub fn new(source_type: LogicalType, target_type: LogicalType, implicit_cast_cost: i64, implementation: T) -> Self {
         Self {
             source_type,
             target_type,
@@ -97,10 +89,7 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
     }
 
     fn build(&self) -> Result<CastFunctionHandle> {
-        let handle = CastFunctionHandle(check_api_call!(
-            ffi::duckdb_v2_cast_function_builder_create,
-            RET
-        )?);
+        let handle = CastFunctionHandle(check_api_call!(ffi::duckdb_v2_cast_function_builder_create, RET)?);
 
         check_api_call!(
             ffi::duckdb_v2_cast_function_builder_set_source_type,
@@ -163,12 +152,7 @@ pub trait CastFunctionCallbacks: Send + Sync + 'static {
     ///
     /// Normal casts should return conversion errors. Try casts should write
     /// `NULL` for values that cannot be converted.
-    fn exec(
-        &self,
-        mode: CastMode,
-        input: Vector<Self::InputType>,
-        output: Vector<Self::OutputType>,
-    ) -> Result<()>;
+    fn exec(&self, mode: CastMode, input: Vector<Self::InputType>, output: Vector<Self::OutputType>) -> Result<()>;
 }
 
 #[cfg(test)]

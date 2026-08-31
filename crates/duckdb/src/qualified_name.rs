@@ -40,12 +40,7 @@ impl QualifiedName {
         let parts: Vec<ffi::duckdb_v2_str> = parts.iter().map(|s| (*s).into()).collect();
 
         Ok(QualifiedName {
-            handle: check_api_call!(
-                ffi::duckdb_v2_qname_create,
-                parts.as_ptr(),
-                parts.len() as u64,
-                RET
-            )?,
+            handle: check_api_call!(ffi::duckdb_v2_qname_create, parts.as_ptr(), parts.len() as u64, RET)?,
         })
     }
 
@@ -88,12 +83,7 @@ impl QualifiedName {
     /// Parts are ordered outermost first. An out-of-range index returns an
     /// error.
     pub fn part(&self, index: usize) -> Result<String> {
-        let data = check_api_call!(
-            ffi::duckdb_v2_qname_get_part,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let data = check_api_call!(ffi::duckdb_v2_qname_get_part, self.handle, index as u64, RET)?;
 
         let reference: &str = data.into();
 

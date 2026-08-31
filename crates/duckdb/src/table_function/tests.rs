@@ -48,10 +48,7 @@ fn test_table_function() -> crate::Result<()> {
             context: Context,
             arguments: BindArguments,
             bind_handle: BindFunctionHandle,
-        ) -> Result<(
-            Self::BindData,
-            Option<crate::table_function::TableFunctionCardinality>,
-        )> {
+        ) -> Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
             let val = arguments.fold(0, &context)?;
 
             assert_eq!(arguments.names()?, vec!["offset"]);
@@ -157,10 +154,7 @@ fn test_table_function() -> crate::Result<()> {
 
     TableFunctionBuilder::new(
         "my_table_function",
-        SignatureBuilder::without_return_type([Parameter::normal(
-            "offset",
-            i32::logical_type(&conn)?,
-        )]),
+        SignatureBuilder::without_return_type([Parameter::normal("offset", i32::logical_type(&conn)?)]),
         MyTableFunction { base: 42 },
     )
     .register_with_connection(&conn)?;

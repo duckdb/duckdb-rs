@@ -21,11 +21,7 @@ impl<'a> BindMetadata<'a> {
     pub(crate) fn from_table_function(
         handle: &'a ffi::duckdb_v2_table_function_bind_info_handle,
     ) -> Result<BindArguments<'a>> {
-        let arguments_handle = check_api_call!(
-            ffi::duckdb_v2_table_function_bind_get_arguments,
-            *handle,
-            RET
-        )?;
+        let arguments_handle = check_api_call!(ffi::duckdb_v2_table_function_bind_get_arguments, *handle, RET)?;
 
         Ok(BindArguments {
             handle: arguments_handle,
@@ -33,22 +29,13 @@ impl<'a> BindMetadata<'a> {
         })
     }
 
-    pub(crate) fn from_scalar(
-        handle: &'a ffi::duckdb_v2_scalar_function_bind_info_handle,
-    ) -> Result<Self> {
-        let function_name: ffi::duckdb_v2_str = check_api_call!(
-            ffi::duckdb_v2_scalar_function_bind_get_function_name,
-            *handle,
-            RET
-        )?;
+    pub(crate) fn from_scalar(handle: &'a ffi::duckdb_v2_scalar_function_bind_info_handle) -> Result<Self> {
+        let function_name: ffi::duckdb_v2_str =
+            check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_function_name, *handle, RET)?;
 
         let str: &str = function_name.into();
 
-        let arguments_handle = check_api_call!(
-            ffi::duckdb_v2_scalar_function_bind_get_arguments,
-            *handle,
-            RET
-        )?;
+        let arguments_handle = check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arguments, *handle, RET)?;
 
         Ok(Self {
             function_name: str.to_string(),
@@ -59,22 +46,13 @@ impl<'a> BindMetadata<'a> {
         })
     }
 
-    pub(crate) fn from_aggregate(
-        handle: &'a ffi::duckdb_v2_aggregate_function_bind_info_handle,
-    ) -> Result<Self> {
-        let function_name: ffi::duckdb_v2_str = check_api_call!(
-            ffi::duckdb_v2_aggregate_function_bind_get_function_name,
-            *handle,
-            RET
-        )?;
+    pub(crate) fn from_aggregate(handle: &'a ffi::duckdb_v2_aggregate_function_bind_info_handle) -> Result<Self> {
+        let function_name: ffi::duckdb_v2_str =
+            check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_function_name, *handle, RET)?;
 
         let str: &str = function_name.into();
 
-        let arguments_handle = check_api_call!(
-            ffi::duckdb_v2_aggregate_function_bind_get_arguments,
-            *handle,
-            RET
-        )?;
+        let arguments_handle = check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arguments, *handle, RET)?;
 
         Ok(Self {
             function_name: str.to_string(),
@@ -100,12 +78,7 @@ impl<'a> BindArguments<'a> {
     ///
     /// An out-of-range index returns an error.
     pub fn logical_type(&self, index: usize) -> Result<LogicalType> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_bind_arguments_get_type,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_bind_arguments_get_type, self.handle, index as u64, RET)?;
 
         Ok(LogicalType { handle })
     }
@@ -115,12 +88,8 @@ impl<'a> BindArguments<'a> {
     /// Unnamed variadic arguments have an empty name.
     /// An out-of-range index returns an error.
     pub fn name(&self, index: usize) -> Result<String> {
-        let name: ffi::duckdb_v2_str = check_api_call!(
-            ffi::duckdb_v2_bind_arguments_get_name,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let name: ffi::duckdb_v2_str =
+            check_api_call!(ffi::duckdb_v2_bind_arguments_get_name, self.handle, index as u64, RET)?;
 
         let str: &str = name.into();
 
@@ -163,8 +132,7 @@ impl<'a> BindArguments<'a> {
 
     /// Return the number of bound arguments, including variadic arguments.
     pub fn len(&self) -> Result<usize> {
-        let count: u64 =
-            check_api_call!(ffi::duckdb_v2_bind_arguments_get_count, self.handle, RET)?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_bind_arguments_get_count, self.handle, RET)?;
 
         Ok(count as usize)
     }

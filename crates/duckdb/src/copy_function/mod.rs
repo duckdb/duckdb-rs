@@ -10,8 +10,8 @@ use std::{any::Any, ops::Deref};
 use crate::{
     Context, Result,
     builder_helpers::{
-        OpaqueHandle, context_and_connection_fn, get_init_data, get_opaque_data_ref, get_user_data,
-        handle_unwind, into_opaque,
+        OpaqueHandle, context_and_connection_fn, get_init_data, get_opaque_data_ref, get_user_data, handle_unwind,
+        into_opaque,
     },
     check_api_call, check_api_call_no_err,
     column_data_collection::ColumnDataCollection,
@@ -62,26 +62,14 @@ unsafe extern "C" fn init_callback<T: CopyFunctionCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_copy_function_init_get_user_data, info);
 
-            let bind_data =
-                check_api_call!(ffi::duckdb_v2_copy_function_init_get_bind_data, info, RET)?;
-            let bind_data =
-                unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }
-                    .unwrap();
+            let bind_data = check_api_call!(ffi::duckdb_v2_copy_function_init_get_bind_data, info, RET)?;
+            let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
             let mut file_path = ffi::duckdb_v2_str::default();
 
-            check_api_call!(
-                ffi::duckdb_v2_copy_function_init_get_file_path,
-                info,
-                &mut file_path
-            )?;
+            check_api_call!(ffi::duckdb_v2_copy_function_init_get_file_path, info, &mut file_path)?;
 
-            let init_data = T::init(
-                user_data,
-                Context(context),
-                &bind_data.data,
-                file_path.into(),
-            )?;
+            let init_data = T::init(user_data, Context(context), &bind_data.data, file_path.into())?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_function_init_set_init_data,
@@ -106,27 +94,17 @@ unsafe extern "C" fn batch_callback<T: CopyFunctionCallbacks>(
 
             let user_data = get_user_data!(ffi::duckdb_v2_copy_function_batch_get_user_data, info);
 
-            let bind_data =
-                check_api_call!(ffi::duckdb_v2_copy_function_batch_get_bind_data, info, RET)?;
-            let bind_data =
-                unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }
-                    .unwrap();
+            let bind_data = check_api_call!(ffi::duckdb_v2_copy_function_batch_get_bind_data, info, RET)?;
+            let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let init_data =
-                get_init_data!(ffi::duckdb_v2_copy_function_batch_get_init_data, info).unwrap();
+            let init_data = get_init_data!(ffi::duckdb_v2_copy_function_batch_get_init_data, info).unwrap();
 
             let collection = ColumnDataCollection {
                 handle: input,
                 logical_types: bind_data.logical_types.clone(),
             };
 
-            let batch_data = T::batch(
-                user_data,
-                Context(context),
-                &bind_data.data,
-                init_data,
-                collection,
-            )?;
+            let batch_data = T::batch(user_data, Context(context), &bind_data.data, init_data, collection)?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_function_batch_set_batch_data,
@@ -149,27 +127,16 @@ unsafe extern "C" fn flush_callback<T: CopyFunctionCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_copy_function_flush_get_user_data, info);
 
-            let bind_data =
-                check_api_call!(ffi::duckdb_v2_copy_function_flush_get_bind_data, info, RET)?;
-            let bind_data =
-                unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }
-                    .unwrap();
+            let bind_data = check_api_call!(ffi::duckdb_v2_copy_function_flush_get_bind_data, info, RET)?;
+            let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let init_data =
-                get_init_data!(ffi::duckdb_v2_copy_function_flush_get_init_data, info).unwrap();
+            let init_data = get_init_data!(ffi::duckdb_v2_copy_function_flush_get_init_data, info).unwrap();
 
-            let batch_data =
-                check_api_call!(ffi::duckdb_v2_copy_function_flush_get_batch_data, info, RET)?;
+            let batch_data = check_api_call!(ffi::duckdb_v2_copy_function_flush_get_batch_data, info, RET)?;
 
             let batch_data = unsafe { get_opaque_data_ref(batch_data) }.unwrap();
 
-            T::flush(
-                user_data,
-                Context(context),
-                &bind_data.data,
-                init_data,
-                batch_data,
-            )?;
+            T::flush(user_data, Context(context), &bind_data.data, init_data, batch_data)?;
 
             Ok(())
         },
@@ -184,20 +151,12 @@ unsafe extern "C" fn finalize_callback<T: CopyFunctionCallbacks>(
 ) {
     handle_unwind(
         || {
-            let user_data =
-                get_user_data!(ffi::duckdb_v2_copy_function_finalize_get_user_data, info);
+            let user_data = get_user_data!(ffi::duckdb_v2_copy_function_finalize_get_user_data, info);
 
-            let bind_data = check_api_call!(
-                ffi::duckdb_v2_copy_function_finalize_get_bind_data,
-                info,
-                RET
-            )?;
-            let bind_data =
-                unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }
-                    .unwrap();
+            let bind_data = check_api_call!(ffi::duckdb_v2_copy_function_finalize_get_bind_data, info, RET)?;
+            let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let init_data =
-                get_init_data!(ffi::duckdb_v2_copy_function_finalize_get_init_data, info).unwrap();
+            let init_data = get_init_data!(ffi::duckdb_v2_copy_function_finalize_get_init_data, info).unwrap();
 
             T::finalize(user_data, Context(context), &bind_data.data, init_data)?;
 
@@ -239,10 +198,7 @@ impl<T: CopyFunctionCallbacks> CopyFunctionBuilder<T> {
     }
 
     fn build(&self) -> Result<CopyFunctionBuilderHandle> {
-        let handle = CopyFunctionBuilderHandle(check_api_call!(
-            ffi::duckdb_v2_copy_function_builder_create,
-            RET
-        )?);
+        let handle = CopyFunctionBuilderHandle(check_api_call!(ffi::duckdb_v2_copy_function_builder_create, RET)?);
 
         check_api_call!(
             ffi::duckdb_v2_copy_function_builder_set_name,
@@ -324,11 +280,7 @@ impl ColumnInfo {
 
     /// Return the number of input columns.
     pub fn len(&self) -> Result<usize> {
-        let res = check_api_call!(
-            ffi::duckdb_v2_copy_function_bind_get_column_count,
-            self.handle,
-            RET
-        )?;
+        let res = check_api_call!(ffi::duckdb_v2_copy_function_bind_get_column_count, self.handle, RET)?;
 
         Ok(res as usize)
     }
@@ -382,12 +334,7 @@ pub trait CopyFunctionCallbacks: Send + Sync + 'static {
     fn bind(&self, context: Context, column_info: ColumnInfo) -> Result<Self::BindData>;
 
     /// **Initialize:** open the output path and create file-level state.
-    fn init(
-        &self,
-        _context: Context,
-        _bind_data: &Self::BindData,
-        file_path: &str,
-    ) -> Result<Self::InitData>;
+    fn init(&self, _context: Context, _bind_data: &Self::BindData, file_path: &str) -> Result<Self::InitData>;
 
     /// **Batch:** prepare one input collection for flushing.
     fn batch(
@@ -408,12 +355,7 @@ pub trait CopyFunctionCallbacks: Send + Sync + 'static {
     ) -> Result<()>;
 
     /// **Finalize:** finish and close the output after all batches are flushed.
-    fn finalize(
-        &self,
-        _context: Context,
-        _bind_data: &Self::BindData,
-        _init_data: &Self::InitData,
-    ) -> Result<()>;
+    fn finalize(&self, _context: Context, _bind_data: &Self::BindData, _init_data: &Self::InitData) -> Result<()>;
 }
 
 #[cfg(test)]

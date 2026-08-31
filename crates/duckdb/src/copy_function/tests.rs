@@ -18,11 +18,7 @@ impl CopyFunctionCallbacks for RapidCopy {
     type InitData = File;
     type BatchData = Vec<i32>;
 
-    fn bind(
-        &self,
-        _context: Context,
-        column_info: super::ColumnInfo,
-    ) -> crate::Result<Self::BindData> {
+    fn bind(&self, _context: Context, column_info: super::ColumnInfo) -> crate::Result<Self::BindData> {
         assert_eq!(column_info.len()?, 1);
         assert_eq!(column_info.get_column(0)?.0, "i");
         assert_eq!(
@@ -33,12 +29,7 @@ impl CopyFunctionCallbacks for RapidCopy {
         Ok(10)
     }
 
-    fn init(
-        &self,
-        context: Context,
-        _bind_data: &Self::BindData,
-        file_path: &str,
-    ) -> crate::Result<Self::InitData> {
+    fn init(&self, context: Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
         let fs = FileSystem::from_context(&context)?;
 
         let flags = libduckdb_sys::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_WRITE as u64
@@ -57,9 +48,7 @@ impl CopyFunctionCallbacks for RapidCopy {
     ) -> crate::Result<Self::BatchData> {
         let scanner = input.to_scan()?;
         let mut result = Vec::new();
-        let to_append =
-            ColumnDataCollection::from_context(&context, [i64::logical_type(&context)?])?
-                .to_append()?;
+        let to_append = ColumnDataCollection::from_context(&context, [i64::logical_type(&context)?])?.to_append()?;
 
         let data_chunk = DataChunk::create(&[i64::logical_type(&context)?], true)?;
         let mut vec = data_chunk.get_vector_at::<i64>(0)?;

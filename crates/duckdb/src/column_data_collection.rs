@@ -9,8 +9,8 @@ use std::ops::Deref;
 use libduckdb_sys as ffi;
 
 use crate::{
-    Result, builder_helpers::context_and_connection_fn, check_api_call, check_api_call_no_err,
-    data_chunk::DataChunk, logical_type::LogicalType,
+    Result, builder_helpers::context_and_connection_fn, check_api_call, check_api_call_no_err, data_chunk::DataChunk,
+    logical_type::LogicalType,
 };
 
 struct WorkerScanState(ffi::duckdb_v2_column_data_collection_worker_scan_state_handle);
@@ -27,11 +27,7 @@ impl Deref for AppenderHandle {
 
 impl Drop for AppenderHandle {
     fn drop(&mut self) {
-        check_api_call_no_err!(
-            ffi::duckdb_v2_column_data_collection_append_state_destroy,
-            &mut self.0
-        )
-        .unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_column_data_collection_append_state_destroy, &mut self.0).unwrap();
     }
 }
 
@@ -153,11 +149,7 @@ impl ColumnDataCollection {
 
     /// Return the total number of rows across all stored chunks.
     pub fn len(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(
-            ffi::duckdb_v2_column_data_collection_row_count,
-            self.handle,
-            RET
-        )?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_column_data_collection_row_count, self.handle, RET)?;
 
         Ok(count as usize)
     }
@@ -175,11 +167,7 @@ impl ColumnDataCollection {
 
 impl Drop for ColumnDataCollection {
     fn drop(&mut self) {
-        check_api_call_no_err!(
-            ffi::duckdb_v2_column_data_collection_destroy,
-            &mut self.handle
-        )
-        .unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_column_data_collection_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -271,10 +259,7 @@ impl ColumnDataCollectionAppender {
             RET
         )?);
 
-        Ok(Self {
-            collection,
-            appender,
-        })
+        Ok(Self { collection, appender })
     }
 
     /// Append a copy of `chunk` to the collection.
@@ -312,10 +297,7 @@ impl ColumnDataCollectionAppender {
 
     /// Remove all rows and return the collection with its schema unchanged.
     pub fn reset(self) -> Result<ColumnDataCollection> {
-        check_api_call!(
-            ffi::duckdb_v2_column_data_collection_reset,
-            self.collection.handle,
-        )?;
+        check_api_call!(ffi::duckdb_v2_column_data_collection_reset, self.collection.handle,)?;
 
         Ok(self.collection)
     }
@@ -414,18 +396,14 @@ mod test {
         id.write(0, Some(14))?;
         is_active.write(0, Some(true))?;
 
-        let collection_2 =
-            ColumnDataCollection::from_connection(&conn, &logical_types)?.to_append()?;
+        let collection_2 = ColumnDataCollection::from_connection(&conn, &logical_types)?.to_append()?;
         collection_2.append(&chunk_2)?;
 
         collection.combine(collection_2.to_normal())?;
 
         let statement = statements.next().unwrap()?;
-        let statement = statement.add_collection(
-            "buf",
-            &collection.collection,
-            Some(&["id".into(), "is_active".into()]),
-        )?;
+        let statement =
+            statement.add_collection("buf", &collection.collection, Some(&["id".into(), "is_active".into()]))?;
 
         let rows_changed = conn.execute(statement, Parameters::None)?;
         assert_eq!(rows_changed, 3);

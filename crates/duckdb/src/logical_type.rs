@@ -162,16 +162,14 @@ impl LogicalType {
 
     /// Return the logical type ID.
     pub fn type_id(&self) -> DUCKDB_V2_LOGICAL_TYPE_ID {
-        let type_id: DUCKDB_V2_LOGICAL_TYPE_ID =
-            check_api_call!(ffi::duckdb_v2_logical_type_get_id, self.handle, RET)
-                .expect("Failed to get logical type id");
+        let type_id: DUCKDB_V2_LOGICAL_TYPE_ID = check_api_call!(ffi::duckdb_v2_logical_type_get_id, self.handle, RET)
+            .expect("Failed to get logical type id");
         type_id
     }
 
     /// Return the alias or canonical type name.
     pub fn name(&self) -> Result<&str> {
-        let name: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_logical_type_get_name, self.handle, RET)?;
+        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_logical_type_get_name, self.handle, RET)?;
 
         Ok(name.into())
     }
@@ -208,11 +206,7 @@ impl LogicalType {
 
     /// Return the number of value parameters carried by the type.
     pub fn param_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(
-            ffi::duckdb_v2_logical_type_get_param_count,
-            self.handle,
-            RET
-        )?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_logical_type_get_param_count, self.handle, RET)?;
 
         Ok(count as usize)
     }
@@ -256,13 +250,8 @@ impl LogicalType {
 
 impl PartialEq for LogicalType {
     fn eq(&self, other: &Self) -> bool {
-        let result: bool = check_api_call!(
-            ffi::duckdb_v2_logical_type_is_equal,
-            self.handle,
-            other.handle,
-            RET
-        )
-        .expect("Failed to compare logical types");
+        let result: bool = check_api_call!(ffi::duckdb_v2_logical_type_is_equal, self.handle, other.handle, RET)
+            .expect("Failed to compare logical types");
 
         result
     }
@@ -270,8 +259,8 @@ impl PartialEq for LogicalType {
 
 impl Clone for LogicalType {
     fn clone(&self) -> Self {
-        let handle = check_api_call!(ffi::duckdb_v2_logical_type_copy, self.handle, RET)
-            .expect("Failed to clone logical type");
+        let handle =
+            check_api_call!(ffi::duckdb_v2_logical_type_copy, self.handle, RET).expect("Failed to clone logical type");
 
         LogicalType { handle }
     }
@@ -293,9 +282,7 @@ impl Deref for LogicalType {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
-    use crate::{
-        DuckDBType, environment::Environment, environment::StorageLocation, types::MapValue,
-    };
+    use crate::{DuckDBType, environment::Environment, environment::StorageLocation, types::MapValue};
 
     use super::*;
 
@@ -309,11 +296,8 @@ mod test {
 
         let key_type = Value::from_logical_type(&conn, &i32::logical_type(&conn)?)?;
         let value_type = Value::from_logical_type(&conn, &String::logical_type(&conn)?)?;
-        let ltype = LogicalType::create_with_connection(
-            &conn,
-            "map",
-            Parameters::positional(&[&key_type, &value_type]),
-        )?;
+        let ltype =
+            LogicalType::create_with_connection(&conn, "map", Parameters::positional(&[&key_type, &value_type]))?;
 
         assert_eq!(ltype.name()?, "MAP");
         assert_eq!(ltype.param_count()?, 2);
@@ -341,10 +325,7 @@ mod test {
 
         assert_eq!(alias_ltype.name()?, "my_map");
         assert_eq!(alias_ltype.param_count()?, 2);
-        assert_eq!(
-            alias_ltype.type_id(),
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP
-        );
+        assert_eq!(alias_ltype.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP);
 
         assert_eq!(
             alias_ltype.get_param(0)?.1.logical_type()?.type_id(),

@@ -8,10 +8,7 @@ use std::ops::Deref;
 
 use libduckdb_sys::{self as ffi};
 
-use crate::{
-    Parameters, Result, check_api_call, check_api_call_no_err, logical_type::LogicalType,
-    value::Value,
-};
+use crate::{Parameters, Result, check_api_call, check_api_call_no_err, logical_type::LogicalType, value::Value};
 
 /// An owned function signature.
 ///
@@ -23,22 +20,14 @@ pub struct Signature(ffi::duckdb_v2_function_signature_handle);
 impl Signature {
     /// Return the number of fixed parameters.
     pub fn parameter_count(&self) -> Result<usize> {
-        let count = check_api_call!(
-            ffi::duckdb_v2_function_signature_get_parameter_count,
-            self.0,
-            RET
-        )?;
+        let count = check_api_call!(ffi::duckdb_v2_function_signature_get_parameter_count, self.0, RET)?;
 
         Ok(count as usize)
     }
 
     /// Return whether a return type is defined.
     fn has_return_type(&self) -> Result<bool> {
-        let has_return_type = check_api_call!(
-            ffi::duckdb_v2_function_signature_has_return_type,
-            self.0,
-            RET
-        )?;
+        let has_return_type = check_api_call!(ffi::duckdb_v2_function_signature_has_return_type, self.0, RET)?;
 
         Ok(has_return_type)
     }
@@ -48,11 +37,7 @@ impl Signature {
         if !self.has_return_type()? {
             return Ok(None);
         }
-        let handle = check_api_call!(
-            ffi::duckdb_v2_function_signature_get_return_type,
-            self.0,
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_function_signature_get_return_type, self.0, RET)?;
 
         Ok(Some(LogicalType { handle }))
     }
@@ -358,21 +343,14 @@ mod test {
 
     use super::*;
 
-    scalar_callback!(
-        DefaultParameterScalar,
-        u64,
-        |input, result, _ctx, _user_data| {
-            let vectors_len = input.vectors_count()?;
-            let vector = input.get_vector_at::<i32>(2)?;
-            let mut result = result;
-            result.set_size(1)?;
-            result.write(
-                0,
-                Some(*vector.get(0).unwrap().unwrap() as u64 + vectors_len as u64),
-            )?;
-            Ok(())
-        }
-    );
+    scalar_callback!(DefaultParameterScalar, u64, |input, result, _ctx, _user_data| {
+        let vectors_len = input.vectors_count()?;
+        let vector = input.get_vector_at::<i32>(2)?;
+        let mut result = result;
+        result.set_size(1)?;
+        result.write(0, Some(*vector.get(0).unwrap().unwrap() as u64 + vectors_len as u64))?;
+        Ok(())
+    });
 
     scalar_callback!(VarargScalar, u64, |input, result, _ctx, _user_data| {
         let vectors_len = input.vectors_count()?;
@@ -401,8 +379,7 @@ mod test {
 
         assert_eq!(sig.parameters.len(), 3);
 
-        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar)
-            .register_with_connection(&conn)?;
+        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register_with_connection(&conn)?;
 
         let statements = conn.query("SELECT test(10, 'AA')", Parameters::None)?;
 
@@ -436,10 +413,7 @@ mod test {
 
         ScalarFunctionBuilder::new("test", sig, VarargScalar).register_with_connection(&conn)?;
 
-        let statements = conn.query(
-            "SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)",
-            Parameters::None,
-        )?;
+        let statements = conn.query("SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)", Parameters::None)?;
 
         for chunk in statements {
             let chunk = chunk?;
@@ -462,11 +436,7 @@ mod test {
             [
                 Parameter::normal("param1", i32::logical_type(&conn)?),
                 Parameter::normal("param2", String::logical_type(&conn)?),
-                Parameter::normal_with_default(
-                    "param3",
-                    i32::logical_type(&conn)?,
-                    42_i32.value(&conn)?,
-                ),
+                Parameter::normal_with_default("param3", i32::logical_type(&conn)?, 42_i32.value(&conn)?),
                 Parameter::tail_vararg("param4", i8::logical_type(&conn)?),
             ],
             u64::logical_type(&conn)?,
@@ -503,10 +473,7 @@ mod test {
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert!(params[2].default_value.is_some());
-        assert_eq!(
-            params[2].default_value.as_ref().unwrap().dbg_string()?,
-            "42"
-        );
+        assert_eq!(params[2].default_value.as_ref().unwrap().dbg_string()?, "42");
 
         assert!(signature.has_varargs()?);
         assert_eq!(

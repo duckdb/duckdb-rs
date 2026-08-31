@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    Result, check_api_call, check_api_call_no_err, connection::Connection,
-    connection_options::ConfigOption, environment::EnvironmentHandle,
+    Result, check_api_call, check_api_call_no_err, connection::Connection, connection_options::ConfigOption,
+    environment::EnvironmentHandle,
 };
 use libduckdb_sys as ffi;
 
@@ -52,11 +52,8 @@ pub struct Database {
 impl Database {
     /// Open a [`Connection`] with independent session state.
     pub fn connect(&self) -> Result<Connection> {
-        let conn: ffi::duckdb_v2_connection_handle = check_api_call!(
-            ffi::duckdb_v2_connect,
-            self.handle.lock().unwrap().handle,
-            RET
-        )?;
+        let conn: ffi::duckdb_v2_connection_handle =
+            check_api_call!(ffi::duckdb_v2_connect, self.handle.lock().unwrap().handle, RET)?;
 
         Ok(Connection {
             handle: conn,
@@ -119,10 +116,7 @@ impl Database {
     ///
     /// Local-only options are rejected. Unknown names are retained for an
     /// extension to consume when it loads.
-    pub fn set_option(
-        &self,
-        option: &impl Deref<Target = ffi::duckdb_v2_option_handle>,
-    ) -> Result<()> {
+    pub fn set_option(&self, option: &impl Deref<Target = ffi::duckdb_v2_option_handle>) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_database_option_set,
             self.handle.lock().unwrap().handle,
@@ -131,15 +125,23 @@ impl Database {
 
         Ok(())
     }
+
+    /// Set multiple options globally, equivalent to SQL `SET GLOBAL` for each.
+    ///
+    /// Local-only options are rejected. Unknown names are retained for an
+    /// extension to consume when it loads.
+    pub fn set_options(&self, options: &[impl Deref<Target = ffi::duckdb_v2_option_handle>]) -> Result<()> {
+        for option in options {
+            self.set_option(option)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for Database {
     fn drop(&mut self) {
-        check_api_call_no_err!(
-            ffi::duckdb_v2_close,
-            &mut self.handle.lock().unwrap().handle
-        )
-        .unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_close, &mut self.handle.lock().unwrap().handle).unwrap();
     }
 }
 
@@ -150,10 +152,6 @@ mod tests {
 
     #[test]
     fn test_database_options() -> crate::Result<()> {
-        let conn = Environment::new()?
-            .open(StorageLocation::InMemory)?
-            .connect()?;
-
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
 
@@ -172,11 +170,7 @@ mod tests {
             if name.is_empty() {
                 continue;
             }
-            println!(
-                "Aliases for option '{}': {:?}",
-                option.canonical_name()?,
-                name
-            );
+            println!("Aliases for option '{}': {:?}", option.canonical_name()?, name);
         }
 
         Ok(())
