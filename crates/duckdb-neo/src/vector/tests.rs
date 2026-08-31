@@ -672,29 +672,29 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let hmap = row.to_hash_map()?;
 
-    assert_eq!(hmap.get(&1).unwrap(), &Some(&121i16));
-    assert_eq!(hmap.get(&2).unwrap(), &Some(&412i16));
+    assert_eq!(hmap.get(&1).unwrap(), &Some(&DecimalValue(121)));
+    assert_eq!(hmap.get(&2).unwrap(), &Some(&DecimalValue(412)));
 
     assert_eq!(row.keys()?, vec![&1, &2]);
-    assert_eq!(row.values()?, vec![&121, &412]);
+    assert_eq!(row.values()?, vec![&DecimalValue(121), &DecimalValue(412)]);
 
-    assert_eq!(row.get(&1)?, Some(&121));
-    assert_eq!(row.get(&2)?, Some(&412));
+    assert_eq!(row.get(&1)?, Some(&DecimalValue(121)));
+    assert_eq!(row.get(&2)?, Some(&DecimalValue(412)));
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get(&1)?, Some(&1121));
-    assert_eq!(row.get(&2)?, Some(&1412));
+    assert_eq!(row.get(&1)?, Some(&DecimalValue(1121)));
+    assert_eq!(row.get(&2)?, Some(&DecimalValue(1412)));
 
     let row = reader.next().unwrap().unwrap();
 
     let hmap = row.to_hash_map()?;
 
     assert_eq!(hmap.get(&1), Some(&None));
-    assert_eq!(hmap.get(&2), Some(&Some(&412i16)));
+    assert_eq!(hmap.get(&2), Some(&Some(&DecimalValue(412))));
 
     assert_eq!(row.get(&1)?, None);
-    assert_eq!(row.get(&2)?, Some(&412));
+    assert_eq!(row.get(&2)?, Some(&DecimalValue(412)));
 
     assert!(reader.next().is_none());
 
@@ -934,7 +934,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     )?;
     let chunk = result.next().unwrap()?;
     let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
-    assert_eq!(vector.get(0)?, Some(&-123_456));
+    assert_eq!(vector.get(0)?, Some(&DecimalValue(-123_456)));
     drop(vector);
     drop(chunk);
     drop(result);
@@ -1016,7 +1016,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     vector.set_size(2)?;
     vector.write(0, Some(-123_456))?;
     vector.write(1, None)?;
-    assert_eq!(vector.get(0)?, Some(&-123_456));
+    assert_eq!(vector.get(0)?, Some(&DecimalValue(-123_456)));
     assert_eq!(vector.get(1)?, None);
 
     let chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
@@ -1785,4 +1785,26 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     assert_eq!(row.get(&3)?, Some(&30));
 
     Ok(())
+}
+
+#[test]
+#[cfg(feature = "rust_decimal")]
+fn test_vector_decimal() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query("SELECT CAST('123.45' AS DECIMAL(5, 2));", Parameters::None)?;
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<Decimal<crate::get_decimal_size!(5)>>(0)?;
+
+        if let Some(item) = vector.iter()?.next() {
+            let decimal = item.unwrap().to_rust_decimal(2);
+            assert_eq!(decimal, rust_decimal::Decimal::new(12345, 2));
+            return Ok(());
+        }
+    }
+    Err(Error::api_error("chunk not found"))
 }

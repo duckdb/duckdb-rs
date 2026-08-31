@@ -861,6 +861,7 @@ dependencies = [
  "libduckdb-sys",
  "paste",
  "r2d2",
+ "rust_decimal",
  "tempfile",
  "uuid",
 ]

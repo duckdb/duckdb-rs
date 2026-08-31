@@ -14,6 +14,126 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
+use std::ops::Deref;
+
+/// Resolves the physical storage integer type for a `DECIMAL` of the given width.
+#[macro_export]
+macro_rules! get_decimal_size {
+    (1) => {
+        i16
+    };
+    (2) => {
+        i16
+    };
+    (3) => {
+        i16
+    };
+    (4) => {
+        i16
+    };
+    (5) => {
+        i32
+    };
+    (6) => {
+        i32
+    };
+    (7) => {
+        i32
+    };
+    (8) => {
+        i32
+    };
+    (9) => {
+        i32
+    };
+    (10) => {
+        i64
+    };
+    (11) => {
+        i64
+    };
+    (12) => {
+        i64
+    };
+    (13) => {
+        i64
+    };
+    (14) => {
+        i64
+    };
+    (15) => {
+        i64
+    };
+    (16) => {
+        i64
+    };
+    (17) => {
+        i64
+    };
+    (18) => {
+        i64
+    };
+    (19) => {
+        i128
+    };
+    (20) => {
+        i128
+    };
+    (21) => {
+        i128
+    };
+    (22) => {
+        i128
+    };
+    (23) => {
+        i128
+    };
+    (24) => {
+        i128
+    };
+    (25) => {
+        i128
+    };
+    (26) => {
+        i128
+    };
+    (27) => {
+        i128
+    };
+    (28) => {
+        i128
+    };
+    (29) => {
+        i128
+    };
+    (30) => {
+        i128
+    };
+    (31) => {
+        i128
+    };
+    (32) => {
+        i128
+    };
+    (33) => {
+        i128
+    };
+    (34) => {
+        i128
+    };
+    (35) => {
+        i128
+    };
+    (36) => {
+        i128
+    };
+    (37) => {
+        i128
+    };
+    (38) => {
+        i128
+    };
+}
 
 /// Marks integer types supported as the physical storage of [`Decimal`].
 pub trait InternalDecimalType {
@@ -27,6 +147,12 @@ macro_rules! impl_internal_decimal_type {
             impl InternalDecimalType for $type {
                 fn to_i128(&self) -> i128 {
                     *self as i128
+                }
+            }
+
+            impl From<$type> for Decimal<$type> {
+                fn from(value: $type) -> Self {
+                    DecimalValue(value)
                 }
             }
         )+
@@ -43,6 +169,22 @@ pub struct DecimalValue<T, const WIDTH: u8, const SCALE: u8>(pub T);
 /// A `DECIMAL` vector element stored as the integer type `T`.
 /// Width and scale are unset; use DecimalValue when creating new decimals.
 pub type Decimal<T> = DecimalValue<T, 0, 0>;
+
+impl<T, const WIDTH: u8, const SCALE: u8> Deref for DecimalValue<T, WIDTH, SCALE> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> DecimalValue<T, WIDTH, SCALE> {
+    /// Convert to a [`rust_decimal::Decimal`] with the given scale.
+    #[cfg(feature = "rust_decimal")]
+    pub fn to_rust_decimal(&self, scale: u32) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from_i128_with_scale(self.0.to_i128(), scale)
+    }
+}
 
 impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> DuckDBType for DecimalValue<T, WIDTH, SCALE> {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
@@ -66,7 +208,7 @@ impl<T: InternalDecimalType> VectorElement for Decimal<T> {
     type Internal = T;
 
     type Ref<'a>
-        = &'a T
+        = &'a Decimal<T>
     where
         Self: 'a;
 
@@ -94,7 +236,7 @@ impl<T: InternalDecimalType> VectorElement for Decimal<T> {
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const T;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const Decimal<T>;
 
         (unsafe { &*data_ptr.add(physical) }) as _
     }
@@ -132,5 +274,17 @@ impl FromValue for DecimalValueRaw {
             width,
             scale,
         })
+    }
+}
+
+impl DecimalValueRaw {
+    /// Convert a [`rust_decimal::Decimal`] to a decimal of the given width.
+    #[cfg(feature = "rust_decimal")]
+    pub fn from_rust_decimal(value: rust_decimal::Decimal, width: u8) -> Self {
+        Self {
+            value: value.mantissa(),
+            width,
+            scale: value.scale() as u8,
+        }
     }
 }
