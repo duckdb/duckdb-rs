@@ -191,3 +191,224 @@ impl WritableVectorElement for IntervalValue {
         vector.write_raw(index, value)
     }
 }
+
+macro_rules! declare_to_chrono {
+    (
+        $name:ident, $chrono_type:ty, $operation:ident
+    ) => {
+        #[cfg(feature = "chrono")]
+        impl From<$name> for $chrono_type {
+            fn from(value: $name) -> Self {
+                <$chrono_type>::$operation(value.0)
+            }
+        }
+    };
+}
+
+macro_rules! declare_to_chrono_option {
+    (
+        $name:ident, $chrono_type:ty, $operation:ident
+    ) => {
+        #[cfg(feature = "chrono")]
+        impl From<$name> for Option<$chrono_type> {
+            fn from(value: $name) -> Self {
+                <$chrono_type>::$operation(value.0)
+            }
+        }
+    };
+}
+
+declare_to_chrono_option!(DateValue, chrono::NaiveDate, from_epoch_days);
+
+#[cfg(feature = "chrono")]
+impl From<TimeValue> for Option<chrono::NaiveTime> {
+    fn from(value: TimeValue) -> Self {
+        let seconds = value.0 / 1_000_000;
+        let nano = (value.0 % 1_000_000) as u32 * 1_000;
+
+        chrono::NaiveTime::from_num_seconds_from_midnight_opt(seconds as u32, nano)
+    }
+}
+
+#[cfg(feature = "chrono")]
+impl From<TimeNsValue> for Option<chrono::NaiveTime> {
+    fn from(value: TimeNsValue) -> Self {
+        let seconds = value.0 / 1_000_000_000;
+        let nano = (value.0 % 1_000_000_000) as u32;
+        chrono::NaiveTime::from_num_seconds_from_midnight_opt(seconds as u32, nano)
+    }
+}
+
+// TimeTz has no chrono equivalent, so we do not provide a conversion macro for it.
+
+declare_to_chrono_option!(TimestampValue, chrono::DateTime<chrono::Utc>, from_timestamp_micros);
+
+#[cfg(feature = "chrono")]
+impl From<TimestampSecValue> for Option<chrono::DateTime<chrono::Utc>> {
+    fn from(value: TimestampSecValue) -> Self {
+        chrono::DateTime::<chrono::Utc>::from_timestamp(value.0, 0)
+    }
+}
+
+declare_to_chrono_option!(TimestampMsValue, chrono::DateTime<chrono::Utc>, from_timestamp_millis);
+declare_to_chrono!(TimestampNsValue, chrono::DateTime<chrono::Utc>, from_timestamp_nanos);
+
+declare_to_chrono_option!(TimestampTzValue, chrono::DateTime<chrono::Utc>, from_timestamp_micros);
+declare_to_chrono!(TimestampTzNsValue, chrono::DateTime<chrono::Utc>, from_timestamp_nanos);
+
+#[cfg(test)]
+#[cfg(feature = "chrono")]
+mod chrono_tests {
+    use crate::{
+        Parameters,
+        environment::{Environment, StorageLocation},
+        types::{
+            DateValue, TimeNsValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzValue,
+            TimestampValue,
+        },
+    };
+
+    #[test]
+    fn test_date() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let result = conn.query("SELECT DATE '1992-09-20';", Parameters::None)?;
+
+        for chunk in result {
+            let chunk = chunk?;
+            let vec = chunk.get_vector_at::<DateValue>(0)?;
+
+            assert_eq!(vec.len(), 1);
+            let chrono = Option::<chrono::NaiveDate>::from(*vec.get(0)?.unwrap()).unwrap();
+
+            assert_eq!(chrono, chrono::NaiveDate::from_ymd_opt(1992, 9, 20).unwrap());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_timestamp_conversion() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        {
+            let mut result = conn.query("SELECT TIMESTAMP_NS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimestampNsValue>(0)?;
+            let timestamp = <chrono::DateTime<chrono::Utc>>::from(*vec.get(0)?.unwrap());
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339("1992-09-20T11:30:00.123456789Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            );
+        }
+        {
+            let mut result = conn.query("SELECT TIMESTAMP '1992-09-20 11:30:00.123456789';", Parameters::None)?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimestampValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339("1992-09-20T11:30:00.123456Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            );
+        }
+        {
+            let mut result = conn.query("SELECT TIMESTAMP_MS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimestampMsValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339("1992-09-20T11:30:00.123Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            );
+        }
+        {
+            let mut result = conn.query("SELECT TIMESTAMP_S '1992-09-20 11:30:00.123456789';", Parameters::None)?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimestampSecValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339("1992-09-20T11:30:00Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            );
+        }
+        {
+            let mut result = conn.query(
+                "SELECT TIMESTAMPTZ '1992-09-20 11:30:00.123456789+00:00';",
+                Parameters::None,
+            )?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimestampTzValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339("1992-09-20T11:30:00.123456Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            );
+        }
+        {
+            let mut result = conn.query(
+                "SELECT TIMESTAMPTZ '1992-09-20 12:30:00.123456789+01:00';",
+                Parameters::None,
+            )?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimestampTzValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339("1992-09-20T12:30:00.123456+01:00")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_time_conversion() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        {
+            let mut result = conn.query("SELECT TIME '1992-09-20 11:30:00.123456';", Parameters::None)?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimeValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let time = Option::<chrono::NaiveTime>::from(val).unwrap();
+            assert_eq!(
+                time,
+                chrono::NaiveTime::parse_from_str("11:30:00.123456", "%H:%M:%S%.f").unwrap()
+            );
+        }
+        {
+            let mut result = conn.query("SELECT '15:30:00.123456789'::TIME_NS;", Parameters::None)?;
+            let chunk = result.next().unwrap()?;
+            let vec = chunk.get_vector_at::<TimeNsValue>(0)?;
+            let val = *(vec.get(0)?.unwrap());
+            let time = Option::<chrono::NaiveTime>::from(val).unwrap();
+            assert_eq!(
+                time,
+                chrono::NaiveTime::parse_from_str("15:30:00.123456789", "%H:%M:%S%.f").unwrap()
+            );
+        }
+
+        Ok(())
+    }
+}
