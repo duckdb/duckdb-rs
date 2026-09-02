@@ -1,58 +1,18 @@
 [package]
 name = "libduckdb-sys"
-version = { workspace = true }
-authors = { workspace = true }
-license = { workspace = true }
-repository = { workspace = true }
-homepage = { workspace = true }
-keywords = { workspace = true }
-readme = { workspace = true }
-build = "build.rs"
-# `links = "duckdb"` lets the build script publish metadata
-# (`cargo:include`, `cargo:lib_dir`) that downstream crates can read
-# via `DEP_DUCKDB_*` environment variables in their own build scripts.
-# Required for crates that need to compile their own C/C++ code that
-# `#include "duckdb.hpp"` against the bundled headers.
+version = "2.0.0"
+edition = "2024"
 links = "duckdb"
-categories = ["external-ffi-bindings", "database"]
-description = "Native bindings to the libduckdb library, C API"
-exclude = ["duckdb-sources"]
-edition = { workspace = true }
-rust-version = { workspace = true }
 
 [features]
-default = ["vcpkg", "pkg-config"]
-bundled = ["cc"]
-# Warning: experimental feature
-bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
-buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
-json = ["bundled"]
-parquet = ["bundled"]
-autocomplete = ["bundled-cmake"]
-icu = ["bundled-cmake"]
-tpcds = ["bundled-cmake"]
-tpch = ["bundled-cmake"]
-extensions-full = ["json", "parquet"]
-winduckdb = []
-# Warning: experimental feature
-loadable-extension = ["prettyplease", "quote", "syn"]
+# Statically link the self-contained libduckdb_static.a (no runtime dylib dependency).
+# Default (feature off) links libduckdb.dylib dynamically and embeds rpaths.
+bundled = []
+
+[dependencies]
 
 [build-dependencies]
-bindgen = { workspace = true, features = ["runtime"], optional = true }
-cc = { workspace = true, features = ["parallel"], optional = true }
-cmake = { version = "0.1", optional = true }
-flate2 = { workspace = true }
-pkg-config = { workspace = true, optional = true }
-prettyplease = { workspace = true, optional = true }
-quote = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-syn = { workspace = true, optional = true }
-tar = { workspace = true }
-ureq = { version = "3", default-features = false, features = ["rustls"] }
-vcpkg = { workspace = true, optional = true }
-which = { version = "8", optional = true }
-zip = { version = "6", default-features = false, features = ["deflate"] }
-
-[dev-dependencies]
-arrow = { workspace = true, features = ["ffi"] }
+bindgen = "0.71.0"
+dotenv = "0.15.0"
+pkg-config = "0.3"
+vcpkg = "0.2"

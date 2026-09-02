@@ -1,451 +1,900 @@
-//! [`ToSql`] and [`FromSql`] are also implemented for `Option<T>` where `T`
-//! implements [`ToSql`] or [`FromSql`] for the cases where you want to know if
-//! a value was NULL (which gets translated to `None`).
+//! Rust representations of DuckDB logical and physical value types.
 //!
-//! # Dynamic value compatibility notes
+//! [`DuckDBType`] maps a Rust type to its DuckDB
+//! [`crate::logical_type::LogicalType`]. [`ToValue`] and [`FromValue`] convert
+//! between Rust values and owned [`crate::value::Value`] handles for parameters,
+//! defaults, and other scalar APIs.
 //!
-//! [`Type`], [`Value`], and [`ValueRef`] are non-exhaustive. Downstream code
-//! matching these enums should include a wildcard arm so new DuckDB types can
-//! be added without another source break.
-//!
-//! Top-level `UHUGEINT` result values use [`Value::UHugeInt`] and
-//! [`ValueRef::UHugeInt`] when DuckDB reports `UHUGEINT` logical metadata for
-//! the result column. Nested `UHUGEINT` values inside lists, structs, maps,
-//! arrays, and unions do not currently carry DuckDB child logical type metadata
-//! through the borrowed container API, so values above `i128::MAX` cannot
-//! recover their `u128` value from those metadata-less carriers.
-//!
-//! Parameter-derived scale-zero Arrow decimal result columns are intentionally
-//! not guessed. DuckDB can report `Invalid` logical metadata for a bare bound
-//! parameter (`SELECT ?`) even when the bound value is `u128`. In that case
-//! `duckdb-rs` preserves the existing signed [`Value::HugeInt`] fallback instead
-//! of inferring `UHUGEINT`, `HUGEINT`, or `DECIMAL` from parameter names,
-//! aliases, or expression text. Cast the result expression so DuckDB reports
-//! stable logical metadata when a dynamic `UHUGEINT` carrier is required.
-//!
-//! DuckDB `DECIMAL` values use [`Decimal`], a full-domain carrier storing
-//! DuckDB's decimal width, scale, and scaled integer payload.
-//! Reading a [`Decimal`] as `f32` or `f64` preserves its fractional component
-//! but still inherits normal binary floating-point precision loss. Read
-//! [`Decimal`] directly when exact decimal transport matters.
-//! Enable the `rust_decimal` feature for compatibility impls that convert to
-//! and from `rust_decimal::Decimal` when the value fits that crate's smaller
-//! decimal domain, including compatibility reads from `FLOAT`, `DOUBLE`, and
-//! text columns.
-//!
-//! Arrow decimal result values use [`Value::Decimal`] and [`ValueRef::Decimal`]
-//! directly except for scale-zero `Decimal128(38, 0)`, which is also the Arrow
-//! shape DuckDB uses for `HUGEINT` and `UHUGEINT`. Top-level result columns use
-//! DuckDB logical metadata to distinguish those cases when DuckDB reports it.
-//! Narrower scale-zero `DECIMAL` widths are unambiguous and materialize as
-//! [`Decimal`] rather than the legacy signed [`Value::HugeInt`] fallback.
-//! Metadata-less scale-zero `Decimal128(38, 0)` values preserve the existing
-//! signed [`Value::HugeInt`] fallback. This affects parameter-derived
-//! expressions where DuckDB reports `Invalid` metadata, and nested container
-//! children where the borrowed container API does not carry DuckDB child
-//! logical metadata.
-//!
-//! DuckDB `GEOMETRY` values use [`Value::Geometry`] and
-//! [`ValueRef::Geometry`], backed by WKB bytes. CRS data is exposed as logical
-//! type metadata through [`crate::core::LogicalTypeHandle::geometry_crs`]
-//! rather than on each value.
-//! Nested `GEOMETRY` values inside lists, structs, maps, arrays, and unions do
-//! not currently carry DuckDB child logical type metadata through the borrowed
-//! container API, so they materialize through their Arrow binary carrier as
-//! [`Value::Blob`] values.
+//! This module also defines marker and wrapper types for values whose DuckDB
+//! representation has no direct Rust primitive equivalent, including decimals,
+//! nested types, intervals, UUIDs, `BIGNUM`, and `VARIANT`. Typed vector access
+//! uses these representations through [`crate::vector::VectorElement`].
 
-pub use self::{
-    decimal::{Decimal, DecimalError},
-    from_sql::{FromSql, FromSqlError, FromSqlResult},
-    ordered_map::OrderedMap,
-    string::DuckString,
-    to_sql::{ToSql, ToSqlOutput},
-    value::Value,
-    value_ref::{EnumType, ListType, TimeUnit, ValueRef},
+use crate::{
+    Parameters, Result, check_api_call,
+    connection::FFILink,
+    error::Error,
+    logical_type::{LogicalType, LogicalTypeID},
+    parameter::QueryParameter,
+    value::{Value, ValueInput},
 };
-pub(crate) use decimal::to_duckdb_decimal;
-pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
+use libduckdb_sys as ffi;
+use std::fmt::Display;
+use std::marker::PhantomData;
 
-use arrow::datatypes::DataType;
-use std::fmt;
+/// Constructs the DuckDB logical type represented by a Rust type.
+pub trait DuckDBType {
+    /// Return the DuckDB logical type represented by this Rust type.
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType>;
+}
 
-use crate::ffi;
+/// Converts a Rust value into its DuckDB representation.
+pub trait ToValue {
+    /// Create a DuckDB value from this value.
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value>;
+}
 
-#[cfg(feature = "chrono")]
-mod chrono;
-mod from_sql;
-#[cfg(feature = "serde_json")]
-mod serde_json;
-mod to_sql;
-#[cfg(feature = "url")]
-mod url;
-mod value;
-mod value_ref;
+/// Converts an owned DuckDB value into a Rust value.
+pub trait FromValue: Sized {
+    /// Read a Rust value from a DuckDB value.
+    fn from_value(value: &Value) -> Result<Self>;
+}
 
-mod decimal;
-mod ordered_map;
-mod string;
+/// Reads the raw [`ffi::duckdb_v2_bytes`] representation of a `VARCHAR` value.
+///
+/// Use [`String`] instead when a borrowed Rust [`str`] is sufficient.
+pub struct TString;
 
-pub(crate) fn to_duckdb_hugeint(i: i128) -> ffi::duckdb_hugeint {
-    ffi::duckdb_hugeint {
-        lower: i as u64,
-        upper: (i >> 64) as i64,
+/// A borrowed encoded `BIGNUM` value from a vector.
+///
+/// Call [`BigNum::decode`] to access its sign and magnitude.
+#[repr(transparent)]
+pub struct BigNum(ffi::duckdb_v2_bignum_t);
+
+/// The decoded sign and magnitude of a [`BigNum`].
+pub struct BigNumDecoded {
+    /// Whether the number is negative.
+    pub is_negative: bool,
+    /// The unsigned magnitude in big-endian byte order.
+    pub magnitude: Vec<u8>,
+}
+
+impl Display for BigNumDecoded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.magnitude.iter().all(|&b| b == 0) {
+            return write!(f, "0");
+        }
+
+        const CHUNK_DIVISOR: u128 = 1_000_000_000_000_000_000;
+        let mut magnitude = self.magnitude.to_vec();
+        let mut chunks: Vec<u64> = Vec::new();
+
+        while !magnitude.iter().all(|&b| b == 0) {
+            let mut remainder: u128 = 0;
+            for byte in magnitude.iter_mut() {
+                let cur = (remainder << 8) | (*byte as u128);
+                *byte = (cur / CHUNK_DIVISOR) as u8;
+                remainder = cur % CHUNK_DIVISOR;
+            }
+            chunks.push(remainder as u64);
+        }
+
+        if self.is_negative {
+            write!(f, "-")?;
+        }
+
+        let mut iter = chunks.iter().rev();
+        write!(f, "{}", iter.next().unwrap())?;
+        for chunk in iter {
+            write!(f, "{:018}", chunk)?;
+        }
+
+        Ok(())
     }
 }
 
-pub(crate) fn to_duckdb_uhugeint(i: u128) -> ffi::duckdb_uhugeint {
-    ffi::duckdb_uhugeint {
-        lower: i as u64,
-        upper: (i >> 64) as u64,
+impl BigNum {
+    /// Return a decoded value containing the sign and big-endian magnitude.
+    pub fn decode(&self) -> Result<BigNumDecoded> {
+        let length = unsafe { self.0.value.inlined.length };
+        let bytes = if length <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
+            unsafe { self.0.value.inlined.inlined.as_ptr() as *const u8 }
+        } else {
+            unsafe { self.0.value.pointer.ptr as *const u8 }
+        };
+        let encoded = unsafe { std::slice::from_raw_parts(bytes, length as usize) };
+        let (is_negative, magnitude) = Value::decode_bignum(encoded)?;
+
+        Ok(BigNumDecoded { is_negative, magnitude })
     }
 }
 
-/// Empty struct that can be used to fill in a query parameter as `NULL`.
-///
-/// ## Example
-///
-/// ```rust,no_run
-/// # use duckdb::{Connection, Result};
-/// # use duckdb::types::{Null};
-///
-/// fn insert_null(conn: &Connection) -> Result<usize> {
-///     conn.execute("INSERT INTO people (name) VALUES (?)", [Null])
-/// }
-/// ```
-#[derive(Copy, Clone)]
-pub struct Null;
+/// Reads a `VARIANT` row as an owned [`Value`].
+pub struct Variant;
 
-/// DuckDB data types.
-/// See [Fundamental Datatypes](https://duckdb.org/docs/sql/data_types/overview).
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Type {
-    /// NULL
-    Null,
-    /// BOOLEAN
-    Boolean,
-    /// TINYINT
-    TinyInt,
-    /// SMALLINT
-    SmallInt,
-    /// INT
-    Int,
-    /// BIGINT
-    BigInt,
-    /// HUGEINT
-    HugeInt,
-    /// UHUGEINT
-    UHugeInt,
-    /// UTINYINT
-    UTinyInt,
-    /// USMALLINT
-    USmallInt,
-    /// UINT
-    UInt,
-    /// UBIGINT
-    UBigInt,
-    /// FLOAT
-    Float,
-    /// DOUBLE
-    Double,
-    /// DECIMAL
-    Decimal,
-    /// TIMESTAMP
-    Timestamp,
-    /// Text
-    Text,
-    /// BLOB
-    Blob,
-    /// GEOMETRY
-    Geometry,
-    /// DATE32
-    Date32,
-    /// TIME64
-    Time64,
-    /// INTERVAL
-    Interval,
-    /// LIST
-    List(Box<Type>),
-    /// ENUM
-    Enum,
-    /// STRUCT
-    Struct(Vec<(String, Type)>),
-    /// MAP
-    Map(Box<Type>, Box<Type>),
-    /// ARRAY
-    Array(Box<Type>, u32),
-    /// UNION
-    Union,
-    /// VARIANT. See [`LogicalTypeId::Variant`](crate::core::LogicalTypeId::Variant).
-    Variant,
-    /// Any
-    Any,
+/// A `DECIMAL` vector element stored as the integer type `T`.
+#[derive(Debug)]
+pub struct Decimal<T> {
+    _marker: PhantomData<T>,
 }
 
-impl From<&DataType> for Type {
-    fn from(value: &DataType) -> Self {
-        match value {
-            DataType::Null => Self::Null,
-            DataType::Boolean => Self::Boolean,
-            DataType::Int8 => Self::TinyInt,
-            DataType::Int16 => Self::SmallInt,
-            DataType::Int32 => Self::Int,
-            DataType::Int64 => Self::BigInt,
-            DataType::UInt8 => Self::UTinyInt,
-            DataType::UInt16 => Self::USmallInt,
-            DataType::UInt32 => Self::UInt,
-            DataType::UInt64 => Self::UBigInt,
-            // DataType::Float16 => Self::Float16,
-            DataType::Float32 => Self::Float,  // Single precision (4 bytes)
-            DataType::Float64 => Self::Double, // Double precision (8 bytes)
-            DataType::Timestamp(_, _) => Self::Timestamp,
-            DataType::Date32 => Self::Date32,
-            // DataType::Date64 => Self::Date64,
-            // DataType::Time32(_) => Self::Time32,
-            DataType::Time64(_) => Self::Time64,
-            // DataType::Duration(_) => Self::Duration,
-            // DataType::Interval(_) => Self::Interval,
-            DataType::Binary => Self::Blob,
-            DataType::FixedSizeBinary(_) => Self::Blob,
-            // DataType::LargeBinary => Self::LargeBinary,
-            DataType::LargeUtf8 | DataType::Utf8 => Self::Text,
-            DataType::List(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
-            DataType::FixedSizeList(field, size) => Self::Array(
-                Box::new(Self::from(field.data_type())),
-                (*size)
-                    .try_into()
-                    .expect("Arrow FixedSizeList size must be non-negative"),
-            ),
-            // DataType::LargeList(_) => Self::LargeList,
-            DataType::Struct(inner) => {
-                let capacity = inner.len();
-                let mut struct_vec = Vec::with_capacity(capacity);
-                struct_vec.extend(inner.iter().map(|f| (f.name().to_owned(), Self::from(f.data_type()))));
-                Self::Struct(struct_vec)
-            }
-            DataType::LargeList(inner) => Self::List(Box::new(Self::from(inner.data_type()))),
-            DataType::Union(_, _) => Self::Union,
-            // Type is a broad value category: Decimal256 is decimal-shaped
-            // metadata, even though DuckDB value paths only carry widths <= 38.
-            DataType::Decimal32(..) | DataType::Decimal64(..) | DataType::Decimal128(..) | DataType::Decimal256(..) => {
-                Self::Decimal
-            }
-            DataType::Map(field, ..) => {
-                let data_type = field.data_type();
-                match data_type {
-                    DataType::Struct(fields) if fields.len() == 2 => Self::Map(
-                        Box::new(Self::from(fields[0].data_type())),
-                        Box::new(Self::from(fields[1].data_type())),
-                    ),
-                    DataType::Struct(fields) => {
-                        panic!(
-                            "Arrow Map child struct must have exactly two fields, got {}",
-                            fields.len()
-                        )
-                    }
-                    _ => panic!("Arrow Map child type must be Struct(key, value), got {data_type}"),
+/// Marks integer types supported as the physical storage of [`Decimal`].
+pub trait InternalDecimalType {
+    /// Convert the physical decimal storage to its scaled integer.
+    fn to_i128(&self) -> i128;
+}
+
+macro_rules! impl_internal_decimal_type {
+    ($($type:ty),+ $(,)?) => {
+        $(
+            impl InternalDecimalType for $type {
+                fn to_i128(&self) -> i128 {
+                    *self as i128
                 }
             }
-            res => unimplemented!("{}", res),
+        )+
+    };
+}
+
+impl_internal_decimal_type!(i16, i32, i64, i128);
+
+/// A physical list entry parameterized by its child element type.
+#[repr(C)]
+pub struct List<L> {
+    pub(crate) offset: u64,
+    pub(crate) length: u64,
+    pub(crate) _marker: PhantomData<L>,
+}
+
+/// A fixed-length array element parameterized by its child element type.
+#[repr(C)]
+pub struct Array<T> {
+    offset: u64,
+    length: u64,
+    _marker: PhantomData<T>,
+}
+
+/// Reads a `STRUCT` vector as named fields.
+pub struct Struct;
+
+/// Reads a `MAP` vector with key type `K` and value type `V`.
+pub struct Map<K, V>(pub ffi::duckdb_v2_list_entry, pub PhantomData<(K, V)>);
+
+/// Reads a `UNION` vector through its tag and member child vectors.
+pub struct Union;
+
+macro_rules! declare_primitive_from_value {
+    ($type:ty, $getter:path) => {
+        impl FromValue for $type {
+            fn from_value(value: &Value) -> Result<Self> {
+                check_api_call!($getter, **value, RET)
+            }
+        }
+    };
+}
+
+declare_primitive_from_value!(bool, ffi::duckdb_v2_value_get_bool);
+declare_primitive_from_value!(u8, ffi::duckdb_v2_value_get_utinyint);
+declare_primitive_from_value!(i8, ffi::duckdb_v2_value_get_tinyint);
+declare_primitive_from_value!(i16, ffi::duckdb_v2_value_get_smallint);
+declare_primitive_from_value!(i32, ffi::duckdb_v2_value_get_int);
+declare_primitive_from_value!(i64, ffi::duckdb_v2_value_get_bigint);
+declare_primitive_from_value!(u16, ffi::duckdb_v2_value_get_usmallint);
+declare_primitive_from_value!(u32, ffi::duckdb_v2_value_get_uint);
+declare_primitive_from_value!(u64, ffi::duckdb_v2_value_get_ubigint);
+declare_primitive_from_value!(f32, ffi::duckdb_v2_value_get_float);
+declare_primitive_from_value!(f64, ffi::duckdb_v2_value_get_double);
+
+impl FromValue for i128 {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_hugeint, **value, RET)?;
+        Ok((i128::from(raw.upper) << 64) | i128::from(raw.lower))
+    }
+}
+
+impl FromValue for u128 {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_uhugeint, **value, RET)?;
+        Ok((u128::from(raw.upper) << 64) | u128::from(raw.lower))
+    }
+}
+
+fn owned_bytes(raw: ffi::DuckDBStr<'_>) -> Result<Vec<u8>> {
+    if raw.len == 0 {
+        return Ok(Vec::new());
+    }
+    if raw.ptr.is_null() {
+        return Err(Error::api_error(
+            "DuckDB returned a null pointer for a non-empty value".to_string(),
+        ));
+    }
+    Ok(unsafe { std::slice::from_raw_parts(raw.ptr.cast(), raw.len as usize) }.to_vec())
+}
+
+impl FromValue for String {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_varchar, **value, RET)?;
+        String::from_utf8(owned_bytes(raw)?).map_err(|_| Error::api_error("DuckDB returned invalid UTF-8".to_string()))
+    }
+}
+
+macro_rules! declare_primitive_to_value {
+    ($type:ty, $type_id:ident, $input:ident) => {
+        impl DuckDBType for $type {
+            fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+                link.logical_type_create_from_id(LogicalTypeID::$type_id, Parameters::None)
+            }
+        }
+
+        impl ToValue for $type {
+            fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+                link.create_value(ValueInput::$input(*self))
+            }
+        }
+    };
+}
+
+declare_primitive_to_value!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN, Bool);
+declare_primitive_to_value!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT, UTinyInt);
+declare_primitive_to_value!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT, TinyInt);
+declare_primitive_to_value!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT, SmallInt);
+declare_primitive_to_value!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER, Int);
+declare_primitive_to_value!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT, BigInt);
+declare_primitive_to_value!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT, USmallInt);
+declare_primitive_to_value!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER, UInt);
+declare_primitive_to_value!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT, UBigInt);
+declare_primitive_to_value!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT, Float);
+declare_primitive_to_value!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE, Double);
+declare_primitive_to_value!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT, HugeInt);
+declare_primitive_to_value!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT, UHugeInt);
+
+impl DuckDBType for str {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR, Parameters::None)
+    }
+}
+
+impl ToValue for str {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Varchar(self))
+    }
+}
+
+impl DuckDBType for String {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        str::logical_type(link)
+    }
+}
+
+impl ToValue for String {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        self.as_str().value(link)
+    }
+}
+
+/// A byte string represented as a DuckDB `BLOB`.
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlobValue<T>(pub T);
+
+impl<T> DuckDBType for BlobValue<T> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB, Parameters::None)
+    }
+}
+
+impl<T: AsRef<[u8]>> ToValue for BlobValue<T> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Blob(self.0.as_ref()))
+    }
+}
+
+impl FromValue for BlobValue<Vec<u8>> {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
+        Ok(Self(owned_bytes(raw)?))
+    }
+}
+
+/// A BIT value in DuckDB's padding-header wire representation.
+#[repr(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BitValue<T>(pub T);
+
+impl<T> DuckDBType for BitValue<T> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT, Parameters::None)
+    }
+}
+
+impl<T: AsRef<[u8]>> ToValue for BitValue<T> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Bit(self.0.as_ref()))
+    }
+}
+
+impl FromValue for BitValue<Vec<u8>> {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
+        Ok(Self(owned_bytes(raw)?))
+    }
+}
+
+macro_rules! declare_storage_value {
+    ($doc:literal, $name:ident, $storage:ty, $type_id:ident, $input:ident, $getter:path) => {
+        #[doc = $doc]
+        #[repr(transparent)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct $name(pub $storage);
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+
+        impl DuckDBType for $name {
+            fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+                link.logical_type_create_from_id(LogicalTypeID::$type_id, Parameters::None)
+            }
+        }
+
+        impl ToValue for $name {
+            fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+                link.create_value(ValueInput::$input(self.0))
+            }
+        }
+
+        impl FromValue for $name {
+            fn from_value(value: &Value) -> Result<Self> {
+                Ok(Self(check_api_call!($getter, **value, RET)?))
+            }
+        }
+    };
+}
+
+declare_storage_value!(
+    "Days since 1970-01-01 represented as a DuckDB `DATE`.",
+    DateValue,
+    i32,
+    DUCKDB_V2_LOGICAL_TYPE_ID_DATE,
+    Date,
+    ffi::duckdb_v2_value_get_date
+);
+declare_storage_value!(
+    "Microseconds since midnight represented as a DuckDB `TIME`.",
+    TimeValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIME,
+    Time,
+    ffi::duckdb_v2_value_get_time
+);
+declare_storage_value!(
+    "Nanoseconds since midnight represented as a DuckDB `TIME_NS`.",
+    TimeNsValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS,
+    TimeNs,
+    ffi::duckdb_v2_value_get_time_ns
+);
+declare_storage_value!(
+    "Packed time and UTC offset represented as a DuckDB `TIME_TZ`.",
+    TimeTzValue,
+    u64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ,
+    TimeTz,
+    ffi::duckdb_v2_value_get_time_tz
+);
+declare_storage_value!(
+    "Microseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP`.",
+    TimestampValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP,
+    Timestamp,
+    ffi::duckdb_v2_value_get_timestamp
+);
+declare_storage_value!(
+    "Seconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_SEC`.",
+    TimestampSecValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC,
+    TimestampSec,
+    ffi::duckdb_v2_value_get_timestamp_sec
+);
+declare_storage_value!(
+    "Milliseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_MS`.",
+    TimestampMsValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS,
+    TimestampMs,
+    ffi::duckdb_v2_value_get_timestamp_ms
+);
+declare_storage_value!(
+    "Nanoseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_NS`.",
+    TimestampNsValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS,
+    TimestampNs,
+    ffi::duckdb_v2_value_get_timestamp_ns
+);
+declare_storage_value!(
+    "UTC microseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_TZ`.",
+    TimestampTzValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ,
+    TimestampTz,
+    ffi::duckdb_v2_value_get_timestamp_tz
+);
+declare_storage_value!(
+    "UTC nanoseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_TZ_NS`.",
+    TimestampTzNsValue,
+    i64,
+    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS,
+    TimestampTzNs,
+    ffi::duckdb_v2_value_get_timestamp_tz_ns
+);
+
+/// DuckDB's internal signed 128-bit UUID representation.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UuidValue(pub i128);
+
+impl DuckDBType for UuidValue {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID, Parameters::None)
+    }
+}
+
+impl ToValue for UuidValue {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Uuid(self.0))
+    }
+}
+
+impl FromValue for UuidValue {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_uuid, **value, RET)?;
+        Ok(Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
+    }
+}
+
+/// A DuckDB `INTERVAL` split into month, day, and microsecond components.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntervalValue {
+    /// Whole months.
+    pub months: i32,
+    /// Whole days.
+    pub days: i32,
+    /// Remaining microseconds.
+    pub micros: i64,
+}
+
+impl DuckDBType for IntervalValue {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL, Parameters::None)
+    }
+}
+
+impl ToValue for IntervalValue {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Interval {
+            months: self.months,
+            days: self.days,
+            micros: self.micros,
+        })
+    }
+}
+
+impl FromValue for IntervalValue {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_interval, **value, RET)?;
+        Ok(Self {
+            months: raw.months,
+            days: raw.days,
+            micros: raw.micros,
+        })
+    }
+}
+
+impl FromValue for LogicalType {
+    fn from_value(value: &Value) -> Result<Self> {
+        value.logical_type()
+    }
+}
+
+impl<T: DuckDBType + ?Sized> DuckDBType for &T {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        T::logical_type(link)
+    }
+}
+
+impl<T: ToValue + ?Sized> ToValue for &T {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        (*self).value(link)
+    }
+}
+
+impl<T: DuckDBType> DuckDBType for Option<T> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        T::logical_type(link)
+    }
+}
+
+impl<T: ToValue + DuckDBType> ToValue for Option<T> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        match self {
+            Some(value) => value.value(link),
+            None => {
+                let logical_type = Self::logical_type(link)?;
+                link.create_value(ValueInput::Null(&logical_type))
+            }
         }
     }
 }
 
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::Null => f.pad("Null"),
-            Self::Boolean => f.pad("Boolean"),
-            Self::TinyInt => f.pad("TinyInt"),
-            Self::SmallInt => f.pad("SmallInt"),
-            Self::Int => f.pad("Int"),
-            Self::BigInt => f.pad("BigInt"),
-            Self::HugeInt => f.pad("HugeInt"),
-            Self::UHugeInt => f.pad("UHugeInt"),
-            Self::UTinyInt => f.pad("UTinyInt"),
-            Self::USmallInt => f.pad("USmallInt"),
-            Self::UInt => f.pad("UInt"),
-            Self::UBigInt => f.pad("UBigInt"),
-            Self::Float => f.pad("Float"),
-            Self::Double => f.pad("Double"),
-            Self::Decimal => f.pad("Decimal"),
-            Self::Timestamp => f.pad("Timestamp"),
-            Self::Text => f.pad("Text"),
-            Self::Blob => f.pad("Blob"),
-            Self::Geometry => f.pad("Geometry"),
-            Self::Date32 => f.pad("Date32"),
-            Self::Time64 => f.pad("Time64"),
-            Self::Interval => f.pad("Interval"),
-            Self::Struct(..) => f.pad("Struct"),
-            Self::List(..) => f.pad("List"),
-            Self::Enum => f.pad("Enum"),
-            Self::Map(..) => f.pad("Map"),
-            Self::Array(..) => f.pad("Array"),
-            Self::Union => f.pad("Union"),
-            Self::Variant => f.pad("Variant"),
-            Self::Any => f.pad("Any"),
+impl<T: FromValue> FromValue for Option<T> {
+    fn from_value(value: &Value) -> Result<Self> {
+        if value.is_null()? {
+            Ok(None)
+        } else {
+            T::from_value(value).map(Some)
         }
     }
 }
+
+/// A scaled integer represented as `DECIMAL(WIDTH, SCALE)`.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecimalValue<T, const WIDTH: u8, const SCALE: u8>(pub T);
+
+impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> DuckDBType for DecimalValue<T, WIDTH, SCALE> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create("DECIMAL", Parameters::positional(&[&WIDTH, &SCALE]))
+    }
+}
+
+impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> ToValue for DecimalValue<T, WIDTH, SCALE> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Decimal {
+            value: self.0.to_i128(),
+            width: WIDTH,
+            scale: SCALE,
+        })
+    }
+}
+
+/// A DuckDB `DECIMAL` in its runtime width, scale, and scaled-integer form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecimalValueRaw {
+    /// The integer payload scaled by ten to [`Self::scale`].
+    pub value: i128,
+    /// The total number of decimal digits.
+    pub width: u8,
+    /// The number of digits after the decimal point.
+    pub scale: u8,
+}
+
+impl FromValue for DecimalValueRaw {
+    fn from_value(value: &Value) -> Result<Self> {
+        let mut width = 0;
+        let mut scale = 0;
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_decimal, **value, RET, &mut width, &mut scale)?;
+        Ok(Self {
+            value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
+            width,
+            scale,
+        })
+    }
+}
+
+macro_rules! declare_bignum_type {
+    ($type:ty) => {
+        impl DuckDBType for $type {
+            fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+                link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM, Parameters::None)
+            }
+        }
+    };
+}
+
+/// The bind-time `ANY` logical type used in function signatures.
+pub struct Any;
+
+impl DuckDBType for Any {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)
+    }
+}
+
+/// An owned encoded `BIGNUM` value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BigNumValue {
+    /// Whether the number is negative.
+    pub is_negative: bool,
+    /// The unsigned magnitude in big-endian byte order.
+    pub magnitude: Vec<u8>,
+}
+
+declare_bignum_type!(BigNumValue);
+declare_bignum_type!(BigNum);
+
+impl ToValue for BigNumValue {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let encoded = Value::encode_bignum(&self.magnitude, self.is_negative)?;
+        link.create_value(ValueInput::BigNum(&encoded))
+    }
+}
+
+impl FromValue for BigNumValue {
+    fn from_value(value: &Value) -> Result<Self> {
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
+        let encoded = owned_bytes(raw)?;
+        let (is_negative, magnitude) = Value::decode_bignum(&encoded)?;
+        Ok(Self { is_negative, magnitude })
+    }
+}
+
+impl ToValue for BigNum {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let decoded = self.decode()?;
+        let encoded = Value::encode_bignum(&decoded.magnitude, decoded.is_negative)?;
+        link.create_value(ValueInput::BigNum(&encoded))
+    }
+}
+
+/// Key-value entries represented as a DuckDB `MAP`.
+pub struct MapValue<K, V> {
+    /// Entries in insertion order.
+    pub entries: Vec<(K, V)>,
+}
+
+impl<K: DuckDBType, V: DuckDBType> DuckDBType for MapValue<K, V> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        let key_type = Value::from_logical_type(link, &K::logical_type(link)?)?;
+        let value_type = Value::from_logical_type(link, &V::logical_type(link)?)?;
+        link.logical_type_create("MAP", Parameters::positional(&[&key_type, &value_type]))
+    }
+}
+
+impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let mut keys = Vec::with_capacity(self.entries.len());
+        let mut values = Vec::with_capacity(self.entries.len());
+        for (key, value) in &self.entries {
+            keys.push(key.value(link)?);
+            values.push(value.value(link)?);
+        }
+
+        let key_type = K::logical_type(link)?;
+        let value_type = V::logical_type(link)?;
+        link.create_value(ValueInput::Map {
+            key_type: &key_type,
+            value_type: &value_type,
+            keys: &keys,
+            values: &values,
+        })
+    }
+}
+
+/// Defines the named fields of a [`StructValue`].
+pub trait StructSchema {
+    /// Return field names and types in storage order.
+    fn fields<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>>;
+}
+
+trait StructFieldValue {
+    fn create_value(&self, link: &dyn FFILink) -> Result<Value>;
+}
+
+impl<T: ToValue> StructFieldValue for T {
+    fn create_value(&self, link: &dyn FFILink) -> Result<Value> {
+        ToValue::value(self, link)
+    }
+}
+
+/// A heterogeneous DuckDB `STRUCT` value with schema `S`.
+pub struct StructValue<'a, S> {
+    fields: Vec<Box<dyn StructFieldValue + 'a>>,
+    _schema: PhantomData<S>,
+}
+
+impl<'a, S> StructValue<'a, S> {
+    /// Create an empty struct builder.
+    pub fn new() -> Self {
+        Self {
+            fields: Vec::new(),
+            _schema: PhantomData,
+        }
+    }
+
+    /// Append a field value in schema order.
+    pub fn field<T: ToValue + 'a>(mut self, value: T) -> Self {
+        self.fields.push(Box::new(value));
+        self
+    }
+}
+
+impl<S> Default for StructValue<'_, S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<S: StructSchema> DuckDBType for StructValue<'_, S> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        let fields = S::fields(link)?;
+        let values = fields
+            .into_iter()
+            .map(|(name, logical_type)| Ok((name, Value::from_logical_type(link, &logical_type)?)))
+            .collect::<Result<Vec<_>>>()?;
+        let parameters = values
+            .iter()
+            .map(|(name, value)| (*name, value as &dyn QueryParameter))
+            .collect::<Vec<_>>();
+        link.logical_type_create("STRUCT", Parameters::named(&parameters))
+    }
+}
+
+impl<S: StructSchema> ToValue for StructValue<'_, S> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let children = self
+            .fields
+            .iter()
+            .map(|field| field.create_value(&link))
+            .collect::<Result<Vec<_>>>()?;
+        let fields = S::fields(link)?;
+        let names = fields.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+        link.create_value(ValueInput::Struct {
+            names: &names,
+            children: &children,
+        })
+    }
+}
+
+/// Defines the named members of a [`UnionValue`].
+pub trait UnionSchema {
+    /// Return member names and types in tag order.
+    fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>>;
+}
+
+/// An active member represented as a DuckDB `UNION` with schema `S`.
+pub struct UnionValue<S, T> {
+    /// The active member value.
+    pub value: T,
+    _schema: PhantomData<S>,
+}
+
+impl<S, T> UnionValue<S, T> {
+    /// Create a union value from its active member.
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            _schema: PhantomData,
+        }
+    }
+}
+
+impl<S: UnionSchema, T> DuckDBType for UnionValue<S, T> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        let members = S::members(link)?;
+        let values = members
+            .into_iter()
+            .map(|(name, logical_type)| Ok((name, Value::from_logical_type(link, &logical_type)?)))
+            .collect::<Result<Vec<_>>>()?;
+        let parameters = values
+            .iter()
+            .map(|(name, value)| (*name, value as &dyn QueryParameter))
+            .collect::<Vec<_>>();
+        link.logical_type_create("UNION", Parameters::named(&parameters))
+    }
+}
+
+impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let value = self.value.value(link)?;
+        link.value_cast(&value, Self::logical_type(link)?)
+    }
+}
+
+/// A value converted to DuckDB's self-describing `VARIANT` type.
+pub struct VariantValue<T>(pub T);
+
+impl<T> DuckDBType for VariantValue<T> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create("VARIANT", Parameters::None)
+    }
+}
+
+impl<T: ToValue> ToValue for VariantValue<T> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let value = self.0.value(link)?;
+        link.value_cast(&value, Self::logical_type(link)?)
+    }
+}
+
+impl<T: DuckDBType> DuckDBType for Vec<T> {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        let child_type = Value::from_logical_type(link, &T::logical_type(link)?)?;
+        link.logical_type_create("LIST", Parameters::positional(&[&child_type]))
+    }
+}
+
+impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let children = self.iter().map(|value| value.value(link)).collect::<Result<Vec<_>>>()?;
+        let child_type = T::logical_type(link)?;
+        link.create_value(ValueInput::List {
+            child_type: &child_type,
+            children: &children,
+        })
+    }
+}
+
+impl<T: DuckDBType, const N: usize> DuckDBType for [T; N] {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        let child_type = Value::from_logical_type(link, &T::logical_type(link)?)?;
+        let length = (N as u64).value(link)?;
+        link.logical_type_create("ARRAY", Parameters::positional(&[&child_type, &length]))
+    }
+}
+
+impl<T: ToValue + DuckDBType, const N: usize> ToValue for [T; N] {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let children = self.iter().map(|value| value.value(link)).collect::<Result<Vec<_>>>()?;
+        let child_type = T::logical_type(link)?;
+        link.create_value(ValueInput::Array {
+            child_type: &child_type,
+            children: &children,
+        })
+    }
+}
+
+impl DuckDBType for () {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        link.logical_type_create("TUPLE", Parameters::None)
+    }
+}
+
+impl ToValue for () {
+    fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        link.create_value(ValueInput::Tuple(&[]))
+    }
+}
+
+macro_rules! impl_tuple_value {
+    ($(($type:ident, $index:tt)),+ $(,)?) => {
+        impl<$($type: DuckDBType),+> DuckDBType for ($($type,)+) {
+            fn logical_type<L: FFILink + ?Sized>(link: &L) -> Result<LogicalType> {
+                let types = vec![
+                    $(Value::from_logical_type(link, &$type::logical_type(link)?)?),+
+                ];
+                let parameters = types
+                    .iter()
+                    .map(|value| value as &dyn crate::parameter::QueryParameter)
+                    .collect::<Vec<_>>();
+                link.logical_type_create("TUPLE", Parameters::positional(&parameters))
+            }
+        }
+
+        impl<$($type: ToValue),+> ToValue for ($($type,)+) {
+            fn value<L: FFILink + ?Sized>(&self, link: &L) -> Result<Value> {
+                let children = vec![$(self.$index.value(link)?),+];
+                link.create_value(ValueInput::Tuple(&children))
+            }
+        }
+    };
+}
+
+impl_tuple_value!((A, 0));
+impl_tuple_value!((A, 0), (B, 1));
+impl_tuple_value!((A, 0), (B, 1), (C, 2));
+impl_tuple_value!((A, 0), (B, 1), (C, 2), (D, 3));
+impl_tuple_value!((A, 0), (B, 1), (C, 2), (D, 3), (E, 4));
+impl_tuple_value!((A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5));
+impl_tuple_value!((A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6));
+impl_tuple_value!((A, 0), (B, 1), (C, 2), (D, 3), (E, 4), (F, 5), (G, 6), (H, 7));
 
 #[cfg(test)]
-mod test {
-    use super::{Type, Value};
-    use crate::{Connection, Result};
-    use arrow::datatypes::DataType;
-
-    fn checked_memory_handle() -> Result<Connection> {
-        let db = Connection::open_in_memory()?;
-        db.execute_batch("CREATE TABLE foo (b BLOB, t TEXT, i INTEGER, f FLOAT, n BLOB)")?;
-        Ok(db)
-    }
-
-    #[test]
-    fn test_blob() -> Result<()> {
-        let db = checked_memory_handle()?;
-
-        let v1234 = vec![1u8, 2, 3, 4];
-        db.execute("INSERT INTO foo(b) VALUES (?)", [&v1234])?;
-
-        let v: Vec<u8> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
-        assert_eq!(v, v1234);
-        Ok(())
-    }
-
-    #[test]
-    fn test_empty_blob() -> Result<()> {
-        let db = checked_memory_handle()?;
-
-        let empty = vec![];
-        db.execute("INSERT INTO foo(b) VALUES (?)", [&empty])?;
-
-        let v: Vec<u8> = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
-        assert_eq!(v, empty);
-        Ok(())
-    }
-
-    #[test]
-    fn test_geometry_value_binds_as_wkb_blob() -> Result<()> {
-        let db = checked_memory_handle()?;
-        let wkb = vec![1_u8, 1, 0, 0, 0];
-
-        let value = Value::Geometry(wkb.clone());
-        let bound: Vec<u8> = db.query_row("SELECT ?::BLOB", [value], |r| r.get(0))?;
-
-        assert_eq!(bound, wkb);
-        Ok(())
-    }
-
-    #[test]
-    fn test_geometry_value_binds_through_st_geomfromwkb() -> Result<()> {
-        let db = checked_memory_handle()?;
-        let wkb = vec![
-            0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F,
-        ];
-
-        let value = Value::Geometry(wkb.clone());
-        let bound: Value = db.query_row("SELECT ST_GeomFromWKB(?)", [value], |r| r.get(0))?;
-
-        assert_eq!(bound, Value::Geometry(wkb));
-        Ok(())
-    }
-
-    #[test]
-    fn test_str() -> Result<()> {
-        let db = checked_memory_handle()?;
-
-        let s = "hello, world!";
-        db.execute("INSERT INTO foo(t) VALUES (?)", [&s])?;
-
-        let from: String = db.query_row("SELECT t FROM foo", [], |r| r.get(0))?;
-        assert_eq!(from, s);
-        Ok(())
-    }
-
-    #[test]
-    fn test_string() -> Result<()> {
-        let db = checked_memory_handle()?;
-
-        let s = "hello, world!";
-        let result = db.execute("INSERT INTO foo(t) VALUES (?)", [s.to_owned()]);
-        if let Err(e) = result {
-            panic!("exe error: {e}")
-        }
-
-        let from: String = db.query_row("SELECT t FROM foo", [], |r| r.get(0))?;
-        assert_eq!(from, s);
-        Ok(())
-    }
-
-    #[test]
-    fn test_value() -> Result<()> {
-        let db = checked_memory_handle()?;
-
-        db.execute("INSERT INTO foo(i) VALUES (?)", [Value::BigInt(10)])?;
-
-        assert_eq!(10i64, db.query_row::<i64, _, _>("SELECT i FROM foo", [], |r| r.get(0))?);
-        Ok(())
-    }
-
-    #[test]
-    fn arrow_decimal_types_match_duckdb_decimal_classification() {
-        assert_eq!(Type::from(&DataType::Decimal32(9, 2)), Type::Decimal);
-        assert_eq!(Type::from(&DataType::Decimal64(18, 2)), Type::Decimal);
-        assert_eq!(Type::from(&DataType::Decimal128(38, 2)), Type::Decimal);
-        assert_eq!(Type::from(&DataType::Decimal256(76, 10)), Type::Decimal);
-    }
-
-    #[test]
-    fn test_option() -> Result<()> {
-        let db = checked_memory_handle()?;
-
-        let s = "hello, world!";
-        let b = Some(vec![1u8, 2, 3, 4]);
-
-        db.execute("INSERT INTO foo(t) VALUES (?)", [&s])?;
-        db.execute("INSERT INTO foo(b) VALUES (?)", [&b])?;
-
-        let mut stmt = db.prepare("SELECT t, b FROM foo ORDER BY ROWID ASC")?;
-        let mut rows = stmt.query([])?;
-
-        {
-            let row1 = rows.next()?.unwrap();
-            let s1: Option<String> = row1.get_unwrap(0);
-            let b1: Option<Vec<u8>> = row1.get_unwrap(1);
-            assert_eq!(s, s1.unwrap());
-            assert!(b1.is_none());
-        }
-
-        {
-            let row2 = rows.next()?.unwrap();
-            let s2: Option<String> = row2.get_unwrap(0);
-            let b2: Option<Vec<u8>> = row2.get_unwrap(1);
-            assert!(s2.is_none());
-            assert_eq!(b, b2);
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_dynamic_type() -> Result<()> {
-        use super::Value;
-        let db = checked_memory_handle()?;
-
-        db.execute("INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)", [])?;
-
-        let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
-        let mut rows = stmt.query([])?;
-        let row = rows.next()?.unwrap();
-        // NOTE: this is different from SQLite
-        // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
-        assert_eq!(Value::Blob(vec![120, 48, 49, 48, 50]), row.get::<_, Value>(0)?);
-        assert_eq!(Value::Text(String::from("text")), row.get::<_, Value>(1)?);
-        assert_eq!(Value::Int(1), row.get::<_, Value>(2)?);
-        match row.get::<_, Value>(3)? {
-            Value::Float(val) => assert!((1.5 - val).abs() < f32::EPSILON),
-            x => panic!("Invalid Value {x:?}"),
-        }
-        assert_eq!(Value::Null, row.get::<_, Value>(4)?);
-        Ok(())
-    }
-}
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests;
