@@ -4,17 +4,21 @@ description: Download and extract the DuckDB v2 nightly staging library and conf
 runs:
   using: composite
   steps:
+    - name: Load DuckDB release
+      shell: bash
+      run: cat "$GITHUB_WORKSPACE/.duckdb-release" >> "$GITHUB_ENV"
+
     - name: Download and extract DuckDB
       shell: bash
       run: |
         case "$RUNNER_OS" in
-          Linux)   artifact="libduckdb-linux-amd64.zip" ;;
-          macOS)   artifact="libduckdb-osx-universal.zip" ;;
-          Windows) artifact="libduckdb-windows-amd64.zip" ;;
+          Linux)   artifact="duckdb-shared-libs-linux-amd64.zip" ;;
+          macOS)   artifact="duckdb-shared-libs-osx-universal.zip" ;;
+          Windows) artifact="duckdb-shared-libs-windows-amd64.zip" ;;
           *) echo "::error::Unsupported runner OS: $RUNNER_OS"; exit 1 ;;
         esac
 
-        url="https://duckdb-staging.duckdb.org/${DUCKDB_SHA:0:10}/duckdb/duckdb/github_release/$artifact"
+        url="${ARTIFACT_BASE_URL}/${ARTIFACT_RELEASE}/duckdb/duckdb/github_release/$artifact"
         dir="$RUNNER_TEMP/libduckdb"
         mkdir -p "$dir"
 
