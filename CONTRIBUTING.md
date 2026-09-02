@@ -210,8 +210,9 @@ published release binaries are needed.
 
 Both regenerate bundled sources and bindings, but do not run tests. Validate
 locally, or rely on the nightly workflow and CI to cover the bundled backends.
-The nightly workflow also downloads the matching upstream nightly library,
-generates bindings from its header, and tests those bindings against it.
+The nightly workflow also downloads the matching upstream nightly libraries
+for Linux, macOS, and Windows, generates bindings from their headers, and tests
+those bindings against them.
 Release-based CI jobs (`DUCKDB_DOWNLOAD_LIB`, the Windows release zip) stay red
 until DuckDB publishes the release binaries. If the planned release command
 above already bumped versions and download URLs, finalize the bundled sources
