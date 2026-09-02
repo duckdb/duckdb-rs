@@ -21,14 +21,15 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [features]
-default = ["vcpkg", "pkg-config"]
+default = ["vcpkg", "dep:pkg-config"]
 bundled = ["cc"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
-buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
+buildtime_bindgen = ["bindgen", "dep:pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
 autocomplete = ["bundled-cmake"]
+httpfs = ["bundled-cmake", "dep:pkg-config"]
 icu = ["bundled-cmake"]
 tpcds = ["bundled-cmake"]
 tpch = ["bundled-cmake"]
