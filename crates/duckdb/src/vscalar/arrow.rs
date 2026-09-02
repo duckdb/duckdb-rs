@@ -288,7 +288,7 @@ mod test {
             let array = batch.column(0);
             let array = array.as_any().downcast_ref::<::arrow::array::StringArray>().unwrap();
             for i in 0..array.len() {
-                assert_eq!(array.value(i), format!("Hello foo"));
+                assert_eq!(array.value(i), "Hello foo");
             }
         }
 
