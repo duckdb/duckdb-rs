@@ -7,9 +7,12 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DUCKDB_INCLUDE_DIR");
     println!("cargo:rerun-if-changed=.env");
 
+    dotenv::dotenv().ok();
+
     // Check Cargo features before loading .env so configuration cannot enable a feature.
-    let bundled = env::var_os("CARGO_FEATURE_BUNDLED").is_some();
-    dotenv::dotenv().unwrap();
+    let bundled = env::var("LINK_DUCKDB_BUNDLED").unwrap_or_default().to_lowercase() == "true";
+
+    println!("cargo:rerun-if-env-changed=LINK_DUCKDB_BUNDLED");
 
     let header_file = Path::new(&env::var("DUCKDB_INCLUDE_DIR").unwrap()).join("duckdb_v2.h");
 
