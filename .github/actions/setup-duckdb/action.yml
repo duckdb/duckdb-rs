@@ -32,7 +32,7 @@ runs:
 
         {
           echo "DUCKDB_LIB_DIR=$dir"
-          echo "DUCKDB_INCLUDE_DIR=$dir"
+          echo "DUCKDB_INCLUDE_DIR=$GITHUB_WORKSPACE/tmp"
           echo "LD_LIBRARY_PATH=$dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           echo "DYLD_FALLBACK_LIBRARY_PATH=$dir${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
         } >> "$GITHUB_ENV"
