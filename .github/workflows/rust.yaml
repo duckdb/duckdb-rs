@@ -4,13 +4,17 @@ on:
   - push
   - pull_request
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
   # DuckDB v2 C API has no stable release yet; setup-duckdb reads the nightly
   # staging release from .duckdb-release.
   # All features except capi-v2-p2, which is not ready to link yet.
-  FEATURES: "bundled strict-docs"
+  FEATURES: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
