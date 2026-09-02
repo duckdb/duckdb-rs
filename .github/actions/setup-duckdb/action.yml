@@ -12,9 +12,9 @@ runs:
       shell: bash
       run: |
         case "$RUNNER_OS" in
-          Linux)   artifact="duckdb-shared-libs-linux-amd64.zip" ;;
-          macOS)   artifact="duckdb-shared-libs-osx-universal.zip" ;;
-          Windows) artifact="duckdb-shared-libs-windows-amd64.zip" ;;
+          Linux)   artifact="duckdb-shared-libs-linux-amd64.tar.gz" ;;
+          macOS)   artifact="duckdb-shared-libs-osx-universal.tar.gz" ;;
+          Windows) artifact="duckdb-shared-libs-windows-amd64.tar.gz" ;;
           *) echo "::error::Unsupported runner OS: $RUNNER_OS"; exit 1 ;;
         esac
 
@@ -22,13 +22,12 @@ runs:
         dir="$RUNNER_TEMP/libduckdb"
         mkdir -p "$dir"
 
-        curl --fail --location --retry 5 --output "$dir.zip" "$url" || {
+        curl --fail --location --retry 5 --output "$dir.tar.gz" "$url" || {
           echo "::error::No staging artifact at $url"
           exit 1
         }
 
-        python="$(command -v python3 || command -v python)"
-        "$python" -m zipfile -e "$dir.zip" "$dir"
+        (cd "$RUNNER_TEMP" && tar -xzf libduckdb.tar.gz -C libduckdb)
 
         {
           echo "DUCKDB_LIB_DIR=$dir"

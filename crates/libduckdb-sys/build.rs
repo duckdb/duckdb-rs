@@ -10,7 +10,7 @@ fn main() {
     dotenv::dotenv().ok();
 
     // Check Cargo features before loading .env so configuration cannot enable a feature.
-    let bundled = env::var("LINK_DUCKDB_BUNDLED").unwrap_or_default().to_lowercase() != "false";
+    let bundled = env::var("LINK_DUCKDB_BUNDLED").unwrap_or_default().to_lowercase() == "true";
 
     println!("cargo:rerun-if-env-changed=LINK_DUCKDB_BUNDLED");
 
