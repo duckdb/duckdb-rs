@@ -1,7 +1,17 @@
 [package]
 name = "libduckdb-sys"
-version = "2.0.0"
-edition = "2024"
+description = "Native bindings to the libduckdb library V2 C API"
+# ---
+version = { workspace = true }
+authors = { workspace = true }
+categories = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
 links = "duckdb"
 
 [features]

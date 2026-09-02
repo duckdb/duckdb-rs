@@ -1,7 +1,17 @@
 [package]
 name = "duckdb-rs"
-version = "2.0.0"
-edition = "2024"
+description = "Ergonomic wrapper for DuckDB"
+# ---
+version = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+categories = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
@@ -15,6 +25,6 @@ uuid = ["dep:uuid"]
 
 [dependencies]
 libc = "0.2.186"
-libduckdb-sys = { path = "../libduckdb-sys" }
+libduckdb-sys = { version = "2.0.0", path = "../libduckdb-sys" }
 paste = "1.0.15"
 uuid = { version = "1.26.0", optional = true }
