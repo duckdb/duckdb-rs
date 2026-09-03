@@ -109,7 +109,7 @@ fn test_remaining_value_creators() -> crate::Result<()> {
         },
         DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL
     );
-    assert_type!(UuidValue(0), DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
+    assert_type!(UuidValueRaw(0), DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
 
     let tuple = (42_i32, "duck").value(&conn)?;
     assert_eq!(
@@ -188,7 +188,7 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let uuid = UuidValue(i128::MIN).value(&conn)?;
+    let uuid = UuidValueRaw(i128::MIN).value(&conn)?;
     assert_eq!(uuid.dbg_string()?, "00000000-0000-0000-0000-000000000000");
 
     let empty = ().value(&conn)?;
@@ -277,7 +277,7 @@ fn test_raw_value_getters() -> crate::Result<()> {
     assert_storage_round_trip!(TimestampNsValue(-7), TimestampNsValue);
     assert_storage_round_trip!(TimestampTzValue(-8), TimestampTzValue);
     assert_storage_round_trip!(TimestampTzNsValue(-9), TimestampTzNsValue);
-    assert_storage_round_trip!(UuidValue(i128::MIN + 10), UuidValue);
+    assert_storage_round_trip!(UuidValueRaw(i128::MIN + 10), UuidValueRaw);
 
     let interval = IntervalValue {
         months: -1,

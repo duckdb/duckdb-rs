@@ -8,11 +8,11 @@ use crate::{
     logical_type::LogicalType,
     query_result::QueryResultStep,
     types::{
-        Any, BigNumValue, BitValue, BlobValue, DateValue, DecimalValue, IntervalValue, MapValue, StructSchema,
-        StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
-        TimestampTzNsValue, TimestampTzValue, TimestampValue, UnionSchema, UnionValue, UuidValue,
+        Any, Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, List,
+        Map, MapValue, Struct, StructSchema, StructValue, TString, TimeNsValue, TimeTzValue, TimeValue,
+        TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
+        Union, UnionSchema, UnionValue, UuidValueRaw, Variant,
     },
-    vector::{Array, Decimal, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
 };
 
 #[cfg(feature = "capi-v2-p2")]
@@ -720,7 +720,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     assert_round_trip!(TimestampNsValue(-7), TimestampNsValue);
     assert_round_trip!(TimestampTzValue(-8), TimestampTzValue);
     assert_round_trip!(TimestampTzNsValue(-9), TimestampTzNsValue);
-    assert_round_trip!(UuidValue(i128::MIN + 10), UuidValue);
+    assert_round_trip!(UuidValueRaw(i128::MIN + 10), UuidValueRaw);
     assert_round_trip!(
         IntervalValue {
             months: -1,

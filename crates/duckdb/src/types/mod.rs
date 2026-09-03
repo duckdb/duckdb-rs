@@ -22,6 +22,9 @@ use libduckdb_sys as ffi;
 use std::fmt::Display;
 use std::marker::PhantomData;
 
+#[cfg(feature = "uuid")]
+pub(crate) mod uuid;
+
 /// Constructs the DuckDB logical type represented by a Rust type.
 pub trait DuckDBType {
     /// Return the DuckDB logical type represented by this Rust type.
@@ -435,26 +438,29 @@ declare_storage_value!(
 );
 
 /// DuckDB's internal signed 128-bit UUID representation.
+///
+/// Because this type is signed internally, we need to do an conversion into a real UUID when interfacing with external libraries.
+/// Enable the feature `uuid` to use conversions between `UuidValueRaw` and `uuid::Uuid`.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UuidValue(pub i128);
+pub struct UuidValueRaw(pub i128);
 
-impl DuckDBType for UuidValue {
+impl DuckDBType for UuidValueRaw {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID, Parameters::None)
     }
 }
 
-impl ToValue for UuidValue {
+impl ToValue for UuidValueRaw {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         link.create_value(ValueInput::Uuid(self.0))
     }
 }
 
-impl FromValue for UuidValue {
+impl FromValue for UuidValueRaw {
     fn from_value(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_uuid, **value, RET)?;
-        Ok(Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
+        Ok(Self((i128::from(raw.upper as i64) << 64) | i128::from(raw.lower)))
     }
 }
 
