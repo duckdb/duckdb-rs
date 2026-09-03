@@ -160,6 +160,7 @@ scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
     let mut result = result;
     let val = 42_i32.value(&ctx)?;
     result.make_constant(val, true, 10)?;
+    assert_eq!(result.get_view().unwrap().as_slice().unwrap(), &[42]);
     Ok(())
 });
 
@@ -1104,6 +1105,102 @@ fn test_vector_tstring() -> crate::Result<()> {
             }
         }
     }
+
+    assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_raw_string_access() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
+
+    let mut results = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<TString>(0)?;
+
+        let view = vector.get_view().unwrap();
+        let slice = view.as_slice().unwrap();
+
+        dbg!(slice.len());
+
+        for (index, item) in slice.iter().enumerate() {
+            if view.is_null(index) {
+                results.push(None);
+            } else {
+                let string = String::from_utf8_lossy(item.get_data());
+                println!("{}", string.to_string());
+
+                results.push(Some(string.to_string()));
+            }
+        }
+    }
+
+    let expected = [
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+    ];
+
+    assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_raw_integer_access() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query("SELECT * FROM test_vector_types(NULL::INTEGER)", Parameters::None)?;
+
+    let mut results = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+
+        let view = vector.get_view().unwrap();
+        let slice = view.as_slice().unwrap();
+        assert!(std::panic::catch_unwind(|| view.is_null(view.len())).is_err());
+
+        for (index, item) in slice.iter().enumerate() {
+            if view.is_null(index) {
+                results.push(None);
+            } else {
+                results.push(Some(*item));
+            }
+        }
+    }
+
+    let expected = [
+        Some(i32::MIN),
+        Some(i32::MAX),
+        None,
+        Some(i32::MIN),
+        Some(i32::MIN),
+        Some(i32::MIN),
+        Some(i32::MAX),
+        None,
+        Some(3),
+        Some(5),
+        Some(7),
+    ];
 
     assert_eq!(results, expected);
 

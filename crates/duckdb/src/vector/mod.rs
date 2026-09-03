@@ -77,16 +77,124 @@ impl StorageKind {
     }
 }
 
+pub struct VectorView<T> {
+    view: ffi::duckdb_v2_vector_view,
+    kind: StorageKind,
+    _marker: PhantomData<T>,
+}
+
+impl<T: VectorElement> VectorView<T> {
+    pub fn physical_index(&self, logical: usize) -> usize {
+        assert!(
+            logical < self.len(),
+            "logical index {logical} out of bounds for vector view of length {}",
+            self.len()
+        );
+
+        match self.kind {
+            StorageKind::Constant => 0,
+            StorageKind::Flat if self.view.sel.is_null() => logical,
+            StorageKind::Flat | StorageKind::Dictionary => unsafe { *self.view.sel.add(logical) as usize },
+            StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.view.count as usize
+    }
+
+    fn physical_len(&self) -> usize {
+        match self.kind {
+            StorageKind::Flat => self.len(),
+            StorageKind::Constant => 1,
+            StorageKind::Dictionary => self
+                .selection()
+                .and_then(|selection| selection.iter().max())
+                .map_or(0, |index| *index as usize + 1),
+            StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
+        }
+    }
+
+    fn is_null_physical(&self, physical: usize) -> bool {
+        if self.view.validity.is_null() {
+            false
+        } else {
+            unsafe { (*self.view.validity.add(physical / 64) & (1 << (physical % 64))) == 0 }
+        }
+    }
+
+    pub fn is_null(&self, index: usize) -> bool {
+        let physical = self.physical_index(index);
+        self.is_null_physical(physical)
+    }
+
+    /// Return the vector's physical storage.
+    ///
+    /// Flat vectors contain one entry per logical row, constant vectors
+    /// contain one entry, and dictionary vectors use [`Self::selection`] to
+    /// map logical rows into this slice.
+    pub fn as_slice(&self) -> Option<&[T::Internal]> {
+        if self.view.data.is_null() {
+            None
+        } else {
+            Some(unsafe { std::slice::from_raw_parts(self.view.data as *const T::Internal, self.physical_len()) })
+        }
+    }
+
+    pub fn as_ptr(&self) -> *const T::Internal {
+        if self.view.data.is_null() {
+            std::ptr::null()
+        } else {
+            self.view.data as *const T::Internal
+        }
+    }
+
+    pub fn selection(&self) -> Option<&[u32]> {
+        if self.view.sel.is_null() {
+            None
+        } else {
+            Some(unsafe { std::slice::from_raw_parts(self.view.sel as *const u32, self.view.count as usize) })
+        }
+    }
+
+    pub fn validity(&self) -> Option<&[u64]> {
+        if self.view.validity.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::slice::from_raw_parts(self.view.validity as *const u64, self.physical_len().div_ceil(64))
+            })
+        }
+    }
+
+    pub(crate) unsafe fn cast<U: VectorElement>(&self) -> &VectorView<U> {
+        unsafe { &*(self as *const VectorView<T> as *const VectorView<U>) }
+    }
+
+    /// Reinterpret this view as a view over a different logical element type.
+    ///
+    /// This only changes the `PhantomData` marker; the underlying FFI view
+    /// (and thus any previously-flattened/dictionary state) is left untouched,
+    /// unlike re-acquiring the view via `duckdb_v2_vector_get_view`.
+    pub(crate) unsafe fn cast_owned<U: VectorElement>(self) -> VectorView<U> {
+        VectorView {
+            view: self.view,
+            kind: self.kind,
+            _marker: PhantomData,
+        }
+    }
+}
+
 /// A typed view of a DuckDB vector borrowed from its owning data chunk.
 ///
 /// Storage representation and writability are runtime properties. Casting only
 /// changes the logical element type and preserves the chunk lifetime.
-pub struct Vector<'chunk, T = Unknown> {
+pub struct Vector<'chunk, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) logical_type: LogicalType,
     pub(crate) kind: StorageKind,
     pub(crate) len: usize,
-    pub(crate) view: Option<ffi::duckdb_v2_vector_view>,
+    pub(crate) view: Option<VectorView<T>>,
     pub(crate) writable: bool,
     pub(crate) data_mut: Option<*mut c_void>,
     pub(crate) validity_mut: Option<*mut u64>,
@@ -120,7 +228,7 @@ impl<'chunk> Vector<'chunk, Unknown> {
             children.push(Self::from_handle(&child_handle, writable)?);
         }
 
-        Ok(Self {
+        Ok(Vector {
             handle: *handle,
             logical_type: LogicalType {
                 handle: logical_type_handle,
@@ -146,17 +254,25 @@ impl<'chunk> Vector<'chunk, Unknown> {
     }
 }
 
-impl<'chunk, T> Vector<'chunk, T> {
-    fn acquire_view(
+impl<'chunk, T: VectorElement> Vector<'chunk, T> {
+    pub fn get_view(&self) -> Option<&VectorView<T>> {
+        self.view.as_ref()
+    }
+
+    fn acquire_view<U: VectorElement>(
         handle: ffi::duckdb_v2_vector_handle,
         kind: StorageKind,
-    ) -> Result<Option<ffi::duckdb_v2_vector_view>> {
+    ) -> Result<Option<VectorView<U>>> {
         if kind == StorageKind::Other {
             return Ok(None);
         }
 
         let view: ffi::duckdb_v2_vector_view = check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET)?;
-        Ok(Some(view))
+        Ok(Some(VectorView {
+            view,
+            kind,
+            _marker: PhantomData,
+        }))
     }
 
     fn acquire_mutable_buffers(
@@ -189,13 +305,13 @@ impl<'chunk, T> Vector<'chunk, T> {
         Ok(())
     }
 
-    pub(crate) fn cast_unchecked<U>(self) -> Vector<'chunk, U> {
+    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'chunk, U> {
         Vector {
             handle: self.handle,
             logical_type: self.logical_type,
             kind: self.kind,
             len: self.len,
-            view: self.view,
+            view: self.view.map(|view| unsafe { view.cast_owned::<U>() }),
             writable: self.writable,
             data_mut: self.data_mut,
             validity_mut: self.validity_mut,
@@ -234,19 +350,6 @@ impl<'chunk, T> Vector<'chunk, T> {
         }
     }
 
-    fn physical_index(&self, logical: usize, view: &ffi::duckdb_v2_vector_view) -> usize {
-        match self.kind {
-            StorageKind::Constant => 0,
-            StorageKind::Flat if view.sel.is_null() => logical,
-            StorageKind::Flat | StorageKind::Dictionary => unsafe { *view.sel.add(logical) as usize },
-            StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
-        }
-    }
-
-    fn is_valid(view: &ffi::duckdb_v2_vector_view, physical: usize) -> bool {
-        view.validity.is_null() || unsafe { *view.validity.add(physical / 64) & (1u64 << (physical % 64)) != 0 }
-    }
-
     /// Return whether a logical row is `NULL`.
     pub fn is_null(&self, index: usize) -> Result<bool> {
         if index >= self.len {
@@ -257,8 +360,8 @@ impl<'chunk, T> Vector<'chunk, T> {
             code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
             message: "vector has no readable view".to_string(),
         })?;
-        let physical = self.physical_index(index, view);
-        Ok(!Self::is_valid(view, physical))
+
+        Ok(view.is_null(index))
     }
 
     /// Make this vector reference another vector's storage.
@@ -275,13 +378,13 @@ impl<'chunk, T> Vector<'chunk, T> {
 
         let view = self.view.as_ref()?;
 
-        let physical = self.physical_index(index, view);
-        // Dictionary selections address the flattened child, while view.count is the parent size.
-        if (self.kind != StorageKind::Dictionary && physical >= view.count as usize) || !Self::is_valid(view, physical)
-        {
-            return None;
+        let physical = view.physical_index(index);
+
+        if view.is_null_physical(physical) {
+            None
+        } else {
+            Some(U::get(self, physical, index))
         }
-        Some(U::get(self, physical, index))
     }
 
     pub(crate) fn get_as_checked<U: VectorElement>(&self, index: usize) -> Result<Option<U::Ref<'_>>> {
@@ -520,7 +623,7 @@ impl<T: WritableVectorElement> Vector<'_, T> {
 }
 
 /// Iterates over the logical rows of a vector.
-pub struct VectorIter<'vector, 'chunk, T> {
+pub struct VectorIter<'vector, 'chunk, T: VectorElement> {
     vector: &'vector Vector<'chunk, T>,
     index: usize,
 }
