@@ -21,6 +21,7 @@ fn profile_dir(out_dir: &Path) -> Option<&Path> {
     build_dir.parent()
 }
 
+#[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
 pub(crate) fn download_root(out_dir: &Path) -> Option<PathBuf> {
     Some(profile_dir(out_dir)?.parent()?.join("duckdb-download"))
 }
