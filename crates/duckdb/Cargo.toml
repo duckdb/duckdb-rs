@@ -17,7 +17,9 @@ rust-version = { workspace = true }
 name = "duckdb"
 
 [features]
-default = []
+# Forwards libduckdb-sys defaults (vcpkg, pkg-config, download-lib) so that
+# `default-features = false` on this crate also drops them from the sys crate.
+default = ["libduckdb-sys/default"]
 bundled = ["libduckdb-sys/bundled"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake", "parquet"]
@@ -39,6 +41,8 @@ appender-arrow = ["vtab-arrow"]
 vtab-full = ["vtab-excel", "vtab-arrow", "appender-arrow"]
 extensions-full = ["json", "parquet", "vtab-full"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
+# Allow DUCKDB_DOWNLOAD_LIB=1 to fetch a pre-built libduckdb at build time.
+download-lib = ["libduckdb-sys/download-lib"]
 modern-full = ["chrono", "serde_json", "url", "r2d2", "uuid", "polars", "rust_decimal"]
 polars = ["dep:polars", "dep:polars-core"]
 rust_decimal = ["dep:rust_decimal"]
