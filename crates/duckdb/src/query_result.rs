@@ -139,7 +139,6 @@ impl QueryResult<'_> {
 
     /// Block until another execution step can make progress.
     pub fn wait(&self) -> Result<()> {
-        sleep(Duration::from_millis(100));
         check_api_call!(ffi::duckdb_v2_result_wait, self.handle)
     }
 
