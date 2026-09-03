@@ -22,6 +22,9 @@ use libduckdb_sys as ffi;
 use std::fmt::Display;
 use std::marker::PhantomData;
 
+#[cfg(feature = "uuid")]
+pub(crate) mod uuid;
+
 /// Constructs the DuckDB logical type represented by a Rust type.
 pub trait DuckDBType {
     /// Return the DuckDB logical type represented by this Rust type.
@@ -441,37 +444,6 @@ declare_storage_value!(
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UuidValueRaw(pub i128);
-
-#[cfg(feature = "uuid")]
-impl From<uuid::Uuid> for UuidValueRaw {
-    fn from(value: uuid::Uuid) -> Self {
-        let lower = value.as_u128() as u64;
-        let upper = (value.as_u128() >> 64) as u64;
-
-        if upper > i64::MAX as u64 {
-            UuidValueRaw(((upper - i64::MAX as u64 - 1) as i128) << 64 | lower as i128)
-        } else {
-            UuidValueRaw(((upper as i128) - i64::MAX as i128 - 1) << 64 | lower as i128)
-        }
-    }
-}
-
-#[cfg(feature = "uuid")]
-impl From<UuidValueRaw> for uuid::Uuid {
-    fn from(value: UuidValueRaw) -> Self {
-        let upper = (value.0 >> 64) as u64;
-        let upper = upper ^ (1u64 << 63);
-        let lower = value.0 as u64;
-
-        let mut bytes = [0u8; 16];
-
-        for i in 0..8 {
-            bytes[i] = ((upper >> (56 - 8 * i)) & 0xFF) as u8;
-            bytes[8 + i] = ((lower >> (56 - 8 * i)) & 0xFF) as u8;
-        }
-        uuid::Uuid::from_bytes(bytes)
-    }
-}
 
 impl DuckDBType for UuidValueRaw {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
