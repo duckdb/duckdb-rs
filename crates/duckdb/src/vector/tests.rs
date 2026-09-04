@@ -4,11 +4,10 @@ use crate::{
     environment::{Environment, StorageLocation},
     error::DuckDBError,
     types::{
-        BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, TimeNsValue, TimeTzValue,
-        TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue,
-        TimestampValue, UuidValue,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, Map, Struct,
+        TString, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
+        TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
     },
-    vector::{Array, Struct, TString, Union},
 };
 
 #[cfg(feature = "capi-v2-p2")]
@@ -479,7 +478,7 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(res.vectors_count()?, 1);
 
-    let vector = res.get_vector_at::<crate::vector::Map<i32, Decimal<i16>>>(0)?;
+    let vector = res.get_vector_at::<Map<i32, Decimal<i16>>>(0)?;
     let mut reader = vector.iter()?;
 
     assert_eq!(vector.len(), 3);
@@ -667,7 +666,7 @@ pub fn vector_test_bignum() -> crate::Result<()> {
     for item in result {
         let item = item?;
 
-        let res = item.get_vector_at::<crate::vector::BigNum>(0)?;
+        let res = item.get_vector_at::<BigNum>(0)?;
 
         assert!(res.len() == 3);
         let reader = res.iter()?;
@@ -1132,7 +1131,7 @@ fn test_raw_string_access() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk?;
-        let vector = chunk.get_vector_at::<TString>(0)?;
+        let vector = chunk.get_vector_at::<BlobValue<&[u8]>>(0)?;
 
         let view = vector.get_view().unwrap();
         let slice = unsafe { view.as_slice() }.unwrap();
