@@ -84,6 +84,11 @@ pub struct VectorView<T> {
 }
 
 impl<T: VectorElement> VectorView<T> {
+    /// Map a logical row to its physical storage index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `logical` is outside the view.
     pub fn physical_index(&self, logical: usize) -> usize {
         assert!(
             logical < self.len(),
@@ -99,6 +104,7 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return the number of logical rows in the view.
     pub fn len(&self) -> usize {
         self.view.count as usize
     }
@@ -123,6 +129,11 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return whether the logical row contains SQL `NULL`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is outside the view.
     pub fn is_null(&self, index: usize) -> bool {
         let physical = self.physical_index(index);
         self.is_null_physical(physical)
@@ -146,6 +157,7 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return a pointer to the physical storage, or null when no data is exposed.
     pub fn as_ptr(&self) -> *const T::Internal {
         if self.view.data.is_null() {
             std::ptr::null()
@@ -154,6 +166,7 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return the logical-to-physical row mapping, if DuckDB supplied one.
     pub fn selection(&self) -> Option<&[u32]> {
         if self.view.sel.is_null() {
             None
@@ -162,6 +175,7 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return the physical validity bitmask, or `None` when every entry is valid.
     pub fn validity(&self) -> Option<&[u64]> {
         if self.view.validity.is_null() {
             None
@@ -260,6 +274,10 @@ impl<'chunk> Vector<'chunk, Unknown> {
 }
 
 impl<'chunk, T: VectorElement> Vector<'chunk, T> {
+    /// Borrow the readable storage view.
+    ///
+    /// Returns `None` for [`StorageKind::Other`] until the vector is
+    /// [`flatten`](Self::flatten)ed.
     pub fn get_view(&self) -> Option<&VectorView<T>> {
         self.view.as_ref()
     }
