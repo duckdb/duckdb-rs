@@ -160,7 +160,7 @@ scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
     let mut result = result;
     let val = 42_i32.value(&ctx)?;
     result.make_constant(val, true, 10)?;
-    assert_eq!(result.get_view().unwrap().as_slice().unwrap(), &[42]);
+    assert_eq!(unsafe { result.get_view().unwrap().as_slice() }.unwrap(), &[42]);
     Ok(())
 });
 
@@ -1130,7 +1130,7 @@ fn test_raw_string_access() -> crate::Result<()> {
         let vector = chunk.get_vector_at::<TString>(0)?;
 
         let view = vector.get_view().unwrap();
-        let slice = view.as_slice().unwrap();
+        let slice = unsafe { view.as_slice() }.unwrap();
 
         dbg!(slice.len());
 
@@ -1180,7 +1180,7 @@ fn test_raw_integer_access() -> crate::Result<()> {
         let vector = chunk.get_vector_at::<i32>(0)?;
 
         let view = vector.get_view().unwrap();
-        let slice = view.as_slice().unwrap();
+        let slice = unsafe { view.as_slice() }.unwrap();
         assert!(std::panic::catch_unwind(|| view.is_null(view.len())).is_err());
 
         for (index, item) in slice.iter().enumerate() {
