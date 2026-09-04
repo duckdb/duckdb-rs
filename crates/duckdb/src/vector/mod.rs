@@ -46,9 +46,7 @@ use crate::{
 };
 
 mod element;
-pub use crate::types::{
-    Array, BigNum, BigNumDecoded, Decimal, InternalDecimalType, List, Map, Struct, TString, Union, Variant,
-};
+pub use crate::types::{Array, BigNum, BigNumDecoded, InternalDecimalType, List, Map, Struct, TString, Union, Variant};
 pub use element::*;
 
 /// Runtime view of a vector's storage kind.
@@ -251,8 +249,6 @@ pub struct Vector<'chunk, T: VectorElement> {
     pub(crate) len: usize,
     pub(crate) view: Option<VectorView<T>>,
     pub(crate) writable: bool,
-    pub(crate) data_mut: Option<*mut c_void>,
-    pub(crate) validity_mut: Option<*mut u64>,
     heap: Option<ffi::duckdb_v2_arena_handle>,
     pub(crate) children: Vec<Vector<'chunk, Unknown>>,
     pub(crate) child_write_offset: usize,
@@ -275,7 +271,6 @@ impl<'chunk> Vector<'chunk, Unknown> {
 
         let kind = StorageKind::from_ffi(vector_type);
         let view = Self::acquire_view(*handle, kind)?;
-        let (data_mut, validity_mut) = Self::acquire_mutable_buffers(*handle, kind, writable)?;
 
         let mut children = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
@@ -292,8 +287,6 @@ impl<'chunk> Vector<'chunk, Unknown> {
             len: len as usize,
             view,
             writable,
-            data_mut,
-            validity_mut,
             heap: None,
             children,
             child_write_offset: 0,
@@ -334,24 +327,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         }))
     }
 
-    fn acquire_mutable_buffers(
-        handle: ffi::duckdb_v2_vector_handle,
-        kind: StorageKind,
-        writable: bool,
-    ) -> Result<(Option<*mut c_void>, Option<*mut u64>)> {
-        if !writable || kind != StorageKind::Flat {
-            return Ok((None, None));
-        }
-
-        let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, handle, RET)?;
-        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
-        Ok((Some(data), Some(validity)))
-    }
-
     /// Refresh the vector's view and mutable buffers after a state change, e.g a flatten.
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
-        (self.data_mut, self.validity_mut) = Self::acquire_mutable_buffers(self.handle, self.kind, self.writable)?;
         self.heap = None;
         Ok(())
     }
@@ -372,8 +350,6 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             len: self.len,
             view: self.view.map(|view| unsafe { view.cast_owned::<U>() }),
             writable: self.writable,
-            data_mut: self.data_mut,
-            validity_mut: self.validity_mut,
             heap: self.heap,
             children: self.children,
             child_write_offset: self.child_write_offset,
@@ -463,17 +439,19 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             return Err(out_of_bounds(index, self.len));
         }
 
-        let data = self.data_mut.ok_or_else(not_writable)?;
-        let validity = self.validity_mut.ok_or_else(not_writable)?;
+        let view = self.view.as_ref().ok_or_else(not_writable)?;
+
+        let data = view.as_ptr() as *mut U;
+        let validity = view.validity().ok_or_else(not_writable)?;
+
         unsafe {
-            let word = validity.add(index / 64);
             let mask = 1u64 << (index % 64);
             match value {
                 Some(value) => {
-                    data.cast::<U>().add(index).write(value);
-                    *word |= mask;
+                    data.add(index).write(value);
+                    validity[index / 64] |= mask;
                 }
-                None => *word &= !mask,
+                None => validity[index / 64] &= !mask,
             }
         }
         Ok(())
@@ -483,21 +461,29 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
-        let validity = self.validity_mut.ok_or_else(not_writable)?;
-        unsafe {
-            let word = validity.add(index / 64);
-            let mask = 1u64 << (index % 64);
-            if is_valid {
-                *word |= mask;
-            } else {
-                *word &= !mask;
-            }
+        let view = self.view.as_ref().ok_or_else(not_writable)?;
+        let validity = view.validity().ok_or_else(not_writable)?;
+
+        let mask = 1u64 << (index % 64);
+        if is_valid {
+            validity[index / 64] |= mask;
+        } else {
+            validity[index / 64] &= !mask;
         }
 
         Ok(())
     }
 
-    pub(crate) fn write_string(&mut self, index: usize, value: Option<&str>) -> Result<()> {
+    fn heap(&mut self) -> Result<ffi::duckdb_v2_arena_handle> {
+        if let Some(handle) = self.heap {
+            return Ok(handle);
+        }
+        let handle = check_api_call!(ffi::duckdb_v2_vector_get_arena, self.handle, RET)?;
+        self.heap = Some(handle);
+        Ok(handle)
+    }
+
+    pub(crate) fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
@@ -530,15 +516,6 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     /// This is the slow path; prefer [`Self::write`] with `None`.
     pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
         check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64,)
-    }
-
-    fn heap(&mut self) -> Result<ffi::duckdb_v2_arena_handle> {
-        if let Some(handle) = self.heap {
-            return Ok(handle);
-        }
-        let handle = check_api_call!(ffi::duckdb_v2_vector_get_arena, self.handle, RET)?;
-        self.heap = Some(handle);
-        Ok(handle)
     }
 
     pub(crate) fn write_as<U: WritableVectorElement>(

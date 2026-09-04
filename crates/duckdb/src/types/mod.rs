@@ -113,10 +113,8 @@ impl BigNum {
 pub struct Variant;
 
 /// A `DECIMAL` vector element stored as the integer type `T`.
-#[derive(Debug)]
-pub struct Decimal<T> {
-    _marker: PhantomData<T>,
-}
+/// Width and scale are unset; use DecimalValue when creating new decimals.
+pub type Decimal<T> = DecimalValue<T, 0, 0>;
 
 /// Marks integer types supported as the physical storage of [`Decimal`].
 pub trait InternalDecimalType {

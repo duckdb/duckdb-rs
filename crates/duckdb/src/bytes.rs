@@ -14,7 +14,7 @@ type DuckDBV2BytesPointer = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_1;
 type DuckDBV2BytesInlined = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_2;
 impl DuckDBBytes {
     /// Encode a string in DuckDB's internal byte representation.
-    pub fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(value: &str, mut heap: F) -> Result<Self> {
+    pub fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(value: &[u8], mut heap: F) -> Result<Self> {
         let encoded = if value.len() <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize {
             let mut inlined = DuckDBV2BytesInlined {
                 length: value.len() as u32,

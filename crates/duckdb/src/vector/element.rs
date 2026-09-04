@@ -1,16 +1,17 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use super::*;
 use crate::bytes::DuckDBBytes;
 use crate::logical_type::LogicalTypeID;
+use crate::types::Decimal;
 use crate::{
     logical_type::LogicalType,
     types::{
-        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, InternalDecimalType,
-        IntervalValue, List, Map, Struct, TString, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
-        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
-        Variant,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalValue, InternalDecimalType, IntervalValue,
+        List, Map, Struct, TString, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue,
+        TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue, Variant,
     },
 };
 
@@ -133,49 +134,6 @@ impl<T> VectorElement for BitValue<T> {
     }
 }
 
-impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> VectorElement for DecimalValue<T, WIDTH, SCALE> {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
-
-    type Internal = Self;
-
-    type Ref<'a>
-        = &'a Self
-    where
-        T: 'a;
-
-    fn validate(other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
-            return Ok(false);
-        }
-
-        let expected_size = match WIDTH {
-            1..=4 => std::mem::size_of::<i16>(),
-            5..=9 => std::mem::size_of::<i32>(),
-            10..=18 => std::mem::size_of::<i64>(),
-            19..=38 => std::mem::size_of::<i128>(),
-            _ => return Ok(false),
-        };
-        if std::mem::size_of::<T>() != expected_size {
-            return Ok(false);
-        }
-
-        let params = other.get_params()?;
-        if params.len() != 2 {
-            return Ok(false);
-        }
-        Ok(params[0].1.get::<u8>()? == WIDTH && params[1].1.get::<u8>()? == SCALE)
-    }
-
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
-    where
-        T: 'a,
-    {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const Self;
-        unsafe { &*data_ptr.add(physical) }
-    }
-}
-
-// TODO: Review if needed
 impl<T: InternalDecimalType> VectorElement for Decimal<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
@@ -256,12 +214,11 @@ impl VectorElement for BigNumValue {
 
     type Ref<'a> = &'a BigNum;
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const BigNum;
-        unsafe { &*data_ptr.add(physical) }
+        BigNum::get(vector, physical, logical).into()
     }
 }
 
@@ -272,7 +229,6 @@ impl VectorElement for String {
 
     type Ref<'a> = &'a str;
 
-    // TODO return slice.
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
@@ -391,6 +347,7 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
         self.list.length == 0
     }
 
+    // TODO: Maybe remove?
     /// Return a unified view of the list's child vector.
     pub fn view(&self) -> &VectorView<T> {
         unsafe {
@@ -640,12 +597,6 @@ impl<'a> StructRow<'a> {
     }
 }
 
-/// Values written into one map row.
-pub struct MapWrite<'a, K: WritableVectorElement + 'a, V: WritableVectorElement + 'a> {
-    /// Key-value entries for the row.
-    pub entries: Vec<(K::Write<'a>, V::Write<'a>)>,
-}
-
 impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP;
 
@@ -691,7 +642,7 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
 
 impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
     type Write<'a>
-        = MapWrite<'a, K, V>
+        = HashMap<K::Write<'a>, V::Write<'a>>
     where
         K: 'a,
         V: 'a;
@@ -702,7 +653,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         };
 
         let offset = vector.child_write_offset;
-        let len = value.entries.len();
+        let len = value.len();
         let mut children = std::mem::take(&mut vector.children).into_iter();
         let mut keys = children.next().expect("validated map key child").cast_unchecked::<K>();
         let mut values = children
@@ -713,14 +664,14 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         let result = (|| {
             keys.set_size(offset + len)?;
             values.set_size(offset + len)?;
-            for (child_index, (key, value)) in value.entries.into_iter().enumerate() {
+            for (child_index, (key, value)) in value.into_iter().enumerate() {
                 keys.write(offset + child_index, Some(key))?;
                 values.write(offset + child_index, Some(value))?;
             }
             Ok(())
         })();
 
-        vector.children = vec![keys.into_unknown(), values.into_unknown()];
+        vector.children = vec![keys.cast_unchecked::<Unknown>(), values.cast_unchecked::<Unknown>()];
         result?;
         vector.child_write_offset += len;
         vector.write_raw(
@@ -984,7 +935,7 @@ impl WritableVectorElement for String {
     type Write<'a> = &'a str;
 
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_string(index, value)
+        vector.write_bytes(index, value.map(|v| v.as_bytes()))
     }
 }
 

@@ -2,17 +2,16 @@ use crate::{
     DuckDBType, Parameters, ToValue,
     builder_helpers::scalar_callback,
     connection::FFILink,
-    environment::Environment,
-    environment::StorageLocation,
+    environment::{Environment, StorageLocation},
     error::DuckDBError,
     logical_type::LogicalType,
     query_result::QueryResultStep,
     types::{
-        Any, BigNumValue, BitValue, BlobValue, DateValue, DecimalValue, IntervalValue, MapValue, StructSchema,
+        Any, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, MapValue, StructSchema,
         StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
         TimestampTzNsValue, TimestampTzValue, TimestampValue, UnionSchema, UnionValue, UuidValue,
     },
-    vector::{Array, Decimal, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
+    vector::{Array, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
 };
 
 #[cfg(feature = "capi-v2-p2")]
@@ -730,10 +729,17 @@ pub fn vector_value_types() -> crate::Result<()> {
         },
         IntervalValue
     );
-    assert_round_trip!(
-        DecimalValue::<i64, 18, 3>(-123_456),
-        DecimalValue<i64, 18, 3>
-    );
+
+    let mut result = conn.query(
+        "SELECT $1",
+        Parameters::positional(&[&DecimalValue::<i64, 18, 3>(-123_456)]),
+    )?;
+    let chunk = result.next().unwrap()?;
+    let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    assert_eq!(vector.get(0)?, Some(&-123_456));
+    drop(vector);
+    drop(chunk);
+    drop(result);
 
     let blob = BlobValue(vec![0_u8, 1, 255]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&blob]))?;
