@@ -17,6 +17,12 @@ pub struct DatabaseHandle {
     pub handle: ffi::duckdb_v2_database_handle,
 }
 
+impl Drop for DatabaseHandle {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_close, &mut self.handle).unwrap();
+    }
+}
+
 unsafe impl Send for DatabaseHandle {}
 unsafe impl Sync for DatabaseHandle {}
 
@@ -136,12 +142,6 @@ impl Database {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for Database {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_close, &mut self.handle.lock().unwrap().handle).unwrap();
     }
 }
 

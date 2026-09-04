@@ -63,28 +63,6 @@ impl<'a> DataChunkRef<'a> {
         }
     }
 
-    /// Create an empty chunk with one vector per logical type.
-    ///
-    /// Vectors start as flat storage with zero logical rows. Set `writable` to
-    /// allow mutation, then call [`Vector::set_size`] after populating them.
-    pub fn create(types: &[LogicalType], writable: bool) -> Result<Self> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_data_chunk_create,
-            types
-                .iter()
-                .map(|lt| lt.handle)
-                .collect::<Vec<ffi::duckdb_v2_logical_type_handle>>()
-                .as_ptr(),
-            types.len() as u64,
-            RET
-        )?;
-        Ok(DataChunkRef {
-            handle,
-            is_writable: writable,
-            _marker: std::marker::PhantomData,
-        })
-    }
-
     /// Return the number of rows shared by the chunk's vectors.
     pub fn row_count(&self) -> Result<usize> {
         let row_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_size, self.handle, RET)?;
@@ -138,6 +116,24 @@ impl DataChunk {
         Self {
             chunk: DataChunkRef::new(handle, is_writable),
         }
+    }
+
+    /// Create an empty chunk with one vector per logical type.
+    ///
+    /// Vectors start as flat storage with zero logical rows. Set `writable` to
+    /// allow mutation, then call [`Vector::set_size`] after populating them.
+    pub fn create(types: &[LogicalType], writable: bool) -> Result<Self> {
+        let handle = check_api_call!(
+            ffi::duckdb_v2_data_chunk_create,
+            types
+                .iter()
+                .map(|lt| lt.handle)
+                .collect::<Vec<ffi::duckdb_v2_logical_type_handle>>()
+                .as_ptr(),
+            types.len() as u64,
+            RET
+        )?;
+        Ok(DataChunk::new(handle, writable))
     }
 }
 
