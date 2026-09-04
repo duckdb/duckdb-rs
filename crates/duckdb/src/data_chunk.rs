@@ -1,5 +1,7 @@
 //! Columnar batches exchanged with DuckDB.
 
+use std::ops::Deref;
+
 use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::logical_type::LogicalType;
@@ -8,6 +10,13 @@ use crate::{
     Result, check_api_call,
     vector::{Unknown, Vector},
 };
+
+#[derive(Debug)]
+pub struct DataChunkRef<'a> {
+    handle: ffi::duckdb_v2_data_chunk_handle,
+    is_writable: bool,
+    _marker: std::marker::PhantomData<&'a ()>,
+}
 
 /// A columnar batch whose vectors share one row count.
 ///
@@ -42,15 +51,18 @@ use crate::{
 /// ```
 #[derive(Debug)]
 pub struct DataChunk {
-    /// The DuckDB data-chunk handle.
-    pub handle: ffi::duckdb_v2_data_chunk_handle,
-    /// Whether dropping this value destroys the handle.
-    pub is_owned: bool,
-    /// Whether vectors borrowed from this chunk may be modified.
-    pub is_writable: bool,
+    chunk: DataChunkRef<'static>,
 }
 
-impl DataChunk {
+impl<'a> DataChunkRef<'a> {
+    pub fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
+        Self {
+            handle,
+            is_writable,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     /// Create an empty chunk with one vector per logical type.
     ///
     /// Vectors start as flat storage with zero logical rows. Set `writable` to
@@ -66,10 +78,10 @@ impl DataChunk {
             types.len() as u64,
             RET
         )?;
-        Ok(DataChunk {
+        Ok(DataChunkRef {
             handle,
-            is_owned: true,
             is_writable: writable,
+            _marker: std::marker::PhantomData,
         })
     }
 
@@ -121,10 +133,26 @@ impl DataChunk {
     }
 }
 
-impl Drop for DataChunk {
-    fn drop(&mut self) {
-        if self.is_owned {
-            check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut self.handle).unwrap();
+impl DataChunk {
+    pub fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
+        Self {
+            chunk: DataChunkRef::new(handle, is_writable),
         }
     }
 }
+
+impl Drop for DataChunk {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut self.chunk.handle).unwrap();
+    }
+}
+
+impl Deref for DataChunk {
+    type Target = DataChunkRef<'static>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.chunk
+    }
+}
+
+unsafe impl Send for DataChunk {}

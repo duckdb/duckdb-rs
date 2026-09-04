@@ -127,11 +127,7 @@ impl QueryResult<'_> {
             ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_FINISHED => QueryResultStep::Finished,
             ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_CANCELLED => QueryResultStep::Canceled,
             ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_CHUNK => {
-                QueryResultStep::Chunk(DataChunk {
-                    handle: chunk,
-                    is_owned: true,
-                    is_writable: false,
-                })
+                QueryResultStep::Chunk(DataChunk::new(chunk, false))
             }
             _ => unimplemented!("Unknown result step: {:?}", step),
         })
@@ -247,11 +243,7 @@ impl Iterator for QueryResult<'_> {
                 if out_chunk.is_null() {
                     None
                 } else {
-                    Some(Ok(DataChunk {
-                        handle: out_chunk,
-                        is_owned: true,
-                        is_writable: false,
-                    }))
+                    Some(Ok(DataChunk::new(out_chunk, false)))
                 }
             }
             Err(e) => Some(Err(e)),
