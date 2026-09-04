@@ -251,6 +251,8 @@ impl Iterator for QueryResult<'_> {
     }
 }
 
+unsafe impl Send for QueryResult<'_> {}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {

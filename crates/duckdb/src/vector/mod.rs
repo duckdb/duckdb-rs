@@ -364,8 +364,15 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         Ok(view.is_null(index))
     }
 
-    /// Make this vector reference another vector's storage.
-    pub fn copy_from<'a, T2: VectorElement>(self, source: &'a Vector<'_, T2>) -> Result<Vector<'chunk, T2>> {
+    /// Make this vector reference another vector's storage without copying.
+    ///
+    /// # Safety
+    ///
+    /// The source's storage must remain valid and must not be mutated
+    /// concurrently for as long as the destination vector may be read. This
+    /// requirement applies to the destination's owning chunk, even after the
+    /// returned vector is dropped.
+    pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'chunk, T2>> {
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
         Ok(self.cast_unchecked::<T2>())

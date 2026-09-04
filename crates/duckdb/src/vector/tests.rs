@@ -1001,7 +1001,11 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
     let input = input.get_vector_at::<String>(0)?;
     let output = output;
 
-    output.copy_from(&input)?;
+    // SAFETY: DuckDB keeps the callback input alive while consuming the
+    // referenced output, and neither vector is accessed concurrently here.
+    unsafe {
+        output.copy_from(&input)?;
+    }
 
     Ok(())
 });
