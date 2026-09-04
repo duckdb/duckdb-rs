@@ -14,7 +14,6 @@ pub struct ConnectionManager {
 
 impl ConnectionManager {
     pub fn new(database: &Database) -> Self {
-        dbg!(database.handle.lock().unwrap().handle.is_null());
         Self {
             database_handle: database.handle.clone(),
         }
