@@ -55,7 +55,7 @@ pub struct DataChunk {
 }
 
 impl<'a> DataChunkRef<'a> {
-    pub fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
+    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
         Self {
             handle,
             is_writable,
@@ -112,7 +112,7 @@ impl<'a> DataChunkRef<'a> {
 }
 
 impl DataChunk {
-    pub fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
+    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
         Self {
             chunk: DataChunkRef::new(handle, is_writable),
         }
