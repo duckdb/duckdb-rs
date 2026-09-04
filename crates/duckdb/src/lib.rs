@@ -52,6 +52,9 @@ pub use bytes::DuckDBBytes;
 pub use parameter::{Parameters, QueryParameter};
 pub use types::{DuckDBType, FromValue, ToValue};
 
+#[cfg(feature = "r2d2")]
+pub mod r2d2;
+
 #[cfg(feature = "capi-v2-p2")]
 pub mod aggregate;
 #[cfg(feature = "capi-v2-p2")]
