@@ -1,7 +1,5 @@
 //! Parsing, binding, and preparing SQL statements.
 
-use std::marker::PhantomData;
-
 use crate::{Result, check_api_call, check_api_call_no_err, connection::Connection, ffi, schema::Schema};
 
 #[cfg(feature = "capi-v2-p2")]

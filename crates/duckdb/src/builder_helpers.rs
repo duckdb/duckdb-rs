@@ -1,17 +1,10 @@
-use std::{any::Any, cell::RefCell, ffi::c_void, panic::AssertUnwindSafe};
-
-use libduckdb_sys::{self as ffi};
-
-use crate::{
-    Result,
-    error::{DuckDBError, Error, check_api_call_no_err},
-};
-
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) struct OpaqueHandle<T> {
     data: *mut T,
     success: RefCell<bool>,
 }
 
+#[cfg(feature = "capi-v2-p2")]
 impl<T> OpaqueHandle<T> {
     pub(crate) fn new(data: T) -> Self {
         let boxed = Box::new(data);
@@ -34,7 +27,7 @@ impl<T> OpaqueHandle<T> {
         }
     }
 }
-
+#[cfg(feature = "capi-v2-p2")]
 impl<T> Drop for OpaqueHandle<T> {
     fn drop(&mut self) {
         if !*self.success.borrow() {
@@ -43,18 +36,21 @@ impl<T> Drop for OpaqueHandle<T> {
     }
 }
 
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, (&error.message).into())
         .expect("Failed to set error text");
 }
 
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) unsafe extern "C" fn drop_opaque<T>(ptr: *mut c_void) {
     if !ptr.is_null() {
         let _ = unsafe { Box::from_raw(ptr as *mut T) };
     }
 }
 
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) fn into_opaque<T>(value: T) -> ffi::duckdb_v2_opaque {
     let raw = Box::into_raw(Box::new(value));
 
@@ -65,6 +61,7 @@ pub(crate) fn into_opaque<T>(value: T) -> ffi::duckdb_v2_opaque {
     }
 }
 
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) unsafe fn get_opaque_data_ref<'a, T>(ptr: *mut c_void) -> Option<&'a T> {
     if ptr.is_null() {
         None
@@ -73,6 +70,7 @@ pub(crate) unsafe fn get_opaque_data_ref<'a, T>(ptr: *mut c_void) -> Option<&'a 
     }
 }
 
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) unsafe fn get_opaque_data_ref_mut<'a, T>(ptr: *mut c_void) -> Option<&'a mut T> {
     if ptr.is_null() {
         None
@@ -81,6 +79,7 @@ pub(crate) unsafe fn get_opaque_data_ref_mut<'a, T>(ptr: *mut c_void) -> Option<
     }
 }
 
+#[cfg(feature = "capi-v2-p2")]
 fn panic_message(panic: &(dyn Any + Send)) -> &str {
     if let Some(text) = panic.downcast_ref::<String>() {
         text.as_str()
@@ -91,6 +90,7 @@ fn panic_message(panic: &(dyn Any + Send)) -> &str {
     }
 }
 
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
     f: F,
     err: *mut ffi::duckdb_v2_error_info_handle,
@@ -226,6 +226,7 @@ macro_rules! context_and_connection_fn {
     };
 }
 
+#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_user_data {
     ($ffi_call:expr, $handle:expr) => {{
         let user_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -234,6 +235,7 @@ macro_rules! get_user_data {
     }};
 }
 
+#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_bind_data {
     ($ffi_call:expr, $handle:expr) => {{
         let bind_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -242,6 +244,7 @@ macro_rules! get_bind_data {
     }};
 }
 
+#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_init_data {
     ($ffi_call:expr, $handle:expr) => {{
         let bind_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -250,6 +253,7 @@ macro_rules! get_init_data {
     }};
 }
 
+#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_global_state {
     ($ffi_call:expr, $handle:expr) => {{
         let global_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -258,6 +262,7 @@ macro_rules! get_global_state {
     }};
 }
 
+#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_local_state {
     ($ffi_call:expr, $handle:expr) => {{
         let local_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -306,10 +311,16 @@ macro_rules! ffi_enum_redeclaration {
 pub(crate) use ffi_enum_redeclaration;
 
 pub(crate) use context_and_connection_fn;
+
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_bind_data;
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_global_state;
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_init_data;
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_local_state;
+#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_user_data;
 
 #[cfg(test)]
@@ -339,6 +350,7 @@ macro_rules! scalar_callback {
 }
 
 #[cfg(not(feature = "capi-v2-p2"))]
+#[cfg(test)]
 macro_rules! scalar_callback {
     ($name:ident, $result_type:ty, |$input:ident, $result:ident, $ctx:ident, $user_data:ident| $body:block) => {};
 }
@@ -348,6 +360,7 @@ pub(crate) use scalar_callback;
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(feature = "capi-v2-p2")]
 mod tests {
     use super::panic_message;
     use std::any::Any;

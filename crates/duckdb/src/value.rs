@@ -2,7 +2,7 @@
 
 use std::{fmt::Debug, ops::Deref};
 
-use libduckdb_sys::{self as ffi, DuckDBStr};
+use libduckdb_sys::{self as ffi};
 
 use crate::{
     Result,

@@ -17,7 +17,7 @@ use std::{
 };
 
 use crate::{
-    Parameters, Result, ToValue,
+    Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
     connection_options::ConfigOption,
     database::DatabaseHandle,

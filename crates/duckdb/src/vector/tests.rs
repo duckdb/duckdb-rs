@@ -1,24 +1,23 @@
 use crate::{
-    DuckDBType, Parameters, ToValue,
+    Parameters,
     builder_helpers::scalar_callback,
-    connection::FFILink,
     environment::{Environment, StorageLocation},
     error::DuckDBError,
-    logical_type::LogicalType,
-    query_result::QueryResultStep,
     types::{
-        Any, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, MapValue, StructSchema,
-        StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
-        TimestampTzNsValue, TimestampTzValue, TimestampValue, UnionSchema, UnionValue, UuidValue,
+        BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, TimeNsValue, TimeTzValue,
+        TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue,
+        TimestampValue, UuidValue,
     },
-    vector::{Array, List, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
+    vector::{Array, Struct, TString, Union},
 };
 
 #[cfg(feature = "capi-v2-p2")]
 use crate::{scalar::ScalarFunctionBuilder, signature::SignatureBuilder};
 
+#[cfg(feature = "capi-v2-p2")]
 struct TestStruct;
 
+#[cfg(feature = "capi-v2-p2")]
 impl StructSchema for TestStruct {
     fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
         Ok(vec![
@@ -27,8 +26,10 @@ impl StructSchema for TestStruct {
         ])
     }
 }
+#[cfg(feature = "capi-v2-p2")]
 
 struct TestUnion;
+#[cfg(feature = "capi-v2-p2")]
 
 impl UnionSchema for TestUnion {
     fn members<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {

@@ -1,17 +1,10 @@
 //! Lazy, streaming query results.
 
-use std::{os::raw::c_char, thread::sleep, time::Duration};
-
-use libduckdb_sys::{self as ffi, ArrowArrayStream, duckdb_v2_str};
+use libduckdb_sys::{self as ffi, duckdb_v2_str};
 
 use crate::{
-    Result,
-    builder_helpers::{ffi_enum_redeclaration, into_opaque},
-    check_api_call, check_api_call_no_err,
-    connection::Connection,
-    data_chunk::DataChunk,
-    error::{DuckDBError, Error},
-    schema::Schema,
+    Result, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err, connection::Connection,
+    data_chunk::DataChunk, schema::Schema,
 };
 
 ffi_enum_redeclaration! {
@@ -184,7 +177,7 @@ impl QueryResult<'_> {
     unsafe extern "C" fn copy_render_box(
         text: ffi::duckdb_v2_str,
         user_data: *mut std::os::raw::c_void,
-        err: *mut ffi::duckdb_v2_error_info_handle,
+        _err: *mut ffi::duckdb_v2_error_info_handle,
     ) {
         let string = unsafe { &mut *(user_data as *mut String) };
 
@@ -256,6 +249,7 @@ unsafe impl Send for QueryResult<'_> {}
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    #[cfg(feature = "capi-v2-p2")]
     use libduckdb_sys::{ArrowArray, ArrowArrayStream};
 
     use crate::{
