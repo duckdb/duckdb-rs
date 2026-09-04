@@ -19,6 +19,8 @@ pub trait VectorElement: Sized {
     /// The DuckDB logical type represented by this Rust type.
     const TYPE_ID: LogicalTypeID;
 
+    type Internal;
+
     /// The borrowed value returned for one vector row.
     type Ref<'a>
     where
@@ -31,7 +33,7 @@ pub trait VectorElement: Sized {
     }
 
     /// Borrow a value at its physical and logical indexes.
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a;
 }
@@ -48,81 +50,66 @@ pub trait WritableVectorElement: VectorElement {
 }
 
 macro_rules! DeclareVectorElement {
-    ($type:tt , $id:expr) => {
-        impl VectorElement for $type {
-            const TYPE_ID: ffi::DUCKDB_V2_LOGICAL_TYPE_ID = $id;
-
-            type Ref<'a> = &'a $type;
-
-            fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
-            where
-                Self: Sized + 'a,
-            {
-                let data_ptr = vector.view.unwrap().data as *const $type;
-                unsafe { &*data_ptr.add(physical) }
-            }
-        }
-    };
-}
-
-DeclareVectorElement!(bool, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
-DeclareVectorElement!(u8, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT);
-DeclareVectorElement!(i8, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT);
-DeclareVectorElement!(i16, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT);
-DeclareVectorElement!(i32, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
-DeclareVectorElement!(i64, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
-DeclareVectorElement!(u16, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT);
-DeclareVectorElement!(u32, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
-DeclareVectorElement!(u64, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
-DeclareVectorElement!(f32, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
-DeclareVectorElement!(f64, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
-DeclareVectorElement!(i128, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
-DeclareVectorElement!(u128, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
-
-macro_rules! declare_storage_vector_element {
-    ($type:ty, $type_id:ident) => {
+    ($type:tt , $type_id:ident) => {
         impl VectorElement for $type {
             const TYPE_ID: LogicalTypeID = LogicalTypeID::$type_id;
 
-            type Ref<'a> = &'a Self;
+            type Internal = $type;
 
-            fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+            type Ref<'a> = &'a $type;
+
+            fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
             where
-                Self: 'a,
+                Self: Sized + 'a,
             {
-                let data_ptr = vector.view.unwrap().data as *const Self;
+                let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const $type;
                 unsafe { &*data_ptr.add(physical) }
             }
         }
     };
 }
 
-declare_storage_vector_element!(DateValue, DUCKDB_V2_LOGICAL_TYPE_ID_DATE);
-declare_storage_vector_element!(TimeValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME);
-declare_storage_vector_element!(TimeNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS);
-declare_storage_vector_element!(TimeTzValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ);
-declare_storage_vector_element!(TimestampValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP);
-declare_storage_vector_element!(TimestampSecValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC);
-declare_storage_vector_element!(TimestampMsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS);
-declare_storage_vector_element!(TimestampNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS);
-declare_storage_vector_element!(TimestampTzValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ);
-declare_storage_vector_element!(TimestampTzNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS);
-declare_storage_vector_element!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
-declare_storage_vector_element!(UuidValue, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
+DeclareVectorElement!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
+DeclareVectorElement!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT);
+DeclareVectorElement!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT);
+DeclareVectorElement!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT);
+DeclareVectorElement!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+DeclareVectorElement!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+DeclareVectorElement!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT);
+DeclareVectorElement!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
+DeclareVectorElement!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
+DeclareVectorElement!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
+DeclareVectorElement!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
+DeclareVectorElement!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
+DeclareVectorElement!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
+DeclareVectorElement!(DateValue, DUCKDB_V2_LOGICAL_TYPE_ID_DATE);
+DeclareVectorElement!(TimeValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME);
+DeclareVectorElement!(TimeNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS);
+DeclareVectorElement!(TimeTzValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ);
+DeclareVectorElement!(TimestampValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP);
+DeclareVectorElement!(TimestampSecValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC);
+DeclareVectorElement!(TimestampMsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS);
+DeclareVectorElement!(TimestampNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS);
+DeclareVectorElement!(TimestampTzValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ);
+DeclareVectorElement!(TimestampTzNsValue, DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS);
+DeclareVectorElement!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
+DeclareVectorElement!(UuidValue, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
 
 impl<T> VectorElement for BlobValue<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
+
+    type Internal = DuckDBBytes;
 
     type Ref<'a>
         = &'a [u8]
     where
         T: 'a;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         T: 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const DuckDBBytes;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
@@ -130,22 +117,26 @@ impl<T> VectorElement for BlobValue<T> {
 impl<T> VectorElement for BitValue<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT;
 
+    type Internal = DuckDBBytes;
+
     type Ref<'a>
         = &'a [u8]
     where
         T: 'a;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         T: 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const DuckDBBytes;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
 
 impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> VectorElement for DecimalValue<T, WIDTH, SCALE> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
+
+    type Internal = Self;
 
     type Ref<'a>
         = &'a Self
@@ -175,31 +166,40 @@ impl<T: InternalDecimalType, const WIDTH: u8, const SCALE: u8> VectorElement for
         Ok(params[0].1.get::<u8>()? == WIDTH && params[1].1.get::<u8>()? == SCALE)
     }
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         T: 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const Self;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const Self;
         unsafe { &*data_ptr.add(physical) }
     }
 }
 
-impl VectorElement for BigNumValue {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
+// TODO: Review if needed
+impl<T: InternalDecimalType> VectorElement for Decimal<T> {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
-    type Ref<'a> = &'a BigNum;
+    type Internal = T;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    type Ref<'a>
+        = &'a T
     where
-        Self: 'a,
+        Self: 'a;
+
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    where
+        Self: Sized + 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const BigNum;
-        unsafe { &*data_ptr.add(physical) }
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const T;
+
+        (unsafe { &*data_ptr.add(physical) }) as _
     }
 }
 
 impl VectorElement for TString {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
+
+    type Internal = DuckDBBytes;
 
     type Ref<'a> = &'a DuckDBBytes;
 
@@ -207,11 +207,11 @@ impl VectorElement for TString {
         Ok(true)
     }
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const DuckDBBytes;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
         (unsafe { &*data_ptr.add(physical) }) as _
     }
 }
@@ -219,9 +219,12 @@ impl VectorElement for TString {
 impl VectorElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT;
 
+    /// Variant does not have an Raw representation in the V2 API. Use [`get`] instead.
+    type Internal = ();
+
     type Ref<'a> = Value;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -232,28 +235,49 @@ impl VectorElement for Variant {
 impl VectorElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
 
+    type Internal = BigNum;
+
     type Ref<'a> = &'a BigNum;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const BigNum;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const BigNum;
         (unsafe { &*data_ptr.add(physical) }) as _
+    }
+}
+
+// TODO: Review if needed..
+impl VectorElement for BigNumValue {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
+
+    type Internal = BigNum;
+
+    type Ref<'a> = &'a BigNum;
+
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    where
+        Self: 'a,
+    {
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const BigNum;
+        unsafe { &*data_ptr.add(physical) }
     }
 }
 
 impl VectorElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
 
+    type Internal = DuckDBBytes;
+
     type Ref<'a> = &'a str;
 
     // TODO return slice.
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const ffi::duckdb_v2_bytes;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const ffi::duckdb_v2_bytes;
 
         let string_view = unsafe { &*data_ptr.add(physical) };
 
@@ -261,21 +285,42 @@ impl VectorElement for String {
     }
 }
 
-impl<T: InternalDecimalType> VectorElement for Decimal<T> {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
-
+impl<L: VectorElement> VectorElement for List<L> {
     type Ref<'a>
-        = &'a T
+        = ListRef<'a, L>
     where
-        Self: 'a;
+        L: 'a;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    type Internal = List<L>;
+
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST;
+
+    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
+        if other.type_id() != Self::TYPE_ID {
+            return Ok(false);
+        }
+
+        if children.len() != 1 {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: "List vector must have exactly one child".to_string(),
+            });
+        }
+
+        let child = children.first().unwrap();
+        child.validate_as::<L>()
+    }
+
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const T;
-
-        (unsafe { &*data_ptr.add(physical) }) as _
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const List<L>;
+        let list = unsafe { &*data_ptr.add(physical) };
+        ListRef {
+            list,
+            child: &vector.children[0],
+        }
     }
 }
 
@@ -318,43 +363,6 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
     }
 }
 
-impl<L: VectorElement> VectorElement for List<L> {
-    type Ref<'a>
-        = ListRef<'a, L>
-    where
-        L: 'a;
-
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST;
-
-    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
-            return Ok(false);
-        }
-
-        if children.len() != 1 {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: "List vector must have exactly one child".to_string(),
-            });
-        }
-
-        let child = children.first().unwrap();
-        child.validate_as::<L>()
-    }
-
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
-    where
-        Self: Sized + 'a,
-    {
-        let data_ptr = vector.view.unwrap().data as *const List<L>;
-        let list = unsafe { &*data_ptr.add(physical) };
-        ListRef {
-            list,
-            child: &vector.children[0],
-        }
-    }
-}
-
 /// A borrowed list row backed by a range in its child vector.
 pub struct ListRef<'a, T> {
     list: &'a List<T>,
@@ -384,8 +392,14 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
     }
 
     /// Return a unified view of the list's child vector.
-    pub fn view(&self) -> ffi::duckdb_v2_vector_view {
-        self.child.view.expect("list child must be readable")
+    pub fn view(&self) -> &VectorView<T> {
+        unsafe {
+            self.child
+                .view
+                .as_ref()
+                .expect("list child must be readable")
+                .cast::<T>()
+        }
     }
 }
 
@@ -421,6 +435,8 @@ impl<T: VectorElement> VectorElement for Array<T> {
     where
         T: 'a;
 
+    type Internal = Array<T>;
+
     fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
@@ -433,7 +449,7 @@ impl<T: VectorElement> VectorElement for Array<T> {
         child.validate_as::<T>()
     }
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -504,7 +520,9 @@ impl VectorElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT;
     type Ref<'a> = StructRow<'a>;
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
+    type Internal = Struct;
+
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -637,6 +655,8 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         K: 'a,
         V: 'a;
 
+    type Internal = List<()>;
+
     fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
@@ -653,11 +673,11 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         children[1].validate_as::<V>()
     }
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.unwrap().data as *const ffi::duckdb_v2_list_entry;
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const ffi::duckdb_v2_list_entry;
         let list = unsafe { &*data_ptr.add(physical) };
 
         MapRow::<K, V> {
@@ -784,6 +804,8 @@ impl VectorElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION;
     type Ref<'a> = UnionRow<'a>;
 
+    type Internal = Union;
+
     fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
@@ -796,7 +818,7 @@ impl VectorElement for Union {
         tag.validate_as::<u8>()
     }
 
-    fn get<'a, U>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -816,7 +838,9 @@ impl VectorElement for Unknown {
 
     type Ref<'a> = ();
 
-    fn get<'a, U>(_vector: &'a Vector<'_, U>, _physical: usize, _logical: usize) -> Self::Ref<'a>
+    type Internal = ();
+
+    fn get<'a, U: VectorElement>(_vector: &'a Vector<'_, U>, _physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -955,7 +979,14 @@ DeclareWritableVectorElement!(u64);
 DeclareWritableVectorElement!(u128);
 DeclareWritableVectorElement!(f32);
 DeclareWritableVectorElement!(f64);
-DeclareWritableVectorElement!(String);
+
+impl WritableVectorElement for String {
+    type Write<'a> = &'a str;
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        vector.write_string(index, value)
+    }
+}
 
 impl WritableVectorElement for Variant {
     type Write<'a> = Value;

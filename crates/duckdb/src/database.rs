@@ -15,6 +15,15 @@ use libduckdb_sys as ffi;
 pub struct DatabaseHandle {
     /// The DuckDB database handle.
     pub handle: ffi::duckdb_v2_database_handle,
+
+    /// The environment kept alive by this database.
+    pub env: Arc<Mutex<EnvironmentHandle>>,
+}
+
+impl Drop for DatabaseHandle {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_close, &mut self.handle).unwrap();
+    }
 }
 
 unsafe impl Send for DatabaseHandle {}
@@ -43,8 +52,6 @@ unsafe impl Sync for DatabaseHandle {}
 /// # }
 /// ```
 pub struct Database {
-    /// The environment kept alive by this database.
-    pub env: Arc<Mutex<EnvironmentHandle>>,
     /// The shared database handle.
     pub handle: Arc<Mutex<DatabaseHandle>>,
 }
@@ -136,12 +143,6 @@ impl Database {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for Database {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_close, &mut self.handle.lock().unwrap().handle).unwrap();
     }
 }
 
