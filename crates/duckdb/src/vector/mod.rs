@@ -33,7 +33,7 @@
 //! own borrowed row representation: scalars yield references, while nested
 //! values yield zero-copy handles into their child vectors.
 
-use std::{marker::PhantomData, os::raw::c_void};
+use std::marker::PhantomData;
 
 use crate::{
     Result,
@@ -46,8 +46,19 @@ use crate::{
 };
 
 mod element;
-pub use crate::types::{Array, BigNum, BigNumDecoded, InternalDecimalType, List, Map, Struct, TString, Union, Variant};
-pub use element::*;
+pub use crate::types::{Array, BigNum, InternalDecimalType, List, Map, Struct, TString, Union, Variant};
+// Borrowed row/iterator types are defined alongside their family's scalar and
+// vector-element implementations under `crate::types`, but are re-exported
+// here (flattened, like the other vector-facing types above) to keep their
+// existing `crate::vector::*` paths.
+pub use crate::types::{
+    array::{ArrayIterator, ArrayRef},
+    list::{ListIterator, ListRef},
+    map::MapRow,
+    structs::{StructRow, StructWrite},
+    union::{UnionRow, UnionWriter},
+};
+pub use element::{Unknown, VectorElement, WritableVectorElement};
 
 /// Runtime view of a vector's storage kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

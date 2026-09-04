@@ -11,7 +11,7 @@ use crate::{
         StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
         TimestampTzNsValue, TimestampTzValue, TimestampValue, UnionSchema, UnionValue, UuidValue,
     },
-    vector::{Array, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
+    vector::{Array, List, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
 };
 
 #[cfg(feature = "capi-v2-p2")]
@@ -89,9 +89,7 @@ scalar_callback!(
     for (index, (key, value)) in rows.iter().enumerate() {
         result.write(
             index,
-            Some(MapWrite {
-                entries: vec![(*key, value.as_str())],
-            }),
+            Some(HashMap::from([(*key, value.as_str())])),
         )?;
     }
     let written: Vec<_> = result.iter()?.collect();

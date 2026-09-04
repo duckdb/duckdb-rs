@@ -1,6 +1,11 @@
 //! Point-in-time progress for an executing query.
 
-use crate::{Connection, Result, SettingScope, check_api_call, connection_options::OptionValue, ffi};
+use crate::{
+    Result, check_api_call,
+    connection::{Connection, SettingScope},
+    connection_options::ConfigOptionValue,
+    ffi,
+};
 
 /// Enables and reads query progress for a connection.
 ///
@@ -15,11 +20,11 @@ impl<'conn> QueryProgressTracker<'conn> {
     /// Enable progress tracking and retain the connection used for snapshots.
     pub fn new(connection: &'conn Connection) -> Result<Self> {
         connection.set_option(
-            &OptionValue::new("enable_progress_bar_print", "false")?,
+            &ConfigOptionValue::new("enable_progress_bar_print", "false")?,
             Some(SettingScope::Local),
         )?;
         connection.set_option(
-            &OptionValue::new("enable_progress_bar", "true")?,
+            &ConfigOptionValue::new("enable_progress_bar", "true")?,
             Some(SettingScope::Local),
         )?;
         Ok(Self { connection })
