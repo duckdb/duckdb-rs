@@ -104,6 +104,11 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return whether the vector contains no logical rows.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Return the number of logical rows in the view.
     pub fn len(&self) -> usize {
         self.view.count as usize
@@ -157,6 +162,19 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return the vector's physical storage as mutable.
+    ///
+    /// Flat vectors contain one entry per logical row, constant vectors
+    /// contain one entry, and dictionary vectors use [`Self::selection`] to
+    /// map logical rows into this slice.
+    pub fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
+        if self.view.data.is_null() {
+            None
+        } else {
+            Some(unsafe { std::slice::from_raw_parts_mut(self.view.data as *mut T::Internal, self.physical_len()) })
+        }
+    }
+
     /// Return a pointer to the physical storage, or null when no data is exposed.
     pub fn as_ptr(&self) -> *const T::Internal {
         if self.view.data.is_null() {
@@ -166,12 +184,21 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
+    /// Return a mutable pointer to the physical storage, or null when no data is exposed.
+    pub fn as_mut_ptr(&mut self) -> *mut T::Internal {
+        if self.view.data.is_null() {
+            std::ptr::null_mut()
+        } else {
+            self.view.data as *mut T::Internal
+        }
+    }
+
     /// Return the logical-to-physical row mapping, if DuckDB supplied one.
     pub fn selection(&self) -> Option<&[u32]> {
         if self.view.sel.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.sel as *const u32, self.view.count as usize) })
+            Some(unsafe { std::slice::from_raw_parts(self.view.sel, self.view.count as usize) })
         }
     }
 
@@ -180,8 +207,17 @@ impl<T: VectorElement> VectorView<T> {
         if self.view.validity.is_null() {
             None
         } else {
+            Some(unsafe { std::slice::from_raw_parts(self.view.validity, self.physical_len().div_ceil(64)) })
+        }
+    }
+
+    /// Return the physical validity bitmask as a mutable slice, or `None` when every entry is valid.
+    pub fn validity_mut(&mut self) -> Option<&mut [u64]> {
+        if self.view.validity.is_null() {
+            None
+        } else {
             Some(unsafe {
-                std::slice::from_raw_parts(self.view.validity as *const u64, self.physical_len().div_ceil(64))
+                std::slice::from_raw_parts_mut(self.view.validity as *mut u64, self.physical_len().div_ceil(64))
             })
         }
     }
