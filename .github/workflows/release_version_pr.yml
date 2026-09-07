@@ -42,11 +42,11 @@ jobs:
       - name: Checkout or Create Needed Branch
         id: branch
         env:
-          HEAD_SHA: ${{ github.sha }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          git fetch --all
+          git fetch origin "${TARGET_BRANCH}"
+          base_sha=$(git rev-parse "origin/${TARGET_BRANCH}")
           branch_name="release-version-${REF_NAME//\//-}"
           git check-ref-format --branch "${branch_name}"
           if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
@@ -54,7 +54,7 @@ jobs:
           else
             git checkout -b "${branch_name}"
           fi
-          git reset --hard "${HEAD_SHA}"
+          git reset --hard "${base_sha}"
           echo "name=${branch_name}" >> "${GITHUB_OUTPUT}"
 
       - name: Bump release_version
