@@ -252,6 +252,8 @@ impl Connection {
     }
 }
 
+unsafe impl Send for Connection {}
+
 impl Deref for Connection {
     type Target = ffi::duckdb_v2_connection_handle;
     fn deref(&self) -> &Self::Target {

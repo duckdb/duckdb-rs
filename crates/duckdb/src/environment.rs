@@ -149,8 +149,10 @@ impl Environment {
         )?;
 
         Ok(Database {
-            env: self.handle.clone(),
-            handle: Arc::new(Mutex::new(DatabaseHandle { handle })),
+            handle: Arc::new(Mutex::new(DatabaseHandle {
+                handle,
+                env: self.handle.clone(),
+            })),
         })
     }
 }
