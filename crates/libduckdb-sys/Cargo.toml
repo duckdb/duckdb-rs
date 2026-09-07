@@ -16,13 +16,11 @@ links = "duckdb"
 
 [features]
 # Statically link the self-contained libduckdb_static.a (no runtime dylib dependency).
-# Default (feature off) links libduckdb.dylib dynamically and embeds rpaths.
-bundled = []
+# Default (feature off) links the installed DuckDB shared library dynamically.
+static = []
 
 [dependencies]
 
 [build-dependencies]
 bindgen = "0.71.0"
-dotenv = "0.15.0"
-pkg-config = "0.3"
-vcpkg = "0.2"
+duckdb-build = { version = "=2.0.0", path = "../duckdb-build" }

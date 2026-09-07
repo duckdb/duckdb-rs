@@ -1,0 +1,16 @@
+[package]
+name = "duckdb-build"
+description = "DuckDB installation discovery and runtime linking for Cargo build scripts"
+version = { workspace = true }
+authors = { workspace = true }
+categories = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+keywords = { workspace = true }
+readme = "README.md"
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+dirs = "6"
