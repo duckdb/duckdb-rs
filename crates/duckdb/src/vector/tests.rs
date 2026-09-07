@@ -767,7 +767,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     drop(chunk);
     drop(result);
 
-    let bit = BitValue(vec![3_u8, 0b0001_0101].into());
+    let bit = BitValue(vec![3_u8, 0b0001_0101]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
     let chunk = result.next().unwrap()?;
     let vector = chunk.get_vector_at::<BitValue>(0)?;
