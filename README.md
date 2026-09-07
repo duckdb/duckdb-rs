@@ -6,6 +6,8 @@
 [![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
 [![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
+> ⚠ The V2 C API is in rapid development. Consider this branch unstable. Feedback is welcome!
+
 duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb), with an API inspired by [rusqlite](https://github.com/rusqlite/rusqlite). Use it to:
 
 - Query DuckDB with type-safe bindings.
