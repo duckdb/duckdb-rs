@@ -2,10 +2,6 @@ name: Create Release Version PR
 env:
   TARGET_BRANCH: v2.0-cyanoptera
 
-permissions:
-  contents: write
-  pull-requests: write
-
 on:
   workflow_call:
     inputs:
@@ -39,6 +35,7 @@ jobs:
       - name: Checkout DuckDB-rs
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
           ref: ${{ github.sha }}
           fetch-depth: 0
 
@@ -83,7 +80,7 @@ jobs:
       - name: Determine GH PR Command
         id: gh_pr_command
         env:
-          GH_TOKEN:  ${{ github.token }} # ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
           BRANCH_NAME: ${{ steps.branch.outputs.name }}
         run: |
           set -euo pipefail
@@ -104,7 +101,7 @@ jobs:
 
       - name: Create PR to Bump release_version
         env:
-          GH_TOKEN:  ${{ github.token }} # ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
           ARTIFACT_RELEASE: ${{ steps.bump.outputs.artifact_release }}
           BRANCH_NAME: ${{ steps.branch.outputs.name }}
           PR_ACTION: ${{ steps.gh_pr_command.outputs.action }}
