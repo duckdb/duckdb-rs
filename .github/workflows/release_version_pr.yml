@@ -1,0 +1,148 @@
+name: Create Release Version PR
+env:
+  TARGET_BRANCH: v2.0-cyanoptera
+
+on:
+  workflow_call:
+    inputs:
+      duckdb-sha:
+        description: 'Vendor Specific DuckDB SHA'
+        required: true
+        type: 'string'
+      duckdb-version:
+        description: 'Vendor Specific DuckDB Version'
+        required: true
+        type: 'string'
+  workflow_dispatch:
+    inputs:
+      duckdb-sha:
+        description: 'Vendor Specific DuckDB SHA'
+        required: true
+        type: 'string'
+      duckdb-version:
+        description: 'Vendor Specific DuckDB Version'
+        required: true
+        type: 'string'
+
+jobs:
+  create_pr:
+    name: Create PR to bump release_version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout DuckDB-rs
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Checkout or Create Needed Branch
+        id: branch
+        env:
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --all
+          branch_name="release-version-${REF_NAME//\//-}"
+          git check-ref-format --branch "${branch_name}"
+          if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+            git checkout "${branch_name}"
+          else
+            git checkout -b "${branch_name}"
+          fi
+          git reset --hard "${HEAD_SHA}"
+          echo "name=${branch_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Bump release_version
+        id: bump
+        env:
+          DUCKDB_SHA: ${{ inputs.duckdb-sha }}
+          DUCKDB_VERSION: ${{ inputs.duckdb-version }}
+        run: |
+          set -euo pipefail
+          [[ "${DUCKDB_SHA}" =~ ^[0-9a-fA-F]{7,40}$ ]] || {
+            echo "::error::duckdb-sha must be a 7-40 character hexadecimal commit SHA"
+            exit 1
+          }
+          [[ "${DUCKDB_VERSION}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] || {
+            echo "::error::duckdb-version contains unsupported characters"
+            exit 1
+          }
+          artifact_release="${DUCKDB_SHA}/${DUCKDB_VERSION}"
+          sed -i "s|^pub const ARTIFACT_RELEASE: &str = \".*\";|pub const ARTIFACT_RELEASE: \&str = \"${artifact_release}\";|" crates/libduckdb-sys/consts.rs
+          sed -i "s|^ARTIFACT_RELEASE=.*|ARTIFACT_RELEASE=${artifact_release}|" .duckdb-release
+          echo "artifact_release=${artifact_release}" >> "${GITHUB_OUTPUT}"
+
+      - name: Determine GH PR Command
+        id: gh_pr_command
+        env:
+          GH_TOKEN:  ${{ github.token }} # ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          pr_url=$(gh pr list --head "${BRANCH_NAME}" --state open --json url --jq '.[0].url // empty')
+          if [[ -n "${pr_url}" ]]; then
+            echo "::notice::Found existing pr, will edit (${pr_url})"
+            echo "action=edit" >> "${GITHUB_OUTPUT}"
+            echo "url=${pr_url}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice::No existing PR, will create new"
+            echo "action=create" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Set Git User
+        run: |
+          git config --global user.email "github_bot@duckdblabs.com"
+          git config --global user.name "DuckDB Labs GitHub Bot"
+
+      - name: Create PR to Bump release_version
+        env:
+          GH_TOKEN:  ${{ github.token }} # ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          ARTIFACT_RELEASE: ${{ steps.bump.outputs.artifact_release }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          PR_ACTION: ${{ steps.gh_pr_command.outputs.action }}
+          PR_URL: ${{ steps.gh_pr_command.outputs.url }}
+        run: |
+          set -euo pipefail
+          git add .duckdb-release crates/libduckdb-sys/consts.rs
+          git commit -m "Bump DuckDB artifact release to ${ARTIFACT_RELEASE}"
+          git push --force origin "${BRANCH_NAME}"
+          echo "Update the DuckDB artifact release:" > body.txt
+          echo "- Target branch: ${TARGET_BRANCH}" >> body.txt
+          echo "- Artifact release: ${ARTIFACT_RELEASE}" >> body.txt
+          echo "- Date: $( date +"%Y-%m-%d %H:%M:%S" )" >> body.txt
+          echo "- Trigger: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> body.txt
+
+          title="[duckdb-labs bot] Bump DuckDB artifact release to ${ARTIFACT_RELEASE}"
+          if [[ "${PR_ACTION}" == "edit" ]]; then
+            if gh pr edit "${PR_URL}" --base "${TARGET_BRANCH}" --title "${title}" \
+              --body-file body.txt > output.txt 2>&1; then
+              success=0
+              prefix="Updated"
+              url="${PR_URL}"
+            else
+              success=$?
+            fi
+          else
+            if gh pr create --head "${BRANCH_NAME}" --base "${TARGET_BRANCH}" \
+              --title "${title}" --body-file body.txt > output.txt 2>&1; then
+              success=0
+              prefix="Created"
+              url=$(gh pr view "${BRANCH_NAME}" --json url --jq .url)
+            else
+              success=$?
+            fi
+          fi
+
+          echo "## Release Version PR Summary" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${success}" -eq 0 ]]; then
+            echo "### ${prefix} PR: [${url}](${url})" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "### Failed to create PR" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          echo '```' >> "${GITHUB_STEP_SUMMARY}"
+          cat output.txt >> "${GITHUB_STEP_SUMMARY}"
+          echo '```' >> "${GITHUB_STEP_SUMMARY}"
+          [[ "${success}" -eq 0 ]]

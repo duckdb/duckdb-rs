@@ -1,6 +1,8 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+mod consts;
+
 fn main() {
     // Re-run build if the discovery environment changed
     println!("cargo:rerun-if-env-changed=DUCKDB_LIB_DIR");
