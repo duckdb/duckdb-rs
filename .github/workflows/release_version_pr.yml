@@ -2,6 +2,10 @@ name: Create Release Version PR
 env:
   TARGET_BRANCH: v2.0-cyanoptera
 
+permissions:
+  contents: write
+  pull-requests: write
+
 on:
   workflow_call:
     inputs:
