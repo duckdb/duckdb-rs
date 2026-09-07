@@ -1,12 +1,13 @@
 use crate::{
     Parameters,
     builder_helpers::scalar_callback,
+    data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     error::DuckDBError,
     types::{
-        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, Map, Struct,
-        TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue,
-        TimestampTzValue, TimestampValue, Union, UuidValue,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
+        Map, Struct, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
+        TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
     },
 };
 
@@ -785,6 +786,114 @@ pub fn vector_value_types() -> crate::Result<()> {
     let decoded = vector.get(0)?.unwrap().decode()?;
     assert_eq!(decoded.is_negative, bignum.is_negative);
     assert_eq!(decoded.magnitude, bignum.magnitude);
+
+    Ok(())
+}
+
+#[test]
+pub fn vector_writable_value_types() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    macro_rules! assert_copy_write {
+        ($type:ty, $value:expr) => {{
+            let chunk = DataChunk::create(&[<$type>::logical_type(&conn)?], true)?;
+            let mut vector = chunk.get_vector_at::<$type>(0)?;
+            vector.set_size(2)?;
+            let value = $value;
+            vector.write(0, Some(value))?;
+            vector.write(1, None)?;
+            assert_eq!(vector.get(0)?, Some(&value));
+            assert_eq!(vector.get(1)?, None);
+        }};
+    }
+
+    assert_copy_write!(DateValue, DateValue(-1));
+    assert_copy_write!(TimeValue, TimeValue(1));
+    assert_copy_write!(TimeNsValue, TimeNsValue(2));
+    assert_copy_write!(TimeTzValue, TimeTzValue(3));
+    assert_copy_write!(TimestampValue, TimestampValue(-4));
+    assert_copy_write!(TimestampSecValue, TimestampSecValue(-5));
+    assert_copy_write!(TimestampMsValue, TimestampMsValue(-6));
+    assert_copy_write!(TimestampNsValue, TimestampNsValue(-7));
+    assert_copy_write!(TimestampTzValue, TimestampTzValue(-8));
+    assert_copy_write!(TimestampTzNsValue, TimestampTzNsValue(-9));
+    assert_copy_write!(UuidValue, UuidValue(i128::MIN + 10));
+    assert_copy_write!(
+        IntervalValue,
+        IntervalValue {
+            months: -1,
+            days: 2,
+            micros: -3,
+        }
+    );
+
+    let chunk = DataChunk::create(&[DecimalValue::<i64, 18, 3>::logical_type(&conn)?], true)?;
+    assert!(chunk.get_vector_at::<Decimal<i32>>(0).is_err());
+    let mut vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(-123_456))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some(&-123_456));
+    assert_eq!(vector.get(1)?, None);
+
+    let chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BlobValue>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(&[0_u8, 1, 255]))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some([0_u8, 1, 255].as_slice()));
+    assert_eq!(vector.get(1)?, None);
+
+    let chunk = DataChunk::create(&[BitValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BitValue>(0)?;
+    vector.set_size(2)?;
+    assert!(vector.write(0, Some(&[])).is_err());
+    vector.write(0, Some(&[3_u8, 0b0001_0101]))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some([3_u8, 0b0001_0101].as_slice()));
+    assert_eq!(vector.get(1)?, None);
+
+    let bignum = BigNumValue {
+        is_negative: true,
+        magnitude: vec![1, 2, 3, 4, 5],
+    };
+    let chunk = DataChunk::create(&[BigNumValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BigNumValue>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(&bignum))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?.unwrap().decode()?, bignum);
+    assert!(vector.get(1)?.is_none());
+
+    let mut source = conn.query("SELECT 12345678901234567890::BIGNUM", Parameters::None)?;
+    let source_chunk = source.next().unwrap()?;
+    let source_vector = source_chunk.get_vector_at::<BigNum>(0)?;
+    let borrowed = source_vector.get(0)?.unwrap();
+    let chunk = DataChunk::create(&[BigNum::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BigNum>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(borrowed))?;
+    assert_eq!(vector.get(0)?.unwrap().decode()?.to_string(), "12345678901234567890");
+
+    let chunk = DataChunk::create(&[<[i32; 3]>::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<Array<i32>>(0)?;
+    vector.set_size(2)?;
+    vector.write(1, None)?;
+    assert_eq!(vector.children[0].len(), 6);
+    assert!(vector.write(0, Some(vec![Some(1), Some(2)])).is_err());
+    vector.write(0, Some(vec![Some(1), None, Some(3)]))?;
+    assert_eq!(
+        vector
+            .get(0)?
+            .unwrap()
+            .iter()
+            .map(|value| value.copied())
+            .collect::<Vec<_>>(),
+        vec![Some(1), None, Some(3)]
+    );
+    assert!(vector.get(1)?.is_none());
 
     Ok(())
 }

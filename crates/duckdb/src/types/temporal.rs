@@ -14,6 +14,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
+    vector::{Vector, WritableVectorElement},
 };
 use libduckdb_sys as ffi;
 use std::fmt::Display;
@@ -44,12 +45,20 @@ macro_rules! declare_storage_value {
         }
 
         impl FromValue for $name {
-            fn from_value(value: &Value) -> Result<Self> {
+            fn _get_inner(value: &Value) -> Result<Self> {
                 Ok(Self(check_api_call!($getter, **value, RET)?))
             }
         }
 
         DeclareVectorElement!($name, $type_id);
+
+        impl WritableVectorElement for $name {
+            type Write<'a> = Self;
+
+            fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                vector.write_raw(index, value)
+            }
+        }
     };
 }
 
@@ -163,7 +172,7 @@ impl ToValue for IntervalValue {
 }
 
 impl FromValue for IntervalValue {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_interval, **value, RET)?;
         Ok(Self {
             months: raw.months,
@@ -174,3 +183,11 @@ impl FromValue for IntervalValue {
 }
 
 DeclareVectorElement!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
+
+impl WritableVectorElement for IntervalValue {
+    type Write<'a> = Self;
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        vector.write_raw(index, value)
+    }
+}

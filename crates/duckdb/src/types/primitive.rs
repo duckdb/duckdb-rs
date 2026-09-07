@@ -26,7 +26,7 @@ impl DuckDBType for Any {
 macro_rules! declare_primitive_from_value {
     ($type:ty, $getter:path) => {
         impl FromValue for $type {
-            fn from_value(value: &Value) -> Result<Self> {
+            fn _get_inner(value: &Value) -> Result<Self> {
                 check_api_call!($getter, **value, RET)
             }
         }
@@ -46,14 +46,14 @@ declare_primitive_from_value!(f32, ffi::duckdb_v2_value_get_float);
 declare_primitive_from_value!(f64, ffi::duckdb_v2_value_get_double);
 
 impl FromValue for i128 {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_hugeint, **value, RET)?;
         Ok((i128::from(raw.upper) << 64) | i128::from(raw.lower))
     }
 }
 
 impl FromValue for u128 {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_uhugeint, **value, RET)?;
         Ok((u128::from(raw.upper) << 64) | u128::from(raw.lower))
     }

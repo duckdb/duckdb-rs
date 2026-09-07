@@ -30,7 +30,7 @@ pub(crate) fn owned_bytes(raw: ffi::DuckDBStr<'_>) -> Result<Vec<u8>> {
 }
 
 impl FromValue for String {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_varchar, **value, RET)?;
         String::from_utf8(owned_bytes(raw)?).map_err(|_| Error::api_error("DuckDB returned invalid UTF-8".to_string()))
     }
@@ -78,7 +78,7 @@ impl ToValue for BlobValue {
 }
 
 impl FromValue for BlobValue {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
         Ok(Self(owned_bytes(raw)?))
     }
@@ -102,7 +102,7 @@ impl ToValue for BitValue {
 }
 
 impl FromValue for BitValue {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
         Ok(Self(owned_bytes(raw)?))
     }
@@ -164,5 +164,26 @@ impl WritableVectorElement for String {
 
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_bytes(index, value.map(|v| v.as_bytes()))
+    }
+}
+
+impl WritableVectorElement for BlobValue {
+    type Write<'a> = &'a [u8];
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        vector.write_bytes(index, value)
+    }
+}
+
+impl WritableVectorElement for BitValue {
+    type Write<'a> = &'a [u8];
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<&[u8]>) -> Result<()> {
+        if value.is_some_and(<[u8]>::is_empty) {
+            return Err(Error::api_error(
+                "DuckDB BIT storage requires a padding-header byte".to_string(),
+            ));
+        }
+        vector.write_bytes(index, value)
     }
 }

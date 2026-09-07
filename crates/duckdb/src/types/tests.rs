@@ -221,7 +221,7 @@ fn test_primitive_value_getters() -> crate::Result<()> {
 
     macro_rules! assert_round_trip {
         ($value:expr, $type:ty) => {
-            assert_eq!($value.value(&conn)?.get::<$type>()?, $value);
+            assert_eq!($value.value(&conn)?.get::<$type>()?, Some($value));
         };
     }
 
@@ -239,9 +239,9 @@ fn test_primitive_value_getters() -> crate::Result<()> {
     assert_round_trip!(1.25_f32, f32);
     assert_round_trip!(1.25_f64, f64);
 
-    assert_eq!("42".value(&conn)?.get::<i32>()?, 42);
-    assert_eq!("hello".value(&conn)?.get::<String>()?, "hello");
-    assert_eq!("".value(&conn)?.get::<String>()?, "");
+    assert_eq!("42".value(&conn)?.get::<i32>()?, Some(42));
+    assert_eq!("hello".value(&conn)?.get::<String>()?, Some("hello".to_string()));
+    assert_eq!("".value(&conn)?.get::<String>()?, Some(String::new()));
 
     Ok(())
 }
@@ -253,18 +253,18 @@ fn test_raw_value_getters() -> crate::Result<()> {
     let conn = db.connect()?;
 
     let blob = BlobValue(vec![0_u8, 1, 255]);
-    assert_eq!(blob.value(&conn)?.get::<BlobValue>()?, blob);
+    assert_eq!(blob.value(&conn)?.get::<BlobValue>()?, Some(blob));
     assert_eq!(
         BlobValue(Vec::<u8>::new()).value(&conn)?.get::<BlobValue>()?,
-        BlobValue(Vec::new())
+        Some(BlobValue(Vec::new()))
     );
 
     let bit = BitValue(vec![3_u8, 0b0001_0101]);
-    assert_eq!(bit.value(&conn)?.get::<BitValue>()?, bit);
+    assert_eq!(bit.value(&conn)?.get::<BitValue>()?, Some(bit));
 
     macro_rules! assert_storage_round_trip {
         ($value:expr, $type:ty) => {
-            assert_eq!($value.value(&conn)?.get::<$type>()?, $value);
+            assert_eq!($value.value(&conn)?.get::<$type>()?, Some($value));
         };
     }
 
@@ -285,23 +285,23 @@ fn test_raw_value_getters() -> crate::Result<()> {
         days: 2,
         micros: -3,
     };
-    assert_eq!(interval.value(&conn)?.get::<IntervalValue>()?, interval);
+    assert_eq!(interval.value(&conn)?.get::<IntervalValue>()?, Some(interval));
 
     let decimal = DecimalValue::<i64, 18, 3>(-123_456).value(&conn)?;
     assert_eq!(
         decimal.get::<DecimalValueRaw>()?,
-        DecimalValueRaw {
+        Some(DecimalValueRaw {
             value: -123_456,
             width: 18,
             scale: 3,
-        }
+        })
     );
 
     let bignum = BigNumValue {
         is_negative: true,
         magnitude: vec![1, 2, 3, 4, 5],
     };
-    assert_eq!(bignum.value(&conn)?.get::<BigNumValue>()?, bignum);
+    assert_eq!(bignum.value(&conn)?.get::<BigNumValue>()?, Some(bignum));
 
     Ok(())
 }
@@ -312,16 +312,22 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    assert_eq!(Some(42_i32).value(&conn)?.get::<Option<i32>>()?, Some(42));
+    assert_eq!(Some(42_i32).value(&conn)?.get::<i32>()?, Some(42));
 
-    let null = Option::<i32>::None.value(&conn)?;
-    assert_eq!(null.get::<Option<i32>>()?, None);
-    assert!(null.get::<i32>().is_err());
+    let null = i32::null_value(&conn)?;
+    assert_eq!(null.get::<i32>()?, None);
+    assert_eq!(
+        null.fetch_logical_type()?.type_id(),
+        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+    );
+
+    let optional_null = Option::<i32>::None.value(&conn)?;
+    assert_eq!(optional_null.get::<i32>()?, None);
 
     let integer = i32::logical_type(&conn)?;
     let type_value = Value::from_logical_type(&conn, &integer)?;
     assert_eq!(
-        type_value.get::<LogicalType>()?.type_id(),
+        type_value.get::<LogicalType>()?.unwrap().type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -361,6 +367,45 @@ fn test_array_to_value() -> crate::Result<()> {
     assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
     assert_eq!(logical_type.to_string()?, "INTEGER[3]");
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
+
+    Ok(())
+}
+
+#[test]
+fn test_nested_value_getters() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let list = vec![Some(1_i32), None, Some(3_i32)];
+    assert_eq!(list.value(&conn)?.get::<Vec<Option<i32>>>()?, Some(list));
+
+    let array = [Some(1_i32), None, Some(3_i32)];
+    assert_eq!(array.value(&conn)?.get::<[Option<i32>; 3]>()?, Some(array));
+    assert!(array.value(&conn)?.get::<[Option<i32>; 2]>().is_err());
+
+    let map = MapValue {
+        entries: vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)],
+    };
+    assert_eq!(
+        map.value(&conn)?
+            .get::<MapValue<String, Option<i32>>>()?
+            .unwrap()
+            .entries,
+        map.entries
+    );
+
+    let tuple = (42_i32, "duck".to_string(), Some(true));
+    assert_eq!(
+        tuple
+            .value(&conn)?
+            .get::<(Option<i32>, Option<String>, Option<bool>)>()?,
+        Some((Some(42), Some("duck".to_string()), Some(true)))
+    );
+    assert_eq!(().value(&conn)?.get::<()>()?, Some(()));
+
+    let null_list = Option::<Vec<Option<i32>>>::None.value(&conn)?;
+    assert_eq!(null_list.get::<Vec<Option<i32>>>()?, None);
 
     Ok(())
 }

@@ -11,7 +11,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 use libduckdb_sys as ffi;
 use std::fmt::Display;
@@ -23,16 +23,19 @@ use std::fmt::Display;
 pub struct BigNum(ffi::duckdb_v2_bignum_t);
 
 impl BigNum {
-    /// Return a decoded value containing the sign and big-endian magnitude.
-    pub fn decode(&self) -> Result<BigNumValue> {
+    fn encoded(&self) -> &[u8] {
         let length = unsafe { self.0.value.inlined.length };
         let bytes = if length <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH {
             unsafe { self.0.value.inlined.inlined.as_ptr() as *const u8 }
         } else {
             unsafe { self.0.value.pointer.ptr as *const u8 }
         };
-        let encoded = unsafe { std::slice::from_raw_parts(bytes, length as usize) };
-        let (is_negative, magnitude) = Value::decode_bignum(encoded)?;
+        unsafe { std::slice::from_raw_parts(bytes, length as usize) }
+    }
+
+    /// Return a decoded value containing the sign and big-endian magnitude.
+    pub fn decode(&self) -> Result<BigNumValue> {
+        let (is_negative, magnitude) = Value::decode_bignum(self.encoded())?;
 
         Ok(BigNumValue { is_negative, magnitude })
     }
@@ -72,6 +75,14 @@ impl VectorElement for BigNum {
     }
 }
 
+impl WritableVectorElement for BigNum {
+    type Write<'a> = &'a BigNum;
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        vector.write_bytes(index, value.map(BigNum::encoded))
+    }
+}
+
 /// The decoded sign and magnitude of a [`BigNum`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BigNumValue {
@@ -92,7 +103,7 @@ impl ToValue for BigNumValue {
 }
 
 impl FromValue for BigNumValue {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
         let encoded = owned_bytes(raw)?;
         let (is_negative, magnitude) = Value::decode_bignum(&encoded)?;
@@ -113,6 +124,17 @@ impl VectorElement for BigNumValue {
         Self: 'a,
     {
         BigNum::get(vector, physical, logical)
+    }
+}
+
+impl WritableVectorElement for BigNumValue {
+    type Write<'a> = &'a BigNumValue;
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        let encoded = value
+            .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
+            .transpose()?;
+        vector.write_bytes(index, encoded.as_deref())
     }
 }
 

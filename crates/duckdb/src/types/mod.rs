@@ -66,16 +66,33 @@ pub trait DuckDBType {
 pub trait ToValue {
     /// Create a DuckDB value from this value.
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value>;
+
+    /// Create a typed DuckDB value representing SQL `NULL`.
+    fn null_value<C: FFILink + ?Sized>(link: &C) -> Result<Value>
+    where
+        Self: DuckDBType,
+    {
+        Value::null(&Self::logical_type(link)?)
+    }
 }
 
 /// Converts an owned DuckDB value into a Rust value.
 pub trait FromValue: Sized {
-    /// Read a Rust value from a DuckDB value.
-    fn from_value(value: &Value) -> Result<Self>;
+    /// Decode a value that has already been checked as non-NULL.
+    fn _get_inner(value: &Value) -> Result<Self>;
+
+    /// Read a Rust value from a DuckDB value, returning `None` for SQL `NULL`.
+    fn from_value(value: &Value) -> Result<Option<Self>> {
+        if value.is_null()? {
+            Ok(None)
+        } else {
+            Self::_get_inner(value).map(Some)
+        }
+    }
 }
 
 impl FromValue for LogicalType {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         value.logical_type()
     }
 }
@@ -102,20 +119,7 @@ impl<T: ToValue + DuckDBType> ToValue for Option<T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         match self {
             Some(value) => value.value(link),
-            None => {
-                let logical_type = Self::logical_type(link)?;
-                link.create_value(crate::value::ValueInput::Null(&logical_type))
-            }
-        }
-    }
-}
-
-impl<T: FromValue> FromValue for Option<T> {
-    fn from_value(value: &Value) -> Result<Self> {
-        if value.is_null()? {
-            Ok(None)
-        } else {
-            T::from_value(value).map(Some)
+            None => T::null_value(link),
         }
     }
 }

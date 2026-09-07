@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use super::{DuckDBType, ToValue};
+use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
     connection::FFILink,
@@ -49,6 +49,39 @@ impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V
             keys: &keys,
             values: &values,
         })
+    }
+}
+
+impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
+    fn _get_inner(value: &Value) -> Result<Self> {
+        let logical_type = value.fetch_logical_type()?;
+        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: format!("Expected MAP value, found {}", logical_type.to_string()?),
+            });
+        }
+
+        let children = value.children()?;
+        if children.len() % 2 != 0 {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: format!("MAP exposed an odd number of children: {}", children.len()),
+            });
+        }
+
+        let entries = children
+            .chunks_exact(2)
+            .enumerate()
+            .map(|(index, entry)| {
+                let key = K::from_value(&entry[0])?.ok_or_else(|| Error {
+                    code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                    message: format!("MAP entry {index} has a NULL key"),
+                })?;
+                Ok((key, V::from_value(&entry[1])?))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { entries })
     }
 }
 

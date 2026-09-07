@@ -11,7 +11,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement},
+    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
 use libduckdb_sys as ffi;
 
@@ -70,6 +70,26 @@ impl<T: InternalDecimalType> VectorElement for Decimal<T> {
     where
         Self: 'a;
 
+    fn validate(other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
+        if other.type_id() != Self::TYPE_ID {
+            return Ok(false);
+        }
+
+        let (_, width) = other.get_param(0)?;
+        let Some(width) = width.get::<u8>()? else {
+            return Ok(false);
+        };
+        let storage_size = match width {
+            1..=4 => size_of::<i16>(),
+            5..=9 => size_of::<i32>(),
+            10..=18 => size_of::<i64>(),
+            19..=38 => size_of::<i128>(),
+            _ => return Ok(false),
+        };
+
+        Ok(size_of::<T>() == storage_size)
+    }
+
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
@@ -77,6 +97,17 @@ impl<T: InternalDecimalType> VectorElement for Decimal<T> {
         let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const T;
 
         (unsafe { &*data_ptr.add(physical) }) as _
+    }
+}
+
+impl<T: InternalDecimalType + 'static> WritableVectorElement for Decimal<T> {
+    type Write<'a>
+        = T
+    where
+        T: 'a;
+
+    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        vector.write_raw(index, value)
     }
 }
 
@@ -92,7 +123,7 @@ pub struct DecimalValueRaw {
 }
 
 impl FromValue for DecimalValueRaw {
-    fn from_value(value: &Value) -> Result<Self> {
+    fn _get_inner(value: &Value) -> Result<Self> {
         let mut width = 0;
         let mut scale = 0;
         let raw = check_api_call!(ffi::duckdb_v2_value_get_decimal, **value, RET, &mut width, &mut scale)?;

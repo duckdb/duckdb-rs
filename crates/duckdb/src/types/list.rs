@@ -6,7 +6,7 @@
 
 use std::marker::PhantomData;
 
-use super::{DuckDBType, ToValue};
+use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
     connection::FFILink,
@@ -39,6 +39,20 @@ impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
             child_type: &child_type,
             children: &children,
         })
+    }
+}
+
+impl<T: FromValue> FromValue for Vec<Option<T>> {
+    fn _get_inner(value: &Value) -> Result<Self> {
+        let logical_type = value.fetch_logical_type()?;
+        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: format!("Expected LIST value, found {}", logical_type.to_string()?),
+            });
+        }
+
+        value.children()?.iter().map(T::from_value).collect::<Result<Vec<_>>>()
     }
 }
 

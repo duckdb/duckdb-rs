@@ -369,8 +369,8 @@ impl Deref for Value {
 }
 
 impl Value {
-    /// Read this value as a Rust type.
-    pub fn get<T: FromValue>(&self) -> Result<T> {
+    /// Read this value as a Rust type, returning `None` for SQL `NULL`.
+    pub fn get<T: FromValue>(&self) -> Result<Option<T>> {
         T::from_value(self)
     }
 

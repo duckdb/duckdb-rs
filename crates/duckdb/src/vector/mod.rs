@@ -438,38 +438,40 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             return Err(out_of_bounds(index, self.len));
         }
 
-        let view = self.view.as_mut().ok_or_else(not_writable)?;
-
-        let data = view.as_ptr() as *mut U;
-        let validity = view.validity_mut().ok_or_else(not_writable)?;
-
-        unsafe {
-            let mask = 1u64 << (index % 64);
-            match value {
-                Some(value) => {
-                    data.add(index).write(value);
-                    validity[index / 64] |= mask;
-                }
-                None => validity[index / 64] &= !mask,
+        let is_valid = value.is_some();
+        if let Some(value) = value {
+            let view = self.view.as_mut().ok_or_else(not_writable)?;
+            let data = view.as_ptr() as *mut U;
+            unsafe {
+                data.add(index).write(value);
             }
         }
-        Ok(())
+        self.set_row_validity(index, is_valid)
     }
 
     pub(crate) fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
+        let handle = self.handle;
         let view = self.view.as_mut().ok_or_else(not_writable)?;
-        let validity = view.validity_mut().ok_or_else(not_writable)?;
-
-        let mask = 1u64 << (index % 64);
-        if is_valid {
-            validity[index / 64] |= mask;
+        let validity = if view.view.validity.is_null() {
+            let validity: *mut u64 = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
+            view.view.validity = validity;
+            validity
         } else {
-            validity[index / 64] &= !mask;
-        }
+            view.view.validity as *mut u64
+        };
 
+        unsafe {
+            let mask = 1u64 << (index % 64);
+            let word = validity.add(index / 64);
+            if is_valid {
+                *word |= mask;
+            } else {
+                *word &= !mask;
+            }
+        }
         Ok(())
     }
 
@@ -514,7 +516,8 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// This is the slow path; prefer [`Self::write`] with `None`.
     pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64,)
+        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
+        self.refresh_buffers()
     }
 
     pub(crate) fn write_as<U: WritableVectorElement>(
