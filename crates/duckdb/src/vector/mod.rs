@@ -19,7 +19,7 @@
 //! [`Vector`] carries only its chunk lifetime and logical element type. Storage
 //! representation and writability remain runtime properties reported by DuckDB.
 //!
-//! A column returned by [`crate::data_chunk::DataChunk::get_vector_at`] is
+//! A column returned by [`crate::data_chunk::DataChunkRef::get_vector_at`] is
 //! narrowed to its logical type before reading:
 //!
 //! ```ignore

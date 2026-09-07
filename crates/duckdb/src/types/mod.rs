@@ -13,7 +13,7 @@
 //! Concrete representations and their [`ToValue`]/[`FromValue`]/
 //! [`crate::vector::VectorElement`]/[`crate::vector::WritableVectorElement`]
 //! implementations live together in family modules grouped by logical type:
-//! [`primitive`], `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
+//! `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
 //! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`,
 //! `list`, `array`, `map`, `structs`, `union`, `variant`, and `tuple`. Each
 //! family module is private; its public types are re-exported below (or from

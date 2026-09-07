@@ -18,8 +18,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
-  # Temporarily allow warnings while the v2 migration is in progress.
-  RUSTFLAGS: ""
   # DuckDB v2 C API has no stable release yet; setup-duckdb reads the nightly
   # staging release from .duckdb-release.
   # All features except capi-v2-p2, which is not ready to link yet.

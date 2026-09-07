@@ -17,9 +17,6 @@ rust-version = { workspace = true }
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-# Forward static linking down to libduckdb-sys.
-bundled = ["libduckdb-sys/bundled"]
-strict-docs = []
 capi-v2-p2 = []
 r2d2 = ["dep:r2d2"]
 

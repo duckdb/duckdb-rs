@@ -15,7 +15,7 @@ pub struct Variant;
 impl VectorElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT;
 
-    /// Variant does not have an Raw representation in the V2 API. Use [`get`] instead.
+    /// Variant does not have an Raw representation in the V2 API. Use [`VectorElement::get`] instead.
     type Internal = ();
 
     type Ref<'a> = Value;

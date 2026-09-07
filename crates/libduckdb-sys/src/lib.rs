@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-
+#![allow(rustdoc::invalid_html_tags)]
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 pub type DuckDBStr<'a> = duckdb_v2_str;
