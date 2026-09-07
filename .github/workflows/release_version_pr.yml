@@ -73,7 +73,8 @@ jobs:
             exit 1
           }
           artifact_release="${DUCKDB_SHA}/${DUCKDB_VERSION}"
-          sed -i "s|^pub const ARTIFACT_RELEASE: &str = \".*\";|pub const ARTIFACT_RELEASE: \&str = \"${artifact_release}\";|" crates/libduckdb-sys/consts.rs
+          sed -i "s|^pub const ARTIFACT_SHA: &str = \".*\";|pub const ARTIFACT_SHA: \&str = \"${DUCKDB_SHA}\";|" crates/libduckdb-sys/consts.rs
+          sed -i "s|^pub const ARTIFACT_VERSION: &str = \".*\";|pub const ARTIFACT_VERSION: \&str = \"${DUCKDB_VERSION}\";|" crates/libduckdb-sys/consts.rs
           sed -i "s|^ARTIFACT_RELEASE=.*|ARTIFACT_RELEASE=${artifact_release}|" .duckdb-release
           echo "artifact_release=${artifact_release}" >> "${GITHUB_OUTPUT}"
 
