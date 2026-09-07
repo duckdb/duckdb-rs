@@ -450,10 +450,10 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             return Err(out_of_bounds(index, self.len));
         }
 
-        let view = self.view.as_ref().ok_or_else(not_writable)?;
+        let view = self.view.as_mut().ok_or_else(not_writable)?;
 
         let data = view.as_ptr() as *mut U;
-        let validity = view.validity().ok_or_else(not_writable)?;
+        let validity = view.validity_mut().ok_or_else(not_writable)?;
 
         unsafe {
             let mask = 1u64 << (index % 64);
@@ -472,8 +472,8 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
-        let view = self.view.as_ref().ok_or_else(not_writable)?;
-        let validity = view.validity().ok_or_else(not_writable)?;
+        let view = self.view.as_mut().ok_or_else(not_writable)?;
+        let validity = view.validity_mut().ok_or_else(not_writable)?;
 
         let mask = 1u64 << (index % 64);
         if is_valid {

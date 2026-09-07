@@ -1144,7 +1144,7 @@ fn test_raw_string_access() -> crate::Result<()> {
                 results.push(None);
             } else {
                 let string = String::from_utf8_lossy(item.get_data());
-                println!("{}", string.to_string());
+                println!("{}", string);
 
                 results.push(Some(string.to_string()));
             }

@@ -112,7 +112,7 @@ impl VectorElement for BigNumValue {
     where
         Self: 'a,
     {
-        BigNum::get(vector, physical, logical).into()
+        BigNum::get(vector, physical, logical)
     }
 }
 
