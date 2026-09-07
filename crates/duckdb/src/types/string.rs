@@ -1,6 +1,6 @@
 //! `VARCHAR`, `BLOB`, and `BIT` byte-oriented logical types.
 //!
-//! [`String`] and [`TString`] represent `VARCHAR`; [`BlobValue`] and
+//! [`String`] and [`BlobValue`] and [`BitValue`] represent `VARCHAR`; [`BlobValue`] and
 //! [`BitValue`] wrap byte payloads for `BLOB` and `BIT` respectively. All four
 //! share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
@@ -13,14 +13,9 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 use libduckdb_sys as ffi;
-
-/// Reads the raw [`ffi::duckdb_v2_bytes`] representation of a `VARCHAR` value.
-///
-/// Use [`String`] instead when a borrowed Rust [`str`] is sufficient.
-pub struct TString;
 
 pub(crate) fn owned_bytes(raw: ffi::DuckDBStr<'_>) -> Result<Vec<u8>> {
     if raw.len == 0 {
@@ -68,21 +63,21 @@ impl ToValue for String {
 /// A byte string represented as a DuckDB `BLOB`.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlobValue<T>(pub T);
+pub struct BlobValue(pub Vec<u8>);
 
-impl<T> DuckDBType for BlobValue<T> {
+impl DuckDBType for BlobValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB, Parameters::None)
     }
 }
 
-impl<T: AsRef<[u8]>> ToValue for BlobValue<T> {
+impl ToValue for BlobValue {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         link.create_value(ValueInput::Blob(self.0.as_ref()))
     }
 }
 
-impl FromValue for BlobValue<Vec<u8>> {
+impl FromValue for BlobValue {
     fn from_value(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
         Ok(Self(owned_bytes(raw)?))
@@ -92,82 +87,56 @@ impl FromValue for BlobValue<Vec<u8>> {
 /// A BIT value in DuckDB's padding-header wire representation.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BitValue<T>(pub T);
+pub struct BitValue(pub Vec<u8>);
 
-impl<T> DuckDBType for BitValue<T> {
+impl DuckDBType for BitValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT, Parameters::None)
     }
 }
 
-impl<T: AsRef<[u8]>> ToValue for BitValue<T> {
+impl ToValue for BitValue {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         link.create_value(ValueInput::Bit(self.0.as_ref()))
     }
 }
 
-impl FromValue for BitValue<Vec<u8>> {
+impl FromValue for BitValue {
     fn from_value(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
         Ok(Self(owned_bytes(raw)?))
     }
 }
 
-impl<T> VectorElement for BlobValue<T> {
+impl VectorElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
 
     type Internal = DuckDBBytes;
 
-    type Ref<'a>
-        = &'a [u8]
-    where
-        T: 'a;
+    type Ref<'a> = &'a [u8];
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
-        T: 'a,
+        Self: 'a,
     {
         let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
 
-impl<T> VectorElement for BitValue<T> {
+impl VectorElement for BitValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT;
 
     type Internal = DuckDBBytes;
 
-    type Ref<'a>
-        = &'a [u8]
-    where
-        T: 'a;
-
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
-    where
-        T: 'a,
-    {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
-        unsafe { &*data_ptr.add(physical) }.get_data()
-    }
-}
-
-impl VectorElement for TString {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
-
-    type Internal = DuckDBBytes;
-
-    type Ref<'a> = &'a DuckDBBytes;
-
-    fn validate(_other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
-        Ok(true)
-    }
+    type Ref<'a> = &'a [u8];
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
         let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
-        (unsafe { &*data_ptr.add(physical) }) as _
+        unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
 

@@ -90,8 +90,8 @@ fn test_remaining_value_creators() -> crate::Result<()> {
         };
     }
 
-    assert_type!(BlobValue([0_u8, 1, 2]), DUCKDB_V2_LOGICAL_TYPE_ID_BLOB);
-    assert_type!(BitValue([0_u8, 0b1010_1010]), DUCKDB_V2_LOGICAL_TYPE_ID_BIT);
+    assert_type!(BlobValue([0_u8, 1, 2].into()), DUCKDB_V2_LOGICAL_TYPE_ID_BLOB);
+    assert_type!(BitValue([0_u8, 0b1010_1010].into()), DUCKDB_V2_LOGICAL_TYPE_ID_BIT);
     assert_type!(DateValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_DATE);
     assert_type!(TimeValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME);
     assert_type!(TimeNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS);
@@ -139,10 +139,10 @@ fn test_binary_value_creators() -> crate::Result<()> {
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB
     );
 
-    let blob = BlobValue([0_u8, 1, 255]).value(&conn)?;
+    let blob = BlobValue([0_u8, 1, 255].into()).value(&conn)?;
     assert_eq!(blob.dbg_string()?, "\\x00\\x01\\xFF");
 
-    let bit = BitValue([0_u8, 0b1010_1010]).value(&conn)?;
+    let bit = BitValue([0_u8, 0b1010_1010].into()).value(&conn)?;
     assert_eq!(bit.dbg_string()?, "10101010");
 
     assert!(BitValue(Vec::<u8>::new()).value(&conn).is_err());
@@ -253,14 +253,14 @@ fn test_raw_value_getters() -> crate::Result<()> {
     let conn = db.connect()?;
 
     let blob = BlobValue(vec![0_u8, 1, 255]);
-    assert_eq!(blob.value(&conn)?.get::<BlobValue<Vec<u8>>>()?, blob);
+    assert_eq!(blob.value(&conn)?.get::<BlobValue>()?, blob);
     assert_eq!(
-        BlobValue(Vec::<u8>::new()).value(&conn)?.get::<BlobValue<Vec<u8>>>()?,
+        BlobValue(Vec::<u8>::new()).value(&conn)?.get::<BlobValue>()?,
         BlobValue(Vec::new())
     );
 
     let bit = BitValue(vec![3_u8, 0b0001_0101]);
-    assert_eq!(bit.value(&conn)?.get::<BitValue<Vec<u8>>>()?, bit);
+    assert_eq!(bit.value(&conn)?.get::<BitValue>()?, bit);
 
     macro_rules! assert_storage_round_trip {
         ($value:expr, $type:ty) => {

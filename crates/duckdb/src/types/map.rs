@@ -149,6 +149,33 @@ pub struct MapRow<'a, K, V> {
 
 impl<'a, K: Debug + VectorElement, V: VectorElement + Debug> MapRow<'a, K, V>
 where
+    for<'b> K::Ref<'b>: PartialEq<&'b K> + Eq + std::hash::Hash,
+    for<'b> <V as VectorElement>::Ref<'b>: Debug,
+{
+    /// Convert the map row into a `HashMap`.
+    ///
+    /// # ! Experimental. Subject to change.
+    /// TODO: REVIEW
+    pub fn to_hash_map(&self) -> Result<HashMap<K::Ref<'a>, Option<V::Ref<'a>>>> {
+        let mut map = HashMap::new();
+        map.reserve(self.length);
+
+        for logical in self.offset..self.offset + self.length {
+            if let Some(key) = { self.children[0].get_as_unchecked::<K>(logical) } {
+                if let Some(value) = self.children[1].get_as_unchecked::<V>(logical) {
+                    map.insert(key, Some(value));
+                } else {
+                    map.insert(key, None);
+                }
+            }
+        }
+
+        Ok(map)
+    }
+}
+
+impl<'a, K: Debug + VectorElement, V: VectorElement + Debug> MapRow<'a, K, V>
+where
     for<'b> K::Ref<'b>: PartialEq<&'b K>,
     for<'b> <V as VectorElement>::Ref<'b>: Debug,
 {

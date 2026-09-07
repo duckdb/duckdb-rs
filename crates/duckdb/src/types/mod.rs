@@ -46,7 +46,7 @@ pub use decimal::{Decimal, DecimalValue, DecimalValueRaw, InternalDecimalType};
 pub use list::List;
 pub use map::{Map, MapValue};
 pub use primitive::Any;
-pub use string::{BitValue, BlobValue, TString};
+pub use string::{BitValue, BlobValue};
 pub use structs::{Struct, StructSchema, StructValue};
 pub use temporal::{
     DateValue, IntervalValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue,

@@ -5,8 +5,8 @@ use crate::{
     error::DuckDBError,
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, IntervalValue, Map, Struct,
-        TString, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
-        TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
+        TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue,
+        TimestampTzValue, TimestampValue, Union, UuidValue,
     },
 };
 
@@ -470,7 +470,7 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let res = conn
         .query(
-            "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: 12.1, 2: 41.2}]);",
+            "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: NULL, 2: 41.2}]);",
             Parameters::None,
         )?
         .next()
@@ -485,6 +485,11 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let row = reader.next().unwrap().unwrap();
 
+    let hmap = row.to_hash_map()?;
+
+    assert_eq!(hmap.get(&1).unwrap(), &Some(&121i16));
+    assert_eq!(hmap.get(&2).unwrap(), &Some(&412i16));
+
     assert_eq!(row.keys()?, vec![&1, &2]);
     assert_eq!(row.values()?, vec![&121, &412]);
 
@@ -495,6 +500,19 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(row.get(&1)?, Some(&1121));
     assert_eq!(row.get(&2)?, Some(&1412));
+
+    let row = reader.next().unwrap().unwrap();
+
+    let hmap = row.to_hash_map()?;
+
+    assert_eq!(hmap.get(&1), Some(&None));
+    assert_eq!(hmap.get(&2), Some(&Some(&412i16)));
+
+    assert_eq!(row.get(&1)?, None);
+    assert_eq!(row.get(&2)?, Some(&412));
+
+    assert!(reader.next().is_none());
+
     Ok(())
 }
 
@@ -742,16 +760,16 @@ pub fn vector_value_types() -> crate::Result<()> {
     let blob = BlobValue(vec![0_u8, 1, 255]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&blob]))?;
     let chunk = result.next().unwrap()?;
-    let vector = chunk.get_vector_at::<BlobValue<Vec<u8>>>(0)?;
+    let vector = chunk.get_vector_at::<BlobValue>(0)?;
     assert_eq!(vector.get(0)?, Some(blob.0.as_slice()));
     drop(vector);
     drop(chunk);
     drop(result);
 
-    let bit = BitValue(vec![3_u8, 0b0001_0101]);
+    let bit = BitValue(vec![3_u8, 0b0001_0101].into());
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
     let chunk = result.next().unwrap()?;
-    let vector = chunk.get_vector_at::<BitValue<Vec<u8>>>(0)?;
+    let vector = chunk.get_vector_at::<BitValue>(0)?;
     assert_eq!(vector.get(0)?, Some(bit.0.as_slice()));
     drop(vector);
     drop(chunk);
@@ -1102,11 +1120,11 @@ fn test_vector_tstring() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk?;
-        let vector = chunk.get_vector_at::<TString>(0)?;
+        let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         for item in vector.iter()? {
             if let Some(value) = item {
-                let string = String::from_utf8_lossy(value.get_data());
+                let string = String::from_utf8_lossy(value);
                 results.push(Some(string.to_string()));
             } else {
                 results.push(None);
@@ -1131,7 +1149,7 @@ fn test_raw_string_access() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk?;
-        let vector = chunk.get_vector_at::<BlobValue<&[u8]>>(0)?;
+        let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         let view = vector.get_view().unwrap();
         let slice = unsafe { view.as_slice() }.unwrap();
