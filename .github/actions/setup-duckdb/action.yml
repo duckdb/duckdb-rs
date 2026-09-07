@@ -1,0 +1,38 @@
+name: Setup DuckDB
+description: Download and extract the DuckDB v2 nightly staging library and configure the build environment.
+
+runs:
+  using: composite
+  steps:
+    - name: Load DuckDB release
+      shell: bash
+      run: cat "$GITHUB_WORKSPACE/.duckdb-release" >> "$GITHUB_ENV"
+
+    - name: Download and extract DuckDB
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux)   artifact="duckdb-shared-libs-linux-amd64.tar.gz" ;;
+          macOS)   artifact="duckdb-shared-libs-osx-universal.tar.gz" ;;
+          Windows) artifact="duckdb-shared-libs-windows-amd64.tar.gz" ;;
+          *) echo "::error::Unsupported runner OS: $RUNNER_OS"; exit 1 ;;
+        esac
+
+        url="${ARTIFACT_BASE_URL}/${ARTIFACT_RELEASE}/duckdb/duckdb/github_release/$artifact"
+        dir="$RUNNER_TEMP/libduckdb"
+        mkdir -p "$dir"
+
+        curl --fail --location --retry 5 --output "$dir.tar.gz" "$url" || {
+          echo "::error::No staging artifact at $url"
+          exit 1
+        }
+
+        (cd "$RUNNER_TEMP" && tar -xzf libduckdb.tar.gz -C libduckdb)
+
+        {
+          echo "DUCKDB_LIB_DIR=$dir"
+          echo "DUCKDB_INCLUDE_DIR=$GITHUB_WORKSPACE/tmp"
+          echo "LD_LIBRARY_PATH=$dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$dir${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+        } >> "$GITHUB_ENV"
+        echo "$dir" >> "$GITHUB_PATH"
