@@ -25,6 +25,8 @@ fn is_compiler(compiler_name: &str) -> bool {
     std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == compiler_name)
 }
 
+mod consts;
+
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir).join("bindgen.rs");
