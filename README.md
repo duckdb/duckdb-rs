@@ -6,7 +6,7 @@
 [![Downloads](https://img.shields.io/crates/d/duckdb.svg)](https://crates.io/crates/duckdb)
 [![CI](https://github.com/duckdb/duckdb-rs/workflows/CI/badge.svg)](https://github.com/duckdb/duckdb-rs/actions)
 
-> ⚠ The V2 C API is in rapid development. Consider this branch unstable. Feedback is welcome!
+> ⚠️ The V2 C API is in rapid development. Consider this branch unstable. Feedback is welcome!
 
 duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/duckdb), with an API inspired by [rusqlite](https://github.com/rusqlite/rusqlite). Use it to:
 
@@ -15,6 +15,7 @@ duckdb-rs is an ergonomic Rust wrapper for [DuckDB](https://github.com/duckdb/du
 - ~~Build DuckDB extensions in Rust with custom scalar and table functions.~~
 
 ## Documentation
+> ⚠️ The V2 Documentation is not live yet!
 
 The **[DuckDB V1 Rust client guide](https://duckdb.org/docs/stable/clients/rust)** is the primary documentation:
 
@@ -46,6 +47,12 @@ fn main() -> std::io::Result<()> {
 ```
 #### main.rs
 ```rust
+use duckdb::{
+    Parameters, Result,
+    environment::{Environment, StorageLocation},
+};
+
+
 fn main() -> Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory);
