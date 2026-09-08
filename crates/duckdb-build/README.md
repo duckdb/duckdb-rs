@@ -31,15 +31,7 @@ curl https://install.duckdb.org | DUCKDB_INSTALL=dynamic sh
 
 Cargo does not propagate a dependency's runtime linker arguments into your
 application. Add this helper as a **build dependency** of the package producing
-the final executable:
-
-```toml
-[dependencies]
-duckdb = "=2.0.0"
-
-[build-dependencies]
-duckdb-build = "=2.0.0"
-```
+the final executable.
 
 In the application's `build.rs`:
 ```rust

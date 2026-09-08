@@ -45,6 +45,8 @@ fn main() -> std::io::Result<()> {
     duckdb_build::emit_runtime_path(duckdb_build::RuntimeLocation::Installed)
 }
 ```
+See [duckdb-build](crates/duckdb-build/README.md) for more options.
+
 #### main.rs
 ```rust
 use duckdb::{
