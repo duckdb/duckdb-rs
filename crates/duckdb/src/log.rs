@@ -94,8 +94,8 @@ impl Deref for LogStorageBuilderHandle {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{Environment, StorageLocation};
-/// use duckdb_rs::log::{LogStorageBuilder, LogStorageCallbacks, LogLevel};
+/// use duckdb::{Environment, StorageLocation};
+/// use duckdb::log::{LogStorageBuilder, LogStorageCallbacks, LogLevel};
 ///
 /// struct StdoutLogger;
 ///
@@ -106,13 +106,13 @@ impl Deref for LogStorageBuilderHandle {
 ///         level: LogLevel,
 ///         _timestamp: i64,
 ///         log_type: &str,
-///     ) -> duckdb_rs::Result<()> {
+///     ) -> duckdb::Result<()> {
 ///         println!("[{level:?}] {log_type}: {message}");
 ///         Ok(())
 ///     }
 /// }
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// LogStorageBuilder::new("stdout", StdoutLogger).register_with_database(&db)?;

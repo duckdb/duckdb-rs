@@ -1,5 +1,5 @@
 [package]
-name = "duckdb-rs"
+name = "duckdb"
 description = "Ergonomic wrapper for DuckDB"
 # ---
 version = { workspace = true }

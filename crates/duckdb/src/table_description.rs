@@ -15,11 +15,11 @@ use crate::{
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{Environment, StorageLocation, Parameters};
-/// use duckdb_rs::qualified_name::QualifiedName;
-/// use duckdb_rs::table_description::TableDescription;
+/// use duckdb::{Environment, StorageLocation, Parameters};
+/// use duckdb::qualified_name::QualifiedName;
+/// use duckdb::table_description::TableDescription;
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

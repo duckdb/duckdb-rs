@@ -9,12 +9,12 @@
 //! # Example
 //!
 //! ```
-//! use duckdb_rs::{
+//! use duckdb::{
 //!     Parameters,
 //!     environment::{Environment, StorageLocation},
 //! };
 //!
-//! # fn main() -> duckdb_rs::Result<()> {
+//! # fn main() -> duckdb::Result<()> {
 //! let environment = Environment::new()?;
 //! let database = environment.open(StorageLocation::InMemory)?;
 //! let connection = database.connect()?;

@@ -132,4 +132,4 @@ jobs:
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: detect_stack_use_after_return=1:detect_leaks=1:symbolize=1
-        run: cargo test --lib --tests --features "$FEATURES" --target x86_64-unknown-linux-gnu --package duckdb-rs --locked
+        run: cargo test --lib --tests --features "$FEATURES" --target x86_64-unknown-linux-gnu --package duckdb --locked

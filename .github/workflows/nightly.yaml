@@ -92,7 +92,7 @@ jobs:
         env:
           CC: ${{ runner.os != 'Windows' && 'sccache cc' || '' }}
           CXX: ${{ runner.os != 'Windows' && 'sccache c++' || '' }}
-        run: cargo test -p duckdb-rs --features static
+        run: cargo test -p duckdb --features static
 
       - name: Test bundled-cmake backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}

@@ -14,7 +14,7 @@ use libduckdb_sys as ffi;
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::qualified_name::QualifiedName;
+/// use duckdb::qualified_name::QualifiedName;
 ///
 /// let name = QualifiedName::from_parts(&["main", "events"]).unwrap();
 ///

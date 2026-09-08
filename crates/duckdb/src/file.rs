@@ -98,10 +98,10 @@ impl<'a> FileBuilder<'a> {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{Environment, StorageLocation};
-/// use duckdb_rs::file::{File, FileSystem, FileBuilder};
+/// use duckdb::{Environment, StorageLocation};
+/// use duckdb::file::{File, FileSystem, FileBuilder};
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

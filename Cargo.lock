@@ -85,14 +85,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "duckdb-build"
-version = "2.0.0"
-dependencies = [
- "dirs",
-]
-
-[[package]]
-name = "duckdb-rs"
+name = "duckdb"
 version = "2.0.0"
 dependencies = [
  "duckdb-build",
@@ -100,6 +93,13 @@ dependencies = [
  "libduckdb-sys",
  "paste",
  "r2d2",
+]
+
+[[package]]
+name = "duckdb-build"
+version = "2.0.0"
+dependencies = [
+ "dirs",
 ]
 
 [[package]]

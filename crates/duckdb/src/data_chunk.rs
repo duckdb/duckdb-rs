@@ -25,13 +25,13 @@ pub struct DataChunkRef<'a> {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{
+/// use duckdb::{
 ///     Parameters,
 ///     environment::Environment,
 ///     environment::StorageLocation,
 /// };
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;
