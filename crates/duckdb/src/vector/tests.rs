@@ -1,25 +1,23 @@
 use crate::{
-    DuckDBType, Parameters, ToValue,
+    Parameters,
     builder_helpers::scalar_callback,
-    connection::FFILink,
-    environment::Environment,
-    environment::StorageLocation,
+    data_chunk::DataChunk,
+    environment::{Environment, StorageLocation},
     error::DuckDBError,
-    logical_type::LogicalType,
-    query_result::QueryResultStep,
     types::{
-        Any, BigNumValue, BitValue, BlobValue, DateValue, DecimalValue, IntervalValue, MapValue, StructSchema,
-        StructValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
-        TimestampTzNsValue, TimestampTzValue, TimestampValue, UnionSchema, UnionValue, UuidValue,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
+        Map, Struct, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
+        TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
     },
-    vector::{Array, Decimal, List, MapWrite, StorageKind, Struct, StructWrite, TString, Union, UnionWriter, Variant},
 };
 
 #[cfg(feature = "capi-v2-p2")]
 use crate::{scalar::ScalarFunctionBuilder, signature::SignatureBuilder};
 
+#[cfg(feature = "capi-v2-p2")]
 struct TestStruct;
 
+#[cfg(feature = "capi-v2-p2")]
 impl StructSchema for TestStruct {
     fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
         Ok(vec![
@@ -28,8 +26,10 @@ impl StructSchema for TestStruct {
         ])
     }
 }
+#[cfg(feature = "capi-v2-p2")]
 
 struct TestUnion;
+#[cfg(feature = "capi-v2-p2")]
 
 impl UnionSchema for TestUnion {
     fn members<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
@@ -90,9 +90,7 @@ scalar_callback!(
     for (index, (key, value)) in rows.iter().enumerate() {
         result.write(
             index,
-            Some(MapWrite {
-                entries: vec![(*key, value.as_str())],
-            }),
+            Some(HashMap::from([(*key, value.as_str())])),
         )?;
     }
     let written: Vec<_> = result.iter()?.collect();
@@ -473,7 +471,7 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let res = conn
         .query(
-            "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: 12.1, 2: 41.2}]);",
+            "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: NULL, 2: 41.2}]);",
             Parameters::None,
         )?
         .next()
@@ -481,12 +479,17 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(res.vectors_count()?, 1);
 
-    let vector = res.get_vector_at::<crate::vector::Map<i32, Decimal<i16>>>(0)?;
+    let vector = res.get_vector_at::<Map<i32, Decimal<i16>>>(0)?;
     let mut reader = vector.iter()?;
 
     assert_eq!(vector.len(), 3);
 
     let row = reader.next().unwrap().unwrap();
+
+    let hmap = row.to_hash_map()?;
+
+    assert_eq!(hmap.get(&1).unwrap(), &Some(&121i16));
+    assert_eq!(hmap.get(&2).unwrap(), &Some(&412i16));
 
     assert_eq!(row.keys()?, vec![&1, &2]);
     assert_eq!(row.values()?, vec![&121, &412]);
@@ -498,6 +501,19 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(row.get(&1)?, Some(&1121));
     assert_eq!(row.get(&2)?, Some(&1412));
+
+    let row = reader.next().unwrap().unwrap();
+
+    let hmap = row.to_hash_map()?;
+
+    assert_eq!(hmap.get(&1), Some(&None));
+    assert_eq!(hmap.get(&2), Some(&Some(&412i16)));
+
+    assert_eq!(row.get(&1)?, None);
+    assert_eq!(row.get(&2)?, Some(&412));
+
+    assert!(reader.next().is_none());
+
     Ok(())
 }
 
@@ -669,7 +685,7 @@ pub fn vector_test_bignum() -> crate::Result<()> {
     for item in result {
         let item = item?;
 
-        let res = item.get_vector_at::<crate::vector::BigNum>(0)?;
+        let res = item.get_vector_at::<BigNum>(0)?;
 
         assert!(res.len() == 3);
         let reader = res.iter()?;
@@ -730,15 +746,22 @@ pub fn vector_value_types() -> crate::Result<()> {
         },
         IntervalValue
     );
-    assert_round_trip!(
-        DecimalValue::<i64, 18, 3>(-123_456),
-        DecimalValue<i64, 18, 3>
-    );
+
+    let mut result = conn.query(
+        "SELECT $1",
+        Parameters::positional(&[&DecimalValue::<i64, 18, 3>(-123_456)]),
+    )?;
+    let chunk = result.next().unwrap()?;
+    let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    assert_eq!(vector.get(0)?, Some(&-123_456));
+    drop(vector);
+    drop(chunk);
+    drop(result);
 
     let blob = BlobValue(vec![0_u8, 1, 255]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&blob]))?;
     let chunk = result.next().unwrap()?;
-    let vector = chunk.get_vector_at::<BlobValue<Vec<u8>>>(0)?;
+    let vector = chunk.get_vector_at::<BlobValue>(0)?;
     assert_eq!(vector.get(0)?, Some(blob.0.as_slice()));
     drop(vector);
     drop(chunk);
@@ -747,7 +770,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     let bit = BitValue(vec![3_u8, 0b0001_0101]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
     let chunk = result.next().unwrap()?;
-    let vector = chunk.get_vector_at::<BitValue<Vec<u8>>>(0)?;
+    let vector = chunk.get_vector_at::<BitValue>(0)?;
     assert_eq!(vector.get(0)?, Some(bit.0.as_slice()));
     drop(vector);
     drop(chunk);
@@ -763,6 +786,114 @@ pub fn vector_value_types() -> crate::Result<()> {
     let decoded = vector.get(0)?.unwrap().decode()?;
     assert_eq!(decoded.is_negative, bignum.is_negative);
     assert_eq!(decoded.magnitude, bignum.magnitude);
+
+    Ok(())
+}
+
+#[test]
+pub fn vector_writable_value_types() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    macro_rules! assert_copy_write {
+        ($type:ty, $value:expr) => {{
+            let chunk = DataChunk::create(&[<$type>::logical_type(&conn)?], true)?;
+            let mut vector = chunk.get_vector_at::<$type>(0)?;
+            vector.set_size(2)?;
+            let value = $value;
+            vector.write(0, Some(value))?;
+            vector.write(1, None)?;
+            assert_eq!(vector.get(0)?, Some(&value));
+            assert_eq!(vector.get(1)?, None);
+        }};
+    }
+
+    assert_copy_write!(DateValue, DateValue(-1));
+    assert_copy_write!(TimeValue, TimeValue(1));
+    assert_copy_write!(TimeNsValue, TimeNsValue(2));
+    assert_copy_write!(TimeTzValue, TimeTzValue(3));
+    assert_copy_write!(TimestampValue, TimestampValue(-4));
+    assert_copy_write!(TimestampSecValue, TimestampSecValue(-5));
+    assert_copy_write!(TimestampMsValue, TimestampMsValue(-6));
+    assert_copy_write!(TimestampNsValue, TimestampNsValue(-7));
+    assert_copy_write!(TimestampTzValue, TimestampTzValue(-8));
+    assert_copy_write!(TimestampTzNsValue, TimestampTzNsValue(-9));
+    assert_copy_write!(UuidValue, UuidValue(i128::MIN + 10));
+    assert_copy_write!(
+        IntervalValue,
+        IntervalValue {
+            months: -1,
+            days: 2,
+            micros: -3,
+        }
+    );
+
+    let chunk = DataChunk::create(&[DecimalValue::<i64, 18, 3>::logical_type(&conn)?], true)?;
+    assert!(chunk.get_vector_at::<Decimal<i32>>(0).is_err());
+    let mut vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(-123_456))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some(&-123_456));
+    assert_eq!(vector.get(1)?, None);
+
+    let chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BlobValue>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(&[0_u8, 1, 255]))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some([0_u8, 1, 255].as_slice()));
+    assert_eq!(vector.get(1)?, None);
+
+    let chunk = DataChunk::create(&[BitValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BitValue>(0)?;
+    vector.set_size(2)?;
+    assert!(vector.write(0, Some(&[])).is_err());
+    vector.write(0, Some(&[3_u8, 0b0001_0101]))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some([3_u8, 0b0001_0101].as_slice()));
+    assert_eq!(vector.get(1)?, None);
+
+    let bignum = BigNumValue {
+        is_negative: true,
+        magnitude: vec![1, 2, 3, 4, 5],
+    };
+    let chunk = DataChunk::create(&[BigNumValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BigNumValue>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(&bignum))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?.unwrap().decode()?, bignum);
+    assert!(vector.get(1)?.is_none());
+
+    let mut source = conn.query("SELECT 12345678901234567890::BIGNUM", Parameters::None)?;
+    let source_chunk = source.next().unwrap()?;
+    let source_vector = source_chunk.get_vector_at::<BigNum>(0)?;
+    let borrowed = source_vector.get(0)?.unwrap();
+    let chunk = DataChunk::create(&[BigNum::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BigNum>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(borrowed))?;
+    assert_eq!(vector.get(0)?.unwrap().decode()?.to_string(), "12345678901234567890");
+
+    let chunk = DataChunk::create(&[<[i32; 3]>::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<Array<i32>>(0)?;
+    vector.set_size(2)?;
+    vector.write(1, None)?;
+    assert_eq!(vector.children[0].len(), 6);
+    assert!(vector.write(0, Some(vec![Some(1), Some(2)])).is_err());
+    vector.write(0, Some(vec![Some(1), None, Some(3)]))?;
+    assert_eq!(
+        vector
+            .get(0)?
+            .unwrap()
+            .iter()
+            .map(|value| value.copied())
+            .collect::<Vec<_>>(),
+        vec![Some(1), None, Some(3)]
+    );
+    assert!(vector.get(1)?.is_none());
 
     Ok(())
 }
@@ -1098,11 +1229,11 @@ fn test_vector_tstring() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk?;
-        let vector = chunk.get_vector_at::<TString>(0)?;
+        let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         for item in vector.iter()? {
             if let Some(value) = item {
-                let string = String::from_utf8_lossy(value.get_data());
+                let string = String::from_utf8_lossy(value);
                 results.push(Some(string.to_string()));
             } else {
                 results.push(None);
@@ -1127,7 +1258,7 @@ fn test_raw_string_access() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk?;
-        let vector = chunk.get_vector_at::<TString>(0)?;
+        let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         let view = vector.get_view().unwrap();
         let slice = unsafe { view.as_slice() }.unwrap();
@@ -1139,7 +1270,7 @@ fn test_raw_string_access() -> crate::Result<()> {
                 results.push(None);
             } else {
                 let string = String::from_utf8_lossy(item.get_data());
-                println!("{}", string.to_string());
+                println!("{}", string);
 
                 results.push(Some(string.to_string()));
             }

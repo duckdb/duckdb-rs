@@ -2,7 +2,7 @@
 
 use std::{fmt::Debug, ops::Deref};
 
-use libduckdb_sys::{self as ffi, DuckDBStr};
+use libduckdb_sys::{self as ffi};
 
 use crate::{
     Result,
@@ -369,8 +369,8 @@ impl Deref for Value {
 }
 
 impl Value {
-    /// Read this value as a Rust type.
-    pub fn get<T: FromValue>(&self) -> Result<T> {
+    /// Read this value as a Rust type, returning `None` for SQL `NULL`.
+    pub fn get<T: FromValue>(&self) -> Result<Option<T>> {
         T::from_value(self)
     }
 

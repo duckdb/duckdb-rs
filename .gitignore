@@ -35,3 +35,5 @@ crates/libduckdb-sys/._duckdb
 .duckdb_rs_history
 
 .env
+
+__pycache__/
