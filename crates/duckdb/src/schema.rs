@@ -11,14 +11,14 @@ use crate::{Result, check_api_call, check_api_call_no_err, logical_type::Logical
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{
+/// use duckdb::{
 ///     Parameters,
 ///     environment::Environment,
 ///     environment::StorageLocation,
 /// };
-/// use duckdb_rs::logical_type::LogicalTypeID;
+/// use duckdb::logical_type::LogicalTypeID;
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

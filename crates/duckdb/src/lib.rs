@@ -9,12 +9,12 @@
 //! # Example
 //!
 //! ```
-//! use duckdb_rs::{
+//! use duckdb::{
 //!     Parameters,
 //!     environment::{Environment, StorageLocation},
 //! };
 //!
-//! # fn main() -> duckdb_rs::Result<()> {
+//! # fn main() -> duckdb::Result<()> {
 //! let environment = Environment::new()?;
 //! let database = environment.open(StorageLocation::InMemory)?;
 //! let connection = database.connect()?;
@@ -77,7 +77,6 @@ pub mod expression;
 pub mod file;
 #[cfg(feature = "capi-v2-p2")]
 pub mod log;
-#[cfg(feature = "capi-v2-p2")]
 pub mod qualified_name;
 #[cfg(feature = "capi-v2-p2")]
 pub mod query_progress;

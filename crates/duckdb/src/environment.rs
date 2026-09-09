@@ -42,7 +42,7 @@ unsafe impl Sync for EnvironmentHandle {}
 ///
 /// # Example
 /// ```rust
-/// use duckdb_rs::{
+/// use duckdb::{
 ///     Parameters,
 ///     environment::Environment,
 ///     environment::StorageLocation,
@@ -79,7 +79,7 @@ impl From<StorageLocation> for String {
 ///
 /// # Example
 /// ```rust
-/// use duckdb_rs::{Parameters, environment::Environment, environment::StorageLocation};
+/// use duckdb::{Parameters, environment::Environment, environment::StorageLocation};
 ///
 /// let env = Environment::new().expect("Failed to create environment");
 /// let db = env.open(StorageLocation::InMemory).expect("Failed to open database");

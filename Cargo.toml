@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/duckdb-build",
     "crates/duckdb",
     "crates/libduckdb-sys",
 ]

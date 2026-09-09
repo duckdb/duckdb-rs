@@ -36,10 +36,10 @@ unsafe impl Sync for DatabaseHandle {}
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{environment::Environment, environment::StorageLocation};
-/// use duckdb_rs::connection_options::ConfigOptionValue;
+/// use duckdb::{environment::Environment, environment::StorageLocation};
+/// use duckdb::connection_options::ConfigOptionValue;
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///

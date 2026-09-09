@@ -10,6 +10,7 @@ use crate::{
     check_api_call, check_api_call_no_err,
     connection::FFILink,
     error::{DuckDBError, Error},
+    qualified_name::QualifiedName,
     value::Value,
 };
 
@@ -24,10 +25,10 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{environment::Environment, environment::StorageLocation};
-/// use duckdb_rs::logical_type::{LogicalType, LogicalTypeID};
+/// use duckdb::{environment::Environment, environment::StorageLocation};
+/// use duckdb::logical_type::{LogicalType, LogicalTypeID};
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;
@@ -145,10 +146,12 @@ impl LogicalType {
             .map(|value| value.as_value().handle)
             .collect::<Vec<_>>();
 
+        let qname = QualifiedName::from_sql(name)?;
+
         let handle = check_api_call!(
             api_fn!(),
             **api_arg!(),
-            name.into(),
+            *qname,
             names
                 .as_ref()
                 .map_or(std::ptr::null(), |names| names.as_ptr()),

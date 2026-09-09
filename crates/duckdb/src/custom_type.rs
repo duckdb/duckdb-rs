@@ -16,10 +16,10 @@ use crate::{
 ///
 /// # Example
 /// ```
-/// use duckdb_rs::{DuckDBType, Environment, StorageLocation};
-/// use duckdb_rs::custom_type::CustomType;
+/// use duckdb::{DuckDBType, Environment, StorageLocation};
+/// use duckdb::custom_type::CustomType;
 ///
-/// # fn main() -> duckdb_rs::Result<()> {
+/// # fn main() -> duckdb::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

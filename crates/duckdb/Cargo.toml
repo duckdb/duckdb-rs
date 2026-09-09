@@ -1,5 +1,5 @@
 [package]
-name = "duckdb-rs"
+name = "duckdb"
 description = "Ergonomic wrapper for DuckDB"
 # ---
 version = { workspace = true }
@@ -17,11 +17,17 @@ rust-version = { workspace = true }
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
+default = []
+pkg-config = ["libduckdb-sys/pkg-config"]
+static = ["libduckdb-sys/static"]
 capi-v2-p2 = []
 r2d2 = ["dep:r2d2"]
 
 [dependencies]
 libc = "0.2.186"
-libduckdb-sys = { version = "2.0.0", path = "../libduckdb-sys" }
+libduckdb-sys = { version = "=2.0.0", path = "../libduckdb-sys" }
 paste = "1.0.15"
 r2d2 = {version = "0.8.10", optional = true }
+
+[build-dependencies]
+duckdb-build = { version = "=2.0.0", path = "../duckdb-build" }

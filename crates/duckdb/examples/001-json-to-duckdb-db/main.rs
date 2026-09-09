@@ -1,4 +1,4 @@
-use duckdb_rs::{
+use duckdb::{
     Parameters, Result,
     environment::{Environment, StorageLocation},
     types::DateValue,
@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     )?;
 
     let csv_data = conn.query(
-        "SELECT id, first_name, email, birth_day, birth_month, birth_year, FROM 'duckdb-rs/examples/001-json-to-duckdb-db/data/001.csv' WHERE country != $1",
+        "SELECT id, first_name, email, birth_day, birth_month, birth_year, FROM 'crates/duckdb/examples/001-json-to-duckdb-db/data/001.csv' WHERE country != $1",
         Parameters::positional(&[&"CHILE"]),
     )?;
 
