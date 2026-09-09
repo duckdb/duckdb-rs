@@ -54,8 +54,8 @@ cargo add duckdb-build --build --git https://github.com/duckdb/duckdb-rs.git --r
 
 #### build.rs
 ```rust
-fn main() -> std::io::Result<()> {
-    duckdb_build::emit_runtime_path(duckdb_build::RuntimeLocation::Installed)
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    duckdb_build::emit_dynamic_linking_flags()
 }
 ```
 

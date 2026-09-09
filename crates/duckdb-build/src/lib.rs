@@ -12,6 +12,8 @@
 //! Static builds and loader-visible installations do not need this helper.
 //! This crate does not download artifacts or load `.env` files.
 
+#![cfg_attr(doctest, doc = include_str!("../README.md"))]
+
 use std::{
     env,
     path::{Path, PathBuf},
@@ -91,10 +93,36 @@ fn try_from_env() -> Result<Option<(Vec<PathBuf>, Vec<PathBuf>)>, Box<dyn std::e
     match (env::var_os("DUCKDB_LIB_DIR"), env::var_os("DUCKDB_INCLUDE_DIR")) {
         (None, None) => Ok(None),
         (Some(lib_path), Some(include_path)) => {
-            Ok(Some((vec![PathBuf::from(lib_path)], vec![PathBuf::from(include_path)])))
+            let pwd = env::var_os("PWD").map(PathBuf::from);
+            Ok(Some((
+                vec![resolve_dir(Path::new(&lib_path), pwd.as_deref())?.canonicalize()?],
+                vec![resolve_dir(Path::new(&include_path), pwd.as_deref())?.canonicalize()?],
+            )))
         }
         _ => Err("Set both DUCKDB_LIB_DIR and DUCKDB_INCLUDE_DIR".into()),
     }
+}
+
+fn resolve_dir(path: &Path, pwd: Option<&Path>) -> std::io::Result<PathBuf> {
+    if path.as_os_str().is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "DUCKDB_LIB_DIR and DUCKDB_INCLUDE_DIR must not be empty",
+        ));
+    }
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    // Cargo changes cwd to the package directory but inherits the invocation's PWD.
+    if let Some(pwd) = pwd.filter(|pwd| pwd.is_absolute()) {
+        return Ok(pwd.join(path));
+    }
+    println!(
+        "cargo:warning=relative DuckDB dir '{}' but $PWD is unset or not absolute; \
+         resolving against the crate dir; prefer an absolute path",
+        path.display()
+    );
+    Ok(env::current_dir()?.join(path))
 }
 
 fn canonicalize_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -186,6 +214,7 @@ pub fn emit_rerun_calls(lib_path: &PathBuf, header_path: &PathBuf) {
     for variable in [
         "DUCKDB_LIB_DIR",
         "DUCKDB_INCLUDE_DIR",
+        "PWD",
         "HOME",
         "USERPROFILE",
         "LINK_DUCKDB_STATIC",
@@ -301,4 +330,41 @@ pub fn resolve_library() -> Result<ResolvedLibrary, Box<dyn std::error::Error>> 
         mode: link_mode,
         provider,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_override_uses_invocation_directory() {
+        let pwd = env::temp_dir().join("duckdb-workspace");
+        for path in ["lib", "include", "../duckdb/lib"] {
+            assert_eq!(resolve_dir(Path::new(path), Some(&pwd)).unwrap(), pwd.join(path));
+        }
+    }
+
+    #[test]
+    fn absolute_override_ignores_invocation_directory() {
+        let path = env::temp_dir().join("duckdb-install");
+        let pwd = env::temp_dir().join("duckdb-workspace");
+        assert_eq!(resolve_dir(&path, Some(&pwd)).unwrap(), path);
+    }
+
+    #[test]
+    fn relative_override_without_absolute_pwd_uses_current_directory() {
+        let path = Path::new("duckdb-install");
+        for pwd in [None, Some(Path::new("relative")), Some(Path::new(""))] {
+            assert_eq!(resolve_dir(path, pwd).unwrap(), env::current_dir().unwrap().join(path));
+        }
+    }
+
+    #[test]
+    fn empty_override_is_rejected() {
+        let pwd = env::temp_dir();
+        assert_eq!(
+            resolve_dir(Path::new(""), Some(&pwd)).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+    }
 }

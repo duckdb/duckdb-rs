@@ -21,7 +21,7 @@ By default, `libduckdb-sys` looks for the release pinned in
     libduckdb.dylib | libduckdb.so | libduckdb_static.a
 ```
 Alternatively, set **both** variables to override the entire installation:
-```
+```sh
 export DUCKDB_INCLUDE_DIR=... # duckdb_v2.h location
 export DUCKDB_LIB_DIR=... # libduckdb location
 ```
@@ -29,30 +29,33 @@ export DUCKDB_LIB_DIR=... # libduckdb location
 Setting only one variable, an empty value, or an invalid installation is an
 error; overrides are never mixed with pkg-config or the pinned installation.
 Relative overrides are resolved against the invocation directory (`PWD`, when
-absolute); `~` expands to the user's home directory.
+absolute). If `PWD` is unset or relative, they resolve against the build script's
+current directory with a warning. Use absolute paths when possible, and let the
+shell expand `~` (for example, `export DUCKDB_LIB_DIR=~/duckdb/lib`).
 
-Static linking is also supported using the `static` feature flag on `duckdb` or
-`libduckdb-sys`, or using `LINK_DUCKDB_STATIC=true`.
+Static linking is supported using the `static` feature flag on `duckdb` or
+`libduckdb-sys`.
 
 ### Build-script API
 
 For a native binding crate, discovery and emission can be separate:
 
 ```rust,no_run
-fn main() -> std::io::Result<()> {
-    let installation = duckdb_build::discover(duckdb_build::LinkMode::Dynamic)?;
-    // Use installation.header() and installation.include_paths() for bindgen.
-    installation.emit_link_flags()?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let installation = duckdb_build::resolve_library()?;
+    // Use installation.header and installation.include_dir() for bindgen.
+    installation.emit_rerun_calls();
+    installation.emit_linker_flags()?;
     Ok(())
 }
 ```
 
-`duckdb_build::link(mode)` combines those steps. `Installation::discover(mode)`
-and `Installation::link(mode)` are also available.
+`resolve_library()` selects static linking when the helper's `static` feature is
+enabled, and dynamic linking otherwise.
 
-The resolved installation exposes read-only `library()`, `header()`,
-`lib_dir()`, `include_dir()`, `include_paths()`, `mode()`, and `source()`
-accessors. Directory-based installations emit their link flags directly.
+The returned `ResolvedLibrary` exposes `library`, `header`, and `mode` fields,
+plus `lib_dir()` and `include_dir()` accessors.
+Directory-based installations emit their link flags directly.
 System installations delegate emission to pkg-config with a second probe,
 rather than duplicating pkg-config's linker logic. Keep the provider environment
 unchanged between discovery and emission.
@@ -71,7 +74,8 @@ duckdb = { git = "https://github.com/duckdb/duckdb-rs.git", rev = "<SHA>", featu
 The `duckdb` and `libduckdb-sys` features forward to the native build helper.
 No application build dependency is needed for system discovery.
 
-- Without the feature, discovery uses the pinned installation as before.
+- Without a system-discovery feature, discovery tries the pinned installation,
+  then `/usr/local/lib` and `/usr/local/include`.
 - With the feature, pkg-config is used. A failed probe is an error, not a silent fallback.
 - Setting both `DUCKDB_LIB_DIR` and `DUCKDB_INCLUDE_DIR` bypasses system
   discovery entirely. A partial or invalid override is an error.
@@ -95,7 +99,8 @@ curl https://install.duckdb.org | DUCKDB_INSTALL=dynamic sh
 ## Runtime deployment
 
 Build-time discovery does not configure the operating system's loader. The
-library crates do not automatically add rpaths or relay metadata to applications.
+native build helper emits rpaths and installation metadata, but Cargo does not
+propagate a dependency's `rustc-link-arg` directives to applications.
 For shared linking, install DuckDB in a loader-visible location or configure
 deployment explicitly. `PKG_CONFIG_PATH` and `DUCKDB_LIB_DIR` affect the build,
 not runtime library lookup. The default pinned directory under `~/.duckdb` is
@@ -118,15 +123,16 @@ duckdb-build = { git = "https://github.com/duckdb/duckdb-rs.git", rev = "<SHA>" 
 
 In the application's `build.rs`:
 
-```rust
-fn main() -> std::io::Result<()> {
-    duckdb_build::emit_runtime_path(duckdb_build::RuntimeLocation::Installed)
+```rust,no_run
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    duckdb_build::emit_dynamic_linking_flags()
 }
 ```
 
-`Installed` resolves the shared library using the same full environment override,
-opt-in pkg-config provider, or pinned default as native linking. It does not
-require headers. Use the same version/source and discovery configuration for
+`emit_dynamic_linking_flags()` resolves the installation using the same full
+environment override, opt-in system provider, or default directories as native
+linking. It requires both the library and `duckdb_v2.h`.
+Use the same version/source and discovery configuration for
 `duckdb` and `duckdb-build`; if using pkg-config, enable it on both dependencies.
 The feature remains disabled by default.
 
@@ -138,11 +144,9 @@ the link mode selected by a transitive dependency.
 
 If the directory is already known, supply an absolute path instead:
 
-```rust
-fn main() -> std::io::Result<()> {
-    duckdb_build::emit_runtime_path(duckdb_build::RuntimeLocation::Directory(
-        std::path::Path::new("/opt/duckdb/lib"),
-    ))
+```rust,no_run
+fn main() {
+    duckdb_build::emit_runtime_path(&std::path::PathBuf::from("/opt/duckdb/lib"));
 }
 ```
 
@@ -151,19 +155,12 @@ Explicit paths do not discover installations, inspect artifacts, or require the
 because Cargo does not propagate a dependency's `rustc-link-arg` directives.
 It emits nothing on Windows.
 
-For distribution, choose the packaged library's location relative to the
-executable instead:
-
-```rust
-fn main() -> std::io::Result<()> {
-    duckdb_build::emit_runtime_path(
-        duckdb_build::RuntimeLocation::RelativeToExecutable("."),
-    )
-}
-```
-
-This uses `$ORIGIN` on Linux/Android and `@loader_path` on macOS/iOS. It does not
-copy the shared library; packaging remains the application's responsibility.
+Both helpers also emit runtime paths for the executable's directory and its
+`../lib` directory, using `$ORIGIN` on Linux/Android and `@loader_path` on
+macOS/iOS. They do not copy the shared library; packaging remains the
+application's responsibility. For deployment using only relative paths, emit
+the appropriate target-specific linker arguments from the application's build
+script instead of embedding an absolute installation path.
 
 Applications that need the exact build-time selection can add `libduckdb-sys`
 as a direct dependency using the same version/source as `duckdb`. Their build
@@ -173,7 +170,7 @@ dependents, not through `duckdb` or a `duckdb-build` build dependency.
 
 ## Static builds
 
-Enable `duckdb`'s `static` feature (or set `LINK_DUCKDB_STATIC=true`) to link an
+Enable `duckdb`'s `static` feature to link an
 existing static DuckDB archive. No DuckDB shared library or runtime-path helper
 is needed. This is not a vendored build: it does not compile DuckDB from source,
 and any other dynamically linked dependencies still need to be available.
