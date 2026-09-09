@@ -36,6 +36,19 @@ The complete API reference is on [docs.rs](https://docs.rs/duckdb).
 
 ```shell
 cargo add duckdb --git https://github.com/duckdb/duckdb-rs.git --rev <SHA>
+```
+
+Install the pinned DuckDB v2 library and `duckdb_v2.h` under
+`~/.duckdb/lib/<ARTIFACT_VERSION>`, or set both `DUCKDB_LIB_DIR` and
+`DUCKDB_INCLUDE_DIR` to a compatible installation. The optional `pkg-config`
+feature enables system discovery instead. `libduckdb-sys` handles native linking
+automatically.
+
+For a shared library in the default `~/.duckdb` installation, add the application
+helper to embed its runtime path on Linux/macOS, avoiding loader environment
+variables:
+
+```shell
 cargo add duckdb-build --build --git https://github.com/duckdb/duckdb-rs.git --rev <SHA>
 ```
 
@@ -45,7 +58,15 @@ fn main() -> std::io::Result<()> {
     duckdb_build::emit_runtime_path(duckdb_build::RuntimeLocation::Installed)
 }
 ```
-See [duckdb-build](crates/duckdb-build/README.md) for more options.
+
+Use the same revision and discovery configuration for both dependencies. If
+using `pkg-config`, enable that feature on both `duckdb` and `duckdb-build`.
+Windows still requires `duckdb.dll` beside the executable or on `PATH`;
+macOS dylibs need an appropriate `@rpath` install name.
+
+Static builds and loader-visible installations do not need the helper. The
+`static` feature links an existing archive; it does not compile or download DuckDB.
+See [installation and deployment options](crates/duckdb-build/README.md).
 
 #### main.rs
 ```rust

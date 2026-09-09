@@ -100,6 +100,8 @@ name = "duckdb-build"
 version = "2.0.0"
 dependencies = [
  "dirs",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -145,7 +147,9 @@ name = "libduckdb-sys"
 version = "2.0.0"
 dependencies = [
  "bindgen",
+ "dirs",
  "duckdb-build",
+ "pkg-config",
 ]
 
 [[package]]
@@ -238,6 +242,12 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pkg-config"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "prettyplease"
@@ -407,6 +417,12 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "wasi"

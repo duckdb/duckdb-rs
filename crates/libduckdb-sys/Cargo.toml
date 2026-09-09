@@ -15,12 +15,14 @@ rust-version = { workspace = true }
 links = "duckdb"
 
 [features]
+default = []
+pkg-config = ["dep:pkg-config", "duckdb-build/pkg-config"]
 # Statically link the self-contained libduckdb_static.a (no runtime dylib dependency).
 # Default (feature off) links the installed DuckDB shared library dynamically.
-static = []
-
-[dependencies]
+static = ["duckdb-build/static"]
 
 [build-dependencies]
+dirs = "6"
+pkg-config = { version = "0.3.34", optional = true }
 bindgen = "0.71.0"
 duckdb-build = { version = "=2.0.0", path = "../duckdb-build" }

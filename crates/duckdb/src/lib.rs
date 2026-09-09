@@ -77,7 +77,6 @@ pub mod expression;
 pub mod file;
 #[cfg(feature = "capi-v2-p2")]
 pub mod log;
-#[cfg(feature = "capi-v2-p2")]
 pub mod qualified_name;
 #[cfg(feature = "capi-v2-p2")]
 pub mod query_progress;
