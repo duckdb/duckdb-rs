@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicUsize};
 
 use arrow::{
     array::{ArrayData, StructArray},
-    ffi::{FFI_ArrowArray, FFI_ArrowSchema, from_ffi},
+    ffi::{FFI_ArrowArray, FFI_ArrowSchema},
     record_batch::RecordBatch,
 };
 
@@ -137,12 +137,6 @@ unsafe fn address_to_arrow_record_batch(
     Ok(unsafe { (*ptr).clone() })
 }
 
-fn arrow_record_batch_from_ffi(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> RecordBatch {
-    let array_data = unsafe { from_ffi(array, &schema) }.expect("failed to import Arrow FFI data");
-    let struct_array = StructArray::from(array_data);
-    RecordBatch::from(&struct_array)
-}
-
 impl VTab for ArrowVTab {
     type BindData = ArrowBindData;
     type InitData = ArrowInitData;
@@ -242,10 +236,21 @@ pub fn arrow_arraydata_to_query_params(data: ArrayData) -> [usize; 2] {
 /// [`arrow_recordbatch_to_query_params`], each call permanently retains one
 /// [`RecordBatch`] allocation in a process-global arena that is never freed.
 ///
+/// # Safety
+///
+/// `array` and `schema` must describe the same valid, unreleased Arrow struct
+/// array and satisfy [`arrow::ffi::from_ffi`]'s C Data Interface contract,
+/// including valid pointers, buffer lengths, and release callbacks. Ownership
+/// of both values is transferred to this function. The array's backing memory
+/// must remain valid and immutable until its release callback runs.
+///
 /// # Panics
 ///
-/// Panics if the FFI values cannot be imported as Arrow data, or if the
+/// Panics if the FFI values cannot be imported as a struct array, or if the
 /// process-global ArrowVTab record batch store mutex is poisoned.
-pub fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
-    arrow_recordbatch_to_query_params(arrow_record_batch_from_ffi(array, schema))
+pub unsafe fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
+    // SAFETY: The caller guarantees matching, valid C Data Interface values.
+    // The importer takes ownership of the array and retains its release callback.
+    let array_data = unsafe { arrow::ffi::from_ffi(array, &schema) }.expect("failed to import Arrow FFI data");
+    arrow_arraydata_to_query_params(array_data)
 }

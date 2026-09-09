@@ -494,7 +494,10 @@ fn test_vtab_arrow_ffi_query_params() -> Result<(), Box<dyn Error>> {
     let struct_array = StructArray::from(batch);
     let array = FFI_ArrowArray::new(&struct_array.to_data());
     let schema = FFI_ArrowSchema::try_from(struct_array.data_type())?;
-    let param = arrow_ffi_to_query_params(array, schema);
+    drop(struct_array);
+    // SAFETY: Both values were exported from the same valid struct array, and
+    // the FFI array owns the backing buffers through its release callback.
+    let param = unsafe { arrow_ffi_to_query_params(array, schema) };
 
     let db = Connection::open_in_memory()?;
     db.register_table_function::<ArrowVTab>("arrow")?;
