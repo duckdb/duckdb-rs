@@ -1,4 +1,4 @@
-use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{duckdb_version_from_pkg_version, is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
@@ -64,6 +64,10 @@ pub fn main(out_dir: &str, out_path: &Path) {
     configure_macos_deployment_target(&mut config);
     config
         .profile(&cmake_build_type)
+        .define(
+            "OVERRIDE_GIT_DESCRIBE",
+            format!("v{}", duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"))),
+        )
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
@@ -98,6 +102,10 @@ pub fn main(out_dir: &str, out_path: &Path) {
         if let Some(launcher) = env_var(var) {
             config.define(var, &launcher);
         }
+    }
+
+    if cfg!(feature = "httpfs") {
+        configure_httpfs_dependencies(&mut config);
     }
 
     let enabled_extensions = enabled_extensions();
@@ -144,7 +152,57 @@ pub fn main(out_dir: &str, out_path: &Path) {
     }
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
+    if cfg!(feature = "httpfs") {
+        emit_httpfs_link_metadata();
+    }
     println!("cargo:lib_dir={}", lib_dir.display());
+}
+
+fn configure_httpfs_dependencies(config: &mut cmake::Config) {
+    let curl = probe_dependency("libcurl", false);
+    let openssl = probe_dependency("openssl", false);
+
+    config
+        .define("CURL_INCLUDE_DIR", dependency_include_dir(&curl, "curl/curl.h"))
+        .define("CURL_LIBRARY_RELEASE", dependency_library(&curl, "curl"))
+        .define("OPENSSL_INCLUDE_DIR", dependency_include_dir(&openssl, "openssl/ssl.h"))
+        .define("OPENSSL_SSL_LIBRARY", dependency_library(&openssl, "ssl"))
+        .define("OPENSSL_CRYPTO_LIBRARY", dependency_library(&openssl, "crypto"));
+}
+
+fn emit_httpfs_link_metadata() {
+    probe_dependency("libcurl", true);
+    probe_dependency("openssl", true);
+}
+
+fn probe_dependency(name: &str, cargo_metadata: bool) -> pkg_config::Library {
+    pkg_config::Config::new()
+        .cargo_metadata(cargo_metadata)
+        .probe(name)
+        .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires {name} through pkg-config: {err}"))
+}
+
+fn dependency_include_dir(library: &pkg_config::Library, header: &str) -> PathBuf {
+    library
+        .include_paths
+        .iter()
+        .find(|path| path.join(header).is_file())
+        .cloned()
+        .unwrap_or_else(|| panic!("pkg-config did not report an include directory containing {header}"))
+}
+
+fn dependency_library(library: &pkg_config::Library, name: &str) -> PathBuf {
+    let filenames = [
+        format!("lib{name}.dylib"),
+        format!("lib{name}.so"),
+        format!("lib{name}.a"),
+    ];
+    library
+        .link_paths
+        .iter()
+        .flat_map(|directory| filenames.iter().map(move |filename| directory.join(filename)))
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| panic!("pkg-config did not report a link path containing lib{name}"))
 }
 
 fn cmake_build_type() -> String {
@@ -452,6 +510,9 @@ fn enabled_extensions() -> Vec<&'static str> {
     }
     if cfg!(feature = "autocomplete") {
         extensions.push("autocomplete");
+    }
+    if cfg!(feature = "httpfs") {
+        extensions.push("httpfs");
     }
     if cfg!(feature = "icu") {
         extensions.push("icu");

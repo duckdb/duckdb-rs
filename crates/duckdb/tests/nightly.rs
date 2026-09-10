@@ -34,6 +34,51 @@ fn can_install_and_load_httpfs() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+#[cfg(feature = "httpfs")]
+fn bundled_cmake_httpfs_needs_no_downloaded_artifact() -> Result<(), Box<dyn std::error::Error>> {
+    let extension_directory = tempfile::tempdir()?;
+    let config = Config::default()
+        .with("extension_directory", extension_directory.path().to_string_lossy())?
+        .with("autoinstall_known_extensions", "false")?
+        .with("autoload_known_extensions", "false")?;
+    let connection = Connection::open_in_memory_with_flags(config)?;
+
+    connection.execute_batch("LOAD httpfs;")?;
+
+    let version: String = connection.query_row("SELECT version()", [], |row| row.get(0))?;
+    assert!(
+        version.starts_with("v1.5.5"),
+        "bundled-cmake should preserve the packaged DuckDB version, got {version}"
+    );
+
+    let extension_state = connection
+        .query_row(
+            "SELECT installed, loaded, install_path FROM duckdb_extensions() WHERE extension_name = 'httpfs'",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, bool>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()?
+        .expect("statically linked httpfs should be listed");
+    assert_eq!(
+        extension_state,
+        (true, true, Some("(BUILT-IN)".to_owned())),
+        "statically linked httpfs should load without an installed artifact"
+    );
+    assert!(
+        extension_directory.path().read_dir()?.next().is_none(),
+        "loading statically linked httpfs must not write an extension artifact"
+    );
+
+    Ok(())
+}
+
 /// CI points the build at a libduckdb artifact built from `DUCKDB_SHA`.
 /// Assert we actually linked it and not a stray system library.
 #[test]

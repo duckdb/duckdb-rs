@@ -76,11 +76,13 @@ The user-facing build options (`bundled`, linking against a system library, `DUC
 
 ### `bundled-cmake`
 
-The `bundled-cmake` feature builds DuckDB from `crates/libduckdb-sys/duckdb-sources` using DuckDB's upstream CMake build instead of the `cc` backend. It is required for CMake-only extensions such as `icu`, and is not available from crates.io because published crates omit the full source tree.
+The `bundled-cmake` feature builds DuckDB from `crates/libduckdb-sys/duckdb-sources` using DuckDB's upstream CMake build instead of the `cc` backend. It is required for CMake-only extensions such as `httpfs` and `icu`, and is not available from crates.io because published crates omit the full source tree.
 
 ```toml
 duckdb = { git = "https://github.com/duckdb/duckdb-rs", branch = "main", features = ["bundled-cmake", "icu"] }
 ```
+
+The `httpfs` feature statically links DuckDB's HTTP(S) and S3 filesystem extension.
 
 - It implies `bundled` for conditional-compilation gates and always links DuckDB's default static extensions (`core_functions` and `parquet`), so it also implies the `parquet` feature.
 - It enables upstream jemalloc on supported 64-bit, non-musl Linux targets. Set `DUCKDB_DISABLE_JEMALLOC=1` to force the standard allocator.
