@@ -1,20 +1,39 @@
 //! Lifetime and binding behaviour of [`ArrowBatchRegistration`].
 
 use super::*;
+use arrow::buffer::NullBuffer;
 
 // Constructors.
 
 #[test]
-#[should_panic(expected = "ArrowVTab registration requires a struct array")]
 fn test_from_array_data_rejects_non_struct_array() {
-    let _ = ArrowBatchRegistration::from_array_data(Int32Array::from(vec![1, 2, 3]).to_data());
+    let err = ArrowBatchRegistration::from_array_data(Int32Array::from(vec![1, 2, 3]).to_data())
+        .expect_err("registered a non-struct array");
+    assert!(
+        err.to_string().contains("requires a struct array"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_from_array_data_rejects_top_level_nulls() {
+    let batch = example_record_batch();
+    let struct_array = StructArray::new(
+        batch.schema().fields().clone(),
+        batch.columns().to_vec(),
+        Some(NullBuffer::from([true, false, true, true].as_slice())),
+    );
+
+    let err = ArrowBatchRegistration::from_array_data(struct_array.to_data())
+        .expect_err("registered a struct array with top-level nulls");
+    assert!(err.to_string().contains("top-level nulls"), "unexpected error: {err}");
 }
 
 #[test]
 fn test_vtab_arrow_arraydata_registration() -> Result<(), Box<dyn Error>> {
     let batch = example_record_batch();
     let struct_array = StructArray::from(batch);
-    let reg = ArrowBatchRegistration::from_array_data(struct_array.to_data());
+    let reg = ArrowBatchRegistration::from_array_data(struct_array.to_data())?;
 
     let db = Connection::open_in_memory()?;
     db.register_table_function::<ArrowVTab>("arrow")?;
@@ -22,6 +41,23 @@ fn test_vtab_arrow_arraydata_registration() -> Result<(), Box<dyn Error>> {
     let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
     let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
     assert_eq!(column.value(0), 10);
+    Ok(())
+}
+
+#[test]
+fn test_from_ffi_rejects_non_struct_array() -> Result<(), Box<dyn Error>> {
+    let data = Int32Array::from(vec![1, 2, 3]).to_data();
+    let array = FFI_ArrowArray::new(&data);
+    let schema = FFI_ArrowSchema::try_from(data.data_type())?;
+
+    // SAFETY: Both values were exported from the same valid array, and the FFI
+    // array owns the backing buffers through its release callback.
+    let err =
+        unsafe { ArrowBatchRegistration::from_ffi(array, schema) }.expect_err("registered a non-struct FFI array");
+    assert!(
+        err.to_string().contains("requires a struct array"),
+        "unexpected error: {err}"
+    );
     Ok(())
 }
 
@@ -34,7 +70,7 @@ fn test_vtab_arrow_ffi_registration() -> Result<(), Box<dyn Error>> {
     drop(struct_array);
     // SAFETY: Both values were exported from the same valid struct array, and
     // the FFI array owns the backing buffers through its release callback.
-    let reg = unsafe { ArrowBatchRegistration::from_ffi(array, schema) };
+    let reg = unsafe { ArrowBatchRegistration::from_ffi(array, schema) }?;
 
     let db = Connection::open_in_memory()?;
     db.register_table_function::<ArrowVTab>("arrow")?;
@@ -46,6 +82,24 @@ fn test_vtab_arrow_ffi_registration() -> Result<(), Box<dyn Error>> {
 }
 
 // Token parameter validation.
+
+#[test]
+fn test_arrow_rejects_non_ubigint_before_bind() -> Result<(), Box<dyn Error>> {
+    let db = Connection::open_in_memory()?;
+    db.register_table_function::<ArrowVTab>("arrow")?;
+
+    for argument in ["'abc'", "1", "1.5"] {
+        let err = db
+            .prepare(&format!("SELECT * FROM arrow({argument})"))
+            .expect_err("non-UBIGINT argument reached ArrowVTab::bind");
+        assert!(
+            err.to_string().contains("No function matches"),
+            "unexpected error: {err}"
+        );
+    }
+
+    Ok(())
+}
 
 #[test]
 fn test_arrow_null_query_params_error() {

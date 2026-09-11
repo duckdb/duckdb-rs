@@ -13,6 +13,7 @@ use std::{
 use arrow::{
     array::{ArrayData, StructArray},
     datatypes::DataType,
+    error::ArrowError,
     ffi::{FFI_ArrowArray, FFI_ArrowSchema},
     record_batch::RecordBatch,
 };
@@ -108,10 +109,6 @@ impl VTab for ArrowVTab {
         if value.is_null() {
             return Err("ArrowVTab record batch token parameter must not be NULL".into());
         }
-        let logical_type = value.logical_type_id();
-        if logical_type != LogicalTypeId::UBigint {
-            return Err(format!("ArrowVTab record batch token parameter must be UBIGINT, got {logical_type:?}").into());
-        }
         let token = value.to_uint64();
         let rb = lock_batches()
             .get(&token)
@@ -167,7 +164,7 @@ impl VTab for ArrowVTab {
 ///
 /// Registrations must not be passed by value:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use duckdb::{Statement, vtab::arrow::ArrowBatchRegistration};
 ///
 /// fn query_with_owned_registration(
@@ -183,11 +180,11 @@ impl VTab for ArrowVTab {
 /// detail as a `UBIGINT`; the value has no stable meaning and should not be
 /// stored or otherwise used as data.
 ///
-/// With DuckDB 1.5.5, dropping a stream returned by
-/// [`crate::Statement::stream_arrow`]
-/// before consuming it can retain the batch even after the statement and
-/// registration are dropped. Another query on the same connection, or closing
-/// the connection, releases it.
+/// DuckDB 1.5.5 can retain the batch after an unconsumed stream returned by
+/// [`crate::Statement::stream_arrow`] is dropped. Another query on the same
+/// connection, or closing the connection, releases it; see [duckdb-rs#853].
+///
+/// [duckdb-rs#853]: https://github.com/duckdb/duckdb-rs/pull/853
 #[derive(Debug)]
 #[must_use = "dropping the registration releases its Arrow record batch"]
 pub struct ArrowBatchRegistration {
@@ -204,20 +201,26 @@ impl ArrowBatchRegistration {
 
     /// Converts a struct [`ArrayData`] into a registration.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `data` does not describe a struct array or if the struct array
-    /// contains top-level nulls, which a [`RecordBatch`] cannot represent.
-    pub fn from_array_data(data: ArrayData) -> Self {
-        // StructArray::from does not check the data type, so a non-struct input
-        // would otherwise reach an unreachable!() inside StructArray::into_parts.
-        assert!(
-            matches!(data.data_type(), DataType::Struct(_)),
-            "ArrowVTab registration requires a struct array, got {:?}",
-            data.data_type()
-        );
+    /// Returns an error if `data` does not describe a struct array or if the
+    /// struct array contains top-level nulls, which a [`RecordBatch`] cannot
+    /// represent.
+    pub fn from_array_data(data: ArrayData) -> Result<Self, ArrowError> {
+        if !matches!(data.data_type(), DataType::Struct(_)) {
+            return Err(ArrowError::InvalidArgumentError(format!(
+                "ArrowVTab registration requires a struct array, got {:?}",
+                data.data_type()
+            )));
+        }
+        if data.null_count() != 0 {
+            return Err(ArrowError::InvalidArgumentError(format!(
+                "ArrowVTab registration does not support {} top-level nulls",
+                data.null_count()
+            )));
+        }
         let struct_array = StructArray::from(data);
-        Self::new(RecordBatch::from(&struct_array))
+        Ok(Self::new(RecordBatch::from(struct_array)))
     }
 
     /// Imports an Arrow FFI struct array into a registration.
@@ -229,14 +232,14 @@ impl ArrowBatchRegistration {
     /// contract. Ownership is transferred to this function. The backing memory
     /// and release callback must be safe to use from any thread.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the FFI values cannot be imported, if they do not describe a
-    /// struct array, or if that array contains top-level nulls, which a
-    /// [`RecordBatch`] cannot represent.
-    pub unsafe fn from_ffi(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> Self {
+    /// Returns an error if the FFI values cannot be imported, if they do not
+    /// describe a struct array, or if that array contains top-level nulls,
+    /// which a [`RecordBatch`] cannot represent.
+    pub unsafe fn from_ffi(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> Result<Self, ArrowError> {
         // SAFETY: The caller guarantees matching, valid C Data Interface values.
-        let data = unsafe { arrow::ffi::from_ffi(array, &schema) }.expect("failed to import Arrow FFI data");
+        let data = unsafe { arrow::ffi::from_ffi(array, &schema) }?;
         Self::from_array_data(data)
     }
 }
@@ -249,8 +252,12 @@ impl ToSql for &ArrowBatchRegistration {
 
 impl Drop for ArrowBatchRegistration {
     fn drop(&mut self) {
-        // Keep the removed batch alive until the registry guard has dropped so
-        // foreign Arrow release callbacks do not run while holding the mutex.
-        let _removed = lock_batches().remove(&self.token);
+        // Remove under the lock, then run any foreign Arrow release callback
+        // only after the registry guard has been dropped.
+        let removed = {
+            let mut batches = lock_batches();
+            batches.remove(&self.token)
+        };
+        drop(removed);
     }
 }
