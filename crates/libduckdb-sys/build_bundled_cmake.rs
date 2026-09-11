@@ -12,7 +12,7 @@ struct Generator {
     make_program: Option<String>,
 }
 
-pub fn main(out_dir: &str, out_path: &Path) {
+pub fn main(out_dir: &str) {
     let source_dir = Path::new("duckdb-sources");
     let cmake_lists = source_dir.join("CMakeLists.txt");
     if !cmake_lists.exists() {
@@ -36,7 +36,7 @@ pub fn main(out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
     let include_path = source_dir.join("src/include").canonicalize().unwrap();
-    write_bindings(&include_path, out_path);
+    write_bindings(&include_path, out_dir);
 
     // Publish the include directory so downstream crates that compile
     // their own C/C++ code can read it from `DEP_DUCKDB_INCLUDE`.

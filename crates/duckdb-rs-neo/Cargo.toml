@@ -1,0 +1,44 @@
+[package]
+name = "duckdb-rs-neo"
+description = "Ergonomic wrapper for DuckDB's v2 C API (experimental)"
+version = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/duckdb-rs-neo/"
+categories = { workspace = true }
+keywords = { workspace = true }
+readme = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+
+[lib]
+name = "duckdb_rs_neo"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
+[features]
+default = []
+bundled = ["libduckdb-sys/bundled"]
+# Warning: experimental feature
+bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
+buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
+r2d2 = ["dep:r2d2"]
+# Warning: targets v2 C API surface that the bundled DuckDB does not provide yet.
+# Does not compile; kept for the next DuckDB bump. Never enable it in CI.
+capi-v2-p2 = []
+
+[dependencies]
+libc = { workspace = true }
+libduckdb-sys = { workspace = true, features = ["capi-v2"] }
+paste = { workspace = true }
+r2d2 = { workspace = true, optional = true }
+
+[package.metadata.docs.rs]
+features = []
+all-features = false
+no-default-features = true
+default-target = "x86_64-unknown-linux-gnu"
+targets = []

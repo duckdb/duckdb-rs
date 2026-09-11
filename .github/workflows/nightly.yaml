@@ -92,11 +92,11 @@ jobs:
         env:
           CC: ${{ runner.os != 'Windows' && 'sccache cc' || '' }}
           CXX: ${{ runner.os != 'Windows' && 'sccache c++' || '' }}
-        run: cargo test -p duckdb --features bundled
+        run: cargo test -p duckdb -p duckdb-rs-neo --features bundled
 
       - name: Test bundled-cmake backend
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
-        run: cargo test -p duckdb --features bundled-cmake
+        run: cargo test -p duckdb -p duckdb-rs-neo --features bundled-cmake
 
       - name: Download nightly artifact
         id: artifact
@@ -143,4 +143,4 @@ jobs:
         # passing silently, which is what an --exact filter would do.
         run: |
           cargo test -p duckdb --features buildtime_bindgen --test nightly -- --ignored
-          cargo test -p duckdb --features buildtime_bindgen
+          cargo test -p duckdb -p duckdb-rs-neo --features buildtime_bindgen

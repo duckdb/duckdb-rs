@@ -79,6 +79,7 @@ update_crate_versions() {
     sed_inplace "s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" \
         Cargo.toml \
         crates/duckdb/Cargo.toml \
+        crates/duckdb-rs-neo/Cargo.toml \
         crates/libduckdb-sys/Cargo.toml \
         crates/duckdb-loadable-macros/Cargo.toml
 

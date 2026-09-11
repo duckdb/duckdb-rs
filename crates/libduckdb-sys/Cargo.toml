@@ -36,6 +36,8 @@ extensions-full = ["json", "parquet"]
 winduckdb = []
 # Warning: experimental feature
 loadable-extension = ["prettyplease", "quote", "syn"]
+# Also generate bindings for the v2 C API header (`duckdb_v2.h`), exposed as `libduckdb_sys::v2`.
+capi-v2 = []
 
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"], optional = true }
@@ -56,3 +58,6 @@ zip = { version = "6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
+
+[package.metadata.docs.rs]
+features = ["capi-v2"]
