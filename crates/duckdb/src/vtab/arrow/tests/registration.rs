@@ -293,16 +293,22 @@ fn test_active_stream_outlives_registration() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn test_bound_statement_outlives_registration() -> Result<(), Box<dyn Error>> {
+fn test_prepared_statement_follows_registration_lifetime() -> Result<(), Box<dyn Error>> {
+    // DuckDB 2.0 re-binds a prepared statement on every execution, so a
+    // statement prepared while the batch was registered only works for as long
+    // as the registration lives (DuckDB 1.x kept the original bind).
     let db = Connection::open_in_memory()?;
     db.register_table_function::<ArrowVTab>("arrow")?;
     let reg = ArrowBatchRegistration::new(example_record_batch());
     let mut stmt = db.prepare(&format!("SELECT * FROM arrow({}::UBIGINT)", reg.token))?;
 
-    drop(reg);
-
     let batches: Vec<RecordBatch> = stmt.query_arrow([])?.collect();
     assert_eq!(batches, vec![example_record_batch()]);
+
+    drop(reg);
+
+    let err = stmt.query_arrow([]).err().expect("stale registration was rebound");
+    assert!(err.to_string().contains("is not registered"), "unexpected error: {err}");
     Ok(())
 }
 

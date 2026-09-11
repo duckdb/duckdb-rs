@@ -1,13 +1,19 @@
 name: Nightly
-run-name: Nightly - ${{ inputs.duckdb-sha }}
+run-name: Nightly - ${{ inputs.duckdb-sha }} (${{ inputs.duckdb-version }})
 
 on:
-  # Triggered from DuckDB's NotifyExternalRepositories workflow.
-  # See https://github.com/duckdb/duckdb/pull/23352 for details.
+  # Dispatched by DuckDB's release dispatcher (duckdb/duckdb-workflow-trigger)
+  # on its `core_ready` hook, which renders `duckdb-sha` from {duckdb_commit}
+  # and `duckdb-version` from {duckdb_version}. This workflow must be listed in
+  # that repository's endpoints.yml to receive events.
   workflow_dispatch:
     inputs:
       duckdb-sha:
-        description: DuckDB commit SHA to test against
+        description: Full DuckDB commit SHA of the staging build to test against
+        required: true
+        type: string
+      duckdb-version:
+        description: DuckDB version label of that staging build (e.g. v2.0.0-alpha39998)
         required: true
         type: string
 
@@ -33,18 +39,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
-            os: ubuntu-latest
-            artifact: libduckdb-linux-amd64.zip
-          - name: macOS
-            os: macos-latest
-            artifact: libduckdb-osx-universal.zip
-          - name: Windows
-            os: windows-latest
-            artifact: libduckdb-windows-amd64.zip
+          - { name: Linux, os: ubuntu-latest }
+          - { name: macOS, os: macos-latest }
+          - { name: Windows, os: windows-latest }
     runs-on: ${{ matrix.os }}
     env:
       DUCKDB_SHA: ${{ inputs.duckdb-sha }}
+      DUCKDB_VERSION: ${{ inputs.duckdb-version }}
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
       CMAKE_C_COMPILER_LAUNCHER: sccache
@@ -74,9 +75,34 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
-      - name: Upgrade bundled DuckDB to nightly commit
+      # Point linked-mode builds at the staging build of the same commit, so the
+      # build script's own download path (the default for users) is what gets
+      # tested. The sync step below vendors the same commit from this pin.
+      - name: Pin nightly staging build
+        id: pin
+        run: |
+          [[ "$DUCKDB_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] || {
+            echo "::error::duckdb-version contains unsupported characters"
+            exit 1
+          }
+          pin_file=crates/libduckdb-sys/.duckdb-release
+          release_url="https://duckdb-staging.duckdb.org/${DUCKDB_SHA:0:10}/${DUCKDB_VERSION}/duckdb/duckdb/github_release"
+          [[ "$DUCKDB_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "::error::duckdb-sha must be the full 40-character commit SHA"
+            exit 1
+          }
+          sed -i.bak "s|^DUCKDB_RELEASE_COMMIT=.*|DUCKDB_RELEASE_COMMIT=${DUCKDB_SHA}|; s|^DUCKDB_RELEASE_URL=.*|DUCKDB_RELEASE_URL=${release_url}|; s|^DUCKDB_RELEASE_VERSION=.*|DUCKDB_RELEASE_VERSION=${DUCKDB_VERSION}|" "$pin_file"
+          rm -f "$pin_file.bak"
+          grep '^DUCKDB_RELEASE' "$pin_file"
+          curl --fail --head --location --retry 5 --silent --output /dev/null \
+            "${release_url}/duckdb-shared-libs-linux-amd64.tar.gz" || {
+            echo "::error::No staging artifacts at ${release_url}"
+            exit 1
+          }
+
+      - name: Sync bundled DuckDB to the nightly pin
         id: upgrade
-        run: ./upgrade.sh --sha "$DUCKDB_SHA"
+        run: ./upgrade.sh --sync
 
       - name: Show generated upgrade diff
         if: ${{ !cancelled() }}
@@ -98,46 +124,10 @@ jobs:
         if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
         run: cargo test -p duckdb -p duckdb-rs-neo --features bundled-cmake
 
-      - name: Download nightly artifact
-        id: artifact
-        if: ${{ !cancelled() && steps.upgrade.outcome == 'success' }}
-        run: |
-          staging_key_length=10
-          staging_key=${DUCKDB_SHA:0:$staging_key_length}
-          artifact_name="${{ matrix.artifact }}"
-          artifact_url="https://duckdb-staging.duckdb.org/$staging_key/duckdb/duckdb/github_release/$artifact_name"
-          artifact_path="$RUNNER_TEMP/$artifact_name"
-          library_path="$RUNNER_TEMP/libduckdb"
-          curl --fail --location --retry 5 --output "$artifact_path" "$artifact_url" || {
-            echo "::error::No staging artifact at $artifact_url"
-            exit 1
-          }
-          unzip -q "$artifact_path" -d "$library_path"
-          {
-            echo "DUCKDB_LIB_DIR=$library_path"
-            echo "DUCKDB_INCLUDE_DIR=$library_path"
-          } >> "$GITHUB_ENV"
-          case "$RUNNER_OS" in
-            Linux)
-              echo "LD_LIBRARY_PATH=$library_path${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-              ;;
-            macOS)
-              # SIP strips DYLD_* when /bin/bash starts a step, so GITHUB_ENV
-              # cannot carry a runtime library path here. Bake in an rpath at
-              # link time instead; libduckdb.dylib installs as @rpath/....
-              echo "RUSTFLAGS=-C link-arg=-Wl,-rpath,$library_path${RUSTFLAGS:+ $RUSTFLAGS}" >> "$GITHUB_ENV"
-              ;;
-            Windows)
-              echo "$library_path" >> "$GITHUB_PATH"
-              ;;
-            *)
-              echo "::error::Unsupported runner OS: $RUNNER_OS"
-              exit 1
-              ;;
-          esac
-
-      - name: Test nightly artifact and extensions
-        if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
+      # No DUCKDB_LIB_DIR: libduckdb-sys downloads the pinned staging archive,
+      # which also carries duckdb.h and duckdb_v2.h for buildtime_bindgen.
+      - name: Test downloaded nightly library and extensions
+        if: ${{ !cancelled() && steps.pin.outcome == 'success' && steps.upgrade.outcome == 'success' }}
         # tests/nightly.rs holds exactly the ignored tests this workflow exists
         # to run. Selecting them with --ignored keeps a mistyped name from
         # passing silently, which is what an --exact filter would do.

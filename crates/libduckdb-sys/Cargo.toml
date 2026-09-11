@@ -58,7 +58,6 @@ tar = { workspace = true }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 vcpkg = { workspace = true, optional = true }
 which = { version = "8", optional = true }
-zip = { version = "6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }

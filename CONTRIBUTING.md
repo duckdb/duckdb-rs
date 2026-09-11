@@ -125,9 +125,9 @@ cd ~/github/duckdb-rs/crates/libduckdb-sys
 cargo test --features bundled
 ```
 
-CI exercises downloaded DuckDB libraries on Linux and Windows, the `bundled` backend through the Linux feature checks, and the `bundled-cmake` backend in its dedicated job.
+CI exercises the pinned DuckDB download (linked mode) on Linux, macOS, and Windows, the `bundled` backend through the Linux feature checks and the sanitizer job on `main`, and the `bundled-cmake` backend in its dedicated job.
 
-To test an upstream DuckDB C API change before it is tagged, run the top-level upgrade script with the full upstream commit SHA:
+To test an upstream DuckDB C API change before it is tagged, run the top-level upgrade script with the full upstream commit SHA (or `--sync` to use the commit pinned in `crates/libduckdb-sys/.duckdb-release`):
 
 ```shell
 cd ~/github/duckdb-rs
@@ -178,50 +178,57 @@ Install a nightly Rust toolchain first if necessary. `RUSTFLAGS` does not instru
 
 ### Update to a new version
 
-When DuckDB releases a new version, duckdb-rs needs a matching release.
-Prepare normal releases from `main`. For LTS releases that stay on DuckDB 1.4 Andium, use the `v1.4-andium` branch.
+Which DuckDB the crates target is pinned in
+`crates/libduckdb-sys/.duckdb-release` (`DUCKDB_RELEASE_COMMIT`,
+`DUCKDB_RELEASE_URL` and `DUCKDB_RELEASE_VERSION`). Linked-mode builds
+download the prebuilt libraries from that URL, and `./upgrade.sh --sync`
+vendors the same commit into the bundled sources and regenerates the
+pregenerated bindings, so the three never drift apart.
 
-Use the top-level upgrade script for DuckDB version updates:
+Normally the pin moves on its own: DuckDB's release dispatcher
+(`duckdb/duckdb-workflow-trigger`, `core_ready` hook) invokes the
+`Create Release Version PR` workflow with the commit and version of each new
+build, which rewrites the pin, runs `--sync`, and opens a PR. The `Nightly`
+workflow is dispatched the same way and tests the bundled and downloaded
+backends against that build.
+
+To do the same by hand, edit the three values in the pin file and run:
 
 ```shell
-./upgrade.sh
+./upgrade.sh --sync           # vendor the pinned commit, regenerate tarball + bindings
+./upgrade.sh v2.0.0 --sync    # same, and bump the crate version for a planned release
 ```
 
-This updates the workspace crate version, the exact workspace dependency pins
-that keep sibling crates in lockstep, README `Cargo.toml` examples, and DuckDB
-version references such as workflow tags and README download URLs. It then calls
-`./crates/libduckdb-sys/upgrade.sh` to regenerate bindings.
+The version form updates the workspace crate version, the exact workspace
+dependency pins that keep sibling crates in lockstep, README `Cargo.toml`
+examples, and the DuckDB version references in the workflows, before calling
+`./crates/libduckdb-sys/upgrade.sh` to regenerate the sources and bindings.
+Neither form runs tests; validate the `bundled`, `bundled-cmake`, and linked
+backends afterwards. DuckDB's C API may occasionally have breaking changes, so
+version updates may also require code fixes.
 
-DuckDB's C API may occasionally have breaking changes, so version updates may
-also require code fixes.
+To try an arbitrary upstream commit without touching the pin, use `--sha`.
+It vendors that commit the same way and warns when it differs from the pin:
 
-For a duckdb-rs patch release that does not change the bundled DuckDB version:
+```shell
+./upgrade.sh --sha <COMMIT_SHA>          # vendor a commit, no version bump
+./upgrade.sh v2.0.0 --sha <COMMIT_SHA>   # planned release, sources from that commit
+```
+
+Prepare normal releases from `main`. For LTS releases that stay on DuckDB 1.4
+Andium, use the `v1.4-andium` branch. For a duckdb-rs patch release that does
+not change the bundled DuckDB version:
 
 ```shell
 ./upgrade.sh --patch
 ```
 
 Patch releases only update crate versions, exact workspace dependency pins,
-README `Cargo.toml` examples, and `Cargo.lock`. They do not update the DuckDB
-submodule, generated bindings, or DuckDB download tags.
+README `Cargo.toml` examples, and `Cargo.lock`. They do not touch the pin, the
+DuckDB submodule, or the generated bindings.
 
-#### Testing a pre-tag DuckDB commit
-
-To integrate a DuckDB version before it is tagged, pass a commit SHA to `--sha`
-(e.g. a release-branch commit). The `bundled` build compiles from source, so no
-published release binaries are needed.
-
-```shell
-./upgrade.sh --sha <COMMIT_SHA>          # pin a commit, no version bump
-./upgrade.sh v1.5.4 --sha <COMMIT_SHA>   # planned release, sources pinned to commit
-```
-
-Both regenerate bundled sources and bindings, but do not run tests. Validate
-locally, or rely on the nightly workflow and CI to cover the bundled backends.
-The nightly workflow also downloads the matching upstream nightly libraries
-for Linux, macOS, and Windows, generates bindings from their headers, and tests
-those bindings against them.
-Release-based CI jobs (`DUCKDB_DOWNLOAD_LIB`, the Windows release zip) stay red
-until DuckDB publishes the release binaries. If the planned release command
-above already bumped versions and download URLs, finalize the bundled sources
-and bindings from the tag with `./crates/libduckdb-sys/upgrade.sh v1.5.4`.
+Note for `cargo package` / `cargo publish --dry-run`: cargo caches the extracted
+workspace crates by name and version under `~/.cargo/registry/src`, so re-running
+verification at the same unpublished version can build against stale sources.
+Delete the `*-<version>` directories there if verification fails on code you have
+since changed.

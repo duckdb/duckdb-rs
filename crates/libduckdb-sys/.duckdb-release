@@ -1,0 +1,31 @@
+# Pinned DuckDB build for libduckdb-sys. Single source of truth for which
+# DuckDB the crates target. Used by the build script, upgrade.sh and CI.
+#
+# Linked-mode builds (no `bundled` feature, no DUCKDB_LIB_DIR) download
+#   <DUCKDB_RELEASE_URL>/duckdb-shared-libs-<platform>.tar.gz
+# and link against the shared library inside. Opt out with
+# DUCKDB_DOWNLOAD_LIB=0, or force the download with DUCKDB_DOWNLOAD_LIB=1.
+#
+# DUCKDB_RELEASE_COMMIT  Full hash of the DuckDB commit the libraries were
+#                        built from. `./upgrade.sh --sync` vendors exactly
+#                        this commit into the bundled sources and regenerates
+#                        the pregenerated bindings, so `bundled` builds and the
+#                        download never disagree.
+# DUCKDB_RELEASE_URL     Directory holding the per-platform tarballs. For
+#                        staging builds this follows DuckDB's upload layout,
+#                        https://duckdb-staging.duckdb.org/<sha10>/<version>/duckdb/duckdb/github_release;
+#                        a tagged release can point at
+#                        https://github.com/duckdb/duckdb/releases/download/<version>
+#                        instead, which holds the same file names.
+# DUCKDB_RELEASE_VERSION DuckDB's version label for the build. Names the
+#                        download cache directory, so it must change whenever
+#                        the URL does.
+#
+# Updated by the `Create Release Version PR` workflow, which DuckDB's release
+# dispatcher (duckdb/duckdb-workflow-trigger, `core_ready` hook) invokes with
+# the commit and version of each new build. Edit by hand only for experiments,
+# and run `./upgrade.sh --sync` afterwards to update the `bundled` files.
+
+DUCKDB_RELEASE_COMMIT=a00803f7687ca3d7188d417216e288c5c4b22b58
+DUCKDB_RELEASE_URL=https://duckdb-staging.duckdb.org/a00803f768/v2.0.0-alpha39998/duckdb/duckdb/github_release
+DUCKDB_RELEASE_VERSION=v2.0.0-alpha39998

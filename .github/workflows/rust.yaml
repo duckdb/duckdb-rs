@@ -21,18 +21,22 @@ concurrency:
 
 jobs:
   test:
-    # DuckDB v2.0.0 release binaries are not published yet, so every job builds
-    # the bundled backend. Restore DUCKDB_DOWNLOAD_LIB / DUCKDB_LIB_DIR coverage
-    # once the release exists.
+    # Linked mode: libduckdb-sys downloads the DuckDB build pinned in
+    # crates/libduckdb-sys/.duckdb-release, so this job compiles no C++. The
+    # bundled backends are covered by the clippy step below (extensions-full
+    # implies bundled), the CMake job, and the sanitizer job on main.
     name: Test ${{ matrix.name }}
     strategy:
       fail-fast: true
       matrix:
         include:
-          - { name: Windows, target: x86_64-pc-windows-msvc, os: windows-latest }
           - { name: Linux, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { name: macOS, target: aarch64-apple-darwin, os: macos-latest }
+          - { name: Windows, target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
     env:
+      # Explicit for clarity; the pin file makes this the default anyway.
+      DUCKDB_DOWNLOAD_LIB: "1"
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
     steps:
@@ -51,6 +55,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
         # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
+        # That also makes buildtime_bindgen read duckdb_v2.h from the bundled tree,
+        # which the pinned download archive may not ship yet.
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
@@ -63,21 +69,15 @@ jobs:
         # Keep this feature list in sync with crates/duckdb/Cargo.toml [package.metadata.docs.rs].
         run: cargo doc --workspace --no-deps --features "modern-full vscalar vscalar-arrow vtab-full"
 
-      - name: Dry-run release of crates
+      - name: Package crates (publish check, no upload path)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo publish --workspace --dry-run
+        run: cargo package --workspace --locked
 
       - name: Run cargo-test
-        if: matrix.os == 'windows-latest'
-        run: cargo test --features "bundled modern-full vscalar vtab-full"
+        run: cargo test --workspace --features "modern-full vscalar vtab-full" --locked
 
       - name: Build loadable extension
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo build --example hello-ext --features="loadable-extension"
-
-      - name: Build loadable extension (windows)
-        if: matrix.os == 'windows-latest'
-        run: cargo build --example hello-ext --features="loadable-extension"
+        run: cargo build --example hello-ext --features="loadable-extension" --locked
 
   cmake:
     name: Bundled CMake ${{ matrix.name }}
@@ -131,6 +131,9 @@ jobs:
   msrv:
     name: MSRV Check
     runs-on: ubuntu-latest
+    env:
+      # cargo check never links, so skip the pinned-library download.
+      DUCKDB_DOWNLOAD_LIB: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -161,13 +164,13 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Tests with asan
         env:
-          # Always bundled until DuckDB v2.0.0 release binaries exist; PRs used
-          # to download libduckdb for speed.
-          ASAN_FEATURES: serde_json url r2d2 uuid polars vscalar vscalar-arrow extensions-full
+          # PRs link the pinned libduckdb download for speed (no bundled C++ ASAN coverage).
+          # Pushes to main keep extensions-full/bundled to preserve deeper coverage.
+          ASAN_FEATURES: ${{ github.ref == 'refs/heads/main' && 'serde_json url r2d2 uuid polars vscalar vscalar-arrow extensions-full' || 'serde_json url r2d2 uuid polars vscalar vscalar-arrow' }}
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
-          # extensions-full compiles the bundled (cc) backend; wrap CC/CXX
+          # extensions-full (main only) compiles the bundled (cc) backend; wrap CC/CXX
           # for sccache. Not ASAN-instrumented (RUSTFLAGS don't reach cc), so safe.
           CC: "sccache cc"
           CXX: "sccache c++"

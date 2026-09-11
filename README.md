@@ -133,7 +133,7 @@ cargo run --example vtab --features vtab
 cargo run --example parquet --features parquet
 ```
 
-If you do not have a system DuckDB library and are not using `DUCKDB_DOWNLOAD_LIB`, add `bundled` to the feature list. For example:
+Without `bundled`, the build links against the pinned prebuilt DuckDB it downloads (or a system library, see [Notes on building](#notes-on-building-duckdb-and-libduckdb-sys)). To compile DuckDB from source instead, add `bundled` to the feature list. For example:
 
 ```shell
 cargo run --example basic --features bundled
@@ -282,13 +282,14 @@ You can adjust this behavior in a number of ways:
 
 3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h` (and `duckdb_v2.h` when using `capi-v2` with `buildtime_bindgen`).
 
-   > Note: the crates currently bundle a DuckDB v2.0.0 preview. Until DuckDB publishes the v2.0.0 release, there are no matching pre-built binaries, so the download URLs below do not resolve yet and `DUCKDB_DOWNLOAD_LIB=1` fails. Use `bundled` in the meantime.
+   The examples below fetch the same prebuilt build the crate pins in `crates/libduckdb-sys/.duckdb-release` (see step 4). Once DuckDB publishes the v2.0.0 release, its `duckdb-shared-libs-<platform>.tar.gz` assets on GitHub Releases work the same way. Each archive is a flat tarball with the shared library and the public headers.
 
    Linux ARM64 example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v2.0.0/libduckdb-linux-arm64.zip
-   unzip libduckdb-linux-arm64.zip -d libduckdb
+   source crates/libduckdb-sys/.duckdb-release   # sets DUCKDB_RELEASE_URL
+   mkdir libduckdb
+   curl -fL "$DUCKDB_RELEASE_URL/duckdb-shared-libs-linux-arm64.tar.gz" | tar -xz -C libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
    export DUCKDB_INCLUDE_DIR=$DUCKDB_LIB_DIR
@@ -297,13 +298,14 @@ You can adjust this behavior in a number of ways:
    cargo build --examples
    ```
 
-   For x86-64 Linux, replace `arm64` with `amd64` in the archive name and URL.
+   For x86-64 Linux, replace `arm64` with `amd64` in the archive name.
 
    macOS example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v2.0.0/libduckdb-osx-universal.zip
-   unzip libduckdb-osx-universal.zip -d libduckdb
+   source crates/libduckdb-sys/.duckdb-release   # sets DUCKDB_RELEASE_URL
+   mkdir libduckdb
+   curl -fL "$DUCKDB_RELEASE_URL/duckdb-shared-libs-osx-universal.tar.gz" | tar -xz -C libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
    export DUCKDB_INCLUDE_DIR=$DUCKDB_LIB_DIR
@@ -312,11 +314,18 @@ You can adjust this behavior in a number of ways:
    cargo build --examples
    ```
 
-4. Setting `DUCKDB_DOWNLOAD_LIB=1` makes the build script download pre-built DuckDB binaries from GitHub Releases. This links against the dynamic library in the archive and effectively automates the manual steps above. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path. The downloaded version always matches the DuckDB version encoded in the `libduckdb-sys` crate version.
+   On Windows the `windows-amd64` and `windows-arm64` archives contain `duckdb.dll` and its `duckdb.lib` import library; put both in `DUCKDB_LIB_DIR` and add that directory to `PATH`.
+
+4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently a staging build of a v2.0.0 preview commit, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `./upgrade.sh --sync` vendors that same commit into the bundled sources, so `bundled` and the download always agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
+
+   Set `DUCKDB_DOWNLOAD_LIB=0` to opt out and probe the system (vcpkg, pkg-config) instead, or `DUCKDB_DOWNLOAD_LIB=1` to force the download. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path.
 
    ```shell
-   DUCKDB_DOWNLOAD_LIB=1 cargo test
+   cargo test                          # downloads the pinned build on first use
+   DUCKDB_DOWNLOAD_LIB=0 cargo test    # use a system DuckDB instead
    ```
+
+   The pinned staging archives do not ship `duckdb_v2.h` yet, so `buildtime_bindgen` together with `capi-v2` needs `DUCKDB_INCLUDE_DIR` or a `bundled` build until the pin moves to a newer DuckDB build.
 
 5. Installing the DuckDB development packages will usually be all that is required, but
    the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)

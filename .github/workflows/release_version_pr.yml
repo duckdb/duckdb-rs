@@ -1,0 +1,140 @@
+# Dispatched by DuckDB's release dispatcher (duckdb/duckdb-workflow-trigger)
+# on its `core_ready` hook with `duckdb-sha` = {duckdb_commit} and
+# `duckdb-version` = {duckdb_version}; register it in that repository's
+# endpoints.yml. Can also be run by hand from the Actions tab.
+name: Create Release Version PR
+env:
+  TARGET_BRANCH: main
+  PIN_FILE: crates/libduckdb-sys/.duckdb-release
+
+on:
+  workflow_call:
+    inputs:
+      duckdb-sha:
+        description: 'Full 40-character DuckDB commit SHA of the staging build'
+        required: true
+        type: 'string'
+      duckdb-version:
+        description: 'DuckDB version label of the staging build (e.g. v2.0.0-alpha39998)'
+        required: true
+        type: 'string'
+  workflow_dispatch:
+    inputs:
+      duckdb-sha:
+        description: 'Full 40-character DuckDB commit SHA of the staging build'
+        required: true
+        type: 'string'
+      duckdb-version:
+        description: 'DuckDB version label of the staging build (e.g. v2.0.0-alpha39998)'
+        required: true
+        type: 'string'
+
+jobs:
+  create_pr:
+    name: Create PR to bump the pinned DuckDB release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout duckdb-rs
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Checkout or create branch
+        id: branch
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${TARGET_BRANCH}"
+          base_sha=$(git rev-parse "origin/${TARGET_BRANCH}")
+          branch_name="release-version-${REF_NAME//\//-}"
+          git check-ref-format --branch "${branch_name}"
+          if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+            git checkout "${branch_name}"
+          else
+            git checkout -b "${branch_name}"
+          fi
+          git reset --hard "${base_sha}"
+          echo "name=${branch_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Bump the pin
+        id: bump
+        env:
+          DUCKDB_SHA: ${{ inputs.duckdb-sha }}
+          DUCKDB_VERSION: ${{ inputs.duckdb-version }}
+        run: |
+          set -euo pipefail
+          [[ "${DUCKDB_SHA}" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "::error::duckdb-sha must be the full 40-character hexadecimal commit SHA"
+            exit 1
+          }
+          [[ "${DUCKDB_VERSION}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] || {
+            echo "::error::duckdb-version contains unsupported characters"
+            exit 1
+          }
+          short_sha="${DUCKDB_SHA:0:10}"
+          release_url="https://duckdb-staging.duckdb.org/${short_sha}/${DUCKDB_VERSION}/duckdb/duckdb/github_release"
+          sed -i "s|^DUCKDB_RELEASE_COMMIT=.*|DUCKDB_RELEASE_COMMIT=${DUCKDB_SHA}|" "${PIN_FILE}"
+          sed -i "s|^DUCKDB_RELEASE_URL=.*|DUCKDB_RELEASE_URL=${release_url}|" "${PIN_FILE}"
+          sed -i "s|^DUCKDB_RELEASE_VERSION=.*|DUCKDB_RELEASE_VERSION=${DUCKDB_VERSION}|" "${PIN_FILE}"
+          git diff --exit-code "${PIN_FILE}" && { echo "::notice::Pin already up to date"; }
+          echo "artifact_release=${short_sha}/${DUCKDB_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      # Vendor the pinned commit so the bundled sources and pregenerated
+      # bindings land in the same PR as the pin (needs python3 and libclang).
+      - name: Sync bundled DuckDB sources and bindings to the pin
+        run: ./upgrade.sh --sync
+
+      - name: Determine PR action
+        id: gh_pr_command
+        env:
+          GH_TOKEN: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          pr_url=$(gh pr list --head "${BRANCH_NAME}" --state open --json url --jq '.[0].url // empty')
+          if [[ -n "${pr_url}" ]]; then
+            echo "action=edit" >> "${GITHUB_OUTPUT}"
+            echo "url=${pr_url}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "action=create" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Set git user
+        run: |
+          git config --global user.email "github_bot@duckdblabs.com"
+          git config --global user.name "DuckDB Labs GitHub Bot"
+
+      - name: Create or update the PR
+        env:
+          GH_TOKEN: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
+          ARTIFACT_RELEASE: ${{ steps.bump.outputs.artifact_release }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          PR_ACTION: ${{ steps.gh_pr_command.outputs.action }}
+          PR_URL: ${{ steps.gh_pr_command.outputs.url }}
+        run: |
+          set -euo pipefail
+          git add -A "${PIN_FILE}" crates/libduckdb-sys
+          git commit -m "Bump pinned DuckDB release to ${ARTIFACT_RELEASE}"
+          git push --force origin "${BRANCH_NAME}"
+          {
+            echo "Update the pinned DuckDB staging release used by linked-mode builds, and vendor the same commit into the bundled sources and pregenerated bindings (\`./upgrade.sh --sync\`):"
+            echo "- Target branch: ${TARGET_BRANCH}"
+            echo "- Release: ${ARTIFACT_RELEASE}"
+            echo "- Trigger: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > body.txt
+          title="[duckdb-labs bot] Bump pinned DuckDB release to ${ARTIFACT_RELEASE}"
+          if [[ "${PR_ACTION}" == "edit" ]]; then
+            gh pr edit "${PR_URL}" --base "${TARGET_BRANCH}" --title "${title}" --body-file body.txt
+          else
+            gh pr create --head "${BRANCH_NAME}" --base "${TARGET_BRANCH}" --title "${title}" --body-file body.txt
+          fi
