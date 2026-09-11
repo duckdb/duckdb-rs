@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow::array::Array;
-use libduckdb_sys::duckdb_string_t;
+use libduckdb_sys::v1::duckdb_string_t;
 
 use crate::{
     Connection,

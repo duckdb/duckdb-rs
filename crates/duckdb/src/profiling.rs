@@ -58,38 +58,38 @@ pub struct ProfilingInfo {
 
 impl ProfilingInfo {
     /// # Safety
-    /// `info` must be a valid (or NULL) pointer obtained from [`libduckdb_sys::duckdb_get_profiling_info`].
+    /// `info` must be a valid (or NULL) pointer obtained from [`libduckdb_sys::v1::duckdb_get_profiling_info`].
     /// Metric key/value string conversions are treated as fallible. NULL varchar results are skipped.
-    fn from_raw(info: libduckdb_sys::duckdb_profiling_info) -> Option<Self> {
+    fn from_raw(info: libduckdb_sys::v1::duckdb_profiling_info) -> Option<Self> {
         if info.is_null() {
             return None;
         }
 
         // Extract metrics
-        let mut map = unsafe { libduckdb_sys::duckdb_profiling_info_get_metrics(info) };
-        let map_size = unsafe { libduckdb_sys::duckdb_get_map_size(map) };
+        let mut map = unsafe { libduckdb_sys::v1::duckdb_profiling_info_get_metrics(info) };
+        let map_size = unsafe { libduckdb_sys::v1::duckdb_get_map_size(map) };
 
         let mut metrics = HashMap::<String, String>::with_capacity(map_size as usize);
 
         for i in 0..map_size {
-            let mut key = unsafe { libduckdb_sys::duckdb_get_map_key(map, i) };
-            let mut val = unsafe { libduckdb_sys::duckdb_get_map_value(map, i) };
+            let mut key = unsafe { libduckdb_sys::v1::duckdb_get_map_key(map, i) };
+            let mut val = unsafe { libduckdb_sys::v1::duckdb_get_map_value(map, i) };
 
             if let (Some(key_str), Some(val_str)) = (Self::value_to_string(key), Self::value_to_string(val)) {
                 metrics.insert(key_str, val_str);
             }
 
-            unsafe { libduckdb_sys::duckdb_destroy_value(&mut key) };
-            unsafe { libduckdb_sys::duckdb_destroy_value(&mut val) };
+            unsafe { libduckdb_sys::v1::duckdb_destroy_value(&mut key) };
+            unsafe { libduckdb_sys::v1::duckdb_destroy_value(&mut val) };
         }
 
-        unsafe { libduckdb_sys::duckdb_destroy_value(&mut map) };
+        unsafe { libduckdb_sys::v1::duckdb_destroy_value(&mut map) };
 
         // Extract children
-        let child_count = unsafe { libduckdb_sys::duckdb_profiling_info_get_child_count(info) };
+        let child_count = unsafe { libduckdb_sys::v1::duckdb_profiling_info_get_child_count(info) };
         let mut children = Vec::with_capacity(child_count as usize);
         for i in 0..child_count {
-            let child_info = unsafe { Self::from_raw(libduckdb_sys::duckdb_profiling_info_get_child(info, i)) };
+            let child_info = unsafe { Self::from_raw(libduckdb_sys::v1::duckdb_profiling_info_get_child(info, i)) };
             if let Some(info) = child_info {
                 children.push(info);
             }
@@ -98,9 +98,9 @@ impl ProfilingInfo {
         Some(ProfilingInfo { metrics, children })
     }
 
-    fn value_to_string(value: libduckdb_sys::duckdb_value) -> Option<String> {
-        let ptr = unsafe { libduckdb_sys::duckdb_get_varchar(value) };
-        unsafe { libduckdb_sys::DuckDbString::from_nullable_ptr(ptr) }
+    fn value_to_string(value: libduckdb_sys::v1::duckdb_value) -> Option<String> {
+        let ptr = unsafe { libduckdb_sys::v1::duckdb_get_varchar(value) };
+        unsafe { libduckdb_sys::v1::DuckDbString::from_nullable_ptr(ptr) }
             .map(|varchar| varchar.to_string_lossy().to_string())
     }
 }
@@ -108,7 +108,7 @@ impl ProfilingInfo {
 impl InnerConnection {
     /// Retrieves the [`ProfilingInfo`] for the last executed query, if profiling is enabled.
     pub fn get_profiling_info(&self) -> Option<ProfilingInfo> {
-        let info = unsafe { libduckdb_sys::duckdb_get_profiling_info(self.con) };
+        let info = unsafe { libduckdb_sys::v1::duckdb_get_profiling_info(self.con) };
         ProfilingInfo::from_raw(info)
     }
 }

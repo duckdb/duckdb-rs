@@ -103,7 +103,7 @@ fn main() -> duckdb_rs_neo::Result<()> {
 }
 ```
 
-The v2 bindings live in `libduckdb-sys` behind its `capi-v2` feature, as the `libduckdb_sys::v2` module. `duckdb-rs-neo` enables that feature itself. Its own `capi-v2-p2` feature targets API surface that the bundled DuckDB does not provide yet and does not compile.
+`libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature and, behind its `capi-v2` feature, the v2 bindings as `libduckdb_sys::v2`. `duckdb-rs-neo` disables the default features so only the v2 bindings are generated. `duckdb-rs-neo` enables that feature itself. Its own `capi-v2-p2` feature targets API surface that the bundled DuckDB does not provide yet and does not compile.
 
 ## Examples
 
@@ -193,6 +193,7 @@ These extensions are only available through the CMake build backend and imply `b
 - `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
 - `bundled-cmake` - _Experimental_. Builds DuckDB via its upstream CMake build system instead of `cc`. Requires a duckdb-rs checkout (not available from crates.io). See [step 2](#notes-on-building-duckdb-and-libduckdb-sys) below for details.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
+- `capi-v1` (`libduckdb-sys` only, default) - Generate bindings for the v1 C API header `duckdb.h`, exposed as `libduckdb_sys::v1` and at the crate root. Required by `duckdb` and by `loadable-extension`.
 - `capi-v2` (`libduckdb-sys` only) - Also generate bindings for the v2 C API header `duckdb_v2.h`, exposed as `libduckdb_sys::v2`. `duckdb-rs-neo` enables this automatically. With `buildtime_bindgen`, `duckdb_v2.h` must sit next to `duckdb.h` in `DUCKDB_INCLUDE_DIR`.
 - `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development. Only enable this when building an extension, never for a client application - see [Database client or extension?](#database-client-or-extension)
 

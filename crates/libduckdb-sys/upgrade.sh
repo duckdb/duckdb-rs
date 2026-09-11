@@ -104,8 +104,8 @@ git checkout "$DUCKDB_TARGET"
 cd "$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/update_sources.py"
 
-regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version.rs" bindgen.rs buildtime_bindgen
-regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" bindgen.rs buildtime_bindgen loadable-extension
+regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version.rs" bindgen.rs buildtime_bindgen capi-v1
+regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" bindgen.rs buildtime_bindgen capi-v1 loadable-extension
 regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_v2.rs" bindgen_v2.rs buildtime_bindgen capi-v2
 
 printf '    \e[35;1mFinished\e[0m regenerating bundled DuckDB sources and bindings (tests not run)\n'

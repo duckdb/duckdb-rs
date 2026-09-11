@@ -47,9 +47,12 @@ pub enum CApi {
 /// Emit every bindings artifact this build needs into `out_dir`, either by
 /// running bindgen (`buildtime_bindgen`) or by copying the pregenerated files.
 pub(crate) fn write_all_bindings(header: &HeaderLocation, out_dir: &Path) {
+    #[cfg(feature = "capi-v1")]
     write_api_bindings(header, CApi::V1, &out_dir.join("bindgen.rs"));
     #[cfg(feature = "capi-v2")]
     write_api_bindings(header, CApi::V2, &out_dir.join("bindgen_v2.rs"));
+    #[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
+    let _ = (header, out_dir);
 }
 
 fn write_api_bindings(header: &HeaderLocation, api: CApi, out_path: &Path) {
@@ -626,12 +629,15 @@ mod bindings {
         let mut output = Vec::new();
 
         // ONLY generate bindings for symbols containing "duckdb" in their name
-        // and for the type `idx_t`. Use the concrete Arrow ABI layouts from
-        // src/arrow_c_data.rs for both headers.
+        // and for the type `idx_t` (each pass emits its own `u64` alias; type
+        // aliases are interchangeable, and blocklisting it would cost bindgen
+        // the `Copy` derives on structs that embed it). Use the concrete Arrow
+        // ABI layouts from src/arrow_c_data.rs for both headers.
         let mut builder = bindgen::builder()
             .trust_clang_mangling(false)
             .header(header.clone())
             .allowlist_item(r#"(\w*duckdb\w*)"#)
+            .allowlist_type("idx_t")
             .blocklist_type("ArrowArray")
             .blocklist_type("ArrowSchema")
             .layout_tests(false) // causes problems on WASM builds
@@ -644,9 +650,7 @@ mod bindings {
                 }
                 // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
                 // until we figure out how to feature gate the generated API
-                builder
-                    .allowlist_type("idx_t")
-                    .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
+                builder.clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
             }
             CApi::V2 => builder
                 // The v2 header spells its enums and macro constants in upper
@@ -655,9 +659,6 @@ mod bindings {
                 // Exported by the v2 header for Arrow interop; not reachable
                 // through the allowlist alone on every DuckDB version.
                 .allowlist_type("ArrowArrayStream")
-                // `idx_t` is shared with the v1 bindings and re-exported into
-                // the `v2` module, so there is a single definition.
-                .blocklist_type("idx_t")
                 // The v2 wrapper matches on real Rust enums rather than
                 // constified integer values.
                 .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#),
