@@ -1,7 +1,4 @@
-use super::{
-    ArrowInitData, ArrowVTab, RowSlice, arrow_arraydata_to_query_params, arrow_ffi_to_query_params,
-    arrow_recordbatch_to_query_params,
-};
+use super::{ArrowBatchRegistration, ArrowInitData, ArrowVTab, RowSlice};
 use crate::arrow_interop::test_support::{uuid_array, uuid_field};
 use crate::{Connection, Result};
 use arrow::{
@@ -15,9 +12,11 @@ use arrow::{
 };
 use std::{
     error::Error,
-    sync::{Arc, Barrier, atomic::AtomicUsize},
+    sync::{Arc, Barrier},
 };
 use uuid::Uuid;
+
+mod registration;
 
 fn example_record_batch() -> RecordBatch {
     let schema = Schema::new(vec![
@@ -52,10 +51,10 @@ fn test_arrow_uuid_extension_roundtrip() -> Result<(), Box<dyn Error>> {
         Arc::new(schema),
         vec![Arc::new(uuid_array(&uuids, Some(vec![true, true, false, true]))) as ArrayRef],
     )?;
-    let param = arrow_recordbatch_to_query_params(batch);
+    let reg = ArrowBatchRegistration::new(batch);
 
-    let mut stmt = db.prepare("SELECT id::VARCHAR, typeof(id) FROM arrow(?, ?)")?;
-    let rows = stmt.query_map(param, |row| {
+    let mut stmt = db.prepare("SELECT id::VARCHAR, typeof(id) FROM arrow(?)")?;
+    let rows = stmt.query_map([&reg], |row| {
         Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
     })?;
     let observed: std::result::Result<Vec<_>, _> = rows.collect();
@@ -101,10 +100,10 @@ fn test_arrow_uuid_extension_roundtrip_in_struct() -> Result<(), Box<dyn Error>>
         true,
     )]);
     let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(struct_array) as ArrayRef])?;
-    let param = arrow_recordbatch_to_query_params(batch);
+    let reg = ArrowBatchRegistration::new(batch);
 
-    let mut stmt = db.prepare("SELECT payload.id::VARCHAR, typeof(payload.id) FROM arrow(?, ?)")?;
-    let rows = stmt.query_map(param, |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+    let mut stmt = db.prepare("SELECT payload.id::VARCHAR, typeof(payload.id) FROM arrow(?)")?;
+    let rows = stmt.query_map([&reg], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
     let observed: std::result::Result<Vec<_>, _> = rows.collect();
 
     assert_eq!(
@@ -136,10 +135,10 @@ fn test_arrow_uuid_extension_roundtrip_in_list() -> Result<(), Box<dyn Error>> {
     );
     let schema = Schema::new(vec![Field::new("ids", list_array.data_type().clone(), true)]);
     let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_array) as ArrayRef])?;
-    let param = arrow_recordbatch_to_query_params(batch);
+    let reg = ArrowBatchRegistration::new(batch);
 
-    let mut stmt = db.prepare("SELECT ids[1]::VARCHAR, typeof(ids[1]) FROM arrow(?, ?)")?;
-    let rows = stmt.query_map(param, |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+    let mut stmt = db.prepare("SELECT ids[1]::VARCHAR, typeof(ids[1]) FROM arrow(?)")?;
+    let rows = stmt.query_map([&reg], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
     let observed: std::result::Result<Vec<_>, _> = rows.collect();
 
     assert_eq!(
@@ -182,10 +181,10 @@ fn test_arrow_uuid_extension_roundtrip_in_map() -> Result<(), Box<dyn Error>> {
     );
     let schema = Schema::new(vec![Field::new("lookup", map_array.data_type().clone(), true)]);
     let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(map_array) as ArrayRef])?;
-    let param = arrow_recordbatch_to_query_params(batch);
+    let reg = ArrowBatchRegistration::new(batch);
 
-    let mut stmt = db.prepare("SELECT lookup['alpha']::VARCHAR, lookup['beta']::VARCHAR FROM arrow(?, ?)")?;
-    let rows = stmt.query_map(param, |row| {
+    let mut stmt = db.prepare("SELECT lookup['alpha']::VARCHAR, lookup['beta']::VARCHAR FROM arrow(?)")?;
+    let rows = stmt.query_map([&reg], |row| {
         Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?))
     })?;
     let observed: std::result::Result<Vec<_>, _> = rows.collect();
@@ -203,17 +202,17 @@ fn test_query_record_batch_with_arrow_vtab() -> Result<(), Box<dyn Error>> {
     let db = Connection::open_in_memory()?;
     db.register_table_function::<ArrowVTab>("arrow")?;
 
-    let params = arrow_recordbatch_to_query_params(example_record_batch());
+    let reg = ArrowBatchRegistration::new(example_record_batch());
     let batches: Vec<RecordBatch> = db
         .prepare(
             "
                 SELECT id, upper(name) AS name, is_odd
-                FROM arrow(?, ?)
+                FROM arrow(?)
                 WHERE is_odd
                 ORDER BY id
                 ",
         )?
-        .query_arrow(params)?
+        .query_arrow([&reg])?
         .collect();
 
     assert_eq!(batches.len(), 1);
@@ -266,13 +265,10 @@ fn large_record_batch(n: usize, vector_size: usize) -> RecordBatch {
 }
 
 #[test]
-fn test_arrow_init_data_take_slice_partitions_rows_concurrently() {
+fn test_arrow_init_data_partitions_rows_concurrently() {
     let num_rows = 10_000usize;
     let thread_count = 16;
-    let init = Arc::new(ArrowInitData {
-        offset: AtomicUsize::new(0),
-        vector_size: 1,
-    });
+    let init = Arc::new(ArrowInitData::new(1));
     let start = Arc::new(Barrier::new(thread_count));
 
     let mut handles = Vec::new();
@@ -310,11 +306,8 @@ fn test_arrow_init_data_take_slice_partitions_rows_concurrently() {
 }
 
 #[test]
-fn test_arrow_init_data_take_slice_handles_partial_tail() {
-    let init = ArrowInitData {
-        offset: AtomicUsize::new(0),
-        vector_size: 4,
-    };
+fn test_arrow_init_data_handles_partial_tail() {
+    let init = ArrowInitData::new(4);
 
     assert_eq!(init.take_slice(9), Some(RowSlice { offset: 0, len: 4 }));
     assert_eq!(init.take_slice(9), Some(RowSlice { offset: 4, len: 4 }));
@@ -322,10 +315,7 @@ fn test_arrow_init_data_take_slice_handles_partial_tail() {
     assert_eq!(init.take_slice(9), None);
     assert_eq!(init.take_slice(9), None);
 
-    let empty = ArrowInitData {
-        offset: AtomicUsize::new(0),
-        vector_size: 4,
-    };
+    let empty = ArrowInitData::new(4);
     assert_eq!(empty.take_slice(0), None);
     assert_eq!(empty.take_slice(0), None);
 }
@@ -339,9 +329,9 @@ fn test_vtab_arrow() -> Result<(), Box<dyn Error>> {
         .prepare("SELECT * FROM read_parquet('./examples/int32_decimal.parquet');")?
         .query_arrow([])?
         .collect();
-    let param = arrow_recordbatch_to_query_params(rbs.into_iter().next().unwrap());
-    let mut stmt = db.prepare("select sum(value) from arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
+    let reg = ArrowBatchRegistration::new(rbs.into_iter().next().unwrap());
+    let mut stmt = db.prepare("select sum(value) from arrow(?)")?;
+    let mut arr = stmt.query_arrow([&reg])?;
     let rb = arr.next().expect("no record batch");
     assert_eq!(rb.num_columns(), 1);
     let column = rb.column(0).as_any().downcast_ref::<Decimal128Array>().unwrap();
@@ -373,10 +363,10 @@ fn test_vtab_arrow_large_record_batch() -> Result<(), Box<dyn Error>> {
         two_vectors,
         with_tail,
     ] {
-        let param = arrow_recordbatch_to_query_params(large_record_batch(n, vector_size));
+        let reg = ArrowBatchRegistration::new(large_record_batch(n, vector_size));
         let rbs: Vec<RecordBatch> = db
-            .prepare("SELECT id, val FROM arrow(?, ?) ORDER BY id")?
-            .query_arrow(param)?
+            .prepare("SELECT id, val FROM arrow(?) ORDER BY id")?
+            .query_arrow([&reg])?
             .collect();
 
         let total: usize = rbs.iter().map(|rb| rb.num_rows()).sum();
@@ -439,110 +429,13 @@ fn test_vtab_arrow_rust_array() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", DataType::Int32, false)]);
     let array = Int32Array::from(vec![1, 2, 3, 4, 5]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)]).expect("failed to create record batch");
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select sum(a)::int32 from arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select sum(a)::int32 from arrow(?)")?;
+    let mut arr = stmt.query_arrow([&reg])?;
     let rb = arr.next().expect("no record batch");
     assert_eq!(rb.num_columns(), 1);
     let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
     assert_eq!(column.len(), 1);
     assert_eq!(column.value(0), 15);
     Ok(())
-}
-
-#[test]
-fn test_vtab_arrow_view_can_rebind_record_batch() -> Result<(), Box<dyn Error>> {
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-
-    let batch = example_record_batch();
-    let param = arrow_recordbatch_to_query_params(batch.clone());
-    db.execute(
-        &format!(
-            "CREATE VIEW arrow_view AS SELECT * FROM arrow({}::UBIGINT, {}::UBIGINT)",
-            param[0], param[1]
-        ),
-        [],
-    )?;
-
-    for _ in 0..2 {
-        let rbs: Vec<RecordBatch> = db.prepare("SELECT * FROM arrow_view")?.query_arrow([])?.collect();
-        assert_eq!(vec![batch.clone()], rbs);
-    }
-
-    Ok(())
-}
-
-#[test]
-fn test_vtab_arrow_arraydata_query_params() -> Result<(), Box<dyn Error>> {
-    let batch = example_record_batch();
-    let struct_array = StructArray::from(batch);
-    let param = arrow_arraydata_to_query_params(struct_array.to_data());
-
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-    let mut stmt = db.prepare("select sum(id)::int32 from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
-    let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
-    assert_eq!(column.value(0), 10);
-    Ok(())
-}
-
-#[test]
-fn test_vtab_arrow_ffi_query_params() -> Result<(), Box<dyn Error>> {
-    let batch = example_record_batch();
-    let struct_array = StructArray::from(batch);
-    let array = FFI_ArrowArray::new(&struct_array.to_data());
-    let schema = FFI_ArrowSchema::try_from(struct_array.data_type())?;
-    drop(struct_array);
-    // SAFETY: Both values were exported from the same valid struct array, and
-    // the FFI array owns the backing buffers through its release callback.
-    let param = unsafe { arrow_ffi_to_query_params(array, schema) };
-
-    let db = Connection::open_in_memory()?;
-    db.register_table_function::<ArrowVTab>("arrow")?;
-    let mut stmt = db.prepare("select sum(id)::int32 from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
-    let column = rb.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
-    assert_eq!(column.value(0), 10);
-    Ok(())
-}
-
-#[test]
-fn test_arrow_null_query_params_error() {
-    let db = Connection::open_in_memory().unwrap();
-    db.register_table_function::<ArrowVTab>("arrow").unwrap();
-
-    let err = db.prepare("SELECT * FROM arrow(NULL, NULL)").err().unwrap();
-    assert!(
-        err.to_string()
-            .contains("ArrowVTab record batch address parameter must not be NULL"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn test_arrow_zero_address_query_params_error() {
-    let db = Connection::open_in_memory().unwrap();
-    db.register_table_function::<ArrowVTab>("arrow").unwrap();
-
-    let valid = arrow_recordbatch_to_query_params(example_record_batch());
-    let sql = format!("SELECT * FROM arrow(0::UBIGINT, {}::UBIGINT)", valid[1]);
-    let err = db.prepare(&sql).err().unwrap();
-    assert!(
-        err.to_string().contains("invalid ArrowVTab record batch address"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn test_arrow_marker_mismatch_query_params_error() {
-    let db = Connection::open_in_memory().unwrap();
-    db.register_table_function::<ArrowVTab>("arrow").unwrap();
-
-    let err = db.prepare("SELECT * FROM arrow(1::UBIGINT, 2::UBIGINT)").err().unwrap();
-    assert!(
-        err.to_string().contains("query parameter marker mismatch"),
-        "unexpected error: {err}"
-    );
 }

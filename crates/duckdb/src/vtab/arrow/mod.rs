@@ -2,25 +2,30 @@
 mod tests;
 
 use super::{BindInfo, DataChunkHandle, InitInfo, LogicalTypeHandle, TableFunctionInfo, VTab};
-use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicUsize};
+use std::{
+    collections::HashMap,
+    sync::{
+        LazyLock, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
+};
 
 use arrow::{
     array::{ArrayData, StructArray},
+    datatypes::DataType,
+    error::ArrowError,
     ffi::{FFI_ArrowArray, FFI_ArrowSchema},
     record_batch::RecordBatch,
 };
 
 pub use crate::arrow_interop::*;
-use crate::core::LogicalTypeId;
+use crate::{ToSql, core::LogicalTypeId, types::ToSqlOutput};
 
-/// The Arrow record batch for the table function.
+/// The registered Arrow record batch resolved during bind.
 ///
-/// Bind data is shared across `func` calls and should be treated as read-only.
-/// That is enough for `RecordBatch`: Arrow batches are immutable containers of
-/// shared array data, and the `VTab::BindData: Send + Sync` bound requires this
-/// value to be safe to share. The mutable scan position lives in
-/// `ArrowInitData.offset`, so the batch itself does not need a `Mutex`.
-#[repr(C)]
+/// Keeping the batch in bind data lets a bound scan finish after its
+/// registration is dropped. Scan position remains isolated in
+/// [`ArrowInitData`].
 pub struct ArrowBindData {
     rb: RecordBatch,
 }
@@ -34,7 +39,6 @@ pub struct ArrowBindData {
 /// lets each call slice the next window of rows, so batches larger than the
 /// vector size are streamed across multiple calls instead of overflowing a
 /// single chunk.
-#[repr(C)]
 pub struct ArrowInitData {
     offset: AtomicUsize,
     vector_size: usize,
@@ -47,9 +51,14 @@ struct RowSlice {
 }
 
 impl ArrowInitData {
-    fn take_slice(&self, num_rows: usize) -> Option<RowSlice> {
-        use std::sync::atomic::Ordering::Relaxed;
+    fn new(vector_size: usize) -> Self {
+        Self {
+            offset: AtomicUsize::new(0),
+            vector_size,
+        }
+    }
 
+    fn take_slice(&self, num_rows: usize) -> Option<RowSlice> {
         let vector_size = self.vector_size;
         // DuckDB currently drives this scan serially, but if parallel scans are
         // enabled later, this atomic read-modify-write makes each claimed row
@@ -57,7 +66,7 @@ impl ArrowInitData {
         // self-contained and no other shared state is published through the atomic.
         let offset = self
             .offset
-            .fetch_update(Relaxed, Relaxed, |offset| {
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |offset| {
                 if offset >= num_rows {
                     None
                 } else {
@@ -77,64 +86,18 @@ impl ArrowInitData {
 /// The Arrow table function.
 pub struct ArrowVTab;
 
-const ARROW_QUERY_PARAMS_MARKER: usize = 0x4152_5257; // "ARRW"
-fn arrow_record_batch_store() -> &'static Mutex<Vec<Arc<RecordBatch>>> {
-    static STORE: OnceLock<Mutex<Vec<Arc<RecordBatch>>>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(Vec::new()))
-}
+// Registrations are not associated with a connection, so batches share a
+// process-global registry. A registration owns its map entry, and binding a
+// scan clones the cheap, Arc-backed RecordBatch into bind data.
+static BATCHES: LazyLock<Mutex<HashMap<u64, RecordBatch>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+// Start tokens in the upper half so ordinary small UBIGINT literals do not
+// accidentally select registrations during any realistic process lifetime.
+// Tokens are registry identifiers, not secrets.
+const ARROW_BATCH_TOKEN_START: u64 = 1 << 63;
+static NEXT_TOKEN: AtomicU64 = AtomicU64::new(ARROW_BATCH_TOKEN_START);
 
-fn register_arrow_record_batch(rb: RecordBatch) -> [usize; 2] {
-    // Views can rebind long after creation, so the RecordBatch allocation must
-    // remain valid for the process lifetime. The Arc keeps the pointee stable
-    // across Vec growth, while the static store keeps it visible to
-    // LeakSanitizer as reachable process-lifetime storage.
-    let mut store = arrow_record_batch_store()
-        .lock()
-        .expect("ArrowVTab record batch store poisoned");
-    let rb = Arc::new(rb);
-    let ptr = Arc::as_ptr(&rb);
-    store.push(rb);
-    [ptr as usize, ARROW_QUERY_PARAMS_MARKER]
-}
-
-fn arrow_query_param_usize(bind: &BindInfo, index: u64, name: &str) -> Result<usize, Box<dyn std::error::Error>> {
-    let value = bind.get_parameter(index);
-    if value.is_null() {
-        return Err(format!("ArrowVTab {name} parameter must not be NULL").into());
-    }
-
-    let logical_type = value.logical_type_id();
-    if logical_type != LogicalTypeId::UBigint {
-        return Err(format!("ArrowVTab {name} parameter must be UBIGINT, got {logical_type:?}").into());
-    }
-
-    usize::try_from(value.to_uint64()).map_err(|_| format!("ArrowVTab {name} parameter does not fit in usize").into())
-}
-
-/// Imports a record batch from the current opaque ArrowVTab query parameters.
-///
-/// # Safety
-///
-/// `address` must be a non-null pointer returned by
-/// [`arrow_recordbatch_to_query_params`], and `marker` must be the matching
-/// layout marker returned with it. The marker catches common misuse only and
-/// does not make stale or forged pointers safe to dereference.
-unsafe fn address_to_arrow_record_batch(
-    address: usize,
-    marker: usize,
-) -> Result<RecordBatch, Box<dyn std::error::Error>> {
-    let ptr = address as *const RecordBatch;
-    if ptr.is_null() {
-        return Err("invalid ArrowVTab record batch address".into());
-    }
-
-    if marker != ARROW_QUERY_PARAMS_MARKER {
-        return Err("ArrowVTab query parameter marker mismatch; use arrow_recordbatch_to_query_params".into());
-    }
-
-    // SAFETY: The caller guarantees that `ptr` is the RecordBatch allocation
-    // retained by `register_arrow_record_batch`.
-    Ok(unsafe { (*ptr).clone() })
+fn lock_batches() -> MutexGuard<'static, HashMap<u64, RecordBatch>> {
+    BATCHES.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl VTab for ArrowVTab {
@@ -142,18 +105,15 @@ impl VTab for ArrowVTab {
     type InitData = ArrowInitData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
-        let param_count = bind.get_parameter_count();
-        if param_count != 2 {
-            return Err(format!("Bad param count: {param_count}, expected 2").into());
+        let value = bind.get_parameter(0);
+        if value.is_null() {
+            return Err("ArrowVTab record batch token parameter must not be NULL".into());
         }
-        let address = arrow_query_param_usize(bind, 0, "record batch address")?;
-        let marker = arrow_query_param_usize(bind, 1, "marker")?;
-
-        // SAFETY: ArrowVTab's raw-parameter API relies on callers passing
-        // values returned unchanged by `arrow_recordbatch_to_query_params`.
-        // Validation above catches nulls, type mismatches, and layout marker
-        // mismatches, but cannot validate forged addresses.
-        let rb = unsafe { address_to_arrow_record_batch(address, marker)? };
+        let token = value.to_uint64();
+        let rb = lock_batches()
+            .get(&token)
+            .cloned()
+            .ok_or_else(|| format!("ArrowVTab record batch token {token} is not registered"))?;
         for f in rb.schema().fields() {
             let name = f.name();
             let logical_type = to_duckdb_logical_type_for_field(f)?;
@@ -169,17 +129,12 @@ impl VTab for ArrowVTab {
             return Err("DuckDB vector size must be greater than zero".into());
         }
 
-        Ok(ArrowInitData {
-            offset: AtomicUsize::new(0),
-            vector_size,
-        })
+        Ok(ArrowInitData::new(vector_size))
     }
 
     fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn std::error::Error>> {
         let init_info = func.get_init_data();
-        let bind_info = func.get_bind_data();
-
-        let rb = &bind_info.rb;
+        let rb = &func.get_bind_data().rb;
         let num_rows = rb.num_rows();
         let Some(slice) = init_info.take_slice(num_rows) else {
             output.set_len(0);
@@ -193,64 +148,116 @@ impl VTab for ArrowVTab {
     }
 
     fn parameters() -> Option<Vec<LogicalTypeHandle>> {
-        Some(vec![
-            LogicalTypeHandle::from(LogicalTypeId::UBigint), // record batch address
-            LogicalTypeHandle::from(LogicalTypeId::UBigint), // query parameter marker
-        ])
+        Some(vec![LogicalTypeHandle::from(LogicalTypeId::UBigint)])
     }
 }
 
-/// Pass a RecordBatch to DuckDB.
+/// An Arrow [`RecordBatch`] registration for [`ArrowVTab`].
 ///
-/// This returns opaque query parameters for [`ArrowVTab`].
+/// Pass a reference as one element of a parameter list, such as
+/// `statement.query_arrow([&registration])`. A registration can back multiple
+/// scans and executions while it is alive. Each bound scan retains the batch,
+/// so it can execute after the registration is dropped. Dropping the
+/// registration releases its batch from the registry and prevents future
+/// scans, including stored views, from binding it. Registrations use a
+/// process-global registry and are not scoped to a connection.
 ///
-/// Each call permanently retains one [`RecordBatch`] allocation in a
-/// process-global arena that is never freed, so stored views can rebind the same
-/// parameters later. Memory grows monotonically. Do not call this per row or
-/// per query. Create these parameters once per logical table or view.
+/// Registrations must not be passed by value:
 ///
-/// # Panics
+/// ```compile_fail,E0277
+/// use duckdb::{Statement, vtab::arrow::ArrowBatchRegistration};
 ///
-/// Panics if the process-global ArrowVTab record batch store mutex is poisoned.
-pub fn arrow_recordbatch_to_query_params(rb: RecordBatch) -> [usize; 2] {
-    register_arrow_record_batch(rb)
+/// fn query_with_owned_registration(
+///     statement: &mut Statement<'_>,
+///     registration: ArrowBatchRegistration,
+/// ) {
+///     let _ = statement.query_arrow([registration]);
+/// }
+/// ```
+///
+/// A reference to this type implements [`ToSql`] only to pass its opaque token
+/// to `arrow(...)`. Using it in another SQL position binds that implementation
+/// detail as a `UBIGINT`; the value has no stable meaning and should not be
+/// stored or otherwise used as data.
+///
+/// DuckDB 1.5.5 can retain the batch after an unconsumed stream returned by
+/// [`crate::Statement::stream_arrow`] is dropped. Another query on the same
+/// connection, or closing the connection, releases it; see [duckdb-rs#853].
+///
+/// [duckdb-rs#853]: https://github.com/duckdb/duckdb-rs/pull/853
+#[derive(Debug)]
+#[must_use = "dropping the registration releases its Arrow record batch"]
+pub struct ArrowBatchRegistration {
+    token: u64,
 }
 
-/// Pass ArrayData to DuckDB.
-///
-/// This converts the [`ArrayData`] to a [`RecordBatch`] immediately. Like
-/// [`arrow_recordbatch_to_query_params`], each call permanently retains one
-/// [`RecordBatch`] allocation in a process-global arena that is never freed.
-///
-/// # Panics
-///
-/// Panics if the process-global ArrowVTab record batch store mutex is poisoned.
-pub fn arrow_arraydata_to_query_params(data: ArrayData) -> [usize; 2] {
-    let struct_array = StructArray::from(data);
-    arrow_recordbatch_to_query_params(RecordBatch::from(&struct_array))
+impl ArrowBatchRegistration {
+    /// Registers `rb` until this value is dropped.
+    pub fn new(rb: RecordBatch) -> Self {
+        let token = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
+        lock_batches().insert(token, rb);
+        Self { token }
+    }
+
+    /// Converts a struct [`ArrayData`] into a registration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `data` does not describe a struct array or if the
+    /// struct array contains top-level nulls, which a [`RecordBatch`] cannot
+    /// represent.
+    pub fn from_array_data(data: ArrayData) -> Result<Self, ArrowError> {
+        if !matches!(data.data_type(), DataType::Struct(_)) {
+            return Err(ArrowError::InvalidArgumentError(format!(
+                "ArrowVTab registration requires a struct array, got {:?}",
+                data.data_type()
+            )));
+        }
+        if data.null_count() != 0 {
+            return Err(ArrowError::InvalidArgumentError(format!(
+                "ArrowVTab registration does not support {} top-level nulls",
+                data.null_count()
+            )));
+        }
+        let struct_array = StructArray::from(data);
+        Ok(Self::new(RecordBatch::from(struct_array)))
+    }
+
+    /// Imports an Arrow FFI struct array into a registration.
+    ///
+    /// # Safety
+    ///
+    /// `array` and `schema` must describe the same valid, unreleased Arrow
+    /// struct array and satisfy [`arrow::ffi::from_ffi`]'s C Data Interface
+    /// contract. Ownership is transferred to this function. The backing memory
+    /// and release callback must be safe to use from any thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the FFI values cannot be imported, if they do not
+    /// describe a struct array, or if that array contains top-level nulls,
+    /// which a [`RecordBatch`] cannot represent.
+    pub unsafe fn from_ffi(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> Result<Self, ArrowError> {
+        // SAFETY: The caller guarantees matching, valid C Data Interface values.
+        let data = unsafe { arrow::ffi::from_ffi(array, &schema) }?;
+        Self::from_array_data(data)
+    }
 }
 
-/// Pass array and schema to DuckDB.
-///
-/// This imports the FFI values immediately. Like
-/// [`arrow_recordbatch_to_query_params`], each call permanently retains one
-/// [`RecordBatch`] allocation in a process-global arena that is never freed.
-///
-/// # Safety
-///
-/// `array` and `schema` must describe the same valid, unreleased Arrow struct
-/// array and satisfy [`arrow::ffi::from_ffi`]'s C Data Interface contract,
-/// including valid pointers, buffer lengths, and release callbacks. Ownership
-/// of both values is transferred to this function. The array's backing memory
-/// must remain valid and immutable until its release callback runs.
-///
-/// # Panics
-///
-/// Panics if the FFI values cannot be imported as a struct array, or if the
-/// process-global ArrowVTab record batch store mutex is poisoned.
-pub unsafe fn arrow_ffi_to_query_params(array: FFI_ArrowArray, schema: FFI_ArrowSchema) -> [usize; 2] {
-    // SAFETY: The caller guarantees matching, valid C Data Interface values.
-    // The importer takes ownership of the array and retains its release callback.
-    let array_data = unsafe { arrow::ffi::from_ffi(array, &schema) }.expect("failed to import Arrow FFI data");
-    arrow_arraydata_to_query_params(array_data)
+impl ToSql for &ArrowBatchRegistration {
+    fn to_sql(&self) -> crate::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.token))
+    }
+}
+
+impl Drop for ArrowBatchRegistration {
+    fn drop(&mut self) {
+        // Remove under the lock, then run any foreign Arrow release callback
+        // only after the registry guard has been dropped.
+        let removed = {
+            let mut batches = lock_batches();
+            batches.remove(&self.token)
+        };
+        drop(removed);
+    }
 }

@@ -6,7 +6,7 @@ use crate::{
     Connection, Result,
     arrow_interop::test_support::{ARROW_EXTENSION_NAME_KEY, uuid_field, uuid_metadata},
     core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
-    vtab::arrow::{ArrowVTab, arrow_recordbatch_to_query_params},
+    vtab::arrow::{ArrowBatchRegistration, ArrowVTab},
 };
 use arrow::{
     array::{
@@ -222,9 +222,9 @@ where
     let schema = Schema::new(vec![Field::new("a", input_array.data_type().clone(), true)]);
 
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(input_array.clone())])?;
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_any_array = rb.column(0);
     match (output_any_array.data_type(), expected_array.data_type()) {
@@ -267,9 +267,9 @@ where
     let schema = Schema::new(vec![Field::new("a", arry.data_type().clone(), true)]);
 
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(arry.clone())])?;
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_any_array = rb.column(0);
     assert!(
@@ -309,9 +309,9 @@ where
     let schema = Schema::new(vec![Field::new("a", arry_in.data_type().clone(), false)]);
 
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(arry_in.clone())])?;
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_any_array = rb.column(0);
 
@@ -342,9 +342,9 @@ fn roundtrip_single_array(array: ArrayRef) -> Result<ArrayRef, Box<dyn Error>> {
 
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![array])?;
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     Ok(rb.column(0).clone())
 }
@@ -422,9 +422,9 @@ fn test_fixed_array_roundtrip() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), false)]);
 
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_any_array = rb.column(0);
     assert!(
@@ -661,10 +661,10 @@ fn test_decimal128_rejects_out_of_precision_values() -> Result<(), Box<dyn Error
     let schema = Schema::new(vec![Field::new("d", DataType::Decimal128(5, 2), true)]);
     let array = Decimal128Array::from(vec![i128::from(999999)]).with_data_type(DataType::Decimal128(5, 2));
     let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array) as ArrayRef])?;
-    let param = arrow_recordbatch_to_query_params(batch);
+    let reg = ArrowBatchRegistration::new(batch);
 
     let err = db
-        .query_row("SELECT d FROM arrow(?, ?)", param, |row| {
+        .query_row("SELECT d FROM arrow(?)", [&reg], |row| {
             row.get::<_, crate::types::Value>(0)
         })
         .unwrap_err();
@@ -684,10 +684,10 @@ fn test_decimal128_rejects_invalid_type_without_values() -> Result<(), Box<dyn E
     let schema = Schema::new(vec![Field::new("d", DataType::Decimal128(5, 10), true)]);
     let array = Decimal128Array::from(vec![None::<i128>]).with_data_type(DataType::Decimal128(5, 10));
     let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array) as ArrayRef])?;
-    let param = arrow_recordbatch_to_query_params(batch);
+    let reg = ArrowBatchRegistration::new(batch);
 
     let err = db
-        .query_row("SELECT d FROM arrow(?, ?)", param, |row| {
+        .query_row("SELECT d FROM arrow(?)", [&reg], |row| {
             row.get::<_, crate::types::Value>(0)
         })
         .unwrap_err();
@@ -760,9 +760,9 @@ fn test_timestamp_tz_insert() -> Result<(), Box<dyn Error>> {
 
     // Since we cant get TIMESTAMP_TZ from the rust client yet, we just check that we can insert it properly here.
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)]).expect("failed to create record batch");
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select typeof(a)::VARCHAR from arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select typeof(a)::VARCHAR from arrow(?)")?;
+    let mut arr = stmt.query_arrow([&reg])?;
     let rb = arr.next().expect("no record batch");
     assert_eq!(rb.num_columns(), 1);
     let column = rb.column(0).as_any().downcast_ref::<StringArray>().unwrap();
@@ -778,9 +778,9 @@ fn test_arrow_error() {
     let db = Connection::open_in_memory().unwrap();
     db.register_table_function::<ArrowVTab>("arrow").unwrap();
 
-    let mut stmt = db.prepare("SELECT * FROM arrow(?, ?)").unwrap();
+    let mut stmt = db.prepare("SELECT * FROM arrow(?)").unwrap();
 
-    let res = stmt.execute(arrow_recordbatch_to_query_params(batch)).err().unwrap();
+    let res = stmt.execute([&ArrowBatchRegistration::new(batch)]).err().unwrap();
 
     assert_eq!(
         res,
@@ -806,9 +806,9 @@ fn test_arrow_binary() {
     let db = Connection::open_in_memory().unwrap();
     db.register_table_function::<ArrowVTab>("arrow").unwrap();
 
-    let mut stmt = db.prepare("SELECT * FROM arrow(?, ?)").unwrap();
+    let mut stmt = db.prepare("SELECT * FROM arrow(?)").unwrap();
 
-    let mut arr = stmt.query_arrow(arrow_recordbatch_to_query_params(batch)).unwrap();
+    let mut arr = stmt.query_arrow([&ArrowBatchRegistration::new(batch)]).unwrap();
     let rb = arr.next().expect("no record batch");
 
     let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
@@ -842,9 +842,9 @@ fn test_string_view_roundtrip() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), false)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
 
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_array = rb
         .column(0)
@@ -873,9 +873,9 @@ fn test_binary_view_roundtrip() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), false)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
 
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_array = rb
         .column(0)
@@ -900,9 +900,9 @@ fn test_string_view_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
 
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_array = rb
         .column(0)
@@ -929,9 +929,9 @@ fn test_binary_view_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
 
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_array = rb
         .column(0)
@@ -958,9 +958,9 @@ fn test_large_binary_nulls_roundtrip() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array.clone())])?;
 
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("select a from arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("select a from arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
 
     let output_array = rb
         .column(0)
