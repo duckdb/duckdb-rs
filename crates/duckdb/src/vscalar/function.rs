@@ -54,7 +54,7 @@ impl Drop for ScalarFunction {
 
 use std::ffi::{CString, c_void};
 
-use libduckdb_sys::{
+use libduckdb_sys::v1::{
     self as ffi, DuckDBSuccess, duckdb_add_scalar_function_to_set, duckdb_connection, duckdb_create_scalar_function,
     duckdb_create_scalar_function_set, duckdb_data_chunk, duckdb_delete_callback_t, duckdb_destroy_scalar_function,
     duckdb_destroy_scalar_function_set, duckdb_function_info, duckdb_scalar_function,

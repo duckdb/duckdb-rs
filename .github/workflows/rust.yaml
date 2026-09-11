@@ -21,28 +21,21 @@ concurrency:
 
 jobs:
   test:
-    # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
-    # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
-    # - bundled feature covered by the Ubuntu clippy feature set below
+    # Linked mode: libduckdb-sys downloads the DuckDB build pinned in
+    # crates/libduckdb-sys/.duckdb-release, so this job compiles no C++. The
+    # bundled backends are covered by the clippy step below (extensions-full
+    # implies bundled), the CMake job, and the sanitizer job on main.
     name: Test ${{ matrix.name }}
     strategy:
       fail-fast: true
       matrix:
         include:
-          - {
-              name: Windows,
-              target: x86_64-pc-windows-msvc,
-              os: windows-latest,
-              duckdb: libduckdb-windows-amd64.zip,
-            }
-          - {
-              name: Linux,
-              target: x86_64-unknown-linux-gnu,
-              os: ubuntu-latest,
-              duckdb: libduckdb-linux-amd64.zip,
-            }
+          - { name: Linux, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { name: macOS, target: aarch64-apple-darwin, os: macos-latest }
+          - { name: Windows, target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
     env:
+      # Explicit for clarity; the pin file makes this the default anyway.
       DUCKDB_DOWNLOAD_LIB: "1"
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
@@ -55,15 +48,6 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
-      - uses: robinraju/release-downloader@v1.4
-        name: Download duckdb
-        if: matrix.os == 'windows-latest'
-        with:
-          repository: "duckdb/duckdb"
-          tag: "v1.5.5"
-          fileName: ${{ matrix.duckdb }}
-          out-file-path: .
-
       - run: cargo fmt --all -- --check
         if: matrix.os == 'ubuntu-latest'
 
@@ -71,6 +55,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
         # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
+        # That also makes buildtime_bindgen read duckdb_v2.h from the bundled tree,
+        # which the pinned download archive may not ship yet.
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
@@ -83,43 +69,15 @@ jobs:
         # Keep this feature list in sync with crates/duckdb/Cargo.toml [package.metadata.docs.rs].
         run: cargo doc --workspace --no-deps --features "modern-full vscalar vscalar-arrow vtab-full"
 
-      - name: Dry-run release of crates
+      - name: Package crates (publish check, no upload path)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo publish --workspace --dry-run
-
-      # For windows
-      - name: Windows extract duckdb
-        if: matrix.os == 'windows-latest'
-        uses: DuckSoft/extract-7z-action@v1.0
-        with:
-          pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
-          pathTarget: ${{ github.workspace }}/libduckdb
-
-      - name: Add path to PATH environment variable
-        if: matrix.os == 'windows-latest'
-        uses: myci-actions/export-env-var-powershell@1
-        with:
-          name: PATH
-          value: $env:PATH;${{ github.workspace }}/libduckdb
+        run: cargo package --workspace --locked
 
       - name: Run cargo-test
-        if: matrix.os == 'windows-latest'
-        run: cargo test --features "modern-full vscalar vtab-full"
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+        run: cargo test --workspace --features "modern-full vscalar vtab-full" --locked
 
       - name: Build loadable extension
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo build --example hello-ext --features="loadable-extension"
-
-      - name: Build loadable extension (windows)
-        if: matrix.os == 'windows-latest'
-        run: cargo build --example hello-ext --features="loadable-extension"
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+        run: cargo build --example hello-ext --features="loadable-extension" --locked
 
   cmake:
     name: Bundled CMake ${{ matrix.name }}
@@ -173,6 +131,9 @@ jobs:
   msrv:
     name: MSRV Check
     runs-on: ubuntu-latest
+    env:
+      # cargo check never links, so skip the pinned-library download.
+      DUCKDB_DOWNLOAD_LIB: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -184,6 +145,7 @@ jobs:
       - run: cargo binstall --no-confirm cargo-msrv
       - run: cargo msrv verify --path crates/duckdb
       - run: cargo msrv verify --path crates/duckdb-loadable-macros
+      - run: cargo msrv verify --path crates/duckdb-rs-neo
       - run: cargo msrv verify --path crates/libduckdb-sys
 
   sanitizer:
@@ -202,10 +164,9 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Tests with asan
         env:
-          # PRs use a downloaded libduckdb for speed (no bundled C++ ASAN coverage).
+          # PRs link the pinned libduckdb download for speed (no bundled C++ ASAN coverage).
           # Pushes to main keep extensions-full/bundled to preserve deeper coverage.
           ASAN_FEATURES: ${{ github.ref == 'refs/heads/main' && 'serde_json url r2d2 uuid polars vscalar vscalar-arrow extensions-full' || 'serde_json url r2d2 uuid polars vscalar vscalar-arrow' }}
-          DUCKDB_DOWNLOAD_LIB: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
@@ -215,4 +176,4 @@ jobs:
           CXX: "sccache c++"
         # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
-        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb
+        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb --package duckdb-rs-neo

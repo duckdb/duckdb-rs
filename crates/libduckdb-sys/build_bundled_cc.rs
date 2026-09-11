@@ -55,11 +55,11 @@ fn untar_archive(out_dir: &str) {
     archive.unpack(out_dir).expect("archive");
 }
 
-pub fn main(out_dir: &str, out_path: &Path) {
+pub fn main(out_dir: &str) {
     untar_archive(out_dir);
 
     let include_path = Path::new(out_dir).join("duckdb/src/include");
-    write_bindings(&include_path, out_path);
+    write_bindings(&include_path, out_dir);
 
     // Publish the include directory so downstream crates that compile
     // their own C/C++ code (e.g. extension shims that #include
@@ -107,8 +107,10 @@ pub fn main(out_dir: &str, out_path: &Path) {
         cfg.file(f);
     }
 
+    // DuckDB 2.0 requires C++17 (mirrors CMAKE_CXX_STANDARD in duckdb-sources/CMakeLists.txt).
     cfg.cpp(true)
-        .flag_if_supported("-std=c++11")
+        .flag_if_supported("-std=c++17")
+        .flag_if_supported("/std:c++17")
         .flag_if_supported("/utf-8")
         .flag_if_supported("/bigobj")
         .warnings(false)
@@ -128,7 +130,12 @@ pub fn main(out_dir: &str, out_path: &Path) {
         Ok(v) => v != "false" && v != "0",
         Err(_) => false,
     };
-    if !is_debug {
+    // Mirror DuckDB's CMake build types: Debug defines DEBUG (enables D_ASSERT
+    // and the debug-only verification paths), Release defines NDEBUG. DuckDB's
+    // sources assume exactly one of the two is set.
+    if is_debug {
+        cfg.define("DEBUG", None);
+    } else {
         cfg.define("NDEBUG", None);
     }
 

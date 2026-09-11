@@ -27,11 +27,50 @@ fn is_compiler(compiler_name: &str) -> bool {
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
-    let out_path = Path::new(&out_dir).join("bindgen.rs");
     #[cfg(feature = "bundled")]
-    build_bundled_backend::main(&out_dir, &out_path);
+    build_bundled_backend::main(&out_dir);
     #[cfg(not(feature = "bundled"))]
-    build_linked::main(&out_dir, &out_path)
+    build_linked::main(&out_dir)
+}
+
+/// Which DuckDB C API header a set of bindings is generated from.
+///
+/// `V1` is `duckdb.h` (or `duckdb_extension.h` for loadable extensions) and is
+/// always emitted as `bindgen.rs`. `V2` is `duckdb_v2.h`, emitted as
+/// `bindgen_v2.rs` only when the `capi-v2` feature is enabled.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CApi {
+    V1,
+    V2,
+}
+
+/// Emit every bindings artifact this build needs into `out_dir`, either by
+/// running bindgen (`buildtime_bindgen`) or by copying the pregenerated files.
+pub(crate) fn write_all_bindings(header: &HeaderLocation, out_dir: &Path) {
+    #[cfg(feature = "capi-v1")]
+    write_api_bindings(header, CApi::V1, &out_dir.join("bindgen.rs"));
+    #[cfg(feature = "capi-v2")]
+    write_api_bindings(header, CApi::V2, &out_dir.join("bindgen_v2.rs"));
+    #[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
+    let _ = (header, out_dir);
+}
+
+fn write_api_bindings(header: &HeaderLocation, api: CApi, out_path: &Path) {
+    #[cfg(feature = "buildtime_bindgen")]
+    bindings::write_to_out_dir(header, api, out_path);
+
+    #[cfg(not(feature = "buildtime_bindgen"))]
+    {
+        let _ = header;
+        copy_pregenerated_bindings(api, out_path);
+    }
+}
+
+/// Bundled backends know the include directory of the unpacked source tree.
+#[cfg(feature = "bundled")]
+pub(crate) fn write_bindings(header_dir: &Path, out_dir: &str) {
+    let header = HeaderLocation::IncludeDir(header_dir.to_path_buf());
+    write_all_bindings(&header, Path::new(out_dir));
 }
 
 #[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
@@ -43,22 +82,6 @@ mod build_bundled_cmake;
 use crate::build_bundled_cc as build_bundled_backend;
 #[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
 use crate::build_bundled_cmake as build_bundled_backend;
-
-#[cfg(feature = "bundled")]
-pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
-    #[cfg(feature = "buildtime_bindgen")]
-    {
-        use crate::{HeaderLocation, bindings};
-        let header = HeaderLocation::IncludeDir(header_dir.to_path_buf());
-        bindings::write_to_out_dir(header, out_path);
-    }
-
-    #[cfg(not(feature = "buildtime_bindgen"))]
-    {
-        let _ = header_dir;
-        copy_pregenerated_bindings(out_path);
-    }
-}
 
 /// Link the Windows system libraries DuckDB needs but that neither `cc` nor a
 /// static CMake link adds automatically. Mirrors DuckDB's `DUCKDB_SYSTEM_LIBS`
@@ -76,11 +99,11 @@ pub(crate) fn link_windows_system_libs() {
 }
 
 #[cfg(not(feature = "buildtime_bindgen"))]
-fn copy_pregenerated_bindings(out_path: &Path) {
-    let bindings_path = if is_loadable_extension() {
-        "src/bindgen_bundled_version_loadable.rs"
-    } else {
-        "src/bindgen_bundled_version.rs"
+fn copy_pregenerated_bindings(api: CApi, out_path: &Path) {
+    let bindings_path = match api {
+        CApi::V1 if is_loadable_extension() => "src/bindgen_bundled_version_loadable.rs",
+        CApi::V1 => "src/bindgen_bundled_version.rs",
+        CApi::V2 => "src/bindgen_bundled_version_v2.rs",
     };
     println!("cargo:rerun-if-changed={bindings_path}");
     std::fs::copy(bindings_path, out_path).expect("Could not copy bindings to output directory");
@@ -98,11 +121,11 @@ fn is_loadable_extension() -> bool {
 }
 
 #[allow(dead_code)]
-fn header_filename() -> &'static str {
-    if is_loadable_extension() {
-        "duckdb_extension.h"
-    } else {
-        "duckdb.h"
+fn header_filename(api: CApi) -> &'static str {
+    match api {
+        CApi::V1 if is_loadable_extension() => "duckdb_extension.h",
+        CApi::V1 => "duckdb.h",
+        CApi::V2 => "duckdb_v2.h",
     }
 }
 
@@ -112,7 +135,7 @@ impl HeaderLocation {
         if let Ok(include_dir) = env::var("DUCKDB_INCLUDE_DIR") {
             return HeaderLocation::IncludeDir(PathBuf::from(include_dir));
         }
-        let header_path = lib_dir.join(header_filename());
+        let header_path = lib_dir.join(header_filename(CApi::V1));
         if header_path.exists() {
             HeaderLocation::IncludeDir(lib_dir.to_path_buf())
         } else {
@@ -121,14 +144,14 @@ impl HeaderLocation {
     }
 
     #[cfg(feature = "buildtime_bindgen")]
-    fn header_path(&self) -> PathBuf {
+    fn header_path(&self, api: CApi) -> PathBuf {
         match self {
-            HeaderLocation::IncludeDir(path) => path.join(header_filename()),
-            HeaderLocation::HeaderPath(path) => path.clone(),
-            HeaderLocation::Wrapper => PathBuf::from(if is_loadable_extension() {
-                "wrapper_ext.h"
-            } else {
-                "wrapper.h"
+            HeaderLocation::IncludeDir(path) => path.join(header_filename(api)),
+            HeaderLocation::HeaderPath(path) => path.with_file_name(header_filename(api)),
+            HeaderLocation::Wrapper => PathBuf::from(match api {
+                CApi::V1 if is_loadable_extension() => "wrapper_ext.h",
+                CApi::V1 => "wrapper.h",
+                CApi::V2 => "wrapper_v2.h",
             }),
         }
     }
@@ -146,13 +169,10 @@ mod build_linked {
     #[cfg(feature = "vcpkg")]
     extern crate vcpkg;
 
-    #[cfg(feature = "buildtime_bindgen")]
-    use super::bindings;
-
     use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
     use std::{env, fs, io, path::Path};
 
-    pub fn main(out_dir: &str, out_path: &Path) {
+    pub fn main(out_dir: &str) {
         // We need this to config the LD_LIBRARY_PATH
         let header = find_duckdb(out_dir);
 
@@ -166,11 +186,7 @@ mod build_linked {
             println!("cargo:include={}", include_dir.display());
         }
 
-        #[cfg(not(feature = "buildtime_bindgen"))]
-        super::copy_pregenerated_bindings(out_path);
-
-        #[cfg(feature = "buildtime_bindgen")]
-        bindings::write_to_out_dir(header, out_path);
+        super::write_all_bindings(&header, Path::new(out_dir));
     }
 
     fn link_directive() -> &'static str {
@@ -293,10 +309,89 @@ mod build_linked {
         None
     }
 
+    /// Pin file, next to Cargo.toml, naming the prebuilt DuckDB libraries that
+    /// linked-mode builds download. Shipped with the crate.
+    const RELEASE_PIN_FILE: &str = ".duckdb-release";
+
+    /// Where to download prebuilt libraries from: a directory URL that holds the
+    /// `duckdb-shared-libs-<platform>.tar.gz` archives, plus a version label used
+    /// to name the download cache directory.
+    struct DownloadSource {
+        base_url: String,
+        version: String,
+    }
+
+    impl DownloadSource {
+        /// The pin from `.duckdb-release`, if the file exists and is complete.
+        fn pinned() -> Option<Self> {
+            println!("cargo:rerun-if-changed={RELEASE_PIN_FILE}");
+            let contents = fs::read_to_string(RELEASE_PIN_FILE).ok()?;
+            let mut base_url = None;
+            let mut version = None;
+            for line in contents.lines().map(str::trim) {
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let Some((key, value)) = line.split_once('=') else {
+                    panic!("{RELEASE_PIN_FILE}: expected KEY=VALUE, got {line:?}");
+                };
+                match key.trim() {
+                    "DUCKDB_RELEASE_URL" => base_url = Some(value.trim().trim_end_matches('/').to_owned()),
+                    "DUCKDB_RELEASE_VERSION" => version = Some(value.trim().to_owned()),
+                    // Consumed by upgrade.sh, not by the build.
+                    "DUCKDB_RELEASE_COMMIT" => {}
+                    other => panic!("{RELEASE_PIN_FILE}: unknown key {other:?}"),
+                }
+            }
+            match (base_url, version) {
+                (Some(base_url), Some(version)) => Some(Self { base_url, version }),
+                (None, None) => None,
+                _ => panic!("{RELEASE_PIN_FILE}: both DUCKDB_RELEASE_URL and DUCKDB_RELEASE_VERSION are required"),
+            }
+        }
+
+        /// The GitHub release matching the DuckDB version encoded in the crate
+        /// version, used when there is no pin file.
+        fn from_crate_version() -> Self {
+            let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
+            Self {
+                base_url: format!("https://github.com/duckdb/duckdb/releases/download/v{version}"),
+                version: format!("v{version}"),
+            }
+        }
+
+        fn archive_url(&self, archive: &LibduckdbArchive) -> String {
+            format!("{}/{}", self.base_url, archive.archive_name)
+        }
+
+        /// Directory-safe form of the version label.
+        fn cache_key(&self) -> String {
+            self.version
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect()
+        }
+    }
+
+    /// Whether to download prebuilt libraries instead of probing the system.
+    ///
+    /// `DUCKDB_DOWNLOAD_LIB=1` forces a download and `DUCKDB_DOWNLOAD_LIB=0`
+    /// forbids one. When unset, a download happens whenever the crate ships a
+    /// `.duckdb-release` pin, so that a plain `cargo build` links against the
+    /// exact DuckDB the pregenerated bindings were generated from.
     fn should_download_libduckdb() -> bool {
-        env::var("DUCKDB_DOWNLOAD_LIB")
-            .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true"))
-            .unwrap_or(false)
+        match env::var("DUCKDB_DOWNLOAD_LIB") {
+            Ok(value) => matches!(value.to_ascii_lowercase().as_str(), "1" | "true"),
+            // Loadable extensions never link against a library, so there is
+            // nothing to download by default.
+            Err(_) => !is_loadable_extension() && DownloadSource::pinned().is_some(),
+        }
     }
 
     fn download_libduckdb(out_dir: &str) -> Result<HeaderLocation, Box<dyn std::error::Error>> {
@@ -304,7 +399,7 @@ mod build_linked {
         let archive = LibduckdbArchive::for_target(&target)
             .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
 
-        let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
+        let source = DownloadSource::pinned().unwrap_or_else(DownloadSource::from_crate_version);
 
         // Cache downloads beside the profile directory so successive builds reuse them.
         let download_dir = crate::build_paths::download_root(Path::new(out_dir))
@@ -315,7 +410,7 @@ mod build_linked {
                 )
             })?
             .join(&target)
-            .join(&version);
+            .join(source.cache_key());
         fs::create_dir_all(&download_dir)?;
 
         let archive_path = download_dir.join(archive.archive_name);
@@ -324,7 +419,7 @@ mod build_linked {
         if lib_marker.exists() {
             println!("cargo:warning=Reusing libduckdb from {}", download_dir.display());
         } else {
-            let url = archive.download_url(&version);
+            let url = source.archive_url(archive);
             ensure_libduckdb(&url, &archive_path)?;
             extract_libduckdb(&archive_path, &download_dir)?;
             if !lib_marker.exists() {
@@ -334,6 +429,18 @@ mod build_linked {
                 )
                 .into());
             }
+        }
+
+        // The pregenerated bindings need no header, but bindgen does.
+        #[cfg(all(feature = "buildtime_bindgen", feature = "capi-v2"))]
+        if !download_dir.join("duckdb_v2.h").exists() {
+            return Err(format!(
+                "The downloaded DuckDB {} archive does not ship duckdb_v2.h, which `buildtime_bindgen` \
+                 needs for the `capi-v2` bindings. Use the pregenerated bindings, point DUCKDB_INCLUDE_DIR \
+                 at a directory containing duckdb_v2.h, or pin a newer release in {RELEASE_PIN_FILE}.",
+                source.version
+            )
+            .into());
         }
 
         configure_link_search(&download_dir);
@@ -348,7 +455,7 @@ mod build_linked {
         emit_link_lib(link_directive());
     }
 
-    // Ensures the libduckdb archive exists: reuses an existing zip or
+    // Ensures the libduckdb archive exists: reuses an existing archive or
     // downloads it into a temp file and atomically renames it into place.
     fn ensure_libduckdb(url: &str, archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if archive_path.exists() {
@@ -367,10 +474,13 @@ mod build_linked {
         Ok(())
     }
 
+    // The archives are flat tarballs: the shared library (plus the MSVC import
+    // library on Windows) and the public headers.
     fn extract_libduckdb(archive_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let file = fs::File::open(archive_path)?;
-        let mut archive = zip::ZipArchive::new(file)?;
-        archive.extract(destination)?;
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
+        archive.set_preserve_mtime(false);
+        archive.unpack(destination)?;
         println!("cargo:warning=Extracted libduckdb to {}", destination.display());
         Ok(())
     }
@@ -445,43 +555,43 @@ mod build_linked {
         format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
     }
 
+    /// A DuckDB 2.0 `shared-libs` release artifact for one platform, as produced
+    /// by `scripts/package_release_artifact.sh` in the DuckDB repository.
     struct LibduckdbArchive {
         archive_name: &'static str,
         dynamic_lib: &'static str,
     }
 
     impl LibduckdbArchive {
-        fn for_target(target: &str) -> Option<Self> {
+        fn for_target(target: &str) -> Option<&'static Self> {
+            const OSX: LibduckdbArchive = LibduckdbArchive {
+                archive_name: "duckdb-shared-libs-osx-universal.tar.gz",
+                dynamic_lib: "libduckdb.dylib",
+            };
+            const LINUX_AMD64: LibduckdbArchive = LibduckdbArchive {
+                archive_name: "duckdb-shared-libs-linux-amd64.tar.gz",
+                dynamic_lib: "libduckdb.so",
+            };
+            const LINUX_ARM64: LibduckdbArchive = LibduckdbArchive {
+                archive_name: "duckdb-shared-libs-linux-arm64.tar.gz",
+                dynamic_lib: "libduckdb.so",
+            };
+            const WINDOWS_AMD64: LibduckdbArchive = LibduckdbArchive {
+                archive_name: "duckdb-shared-libs-windows-amd64.tar.gz",
+                dynamic_lib: "duckdb.dll",
+            };
+            const WINDOWS_ARM64: LibduckdbArchive = LibduckdbArchive {
+                archive_name: "duckdb-shared-libs-windows-arm64.tar.gz",
+                dynamic_lib: "duckdb.dll",
+            };
             match target {
-                t if t.ends_with("apple-darwin") => Some(Self {
-                    archive_name: "libduckdb-osx-universal.zip",
-                    dynamic_lib: "libduckdb.dylib",
-                }),
-                "x86_64-unknown-linux-gnu" => Some(Self {
-                    archive_name: "libduckdb-linux-amd64.zip",
-                    dynamic_lib: "libduckdb.so",
-                }),
-                "aarch64-unknown-linux-gnu" => Some(Self {
-                    archive_name: "libduckdb-linux-arm64.zip",
-                    dynamic_lib: "libduckdb.so",
-                }),
-                "x86_64-pc-windows-msvc" => Some(Self {
-                    archive_name: "libduckdb-windows-amd64.zip",
-                    dynamic_lib: "duckdb.dll",
-                }),
-                "aarch64-pc-windows-msvc" => Some(Self {
-                    archive_name: "libduckdb-windows-arm64.zip",
-                    dynamic_lib: "duckdb.dll",
-                }),
+                t if t.ends_with("apple-darwin") => Some(&OSX),
+                "x86_64-unknown-linux-gnu" => Some(&LINUX_AMD64),
+                "aarch64-unknown-linux-gnu" => Some(&LINUX_ARM64),
+                "x86_64-pc-windows-msvc" => Some(&WINDOWS_AMD64),
+                "aarch64-pc-windows-msvc" => Some(&WINDOWS_ARM64),
                 _ => None,
             }
-        }
-
-        fn download_url(&self, version: &str) -> String {
-            format!(
-                "https://github.com/duckdb/duckdb/releases/download/v{version}/{}",
-                self.archive_name
-            )
         }
     }
 
@@ -501,7 +611,7 @@ mod build_linked {
 
 #[cfg(feature = "buildtime_bindgen")]
 mod bindings {
-    use super::{HeaderLocation, is_loadable_extension};
+    use super::{CApi, HeaderLocation, is_loadable_extension};
 
     use std::{fs::OpenOptions, io::Write, path::Path};
 
@@ -608,30 +718,47 @@ mod bindings {
         output
     }
 
-    pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
-        let header = header.header_path().to_string_lossy().into_owned();
+    pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
+        let header = header.header_path(api).to_string_lossy().into_owned();
         let mut output = Vec::new();
-        let mut builder = bindgen::builder();
-
-        if is_loadable_extension() {
-            builder = builder.ignore_functions();
-        }
 
         // ONLY generate bindings for symbols containing "duckdb" in their name
-        // and for the type `idx_t`
-        // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
-        // until we figure out how to feature gate the generated API
-        builder
+        // and for the type `idx_t` (each pass emits its own `u64` alias; type
+        // aliases are interchangeable, and blocklisting it would cost bindgen
+        // the `Copy` derives on structs that embed it). Use the concrete Arrow
+        // ABI layouts from src/arrow_c_data.rs for both headers.
+        let mut builder = bindgen::builder()
             .trust_clang_mangling(false)
             .header(header.clone())
             .allowlist_item(r#"(\w*duckdb\w*)"#)
             .allowlist_type("idx_t")
-            // Use the concrete ABI layouts from src/arrow_c_data.rs.
             .blocklist_type("ArrowArray")
             .blocklist_type("ArrowSchema")
             .layout_tests(false) // causes problems on WASM builds
-            .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
-            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+
+        builder = match api {
+            CApi::V1 => {
+                if is_loadable_extension() {
+                    builder = builder.ignore_functions();
+                }
+                // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
+                // until we figure out how to feature gate the generated API
+                builder.clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
+            }
+            CApi::V2 => builder
+                // The v2 header spells its enums and macro constants in upper
+                // case, which the case-sensitive allowlist above would drop.
+                .allowlist_item(r#"DUCKDB_V2_\w*"#)
+                // Exported by the v2 header for Arrow interop; not reachable
+                // through the allowlist alone on every DuckDB version.
+                .allowlist_type("ArrowArrayStream")
+                // The v2 wrapper matches on real Rust enums rather than
+                // constified integer values.
+                .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#),
+        };
+
+        builder
             .generate()
             .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
             .write(Box::new(&mut output))
@@ -640,7 +767,11 @@ mod bindings {
         let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
         #[cfg(feature = "loadable-extension")]
-        let output = generate_functions(output);
+        let output = if api == CApi::V1 {
+            generate_functions(output)
+        } else {
+            output
+        };
 
         let mut file = OpenOptions::new()
             .write(true)

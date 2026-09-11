@@ -436,9 +436,7 @@ mod test {
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
         let row = rows.next()?.unwrap();
-        // NOTE: this is different from SQLite
-        // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
-        assert_eq!(Value::Blob(vec![120, 48, 49, 48, 50]), row.get::<_, Value>(0)?);
+        assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Text(String::from("text")), row.get::<_, Value>(1)?);
         assert_eq!(Value::Int(1), row.get::<_, Value>(2)?);
         match row.get::<_, Value>(3)? {
