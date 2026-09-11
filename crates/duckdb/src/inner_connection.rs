@@ -59,6 +59,7 @@ pub struct InnerConnection {
     // it is not used for concurrent access to the database itself.
     database: Arc<Mutex<DatabaseHandle>>,
     pub con: ffi::duckdb_connection,
+    pub(crate) cell: Arc<ConnectionCell>,
     interrupt: Arc<InterruptHandle>,
 }
 
@@ -76,11 +77,13 @@ impl InnerConnection {
                     Some("connect error".to_owned()),
                 ));
             }
-            let interrupt = Arc::new(InterruptHandle::new(con));
+            let cell = Arc::new(ConnectionCell::new(con));
+            let interrupt = Arc::new(InterruptHandle::new(cell.clone()));
 
             Ok(Self {
                 database,
                 con,
+                cell,
                 interrupt,
             })
         }
@@ -108,11 +111,15 @@ impl InnerConnection {
         if self.con.is_null() {
             return Ok(());
         }
-        unsafe {
-            ffi::duckdb_disconnect(&mut self.con);
-            self.con = ptr::null_mut();
-            self.interrupt.clear();
-        }
+        // Disconnecting inside the cell's lock is what stops a handle on another
+        // thread from passing its null check and then calling into a connection
+        // this thread is freeing.
+        let cell = self.cell.clone();
+        let con = &mut self.con;
+        cell.close(|| unsafe {
+            ffi::duckdb_disconnect(con);
+            *con = ptr::null_mut();
+        });
         Ok(())
     }
 
@@ -281,21 +288,59 @@ impl Drop for InnerConnection {
     }
 }
 
-/// A handle that allows interrupting long-running queries.
-pub struct InterruptHandle {
+/// The raw connection pointer, shared between an [`InnerConnection`] and every
+/// handle handed out from it ([`InterruptHandle`], [`crate::progress::ProgressHandle`]).
+///
+/// The pointer is nulled on close, so a handle outliving its connection is a
+/// no-op rather than a use-after-free; the mutex is what serializes those
+/// handle calls against the close. It does *not* guard use of the connection
+/// itself — DuckDB permits `duckdb_interrupt` and `duckdb_query_progress`
+/// while a query is in flight on another thread.
+pub(crate) struct ConnectionCell {
     conn: Mutex<ffi::duckdb_connection>,
 }
 
-unsafe impl Send for InterruptHandle {}
-unsafe impl Sync for InterruptHandle {}
+unsafe impl Send for ConnectionCell {}
+unsafe impl Sync for ConnectionCell {}
 
-impl InterruptHandle {
+impl ConnectionCell {
     fn new(conn: ffi::duckdb_connection) -> Self {
         Self { conn: Mutex::new(conn) }
     }
 
-    fn clear(&self) {
-        *(self.conn.lock().unwrap()) = ptr::null_mut();
+    /// Run `f` against the raw connection, or return `None` if it is closed.
+    ///
+    /// The lock is held for the duration of `f`, so `f` must return promptly —
+    /// an interrupt or a progress read, not a query — and must not re-enter
+    /// this cell, which would deadlock on the non-reentrant mutex.
+    pub(crate) fn with<T>(&self, f: impl FnOnce(ffi::duckdb_connection) -> T) -> Option<T> {
+        let conn = self.lock();
+        (!conn.is_null()).then(|| f(*conn))
+    }
+
+    /// Null the stored pointer, then run `on_close` still holding the lock.
+    pub(crate) fn close(&self, on_close: impl FnOnce()) {
+        let mut conn = self.lock();
+        *conn = ptr::null_mut();
+        on_close();
+    }
+
+    /// Poisoning is recovered from rather than propagated: the pointer is
+    /// either the connection or null whatever happens, and closing runs from
+    /// `Drop`, where a second panic would abort.
+    fn lock(&self) -> std::sync::MutexGuard<'_, ffi::duckdb_connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// A handle that allows interrupting long-running queries.
+pub struct InterruptHandle {
+    cell: Arc<ConnectionCell>,
+}
+
+impl InterruptHandle {
+    fn new(cell: Arc<ConnectionCell>) -> Self {
+        Self { cell }
     }
 
     /// Interrupt the query currently running on the connection this handle was
@@ -305,12 +350,6 @@ impl InterruptHandle {
     ///
     /// See [`crate::Connection::interrupt_handle`] for an example.
     pub fn interrupt(&self) {
-        let db_handle = self.conn.lock().unwrap();
-
-        if !db_handle.is_null() {
-            unsafe {
-                ffi::duckdb_interrupt(*db_handle);
-            }
-        }
+        self.cell.with(|conn| unsafe { ffi::duckdb_interrupt(conn) });
     }
 }
