@@ -20,6 +20,7 @@ pub struct ArrowArrayStream {
     pub release: ::std::option::Option<unsafe extern "C" fn(arg1: *mut ArrowArrayStream)>,
     pub private_data: *mut ::std::os::raw::c_void,
 }
+pub type idx_t = u64;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_extension_info {
@@ -149,6 +150,7 @@ pub type duckdb_v2_opaque_equals_fn =
 pub type duckdb_v2_opaque_destroy_fn = ::std::option::Option<unsafe extern "C" fn(data: *mut ::std::os::raw::c_void)>;
 #[doc = " A borrowed, length-delimited string view: `ptr` points at `len` bytes of character data. The bytes are NOT guaranteed\n to be null-terminated and may contain interior null bytes, so always honor `len` rather than scanning for a\n terminator. The view never owns its bytes; the function that produced it documents how long they live (typically\n \"valid until the owning handle is destroyed\"). `{NULL, 0}` is the canonical empty view, and `ptr` must not be\n dereferenced when `len` is 0. Not to be confused with `bytes`, the transparent 16-byte *storage* format for a\n variable-size value in a vector."]
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct duckdb_v2_str {
     pub ptr: *const ::std::os::raw::c_char,
     pub len: idx_t,
@@ -1339,6 +1341,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct duckdb_v2_vector_view {
     pub data: *const ::std::os::raw::c_void,
     pub validity: *const u64,
@@ -1346,6 +1349,7 @@ pub struct duckdb_v2_vector_view {
     pub count: idx_t,
 }
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct duckdb_v2_list_entry {
     pub offset: idx_t,
     pub length: idx_t,

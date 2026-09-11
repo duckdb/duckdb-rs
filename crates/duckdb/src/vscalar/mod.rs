@@ -20,7 +20,7 @@
 //! [`std::panic::set_hook`]. These guarantees require unwinding; a
 //! `panic = "abort"` build aborts first.
 
-use libduckdb_sys::{
+use libduckdb_sys::v1::{
     duckdb_data_chunk, duckdb_function_info, duckdb_scalar_function_get_extra_info, duckdb_scalar_function_set_error,
     duckdb_vector,
 };

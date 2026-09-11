@@ -4,39 +4,64 @@
 #![allow(deref_nullptr)]
 #![allow(improper_ctypes)]
 
+#[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
+compile_error!("libduckdb-sys needs at least one of the `capi-v1` or `capi-v2` features");
+
 /// Dependency-free Arrow C Data Interface structs used by DuckDB Arrow APIs.
 mod arrow_c_data;
-pub use arrow_c_data::{ArrowArray, ArrowSchema};
 
 // Build-script helper mounted here so cargo test runs its unit tests.
 #[cfg(test)]
 mod build_paths;
 
-#[allow(clippy::all, unsafe_op_in_unsafe_fn)]
-mod bindings {
-    // Bindgen preserves DuckDB's C API comments verbatim. Some of those comments
-    // contain C snippets and prose that rustdoc parses as Rust links or HTML.
-    #![allow(
-        rustdoc::broken_intra_doc_links,
-        rustdoc::invalid_html_tags,
-        rustdoc::invalid_codeblock_attributes
-    )]
+/// Bindings for DuckDB's v1 C API (`duckdb.h`, or `duckdb_extension.h` with the
+/// `loadable-extension` feature).
+///
+/// Enabled by the default `capi-v1` feature. Everything in this module is also
+/// re-exported at the crate root for compatibility with code written before the
+/// `v2` module existed.
+#[cfg(feature = "capi-v1")]
+pub mod v1 {
+    #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
+    mod bindings {
+        // Bindgen preserves DuckDB's C API comments verbatim. Some of those comments
+        // contain C snippets and prose that rustdoc parses as Rust links or HTML.
+        #![allow(
+            rustdoc::broken_intra_doc_links,
+            rustdoc::invalid_html_tags,
+            rustdoc::invalid_codeblock_attributes
+        )]
 
-    // Bindgen references these blocklisted forward declarations unqualified.
-    use crate::arrow_c_data::{ArrowArray, ArrowSchema};
+        // Bindgen references these blocklisted forward declarations unqualified.
+        use crate::arrow_c_data::{ArrowArray, ArrowSchema};
 
-    include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
+        include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
+    }
+    #[allow(clippy::all)]
+    pub use bindings::*;
+
+    pub use crate::arrow_c_data::{ArrowArray, ArrowSchema};
+
+    mod string;
+    pub use string::*;
+
+    pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
+    pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
+
+    mod error;
+    pub use error::*;
 }
-#[allow(clippy::all)]
-pub use bindings::*;
 
-mod string;
-pub use string::*;
+// To not break existing code that expects the v1 API at the crate root.
+// TODO: Remove in the future
+#[cfg(feature = "capi-v1")]
+pub use v1::*;
 
 /// Bindings for DuckDB's v2 C API (`duckdb_v2.h`).
 ///
-/// Enabled by the `capi-v2` feature. The v2 API shares `idx_t` and the Arrow C
-/// data structs with the v1 bindings; everything else is namespaced `duckdb_v2_*`.
+/// Enabled by the `capi-v2` feature. The v2 API shares the Arrow C data structs
+/// with the v1 bindings (and both define `idx_t` as `u64`); everything else is
+/// namespaced `duckdb_v2_*`.
 #[cfg(feature = "capi-v2")]
 pub mod v2 {
     #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
@@ -48,35 +73,23 @@ pub mod v2 {
             rustdoc::bare_urls
         )]
 
-        // Bindgen references these blocklisted types unqualified. Whether the
-        // Arrow structs are referenced depends on the DuckDB version.
+        // Bindgen references these blocklisted forward declarations unqualified.
+        // Whether the v2 header references them depends on the DuckDB version.
         #[allow(unused_imports)]
-        use crate::{
-            arrow_c_data::{ArrowArray, ArrowSchema},
-            idx_t,
-        };
+        use crate::arrow_c_data::{ArrowArray, ArrowSchema};
 
         include!(concat!(env!("OUT_DIR"), "/bindgen_v2.rs"));
     }
     #[allow(clippy::all)]
     pub use bindings::*;
 
-    pub use crate::{
-        arrow_c_data::{ArrowArray, ArrowSchema},
-        idx_t,
-    };
+    pub use crate::arrow_c_data::{ArrowArray, ArrowSchema};
 
     mod string;
     pub use string::*;
 }
 
-pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
-pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
-
-pub use self::error::*;
-mod error;
-
-#[cfg(test)]
+#[cfg(all(test, feature = "capi-v1"))]
 mod tests {
     use super::*;
     use std::{
