@@ -16,7 +16,11 @@ mod build_paths;
 mod bindings {
     // Bindgen preserves DuckDB's C API comments verbatim. Some of those comments
     // contain C snippets and prose that rustdoc parses as Rust links or HTML.
-    #![allow(rustdoc::broken_intra_doc_links, rustdoc::invalid_html_tags)]
+    #![allow(
+        rustdoc::broken_intra_doc_links,
+        rustdoc::invalid_html_tags,
+        rustdoc::invalid_codeblock_attributes
+    )]
 
     // Bindgen references these blocklisted forward declarations unqualified.
     use crate::arrow_c_data::{ArrowArray, ArrowSchema};
@@ -28,6 +32,43 @@ pub use bindings::*;
 
 mod string;
 pub use string::*;
+
+/// Bindings for DuckDB's v2 C API (`duckdb_v2.h`).
+///
+/// Enabled by the `capi-v2` feature. The v2 API shares `idx_t` and the Arrow C
+/// data structs with the v1 bindings; everything else is namespaced `duckdb_v2_*`.
+#[cfg(feature = "capi-v2")]
+pub mod v2 {
+    #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
+    mod bindings {
+        #![allow(
+            rustdoc::broken_intra_doc_links,
+            rustdoc::invalid_html_tags,
+            rustdoc::invalid_codeblock_attributes,
+            rustdoc::bare_urls
+        )]
+
+        // Bindgen references these blocklisted types unqualified. Whether the
+        // Arrow structs are referenced depends on the DuckDB version.
+        #[allow(unused_imports)]
+        use crate::{
+            arrow_c_data::{ArrowArray, ArrowSchema},
+            idx_t,
+        };
+
+        include!(concat!(env!("OUT_DIR"), "/bindgen_v2.rs"));
+    }
+    #[allow(clippy::all)]
+    pub use bindings::*;
+
+    pub use crate::{
+        arrow_c_data::{ArrowArray, ArrowSchema},
+        idx_t,
+    };
+
+    mod string;
+    pub use string::*;
+}
 
 pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
 pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;

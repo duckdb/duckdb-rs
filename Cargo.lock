@@ -803,7 +803,7 @@ checksum = "780955b8b195a21ab8e4ac6b60dd1dbdcec1dc6c51c0617964b08c81785e12c9"
 
 [[package]]
 name = "duckdb"
-version = "1.10505.0"
+version = "1.20000.0"
 dependencies = [
  "arrow",
  "cast",
@@ -833,12 +833,22 @@ dependencies = [
 
 [[package]]
 name = "duckdb-loadable-macros"
-version = "1.10505.0"
+version = "1.20000.0"
 dependencies = [
  "darling",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "duckdb-rs-neo"
+version = "1.20000.0"
+dependencies = [
+ "libc",
+ "libduckdb-sys",
+ "paste",
+ "r2d2",
 ]
 
 [[package]]
@@ -1609,7 +1619,7 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "libduckdb-sys"
-version = "1.10505.0"
+version = "1.20000.0"
 dependencies = [
  "arrow",
  "bindgen",
@@ -1952,6 +1962,12 @@ dependencies = [
  "smallvec",
  "windows-link",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "percent-encoding"

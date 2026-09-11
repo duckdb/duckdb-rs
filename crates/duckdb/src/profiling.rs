@@ -122,6 +122,7 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
+    use super::ProfilingInfo;
     use crate::Connection;
 
     #[test]
@@ -144,19 +145,34 @@ mod tests {
         assert!(info.is_some(), "Metrics should be present when profiling is enabled");
         let info = info.unwrap();
 
-        assert!(!info.metrics.is_empty(), "Metrics should not be empty");
         assert!(
             !info.children.is_empty(),
             "There should be at least one child for a simple query"
         );
 
-        assert!(
-            info.metrics.contains_key("ROWS_RETURNED"),
-            "Metrics should contain ROWS_RETURNED"
+        // DuckDB 2.0 attaches no metrics to the root node: operator metrics
+        // hang off the operator tree and query-level metrics live in metric
+        // group children (e.g. the "query" group with `sql` and `cpu_time`),
+        // so search the whole tree.
+        fn find_metric(info: &ProfilingInfo, key: &str) -> Option<String> {
+            info.metrics
+                .get(key)
+                .cloned()
+                .or_else(|| info.children.iter().find_map(|child| find_metric(child, key)))
+        }
+
+        assert_eq!(
+            find_metric(&info, "sql").as_deref(),
+            Some("SELECT 1"),
+            "query group should record the profiled statement"
         );
         assert!(
-            info.metrics.get("ROWS_RETURNED").unwrap() == "1",
-            "ROWS_RETURNED should be 1"
+            find_metric(&info, "cpu_time").is_some(),
+            "query group should contain cpu_time"
+        );
+        assert!(
+            find_metric(&info, "type").is_some(),
+            "operator nodes should report their type"
         );
     }
 }

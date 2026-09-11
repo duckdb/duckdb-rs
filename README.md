@@ -74,6 +74,37 @@ fn main() -> Result<()> {
 
 Execute the program with `cargo run` and watch DuckDB in action!
 
+### duckdb-rs-neo: the v2 C API wrapper (experimental)
+
+> ⚠ DuckDB's v2 C API is in rapid development. Consider `duckdb-rs-neo` unstable. Feedback is welcome!
+
+`duckdb-rs-neo` is a second wrapper crate in this repository that targets DuckDB's new v2 C API (`duckdb_v2.h`) instead of the v1 API used by `duckdb`. Both crates share the same `libduckdb-sys` crate and therefore the same bundled DuckDB, build options, and version number.
+
+```shell
+cargo add duckdb-rs-neo -F bundled
+```
+
+```rust,ignore
+use duckdb_rs_neo::{
+    Parameters,
+    environment::{Environment, StorageLocation},
+};
+
+fn main() -> duckdb_rs_neo::Result<()> {
+    let environment = Environment::new()?;
+    let database = environment.open(StorageLocation::InMemory)?;
+    let connection = database.connect()?;
+
+    let mut result = connection.query("SELECT $1::INTEGER", Parameters::positional(&[&42]))?;
+    let chunk = result.next().transpose()?.expect("query returned no rows");
+    let values = chunk.get_vector_at::<i32>(0)?;
+    assert_eq!(values.get(0)?, Some(&42));
+    Ok(())
+}
+```
+
+The v2 bindings live in `libduckdb-sys` behind its `capi-v2` feature, as the `libduckdb_sys::v2` module. `duckdb-rs-neo` enables that feature itself. Its own `capi-v2-p2` feature targets API surface that the bundled DuckDB does not provide yet and does not compile.
+
 ## Examples
 
 The following [examples](crates/duckdb/examples) demonstrate various features and use cases of duckdb-rs:
@@ -162,6 +193,7 @@ These extensions are only available through the CMake build backend and imply `b
 - `bundled` - Uses a bundled version of DuckDB's source code and compiles it during build. This is the simplest way to get started and avoids needing DuckDB system libraries.
 - `bundled-cmake` - _Experimental_. Builds DuckDB via its upstream CMake build system instead of `cc`. Requires a duckdb-rs checkout (not available from crates.io). See [step 2](#notes-on-building-duckdb-and-libduckdb-sys) below for details.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
+- `capi-v2` (`libduckdb-sys` only) - Also generate bindings for the v2 C API header `duckdb_v2.h`, exposed as `libduckdb_sys::v2`. `duckdb-rs-neo` enables this automatically. With `buildtime_bindgen`, `duckdb_v2.h` must sit next to `duckdb.h` in `DUCKDB_INCLUDE_DIR`.
 - `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development. Only enable this when building an extension, never for a client application - see [Database client or extension?](#database-client-or-extension)
 
 ## Installation
@@ -184,7 +216,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "~1.10505.0", features = ["bundled"] }
+duckdb = { version = "~1.20000.0", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -224,7 +256,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "~1.10505.0", features = ["bundled"] }
+   duckdb = { version = "~1.20000.0", features = ["bundled"] }
    ```
 
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
@@ -247,12 +279,14 @@ You can adjust this behavior in a number of ways:
    - `DUCKDB_EXTENSION_CONFIGS` is unsupported. Setting it fails fast.
    - Use `cargo build -vv -F bundled-cmake` for CMake configure/build logs.
 
-3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h`.
+3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h` (and `duckdb_v2.h` when using `capi-v2` with `buildtime_bindgen`).
+
+   > Note: the crates currently bundle a DuckDB v2.0.0 preview. Until DuckDB publishes the v2.0.0 release, there are no matching pre-built binaries, so the download URLs below do not resolve yet and `DUCKDB_DOWNLOAD_LIB=1` fails. Use `bundled` in the meantime.
 
    Linux ARM64 example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.5.5/libduckdb-linux-arm64.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v2.0.0/libduckdb-linux-arm64.zip
    unzip libduckdb-linux-arm64.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -267,7 +301,7 @@ You can adjust this behavior in a number of ways:
    macOS example:
 
    ```shell
-   wget https://github.com/duckdb/duckdb/releases/download/v1.5.5/libduckdb-osx-universal.zip
+   wget https://github.com/duckdb/duckdb/releases/download/v2.0.0/libduckdb-osx-universal.zip
    unzip libduckdb-osx-universal.zip -d libduckdb
 
    export DUCKDB_LIB_DIR=$PWD/libduckdb
@@ -325,6 +359,10 @@ pregenerated bindings for DuckDB.
 If you use the `bundled` feature, you will get pregenerated bindings for the
 bundled version of DuckDB. If you want to run `bindgen` at build time to
 produce your own bindings, use the `buildtime_bindgen` Cargo feature.
+
+Three pregenerated files ship with `libduckdb-sys`: the v1 bindings, the
+v1 loadable-extension bindings, and (for `capi-v2`) the v2 bindings. The
+`upgrade.sh` script regenerates all of them.
 
 ## Thread safety
 

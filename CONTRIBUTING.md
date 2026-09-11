@@ -4,10 +4,11 @@ Thank you for your interest in contributing to duckdb-rs. This guide describes h
 
 ## Background
 
-This workspace has three crates:
+This workspace has four crates:
 
-- `libduckdb-sys` provides native bindings for the [DuckDB C API](https://duckdb.org/docs/current/clients/c/api).
-- `duckdb` provides an ergonomic wrapper around `libduckdb-sys`.
+- `libduckdb-sys` provides native bindings for the [DuckDB C API](https://duckdb.org/docs/current/clients/c/api). With the `capi-v2` feature it also exposes bindings for the v2 C API (`duckdb_v2.h`) under `libduckdb_sys::v2`.
+- `duckdb` provides an ergonomic wrapper around the v1 C API.
+- `duckdb-rs-neo` provides an ergonomic wrapper around the v2 C API. The v2 C API is still in rapid development, so this crate is experimental. Its `capi-v2-p2` feature targets API surface the bundled DuckDB does not provide yet and does not compile.
 - `duckdb-loadable-macros` provides procedural macros for loadable DuckDB extensions.
 
 Most users should use `duckdb`, but development may involve any of these components.
@@ -39,6 +40,7 @@ When using `DUCKDB_LIB_DIR` and `DUCKDB_INCLUDE_DIR`, put the header and the lib
 ```
 ~/duckdb-lib/
 ├── duckdb.h           # All platforms
+├── duckdb_v2.h        # Only with `capi-v2` + `buildtime_bindgen` (duckdb-rs-neo)
 ├── libduckdb.so       # Linux
 ├── libduckdb.dylib    # macOS
 ├── duckdb.dll         # Windows runtime library
@@ -132,7 +134,7 @@ cd ~/github/duckdb-rs
 ./upgrade.sh --sha <COMMIT_SHA>
 ```
 
-This checks out that commit in the `duckdb-sources` submodule, regenerates `duckdb.tar.gz`, and regenerates both sets of pregenerated bindings. It does not run tests; validate the `bundled` and `bundled-cmake` backends afterward.
+This checks out that commit in the `duckdb-sources` submodule, regenerates `duckdb.tar.gz`, and regenerates all three pregenerated bindings files (`bindgen_bundled_version.rs`, `bindgen_bundled_version_loadable.rs`, `bindgen_bundled_version_v2.rs`). It does not run tests; validate the `bundled` and `bundled-cmake` backends afterward.
 
 ### duckdb-rs
 
@@ -156,6 +158,12 @@ cd ~/github/duckdb-rs
 cargo test --features bundled -- --nocapture
 ```
 
+Run the v2 C API wrapper's tests the same way:
+
+```shell
+cargo test -p duckdb-rs-neo --features bundled -- --nocapture
+```
+
 Run AddressSanitizer for Rust code on x86-64 Linux:
 ```shell
 cd ~/github/duckdb-rs
@@ -163,7 +171,7 @@ RUSTFLAGS="-Zsanitizer=address -C debuginfo=0" \
 RUSTDOCFLAGS="-Zsanitizer=address" \
 ASAN_OPTIONS="detect_stack_use_after_return=1:detect_leaks=1:symbolize=1" \
 cargo +nightly test --lib --tests --features bundled \
-  --target x86_64-unknown-linux-gnu --package duckdb
+  --target x86_64-unknown-linux-gnu --package duckdb --package duckdb-rs-neo
 ```
 
 Install a nightly Rust toolchain first if necessary. `RUSTFLAGS` does not instrument the bundled C++ sources compiled by the `cc` crate, so this command covers the Rust side of the integration.
