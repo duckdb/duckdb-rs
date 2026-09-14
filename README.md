@@ -279,6 +279,7 @@ You can adjust this behavior in a number of ways:
    - DuckDB builds in `Release` mode by default, even for Rust debug builds, avoiding DuckDB's much slower debug/sanitizer profile. Override with `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE`. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
    - `DUCKDB_EXTENSION_CONFIGS` is unsupported. Setting it fails fast.
    - Use `cargo build -vv -F bundled-cmake` for CMake configure/build logs.
+   - On Windows (MSVC), keep the Cargo target directory short (e.g. `CARGO_TARGET_DIR=D:/t`). DuckDB's unity build includes sources by a path relative to the build directory, and deep paths exceed MSVC's 260-character limit with `C1083`. Alternatively set `DUCKDB_DISABLE_UNITY=1`.
 
 3. When linking against a DuckDB library already on the system (so _not_ using any of the `bundled` features), you can set the `DUCKDB_LIB_DIR` environment variable to point to a directory containing the library. You can also set the `DUCKDB_INCLUDE_DIR` variable to point to the directory containing `duckdb.h` (and `duckdb_v2.h` when using `capi-v2` with `buildtime_bindgen`).
 
