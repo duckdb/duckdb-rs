@@ -127,10 +127,13 @@ pub fn main(out_dir: &str) {
         );
 
     // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
-    // CMAKE_OBJECT_PATH_MAX), so a deep OUT_DIR can exceed 260 chars and fail late with
-    // `C1083: Cannot open compiler generated file: ''`. The build script can't move
-    // OUT_DIR — shorten the path (short CARGO_TARGET_DIR, drop `--target`, or check out
-    // nearer the drive root).
+    // CMAKE_OBJECT_PATH_MAX), and since DuckDB 2.0 the unity build includes each
+    // source by a path relative to the build directory (`#include "../../.../src/x.cpp"`),
+    // which MSVC measures unnormalized. A deep OUT_DIR therefore fails with
+    // `C1083: Cannot open compiler generated file: ''` or `C1083: Cannot open include
+    // file: '../../..'`. The build script can't move OUT_DIR — shorten the path (short
+    // CARGO_TARGET_DIR such as `D:/t`, drop `--target`, or check out nearer the drive
+    // root), or set DUCKDB_DISABLE_UNITY=1 to compile each file individually.
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
