@@ -145,6 +145,15 @@ These extensions are only available through the CMake build backend and imply `b
 
 - `appender-arrow` - Efficient bulk insertion of Arrow data into DuckDB tables.
 - `polars` - Integration with Polars DataFrames.
+- `ndarray` - Conversions between DuckDB vector (`ARRAY`) columns and
+  `ndarray::Array1<f32>` / `Array1<f64>`. Also see the `Vec<f32>` / `[T; N]`
+  `ToSql`/`FromSql` impls, which are available without this feature.
+- `serde` - Round-trip `#[derive(Serialize, Deserialize)]` Rust values to and
+  from DuckDB `STRUCT` columns through the `types::Struct<T>` wrapper. Rust
+  structs and string-keyed maps map to `STRUCT`; `Vec`/`[T; N]` map to `LIST`;
+  unit enum variants map to `VARCHAR`. A bare `impl<T: Serialize> ToSql` is
+  incoherent with the scalar impls, so values are wrapped (`[Struct(&value)]`
+  to bind, `Struct<T>` to read back).
 - `rust_decimal` - Compatibility impls for `rust_decimal::Decimal`. DuckDB
   `DECIMAL` values use `duckdb::types::Decimal` as the core full-domain
   carrier; this feature restores `ToSql`/`FromSql` conversions for
@@ -155,7 +164,7 @@ These extensions are only available through the CMake build backend and imply `b
 
 - `vtab-full` - Enables virtual table features: `vtab-arrow` and `appender-arrow`; retains the deprecated `vtab-excel` compatibility flag.
 - `extensions-full` - Enables all major extensions: `json`, `parquet`, and `vtab-full`.
-- `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde_json`, `url`, `r2d2`, `uuid`, `polars`, and `rust_decimal`.
+- `modern-full` - Enables modern Rust ecosystem integrations: `chrono`, `serde`, `serde_json`, `url`, `r2d2`, `uuid`, `polars`, `rust_decimal`, and `ndarray`.
 
 ### Build configuration
 

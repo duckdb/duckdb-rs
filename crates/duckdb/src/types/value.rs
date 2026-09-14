@@ -253,9 +253,12 @@ where
 
 impl Value {
     /// Returns DuckDB fundamental datatype.
-    #[inline]
+    ///
+    /// For container variants the child type is derived from the first
+    /// element/entry and falls back to [`Type::Null`] for empty containers,
+    /// since DuckDB's logical type metadata is not carried on [`Value`].
     pub fn data_type(&self) -> Type {
-        match *self {
+        match self {
             Self::Null => Type::Null,
             Self::Boolean(_) => Type::Boolean,
             Self::TinyInt(_) => Type::TinyInt,
@@ -278,8 +281,25 @@ impl Value {
             Self::Date32(_) => Type::Date32,
             Self::Time64(..) => Type::Time64,
             Self::Interval { .. } => Type::Interval,
-            Self::Union(..) | Self::Struct(..) | Self::List(..) | Self::Array(..) | Self::Map(..) => todo!(),
             Self::Enum(..) => Type::Enum,
+            Self::List(items) => Type::List(Box::new(container_child_type(items))),
+            Self::Array(items) => Type::Array(Box::new(container_child_type(items)), items.len() as u32),
+            Self::Struct(fields) => Type::Struct(fields.iter().map(|(k, v)| (k.clone(), v.data_type())).collect()),
+            Self::Map(entries) => {
+                let (key, value) = entries
+                    .iter()
+                    .next()
+                    .map(|(k, v)| (k.data_type(), v.data_type()))
+                    .unwrap_or((Type::Null, Type::Null));
+                Type::Map(Box::new(key), Box::new(value))
+            }
+            Self::Union(_) => Type::Union,
         }
     }
+}
+
+/// Derives the element [`Type`] for a container [`Value`], falling back to
+/// [`Type::Null`] when the container is empty.
+fn container_child_type(items: &[Value]) -> Type {
+    items.first().map(Value::data_type).unwrap_or(Type::Null)
 }

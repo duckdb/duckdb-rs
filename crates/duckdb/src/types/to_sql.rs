@@ -1,5 +1,5 @@
 use super::{Null, TimeUnit, Value, ValueRef, binding_unsupported_value, value_ref_from_value};
-use crate::Result;
+use crate::{Error, Result};
 use std::borrow::Cow;
 
 /// `ToSqlOutput` represents the possible output types for implementers of the
@@ -64,9 +64,14 @@ from_value!(uuid::Uuid);
 impl ToSql for ToSqlOutput<'_> {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(match *self {
-            ToSqlOutput::Borrowed(v) => ToSqlOutput::Borrowed(v),
-            ToSqlOutput::Owned(ref v) => ToSqlOutput::Borrowed(value_ref_from_value(v, binding_unsupported_value)?),
+        Ok(match self {
+            ToSqlOutput::Borrowed(v) => ToSqlOutput::Borrowed(*v),
+            // Container values cannot become ValueRef from an owned Value, so
+            // keep them Owned for the bind/append sites to handle recursively.
+            ToSqlOutput::Owned(v) => match value_ref_from_value(v, binding_unsupported_value) {
+                Ok(borrowed) => ToSqlOutput::Borrowed(borrowed),
+                Err(_) => ToSqlOutput::Owned(v.clone()),
+            },
         })
     }
 }
@@ -191,10 +196,18 @@ impl ToSql for [u8] {
 impl ToSql for Value {
     #[inline]
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::Borrowed(value_ref_from_value(
-            self,
-            binding_unsupported_value,
-        )?))
+        match self {
+            // Container variants cannot become ValueRef from an owned Value.
+            // Keep them Owned so the bind/append sites can build duckdb_value
+            // recursively via the C value API.
+            Value::List(_) | Value::Array(_) | Value::Struct(_) | Value::Map(_) | Value::Union(_) | Value::Enum(_) => {
+                Ok(ToSqlOutput::Owned(self.clone()))
+            }
+            _ => Ok(ToSqlOutput::Borrowed(value_ref_from_value(
+                self,
+                binding_unsupported_value,
+            )?)),
+        }
     }
 }
 
@@ -216,6 +229,47 @@ impl ToSql for std::time::Duration {
         )))
     }
 }
+
+/// Implements [`ToSql`] for `Vec<T>` and `[T; N]` by binding the elements as a
+/// DuckDB fixed-size `ARRAY` (`T[N]`). Empty containers are rejected because
+/// the element type cannot be inferred from the value alone.
+macro_rules! to_sql_numeric_array {
+    ($t:ty, $variant:ident) => {
+        impl ToSql for Vec<$t> {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                if self.is_empty() {
+                    return Err(Error::ToSqlConversionFailure(
+                        "cannot bind an empty Vec; the array element type cannot be inferred".into(),
+                    ));
+                }
+                let value = Value::Array(self.iter().map(|x| Value::$variant(*x)).collect());
+                Ok(ToSqlOutput::Owned(value))
+            }
+        }
+
+        impl<const N: usize> ToSql for [$t; N] {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                if N == 0 {
+                    return Err(Error::ToSqlConversionFailure(
+                        "cannot bind a zero-length array; DuckDB arrays require at least one element".into(),
+                    ));
+                }
+                let value = Value::Array(self.iter().map(|x| Value::$variant(*x)).collect());
+                Ok(ToSqlOutput::Owned(value))
+            }
+        }
+    };
+}
+
+to_sql_numeric_array!(f32, Float);
+to_sql_numeric_array!(f64, Double);
+to_sql_numeric_array!(i8, TinyInt);
+to_sql_numeric_array!(i16, SmallInt);
+to_sql_numeric_array!(i32, Int);
+to_sql_numeric_array!(i64, BigInt);
+to_sql_numeric_array!(u16, USmallInt);
+to_sql_numeric_array!(u32, UInt);
+to_sql_numeric_array!(u64, UBigInt);
 
 #[cfg(test)]
 mod test {
@@ -240,49 +294,47 @@ mod test {
     }
 
     #[test]
-    fn test_value_to_sql_rejects_unsupported_variants() {
-        use crate::{
-            Error,
-            types::{OrderedMap, Value},
-        };
+    fn test_value_to_sql_preserves_owned_for_containers() {
+        use crate::types::{OrderedMap, Value};
 
-        let cases: &[(&str, Value)] = &[
-            ("List", Value::List(vec![Value::Int(1)])),
-            ("Array", Value::Array(vec![Value::Int(1)])),
-            (
-                "Struct",
-                Value::Struct(OrderedMap::from(vec![("k".to_string(), Value::Int(1))])),
-            ),
-            (
-                "Map",
-                Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Int(2))])),
-            ),
-            ("Union", Value::Union(Box::new(Value::Int(1)))),
-            ("Enum", Value::Enum("variant".to_string())),
+        let containers: &[Value] = &[
+            Value::List(vec![Value::Int(1)]),
+            Value::Array(vec![Value::Int(1)]),
+            Value::Struct(OrderedMap::from(vec![("k".to_string(), Value::Int(1))])),
+            Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Int(2))])),
         ];
 
-        for (variant, value) in cases {
+        for value in containers {
             match value.to_sql() {
-                Err(Error::ToSqlConversionFailure(e)) => {
-                    let msg = e.to_string();
-                    assert!(
-                        msg.contains(&format!("binding {variant} parameters is not yet supported")),
-                        "{variant}: unexpected message {msg}"
-                    );
-                }
-                Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
-                Ok(_) => panic!("{variant}: expected error, got Ok"),
+                Ok(ToSqlOutput::Owned(v)) => assert_eq!(v, *value, "container should round-trip as Owned"),
+                other => panic!("expected ToSqlOutput::Owned for {:?}, got {other:?}", value),
             }
-            match ToSqlOutput::Owned(value.clone()).to_sql() {
-                Err(Error::ToSqlConversionFailure(e)) => {
+        }
+    }
+
+    #[test]
+    fn test_enum_and_union_values_reject_at_bind() {
+        use crate::{Connection, Error, types::Value};
+
+        let cases: &[(&str, Value)] = &[
+            ("Enum", Value::Enum("variant".to_string())),
+            ("Union", Value::Union(Box::new(Value::Int(1)))),
+        ];
+
+        let conn = Connection::open_in_memory().unwrap();
+        for (variant, value) in cases {
+            let err = conn
+                .query_row("SELECT ?", [value.clone()], |r| r.get::<_, Value>(0))
+                .unwrap_err();
+            match err {
+                Error::ToSqlConversionFailure(e) => {
                     let msg = e.to_string();
                     assert!(
                         msg.contains(&format!("binding {variant} parameters is not yet supported")),
                         "{variant}: unexpected message {msg}"
                     );
                 }
-                Err(other) => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
-                Ok(_) => panic!("{variant}: expected error, got Ok"),
+                other => panic!("{variant}: expected ToSqlConversionFailure, got {other:?}"),
             }
         }
     }
