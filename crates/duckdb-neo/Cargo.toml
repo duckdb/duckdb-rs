@@ -1,12 +1,12 @@
 [package]
-name = "duckdb-rs-neo"
+name = "duckdb-neo"
 description = "Ergonomic wrapper for DuckDB's v2 C API (experimental)"
 version = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 homepage = { workspace = true }
-documentation = "https://docs.rs/duckdb-rs-neo/"
+documentation = "https://docs.rs/duckdb-neo/"
 categories = { workspace = true }
 keywords = { workspace = true }
 readme = { workspace = true }
@@ -14,7 +14,7 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [lib]
-name = "duckdb_rs_neo"
+name = "duckdb_neo"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

@@ -2,7 +2,7 @@
 resolver = "3"
 members = [
     "crates/duckdb",
-    "crates/duckdb-rs-neo",
+    "crates/duckdb-neo",
     "crates/libduckdb-sys",
     "crates/duckdb-loadable-macros",
 ]
@@ -23,7 +23,7 @@ rust-version = "1.85.1"
 [workspace.dependencies]
 duckdb = { version = "=1.20000.0", path = "crates/duckdb" }
 duckdb-loadable-macros = { version = "=1.20000.0", path = "crates/duckdb-loadable-macros" }
-duckdb-rs-neo = { version = "=1.20000.0", path = "crates/duckdb-rs-neo" }
+duckdb-neo = { version = "=1.20000.0", path = "crates/duckdb-neo" }
 libduckdb-sys = { version = "=1.20000.0", path = "crates/libduckdb-sys" }
 
 arrow = { version = "59", default-features = false }

@@ -24,10 +24,10 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 ///
 /// # Example
 /// ```
-/// use duckdb_rs_neo::{environment::Environment, environment::StorageLocation};
-/// use duckdb_rs_neo::logical_type::{LogicalType, LogicalTypeID};
+/// use duckdb_neo::{environment::Environment, environment::StorageLocation};
+/// use duckdb_neo::logical_type::{LogicalType, LogicalTypeID};
 ///
-/// # fn main() -> duckdb_rs_neo::Result<()> {
+/// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

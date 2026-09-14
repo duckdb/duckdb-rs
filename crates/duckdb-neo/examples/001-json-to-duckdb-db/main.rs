@@ -1,4 +1,4 @@
-use duckdb_rs_neo::{
+use duckdb_neo::{
     Parameters, Result,
     environment::{Environment, StorageLocation},
     types::DateValue,

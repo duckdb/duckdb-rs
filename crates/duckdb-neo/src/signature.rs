@@ -234,11 +234,11 @@ impl Parameter {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs_neo::{DuckDBType, Environment, StorageLocation};
-/// use duckdb_rs_neo::logical_type::LogicalTypeID;
-/// use duckdb_rs_neo::signature::{Parameter, SignatureBuilder};
+/// use duckdb_neo::{DuckDBType, Environment, StorageLocation};
+/// use duckdb_neo::logical_type::LogicalTypeID;
+/// use duckdb_neo::signature::{Parameter, SignatureBuilder};
 ///
-/// # fn main() -> duckdb_rs_neo::Result<()> {
+/// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

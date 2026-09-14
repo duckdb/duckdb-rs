@@ -37,10 +37,10 @@ ffi_enum_redeclaration! {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs_neo::{environment::Environment, environment::StorageLocation};
-/// use duckdb_rs_neo::connection_options::ConfigOptionValue;
+/// use duckdb_neo::{environment::Environment, environment::StorageLocation};
+/// use duckdb_neo::connection_options::ConfigOptionValue;
 ///
-/// # fn main() -> duckdb_rs_neo::Result<()> {
+/// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
