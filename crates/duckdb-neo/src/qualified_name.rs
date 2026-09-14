@@ -14,7 +14,7 @@ use libduckdb_sys::v2 as ffi;
 ///
 /// # Example
 /// ```
-/// use duckdb_rs_neo::qualified_name::QualifiedName;
+/// use duckdb_neo::qualified_name::QualifiedName;
 ///
 /// let name = QualifiedName::from_parts(&["main", "events"]).unwrap();
 ///

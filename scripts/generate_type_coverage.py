@@ -7,7 +7,7 @@ matrix to stdout:
 
     python3 scripts/generate_type_coverage.py > type-coverage.md
 
-Pass ``--input target/doc/duckdb_rs_neo.json`` to reuse existing rustdoc JSON.
+Pass ``--input target/doc/duckdb_neo.json`` to reuse existing rustdoc JSON.
 Run with ``--help`` for all options.
 """
 
@@ -317,7 +317,7 @@ def render_markdown(rows: dict[str, dict[str, Any]]) -> str:
     lines = [
         "# DuckDB Rust type coverage",
         "",
-        "Generated from `duckdb_rs_neo` rustdoc JSON.",
+        "Generated from `duckdb_neo` rustdoc JSON.",
         "",
         "| " + " | ".join(cell.ljust(widths[index]) for index, cell in enumerate(table[0])) + " |",
         "| "
@@ -343,7 +343,7 @@ def generate_rustdoc(repo_root: Path) -> Path:
         "+nightly",
         "rustdoc",
         "-p",
-        "duckdb-rs-neo",
+        "duckdb-neo",
         "--lib",
         "--",
         "-Z",
@@ -353,7 +353,7 @@ def generate_rustdoc(repo_root: Path) -> Path:
     ]
     print("+ " + " ".join(command), file=sys.stderr)
     subprocess.run(command, cwd=repo_root, check=True, stdout=sys.stderr)
-    return repo_root / "target" / "doc" / "duckdb_rs_neo.json"
+    return repo_root / "target" / "doc" / "duckdb_neo.json"
 
 
 def parse_args() -> argparse.Namespace:

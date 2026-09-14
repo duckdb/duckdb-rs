@@ -1,12 +1,12 @@
 use std::thread;
 
-use duckdb_rs_neo::{
+use duckdb_neo::{
     Parameters,
     environment::{Environment, StorageLocation},
 };
 
 #[test]
-fn test_send_between_threads() -> duckdb_rs_neo::Result<()> {
+fn test_send_between_threads() -> duckdb_neo::Result<()> {
     let connection = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 
     let connection = thread::spawn(move || {

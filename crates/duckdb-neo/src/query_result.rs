@@ -81,13 +81,13 @@ pub enum QueryResultStep {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs_neo::{
+/// use duckdb_neo::{
 ///     Parameters,
 ///     environment::Environment,
 ///     environment::StorageLocation,
 /// };
 ///
-/// # fn main() -> duckdb_rs_neo::Result<()> {
+/// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;

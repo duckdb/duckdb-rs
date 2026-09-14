@@ -74,23 +74,23 @@ fn main() -> Result<()> {
 
 Execute the program with `cargo run` and watch DuckDB in action!
 
-### duckdb-rs-neo: the v2 C API wrapper (experimental)
+### duckdb-neo: the v2 C API wrapper (experimental)
 
-> ⚠ DuckDB's v2 C API is in rapid development. Consider `duckdb-rs-neo` unstable. Feedback is welcome!
+> ⚠ DuckDB's v2 C API is in rapid development. Consider `duckdb-neo` unstable. Feedback is welcome!
 
-`duckdb-rs-neo` is a second wrapper crate in this repository that targets DuckDB's new v2 C API (`duckdb_v2.h`) instead of the v1 API used by `duckdb`. Both crates share the same `libduckdb-sys` crate and therefore the same bundled DuckDB, build options, and version number.
+`duckdb-neo` is a second wrapper crate in this repository that targets DuckDB's new v2 C API (`duckdb_v2.h`) instead of the v1 API used by `duckdb`. Both crates share the same `libduckdb-sys` crate and therefore the same bundled DuckDB, build options, and version number.
 
 ```shell
-cargo add duckdb-rs-neo -F bundled
+cargo add duckdb-neo -F bundled
 ```
 
 ```rust,ignore
-use duckdb_rs_neo::{
+use duckdb_neo::{
     Parameters,
     environment::{Environment, StorageLocation},
 };
 
-fn main() -> duckdb_rs_neo::Result<()> {
+fn main() -> duckdb_neo::Result<()> {
     let environment = Environment::new()?;
     let database = environment.open(StorageLocation::InMemory)?;
     let connection = database.connect()?;
@@ -103,7 +103,7 @@ fn main() -> duckdb_rs_neo::Result<()> {
 }
 ```
 
-`libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature and, behind its `capi-v2` feature, the v2 bindings as `libduckdb_sys::v2`. `duckdb-rs-neo` disables the default features so only the v2 bindings are generated. `duckdb-rs-neo` enables that feature itself. Its own `capi-v2-p2` feature targets API surface that the bundled DuckDB does not provide yet and does not compile.
+`libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature and, behind its `capi-v2` feature, the v2 bindings as `libduckdb_sys::v2`. `duckdb-neo` disables the default features so only the v2 bindings are generated. `duckdb-neo` enables that feature itself. Its own `capi-v2-p2` feature targets API surface that the bundled DuckDB does not provide yet and does not compile.
 
 ## Examples
 
@@ -194,7 +194,7 @@ These extensions are only available through the CMake build backend and imply `b
 - `bundled-cmake` - _Experimental_. Builds DuckDB via its upstream CMake build system instead of `cc`. Requires a duckdb-rs checkout (not available from crates.io). See [step 2](#notes-on-building-duckdb-and-libduckdb-sys) below for details.
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
 - `capi-v1` (`libduckdb-sys` only, default) - Generate bindings for the v1 C API header `duckdb.h`, exposed as `libduckdb_sys::v1` and at the crate root. Required by `duckdb` and by `loadable-extension`.
-- `capi-v2` (`libduckdb-sys` only) - Also generate bindings for the v2 C API header `duckdb_v2.h`, exposed as `libduckdb_sys::v2`. `duckdb-rs-neo` enables this automatically. With `buildtime_bindgen`, `duckdb_v2.h` must sit next to `duckdb.h` in `DUCKDB_INCLUDE_DIR`.
+- `capi-v2` (`libduckdb-sys` only) - Also generate bindings for the v2 C API header `duckdb_v2.h`, exposed as `libduckdb_sys::v2`. `duckdb-neo` enables this automatically. With `buildtime_bindgen`, `duckdb_v2.h` must sit next to `duckdb.h` in `DUCKDB_INCLUDE_DIR`.
 - `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development. Only enable this when building an extension, never for a client application - see [Database client or extension?](#database-client-or-extension)
 
 ## Installation

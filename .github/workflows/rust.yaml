@@ -145,7 +145,7 @@ jobs:
       - run: cargo binstall --no-confirm cargo-msrv
       - run: cargo msrv verify --path crates/duckdb
       - run: cargo msrv verify --path crates/duckdb-loadable-macros
-      - run: cargo msrv verify --path crates/duckdb-rs-neo
+      - run: cargo msrv verify --path crates/duckdb-neo
       - run: cargo msrv verify --path crates/libduckdb-sys
 
   sanitizer:
@@ -176,4 +176,4 @@ jobs:
           CXX: "sccache c++"
         # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
-        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb --package duckdb-rs-neo
+        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb --package duckdb-neo

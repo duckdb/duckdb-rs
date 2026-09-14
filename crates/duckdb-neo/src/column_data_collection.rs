@@ -73,11 +73,11 @@ impl Drop for SharedScanState {
 ///
 /// # Example
 /// ```
-/// use duckdb_rs_neo::{DuckDBType, Environment, StorageLocation};
-/// use duckdb_rs_neo::column_data_collection::ColumnDataCollection;
-/// use duckdb_rs_neo::data_chunk::DataChunk;
+/// use duckdb_neo::{DuckDBType, Environment, StorageLocation};
+/// use duckdb_neo::column_data_collection::ColumnDataCollection;
+/// use duckdb_neo::data_chunk::DataChunk;
 ///
-/// # fn main() -> duckdb_rs_neo::Result<()> {
+/// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;
