@@ -176,6 +176,12 @@ fn emit_httpfs_link_metadata() {
             .probe(name)
             .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires {name} through pkg-config: {err}"));
     }
+    // HTTPFS's OpenSSL client reads the macOS certificate store. Mirror its
+    // CMake framework dependencies, which static archives do not carry over.
+    if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "macos") {
+        println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=framework=Security");
+    }
 }
 
 fn cmake_build_type() -> String {
