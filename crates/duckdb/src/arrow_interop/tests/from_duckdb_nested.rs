@@ -3,7 +3,7 @@ use arrow::datatypes::{
     Int32Type, TimeUnit, TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
     TimestampSecondType,
 };
-use libduckdb_sys::{duckdb_timestamp, duckdb_timestamp_ms, duckdb_timestamp_ns, duckdb_timestamp_s};
+use libduckdb_sys::v1::{duckdb_timestamp, duckdb_timestamp_ms, duckdb_timestamp_ns, duckdb_timestamp_s};
 
 fn data_chunk_roundtrip_single_array(array: ArrayRef) -> Result<ArrayRef, Box<dyn Error>> {
     let input_data_type = array.data_type().clone();

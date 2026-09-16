@@ -1,4 +1,4 @@
-use crate::duckdb_state;
+use super::duckdb_state;
 use std::{error, fmt};
 
 /// Error Codes

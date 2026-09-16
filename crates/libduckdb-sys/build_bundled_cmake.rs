@@ -1,4 +1,4 @@
-use crate::{duckdb_version_from_pkg_version, is_compiler, link_windows_system_libs, win_target, write_bindings};
+use crate::{is_compiler, link_windows_system_libs, win_target, write_bindings};
 use std::{
     collections::BTreeSet,
     env::{self, VarError},
@@ -12,7 +12,7 @@ struct Generator {
     make_program: Option<String>,
 }
 
-pub fn main(out_dir: &str, out_path: &Path) {
+pub fn main(out_dir: &str) {
     let source_dir = Path::new("duckdb-sources");
     let cmake_lists = source_dir.join("CMakeLists.txt");
     if !cmake_lists.exists() {
@@ -36,7 +36,7 @@ pub fn main(out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
     let include_path = source_dir.join("src/include").canonicalize().unwrap();
-    write_bindings(&include_path, out_path);
+    write_bindings(&include_path, out_dir);
 
     // Publish the include directory so downstream crates that compile
     // their own C/C++ code can read it from `DEP_DUCKDB_INCLUDE`.
@@ -64,10 +64,6 @@ pub fn main(out_dir: &str, out_path: &Path) {
     configure_macos_deployment_target(&mut config);
     config
         .profile(&cmake_build_type)
-        .define(
-            "OVERRIDE_GIT_DESCRIBE",
-            format!("v{}", duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"))),
-        )
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
@@ -135,10 +131,13 @@ pub fn main(out_dir: &str, out_path: &Path) {
         );
 
     // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
-    // CMAKE_OBJECT_PATH_MAX), so a deep OUT_DIR can exceed 260 chars and fail late with
-    // `C1083: Cannot open compiler generated file: ''`. The build script can't move
-    // OUT_DIR — shorten the path (short CARGO_TARGET_DIR, drop `--target`, or check out
-    // nearer the drive root).
+    // CMAKE_OBJECT_PATH_MAX), and since DuckDB 2.0 the unity build includes each
+    // source by a path relative to the build directory (`#include "../../.../src/x.cpp"`),
+    // which MSVC measures unnormalized. A deep OUT_DIR therefore fails with
+    // `C1083: Cannot open compiler generated file: ''` or `C1083: Cannot open include
+    // file: '../../..'`. The build script can't move OUT_DIR — shorten the path (short
+    // CARGO_TARGET_DIR such as `D:/t`, drop `--target`, or check out nearer the drive
+    // root), or set DUCKDB_DISABLE_UNITY=1 to compile each file individually.
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);

@@ -55,7 +55,7 @@
 //! ```
 #![warn(missing_docs)]
 
-pub use libduckdb_sys as ffi;
+pub use libduckdb_sys::v1 as ffi;
 
 use std::{
     cell::RefCell,

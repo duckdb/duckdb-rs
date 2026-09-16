@@ -1,0 +1,59 @@
+name: Forward PR events to pr-tracker
+
+# Thin forwarder (Phase 1). Copy this into a tracked repo as
+# .github/workflows/pr-forward.yml. It fires a repository_dispatch at
+# duckdblabs/pr-tracker for each event below; all real logic lives in
+# pr-tracker's ingest.yml, which routes on the `event` field of the payload.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to pr-tracker
+        env:
+          GH_TOKEN: ${{ secrets.PR_DISPATCH_TOKEN }}
+          EVENT_KIND: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Present only on pull_request_review; empty otherwise.
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEWER: ${{ github.event.review.user.login }}
+          REVIEW_URL: ${{ github.event.review.html_url }}
+          REVIEW_ID: ${{ github.event.review.id }}
+          # Present only on labeled/unlabeled; empty otherwise.
+          LABEL: ${{ github.event.label.name }}
+        run: |
+          # A pull_request_review on a fork PR runs without secrets, so the token
+          # is empty. That path can't dispatch — skip cleanly (green) instead of
+          # failing loudly on the source repo. Fork-PR reviews are handled via the
+          # reviewer closing their task (see forwarder/review-task-forward.yml).
+          if [ -z "$GH_TOKEN" ]; then
+            echo "No dispatch token (fork PR — secrets withheld); skipping." >&2
+            exit 0
+          fi
+          jq -n \
+            --arg event "$EVENT_KIND" \
+            --arg action "$EVENT_ACTION" \
+            --arg repo "$REPO" \
+            --argjson number "$PR_NUMBER" \
+            --arg review_state "$REVIEW_STATE" \
+            --arg reviewer "$REVIEWER" \
+            --arg review_url "$REVIEW_URL" \
+            --arg review_id "$REVIEW_ID" \
+            --arg label "$LABEL" \
+            '{event_type: "pr-event", client_payload: {
+               event: $event, action: $action, repo: $repo, number: $number,
+               review_state: $review_state, reviewer: $reviewer, review_url: $review_url,
+               review_id: $review_id, label: $label
+             }}' \
+          | gh api -X POST /repos/duckdblabs/pr-tracker/dispatches --input -

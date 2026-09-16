@@ -35,19 +35,20 @@ fetch_duckdb_sha() {
 
 regenerate_bindings() {
     local OUTPUT=$1
-    shift
+    local GENERATED=$2
+    shift 2
     local FEATURES=$*
     local BINDGEN_RS
     local TMP_OUTPUT
 
-    find "$CARGO_OUTPUT_DIR" -type f -name bindgen.rs -exec rm {} \;
+    find "$CARGO_OUTPUT_DIR" -type f \( -name bindgen.rs -o -name bindgen_v2.rs \) -exec rm {} \;
     DUCKDB_LIB_DIR="$SCRIPT_DIR/duckdb" \
         DUCKDB_INCLUDE_DIR="$SCRIPT_DIR/duckdb/src/include" \
         cargo check -p libduckdb-sys --no-default-features --features "$FEATURES"
 
-    BINDGEN_RS=$(find "$CARGO_OUTPUT_DIR" -path '*/libduckdb-sys-*/out/bindgen.rs' -print -quit)
+    BINDGEN_RS=$(find "$CARGO_OUTPUT_DIR" -path "*/libduckdb-sys-*/out/$GENERATED" -print -quit)
     if [ -z "$BINDGEN_RS" ]; then
-        echo "ERROR: bindgen.rs was not generated" >&2
+        echo "ERROR: $GENERATED was not generated" >&2
         exit 1
     fi
 
@@ -103,7 +104,8 @@ git checkout "$DUCKDB_TARGET"
 cd "$SCRIPT_DIR"
 python3 "$SCRIPT_DIR/update_sources.py"
 
-regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version.rs" buildtime_bindgen
-regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" buildtime_bindgen loadable-extension
+regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version.rs" bindgen.rs buildtime_bindgen capi-v1
+regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" bindgen.rs buildtime_bindgen capi-v1 loadable-extension
+regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_v2.rs" bindgen_v2.rs buildtime_bindgen capi-v2
 
 printf '    \e[35;1mFinished\e[0m regenerating bundled DuckDB sources and bindings (tests not run)\n'

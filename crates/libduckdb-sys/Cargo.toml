@@ -21,22 +21,28 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [features]
-default = ["vcpkg", "dep:pkg-config"]
+default = ["capi-v1", "vcpkg", "pkg-config"]
 bundled = ["cc"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
-buildtime_bindgen = ["bindgen", "dep:pkg-config", "vcpkg"]
+buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
 json = ["bundled"]
 parquet = ["bundled"]
 autocomplete = ["bundled-cmake"]
-httpfs = ["bundled-cmake", "dep:pkg-config"]
+httpfs = ["bundled-cmake", "pkg-config"]
 icu = ["bundled-cmake"]
 tpcds = ["bundled-cmake"]
 tpch = ["bundled-cmake"]
 extensions-full = ["json", "parquet"]
 winduckdb = []
 # Warning: experimental feature
-loadable-extension = ["prettyplease", "quote", "syn"]
+loadable-extension = ["prettyplease", "quote", "syn", "capi-v1"]
+# Generate bindings for the v1 C API header (`duckdb.h`), exposed as `libduckdb_sys::v1`
+# and re-exported at the crate root. Disable with `default-features = false` when only
+# the v2 API is needed.
+capi-v1 = []
+# Also generate bindings for the v2 C API header (`duckdb_v2.h`), exposed as `libduckdb_sys::v2`.
+capi-v2 = []
 
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"], optional = true }
@@ -53,7 +59,9 @@ tar = { workspace = true }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 vcpkg = { workspace = true, optional = true }
 which = { version = "8", optional = true }
-zip = { version = "6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
+
+[package.metadata.docs.rs]
+features = ["capi-v2"]

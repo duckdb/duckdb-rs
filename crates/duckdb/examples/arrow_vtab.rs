@@ -12,24 +12,24 @@ use duckdb::{
         record_batch::RecordBatch,
         util::pretty::print_batches,
     },
-    vtab::arrow::{ArrowVTab, arrow_recordbatch_to_query_params},
+    vtab::arrow::{ArrowBatchRegistration, ArrowVTab},
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
     let conn = Connection::open_in_memory()?;
     conn.register_table_function::<ArrowVTab>("arrow")?;
 
-    let params = arrow_recordbatch_to_query_params(cities_batch()?);
+    let reg = ArrowBatchRegistration::new(cities_batch()?);
     let batches: Vec<RecordBatch> = conn
         .prepare(
             "
             SELECT city, population
-            FROM arrow(?, ?)
+            FROM arrow(?)
             WHERE coastal AND population >= 500000
             ORDER BY population DESC
             ",
         )?
-        .query_arrow(params)?
+        .query_arrow([&reg])?
         .collect();
 
     print_batches(&batches)?;
