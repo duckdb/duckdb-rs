@@ -4,34 +4,6 @@ name: Forward PR events to pr-tracker
 # .github/workflows/pr-forward.yml. It fires a repository_dispatch at
 # duckdblabs/pr-tracker for each event below; all real logic lives in
 # pr-tracker's ingest.yml, which routes on the `event` field of the payload.
-#
-# EVENT MATRIX (extend here — the payload envelope is the contract):
-#   pull_request_target  opened / reopened / ready_for_review /
-#                        converted_to_draft / closed   -> tracking issue lifecycle
-#   pull_request_target  labeled / unlabeled            -> author-input labels move the card in/out
-#   pull_request_review  submitted                      -> "review happened" comment
-#     (NON-FORK PRs ONLY — see below; fork reviews go via review-task-forward.yml)
-#   (future) workflow_run / status / check_suite        -> CI Passing/Failure labels
-# To add an event: add the trigger, surface its fields as env below, include them
-# in the jq payload, and add a branch in pr_tracker.ingest. No rewrite needed.
-#
-# SECURITY — this is the public-repo trust boundary, read before editing:
-#   * pull_request_target runs in the trusted base context WITH secrets even for
-#     fork PRs, so it can authenticate the dispatch. pull_request_review, however,
-#     gets NO secrets on a PR from a fork — so that run has an empty token and is
-#     skipped (green) by the guard below; the fork review-done signal comes from
-#     review-task-forward.yml instead. A fork-triggered pull_request (not used
-#     here) also gets a read-only token and no secrets.
-#   * We do NOT checkout or run any PR-head (fork-supplied) code.
-#   * We send coordinates + a few GitHub-supplied review fields (login / state
-#     enum / URL) — never PR title/body/branch. The payload is built with jq from
-#     env vars; nothing attacker-influenced is interpolated into a run: script
-#     via ${{ }} (script injection, not checkout, is the likeliest exfil path).
-#
-# SETUP (per tracked repo):
-#   Add a secret PR_DISPATCH_TOKEN = a fine-grained PAT scoped to
-#   duckdblabs/pr-tracker ONLY, with Contents: write (the minimum that
-#   repository_dispatch requires). Nothing else — keep blast radius tiny.
 
 on:
   pull_request_target:
