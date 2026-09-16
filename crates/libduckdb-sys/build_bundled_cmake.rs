@@ -100,9 +100,8 @@ pub fn main(out_dir: &str) {
         }
     }
 
-    if cfg!(feature = "httpfs") {
-        configure_httpfs_dependencies(&mut config);
-    }
+    #[cfg(feature = "httpfs")]
+    configure_httpfs_dependencies(&mut config);
 
     let enabled_extensions = enabled_extensions();
     if !enabled_extensions.is_empty() {
@@ -151,57 +150,32 @@ pub fn main(out_dir: &str) {
     }
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
-    if cfg!(feature = "httpfs") {
-        emit_httpfs_link_metadata();
-    }
+    #[cfg(feature = "httpfs")]
+    emit_httpfs_link_metadata();
     println!("cargo:lib_dir={}", lib_dir.display());
 }
 
+#[cfg(feature = "httpfs")]
 fn configure_httpfs_dependencies(config: &mut cmake::Config) {
-    let curl = probe_dependency("libcurl", false);
-    let openssl = probe_dependency("openssl", false);
+    if win_target() {
+        panic!("bundled-cmake httpfs is currently supported only on Linux and macOS");
+    }
 
-    config
-        .define("CURL_INCLUDE_DIR", dependency_include_dir(&curl, "curl/curl.h"))
-        .define("CURL_LIBRARY_RELEASE", dependency_library(&curl, "curl"))
-        .define("OPENSSL_INCLUDE_DIR", dependency_include_dir(&openssl, "openssl/ssl.h"))
-        .define("OPENSSL_SSL_LIBRARY", dependency_library(&openssl, "ssl"))
-        .define("OPENSSL_CRYPTO_LIBRARY", dependency_library(&openssl, "crypto"));
+    // Only OpenSSL needs a hint (Homebrew keeps it keg-only). Do not hint curl:
+    // FindCURL locates the sysroot curl itself, and a pkg-config prefix may point
+    // at a different SDK than the compiler, breaking libc++ header ordering.
+    let openssl_prefix = pkg_config::get_variable("openssl", "prefix")
+        .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires openssl through pkg-config: {err}"));
+    config.define("OPENSSL_ROOT_DIR", openssl_prefix);
 }
 
+#[cfg(feature = "httpfs")]
 fn emit_httpfs_link_metadata() {
-    probe_dependency("libcurl", true);
-    probe_dependency("openssl", true);
-}
-
-fn probe_dependency(name: &str, cargo_metadata: bool) -> pkg_config::Library {
-    pkg_config::Config::new()
-        .cargo_metadata(cargo_metadata)
-        .probe(name)
-        .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires {name} through pkg-config: {err}"))
-}
-
-fn dependency_include_dir(library: &pkg_config::Library, header: &str) -> PathBuf {
-    library
-        .include_paths
-        .iter()
-        .find(|path| path.join(header).is_file())
-        .cloned()
-        .unwrap_or_else(|| panic!("pkg-config did not report an include directory containing {header}"))
-}
-
-fn dependency_library(library: &pkg_config::Library, name: &str) -> PathBuf {
-    let filenames = [
-        format!("lib{name}.dylib"),
-        format!("lib{name}.so"),
-        format!("lib{name}.a"),
-    ];
-    library
-        .link_paths
-        .iter()
-        .flat_map(|directory| filenames.iter().map(move |filename| directory.join(filename)))
-        .find(|path| path.is_file())
-        .unwrap_or_else(|| panic!("pkg-config did not report a link path containing lib{name}"))
+    for name in ["libcurl", "openssl"] {
+        pkg_config::Config::new()
+            .probe(name)
+            .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires {name} through pkg-config: {err}"));
+    }
 }
 
 fn cmake_build_type() -> String {
