@@ -170,7 +170,9 @@ mod build_linked {
     extern crate vcpkg;
 
     use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
-    use std::{env, fs, io, path::Path};
+    #[cfg(feature = "download-lib")]
+    use std::io;
+    use std::{env, fs, path::Path};
 
     pub fn main(out_dir: &str) {
         // We need this to config the LD_LIBRARY_PATH
@@ -259,7 +261,14 @@ mod build_linked {
         }
 
         if should_download_libduckdb() {
+            #[cfg(feature = "download-lib")]
             return download_libduckdb(out_dir).unwrap_or_else(|err| panic!("Failed to set up libduckdb: {err}"));
+            #[cfg(not(feature = "download-lib"))]
+            panic!(
+                "DUCKDB_DOWNLOAD_LIB is set, but libduckdb-sys was built without the `download-lib` feature. \
+                 Enable it (`--features download-lib`) to download a pre-built libduckdb, \
+                 or set DUCKDB_LIB_DIR / use the `bundled` feature instead."
+            );
         }
 
         if let Some(header) = try_vcpkg() {
@@ -311,16 +320,19 @@ mod build_linked {
 
     /// Pin file, next to Cargo.toml, naming the prebuilt DuckDB libraries that
     /// linked-mode builds download. Shipped with the crate.
+    #[cfg(feature = "download-lib")]
     const RELEASE_PIN_FILE: &str = ".duckdb-release";
 
     /// Where to download prebuilt libraries from: a directory URL that holds the
     /// `duckdb-shared-libs-<platform>.tar.gz` archives, plus a version label used
     /// to name the download cache directory.
+    #[cfg(feature = "download-lib")]
     struct DownloadSource {
         base_url: String,
         version: String,
     }
 
+    #[cfg(feature = "download-lib")]
     impl DownloadSource {
         /// The pin from `.duckdb-release`, if the file exists and is complete.
         fn pinned() -> Option<Self> {
@@ -385,15 +397,23 @@ mod build_linked {
     /// forbids one. When unset, a download happens whenever the crate ships a
     /// `.duckdb-release` pin, so that a plain `cargo build` links against the
     /// exact DuckDB the pregenerated bindings were generated from.
+    ///
+    /// Without the `download-lib` feature only an explicit `DUCKDB_DOWNLOAD_LIB=1`
+    /// counts, so that opting out of the HTTP client silently falls back to
+    /// probing the system instead of failing on the shipped pin.
     fn should_download_libduckdb() -> bool {
         match env::var("DUCKDB_DOWNLOAD_LIB") {
             Ok(value) => matches!(value.to_ascii_lowercase().as_str(), "1" | "true"),
             // Loadable extensions never link against a library, so there is
             // nothing to download by default.
+            #[cfg(feature = "download-lib")]
             Err(_) => !is_loadable_extension() && DownloadSource::pinned().is_some(),
+            #[cfg(not(feature = "download-lib"))]
+            Err(_) => false,
         }
     }
 
+    #[cfg(feature = "download-lib")]
     fn download_libduckdb(out_dir: &str) -> Result<HeaderLocation, Box<dyn std::error::Error>> {
         let target = env::var("TARGET")?;
         let archive = LibduckdbArchive::for_target(&target)
@@ -450,11 +470,13 @@ mod build_linked {
         Ok(HeaderLocation::IncludeDir(download_dir))
     }
 
+    #[cfg(feature = "download-lib")]
     fn configure_link_search(lib_dir: &Path) {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         emit_link_lib(link_directive());
     }
 
+    #[cfg(feature = "download-lib")]
     // Ensures the libduckdb archive exists: reuses an existing archive or
     // downloads it into a temp file and atomically renames it into place.
     fn ensure_libduckdb(url: &str, archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -476,6 +498,7 @@ mod build_linked {
 
     // The archives are flat tarballs: the shared library (plus the MSVC import
     // library on Windows) and the public headers.
+    #[cfg(feature = "download-lib")]
     fn extract_libduckdb(archive_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let file = fs::File::open(archive_path)?;
         let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
@@ -541,6 +564,7 @@ mod build_linked {
         Ok(())
     }
 
+    #[cfg(feature = "download-lib")]
     fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
         // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
         let encoded = pkg_version
@@ -558,6 +582,7 @@ mod build_linked {
     /// A DuckDB 2.0 `shared-libs` release artifact for one platform, as produced
     /// by `scripts/package_release_artifact.sh` in the DuckDB repository.
     struct LibduckdbArchive {
+        #[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
         archive_name: &'static str,
         dynamic_lib: &'static str,
     }
@@ -595,6 +620,7 @@ mod build_linked {
         }
     }
 
+    #[cfg(feature = "download-lib")]
     fn http_client() -> ureq::Agent {
         let timeout = env::var("CARGO_HTTP_TIMEOUT")
             .or_else(|_| env::var("HTTP_TIMEOUT"))
