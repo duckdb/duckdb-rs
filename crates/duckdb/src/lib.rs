@@ -1583,7 +1583,7 @@ mod test {
         // interrupt that arrives while the worker is still preparing is discarded.
         // Keep signalling until the query reacts; a single fixed-delay interrupt
         // is missed whenever the worker is descheduled past the sleep.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         let result = loop {
             db_interrupt.interrupt();
             match rx.recv_timeout(std::time::Duration::from_millis(50)) {
