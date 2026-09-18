@@ -1573,10 +1573,13 @@ mod test {
 
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let mut stmt = db
+            // The interrupt can land while the statement is still being prepared
+            // (prepare() itself surfaces it as an INTERRUPT error) or once the
+            // query starts executing.
+            let result = db
                 .prepare("select count(*) from range(10000000) t1, range(1000000) t2")
-                .unwrap();
-            tx.send(stmt.execute([])).unwrap();
+                .and_then(|mut stmt| stmt.execute([]));
+            tx.send(result).unwrap();
         });
 
         // DuckDB resets the interrupt flag when a query starts executing, so an
