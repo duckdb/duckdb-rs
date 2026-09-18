@@ -1,69 +1,121 @@
 //! Bind-time metadata for scalar, aggregate, and table functions.
 
-use std::marker::PhantomData;
-
 use libduckdb_sys::v2 as ffi;
 
-use crate::{Result, check_api_call, logical_type::LogicalType, value::Value};
+use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
+
+pub(crate) enum BindType<'a> {
+    Scalar(&'a ffi::duckdb_v2_scalar_function_bind_info_handle),
+    Table(&'a ffi::duckdb_v2_table_function_bind_info_handle),
+    Aggregate(&'a ffi::duckdb_v2_aggregate_function_bind_info_handle),
+}
 
 /// Metadata available while binding a scalar or aggregate function.
 ///
 /// The argument list follows signature-slot order: fixed parameters first,
 /// followed by expanded variadic arguments.
 pub struct BindMetadata<'a> {
-    /// The registered function name selected for the call.
-    pub function_name: String,
-    /// The call's resolved arguments.
-    pub arguments: BindArguments<'a>,
+    pub(crate) bind_type: BindType<'a>,
+}
+
+/// An owned argument type and optional constant value supplied to a bind callback.
+pub struct BindArgument {
+    /// The argument's resolved logical type.
+    pub logical_type: LogicalType,
+    /// The constant value, if the argument can be folded at bind time.
+    ///
+    /// SQL NULL is represented by `Some` containing a null [`Value`], not `None`.
+    pub value: Option<Value>,
 }
 
 impl<'a> BindMetadata<'a> {
-    pub(crate) fn from_table_function(
-        handle: &'a ffi::duckdb_v2_table_function_bind_info_handle,
-    ) -> Result<BindArguments<'a>> {
-        let arguments_handle = check_api_call!(ffi::duckdb_v2_table_function_bind_get_arguments, *handle, RET)?;
-
-        Ok(BindArguments {
-            handle: arguments_handle,
-            _marker: PhantomData,
-        })
+    pub(crate) fn get_arguments(&self) -> Result<Vec<BindArgument>> {
+        match self.bind_type {
+            BindType::Aggregate(handle) => self.aggregate(handle),
+            BindType::Scalar(handle) => self.scalar(handle),
+            BindType::Table(handle) => self.table(handle),
+        }
     }
 
-    pub(crate) fn from_scalar(handle: &'a ffi::duckdb_v2_scalar_function_bind_info_handle) -> Result<Self> {
-        let function_name: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_function_name, *handle, RET)?;
+    fn scalar(&self, handle: &ffi::duckdb_v2_scalar_function_bind_info_handle) -> Result<Vec<BindArgument>> {
+        let count = check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_count, *handle, RET)?;
 
-        let str: &str = function_name.into();
+        let mut bind_views = vec![];
 
-        let arguments_handle = check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arguments, *handle, RET)?;
+        for i in 0..count {
+            let logical_type = LogicalType {
+                handle: check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_type, *handle, i, RET)?,
+            };
 
-        Ok(Self {
-            function_name: str.to_string(),
-            arguments: BindArguments {
-                handle: arguments_handle,
-                _marker: std::marker::PhantomData,
-            },
-        })
+            let value_handle = check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_value, *handle, i, RET);
+            let value = match value_handle {
+                Ok(v) => Some(Value { handle: v }),
+                Err(e) => {
+                    if e.code == DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER {
+                        None
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+
+            bind_views.push(BindArgument { logical_type, value });
+        }
+
+        Ok(bind_views)
     }
 
-    pub(crate) fn from_aggregate(handle: &'a ffi::duckdb_v2_aggregate_function_bind_info_handle) -> Result<Self> {
-        let function_name: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_function_name, *handle, RET)?;
+    fn aggregate(&self, handle: &ffi::duckdb_v2_aggregate_function_bind_info_handle) -> Result<Vec<BindArgument>> {
+        let count = check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_count, *handle, RET)?;
 
-        let str: &str = function_name.into();
+        let mut bind_views = vec![];
 
-        let arguments_handle = check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arguments, *handle, RET)?;
+        for i in 0..count {
+            let logical_type = LogicalType {
+                handle: check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_type, *handle, i, RET)?,
+            };
+            let value_handle = check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_value, *handle, i, RET);
+            let value = match value_handle {
+                Ok(v) => Some(Value { handle: v }),
+                Err(e) => {
+                    if e.code == DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER {
+                        None
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
 
-        Ok(Self {
-            function_name: str.to_string(),
-            arguments: BindArguments {
-                handle: arguments_handle,
-                _marker: std::marker::PhantomData,
-            },
-        })
+            bind_views.push(BindArgument { logical_type, value });
+        }
+
+        Ok(bind_views)
+    }
+
+    fn table(&self, handle: &ffi::duckdb_v2_table_function_bind_info_handle) -> Result<Vec<BindArgument>> {
+        let count = check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_count, *handle, RET)?;
+
+        let mut bind_views = vec![];
+
+        for i in 0..count {
+            let logical_type = LogicalType {
+                handle: check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_type, *handle, i, RET)?,
+            };
+            let value = Value {
+                handle: check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_value, *handle, i, RET)?,
+            };
+
+            bind_views.push(BindArgument {
+                logical_type,
+                value: Some(value),
+            });
+        }
+
+        Ok(bind_views)
     }
 }
 
+#[cfg(feature = "capi-v2-p4")]
 /// A read-only view of a function's resolved arguments during binding.
 ///
 /// Entries follow signature-slot order and include expanded variadic arguments.
@@ -73,6 +125,7 @@ pub struct BindArguments<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
+#[cfg(feature = "capi-v2-p4")]
 impl<'a> BindArguments<'a> {
     /// Return an owned copy of the resolved type at `index`.
     ///

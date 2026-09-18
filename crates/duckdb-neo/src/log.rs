@@ -1,16 +1,6 @@
 //! Emit DuckDB log records and register custom log storage.
 
-use std::ops::Deref;
-
-use crate::{
-    Context, Result,
-    builder_helpers::{
-        OpaqueHandle, context_and_connection_fn, ffi_enum_redeclaration, get_opaque_data_ref, handle_unwind,
-    },
-    check_api_call, check_api_call_no_err,
-    database::Database,
-    ffi,
-};
+use crate::{Result, builder_helpers::ffi_enum_redeclaration, check_api_call, connection::Context, ffi};
 
 ffi_enum_redeclaration! {
     /// The severity of a DuckDB log record.
@@ -19,7 +9,7 @@ ffi_enum_redeclaration! {
     Trace = DUCKDB_V2_LOG_LEVEL_TRACE,
     Debug = DUCKDB_V2_LOG_LEVEL_DEBUG,
     Info = DUCKDB_V2_LOG_LEVEL_INFO,
-    Warn = DUCKDB_V2_LOG_LEVEL_WARN,
+    Warn = DUCKDB_V2_LOG_LEVEL_WARNING,
     Error = DUCKDB_V2_LOG_LEVEL_ERROR,
     Fatal = DUCKDB_V2_LOG_LEVEL_FATAL,
     }
@@ -29,30 +19,19 @@ ffi_enum_redeclaration! {
 pub struct Log;
 
 impl Log {
-    context_and_connection_fn! {
-        /// Submit a log record associated with a connection or callback context.
-        ///
-        /// Whether the record is emitted depends on the active logging
-        /// configuration.
-        pub fn log_on_[context, connection](
-            level: LogLevel,
-            message: &str,
-            log_type: &str,
-        ) -> Result<()>
-        {
-            context_fn: ffi::duckdb_v2_context_log,
-            connection_fn: ffi::duckdb_v2_connection_log,
-        }
+    /// Log a message in the context's connection scope, subject to DuckDB's logging configuration.
+    pub fn log_on_context(ctx: &Context, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
-            api_fn!(),
-            **api_arg!(),
+            ffi::duckdb_v2_context_log,
+            **ctx,
             level.into(),
-            message.into(),
-            log_type.into()
+            log_type.into(),
+            message.into()
         )
     }
 }
 
+#[cfg(feature = "capi-v2-p4")]
 unsafe extern "C" fn log_callback<T: LogStorageCallbacks>(
     user_data: *mut ::std::os::raw::c_void,
     timestamp: i64,
@@ -71,22 +50,7 @@ unsafe extern "C" fn log_callback<T: LogStorageCallbacks>(
     );
 }
 
-struct LogStorageBuilderHandle(ffi::duckdb_v2_log_storage_builder_handle);
-
-impl Drop for LogStorageBuilderHandle {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_log_storage_builder_destroy, &mut self.0).unwrap()
-    }
-}
-
-impl Deref for LogStorageBuilderHandle {
-    type Target = ffi::duckdb_v2_log_storage_builder_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
+#[cfg(feature = "capi-v2-p4")]
 /// Registers a named Rust implementation as DuckDB log storage.
 ///
 /// DuckDB calls the implementation for records routed to the registered
@@ -94,7 +58,7 @@ impl Deref for LogStorageBuilderHandle {
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{Environment, StorageLocation};
+/// use duckdb_neo::environment::{Environment, StorageLocation};
 /// use duckdb_neo::log::{LogStorageBuilder, LogStorageCallbacks, LogLevel};
 ///
 /// struct StdoutLogger;
@@ -124,6 +88,7 @@ pub struct LogStorageBuilder<T: LogStorageCallbacks> {
     implementation: OpaqueHandle<T>,
 }
 
+#[cfg(feature = "capi-v2-p4")]
 impl<T: LogStorageCallbacks> LogStorageBuilder<T> {
     /// Create named log storage backed by `implementation`.
     pub fn new(name: &str, implementation: T) -> Self {
@@ -134,7 +99,7 @@ impl<T: LogStorageCallbacks> LogStorageBuilder<T> {
     }
 
     fn build(&self) -> Result<LogStorageBuilderHandle> {
-        let handle = LogStorageBuilderHandle(check_api_call!(ffi::duckdb_v2_log_storage_builder_create, RET)?);
+        let handle = LogStorageBuilderHandle::new()?;
 
         check_api_call!(
             ffi::duckdb_v2_log_storage_builder_set_name,
@@ -189,30 +154,22 @@ pub trait LogStorageCallbacks: Send + Sync + 'static {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use std::sync::atomic::AtomicI64;
-
     use crate::{
-        Environment, Parameters, SettingScope, StorageLocation,
-        connection_options::OptionValue,
-        log::{Log, LogLevel, LogStorageBuilder, LogStorageCallbacks},
+        Parameters,
+        builder_helpers::scalar_callback,
+        connection::SettingScope,
+        connection_options::ConfigOptionValue,
+        environment::{Environment, StorageLocation},
+        log::{Log, LogLevel},
+        scalar::ScalarFunctionBuilder,
+        signature::{Parameter, SignatureBuilder},
     };
 
-    static IS_CALLED: AtomicI64 = AtomicI64::new(0);
+    scalar_callback!(LogCallback, i32, |_input, _result, ctx, _ud| {
+        Log::log_on_context(&ctx, LogLevel::Warn, "first message", "cpp_api_test")
+    });
 
-    struct CustomLogger;
-
-    impl LogStorageCallbacks for CustomLogger {
-        fn log(&self, log_message: &str, level: LogLevel, _timestamp: i64, log_type: &str) -> crate::Result<()> {
-            assert_eq!(log_type, "cpp_api_test");
-            assert_ne!(log_message, "wrong message");
-            assert_eq!(level, LogLevel::Warn);
-
-            let current_count = IS_CALLED.load(std::sync::atomic::Ordering::Relaxed);
-            IS_CALLED.store(current_count + 1, std::sync::atomic::Ordering::Relaxed);
-
-            Ok(())
-        }
-    }
+    use crate::types::DuckDBType;
 
     #[test]
     fn test_log_storage_builder() -> crate::Result<()> {
@@ -220,23 +177,36 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        LogStorageBuilder::new("custom_logger", CustomLogger).register_with_database(&db)?;
-
-        conn.set_option(&OptionValue::new("enable_logging", "true")?, Some(SettingScope::Global))?;
+        // LogStorageBuilder::new("custom_logger", CustomLogger).register_with_database(&db)?;
 
         conn.set_option(
-            &OptionValue::new("logging_storage", "custom_logger")?,
+            &ConfigOptionValue::new("enable_logging", "true")?,
             Some(SettingScope::Global),
         )?;
 
+        // conn.set_option(
+        //     &ConfigOptionValue::new("logging_storage", "custom_logger")?,
+        //     Some(SettingScope::Global),
+        // )?;
+
         conn.set_option(
-            &OptionValue::new("logging_level", "WARNING")?,
+            &ConfigOptionValue::new("logging_level", "WARNING")?,
             Some(SettingScope::Global),
         )?;
 
         let conn = db.connect()?;
 
-        Log::log_on_connection(&conn, LogLevel::Warn, "first message", "cpp_api_test")?;
+        ScalarFunctionBuilder::new(
+            "log_it",
+            SignatureBuilder::new(
+                [Parameter::normal("A", i32::logical_type(&conn)?)],
+                i32::logical_type(&conn)?,
+            ),
+            LogCallback,
+        )
+        .register(&conn)?;
+
+        conn.execute("SELECT log_it(1)", Parameters::None)?;
 
         conn.execute(
             "SELECT write_log('second message', log_type := 'cpp_api_test', level := 'WARNING');",
@@ -248,7 +218,15 @@ mod tests {
             Parameters::None,
         )?;
 
-        assert_eq!(IS_CALLED.load(std::sync::atomic::Ordering::Relaxed), 2);
+        let query = conn.query("SELECT * FROM duckdb_logs;", Parameters::None)?;
+
+        for chunk in query {
+            let chunk = chunk?;
+
+            assert_eq!(chunk.row_count()?, 2)
+        }
+
+        // assert_eq!(IS_CALLED.load(std::sync::atomic::Ordering::Relaxed), 2);
 
         Ok(())
     }

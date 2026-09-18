@@ -1,9 +1,14 @@
 //! Parsing, binding, and preparing SQL statements.
 
-use crate::{Result, check_api_call, check_api_call_no_err, connection::Connection, ffi, schema::Schema};
+use libduckdb_sys::v2::DuckDBStr;
 
-#[cfg(feature = "capi-v2-p2")]
-use crate::{Parameters, column_data_collection::ColumnDataCollection, query_result::QueryResult, value::Value};
+use crate::{
+    Parameters, Result, check_api_call, check_api_call_no_err,
+    connection::Connection,
+    ffi,
+    query_result::{QueryResult, StatementType},
+    schema::Schema,
+};
 
 /// Schemas resolved while binding a statement.
 pub struct SchemaBind {
@@ -57,7 +62,7 @@ impl Drop for Statements {
 }
 
 impl Iterator for Statements {
-    type Item = Result<Statement<'static>>;
+    type Item = Result<Statement>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let stmt_handle: ffi::duckdb_v2_sql_statement_handle =
@@ -69,32 +74,22 @@ impl Iterator for Statements {
         if stmt_handle.is_null() {
             None
         } else {
-            Some(Ok(Statement {
-                handle: stmt_handle,
-                #[cfg(feature = "capi-v2-p2")]
-                collections: Vec::new(),
-                #[cfg(not(feature = "capi-v2-p2"))]
-                collections: std::marker::PhantomData,
-            }))
+            Some(Ok(Statement { handle: stmt_handle }))
         }
     }
 }
 
 /// A single parsed SQL statement.
 ///
-/// A statement can be bound to inspect its input and output schemas, extended
-/// with in-memory collections, prepared for repeated execution, or passed to
+/// A statement can be bound to inspect its input and output schemas,
+/// prepared for repeated execution, or passed to
 /// [`Connection::query`].
-pub struct Statement<'collection> {
+pub struct Statement {
     /// The owned DuckDB statement handle.
     pub handle: ffi::duckdb_v2_sql_statement_handle,
-    #[cfg(feature = "capi-v2-p2")]
-    collections: Vec<&'collection ColumnDataCollection>,
-    #[cfg(not(feature = "capi-v2-p2"))]
-    collections: std::marker::PhantomData<&'collection ()>,
 }
 
-impl<'collection> Statement<'collection> {
+impl Statement {
     /// Bind the statement and return its result and parameter schemas.
     pub fn bind(&self, conn: &Connection) -> Result<SchemaBind> {
         let mut out_parameters = std::ptr::null_mut();
@@ -113,57 +108,13 @@ impl<'collection> Statement<'collection> {
         })
     }
 
-    /// Make a collection available as a named table in the statement.
-    ///
-    /// Custom column names must match the collection width; otherwise DuckDB
-    /// exposes the columns as `col1`, `col2`, and so on.
-    #[cfg(feature = "capi-v2-p2")]
-    pub fn add_collection<'new_collection>(
-        self,
-        name: &str,
-        collection: &'new_collection ColumnDataCollection,
-        column_names: Option<&[String]>,
-    ) -> Result<Statement<'new_collection>>
-    where
-        'collection: 'new_collection,
-    {
-        let mut statement: Statement<'new_collection> = self;
-
-        statement.register_collection(name, collection, column_names)?;
-        statement.collections.push(collection);
-
-        Ok(statement)
-    }
-
-    #[cfg(feature = "capi-v2-p2")]
-    fn register_collection(
-        &self,
-        name: &str,
-        collection: &ColumnDataCollection,
-        column_names: Option<&[String]>,
-    ) -> Result<()> {
-        let names = column_names.map_or(vec![], |v| {
-            v.iter().map(|name| name.into()).collect::<Vec<ffi::duckdb_v2_str>>()
-        });
-
-        check_api_call!(
-            ffi::duckdb_v2_statement_add_collection,
-            self.handle,
-            name.into(),
-            collection.handle,
-            names.as_ptr(),
-            column_names.map_or(0, |v| v.len() as u64)
-        )
-    }
-
-    #[cfg(feature = "capi-v2-p2")]
     /// Prepare the statement for repeated execution.
     ///
     /// When `require_cacheable` is true, preparation fails unless the compiled
     /// plan can be reused.
     pub fn prepare<'a>(&self, conn: &'a Connection, require_cacheable: bool) -> Result<PreparedStatement<'a>> {
         let prepared_handle = check_api_call!(
-            ffi::duckdb_v2_statement_prepare,
+            ffi::duckdb_v2_prepared_statement_create,
             **conn,
             self.handle,
             require_cacheable,
@@ -175,18 +126,54 @@ impl<'collection> Statement<'collection> {
             handle: prepared_handle,
         })
     }
+
+    /// Return a copy of this statement's SQL text.
+    ///
+    /// Includes the trailing terminator and whitespace, but excludes whitespace
+    /// and comments before the first token.
+
+    pub fn get_text(&self) -> Result<String> {
+        check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET).map(|x| x.into())
+    }
+
+    /// Return the statement type as classified by the parser, before execution-time rewrites.
+
+    pub fn get_type(&self) -> Result<StatementType> {
+        let val = check_api_call!(ffi::duckdb_v2_sql_statement_get_type, self.handle, RET)?;
+        val.try_into()
+    }
+
+    /// Return the number of distinct parameters found by the parser, counting repeated uses once.
+
+    pub fn parameter_count(&self) -> Result<usize> {
+        check_api_call!(ffi::duckdb_v2_sql_statement_get_parameter_count, self.handle, RET).map(|x| x as usize)
+    }
+
+    /// Return the parameter's binding key at the zero-based index in binding order.
+    ///
+    /// Keys omit the `$` prefix: `"1"` for `$1`, or `"name"` for `$name`.
+    /// Positional keys may have gaps.
+
+    pub fn parameter_name(&self, index: usize) -> Result<String> {
+        check_api_call!(
+            ffi::duckdb_v2_sql_statement_get_parameter_name,
+            self.handle,
+            index as u64,
+            RET
+        )
+        .map(|x| x.into())
+    }
 }
 
-impl Drop for Statement<'_> {
+impl Drop for Statement {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_sql_statement_destroy, &mut self.handle).unwrap();
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
 /// A statement bound and planned for repeated execution.
 ///
-/// Execution accepts either named or positional [`Value`] parameters and is
+/// Execution accepts named or positional [`Parameters`] and is
 /// lazy: work begins when the returned [`QueryResult`] is consumed. The
 /// prepared statement remains associated with the connection used to create it.
 pub struct PreparedStatement<'a> {
@@ -195,7 +182,6 @@ pub struct PreparedStatement<'a> {
     pub handle: ffi::duckdb_v2_prepared_statement_handle,
 }
 
-#[cfg(feature = "capi-v2-p2")]
 impl<'a> PreparedStatement<'a> {
     /// Execute with optional positional or named parameters.
     pub fn execute(&self, parameters: Parameters<'_>) -> Result<QueryResult<'a>> {
@@ -204,11 +190,12 @@ impl<'a> PreparedStatement<'a> {
             .iter()
             .map(|value| value.as_value().handle)
             .collect::<Vec<_>>();
+        let param_names = param_names.map(|x| x.iter().map(|s| (*s).into()).collect::<Vec<DuckDBStr<'_>>>());
 
         let result: ffi::duckdb_v2_result_handle = check_api_call!(
-            ffi::duckdb_v2_prepared_execute,
+            ffi::duckdb_v2_prepared_statement_execute,
             self.handle,
-            param_names.as_ref().map_or(std::ptr::null(), |names| names.as_ptr()),
+            param_names.map_or(std::ptr::null(), |v| v.as_ptr()),
             param_values.as_ptr(),
             param_values.len() as u64,
             RET
@@ -222,14 +209,44 @@ impl<'a> PreparedStatement<'a> {
 
     /// Return whether executions reuse the compiled plan.
     pub fn reuses_plan(&self) -> Result<bool> {
-        let reuses_plan: bool = check_api_call!(ffi::duckdb_v2_prepared_reuses_plan, self.handle, RET)?;
+        let reuses_plan: bool = check_api_call!(ffi::duckdb_v2_prepared_statement_reuses_plan, self.handle, RET)?;
         Ok(reuses_plan)
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
 impl<'a> Drop for PreparedStatement<'a> {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_prepared_statement_destroy, &mut self.handle).unwrap();
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use crate::{
+        environment::{Environment, StorageLocation},
+        statement::Statements,
+    };
+
+    #[test]
+    fn test_prepared_statement() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?")?;
+        let statement = statements.next().unwrap()?.prepare(&conn, true)?;
+
+        let query = statement.execute(crate::Parameters::Positional(&[&10]))?;
+
+        for chunk in query {
+            let chunk = chunk?;
+
+            let vec = chunk.get_vector_at::<i64>(0)?;
+
+            assert_eq!(vec.len(), 10);
+        }
+
+        Ok(())
     }
 }

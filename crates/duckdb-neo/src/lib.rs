@@ -1,6 +1,7 @@
 #![doc(
     html_logo_url = "https://upload.wikimedia.org/wikipedia/commons/4/40/DuckDB_logo.svg?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original"
 )]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 //! Safe Rust bindings for [DuckDB's](https://duckdb.org/) C API V2.
 //!
 //! Use this crate to embed DuckDB in a Rust application, open databases, execute
@@ -32,6 +33,8 @@ use libduckdb_sys::v2 as ffi;
 
 mod builder_helpers;
 pub mod connection_options;
+mod handles;
+mod links;
 
 pub(crate) mod bytes;
 pub mod connection;
@@ -47,7 +50,7 @@ pub mod statement;
 pub mod types;
 pub mod value;
 pub mod vector;
-use crate::error::{Error, check_api_call, check_api_call_no_err};
+use crate::error::{Error, check_api_call, check_api_call_no_err, check_api_call_string};
 pub use bytes::DuckDBBytes;
 pub use parameter::{Parameters, QueryParameter};
 pub use types::{DuckDBType, FromValue, ToValue};
@@ -55,63 +58,31 @@ pub use types::{DuckDBType, FromValue, ToValue};
 #[cfg(feature = "r2d2")]
 pub mod r2d2;
 
-#[cfg(feature = "capi-v2-p2")]
 pub mod aggregate;
-#[cfg(feature = "capi-v2-p2")]
 pub mod arrow;
-#[cfg(feature = "capi-v2-p2")]
 pub mod bind_arguments;
-#[cfg(feature = "capi-v2-p2")]
 pub mod cast;
-#[cfg(feature = "capi-v2-p2")]
 pub mod column_data_collection;
-#[cfg(feature = "capi-v2-p2")]
 pub mod copy_function;
-#[cfg(feature = "capi-v2-p2")]
 pub mod custom_type;
-#[cfg(feature = "capi-v2-p2")]
+pub mod description;
 pub mod enums;
-#[cfg(feature = "capi-v2-p2")]
 pub mod expression;
-#[cfg(feature = "capi-v2-p2")]
 pub mod file;
-#[cfg(feature = "capi-v2-p2")]
 pub mod log;
-#[cfg(feature = "capi-v2-p2")]
 pub mod qualified_name;
-#[cfg(feature = "capi-v2-p2")]
 pub mod query_progress;
-#[cfg(feature = "capi-v2-p2")]
 pub mod replacement_scan;
-#[cfg(feature = "capi-v2-p2")]
 pub mod scalar;
-#[cfg(feature = "capi-v2-p2")]
 pub mod signature;
-#[cfg(feature = "capi-v2-p2")]
-pub mod table_description;
-#[cfg(feature = "capi-v2-p2")]
 pub mod table_function;
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[cfg(feature = "capi-v2-p2")]
 /// Render a name as SQL, quoting and escaping it only when required.
 pub fn render_identifier_quoted(text: &str) -> Result<String> {
-    let data = check_api_call!(ffi::duckdb_v2_identifier_render_quoted, text.into(), RET)?;
-
-    let string = unsafe {
-        CStr::from_ptr(data).to_str().map_err(|e| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("Failed to convert library version to string: {}", e),
-        })
-    }
-    .map(|v| v.to_string());
-
-    unsafe {
-        libc::free(data as *mut libc::c_void);
-    }
-    string
+    check_api_call_string!(ffi::duckdb_v2_identifier_render_quoted, text.into())
 }
 
 /// Return the linked DuckDB library version.
@@ -200,7 +171,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "capi-v2-p2")]
     fn test_prepared_statement() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
@@ -248,12 +218,10 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "capi-v2-p2")]
     fn test_identifier_render_quoted() -> crate::Result<()> {
         let identifier = ffi::duckdb_v2_str {
             ptr: "10".as_ptr() as *const i8,
             len: "10".len() as u64,
-            _marker: std::marker::PhantomData,
         };
 
         let quoted = render_identifier_quoted(identifier.into())?;

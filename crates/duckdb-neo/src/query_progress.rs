@@ -31,9 +31,6 @@ impl<'conn> QueryProgressTracker<'conn> {
     }
 
     /// Capture the active query's progress, or return `None` when unavailable.
-    ///
-    /// This may be called from a different thread while the query result is
-    /// being stepped.
     pub fn snapshot(&self) -> Result<Option<QueryProgress>> {
         QueryProgress::new(self.connection)
     }
@@ -57,7 +54,7 @@ impl QueryProgress {
         let mut rows_processed = 0;
         let mut total_rows = 0;
         check_api_call!(
-            ffi::duckdb_v2_progress_get,
+            ffi::duckdb_v2_connection_progress_get,
             **conn,
             &mut percentage,
             &mut rows_processed,
@@ -79,7 +76,9 @@ impl QueryProgress {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::{Environment, Parameters, StorageLocation, query_progress::QueryProgressTracker};
+    use crate::{
+        Parameters, environment::Environment, environment::StorageLocation, query_progress::QueryProgressTracker,
+    };
 
     #[test]
     fn test_query_progress() -> crate::Result<()> {

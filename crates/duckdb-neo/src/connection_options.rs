@@ -178,7 +178,6 @@ impl Drop for ConfigOption {
 }
 
 #[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use crate::environment::{Environment, StorageLocation};
 

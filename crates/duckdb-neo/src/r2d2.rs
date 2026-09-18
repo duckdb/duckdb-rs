@@ -8,11 +8,13 @@ use crate::{
     ffi,
 };
 
+/// An [`r2d2::ManageConnection`] that opens connections to a shared [`Database`].
 pub struct ConnectionManager {
     database_handle: Arc<Mutex<DatabaseHandle>>,
 }
 
 impl ConnectionManager {
+    /// Create a manager that opens connections to `database`.
     pub fn new(database: &Database) -> Self {
         Self {
             database_handle: database.handle.clone(),
@@ -45,13 +47,14 @@ impl r2d2::ManageConnection for ConnectionManager {
         Ok(())
     }
 
-    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        // Always true since duckdb lives in memory.
+    fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
+        // Always false since duckdb lives in memory.
         false
     }
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
         Parameters,
@@ -96,7 +99,7 @@ mod tests {
         }
 
         let (s1, r1) = mpsc::channel();
-        let (s2, r2) = mpsc::channel();
+        let (s2, _r2) = mpsc::channel();
 
         let pool1 = pool.clone();
         let t1 = thread::spawn(move || {

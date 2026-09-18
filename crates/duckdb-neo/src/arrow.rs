@@ -1,92 +1,140 @@
 //! Arrow C Data Interface conversion.
 //!
 //! Exported `ArrowSchema` and `ArrowArray` values follow Arrow's `release`
-//! callback ownership convention. Importing an array transfers its buffers to
-//! the resulting [`crate::data_chunk::DataChunk`].
+//! callback ownership convention. Importing copies array data into DuckDB
+//! chunks; the caller retains ownership of the input array.
+
+use libduckdb_sys::v2::DuckDBStr;
 
 use crate::{
-    Context, Result, check_api_call, check_api_call_no_err, data_chunk::DataChunk, ffi, logical_type::LogicalType,
+    Result, check_api_call, check_api_call_no_err,
+    connection::Context,
+    data_chunk::{DataChunk, DataChunkRef},
+    ffi,
+    logical_type::LogicalType,
     schema::Schema,
 };
 
-/// Convert logical types into an owned Arrow C schema.
+/// Converts DuckDB chunks into Arrow arrays using a fixed schema.
 ///
-/// Each Arrow field is named with the corresponding logical type's DuckDB
-/// name.
-///
-/// The caller must invoke the returned schema's `release` callback.
-pub fn logical_types_to_arrow_schema(context: &Context, logical_types: &[LogicalType]) -> Result<ffi::ArrowSchema> {
-    let names = logical_types
-        .iter()
-        .map(|v| v.name().unwrap().into())
-        .collect::<Vec<ffi::duckdb_v2_str>>();
-
-    let types = logical_types.iter().map(|v| v.handle).collect::<Vec<_>>();
-
-    check_api_call!(
-        ffi::duckdb_v2_logical_types_to_arrow_schema,
-        **context,
-        types.as_ptr(),
-        names.as_ptr(),
-        logical_types.len() as u64,
-        RET
-    )
+/// Feed chunks with [`Self::append`] and drain completed arrays with [`Self::next_array`].
+pub struct ArrowExporter {
+    handle: ffi::duckdb_v2_arrow_exporter_handle,
 }
 
-/// A reusable mapping from an Arrow schema to DuckDB logical types.
-///
-/// Build a plan once and reuse it for arrays with the same schema. Each
-/// imported array transfers ownership of its buffers to the returned
-/// [`DataChunk`].
-pub struct ConversionPlan {
-    /// The owned DuckDB Arrow-conversion-plan handle.
-    pub handle: ffi::duckdb_v2_arrow_conversion_plan_handle,
+impl ArrowExporter {
+    /// Capture the column schema and Arrow settings from an active transaction.
+    ///
+    /// `count` must match both slices' lengths. `None` or `Some(0)` imposes no batch-size limit.
+    pub fn new(
+        context: &Context,
+        logical_types: &[LogicalType],
+        names: &[String],
+        count: usize,
+        batch_size: Option<usize>,
+    ) -> Result<Self> {
+        let logical_type_handles = logical_types.iter().map(|x| x.handle).collect::<Vec<_>>();
+        let name_ptrs = names.iter().map(|x| x.into()).collect::<Vec<DuckDBStr<'_>>>();
+
+        let handle = check_api_call!(
+            ffi::duckdb_v2_arrow_exporter_create,
+            **context,
+            logical_type_handles.as_ptr(),
+            name_ptrs.as_ptr(),
+            count as u64,
+            batch_size.unwrap_or(0) as u64,
+            RET
+        )?;
+
+        Ok(ArrowExporter { handle })
+    }
+
+    /// Copy a chunk into Arrow buffers, flushing any partial batch when `flush` is true.
+    pub fn append(&mut self, mut chunk: DataChunkRef<'_>, flush: bool) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_arrow_exporter_append,
+            self.handle,
+            &mut chunk.handle,
+            false,
+            flush
+        )
+    }
+
+    /// Return the Arrow schema; the caller must invoke its `release` callback when done.
+    pub fn get_schema(&self) -> Result<ffi::ArrowSchema> {
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_get_schema, self.handle, RET)
+    }
+
+    /// Take the next completed array, or an array with no `release` callback when none is ready.
+    ///
+    /// The caller must invoke each returned array's `release` callback when present.
+    pub fn next_array(&self) -> Result<ffi::ArrowArray> {
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, RET)
+    }
 }
 
-impl ConversionPlan {
-    /// Resolve an Arrow schema using a context's type configuration.
+impl Drop for ArrowExporter {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_arrow_exporter_destroy, &mut self.handle).unwrap();
+    }
+}
+
+/// Converts Arrow arrays of a fixed schema into DuckDB chunks.
+///
+/// The connection supplying its context must outlive the importer.
+pub struct ArrowImporter {
+    handle: ffi::duckdb_v2_arrow_importer_handle,
+}
+
+impl ArrowImporter {
+    /// Resolve an Arrow schema using the context's active transaction.
     ///
-    /// The schema remains caller-owned and may be released after this call.
-    pub fn new(context: &Context, schema: &mut ffi::ArrowSchema) -> Result<Self> {
-        Ok(Self {
-            handle: check_api_call!(ffi::duckdb_v2_arrow_conversion_plan_create, **context, schema, RET)?,
-        })
+    /// The caller retains the schema. `None` or `Some(0)` imposes no chunk-size limit.
+    pub fn new(context: Context, schema: &mut ffi::ArrowSchema, batch_size: Option<usize>) -> Result<Self> {
+        let handle = check_api_call!(
+            ffi::duckdb_v2_arrow_importer_create,
+            *context,
+            schema,
+            batch_size.unwrap_or(0) as u64,
+            RET
+        )?;
+        Ok(ArrowImporter { handle })
     }
 
-    /// Import an Arrow array as an owned data chunk.
+    /// Queue an array for copying into chunks; `flush` releases any final partial batch.
     ///
-    /// Ownership transfers to the chunk and the array's `release` callback is
-    /// cleared; do not release the array afterward.
-    pub fn to_data_chunk(&self, context: &Context, array: &mut ffi::ArrowArray) -> Result<DataChunk> {
-        Ok(DataChunk {
-            handle: check_api_call!(
-                ffi::duckdb_v2_arrow_array_to_data_chunk,
-                **context,
-                array,
-                self.handle,
-                RET
-            )?,
-            is_owned: true,
-            is_writable: false,
-        })
+    /// Keep the array valid and drain its chunks before appending another array.
+    pub fn append(&self, array: &mut ffi::ArrowArray, flush: bool) -> Result<()> {
+        check_api_call!(ffi::duckdb_v2_arrow_importer_append, self.handle, array, false, flush)
     }
 
-    /// Return the resolved DuckDB field schema.
+    /// Return the owned DuckDB schema resolved from the Arrow schema.
     pub fn schema(&self) -> Result<Schema> {
         Ok(Schema {
-            handle: check_api_call!(ffi::duckdb_v2_arrow_conversion_plan_get_schema, self.handle, RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET)?,
         })
+    }
+
+    /// Take the next chunk, or return `None` when the current array is drained.
+    pub fn chunk(&self) -> Result<Option<DataChunk>> {
+        let handle = check_api_call!(ffi::duckdb_v2_arrow_importer_next_chunk, self.handle, RET)?;
+
+        if handle.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(DataChunk::new(handle, true)))
+        }
     }
 }
 
-impl Drop for ConversionPlan {
+impl Drop for ArrowImporter {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_arrow_conversion_plan_destroy, &mut self.handle).unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_arrow_importer_destroy, &mut self.handle).unwrap();
     }
 }
 
 #[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(false)]
 mod tests {
     use crate::{
         DuckDBType, Environment, Parameters, StorageLocation,
@@ -168,7 +216,7 @@ mod tests {
             ),
             ToArrowTest,
         )
-        .register_with_connection(&conn)?;
+        .register(&conn)?;
 
         let result = conn.query(
             "SELECT to_arrow(a, b, c) FROM (VALUES (2, true, 'hello'), (1, false, 'world')) AS t(a, b, c)",

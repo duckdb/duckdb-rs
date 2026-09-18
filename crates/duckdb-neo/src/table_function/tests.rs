@@ -1,13 +1,16 @@
 use std::sync::Mutex;
 
 use crate::{
-    Context, DuckDBType, Environment, Parameters, SettingScope, StorageLocation,
-    bind_arguments::BindArguments,
-    connection_options::OptionValue,
-    data_chunk::DataChunk,
+    DuckDBType, Parameters,
+    bind_arguments::BindArgument,
+    connection::{Context, SettingScope},
+    connection_options::ConfigOptionValue,
+    data_chunk::DataChunkRef,
+    environment::{Environment, StorageLocation},
     error::{DuckDBError, Error},
+    logical_type::LogicalTypeID,
     signature::{Parameter, SignatureBuilder},
-    table_function::{BindFunctionHandle, TableFunctionCallbacks, TableFunctionCardinality},
+    table_function::{BindFunctionHandle, ExecColumnInfo, TableFunctionCallbacks, TableFunctionCardinality},
 };
 
 #[test]
@@ -33,26 +36,21 @@ fn test_table_function() -> crate::Result<()> {
         type GlobalState = GlobalStateCounter;
         type LocalState = i32;
 
-        fn cardinality(
-            _bind_data: Option<&Self::BindData>,
-            _context: Context,
-        ) -> crate::Result<Option<TableFunctionCardinality>> {
-            Ok(Some(TableFunctionCardinality {
-                is_exact: true,
-                cardinality: 10_000_000,
-            }))
-        }
-
         fn bind(
             &self,
             context: Context,
-            arguments: BindArguments,
-            bind_handle: BindFunctionHandle,
+            arguments: Vec<BindArgument>,
+            bind_handle: BindFunctionHandle<'_>,
         ) -> Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
-            let val = arguments.fold(0, &context)?;
+            let arg = &arguments[0];
 
-            assert_eq!(arguments.names()?, vec!["offset"]);
-            assert_eq!(val.dbg_string()?, "10");
+            let val = &arg.value;
+
+            assert_eq!(
+                arg.logical_type.type_id(),
+                LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+            );
+            assert_eq!(val.as_ref().unwrap().dbg_string()?, "10");
 
             bind_handle.add_result_column("out", i32::logical_type(&context)?)?;
 
@@ -69,7 +67,7 @@ fn test_table_function() -> crate::Result<()> {
             &self,
             _bind_data: Option<&Self::BindData>,
             _context: Context,
-            column_data: super::InitColumnData,
+            column_data: super::InitColumnData<'_>,
         ) -> crate::Result<(Option<Self::GlobalState>, Option<usize>)> {
             assert_eq!(column_data.get_column_count()?, 1);
 
@@ -87,7 +85,7 @@ fn test_table_function() -> crate::Result<()> {
             _bind_data: Option<&Self::BindData>,
             _context: Context,
             _global_state: Option<&Self::GlobalState>,
-            _column_data: super::InitColumnData,
+            _column_data: super::InitColumnData<'_>,
         ) -> crate::Result<Option<Self::LocalState>> {
             Ok(Some(100))
         }
@@ -95,6 +93,7 @@ fn test_table_function() -> crate::Result<()> {
         //TODO: Pushdown
 
         fn progress(
+            &self,
             _bind_data: Option<&Self::BindData>,
             global_state: Option<&Self::GlobalState>,
             _context: Context,
@@ -118,7 +117,8 @@ fn test_table_function() -> crate::Result<()> {
             global_state: Option<&Self::GlobalState>,
             local_state: Option<&mut Self::LocalState>,
             _context: Context,
-            output: DataChunk,
+            output: DataChunkRef<'_>,
+            _column_info: ExecColumnInfo<'_>,
         ) -> crate::Result<()> {
             let mut output_vector = output.get_vector_at::<i32>(0)?;
 
@@ -149,7 +149,7 @@ fn test_table_function() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let option = OptionValue::new("enable_progress_bar", "true")?;
+    let option = ConfigOptionValue::new("enable_progress_bar", "true")?;
     conn.set_option(&option, Some(SettingScope::Local))?;
 
     TableFunctionBuilder::new(
@@ -157,7 +157,7 @@ fn test_table_function() -> crate::Result<()> {
         SignatureBuilder::without_return_type([Parameter::normal("offset", i32::logical_type(&conn)?)]),
         MyTableFunction { base: 42 },
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     conn.execute("SET preserve_insertion_order=false", Parameters::None)?;
     let result = conn.query("SELECT * FROM my_table_function(10)", Parameters::None)?;

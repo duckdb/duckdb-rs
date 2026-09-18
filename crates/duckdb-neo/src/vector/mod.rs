@@ -74,6 +74,10 @@ impl StorageKind {
     }
 }
 
+/// A typed, borrowed view over a vector's physical storage.
+///
+/// Maps logical row indices to physical positions, accounting for constant,
+/// dictionary, and selection-vector layouts.
 pub struct VectorView<T> {
     view: ffi::duckdb_v2_vector_view,
     kind: StorageKind,

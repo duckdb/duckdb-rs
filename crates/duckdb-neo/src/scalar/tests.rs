@@ -1,4 +1,7 @@
-use crate::{Context, DuckDBType, Environment, Parameters, StorageLocation, signature::Parameter};
+use crate::{
+    DuckDBType, Parameters, connection::Context, environment::Environment, environment::StorageLocation,
+    signature::Parameter,
+};
 
 use super::*;
 
@@ -9,13 +12,12 @@ struct ScalarWithData {
 impl ScalarCallbacks for ScalarWithData {
     type BindData = Vec<i32>;
     type InitData = i32;
-    type ResultType = i32;
 
     fn bind(
         &self,
         _context: Context,
-        _metadata: BindMetadata,
-        _result_type_handle: ResultTypeHandle,
+        _metadata: BindMetadata<'_>,
+        _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
         Ok(vec![1, 2, 3])
     }
@@ -30,10 +32,10 @@ impl ScalarCallbacks for ScalarWithData {
         init_data: Option<&Self::InitData>,
         _context: Context,
 
-        input: &DataChunk,
-        output: Vector<'_>,
+        input: &VectorCollection,
+        output: Vector<'_, Unknown>,
     ) -> Result<()> {
-        let mut output: Vector<'_, i32> = output.cast::<Self::ResultType>()?;
+        let mut output: Vector<'_, i32> = output.cast::<i32>()?;
 
         let in_vector = input.get_vector_at::<i32>(0)?;
         let in_data = in_vector
@@ -57,17 +59,16 @@ struct BasicScalarFunction;
 impl ScalarCallbacks for BasicScalarFunction {
     type BindData = ();
     type InitData = ();
-    type ResultType = i32;
 
     fn exec(
         &self,
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&Self::InitData>,
         _context: Context,
-        _input: &DataChunk,
-        output: Vector<'_>,
+        _input: &VectorCollection,
+        output: Vector<'_, Unknown>,
     ) -> Result<()> {
-        let mut output: Vector<'_, i32> = output.cast::<Self::ResultType>()?;
+        let mut output: Vector<'_, i32> = output.cast::<i32>()?;
 
         output.set_size(1)?;
         output.write(0, Some(42))?;
@@ -80,15 +81,14 @@ struct BasicScalarPanicFunction;
 impl ScalarCallbacks for BasicScalarPanicFunction {
     type BindData = ();
     type InitData = ();
-    type ResultType = i32;
 
     fn exec(
         &self,
         _init_data: Option<&Self::InitData>,
         _bind_data: Option<&Self::BindData>,
         _context: Context,
-        _input: &DataChunk,
-        _output: Vector<'_>,
+        _input: &VectorCollection,
+        _output: Vector<'_, Unknown>,
     ) -> Result<()> {
         panic!("This function panics");
     }
@@ -110,7 +110,7 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
             base_data: vec![1, 2, 3],
         },
     )
-    .register_with_connection(&conn)
+    .register(&conn)
     .expect("Failed to register scalar function");
 
     let result = conn
@@ -146,7 +146,7 @@ fn test_scalar_panic() -> crate::Result<()> {
         SignatureBuilder::new(Vec::new(), i32::logical_type(&conn)?),
         BasicScalarPanicFunction,
     )
-    .register_with_connection(&conn)
+    .register(&conn)
     .expect("Failed to register scalar function");
 
     let statements = conn.parse("SELECT panic_func()").expect("Failed to parse query");
@@ -201,7 +201,7 @@ fn test_invalid_scalar_function_registration() -> crate::Result<()> {
         ),
         BasicScalarFunction,
     )
-    .register_with_connection(&conn);
+    .register(&conn);
 
     assert!(
         result.is_err(),
@@ -227,7 +227,7 @@ fn test_scalar_building() -> crate::Result<()> {
         ),
         BasicScalarFunction,
     )
-    .register_with_connection(&conn)
+    .register(&conn)
     .expect("Failed to register scalar function");
 
     let result = conn
@@ -264,7 +264,7 @@ fn test_scalar_property() -> crate::Result<()> {
         BasicScalarFunction,
     )
     .set_property(FunctionProperty::HasSpecialNullHandling(false))
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     for chunk in conn.query("SELECT basic(NULL)", Parameters::None)? {
         let chunk = chunk?;
@@ -286,15 +286,14 @@ struct OverrideAbleScalar;
 impl ScalarCallbacks for OverrideAbleScalar {
     type BindData = ();
     type InitData = ();
-    type ResultType = i32;
 
     fn bind(
         &self,
         context: Context,
-        _metadata: BindMetadata,
-        result_type_handle: ResultTypeHandle,
+        _metadata: BindMetadata<'_>,
+        result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
-        result_type_handle.override_result_type(i8::logical_type(&context)?)?;
+        result_type_handle.override_return(i8::logical_type(&context)?)?;
         Ok(())
     }
 
@@ -303,7 +302,7 @@ impl ScalarCallbacks for OverrideAbleScalar {
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&Self::InitData>,
         _context: Context,
-        _input: &DataChunk,
+        _input: &VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
         let mut output = output.cast::<i8>()?;
@@ -329,7 +328,7 @@ fn test_scalar_override_result() -> crate::Result<()> {
         ),
         OverrideAbleScalar {},
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let result = conn.query("SELECT override(42)", Parameters::None)?;
 

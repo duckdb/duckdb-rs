@@ -1,24 +1,25 @@
 //! File access through DuckDB's file system.
 
-use crate::{Result, builder_helpers::context_and_connection_fn, check_api_call, check_api_call_no_err, ffi};
+use std::marker::PhantomData;
+
+use crate::{Result, check_api_call, check_api_call_no_err, ffi, links::FileSystemLink, value::Value};
 
 /// A borrowed handle to DuckDB's file system.
-pub struct FileSystem {
-    /// The borrowed DuckDB file-system handle.
-    pub handle: ffi::duckdb_v2_file_system_handle,
+pub struct FileSystem<'a> {
+    handle: ffi::duckdb_v2_file_system_handle,
+    _marker: PhantomData<&'a ()>,
 }
 
-impl FileSystem {
-    context_and_connection_fn! {
-        /// Borrow the file system associated with a connection or callback context.
-        pub fn from_[context, connection]() -> Result<Self>
-        {
-            context_fn: ffi::duckdb_v2_file_system_get_from_context,
-            connection_fn: ffi::duckdb_v2_file_system_get_from_connection,
-        }
-        let handle = check_api_call!(api_fn!(), **api_arg!(), RET)?;
+impl<'a> FileSystem<'a> {
+    /// Borrow the file system associated with a connection or callback context.
+    #[allow(private_bounds)]
+    pub fn new<C: FileSystemLink>(link: &'a C) -> Result<Self> {
+        let handle = link.get_file_system()?;
 
-        Ok(FileSystem { handle })
+        Ok(FileSystem {
+            handle,
+            _marker: PhantomData,
+        })
     }
 }
 
@@ -27,68 +28,119 @@ impl FileSystem {
 /// Access and creation flags are disabled by default and can be composed with
 /// the builder methods before calling [`FileBuilder::open`].
 pub struct FileBuilder<'a> {
-    fs: &'a FileSystem,
+    fs: &'a FileSystem<'a>,
+    handle: ffi::duckdb_v2_file_open_options_handle,
     path: String,
-    flags: u64,
-}
-
-macro_rules! set_flag {
-    ($flags:expr, $flag:expr, $enable:expr) => {
-        if $enable {
-            $flags |= $flag as u64;
-        } else {
-            $flags &= !($flag as u64);
-        }
-    };
 }
 
 impl<'a> FileBuilder<'a> {
     /// Create a builder for `path` with no flags enabled.
-    pub fn new(fs: &'a FileSystem, path: &str) -> FileBuilder<'a> {
-        FileBuilder {
+    pub fn new(fs: &'a FileSystem<'a>, path: &str) -> Result<FileBuilder<'a>> {
+        let handle = check_api_call!(ffi::duckdb_v2_file_open_options_create, fs.handle, RET)?;
+
+        Ok(FileBuilder {
             fs,
+            handle,
             path: path.to_string(),
-            flags: 0,
-        }
+        })
     }
 
     /// Enable or disable write access.
-    pub fn write(mut self, write: bool) -> Self {
-        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_WRITE, write);
-        self
+    pub fn write(self) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            self.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_WRITE
+        )?;
+        Ok(self)
     }
 
     /// Enable or disable read access.
-    pub fn read(mut self, read: bool) -> Self {
-        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_READ, read);
-        self
+    pub fn read(self) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            self.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_READ
+        )?;
+        Ok(self)
     }
 
     /// Enable or disable creating the file when it does not exist.
-    pub fn create(mut self, create: bool) -> Self {
-        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_CREATE, create);
-        self
+    pub fn create(self) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            self.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_CREATE
+        )?;
+        Ok(self)
     }
 
-    /// Enable or disable exclusive creation that fails if the file exists.
-    pub fn create_new(mut self, create_new: bool) -> Self {
-        set_flag!(
-            self.flags,
-            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_CREATE_NEW,
-            create_new
-        );
-        self
+    /// Create the file if missing, or truncate it to empty if it exists.
+    pub fn create_new(self) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            self.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_CREATE_NEW
+        )?;
+        Ok(self)
+    }
+
+    /// Create the file only if it does not exist, failing if it already does.
+    pub fn exclusive_create(self) -> Result<Self> {
+        let new = self.create()?;
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            new.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_EXCLUSIVE_CREATE
+        )?;
+        Ok(new)
     }
 
     /// Enable or disable append mode.
-    pub fn append(mut self, append: bool) -> Self {
-        set_flag!(self.flags, ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_APPEND, append);
-        self
+    pub fn append(self) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            self.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_APPEND
+        )?;
+        Ok(self)
+    }
+
+    /// Permit concurrent reads and writes at explicit offsets.
+    ///
+    /// Set this when [`File::read_at`] or [`File::write_at`] are used from several threads.
+    pub fn parallel_access(self) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_flag,
+            self.handle,
+            ffi::DUCKDB_V2_FILE_FLAG::DUCKDB_V2_FILE_FLAG_PARALLEL_ACCESS
+        )?;
+        Ok(self)
+    }
+
+    /// Attach a named hint for the file system that handles the path.
+    ///
+    /// Unrecognized names are ignored.
+    pub fn set_value(self, name: &str, value: &Value) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_file_open_options_set_value,
+            self.handle,
+            name.into(),
+            **value
+        )?;
+        Ok(self)
     }
 
     /// Open the path with the configured flags.
     pub fn open(self) -> Result<File> {
-        File::open(self.fs, &self.path, self.flags)
+        File::open(self.fs, &self.path, self.handle)
+    }
+}
+
+impl Drop for FileBuilder<'_> {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_file_open_options_destroy, &mut self.handle)
+            .expect("failed to destroy file options handle");
     }
 }
 
@@ -98,19 +150,19 @@ impl<'a> FileBuilder<'a> {
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{Environment, StorageLocation};
+/// use duckdb_neo::environment::{Environment, StorageLocation};
 /// use duckdb_neo::file::{File, FileSystem, FileBuilder};
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 /// let conn = db.connect()?;
-/// let fs = FileSystem::from_connection(&conn)?;
+/// let fs = FileSystem::new(&conn)?;
 /// let path = std::env::temp_dir().join("duckdb-rs-file-example.txt");
-/// let file = FileBuilder::new(&fs, path.to_str().unwrap())
-///         .write(true)
-///         .read(true)
-///         .create(true)
+/// let file = FileBuilder::new(&fs, path.to_str().unwrap())?
+///         .write()?
+///         .read()?
+///         .create()?
 ///         .open()?;
 /// file.write(b"DuckDB")?;
 /// file.seek(0)?;
@@ -122,8 +174,12 @@ impl<'a> FileBuilder<'a> {
 /// ```
 pub struct File {
     /// The owned DuckDB file handle.
-    pub handle: ffi::duckdb_v2_file_handle_handle,
+    handle: ffi::duckdb_v2_file_handle,
 }
+
+// TODO verify
+unsafe impl Send for File {}
+unsafe impl Sync for File {}
 
 impl File {
     /// Close the underlying file without destroying its handle.
@@ -131,11 +187,15 @@ impl File {
     /// The handle is still destroyed on drop but cannot be read, written,
     /// sought, or synchronized after this call.
     pub fn close(&self) -> crate::Result<()> {
-        check_api_call!(ffi::duckdb_v2_file_handle_close, self.handle)
+        check_api_call!(ffi::duckdb_v2_file_close, self.handle)
     }
 
     /// Open `path` with a bitwise combination of DuckDB file flags.
-    pub(crate) fn open(fs: &FileSystem, path: &str, flags: u64) -> crate::Result<Self> {
+    pub(crate) fn open(
+        fs: &FileSystem<'_>,
+        path: &str,
+        flags: ffi::duckdb_v2_file_open_options_handle,
+    ) -> crate::Result<Self> {
         Ok(File {
             handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, path.into(), flags, RET)?,
         })
@@ -147,7 +207,7 @@ impl File {
         let mut bytes_read: u64 = 0;
 
         check_api_call!(
-            ffi::duckdb_v2_file_handle_read,
+            ffi::duckdb_v2_file_read,
             self.handle,
             buffer.as_mut_ptr() as *mut std::ffi::c_void,
             buffer.len() as u64,
@@ -161,22 +221,22 @@ impl File {
 
     /// Set the current position to an absolute byte offset.
     pub fn seek(&self, position: usize) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_file_handle_seek, self.handle, position as u64)
+        check_api_call!(ffi::duckdb_v2_file_seek, self.handle, position as u64)
     }
 
     /// Return the file size in bytes.
     pub fn size(&self) -> Result<u64> {
-        check_api_call!(ffi::duckdb_v2_file_handle_size, self.handle, RET)
+        check_api_call!(ffi::duckdb_v2_file_size, self.handle, RET)
     }
 
     /// Flush buffered writes to persistent storage.
     pub fn sync(&self) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_file_handle_sync, self.handle)
+        check_api_call!(ffi::duckdb_v2_file_sync, self.handle)
     }
 
     /// Return the current byte position.
     pub fn tell(&self) -> Result<u64> {
-        check_api_call!(ffi::duckdb_v2_file_handle_tell, self.handle, RET)
+        check_api_call!(ffi::duckdb_v2_file_tell, self.handle, RET)
     }
 
     /// Write bytes at the current position and return the number written.
@@ -184,7 +244,7 @@ impl File {
         let mut bytes_written: u64 = 0;
 
         check_api_call!(
-            ffi::duckdb_v2_file_handle_write,
+            ffi::duckdb_v2_file_write,
             self.handle,
             buffer.as_ptr() as *const std::ffi::c_void,
             buffer.len() as u64,
@@ -193,12 +253,35 @@ impl File {
 
         Ok(bytes_written as usize)
     }
+
+    /// Read exactly `len` bytes from `position`; returns an error when not enough bytes could be read.
+    pub fn read_at(&self, position: usize, len: usize) -> Result<Vec<u8>> {
+        let mut buffer = vec![0u8; len];
+
+        check_api_call!(
+            ffi::duckdb_v2_file_read_at,
+            self.handle,
+            buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            len as u64,
+            position as u64
+        )?;
+        Ok(buffer)
+    }
+    /// Write bytes at position. Increases file-size when overflowing.
+    pub fn write_at(&self, position: usize, buffer: &[u8]) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_file_write_at,
+            self.handle,
+            buffer.as_ptr() as *const std::ffi::c_void,
+            buffer.len() as u64,
+            position as u64,
+        )
+    }
 }
 
 impl Drop for File {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_file_handle_destroy, &mut self.handle)
-            .expect("Failed to destroy file handle");
+        check_api_call_no_err!(ffi::duckdb_v2_file_destroy, &mut self.handle).expect("Failed to destroy file handle");
     }
 }
 
@@ -206,7 +289,7 @@ impl Drop for File {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
-        Environment, StorageLocation,
+        environment::{Environment, StorageLocation},
         file::{FileBuilder, FileSystem},
     };
 
@@ -216,16 +299,16 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let fs = FileSystem::from_connection(&conn)?;
+        let fs = FileSystem::new(&conn)?;
 
-        let file = FileBuilder::new(&fs, "test_file.txt")
-            .write(true)
-            .create(true)
-            .create_new(true)
-            .read(true)
+        let file = FileBuilder::new(&fs, "test_file.txt")?
+            .write()?
+            .create_new()?
+            .read()?
             .open()?;
 
         file.write("HELLO RUST CLIENT!".as_bytes())?;
+        file.write_at(11, "DUCKDB".as_bytes())?;
 
         file.sync()?;
 
@@ -240,6 +323,8 @@ mod tests {
         assert_eq!(file.tell()?, 10);
 
         assert_eq!(file.size()?, 18);
+
+        assert_eq!(String::from_utf8(file.read_at(11, 6)?).unwrap(), "DUCKDB");
 
         file.close()?;
 

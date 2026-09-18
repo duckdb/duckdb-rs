@@ -1,6 +1,6 @@
 //! Lazy, streaming query results.
 
-use libduckdb_sys::v2::{self as ffi, duckdb_v2_str};
+use libduckdb_sys::v2::{self as ffi, ArrowArrayStream, duckdb_v2_str};
 
 use crate::{
     Result, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err, connection::Connection,
@@ -153,7 +153,6 @@ impl QueryResult<'_> {
         Ok(Schema { handle })
     }
 
-    #[cfg(feature = "capi-v2-p2")]
     /// Consume the result into a lazy Arrow C Data Interface stream.
     ///
     /// The stream contains only rows not already consumed. A `batch_size` of
@@ -249,7 +248,6 @@ unsafe impl Send for QueryResult<'_> {}
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    #[cfg(feature = "capi-v2-p2")]
     use libduckdb_sys::v2::{ArrowArray, ArrowArrayStream};
 
     use crate::{
@@ -335,10 +333,9 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "capi-v2-p2")]
     fn test_query_to_arrow_stream() -> crate::Result<()> {
-        let env = crate::Environment::new()?;
-        let db = env.open(crate::StorageLocation::InMemory)?;
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
         let mut statements = conn.parse(

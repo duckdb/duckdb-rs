@@ -23,6 +23,7 @@ use crate::{
     database::DatabaseHandle,
     error::{DuckDBError, Error, check_api_call, check_api_call_no_err},
     ffi,
+    links::LogicalTypeFromTextLink,
     logical_type::{LogicalType, LogicalTypeID},
     parameter::ParameterValue,
     query_result::QueryResult,
@@ -78,7 +79,7 @@ impl IntoStatement for Statements {
     }
 }
 
-impl IntoStatement for Statement<'_> {
+impl IntoStatement for Statement {
     fn execute_statement<'conn>(
         self,
         conn: &'conn Connection,
@@ -140,12 +141,7 @@ impl Connection {
         stmt.execute_statement(self, names.as_deref(), &values)
     }
 
-    fn execute_statement(
-        &self,
-        stmt: Statement<'_>,
-        names: Option<&[&str]>,
-        values: &[&Value],
-    ) -> Result<QueryResult<'_>> {
+    fn execute_statement(&self, stmt: Statement, names: Option<&[&str]>, values: &[&Value]) -> Result<QueryResult<'_>> {
         let values = values.iter().map(|value| value.handle).collect::<Vec<_>>();
         let name_strs = names.map(|names| {
             names
@@ -287,23 +283,38 @@ pub trait FFILink {
 
 impl FFILink for Connection {
     fn logical_type_create(&self, name: &str, parameters: Parameters<'_>) -> Result<LogicalType> {
-        LogicalType::create_with_connection(self, name, parameters)
+        LogicalType::create(self, name, parameters)
     }
 
     fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
-        LogicalType::create_from_id_with_connection(self, type_id, parameters)
+        LogicalType::create_from_id(self, type_id, parameters)
     }
 
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        LogicalType::from_text_with_connection(self, text)
+        self.create_logical_type_from_text(text)
+            .map(|handle| LogicalType { handle })
     }
 
     fn value_cast(&self, value: &Value, target_type: LogicalType) -> Result<Value> {
-        value.cast_with_connection(self, target_type)
+        value.cast(self, target_type)
     }
 
     fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
         value::create_with_connection(self, input)
+    }
+}
+
+/// A non-owning handle to the extension being loaded, available during an
+/// extension load callback. Registering through it makes the item visible to
+/// every connection on that database.
+#[repr(transparent)]
+pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
+
+impl Deref for Extension {
+    type Target = ffi::duckdb_v2_extension_handle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -323,19 +334,20 @@ impl Deref for Context {
 
 impl FFILink for Context {
     fn logical_type_create(&self, name: &str, parameters: Parameters<'_>) -> Result<LogicalType> {
-        LogicalType::create_with_context(self, name, parameters)
+        LogicalType::create(self, name, parameters)
     }
 
     fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
-        LogicalType::create_from_id_with_context(self, type_id, parameters)
+        LogicalType::create_from_id(self, type_id, parameters)
     }
 
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        LogicalType::from_text_with_context(self, text)
+        self.create_logical_type_from_text(text)
+            .map(|handle| LogicalType { handle })
     }
 
     fn value_cast(&self, value: &Value, target_type: LogicalType) -> Result<Value> {
-        value.cast_with_context(self, target_type)
+        value.cast(self, target_type)
     }
 
     fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
@@ -367,6 +379,7 @@ impl<T: FFILink + ?Sized> FFILink for &T {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
         Parameters,
