@@ -20,12 +20,18 @@ name = "duckdb_neo"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = []
+default = ["tls-aws-lc-rs"]
 bundled = ["libduckdb-sys/bundled"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 r2d2 = ["dep:r2d2"]
+# Crypto provider for the prebuilt-library download in the libduckdb-sys build
+# script, and the only thing that pulls in an HTTP stack. For ring instead, use
+# `default-features = false` with `tls-ring`; a build that never downloads can
+# enable neither.
+tls-aws-lc-rs = ["libduckdb-sys/tls-aws-lc-rs"]
+tls-ring = ["libduckdb-sys/tls-ring"]
 # Warning: targets v2 C API surface that the bundled DuckDB does not provide yet.
 # Does not compile; kept for the next DuckDB bump. Never enable it in CI.
 capi-v2-p2 = []
@@ -40,7 +46,7 @@ paste = { workspace = true }
 r2d2 = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
-features = []
+features = ["tls-aws-lc-rs"]
 all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"

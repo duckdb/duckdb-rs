@@ -195,6 +195,13 @@ These extensions are only available through the CMake build backend and imply `b
 - `buildtime_bindgen` - Use bindgen at build time to generate fresh bindings instead of using pre-generated ones.
 - `capi-v1` (`libduckdb-sys` only, default) - Generate bindings for the v1 C API header `duckdb.h`, exposed as `libduckdb_sys::v1` and at the crate root. Required by `duckdb` and by `loadable-extension`.
 - `capi-v2` (`libduckdb-sys` only) - Also generate bindings for the v2 C API header `duckdb_v2.h`, exposed as `libduckdb_sys::v2`. `duckdb-neo` enables this automatically. With `buildtime_bindgen`, `duckdb_v2.h` must sit next to `duckdb.h` in `DUCKDB_INCLUDE_DIR`.
+- `tls-aws-lc-rs` (default) - Use aws-lc-rs as the rustls crypto provider when the `libduckdb-sys` build script downloads a prebuilt DuckDB library.
+  Building aws-lc-rs needs a C compiler, and CMake plus NASM on some targets.
+- `tls-ring` - Use ring instead, which builds with just a C compiler. Combine it with `default-features = false` so that aws-lc-rs is never compiled:
+  `duckdb = { version = "1.20000.0", default-features = false, features = ["tls-ring"] }`.
+- Enabling neither drops `ureq` and `rustls` from the build entirely. That only works when the build never downloads, which means `bundled`
+  or a library found through `DUCKDB_LIB_DIR`, vcpkg, or pkg-config; a build that tries to download without one of these features fails
+  and says so.
 - `loadable-extension` - _Experimental_ support for creating loadable DuckDB extensions. Includes procedural macros for extension development. Only enable this when building an extension, never for a client application - see [Database client or extension?](#database-client-or-extension)
 
 ## Installation

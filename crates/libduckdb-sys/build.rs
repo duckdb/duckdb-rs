@@ -457,6 +457,7 @@ mod build_linked {
 
     // Ensures the libduckdb archive exists: reuses an existing archive or
     // downloads it into a temp file and atomically renames it into place.
+    #[cfg(any(feature = "tls-aws-lc-rs", feature = "tls-ring"))]
     fn ensure_libduckdb(url: &str, archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if archive_path.exists() {
             println!("cargo:warning=libduckdb already present at {}", archive_path.display());
@@ -472,6 +473,17 @@ mod build_linked {
         fs::rename(&tmp_path, archive_path)?;
         println!("cargo:warning=Downloaded libduckdb from {url}");
         Ok(())
+    }
+
+    // Without a `tls-*` feature the crate has no HTTP client to download with, so the
+    // build has to be pointed at a library that already exists.
+    #[cfg(not(any(feature = "tls-aws-lc-rs", feature = "tls-ring")))]
+    fn ensure_libduckdb(_url: &str, _archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        Err(
+            "no TLS crypto provider to download with. Enable the `tls-aws-lc-rs` or `tls-ring` \
+             feature, set DUCKDB_LIB_DIR to an existing DuckDB library, or build with `bundled`"
+                .into(),
+        )
     }
 
     // The archives are flat tarballs: the shared library (plus the MSVC import
@@ -595,7 +607,9 @@ mod build_linked {
         }
     }
 
+    #[cfg(any(feature = "tls-aws-lc-rs", feature = "tls-ring"))]
     fn http_client() -> ureq::Agent {
+        install_crypto_provider();
         let timeout = env::var("CARGO_HTTP_TIMEOUT")
             .or_else(|_| env::var("HTTP_TIMEOUT"))
             .ok()
@@ -606,6 +620,19 @@ mod build_linked {
                 .timeout_global(Some(std::time::Duration::from_secs(timeout)))
                 .build(),
         )
+    }
+
+    // ureq is built against rustls without a crypto provider, so the `tls-*` features
+    // decide which one is compiled and installed here. aws-lc-rs wins when cargo
+    // unifies both, matching which one the crate enables by default.
+    #[cfg(feature = "tls-aws-lc-rs")]
+    fn install_crypto_provider() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
+
+    #[cfg(all(feature = "tls-ring", not(feature = "tls-aws-lc-rs")))]
+    fn install_crypto_provider() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
     }
 }
 

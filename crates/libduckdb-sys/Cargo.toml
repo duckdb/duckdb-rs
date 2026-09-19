@@ -21,7 +21,7 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [features]
-default = ["capi-v1", "vcpkg", "pkg-config"]
+default = ["capi-v1", "vcpkg", "pkg-config", "tls-aws-lc-rs"]
 bundled = ["cc"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
@@ -42,6 +42,12 @@ loadable-extension = ["prettyplease", "quote", "syn", "capi-v1"]
 capi-v1 = []
 # Also generate bindings for the v2 C API header (`duckdb_v2.h`), exposed as `libduckdb_sys::v2`.
 capi-v2 = []
+# Crypto provider that rustls uses when the build script downloads prebuilt DuckDB
+# libraries. These are the only features that pull in an HTTP stack at all, so a
+# build that never downloads can drop ureq and rustls by enabling neither. Enable
+# exactly one; when cargo unifies both, the build script installs aws-lc-rs.
+tls-aws-lc-rs = ["dep:ureq", "dep:rustls", "rustls/aws-lc-rs"]
+tls-ring = ["dep:ureq", "dep:rustls", "rustls/ring"]
 
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"], optional = true }
@@ -51,11 +57,14 @@ flate2 = { workspace = true }
 pkg-config = { workspace = true, optional = true }
 prettyplease = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
+# Only pulled in to install the crypto provider the `tls-*` features select; ureq
+# contributes the remaining rustls features it needs.
+rustls = { version = "0.23.22", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 syn = { workspace = true, optional = true }
 tar = { workspace = true }
-ureq = { version = "3", default-features = false, features = ["rustls"] }
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots"], optional = true }
 vcpkg = { workspace = true, optional = true }
 which = { version = "8", optional = true }
 
