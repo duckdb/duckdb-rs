@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::ffi;
 
-use crate::bind_arguments::{BindMetadata, BindType};
+use crate::bind_arguments::{BindArgument, BindMetadata, BindType};
 use crate::builder_helpers::{OpaqueHandle, get_bind_data, get_init_data, get_user_data, handle_unwind, into_opaque};
 use crate::data_chunk::VectorCollection;
 use crate::enums::FunctionProperty;
@@ -29,14 +29,15 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_bind_get_user_data, info);
 
-            let metadata = BindMetadata {
+            let arguments = BindMetadata {
                 bind_type: BindType::Scalar(&info),
-            };
+            }
+            .get_arguments()?;
 
             let result = T::bind(
                 user_data,
                 Context(context),
-                metadata,
+                arguments,
                 ReturnTypeHandle {
                     handle: FunctionBindHandles::Scalar(&info),
                 },
@@ -250,7 +251,7 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         _context: Context,
-        _metadata: BindMetadata<'_>,
+        _metadata: Vec<BindArgument>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
         Ok(Self::BindData::default())

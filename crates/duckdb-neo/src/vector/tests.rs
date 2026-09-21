@@ -192,6 +192,182 @@ scalar_callback!(CopyStringScalar, String, |input, result, _ctx, _user_data| {
     Ok(())
 });
 
+scalar_callback!(DictionaryProbeScalar, i32, |input, output, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    if vector.storage_kind() == StorageKind::Dictionary {
+        // Dictionary vectors expose a selection vector mapping each logical
+        // row into a shared physical child buffer. Reading through the
+        // normal iterator must already honour that indirection.
+        let selection = vector.get_view().unwrap().selection().unwrap().to_vec();
+        assert_eq!(selection.len(), 2);
+
+        let before: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(before, vec![Some(i32::MAX), None]);
+
+        // Flattening should collapse the dictionary into a flat vector while
+        // preserving the logical values.
+        vector.flatten()?;
+        assert_eq!(vector.storage_kind(), StorageKind::Flat);
+
+        let after: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(after, before);
+    } else if vector.storage_kind() == StorageKind::Other {
+        // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
+        // flattened before it can be read like the other storage kinds.
+        vector.flatten()?;
+    }
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+pub fn test_vector_dictionary() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "dict_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        DictionaryProbeScalar,
+    )
+    .register(&conn)?;
+
+    // `test_vector_types` feeds its output straight into the projection
+    // below without an intervening `Fetch`, so `dict_probe` observes the
+    // table function's chunks in their native storage kind: FLAT, CONSTANT,
+    // DICTIONARY, then OTHER (SEQUENCE) - in that fixed order. The
+    // DICTIONARY chunk is the one asserted on inside `DictionaryProbeScalar`.
+    let result = conn.query(
+        "SELECT dict_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+
+    let mut values = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+        values.extend(vector.iter()?.map(|v| v.copied()));
+    }
+
+    assert_eq!(
+        values,
+        vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(3),
+            Some(5),
+            Some(7),
+        ]
+    );
+
+    Ok(())
+}
+
+scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    if vector.storage_kind() == StorageKind::Constant {
+        // DuckDB constant-folds scalar function calls whose arguments are
+        // all CONSTANT_VECTOR: it runs the callback on a single logical row
+        // and broadcasts the (constant) result back out to the real batch
+        // size afterwards, so the vector we observe here has length 1 and
+        // must not be flattened - flattening would defeat the broadcast.
+        assert_eq!(vector.len(), 1);
+
+        let view = vector.get_view().unwrap();
+        if let Some(selection) = view.selection() {
+            assert!(selection.iter().all(|&index| index == 0));
+        }
+        assert_eq!(unsafe { view.as_slice() }.unwrap().len(), 1);
+
+        let values: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(values, vec![Some(i32::MIN)]);
+    } else if vector.storage_kind() == StorageKind::Other {
+        // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
+        // flattened before it can be read like the other storage kinds.
+        vector.flatten()?;
+    }
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+pub fn test_vector_constant() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "const_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        ConstantProbeScalar,
+    )
+    .register(&conn)?;
+
+    // Same chunk sequence as `test_vector_dictionary` (FLAT, CONSTANT,
+    // DICTIONARY, then OTHER/SEQUENCE); this test asserts on the CONSTANT
+    // chunk inside `ConstantProbeScalar`. Note that DuckDB constant-folds
+    // the call for that chunk, so `const_probe` itself only observes a
+    // single logical row before DuckDB broadcasts the result back to the
+    // full batch size shown in `values` below.
+    let result = conn.query(
+        "SELECT const_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+
+    let mut values = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+        values.extend(vector.iter()?.map(|v| v.copied()));
+    }
+
+    assert_eq!(
+        values,
+        vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(3),
+            Some(5),
+            Some(7),
+        ]
+    );
+
+    Ok(())
+}
+
 #[test]
 fn test_vector_read_write() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");

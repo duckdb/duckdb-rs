@@ -9,16 +9,26 @@ struct ScalarWithData {
     base_data: Vec<i32>,
 }
 
+use crate::types::FromValue;
+
 impl ScalarCallbacks for ScalarWithData {
     type BindData = Vec<i32>;
     type InitData = i32;
 
     fn bind(
         &self,
-        _context: Context,
-        _metadata: BindMetadata<'_>,
+        context: Context,
+        arguments: Vec<BindArgument>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
+        assert_eq!(arguments[0].logical_type, LogicalType::from_text(&context, "INTEGER")?);
+        assert!(
+            arguments[0]
+                .value
+                .as_ref()
+                .is_some_and(|v| i32::from_value(&v).unwrap() == Some(2))
+        );
+
         Ok(vec![1, 2, 3])
     }
 
@@ -290,7 +300,7 @@ impl ScalarCallbacks for OverrideAbleScalar {
     fn bind(
         &self,
         context: Context,
-        _metadata: BindMetadata<'_>,
+        _arguments: Vec<BindArgument>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
         result_type_handle.override_return(i8::logical_type(&context)?)?;

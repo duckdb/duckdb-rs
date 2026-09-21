@@ -6,6 +6,7 @@ use crate::{
     Result,
     builder_helpers::{OpaqueHandle, ffi_enum_redeclaration, get_user_data, handle_unwind},
     check_api_call,
+    connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::LogicalType,
     vector::{Vector, VectorElement},
@@ -23,7 +24,7 @@ ffi_enum_redeclaration! {
 
 unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
     info: ffi::duckdb_v2_cast_function_exec_info_handle,
-    _ctx: ffi::duckdb_v2_context_handle,
+    context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -43,7 +44,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             )?;
             let output = output.cast::<T::OutputType>()?;
 
-            T::exec(user_data, mode.try_into()?, input, output)
+            T::exec(user_data, Context(context), mode.try_into()?, input, output)
         },
         err,
     );
@@ -129,6 +130,7 @@ pub trait CastFunctionCallbacks: Send + Sync + 'static {
     /// `NULL` for values that cannot be converted.
     fn exec(
         &self,
+        context: Context,
         mode: CastMode,
         input: Vector<'_, Self::InputType>,
         output: Vector<'_, Self::OutputType>,
@@ -156,6 +158,7 @@ mod tests {
 
         fn exec(
             &self,
+            _context: crate::connection::Context,
             _mode: CastMode,
             input: crate::vector::Vector<'_, Self::InputType>,
             mut output: crate::vector::Vector<'_, Self::OutputType>,

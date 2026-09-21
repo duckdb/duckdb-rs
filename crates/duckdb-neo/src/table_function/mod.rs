@@ -182,11 +182,11 @@ impl<'a> InitColumnData<'a> {
 }
 
 /// Candidate filters and column mappings offered for pushdown.
-pub struct FilterColumnData<'a> {
+pub struct PushdownData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_filter_pushdown_info_handle,
 }
 
-impl<'a> FilterColumnData<'a> {
+impl<'a> PushdownData<'a> {
     /// Return the number of columns in the pushdown-time column list.
     pub fn get_column_count(&self) -> Result<usize> {
         let column_count = check_api_call!(
@@ -353,7 +353,7 @@ unsafe extern "C" fn filter_pushdown_callback<T: TableFunctionCallbacks>(
             let user_data = get_user_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_user_data, info);
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_bind_data, info);
 
-            T::pushdown_complex_filter(user_data, bind_data, Context(ctx), FilterColumnData { handle: &info })
+            T::pushdown_filter(user_data, bind_data, Context(ctx), PushdownData { handle: &info })
         },
         err,
     );
@@ -536,11 +536,11 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     }
 
     /// **Push down filters:** inspect and claim filters applied by the scan.
-    fn pushdown_complex_filter(
+    fn pushdown_filter(
         &self,
         _bind_data: Option<&Self::BindData>,
         _context: Context,
-        _column_data: FilterColumnData<'_>,
+        _column_data: PushdownData<'_>,
     ) -> Result<()> {
         Ok(())
     }

@@ -193,11 +193,11 @@ mod tests {
             Ok(())
         }
 
-        fn pushdown_complex_filter(
+        fn pushdown_filter(
             &self,
             _bind_data: Option<&Self::BindData>,
             context: Context,
-            column_data: crate::table_function::FilterColumnData<'_>,
+            column_data: crate::table_function::PushdownData<'_>,
         ) -> crate::Result<()> {
             assert_eq!(column_data.get_column_count()?, 3);
 

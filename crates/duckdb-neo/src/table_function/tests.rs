@@ -1,4 +1,7 @@
-use std::sync::Mutex;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::{
     DuckDBType, Parameters,
@@ -8,6 +11,7 @@ use crate::{
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
     error::{DuckDBError, Error},
+    expression::ExpressionType,
     logical_type::LogicalTypeID,
     signature::{Parameter, SignatureBuilder},
     table_function::{BindFunctionHandle, ExecColumnInfo, TableFunctionCallbacks, TableFunctionCardinality},
@@ -20,6 +24,10 @@ fn test_table_function() -> crate::Result<()> {
 
     struct BindData {
         size: usize,
+        // Filled in by `pushdown_filter` once DuckDB offers a `>` filter on
+        // the output column; `exec` honors it by dropping non-matching rows
+        // itself, since accepting the pushdown means DuckDB won't re-apply it.
+        accepted_threshold: Mutex<Option<i32>>,
     }
 
     struct GlobalStateCounter {
@@ -29,6 +37,7 @@ fn test_table_function() -> crate::Result<()> {
 
     struct MyTableFunction {
         base: i32,
+        pushdown_called: Arc<AtomicBool>,
     }
 
     impl TableFunctionCallbacks for MyTableFunction {
@@ -55,7 +64,10 @@ fn test_table_function() -> crate::Result<()> {
             bind_handle.add_result_column("out", i32::logical_type(&context)?)?;
 
             Ok((
-                BindData { size: 10 },
+                BindData {
+                    size: 10,
+                    accepted_threshold: Mutex::new(None),
+                },
                 Some(TableFunctionCardinality {
                     is_exact: true,
                     cardinality: 10_000_000,
@@ -90,8 +102,6 @@ fn test_table_function() -> crate::Result<()> {
             Ok(Some(100))
         }
 
-        //TODO: Pushdown
-
         fn progress(
             &self,
             _bind_data: Option<&Self::BindData>,
@@ -109,6 +119,46 @@ fn test_table_function() -> crate::Result<()> {
                 })?;
 
             Ok(prog)
+        }
+
+        fn pushdown_filter(
+            &self,
+            bind_data: Option<&Self::BindData>,
+            context: Context,
+            column_data: super::PushdownData<'_>,
+        ) -> crate::Result<()> {
+            self.pushdown_called.store(true, Ordering::SeqCst);
+
+            assert_eq!(column_data.get_column_count()?, 1);
+            assert_eq!(column_data.get_column_index(0)?, 0);
+            assert_eq!(column_data.filter_count()?, 1);
+
+            let filter = column_data.filter(0)?;
+
+            assert_eq!(filter.expression_type()?, ExpressionType::CompareGreaterThan);
+            assert_eq!(filter.function_name()?, ">");
+            assert_eq!(filter.child_count()?, 2);
+
+            let column_ref = filter.child(0)?;
+            assert_eq!(column_ref.expression_type()?, ExpressionType::BoundColumnRef);
+            assert_eq!(column_ref.reference_index()?, 0);
+
+            let constant = filter.child(1)?;
+            assert_eq!(constant.expression_type()?, ExpressionType::ValueConstant);
+            assert_eq!(constant.return_type()?, i32::logical_type(&context)?);
+
+            let threshold = constant
+                .get_constant_value()?
+                .get::<i32>()?
+                .expect("filter constant must not be NULL");
+
+            *bind_data.unwrap().accepted_threshold.lock().unwrap() = Some(threshold);
+
+            // We take full responsibility for enforcing this filter in `exec`,
+            // so DuckDB does not need to re-check it on our output rows.
+            column_data.accept_pushdown(0)?;
+
+            Ok(())
         }
 
         fn exec(
@@ -134,11 +184,20 @@ fn test_table_function() -> crate::Result<()> {
 
             let local_offset = local_state.unwrap();
             let user_offset = self.base;
+            let threshold = *bind_data.unwrap().accepted_threshold.lock().unwrap();
 
+            let mut written = 0;
             for i in 0..bind_data.unwrap().size {
                 let item = i as i32 + *local_offset + user_offset;
-                output_vector.write(i, Some(item))?;
+                if threshold.is_some_and(|threshold| item <= threshold) {
+                    // We accepted this filter in `pushdown_filter`, so we must
+                    // drop non-matching rows ourselves.
+                    continue;
+                }
+                output_vector.write(written, Some(item))?;
+                written += 1;
             }
+            output_vector.set_size(written)?;
 
             *count += 1;
 
@@ -152,31 +211,49 @@ fn test_table_function() -> crate::Result<()> {
     let option = ConfigOptionValue::new("enable_progress_bar", "true")?;
     conn.set_option(&option, Some(SettingScope::Local))?;
 
+    let pushdown_called = Arc::new(AtomicBool::new(false));
+
     TableFunctionBuilder::new(
         "my_table_function",
         SignatureBuilder::without_return_type([Parameter::normal("offset", i32::logical_type(&conn)?)]),
-        MyTableFunction { base: 42 },
+        MyTableFunction {
+            base: 42,
+            pushdown_called: pushdown_called.clone(),
+        },
     )
     .register(&conn)?;
 
     conn.execute("SET preserve_insertion_order=false", Parameters::None)?;
-    let result = conn.query("SELECT * FROM my_table_function(10)", Parameters::None)?;
+
+    // Every batch produces values in `142..152`; pushing `out > 145` down
+    // into the table function should drop `142..=145` from every batch
+    // instead of DuckDB filtering them out after the fact.
+    let result = conn.query("SELECT * FROM my_table_function(10) WHERE out > 145", Parameters::None)?;
+
+    let mut row_count = 0;
 
     for chunk in result {
         let chunk = chunk?;
 
         let vector = chunk.get_vector_at::<i32>(0)?;
 
-        // dbg!("Vector length: {}", vector.len());
+        row_count += vector.len();
 
         for i in 0..vector.len() {
             let value = vector.get(i)?;
 
-            //println!("{}", value.unwrap());
-
-            assert!(value.is_some_and(|v| (&142..&152).contains(&v)));
+            assert!(value.is_some_and(|v| (&146..&152).contains(&v)));
         }
     }
+
+    assert!(
+        pushdown_called.load(Ordering::SeqCst),
+        "pushdown_filter was never called"
+    );
+    assert!(
+        row_count > 0,
+        "expected at least one row to survive the pushed-down filter"
+    );
 
     Ok(())
 }
