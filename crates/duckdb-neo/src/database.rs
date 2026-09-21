@@ -6,7 +6,9 @@ use std::{
 };
 
 use crate::{
-    Result, check_api_call, check_api_call_no_err, connection::Connection, connection_options::ConfigOption,
+    Result, check_api_call, check_api_call_no_err,
+    connection::{Connection, InnerConnection},
+    connection_options::ConfigOption,
     environment::EnvironmentHandle,
 };
 use libduckdb_sys::v2 as ffi;
@@ -63,7 +65,7 @@ impl Database {
             check_api_call!(ffi::duckdb_v2_connect, self.handle.lock().unwrap().handle, RET)?;
 
         Ok(Connection {
-            handle: conn,
+            inner: Arc::new(InnerConnection { handle: conn }),
             _db: self.handle.clone(),
         })
     }

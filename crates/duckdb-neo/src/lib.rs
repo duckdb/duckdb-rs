@@ -97,6 +97,7 @@ mod tests {
     use crate::{
         Parameters,
         environment::{Environment, StorageLocation},
+        error::DuckDBError,
         query_result::QueryResultStep,
     };
 
@@ -245,6 +246,36 @@ mod tests {
         let step = result.step()?;
 
         assert!(matches!(step, QueryResultStep::Canceled));
+        Ok(())
+    }
+
+    #[test]
+    fn test_connection_interrupt_other_thread() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+
+        let interrupt_handle = conn.interrupt_handle();
+
+        let t1 = std::thread::spawn(move || {
+            let mut query = conn.query("SELECT * from range(0,10_000)", Parameters::None).unwrap();
+
+            let _ = query.next().unwrap().unwrap();
+
+            sender.send(()).unwrap();
+
+            let error = query.next().unwrap().err().unwrap();
+
+            assert!(error.code == DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERRUPT);
+        });
+
+        receiver.recv().unwrap();
+        interrupt_handle.interrupt()?;
+
+        t1.join().unwrap();
+
         Ok(())
     }
 

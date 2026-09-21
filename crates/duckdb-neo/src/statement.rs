@@ -131,20 +131,17 @@ impl Statement {
     ///
     /// Includes the trailing terminator and whitespace, but excludes whitespace
     /// and comments before the first token.
-
     pub fn get_text(&self) -> Result<String> {
         check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET).map(|x| x.into())
     }
 
     /// Return the statement type as classified by the parser, before execution-time rewrites.
-
     pub fn get_type(&self) -> Result<StatementType> {
         let val = check_api_call!(ffi::duckdb_v2_sql_statement_get_type, self.handle, RET)?;
         val.try_into()
     }
 
     /// Return the number of distinct parameters found by the parser, counting repeated uses once.
-
     pub fn parameter_count(&self) -> Result<usize> {
         check_api_call!(ffi::duckdb_v2_sql_statement_get_parameter_count, self.handle, RET).map(|x| x as usize)
     }
@@ -153,7 +150,6 @@ impl Statement {
     ///
     /// Keys omit the `$` prefix: `"1"` for `$1`, or `"name"` for `$name`.
     /// Positional keys may have gaps.
-
     pub fn parameter_name(&self, index: usize) -> Result<String> {
         check_api_call!(
             ffi::duckdb_v2_sql_statement_get_parameter_name,

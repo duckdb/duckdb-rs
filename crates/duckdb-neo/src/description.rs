@@ -85,12 +85,7 @@ impl TableDescription {
     /// Resolve a base table through the connection's catalog and search path.
     pub fn new(connection: &Connection, name: &QualifiedName) -> Result<Self> {
         Ok(TableDescription {
-            handle: check_api_call!(
-                ffi::duckdb_v2_connection_describe_table,
-                connection.handle,
-                name.handle,
-                RET
-            )?,
+            handle: check_api_call!(ffi::duckdb_v2_connection_describe_table, **connection, name.handle, RET)?,
         })
     }
 
