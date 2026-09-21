@@ -35,6 +35,13 @@ pub struct QualifiedName {
     pub handle: ffi::duckdb_v2_qname_handle,
 }
 
+// The underlying handle is only ever accessed through DuckDB's C API, which is safe to
+// call from any thread as long as a single handle isn't used concurrently without
+// synchronization; callers are responsible for that synchronization, same as the other
+// owned handle types in this crate (e.g. `LogicalType`).
+unsafe impl Send for QualifiedName {}
+unsafe impl Sync for QualifiedName {}
+
 impl TryFrom<&str> for QualifiedName {
     type Error = Error;
 

@@ -256,6 +256,7 @@ mod tests {
         let conn = db.connect()?;
 
         let (sender, receiver) = std::sync::mpsc::channel();
+        let (sender_2, receiver_2) = std::sync::mpsc::channel();
 
         let interrupt_handle = conn.interrupt_handle();
 
@@ -265,6 +266,7 @@ mod tests {
             let _ = query.next().unwrap().unwrap();
 
             sender.send(()).unwrap();
+            receiver_2.recv().unwrap();
 
             let error = query.next().unwrap().err().unwrap();
 
@@ -273,6 +275,7 @@ mod tests {
 
         receiver.recv().unwrap();
         interrupt_handle.interrupt()?;
+        sender_2.send(()).unwrap();
 
         t1.join().unwrap();
 
