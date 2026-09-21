@@ -158,7 +158,6 @@ mod tests {
         Parameters,
         builder_helpers::scalar_callback,
         connection::SettingScope,
-        connection_options::ConfigOptionValue,
         environment::{Environment, StorageLocation},
         log::{Log, LogLevel},
         scalar::ScalarFunctionBuilder,
@@ -179,20 +178,14 @@ mod tests {
 
         // LogStorageBuilder::new("custom_logger", CustomLogger).register_with_database(&db)?;
 
-        conn.set_option(
-            &ConfigOptionValue::new("enable_logging", "true")?,
-            Some(SettingScope::Global),
-        )?;
+        conn.set_option("enable_logging", "true", Some(SettingScope::Global))?;
 
         // conn.set_option(
-        //     &ConfigOptionValue::new("logging_storage", "custom_logger")?,
+        //     "logging_storage", "custom_logger",
         //     Some(SettingScope::Global),
         // )?;
 
-        conn.set_option(
-            &ConfigOptionValue::new("logging_level", "WARNING")?,
-            Some(SettingScope::Global),
-        )?;
+        conn.set_option("logging_level", "WARNING", Some(SettingScope::Global))?;
 
         let conn = db.connect()?;
 

@@ -76,6 +76,7 @@ pub mod replacement_scan;
 pub mod scalar;
 pub mod signature;
 pub mod table_function;
+pub mod tokens;
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
 pub type Result<T> = std::result::Result<T, Error>;

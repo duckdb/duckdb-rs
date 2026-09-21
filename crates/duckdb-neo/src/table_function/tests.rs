@@ -7,7 +7,6 @@ use crate::{
     DuckDBType, Parameters,
     bind_arguments::BindArgument,
     connection::{Context, SettingScope},
-    connection_options::ConfigOptionValue,
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
     error::{DuckDBError, Error},
@@ -208,8 +207,7 @@ fn test_table_function() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let option = ConfigOptionValue::new("enable_progress_bar", "true")?;
-    conn.set_option(&option, Some(SettingScope::Local))?;
+    conn.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
 
     let pushdown_called = Arc::new(AtomicBool::new(false));
 

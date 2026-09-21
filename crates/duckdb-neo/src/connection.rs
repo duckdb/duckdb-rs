@@ -124,7 +124,7 @@ pub(crate) struct InnerConnection {
 
 impl Drop for InnerConnection {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_disconnect, &mut self.handle).unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_connection_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -203,7 +203,7 @@ impl Connection {
 
     /// Return the number of options visible to this connection.
     pub fn get_options_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_get_option_count, self.handle, RET)?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_get_option_count, **self, RET)?;
 
         Ok(count as usize)
     }
@@ -213,12 +213,7 @@ impl Connection {
     /// The setting resolves from this connection's local override, then the
     /// database's global value, then the static default.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_connection_get_option_by_name,
-            self.handle,
-            name.into(),
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_name, **self, name.into(), RET)?;
 
         Ok(ConfigOption { handle })
     }
@@ -227,12 +222,7 @@ impl Connection {
     ///
     /// An out-of-range index returns an error.
     pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_connection_get_option_by_index,
-            self.handle,
-            index as u64,
-            RET
-        )?;
+        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_index, **self, index as u64, RET)?;
 
         Ok(ConfigOption { handle })
     }
@@ -260,7 +250,7 @@ impl Connection {
 
         check_api_call!(
             ffi::duckdb_v2_connection_set_option,
-            self.handle,
+            **self,
             name.into(),
             value.into(),
             scope.into()
@@ -286,13 +276,7 @@ unsafe impl Send for Connection {}
 impl Deref for Connection {
     type Target = ffi::duckdb_v2_connection_handle;
     fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_connection_destroy, &mut self.handle).unwrap();
+        &self.inner.handle
     }
 }
 
@@ -356,6 +340,24 @@ impl Deref for Extension {
 /// This wrapper does not own the underlying handle and must not outlive the callback invocation.
 #[repr(transparent)]
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
+
+impl Context {
+    pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
+        Ok(ConfigOption {
+            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, name.into(), RET)?,
+        })
+    }
+
+    pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
+        Ok(ConfigOption {
+            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_index, **self, index as u64, RET)?,
+        })
+    }
+
+    pub fn get_option_count(&self) -> Result<usize> {
+        check_api_call!(ffi::duckdb_v2_context_get_option_count, **self, RET).map(|count| count as usize)
+    }
+}
 
 impl Deref for Context {
     type Target = ffi::duckdb_v2_context_handle;

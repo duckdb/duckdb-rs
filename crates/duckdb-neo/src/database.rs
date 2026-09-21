@@ -62,10 +62,6 @@ impl InstanceBuilder {
     }
 }
 
-// impl Drop for InstanceBuilder {
-//     fn drop(&mut self) {}
-// }
-
 impl Drop for DatabaseHandle {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_instance_destroy, &mut self.handle).unwrap();

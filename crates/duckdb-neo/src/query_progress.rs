@@ -3,7 +3,6 @@
 use crate::{
     Result, check_api_call,
     connection::{Connection, SettingScope},
-    connection_options::ConfigOptionValue,
     ffi,
 };
 
@@ -19,14 +18,8 @@ pub struct QueryProgressTracker<'conn> {
 impl<'conn> QueryProgressTracker<'conn> {
     /// Enable progress tracking and retain the connection used for snapshots.
     pub fn new(connection: &'conn Connection) -> Result<Self> {
-        connection.set_option(
-            &ConfigOptionValue::new("enable_progress_bar_print", "false")?,
-            Some(SettingScope::Local),
-        )?;
-        connection.set_option(
-            &ConfigOptionValue::new("enable_progress_bar", "true")?,
-            Some(SettingScope::Local),
-        )?;
+        connection.set_option("enable_progress_bar_print", "false", Some(SettingScope::Local))?;
+        connection.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
         Ok(Self { connection })
     }
 
@@ -53,13 +46,13 @@ impl QueryProgress {
         let mut percentage = 0.0;
         let mut rows_processed = 0;
         let mut total_rows = 0;
-        check_api_call!(
-            ffi::duckdb_v2_connection_progress_get,
-            **conn,
-            &mut percentage,
-            &mut rows_processed,
-            &mut total_rows
-        )?;
+        // check_api_call!(
+        //     ffi::duckdb_v2_connection_progress_get,
+        //     **conn,
+        //     &mut percentage,
+        //     &mut rows_processed,
+        //     &mut total_rows
+        // )?;
 
         if percentage < 0.0 || (rows_processed == 0 && total_rows == 0) {
             return Ok(None);

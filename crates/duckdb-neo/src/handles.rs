@@ -151,7 +151,7 @@ define_handle! {
 impl ReplacementScanBuilderLink for Database {
     fn create_replacement_scan_handle(&self) -> Result<ReplacementScanBuilderHandle> {
         Ok(ReplacementScanBuilderHandle(check_api_call!(
-            ffi::duckdb_v2_replacement_scan_create_with_database,
+            ffi::duckdb_v2_replacement_scan_create_with_instance,
             self.handle.lock().unwrap().handle,
             RET
         )?))

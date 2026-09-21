@@ -7,7 +7,6 @@ use crate::{
     aggregate::{AggregateCallbacks, AggregateFunctionBuilder},
     bind_arguments::BindArgument,
     connection::Context,
-    connection_options::ConfigOptionValue,
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
     logical_type::LogicalType,
@@ -153,7 +152,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
 
-    db.set_option(&ConfigOptionValue::new("threads", &1.to_string())?)?;
+    db.set_option("threads", &1.to_string());
 
     let conn = db.connect()?;
 
