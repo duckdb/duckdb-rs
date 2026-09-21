@@ -58,39 +58,6 @@ pub struct ConfigOption {
     pub handle: ffi::duckdb_v2_option_handle,
 }
 
-/// A name and string-encoded setting to apply to DuckDB.
-///
-/// Create a value with [`ConfigOptionValue::new`], then pass it to a
-/// database or connection's `set_option` method. DuckDB resolves the name and
-/// validates the setting when it is applied.
-pub struct ConfigOptionValue {
-    /// The owned DuckDB option handle.
-    pub handle: ffi::duckdb_v2_option_handle,
-}
-
-impl ConfigOptionValue {
-    /// Create an option value from a name and string-encoded setting.
-    pub fn new(name: &str, setting: &str) -> Result<ConfigOptionValue> {
-        let handle = check_api_call!(ffi::duckdb_v2_option_create, name.into(), setting.into(), RET)?;
-
-        Ok(ConfigOptionValue { handle })
-    }
-}
-
-impl Drop for ConfigOptionValue {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_option_destroy, &mut self.handle).unwrap();
-    }
-}
-
-impl Deref for ConfigOptionValue {
-    type Target = ffi::duckdb_v2_option_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
-}
-
 impl Deref for ConfigOption {
     type Target = ffi::duckdb_v2_option_handle;
 
@@ -205,9 +172,7 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let option = ConfigOptionValue::new("worker_threads", &12.to_string())?;
-
-        conn.set_option(&option, None)?;
+        conn.set_option("worker_threads", &12.to_string(), None)?;
 
         let option_real = conn.get_option("threads")?;
 

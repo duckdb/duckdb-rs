@@ -8,15 +8,11 @@
 //! [`StorageLocation`] selects either a transient in-memory database or a
 //! persistent database file.
 
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,
-    connection_options::ConfigOption,
-    database::{Database, DatabaseHandle},
+    database::{Database, DatabaseHandle, InstanceBuilder},
     ffi,
 };
 
@@ -26,13 +22,13 @@ pub struct EnvironmentHandle {
 }
 impl EnvironmentHandle {
     fn new() -> Result<Self> {
-        let handle = check_api_call!(ffi::duckdb_v2_create_environment, RET)?;
+        let handle = check_api_call!(ffi::duckdb_v2_environment_create, RET)?;
         Ok(EnvironmentHandle { handle })
     }
 }
 impl Drop for EnvironmentHandle {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_destroy_environment, &mut self.handle).unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_environment_destroy, &mut self.handle).unwrap();
     }
 }
 unsafe impl Send for EnvironmentHandle {}
@@ -112,66 +108,49 @@ impl Environment {
     /// Return the number of open databases.
     pub fn get_database_count(&self) -> Result<usize> {
         let count: ffi::idx_t = check_api_call!(
-            ffi::duckdb_v2_environment_database_count,
+            ffi::duckdb_v2_environment_get_instance_count,
             self.handle.lock().unwrap().handle,
             RET
         )?;
         Ok(count as usize)
     }
 
-    /// Open a database with default configuration at the selected storage location.
-    ///
-    /// Each in-memory location creates a fresh database. Opening the same
-    /// on-disk path twice under one environment returns a resource-in-use error.
+    /// Open an instance of an database.
     pub fn open(&self, path: StorageLocation) -> Result<Database> {
-        self.open_with_options(path, &[] as &[ConfigOption])
-    }
-
-    /// Open a database with configuration options applied during construction.
-    ///
-    /// Use this for pre-open settings and storage options. The option handles
-    /// are borrowed and remain owned by the caller.
-    pub fn open_with_options(
-        &self,
-        path: StorageLocation,
-        options: &[impl Deref<Target = ffi::duckdb_v2_option_handle>],
-    ) -> Result<Database> {
         let path: String = path.into();
-        let mut option_handles: Vec<ffi::duckdb_v2_option_handle> = options.iter().map(|opt| **opt).collect();
 
-        let handle: ffi::duckdb_v2_database_handle = check_api_call!(
-            ffi::duckdb_v2_open,
-            self.handle.lock().unwrap().handle,
-            (&path).into(),
-            option_handles.as_mut_ptr(),
-            options.len() as u64,
-            RET
-        )?;
+        let handle: ffi::duckdb_v2_instance_handle =
+            check_api_call!(ffi::duckdb_v2_instance_create, self.handle.lock().unwrap().handle, RET)?;
 
-        Ok(Database {
-            handle: Arc::new(Mutex::new(DatabaseHandle {
-                handle,
-                env: self.handle.clone(),
-            })),
-        })
+        let options = check_api_call!(ffi::duckdb_v2_attach_options_create, handle, RET)?;
+
+        Ok(InstanceBuilder {
+            db: Database {
+                handle: Arc::new(Mutex::new(DatabaseHandle {
+                    handle,
+                    env: self.handle.clone(),
+                })),
+            },
+            path,
+            options: options,
+            name: None,
+        }
+        .connect()?)
     }
 }
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::{
-        connection_options::ConfigOptionValue,
-        environment::{Environment, StorageLocation},
-    };
+    use crate::environment::{Environment, StorageLocation};
 
     #[test]
     fn test_open_database_options() -> crate::Result<()> {
         let env = Environment::new()?;
 
-        let option = ConfigOptionValue::new("memory_limit", "200MB")?;
+        let db = env.open(StorageLocation::InMemory)?;
 
-        let db = env.open_with_options(StorageLocation::InMemory, &[option])?;
+        db.set_option("memory_limit", "200MB");
 
         assert_eq!(db.get_option("memory_limit")?.setting()?, "190.7 MiB".to_string());
         Ok(())

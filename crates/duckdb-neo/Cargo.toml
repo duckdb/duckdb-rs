@@ -20,7 +20,7 @@ name = "duckdb_neo"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = []
+default = ["libduckdb-sys/capi-v2", "libduckdb-sys/buildtime_bindgen"]
 bundled = ["libduckdb-sys/bundled"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]

@@ -1,9 +1,6 @@
 //! Open DuckDB databases and their global configuration.
 
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,
@@ -16,15 +13,62 @@ use libduckdb_sys::v2 as ffi;
 /// A shared handle to an open DuckDB database.
 pub struct DatabaseHandle {
     /// The DuckDB database handle.
-    pub handle: ffi::duckdb_v2_database_handle,
+    pub handle: ffi::duckdb_v2_instance_handle,
 
     /// The environment kept alive by this database.
     pub env: Arc<Mutex<EnvironmentHandle>>,
 }
 
+pub struct InstanceBuilder {
+    pub(crate) db: Database,
+    pub(crate) path: String,
+    pub(crate) options: ffi::duckdb_v2_attach_options_handle,
+    pub(crate) name: Option<String>,
+}
+
+impl InstanceBuilder {
+    pub fn connect(mut self) -> Result<Database> {
+        let mut name = self.name.as_ref().map_or((&self.path).into(), |s| (s).into());
+
+        check_api_call!(
+            ffi::duckdb_v2_instance_attach,
+            self.db.handle.lock().unwrap().handle,
+            (&self.path).into(),
+            &mut name,
+            self.options,
+            true
+        )?;
+
+        check_api_call_no_err!(ffi::duckdb_v2_attach_options_destroy, &mut self.options).unwrap();
+
+        Ok(self.db)
+    }
+
+    pub fn set_default(&self) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_instance_set_default,
+            self.db.handle.lock().unwrap().handle,
+            self.name.as_ref().map_or((&self.path).into(), |s| (s).into())
+        )
+    }
+
+    pub fn set_option(&self, key: &str, setting: &str) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_attach_options_set,
+            self.options,
+            key.into(),
+            setting.into()
+        )
+    }
+}
+
+// impl Drop for InstanceBuilder {
+//     fn drop(&mut self) {}
+// }
+
 impl Drop for DatabaseHandle {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_close, &mut self.handle).unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_instance_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -61,8 +105,11 @@ pub struct Database {
 impl Database {
     /// Open a [`Connection`] with independent session state.
     pub fn connect(&self) -> Result<Connection> {
-        let conn: ffi::duckdb_v2_connection_handle =
-            check_api_call!(ffi::duckdb_v2_connect, self.handle.lock().unwrap().handle, RET)?;
+        let conn: ffi::duckdb_v2_connection_handle = check_api_call!(
+            ffi::duckdb_v2_connection_create,
+            self.handle.lock().unwrap().handle,
+            RET
+        )?;
 
         Ok(Connection {
             inner: Arc::new(InnerConnection { handle: conn }),
@@ -73,7 +120,7 @@ impl Database {
     /// Return the number of registered options, excluding aliases.
     pub fn get_options_count(&self) -> Result<usize> {
         let count: u64 = check_api_call!(
-            ffi::duckdb_v2_database_option_get_count,
+            ffi::duckdb_v2_instance_get_option_count,
             self.handle.lock().unwrap().handle,
             RET
         )?;
@@ -84,7 +131,7 @@ impl Database {
     /// Return a global option by canonical name or alias.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
         let handle = check_api_call!(
-            ffi::duckdb_v2_database_option_get,
+            ffi::duckdb_v2_instance_get_option_by_name,
             self.handle.lock().unwrap().handle,
             name.into(),
             RET
@@ -99,7 +146,7 @@ impl Database {
     /// An out-of-range index returns an error.
     pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
         let handle = check_api_call!(
-            ffi::duckdb_v2_database_option_get_by_index,
+            ffi::duckdb_v2_instance_get_option_by_index,
             self.handle.lock().unwrap().handle,
             index as u64,
             RET
@@ -125,24 +172,13 @@ impl Database {
     ///
     /// Local-only options are rejected. Unknown names are retained for an
     /// extension to consume when it loads.
-    pub fn set_option(&self, option: &impl Deref<Target = ffi::duckdb_v2_option_handle>) -> Result<()> {
+    pub fn set_option(&self, key: &str, value: &str) -> Result<()> {
         check_api_call!(
-            ffi::duckdb_v2_database_option_set,
+            ffi::duckdb_v2_instance_set_option,
             self.handle.lock().unwrap().handle,
-            **option
+            key.into(),
+            value.into()
         )?;
-
-        Ok(())
-    }
-
-    /// Set multiple options globally, equivalent to SQL `SET GLOBAL` for each.
-    ///
-    /// Local-only options are rejected. Unknown names are retained for an
-    /// extension to consume when it loads.
-    pub fn set_options(&self, options: &[impl Deref<Target = ffi::duckdb_v2_option_handle>]) -> Result<()> {
-        for option in options {
-            self.set_option(option)?;
-        }
 
         Ok(())
     }

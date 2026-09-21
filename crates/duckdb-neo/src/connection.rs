@@ -203,7 +203,7 @@ impl Connection {
 
     /// Return the number of options visible to this connection.
     pub fn get_options_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_option_get_count, **self, RET)?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_get_option_count, self.handle, RET)?;
 
         Ok(count as usize)
     }
@@ -213,7 +213,12 @@ impl Connection {
     /// The setting resolves from this connection's local override, then the
     /// database's global value, then the static default.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(ffi::duckdb_v2_connection_option_get, **self, name.into(), RET)?;
+        let handle = check_api_call!(
+            ffi::duckdb_v2_connection_get_option_by_name,
+            self.handle,
+            name.into(),
+            RET
+        )?;
 
         Ok(ConfigOption { handle })
     }
@@ -222,7 +227,12 @@ impl Connection {
     ///
     /// An out-of-range index returns an error.
     pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
-        let handle = check_api_call!(ffi::duckdb_v2_connection_option_get_by_index, **self, index as u64, RET)?;
+        let handle = check_api_call!(
+            ffi::duckdb_v2_connection_get_option_by_index,
+            self.handle,
+            index as u64,
+            RET
+        )?;
 
         Ok(ConfigOption { handle })
     }
@@ -245,14 +255,16 @@ impl Connection {
     /// Global writes affect the database; local writes affect only this
     /// session. Unknown options and scopes disallowed by the option return an
     /// error.
-    pub fn set_option(
-        &self,
-        option: &impl Deref<Target = ffi::duckdb_v2_option_handle>,
-        scope: Option<SettingScope>,
-    ) -> Result<()> {
+    pub fn set_option(&self, name: &str, value: &str, scope: Option<SettingScope>) -> Result<()> {
         let scope = scope.unwrap_or(SettingScope::Automatic);
 
-        check_api_call!(ffi::duckdb_v2_connection_option_set, **self, **option, scope.into())?;
+        check_api_call!(
+            ffi::duckdb_v2_connection_set_option,
+            self.handle,
+            name.into(),
+            value.into(),
+            scope.into()
+        )?;
 
         Ok(())
     }
@@ -274,7 +286,13 @@ unsafe impl Send for Connection {}
 impl Deref for Connection {
     type Target = ffi::duckdb_v2_connection_handle;
     fn deref(&self) -> &Self::Target {
-        &self.inner.handle
+        &self.handle
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_connection_destroy, &mut self.handle).unwrap();
     }
 }
 
