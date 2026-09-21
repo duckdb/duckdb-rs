@@ -81,7 +81,7 @@ Execute the program with `cargo run` and watch DuckDB in action!
 `duckdb-neo` is a second wrapper crate in this repository that targets DuckDB's new v2 C API (`duckdb_v2.h`) instead of the v1 API used by `duckdb`. Both crates share the same `libduckdb-sys` crate and therefore the same bundled DuckDB, build options, and version number.
 
 ```shell
-cargo add duckdb-neo -F bundled
+cargo add duckdb-neo
 ```
 
 ```rust,ignore
