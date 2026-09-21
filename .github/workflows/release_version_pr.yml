@@ -40,7 +40,6 @@ jobs:
       - name: Checkout duckdb-rs
         uses: actions/checkout@v5
         with:
-          token: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
           ref: ${{ github.sha }}
           fetch-depth: 0
 
