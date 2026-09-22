@@ -377,11 +377,11 @@ mod test {
         }
 
         impl ReplacementScanCallbacks for A {
-            fn scan(
-                &self,
+            fn scan<'a>(
+                &'a self,
                 _context: crate::connection::Context,
                 name: &crate::qualified_name::QualifiedName,
-                handle: crate::replacement_scan::ReplacementHandle<'_>,
+                handle: crate::replacement_scan::ReplacementHandle<'a>,
             ) -> Result<()> {
                 if name.get_view()?.table == Some("A".into()) {
                     handle.set_reference(ReplacementType::NamedColumnDataCollection((

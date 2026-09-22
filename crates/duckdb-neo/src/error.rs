@@ -194,13 +194,39 @@ macro_rules! check_api_call {
 macro_rules! check_api_call_string {
     ($call:expr $(, $arg:expr)* $(,)?) => {{
         let call = $call;
-        $crate::error::check_api_call_string!(@bind call; (); $($arg),*)
+        $crate::error::check_api_call_string!(@bind call; (); 0; $($arg),*)
     }};
-    (@bind $call:ident; ($($args:ident,)*); $head:expr $(, $rest:expr)*) => {{
-        let arg = $head;
-        $crate::error::check_api_call_string!(@bind $call; ($($args,)* arg,); $($rest),*)
+    (@bind $call:ident; ($($args:ident,)*); $i:tt; $head:expr $(, $rest:expr)*) => {{
+        paste::paste! {
+            let [<arg $i>] = $head;
+            $crate::error::check_api_call_string!(@bump $call; ($($args,)* [<arg $i>],); $i; $($rest),*)
+        }
     }};
-    (@bind $call:ident; ($($args:ident,)*); ) => {{
+    (@bump $call:ident; ($($args:ident,)*); 0; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 1; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 1; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 2; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 2; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 3; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 3; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 4; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 4; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 5; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 5; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 6; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 6; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 7; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 7; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 8; $($rest)*)
+    };
+    (@bind $call:ident; ($($args:ident,)*); $i:tt; ) => {{
         (|| -> $crate::Result<String> {
             let length = $crate::check_api_call!($call, $($args,)* std::ptr::null_mut(), 0, RET)?;
             let capacity = usize::try_from(length)

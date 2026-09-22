@@ -23,18 +23,24 @@ pub struct ReplacementHandle<'a> {
 
 /// A replacement source for an unresolved table reference, selected with
 /// [`ReplacementHandle::set_reference`].
+///
+/// The table-function and subquery forms are borrowed and copied, so they carry
+/// no lifetime obligation. The column-data-collection forms are borrowed, not
+/// copied: DuckDB keeps a pointer to the collection and reads its buffers
+/// directly, so the collection must stay alive as long as any result or
+/// prepared statement over the claimed name does.
 pub enum ReplacementType<'a> {
     /// A table function's name, optionally qualified by schema and catalog.
     Table(QualifiedName),
+
+    /// A `SELECT` statement read instead of the table.
+    Subquery(String),
+
     /// A borrowed column data collection to be read. Has default column names (`col1`, `col2`, ...).
     ColumnDataCollection(&'a ColumnDataCollection),
 
     /// A borrowed column data collection with explicitly named columns.
-    /// with explicitly named column names.
     NamedColumnDataCollection((&'a ColumnDataCollection, Vec<String>)),
-
-    /// A `SELECT` statement read instead of the table.
-    Subquery(String),
 }
 
 impl<'a> ReplacementHandle<'a> {
@@ -57,29 +63,16 @@ impl<'a> ReplacementHandle<'a> {
     ///
     /// Returns an error if a different replacement kind has already claimed the
     /// reference. A subquery must contain exactly one SELECT statement.
-    pub fn set_reference<'b>(&'a self, replacement_type: ReplacementType<'b>) -> Result<()>
-    where
-        'b: 'a,
-    {
+    ///
+    /// The column-data-collection forms are borrowed, not copied: the borrow is
+    /// tied to the callback's user data (`&self`), which the registration keeps
+    /// alive until the scan is destroyed. Store the collection in the callback
+    /// struct (or somewhere with an equal or longer lifetime) to keep it valid
+    /// for as long as any result or prepared statement reads it.
+    pub fn set_reference(&self, replacement_type: ReplacementType<'a>) -> Result<()> {
         match replacement_type {
             ReplacementType::Table(name) => {
                 check_api_call!(ffi::duckdb_v2_replacement_scan_set_function_name, *self.info, *name)
-            }
-            ReplacementType::NamedColumnDataCollection((cdc, names)) => check_api_call!(
-                ffi::duckdb_v2_replacement_scan_set_collection,
-                *self.info,
-                **cdc,
-                names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
-                names.len() as u64
-            ),
-            ReplacementType::ColumnDataCollection(cdc) => {
-                check_api_call!(
-                    ffi::duckdb_v2_replacement_scan_set_collection,
-                    *self.info,
-                    **cdc,
-                    std::ptr::null(),
-                    0
-                )
             }
             ReplacementType::Subquery(query) => {
                 check_api_call!(
@@ -88,6 +81,20 @@ impl<'a> ReplacementHandle<'a> {
                     (&query).into()
                 )
             }
+            ReplacementType::ColumnDataCollection(collection) => check_api_call!(
+                ffi::duckdb_v2_replacement_scan_set_collection,
+                *self.info,
+                **collection,
+                std::ptr::null(),
+                0
+            ),
+            ReplacementType::NamedColumnDataCollection((collection, names)) => check_api_call!(
+                ffi::duckdb_v2_replacement_scan_set_collection,
+                *self.info,
+                **collection,
+                names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
+                names.len() as u64
+            ),
         }
     }
 
@@ -173,7 +180,7 @@ pub trait ReplacementScanCallbacks: Send + Sync + 'static {
     /// Call [`ReplacementHandle::set_reference`] to claim it, return without
     /// doing so to let the next replacement scan try, or return an error to
     /// reject the query.
-    fn scan(&self, context: Context, name: &QualifiedName, handle: ReplacementHandle<'_>) -> Result<()>;
+    fn scan<'a>(&'a self, context: Context, name: &QualifiedName, handle: ReplacementHandle<'a>) -> Result<()>;
 }
 
 #[cfg(test)]

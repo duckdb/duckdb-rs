@@ -96,7 +96,6 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
     match result {
         Ok(Ok(value)) => Some(value),
         Ok(Err(e)) => {
-            dbg!(&e);
             set_error(err, &e);
             None
         }
@@ -106,7 +105,6 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
                 code: DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
                 message: format!("Panic occurred: {text}"),
             };
-            dbg!(&error);
             set_error(err, &error);
             None
         }

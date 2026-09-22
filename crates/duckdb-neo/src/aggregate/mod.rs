@@ -123,8 +123,6 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
                 },
             )?;
 
-            dbg!("AA");
-
             check_api_call!(
                 ffi::duckdb_v2_aggregate_function_bind_set_bind_data,
                 info,
@@ -139,7 +137,6 @@ unsafe extern "C" fn size_callback<T: AggregateCallbacks>(
     info: ffi::duckdb_v2_aggregate_function_size_info_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
-    dbg!("AA");
     handle_unwind(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_size_get_user_data, info);
@@ -217,8 +214,10 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
 
             let row_count = check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_row_count, info, RET)?;
 
-            let states: &mut [&mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts_mut(states_ptr as *mut &mut T::StateItem, row_count as usize) };
+            let states_slice: &[*mut T::StateItem] =
+                unsafe { std::slice::from_raw_parts(states_ptr as *const *mut T::StateItem, row_count as usize) };
+
+            let states: States<'_, T::StateItem> = unsafe { States::new(states_slice) };
 
             T::update(user_data, bind_data, vector_collection, states)
         },
@@ -242,13 +241,17 @@ unsafe extern "C" fn combine_callback<T: AggregateCallbacks>(
 
             let target_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_combine_get_targets, info, RET)?;
 
-            let source: &[&T::StateItem] =
-                unsafe { std::slice::from_raw_parts(source_ptr as *const &T::StateItem, count as usize) };
+            let source_slice: &[*mut T::StateItem] =
+                unsafe { std::slice::from_raw_parts(source_ptr as *const *mut T::StateItem, count as usize) };
 
-            let target: &mut [&mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts_mut(target_ptr as *mut &mut T::StateItem, count as usize) };
+            let source: States<'_, T::StateItem> = unsafe { States::new(source_slice) };
 
-            T::combine(user_data, bind_data, source, target)
+            let target_slice: &[*mut T::StateItem] =
+                unsafe { std::slice::from_raw_parts(target_ptr as *const *mut T::StateItem, count as usize) };
+
+            let target: States<'_, T::StateItem> = unsafe { States::new(target_slice) };
+
+            T::combine(user_data, bind_data, &source, target)
         },
         err,
     );
@@ -455,18 +458,26 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     fn init(&self, bind_data: Option<&Self::BindData>) -> Result<Self::StateItem>;
 
     /// **Update:** apply an input batch to its corresponding aggregate states.
+    ///
+    /// Rows of the same group share a state, so the view may contain the same
+    /// state more than once. Mutable access is offered one state at a time
+    /// through [`States`]' [`IndexMut`](std::ops::IndexMut) implementation.
     fn update(
         &self,
         bind_data: Option<&Self::BindData>,
         data: VectorCollection,
-        states: &mut [&mut Self::StateItem],
+        states: States<'_, Self::StateItem>,
     ) -> Result<()>;
     /// **Combine:** merge partial source states into target states.
+    ///
+    /// The source view is read-only; the target view offers mutable access one
+    /// state at a time through [`States`]' [`IndexMut`](std::ops::IndexMut)
+    /// implementation.
     fn combine(
         &self,
         bind_data: Option<&Self::BindData>,
-        source: &[&Self::StateItem],
-        target: &mut [&mut Self::StateItem],
+        source: &States<'_, Self::StateItem>,
+        target: States<'_, Self::StateItem>,
     ) -> Result<()>;
     /// **Finalize:** write aggregate states to the result vector.
     fn finalize(

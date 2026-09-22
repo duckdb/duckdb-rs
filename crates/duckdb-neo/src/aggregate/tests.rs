@@ -4,7 +4,7 @@ use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROP
 
 use crate::{
     DuckDBType, Parameters,
-    aggregate::{AggregateCallbacks, AggregateFunctionBuilder},
+    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, States},
     bind_arguments::BindArgument,
     connection::Context,
     data_chunk::VectorCollection,
@@ -62,7 +62,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
         &self,
         _bind_data: Option<&Self::BindData>,
         collection: VectorCollection,
-        states: &mut [&mut Self::StateItem],
+        mut states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         let vec = collection.get_vector_at::<Self::IncomingType>(0)?;
 
@@ -78,8 +78,8 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
     fn combine(
         &self,
         _bind_data: Option<&Self::BindData>,
-        source: &[&Self::StateItem],
-        dest: &mut [&mut Self::StateItem],
+        source: &States<'_, Self::StateItem>,
+        mut dest: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         for i in 0..dest.len() {
             let values = source[i].clone();

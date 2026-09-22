@@ -14,7 +14,7 @@ struct CustomReplacementScan {
 }
 
 impl ReplacementScanCallbacks for CustomReplacementScan {
-    fn scan(&self, context: Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+    fn scan<'a>(&'a self, context: Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
         let view = name.get_view()?;
 
         if let Some(table) = view.table
@@ -44,7 +44,7 @@ impl ReplacementScanCallbacks for CustomReplacementScan {
 struct CustomNamedParameters {}
 
 impl ReplacementScanCallbacks for CustomNamedParameters {
-    fn scan(&self, context: Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+    fn scan<'a>(&'a self, context: Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("alltypes")) {
@@ -65,7 +65,7 @@ struct CustomCdcScan {
 }
 
 impl ReplacementScanCallbacks for CustomCdcScan {
-    fn scan(&self, _context: Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+    fn scan<'a>(&'a self, _context: Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("cdc")) {
