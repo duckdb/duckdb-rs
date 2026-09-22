@@ -1,7 +1,7 @@
 //! Point-in-time progress for an executing query.
 
 use crate::{
-    Result, check_api_call,
+    Result, check_api_call, check_api_call_no_err,
     connection::{Connection, SettingScope},
     ffi,
 };

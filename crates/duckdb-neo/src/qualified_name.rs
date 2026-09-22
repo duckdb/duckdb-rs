@@ -14,8 +14,6 @@ pub struct QualifiedNameView {
     pub schema: Option<String>,
     /// The table (or other object) name; always present.
     pub table: Option<String>,
-    /// The column name, present only for a fully column-qualified name.
-    pub column: Option<String>,
 }
 
 /// An owned, optionally qualified name for a database object.
@@ -95,7 +93,6 @@ impl QualifiedName {
     pub fn get_view(&self) -> Result<QualifiedNameView> {
         let mut view = QualifiedNameView {
             catalog: None,
-            column: None,
             schema: None,
             table: None,
         };
@@ -104,9 +101,6 @@ impl QualifiedName {
 
         let mut iter = parts.iter().rev();
 
-        if parts.len() == 4 {
-            view.column = iter.next().cloned();
-        }
         view.table = iter.next().cloned();
         view.schema = iter.next().cloned();
         view.catalog = iter.next().cloned();

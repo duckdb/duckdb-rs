@@ -190,17 +190,3 @@ define_handle! {
         ColumnDataCollection => ffi::duckdb_v2_column_data_collection_shared_scan_state_create,
     },
 }
-
-#[cfg(feature = "capi-v2-p4")]
-define_handle! {
-    name: LogStorageBuilderHandle,
-    handle: ffi::duckdb_v2_log_storage_builder_handle,
-    destroy: ffi::duckdb_v2_log_storage_builder_destroy,
-}
-
-#[cfg(feature = "capi-v2-p4")]
-impl LogStorageBuilderHandle {
-    pub(crate) fn new() -> Result<Self> {
-        Ok(Self(check_api_call!(ffi::duckdb_v2_log_storage_builder_create, RET)?))
-    }
-}

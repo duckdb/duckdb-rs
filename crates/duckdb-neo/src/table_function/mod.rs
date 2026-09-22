@@ -287,7 +287,6 @@ unsafe extern "C" fn init_global_callback<T: TableFunctionCallbacks>(
             }
 
             if let Some(max_threads) = max_threads {
-                dbg!(max_threads);
                 check_api_call!(
                     ffi::duckdb_v2_table_function_init_global_set_max_threads,
                     info,

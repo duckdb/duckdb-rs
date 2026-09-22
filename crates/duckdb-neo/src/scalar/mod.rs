@@ -138,8 +138,8 @@ impl<'a> ReturnTypeHandle<'a> {
     /// Override the result type for the current bound call site.
     ///
     /// For example, a function declared to return `ANY` can derive a concrete
-    /// type from its bound arguments. DuckDB copies `return`, and the
-    /// override is valid only during binding.
+    /// type from its bound arguments. DuckDB copies the returned logical
+    /// type, and the override is valid only during binding.
     pub fn override_return(&self, return_type: LogicalType) -> Result<()> {
         match self.handle {
             FunctionBindHandles::Scalar(handle) => check_api_call!(

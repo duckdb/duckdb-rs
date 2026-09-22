@@ -338,6 +338,16 @@ impl FFILink for Connection {
 #[repr(transparent)]
 pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 
+impl Extension {
+    /// Wrap a borrowed extension handle.
+    /// # Safety
+    ///
+    /// `handle` must be a valid [`ffi::duckdb_v2_context_handle`].
+    pub unsafe fn from_raw(handle: ffi::duckdb_v2_extension_handle) -> Self {
+        Extension(handle)
+    }
+}
+
 impl Deref for Extension {
     type Target = ffi::duckdb_v2_extension_handle;
 
@@ -353,6 +363,14 @@ impl Deref for Extension {
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
 
 impl Context {
+    /// Wrap a borrowed context handle.
+    /// # Safety
+    ///
+    /// `handle` must be a valid [`ffi::duckdb_v2_context_handle`].
+    pub unsafe fn from_raw(handle: ffi::duckdb_v2_context_handle) -> Self {
+        Context(handle)
+    }
+
     /// Return an effective option by canonical name or alias.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
         Ok(ConfigOption {
