@@ -134,3 +134,21 @@ jobs:
         run: |
           cargo test -p duckdb --features buildtime_bindgen --test nightly -- --ignored
           cargo test -p duckdb -p duckdb-neo --features buildtime_bindgen
+
+  report:
+    name: Report release status
+    runs-on: ubuntu-latest
+    needs: [nightly]
+    if: always()
+    steps:
+      - name: Record client status
+        if: ${{ github.repository_owner == 'duckdb' }}
+        uses: duckdb/duckdb-workflow-trigger/dispatch@main
+        with:
+          github_token: ${{ secrets.DUCKDB_RELEASE_DISPATCH_TOKEN }}
+          event: client_ready
+          name: rust
+          duckdb_version: ${{ inputs.duckdb-version }}
+          duckdb_commit: ${{ inputs.duckdb-sha }}
+          status: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          message: DuckDB Rust client ready
