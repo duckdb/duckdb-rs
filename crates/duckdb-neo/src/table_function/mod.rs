@@ -5,7 +5,8 @@
 //! [`TableFunctionBuilder`] registers the implementation and configures
 //! projection pushdown. Optional cardinality estimates help DuckDB optimize
 //! query plans, while progress and complex-filter callbacks expose additional
-//! execution and pushdown behavior.
+//! execution and pushdown behavior. Functions that can describe the batches
+//! they produce implement [`TablePartitioningCallbacks`] on top.
 
 use std::any::Any;
 
@@ -15,7 +16,8 @@ use crate::{
     Result,
     bind_arguments::{BindArgument, BindMetadata, BindType},
     builder_helpers::{
-        OpaqueHandle, get_bind_data, get_global_state, get_local_state, get_user_data, handle_unwind, into_opaque,
+        OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state, get_user_data,
+        handle_unwind, into_opaque,
     },
     check_api_call,
     connection::Context,
@@ -25,6 +27,7 @@ use crate::{
     logical_type::LogicalType,
     signature::SignatureBuilder,
     table_function::InitColumnHandle::{Global, Local},
+    value::Value,
 };
 
 /// Callback-scoped output-schema builder.
@@ -359,12 +362,207 @@ unsafe extern "C" fn filter_pushdown_callback<T: TableFunctionCallbacks>(
     );
 }
 
+ffi_enum_redeclaration! {
+    /// Whether, and how, a scan's partitions line up with a set of columns.
+    ///
+    /// Reported by [`TablePartitioningCallbacks::partitioning`].
+    pub enum TablePartitionInfo <- ffi::DUCKDB_V2_TABLE_PARTITION_INFO {
+        /// The scan is not known to be partitioned by the requested columns.
+        NotPartitioned = DUCKDB_V2_TABLE_PARTITION_INFO_NOT_PARTITIONED,
+        /// Each produced partition carries exactly one distinct value for the requested columns.
+        ///
+        /// The only variant that unlocks the partitioned aggregate optimization.
+        SingleValuePartitions = DUCKDB_V2_TABLE_PARTITION_INFO_SINGLE_VALUE_PARTITIONS,
+        /// The produced partitions overlap only at their boundaries.
+        OverlappingPartitions = DUCKDB_V2_TABLE_PARTITION_INFO_OVERLAPPING_PARTITIONS,
+        /// The produced partitions are disjoint ranges.
+        DisjointPartitions = DUCKDB_V2_TABLE_PARTITION_INFO_DISJOINT_PARTITIONS,
+    }
+}
+
+/// What a downstream operator wants to know about the batch just produced.
+pub struct PartitionData<'a> {
+    handle: &'a ffi::duckdb_v2_table_function_partition_data_info_handle,
+}
+
+impl<'a> PartitionData<'a> {
+    /// Return whether a downstream operator needs this batch's ordering position.
+    pub fn requires_batch_index(&self) -> Result<bool> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_partition_data_requires_batch_index,
+            *self.handle,
+            RET
+        )
+    }
+
+    /// Return whether a downstream operator needs this batch's partitioning-column values.
+    ///
+    /// When true, call [`set_partition_value`](Self::set_partition_value) once
+    /// for every index below [`get_column_count`](Self::get_column_count).
+    pub fn requires_partition_columns(&self) -> Result<bool> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_partition_data_requires_partition_columns,
+            *self.handle,
+            RET
+        )
+    }
+
+    /// Return the number of partitioning columns values are requested for.
+    ///
+    /// Zero when [`requires_partition_columns`](Self::requires_partition_columns) is false.
+    pub fn get_column_count(&self) -> Result<usize> {
+        let column_count = check_api_call!(
+            ffi::duckdb_v2_table_function_partition_data_get_partition_column_count,
+            *self.handle,
+            RET
+        )?;
+
+        Ok(column_count as usize)
+    }
+
+    /// Map a requested partitioning column to its bind-declared column index.
+    pub fn get_column_index(&self, partition_index: usize) -> Result<usize> {
+        let original_index = check_api_call!(
+            ffi::duckdb_v2_table_function_partition_data_get_partition_column_index,
+            *self.handle,
+            partition_index as u64,
+            RET
+        )?;
+
+        Ok(original_index as usize)
+    }
+
+    /// Report the single value the batch carries for the partitioning column at `partition_index`.
+    ///
+    /// The value must have the declared type of the corresponding result
+    /// column. Calling this again for the same index overwrites the previous
+    /// value. Reported values only take effect together with a changed batch
+    /// index, so [`TablePartitioningCallbacks::partition_data`] must return a new
+    /// index whenever these values change.
+    pub fn set_partition_value(&self, partition_index: usize, value: &Value) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_partition_data_set_partition_value,
+            *self.handle,
+            partition_index as u64,
+            value.handle
+        )
+    }
+}
+
+/// The candidate `GROUP BY` column set the optimizer is asking about.
+pub struct PartitioningData<'a> {
+    handle: &'a ffi::duckdb_v2_table_function_partitioning_info_handle,
+}
+
+impl<'a> PartitioningData<'a> {
+    /// Return the number of columns in the candidate column set.
+    pub fn get_column_count(&self) -> Result<usize> {
+        let column_count = check_api_call!(
+            ffi::duckdb_v2_table_function_partitioning_get_partition_column_count,
+            *self.handle,
+            RET
+        )?;
+
+        Ok(column_count as usize)
+    }
+
+    /// Map a candidate column to its bind-declared column index.
+    pub fn get_column_index(&self, partition_index: usize) -> Result<usize> {
+        let original_index = check_api_call!(
+            ffi::duckdb_v2_table_function_partitioning_get_partition_column_index,
+            *self.handle,
+            partition_index as u64,
+            RET
+        )?;
+
+        Ok(original_index as usize)
+    }
+}
+
+unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
+    info: ffi::duckdb_v2_table_function_partition_data_info_handle,
+    ctx: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_table_function_partition_data_get_user_data, info);
+            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partition_data_get_bind_data, info);
+            let global_state = get_global_state!(ffi::duckdb_v2_table_function_partition_data_get_global_state, info);
+            let local_state = get_local_state!(ffi::duckdb_v2_table_function_partition_data_get_local_state, info);
+
+            let batch_index = T::partition_data(
+                user_data,
+                bind_data,
+                global_state,
+                local_state,
+                Context(ctx),
+                PartitionData { handle: &info },
+            )?;
+
+            // DuckDB validates the batch index on every call, whether or not a
+            // downstream operator ends up using it.
+            check_api_call!(
+                ffi::duckdb_v2_table_function_partition_data_set_batch_index,
+                info,
+                batch_index as u64
+            )?;
+
+            Ok(())
+        },
+        err,
+    );
+}
+
+unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
+    info: ffi::duckdb_v2_table_function_partitioning_info_handle,
+    ctx: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_table_function_partitioning_get_user_data, info);
+            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partitioning_get_bind_data, info);
+
+            let partition_info =
+                T::partitioning(user_data, bind_data, Context(ctx), PartitioningData { handle: &info })?;
+
+            check_api_call!(
+                ffi::duckdb_v2_table_function_partitioning_set_partition_info,
+                info,
+                partition_info.into()
+            )?;
+
+            Ok(())
+        },
+        err,
+    );
+}
+
 /// Builds and registers a user-defined table function.
 pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     name: String,
     signature: SignatureBuilder,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
+    partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
+    partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
+}
+
+impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
+    /// Report partition data to DuckDB, enabling [`TablePartitioningCallbacks`].
+    ///
+    /// DuckDB only accepts the two partitioning callbacks together, so this
+    /// registers both. It tells the optimizer the scan can describe the batches
+    /// it produces: DuckDB then relies on the batch index reported by
+    /// [`TablePartitioningCallbacks::partition_data`] instead of the order in
+    /// which batches arrive to preserve insertion order, and can turn a
+    /// matching hash aggregate into a partitioned one.
+    pub fn with_partitioning(mut self) -> Self {
+        self.partition_data_callback = Some(partition_data_callback::<T>);
+        self.partitioning_callback = Some(partitioning_callback::<T>);
+        self
+    }
 }
 
 impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
@@ -375,6 +573,8 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             signature,
             user_data: OpaqueHandle::new(implementation),
             projection_pushdown: false,
+            partition_data_callback: None,
+            partitioning_callback: None,
         }
     }
 
@@ -435,6 +635,24 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             **handle,
             Some(filter_pushdown_callback::<T>)
         )?;
+
+        // Registering the partition data callback makes DuckDB order batches by
+        // the index it reports, so it is only registered through
+        // `with_partitioning`. DuckDB rejects the partitioning callback unless
+        // both are set.
+        if self.partition_data_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_partition_data_callback,
+                **handle,
+                self.partition_data_callback
+            )?;
+
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_partitioning_callback,
+                **handle,
+                self.partitioning_callback
+            )?;
+        }
 
         // required
         check_api_call!(
@@ -543,6 +761,62 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         _column_data: PushdownData<'_>,
     ) -> Result<()> {
         Ok(())
+    }
+}
+
+/// Describes the batches a table function produces to DuckDB.
+///
+/// Implement this for table functions that can report where the batch they
+/// just produced sits in the scan's order, and optionally that their partitions
+/// carry a single distinct value for some columns. Enable the callbacks with
+/// [`TableFunctionBuilder::with_partitioning`]; they are ignored, and never
+/// registered, without it.
+///
+/// Reporting batch indices makes DuckDB order the scan's output by them instead
+/// of by the order batches arrive in, which is what lets an insertion-order
+/// preserving query stay parallel. Claiming single-value partitions lets the
+/// optimizer replace a hash aggregate with a partitioned one.
+pub trait TablePartitioningCallbacks: TableFunctionCallbacks {
+    /// **Partition data:** describe the batch [`exec`](TableFunctionCallbacks::exec) just produced.
+    ///
+    /// Runs on the worker thread that produced the batch, and only when a
+    /// downstream operator needs the batch's ordering position, the values of a
+    /// set of partitioning columns, or both; [`PartitionData`] reports which of
+    /// those were requested and receives the column values.
+    ///
+    /// The returned batch index is the batch's ordering position. It must not
+    /// decrease across successive calls on the same thread, must be unique
+    /// across threads for the ordering to be meaningful, must stay below
+    /// roughly `10^13`, and must change whenever the reported partitioning
+    /// column values change. It is reported on every call, since DuckDB
+    /// validates it even when nothing consumes it.
+    fn partition_data(
+        &self,
+        bind_data: Option<&Self::BindData>,
+        global_state: Option<&Self::GlobalState>,
+        local_state: Option<&mut Self::LocalState>,
+        context: Context,
+        partition_data: PartitionData<'_>,
+    ) -> Result<usize>;
+
+    /// **Partitioning:** report how the scan partitions a candidate `GROUP BY` column set.
+    ///
+    /// Runs on the planning thread, once per candidate column set, and must be
+    /// deterministic for a given set because the optimizer may discard the plan
+    /// it was called for. Only [`TablePartitionInfo::SingleValuePartitions`]
+    /// unlocks the partitioned aggregate optimization; every other variant
+    /// keeps the regular hash aggregate.
+    ///
+    /// Claiming single-value partitions commits
+    /// [`partition_data`](Self::partition_data) to reporting the values of
+    /// those columns for every batch.
+    fn partitioning(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _context: Context,
+        _partitioning_data: PartitioningData<'_>,
+    ) -> Result<TablePartitionInfo> {
+        Ok(TablePartitionInfo::NotPartitioned)
     }
 }
 
