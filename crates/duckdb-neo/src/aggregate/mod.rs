@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use libduckdb_sys::v2::{self as ffi};
+use crate::ffi;
 
 use crate::{
     Result,

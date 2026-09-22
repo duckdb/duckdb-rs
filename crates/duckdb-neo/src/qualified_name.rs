@@ -2,15 +2,19 @@
 
 use std::ops::Deref;
 
+use crate::ffi;
 use crate::{Result, check_api_call, check_api_call_no_err, check_api_call_string, error::Error};
-use libduckdb_sys::v2 as ffi;
 
 /// Owned identifier parts extracted from a [`QualifiedName`].
 #[derive(Default, Debug)]
 pub struct QualifiedNameView {
+    /// The catalog (database) name, absent for unqualified names.
     pub catalog: Option<String>,
+    /// The schema name, absent when only the table is named.
     pub schema: Option<String>,
+    /// The table (or other object) name; always present.
     pub table: Option<String>,
+    /// The column name, present only for a fully column-qualified name.
     pub column: Option<String>,
 }
 

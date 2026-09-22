@@ -7,7 +7,7 @@ use crate::{
     Result, check_api_call,
     column_data_collection::ColumnDataCollection,
     connection::{Connection, Extension},
-    database::Database,
+    database::Instance,
     ffi,
 };
 
@@ -148,7 +148,7 @@ define_handle! {
     },
 }
 
-impl ReplacementScanBuilderLink for Database {
+impl ReplacementScanBuilderLink for Instance {
     fn create_replacement_scan_handle(&self) -> Result<ReplacementScanBuilderHandle> {
         Ok(ReplacementScanBuilderHandle(check_api_call!(
             ffi::duckdb_v2_replacement_scan_create_with_instance,

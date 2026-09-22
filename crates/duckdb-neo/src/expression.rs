@@ -1,6 +1,6 @@
 //! Read-only introspection of bound expression trees.
 
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 use crate::{
     Result, builder_helpers::ffi_enum_redeclaration, cast::CastMode, check_api_call, logical_type::LogicalType,

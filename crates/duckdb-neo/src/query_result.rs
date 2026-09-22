@@ -1,10 +1,10 @@
 //! Lazy, streaming query results.
 
-use libduckdb_sys::v2::{self as ffi, ArrowArrayStream, duckdb_v2_str};
+use libduckdb_sys::v2::{ArrowArrayStream, duckdb_v2_str};
 
 use crate::{
     Result, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err, connection::Connection,
-    data_chunk::DataChunk, schema::Schema,
+    data_chunk::DataChunk, ffi, schema::Schema,
 };
 
 ffi_enum_redeclaration! {

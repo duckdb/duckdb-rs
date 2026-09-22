@@ -182,15 +182,20 @@ impl<'a> DataChunkRef<'a> {
         vec.cast::<T>()
     }
 
+    /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
     #[allow(private_bounds)]
     pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk> {
         link.copy_data_chunk(self)
     }
 }
 
+/// Selects where a chunk's vectors are allocated.
 pub enum Allocator<'a> {
+    /// Allocate from the DuckDB default allocator.
     Default,
+    /// Allocate from the given connection.
     Connection(&'a Connection),
+    /// Allocate from the given callback context.
     Context(&'a Context),
 }
 

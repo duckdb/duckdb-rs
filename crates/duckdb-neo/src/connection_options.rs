@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use libduckdb_sys::v2::{self as ffi};
+use crate::ffi;
 
 use crate::{
     Result,
@@ -33,7 +33,7 @@ ffi_enum_redeclaration! {
 ///
 /// Fetched from a database or connection, this contains the effective setting
 /// and canonical metadata such as aliases, description, default setting, and
-/// target scope. Use [`ConfigOptionValue`] to set an option.
+/// target scope.
 ///
 /// # Example
 /// ```

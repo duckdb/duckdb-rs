@@ -13,7 +13,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 use std::fmt::Display;
 
 /// A borrowed encoded `BIGNUM` value from a vector.

@@ -11,7 +11,7 @@
 
 use std::any::Any;
 
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 use crate::{
     Result,
@@ -89,15 +89,23 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
     );
 }
 
+/// Column layout of the scan's output during the exec callback.
+///
+/// With projection pushdown enabled, the columns here are the subset of
+/// declared columns the query actually uses.
 pub struct ExecColumnInfo<'a> {
     handle: &'a ffi::duckdb_v2_table_function_exec_info_handle,
 }
 
 impl<'a> ExecColumnInfo<'a> {
+    /// Return the number of columns the scan produces.
     pub fn count(&self) -> Result<usize> {
         check_api_call!(ffi::duckdb_v2_table_function_exec_get_column_count, *self.handle, RET).map(|x| x as usize)
     }
 
+    /// Return the index of the declared column that the scan's column at `index` stands for.
+    ///
+    /// Fails if `index` is out of bounds.
     pub fn get_column_index(&self, index: usize) -> Result<usize> {
         check_api_call!(
             ffi::duckdb_v2_table_function_exec_get_column_index,

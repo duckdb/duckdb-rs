@@ -2,7 +2,7 @@
 //!
 //! An [`Environment`] is the root of the handle hierarchy. It owns engine state
 //! shared by the databases opened through [`Environment::open`] or
-//! [`Environment::open_with_options`]. Databases keep their environment alive,
+//! [`Environment::instance`]. Databases keep their environment alive,
 //! and connections in turn keep their database alive.
 //!
 //! [`StorageLocation`] selects either a transient in-memory database or a
@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::{Result, check_api_call, check_api_call_no_err, database::Database, ffi};
+use crate::{Result, check_api_call, check_api_call_no_err, database::Instance, ffi};
 
 /// A shared handle to a DuckDB environment.
 pub struct EnvironmentHandle {
@@ -48,6 +48,7 @@ unsafe impl Sync for EnvironmentHandle {}
 /// drop(db);
 /// std::fs::remove_file(path).expect("Failed to remove on-disk database");
 /// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum StorageLocation {
     /// A transient database that lives only in memory (`:memory:`).
     InMemory,
@@ -60,6 +61,15 @@ impl From<StorageLocation> for String {
         match location {
             StorageLocation::InMemory => ":memory:".to_string(),
             StorageLocation::OnDisk(path) => path,
+        }
+    }
+}
+
+impl From<&StorageLocation> for String {
+    fn from(location: &StorageLocation) -> Self {
+        match location {
+            StorageLocation::InMemory => ":memory:".to_string(),
+            StorageLocation::OnDisk(path) => path.clone(),
         }
     }
 }
@@ -111,11 +121,17 @@ impl Environment {
         Ok(count as usize)
     }
 
-    /// Open an instance of an database.
-    pub fn open(&self, path: StorageLocation) -> Result<Database> {
-        let db = Database::new(self)?;
-        db.attach(path)?;
+    /// Create an instance and attach a database located at `path`.
+    /// For more fine grained control, use [`Self::instance`] and the [`Instance`] API directly.
+    pub fn open(&self, path: StorageLocation) -> Result<Instance> {
+        let db = Instance::new(self)?;
+        db.attach(&path)?;
         Ok(db)
+    }
+
+    /// Create a new instance of the DuckDB engine without attaching any database.
+    pub fn instance(&self) -> Result<Instance> {
+        Instance::new(self)
     }
 }
 
@@ -130,7 +146,7 @@ mod tests {
 
         let db = env.open(StorageLocation::InMemory)?;
 
-        db.set_option("memory_limit", "200MB");
+        db.set_option("memory_limit", "200MB")?;
 
         assert_eq!(db.get_option("memory_limit")?.setting()?, "190.7 MiB".to_string());
         Ok(())

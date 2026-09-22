@@ -1,7 +1,6 @@
 //! Bind-time metadata for scalar, aggregate, and table functions.
 
-use libduckdb_sys::v2 as ffi;
-
+use crate::ffi;
 use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
 
 pub(crate) enum BindType<'a> {

@@ -2,11 +2,12 @@
 
 use std::ops::Deref;
 
-use libduckdb_sys::v2::{self as ffi, DUCKDB_V2_LOGICAL_TYPE_ID};
+use libduckdb_sys::v2::DUCKDB_V2_LOGICAL_TYPE_ID;
 
 use crate::{
     Parameters, Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::FFILink,
+    ffi,
     links::{LogicalTypeAliasLink, LogicalTypeFromIdLink, LogicalTypeFromNameLink},
     qualified_name::QualifiedName,
     value::Value,

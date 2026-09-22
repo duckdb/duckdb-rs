@@ -91,6 +91,7 @@ pub fn library_version() -> Result<&'static str> {
     check_api_call!(ffi::duckdb_v2_library_version, RET).map(|v| v.into())
 }
 
+/// Validate that `text` is well-formed UTF-8, including bytes after any embedded NULs.
 pub fn validate_utf8(text: impl Into<DuckDBStr<'static>>) -> Result<()> {
     check_api_call!(ffi::duckdb_v2_validate_utf8, text.into())
 }

@@ -1,13 +1,10 @@
-use libduckdb_sys::v2::DUCKDB_V2_LOGICAL_TYPE_ID::{
-    DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER,
-};
-
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
     column_data_collection::ColumnDataCollection,
     connection::Context,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
+    logical_type::{LogicalType, LogicalTypeID},
     qualified_name::QualifiedName,
     replacement_scan::{ReplacementHandle, ReplacementScanBuilder, ReplacementScanCallbacks, ReplacementType},
 };
@@ -96,7 +93,7 @@ fn test_replacement_scan() -> crate::Result<()> {
 
     let chunk = query.next().unwrap()?;
 
-    assert!(chunk.get_vector_at::<i64>(0)?.logical_type().type_id() == DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+    assert!(chunk.get_vector_at::<i64>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
 
     assert_eq!(chunk.row_count()?, 10 + 42);
 
@@ -106,7 +103,9 @@ fn test_replacement_scan() -> crate::Result<()> {
 
     let chunk = query.next().unwrap()?;
 
-    assert!(chunk.get_vector_at::<bool>(0)?.logical_type().type_id() == DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
+    assert!(
+        chunk.get_vector_at::<bool>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
+    );
 
     assert_eq!(chunk.vectors_count()?, 59);
 
@@ -145,8 +144,12 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
     let chunk = query.next().unwrap()?;
 
-    assert!(chunk.get_vector_at::<i32>(0)?.logical_type().type_id() == DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
-    assert!(chunk.get_vector_at::<bool>(1)?.logical_type().type_id() == DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
+    assert!(
+        chunk.get_vector_at::<i32>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+    );
+    assert!(
+        chunk.get_vector_at::<bool>(1)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
+    );
 
     assert_eq!(chunk.row_count()?, 2);
 

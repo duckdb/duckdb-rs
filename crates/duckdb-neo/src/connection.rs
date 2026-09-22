@@ -1,6 +1,6 @@
 //! Database sessions, SQL execution, and connection-scoped operations.
 //!
-//! Create a [`Connection`] with [`crate::database::Database::connect`]. Each
+//! Create a [`Connection`] with [`crate::database::Instance::connect`]. Each
 //! connection has independent settings and transaction state while sharing its
 //! database's catalog and storage. SQL can be parsed into
 //! [`crate::statement::Statement`] values, executed for a changed-row count, or
@@ -20,7 +20,7 @@ use crate::{
     Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
     connection_options::ConfigOption,
-    database::{Database, DatabaseHandle},
+    database::{DatabaseHandle, Instance},
     error::{DuckDBError, Error, check_api_call, check_api_call_no_err},
     ffi,
     links::LogicalTypeFromTextLink,
@@ -141,7 +141,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub(crate) fn new(db: &Database) -> Result<Self> {
+    pub(crate) fn new(db: &Instance) -> Result<Self> {
         let handle: ffi::duckdb_v2_connection_handle =
             check_api_call!(ffi::duckdb_v2_connection_create, db.handle.lock().unwrap().handle, RET)?;
 
@@ -274,6 +274,7 @@ impl Connection {
         check_api_call!(ffi::duckdb_v2_connection_interrupt, **self)
     }
 
+    /// Return an [`InterruptHandle`] that can cancel this connection's active query from another thread.
     pub fn interrupt_handle(&self) -> InterruptHandle {
         InterruptHandle {
             conn: self.inner.clone(),
@@ -352,18 +353,21 @@ impl Deref for Extension {
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
 
 impl Context {
+    /// Return an effective option by canonical name or alias.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
         Ok(ConfigOption {
             handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, name.into(), RET)?,
         })
     }
 
+    /// Return the option visible at `index`.
     pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
         Ok(ConfigOption {
             handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_index, **self, index as u64, RET)?,
         })
     }
 
+    /// Return the number of options visible to this context.
     pub fn get_option_count(&self) -> Result<usize> {
         check_api_call!(ffi::duckdb_v2_context_get_option_count, **self, RET).map(|count| count as usize)
     }

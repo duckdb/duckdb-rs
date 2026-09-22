@@ -16,7 +16,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 use std::fmt::Display;
 
 macro_rules! declare_storage_value {

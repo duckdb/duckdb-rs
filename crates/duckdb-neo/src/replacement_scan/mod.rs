@@ -26,7 +26,10 @@ pub struct ReplacementHandle<'a> {
 pub enum ReplacementType<'a> {
     /// A table function's name, optionally qualified by schema and catalog.
     Table(QualifiedName),
+    /// A borrowed column data collection read directly instead of the table,
+    /// with optional column names in place of the default `col1..colN`.
     ColumnDataCollection((&'a ColumnDataCollection, Vec<String>)),
+    /// A `SELECT` statement read instead of the table.
     Subquery(String),
 }
 

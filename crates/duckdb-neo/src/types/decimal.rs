@@ -13,7 +13,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 /// Marks integer types supported as the physical storage of [`Decimal`].
 pub trait InternalDecimalType {

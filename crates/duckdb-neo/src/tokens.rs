@@ -1,3 +1,5 @@
+//! SQL tokenization into typed lexemes with source offsets.
+
 use libduckdb_sys::v2::DuckDBStr;
 
 use crate::{
@@ -8,13 +10,23 @@ use crate::{
     ffi,
 };
 
+/// One lexical token from a tokenized SQL statement.
 #[derive(Debug)]
 pub struct TokenData {
+    /// The token's lexical class.
     pub token_type: TokenType,
+    /// Byte offset of the token's first byte in the source SQL.
     pub start: usize,
+    /// Length of the token in bytes.
     pub length: usize,
 }
 
+/// A streaming iterator over the tokens of an SQL string.
+///
+/// Tokens are produced lazily by [`Iterator::next`], each carrying its
+/// [`TokenType`], byte offset, and length back into the source SQL. The
+/// iterator is created with [`SqlTokenIterator::new`] and holds a DuckDB
+/// tokenizer handle, so it must be dropped before the connection is destroyed.
 pub struct SqlTokenIterator {
     handle: ffi::duckdb_v2_token_iterator_handle,
 }
@@ -26,12 +38,17 @@ impl Drop for SqlTokenIterator {
 }
 
 impl SqlTokenIterator {
+    /// Tokenize `sql`, returning a lazy iterator over its lexical tokens.
+    ///
+    /// The tokenizer consumes the SQL text immediately; tokens are then yielded
+    /// on demand as the iterator is advanced.
     pub fn new(conn: &Connection, sql: impl Into<DuckDBStr<'static>>) -> Result<SqlTokenIterator> {
         Ok(Self {
             handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, sql.into(), RET)?,
         })
     }
 
+    /// Whether the statement ends inside an unterminated string or quoted identifier.
     pub fn ends_undetermined(&self) -> Result<bool> {
         check_api_call!(ffi::duckdb_v2_token_iterator_ends_unterminated, self.handle, RET)
     }

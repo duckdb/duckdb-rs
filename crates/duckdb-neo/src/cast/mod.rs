@@ -1,6 +1,6 @@
 //! User-defined casts between logical types.
 
-use libduckdb_sys::v2::{self as ffi};
+use crate::ffi;
 
 use crate::{
     Result,

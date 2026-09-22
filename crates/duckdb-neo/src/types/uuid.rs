@@ -14,7 +14,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 /// DuckDB's internal signed 128-bit UUID representation.
 #[repr(transparent)]

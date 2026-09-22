@@ -6,7 +6,7 @@
 
 use std::ops::Deref;
 
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,

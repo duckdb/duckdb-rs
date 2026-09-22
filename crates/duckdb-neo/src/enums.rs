@@ -1,3 +1,5 @@
+//! Enumerations mirrored from the C API, including token classes and function properties.
+
 use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
 ffi_enum_redeclaration! {

@@ -12,7 +12,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 /// The bind-time `ANY` logical type used in function signatures.
 pub struct Any;
