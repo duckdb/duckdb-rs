@@ -120,46 +120,6 @@ fn test_table_function() -> crate::Result<()> {
             Ok(prog)
         }
 
-        fn pushdown_filter(
-            &self,
-            bind_data: Option<&Self::BindData>,
-            context: Context,
-            column_data: super::PushdownData<'_>,
-        ) -> crate::Result<()> {
-            self.pushdown_called.store(true, Ordering::SeqCst);
-
-            assert_eq!(column_data.get_column_count()?, 1);
-            assert_eq!(column_data.get_column_index(0)?, 0);
-            assert_eq!(column_data.filter_count()?, 1);
-
-            let filter = column_data.filter(0)?;
-
-            assert_eq!(filter.expression_type()?, ExpressionType::CompareGreaterThan);
-            assert_eq!(filter.function_name()?, ">");
-            assert_eq!(filter.child_count()?, 2);
-
-            let column_ref = filter.child(0)?;
-            assert_eq!(column_ref.expression_type()?, ExpressionType::BoundColumnRef);
-            assert_eq!(column_ref.reference_index()?, 0);
-
-            let constant = filter.child(1)?;
-            assert_eq!(constant.expression_type()?, ExpressionType::ValueConstant);
-            assert_eq!(constant.return_type()?, i32::logical_type(&context)?);
-
-            let threshold = constant
-                .get_constant_value()?
-                .get::<i32>()?
-                .expect("filter constant must not be NULL");
-
-            *bind_data.unwrap().accepted_threshold.lock().unwrap() = Some(threshold);
-
-            // We take full responsibility for enforcing this filter in `exec`,
-            // so DuckDB does not need to re-check it on our output rows.
-            column_data.accept_pushdown(0)?;
-
-            Ok(())
-        }
-
         fn exec(
             &self,
             bind_data: Option<&Self::BindData>,
@@ -203,6 +163,48 @@ fn test_table_function() -> crate::Result<()> {
             Ok(())
         }
     }
+
+    impl super::TableFilterPushdownCallbacks for MyTableFunction {
+        fn pushdown_filter(
+            &self,
+            bind_data: Option<&Self::BindData>,
+            context: Context,
+            column_data: super::PushdownData<'_>,
+        ) -> crate::Result<()> {
+            self.pushdown_called.store(true, Ordering::SeqCst);
+
+            assert_eq!(column_data.get_column_count()?, 1);
+            assert_eq!(column_data.get_column_index(0)?, 0);
+            assert_eq!(column_data.filter_count()?, 1);
+
+            let filter = column_data.filter(0)?;
+
+            assert_eq!(filter.expression_type()?, ExpressionType::CompareGreaterThan);
+            assert_eq!(filter.function_name()?, ">");
+            assert_eq!(filter.child_count()?, 2);
+
+            let column_ref = filter.child(0)?;
+            assert_eq!(column_ref.expression_type()?, ExpressionType::BoundColumnRef);
+            assert_eq!(column_ref.reference_index()?, 0);
+
+            let constant = filter.child(1)?;
+            assert_eq!(constant.expression_type()?, ExpressionType::ValueConstant);
+            assert_eq!(constant.return_type()?, i32::logical_type(&context)?);
+
+            let threshold = constant
+                .get_constant_value()?
+                .get::<i32>()?
+                .expect("filter constant must not be NULL");
+
+            *bind_data.unwrap().accepted_threshold.lock().unwrap() = Some(threshold);
+
+            // We take full responsibility for enforcing this filter in `exec`,
+            // so DuckDB does not need to re-check it on our output rows.
+            column_data.accept_pushdown(0)?;
+
+            Ok(())
+        }
+    }
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
@@ -219,6 +221,7 @@ fn test_table_function() -> crate::Result<()> {
             pushdown_called: pushdown_called.clone(),
         },
     )
+    .with_filter_pushdown()
     .register(&conn)?;
 
     conn.execute("SET preserve_insertion_order=false", Parameters::None)?;

@@ -3,10 +3,11 @@
 //! Implement [`TableFunctionCallbacks`] to bind arguments and declare output
 //! columns, initialize shared and worker-local scan state, and produce chunks.
 //! [`TableFunctionBuilder`] registers the implementation and configures
-//! projection pushdown. Optional cardinality estimates help DuckDB optimize
-//! query plans, while progress and complex-filter callbacks expose additional
-//! execution and pushdown behavior. Functions that can describe the batches
-//! they produce implement [`TablePartitioningCallbacks`] on top.
+//! projection pushdown. Optional cardinality estimates and progress reports
+//! help DuckDB optimize query plans and track execution. Functions that can
+//! apply the query's filters themselves implement
+//! [`TableFilterPushdownCallbacks`] on top, and functions that can describe the
+//! batches they produce implement [`TablePartitioningCallbacks`].
 
 use std::any::Any;
 
@@ -346,7 +347,7 @@ unsafe extern "C" fn progress_callback<T: TableFunctionCallbacks>(
     );
 }
 
-unsafe extern "C" fn filter_pushdown_callback<T: TableFunctionCallbacks>(
+unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
     info: ffi::duckdb_v2_table_function_filter_pushdown_info_handle,
     ctx: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
@@ -545,8 +546,20 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     signature: SignatureBuilder,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
+    filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
     partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
     partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
+}
+
+impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
+    /// Claim filters in the scan, enabling [`TableFilterPushdownCallbacks`].
+    ///
+    /// Without this DuckDB never offers the function its filters and applies
+    /// all of them itself.
+    pub fn with_filter_pushdown(mut self) -> Self {
+        self.filter_pushdown_callback = Some(filter_pushdown_callback::<T>);
+        self
+    }
 }
 
 impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
@@ -573,6 +586,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             signature,
             user_data: OpaqueHandle::new(implementation),
             projection_pushdown: false,
+            filter_pushdown_callback: None,
             partition_data_callback: None,
             partitioning_callback: None,
         }
@@ -630,11 +644,15 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             Some(progress_callback::<T>)
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
-            **handle,
-            Some(filter_pushdown_callback::<T>)
-        )?;
+        // Only registered through `with_filter_pushdown`, so that DuckDB does
+        // not ask a function that cannot claim any filter.
+        if self.filter_pushdown_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
+                **handle,
+                self.filter_pushdown_callback
+            )?;
+        }
 
         // Registering the partition data callback makes DuckDB order batches by
         // the index it reports, so it is only registered through
@@ -691,8 +709,9 @@ pub struct TableFunctionCardinality {
 /// Callback lifecycle for a user-defined table function.
 ///
 /// DuckDB binds the call and output schema, initializes shared and worker-local
-/// scan state, then repeatedly requests output chunks. Optional callbacks
-/// expose cardinality, progress, projections, and filter pushdown.
+/// scan state, then repeatedly requests output chunks. Optional callbacks expose
+/// cardinality, progress, and projections; filter pushdown and partitioning live
+/// in [`TableFilterPushdownCallbacks`] and [`TablePartitioningCallbacks`].
 pub trait TableFunctionCallbacks: Send + Sync + 'static {
     /// Data shared from binding through optimization and execution.
     type BindData: Any + Send + Sync;
@@ -752,16 +771,27 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
         Ok((None, None))
     }
+}
 
+/// Applies query filters inside a table function.
+///
+/// Implement this for table functions that can evaluate some of the query's
+/// filters while scanning, for instance by skipping files, row groups, or rows
+/// that cannot match. Enable the callback with
+/// [`TableFunctionBuilder::with_filter_pushdown`]; it is ignored, and never
+/// registered, without it.
+pub trait TableFilterPushdownCallbacks: TableFunctionCallbacks {
     /// **Push down filters:** inspect and claim filters applied by the scan.
+    ///
+    /// Runs during query optimization. Claiming a filter with
+    /// [`PushdownData::accept_pushdown`] stops DuckDB from re-applying it, so
+    /// every row the function emits afterwards must satisfy it.
     fn pushdown_filter(
         &self,
-        _bind_data: Option<&Self::BindData>,
-        _context: Context,
-        _column_data: PushdownData<'_>,
-    ) -> Result<()> {
-        Ok(())
-    }
+        bind_data: Option<&Self::BindData>,
+        context: Context,
+        column_data: PushdownData<'_>,
+    ) -> Result<()>;
 }
 
 /// Describes the batches a table function produces to DuckDB.
