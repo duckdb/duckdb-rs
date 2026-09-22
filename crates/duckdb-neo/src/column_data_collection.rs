@@ -384,7 +384,7 @@ mod test {
                 handle: crate::replacement_scan::ReplacementHandle<'_>,
             ) -> Result<()> {
                 if name.get_view()?.table == Some("A".into()) {
-                    handle.set_reference(ReplacementType::ColumnDataCollection((
+                    handle.set_reference(ReplacementType::NamedColumnDataCollection((
                         &self.cdc,
                         ["id".to_string(), "is_active".to_string()].into(),
                     )))?;

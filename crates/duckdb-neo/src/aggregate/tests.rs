@@ -152,7 +152,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
 
-    db.set_option("threads", &1.to_string());
+    db.set_option("threads", &1.to_string())?;
 
     let conn = db.connect()?;
 

@@ -4,7 +4,7 @@ use crate::{
     connection::Context,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
-    logical_type::{LogicalType, LogicalTypeID},
+    logical_type::LogicalTypeID,
     qualified_name::QualifiedName,
     replacement_scan::{ReplacementHandle, ReplacementScanBuilder, ReplacementScanCallbacks, ReplacementType},
 };
@@ -69,7 +69,7 @@ impl ReplacementScanCallbacks for CustomCdcScan {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("cdc")) {
-            replacement.set_reference(ReplacementType::ColumnDataCollection((
+            replacement.set_reference(ReplacementType::NamedColumnDataCollection((
                 &self.collection,
                 vec!["id".to_string(), "is_active".to_string()],
             )))?;

@@ -26,9 +26,13 @@ pub struct ReplacementHandle<'a> {
 pub enum ReplacementType<'a> {
     /// A table function's name, optionally qualified by schema and catalog.
     Table(QualifiedName),
-    /// A borrowed column data collection read directly instead of the table,
-    /// with optional column names in place of the default `col1..colN`.
-    ColumnDataCollection((&'a ColumnDataCollection, Vec<String>)),
+    /// A borrowed column data collection to be read. Has default column names (`col1`, `col2`, ...).
+    ColumnDataCollection(&'a ColumnDataCollection),
+
+    /// A borrowed column data collection with explicitly named columns.
+    /// with explicitly named column names.
+    NamedColumnDataCollection((&'a ColumnDataCollection, Vec<String>)),
+
     /// A `SELECT` statement read instead of the table.
     Subquery(String),
 }
@@ -61,13 +65,22 @@ impl<'a> ReplacementHandle<'a> {
             ReplacementType::Table(name) => {
                 check_api_call!(ffi::duckdb_v2_replacement_scan_set_function_name, *self.info, *name)
             }
-            ReplacementType::ColumnDataCollection((cdc, names)) => check_api_call!(
+            ReplacementType::NamedColumnDataCollection((cdc, names)) => check_api_call!(
                 ffi::duckdb_v2_replacement_scan_set_collection,
                 *self.info,
                 **cdc,
                 names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
                 names.len() as u64
             ),
+            ReplacementType::ColumnDataCollection(cdc) => {
+                check_api_call!(
+                    ffi::duckdb_v2_replacement_scan_set_collection,
+                    *self.info,
+                    **cdc,
+                    std::ptr::null(),
+                    0
+                )
+            }
             ReplacementType::Subquery(query) => {
                 check_api_call!(
                     ffi::duckdb_v2_replacement_scan_set_subquery,

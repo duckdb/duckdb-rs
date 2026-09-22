@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn test_instance_attach_options() -> crate::Result<()> {
         let env = Environment::new()?;
-        let instance = env.get_instance()?;
+        let instance = env.instance()?;
         let mut attach_options = instance.get_attach_options_builder()?;
 
         let location = StorageLocation::OnDisk("test_instance_attach_options.db".into());
