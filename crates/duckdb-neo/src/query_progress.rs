@@ -46,13 +46,13 @@ impl QueryProgress {
         let mut percentage = 0.0;
         let mut rows_processed = 0;
         let mut total_rows = 0;
-        // check_api_call!(
-        //     ffi::duckdb_v2_connection_progress_get,
-        //     **conn,
-        //     &mut percentage,
-        //     &mut rows_processed,
-        //     &mut total_rows
-        // )?;
+        check_api_call!(
+            ffi::duckdb_v2_connection_progress_get,
+            **conn,
+            &mut percentage,
+            &mut rows_processed,
+            &mut total_rows
+        )?;
 
         if percentage < 0.0 || (rows_processed == 0 && total_rows == 0) {
             return Ok(None);

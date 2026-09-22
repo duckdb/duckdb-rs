@@ -192,7 +192,9 @@ mod tests {
 
             Ok(())
         }
+    }
 
+    impl crate::table_function::TableFilterPushdownCallbacks for TableFunctionTest {
         fn pushdown_filter(
             &self,
             _bind_data: Option<&Self::BindData>,
@@ -241,7 +243,9 @@ mod tests {
 
         let signature = SignatureBuilder::without_return_type(vec![]);
 
-        TableFunctionBuilder::new("test_function", signature, TableFunctionTest {}).register(&conn)?;
+        TableFunctionBuilder::new("test_function", signature, TableFunctionTest {})
+            .with_filter_pushdown()
+            .register(&conn)?;
 
         use crate::Parameters;
 

@@ -20,7 +20,7 @@ use crate::{
     Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
     connection_options::ConfigOption,
-    database::DatabaseHandle,
+    database::{Database, DatabaseHandle},
     error::{DuckDBError, Error, check_api_call, check_api_call_no_err},
     ffi,
     links::LogicalTypeFromTextLink,
@@ -141,6 +141,16 @@ pub struct Connection {
 }
 
 impl Connection {
+    pub(crate) fn new(db: &Database) -> Result<Self> {
+        let handle: ffi::duckdb_v2_connection_handle =
+            check_api_call!(ffi::duckdb_v2_connection_create, db.handle.lock().unwrap().handle, RET)?;
+
+        Ok(Connection {
+            inner: Arc::new(InnerConnection { handle }),
+            _db: db.handle.clone(),
+        })
+    }
+
     /// Parse SQL into an iterator over its statements.
     pub fn parse(&self, query: impl AsRef<str>) -> Result<Statements> {
         Statements::parse(self, query)

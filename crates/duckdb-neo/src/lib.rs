@@ -29,7 +29,7 @@
 //! # }
 //! ```
 
-use libduckdb_sys::v2 as ffi;
+use libduckdb_sys::v2::{self as ffi, DuckDBStr};
 
 mod builder_helpers;
 pub mod connection_options;
@@ -89,6 +89,10 @@ pub fn render_identifier_quoted(text: &str) -> Result<String> {
 /// Return the linked DuckDB library version.
 pub fn library_version() -> Result<&'static str> {
     check_api_call!(ffi::duckdb_v2_library_version, RET).map(|v| v.into())
+}
+
+pub fn validate_utf8(text: impl Into<DuckDBStr<'static>>) -> Result<()> {
+    check_api_call!(ffi::duckdb_v2_validate_utf8, text.into())
 }
 
 #[cfg(test)]

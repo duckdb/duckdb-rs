@@ -10,15 +10,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::{
-    Result, check_api_call, check_api_call_no_err,
-    database::{Database, DatabaseHandle, InstanceBuilder},
-    ffi,
-};
+use crate::{Result, check_api_call, check_api_call_no_err, database::Database, ffi};
 
 /// A shared handle to a DuckDB environment.
 pub struct EnvironmentHandle {
-    handle: ffi::duckdb_v2_environment_handle,
+    pub(crate) handle: ffi::duckdb_v2_environment_handle,
 }
 impl EnvironmentHandle {
     fn new() -> Result<Self> {
@@ -93,7 +89,7 @@ impl From<StorageLocation> for String {
 /// }
 /// ```
 pub struct Environment {
-    handle: Arc<Mutex<EnvironmentHandle>>,
+    pub(crate) handle: Arc<Mutex<EnvironmentHandle>>,
 }
 
 impl Environment {
@@ -117,25 +113,9 @@ impl Environment {
 
     /// Open an instance of an database.
     pub fn open(&self, path: StorageLocation) -> Result<Database> {
-        let path: String = path.into();
-
-        let handle: ffi::duckdb_v2_instance_handle =
-            check_api_call!(ffi::duckdb_v2_instance_create, self.handle.lock().unwrap().handle, RET)?;
-
-        let options = check_api_call!(ffi::duckdb_v2_attach_options_create, handle, RET)?;
-
-        Ok(InstanceBuilder {
-            db: Database {
-                handle: Arc::new(Mutex::new(DatabaseHandle {
-                    handle,
-                    env: self.handle.clone(),
-                })),
-            },
-            path,
-            options: options,
-            name: None,
-        }
-        .connect()?)
+        let db = Database::new(self)?;
+        db.attach(path)?;
+        Ok(db)
     }
 }
 

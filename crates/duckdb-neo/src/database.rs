@@ -1,14 +1,17 @@
 //! Open DuckDB databases and their global configuration.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,
-    connection::{Connection, InnerConnection},
+    connection::Connection,
     connection_options::ConfigOption,
-    environment::EnvironmentHandle,
+    environment::{Environment, EnvironmentHandle, StorageLocation},
 };
-use libduckdb_sys::v2 as ffi;
+use libduckdb_sys::v2::{self as ffi, DuckDBStr};
 
 /// A shared handle to an open DuckDB database.
 pub struct DatabaseHandle {
@@ -17,49 +20,6 @@ pub struct DatabaseHandle {
 
     /// The environment kept alive by this database.
     pub env: Arc<Mutex<EnvironmentHandle>>,
-}
-
-pub struct InstanceBuilder {
-    pub(crate) db: Database,
-    pub(crate) path: String,
-    pub(crate) options: ffi::duckdb_v2_attach_options_handle,
-    pub(crate) name: Option<String>,
-}
-
-impl InstanceBuilder {
-    pub fn connect(mut self) -> Result<Database> {
-        let mut name = self.name.as_ref().map_or((&self.path).into(), |s| (s).into());
-
-        check_api_call!(
-            ffi::duckdb_v2_instance_attach,
-            self.db.handle.lock().unwrap().handle,
-            (&self.path).into(),
-            &mut name,
-            self.options,
-            true
-        )?;
-
-        check_api_call_no_err!(ffi::duckdb_v2_attach_options_destroy, &mut self.options).unwrap();
-
-        Ok(self.db)
-    }
-
-    pub fn set_default(&self) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_instance_set_default,
-            self.db.handle.lock().unwrap().handle,
-            self.name.as_ref().map_or((&self.path).into(), |s| (s).into())
-        )
-    }
-
-    pub fn set_option(&self, key: &str, setting: &str) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_attach_options_set,
-            self.options,
-            key.into(),
-            setting.into()
-        )
-    }
 }
 
 impl Drop for DatabaseHandle {
@@ -71,7 +31,32 @@ impl Drop for DatabaseHandle {
 unsafe impl Send for DatabaseHandle {}
 unsafe impl Sync for DatabaseHandle {}
 
-/// An open DuckDB database instance.
+pub struct AttachOptionsBuilder {
+    pub handle: ffi::duckdb_v2_attach_options_handle,
+}
+
+impl AttachOptionsBuilder {
+    pub fn add_option(&mut self, key: &str, value: &str) -> Result<()> {
+        check_api_call!(ffi::duckdb_v2_attach_options_set, self.handle, key.into(), value.into())
+    }
+}
+
+impl Drop for AttachOptionsBuilder {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_attach_options_destroy, &mut self.handle)
+            .expect("Failed to destroy AttachOptionsBuilder");
+    }
+}
+
+impl Deref for AttachOptionsBuilder {
+    type Target = ffi::duckdb_v2_attach_options_handle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
+/// An open DuckDB instance.
 ///
 /// Connections share the database's catalog, buffer pool, and transaction
 /// manager while retaining independent session state.
@@ -79,13 +64,12 @@ unsafe impl Sync for DatabaseHandle {}
 /// # Example
 /// ```
 /// use duckdb_neo::{environment::Environment, environment::StorageLocation};
-/// use duckdb_neo::connection_options::ConfigOptionValue;
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
-/// db.set_option(&ConfigOptionValue::new("threads", "2")?)?;
+/// db.set_option(&"threads", "2")?;
 /// assert_eq!(db.get_option("threads")?.setting()?, "2");
 ///
 /// let conn = db.connect()?;
@@ -94,23 +78,83 @@ unsafe impl Sync for DatabaseHandle {}
 /// # }
 /// ```
 pub struct Database {
-    /// The shared database handle.
     pub handle: Arc<Mutex<DatabaseHandle>>,
 }
 
 impl Database {
-    /// Open a [`Connection`] with independent session state.
-    pub fn connect(&self) -> Result<Connection> {
-        let conn: ffi::duckdb_v2_connection_handle = check_api_call!(
-            ffi::duckdb_v2_connection_create,
-            self.handle.lock().unwrap().handle,
-            RET
-        )?;
-
-        Ok(Connection {
-            inner: Arc::new(InnerConnection { handle: conn }),
-            _db: self.handle.clone(),
+    pub fn new(environment: &Environment) -> Result<Self> {
+        Ok(Database {
+            handle: Arc::new(Mutex::new(DatabaseHandle {
+                handle: check_api_call!(
+                    ffi::duckdb_v2_instance_create,
+                    environment.handle.lock().unwrap().handle,
+                    RET
+                )?,
+                env: environment.handle.clone(),
+            })),
         })
+    }
+
+    pub fn get_attach_options_builder(&self) -> Result<AttachOptionsBuilder> {
+        Ok(AttachOptionsBuilder {
+            handle: check_api_call!(
+                ffi::duckdb_v2_attach_options_create,
+                self.handle.lock().unwrap().handle,
+                RET
+            )?,
+        })
+    }
+
+    pub fn attach(&self, location: StorageLocation) -> Result<&Self> {
+        self.attach_with_options(location, None, None, true)?;
+        Ok(self)
+    }
+
+    pub fn attach_with_options(
+        &self,
+        location: StorageLocation,
+        alias: Option<String>,
+        options: Option<&AttachOptionsBuilder>,
+        default: bool,
+    ) -> Result<()> {
+        let location: String = location.into();
+        let alias: *mut DuckDBStr<'_> = alias.map_or(std::ptr::null_mut(), |a| &mut (&a).into());
+        let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| o.handle);
+
+        check_api_call!(
+            ffi::duckdb_v2_instance_attach,
+            self.handle.lock().unwrap().handle,
+            (&location).into(),
+            alias,
+            options,
+            default
+        )?;
+        Ok(())
+    }
+
+    pub fn set_default(&self, location: StorageLocation) -> Result<&Self> {
+        let location: String = location.into();
+        check_api_call!(
+            ffi::duckdb_v2_instance_set_default,
+            self.handle.lock().unwrap().handle,
+            (&location).into()
+        )?;
+        Ok(self)
+    }
+
+    pub fn detach(&self, location: StorageLocation) -> Result<&Self> {
+        let location: String = location.into();
+
+        check_api_call!(
+            ffi::duckdb_v2_instance_detach,
+            self.handle.lock().unwrap().handle,
+            (&location).into()
+        )?;
+        Ok(self)
+    }
+
+    pub fn connect(&self) -> Result<Connection> {
+        Connection::new(self)
     }
 
     /// Return the number of registered options, excluding aliases.

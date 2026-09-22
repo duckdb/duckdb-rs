@@ -38,14 +38,12 @@ ffi_enum_redeclaration! {
 /// # Example
 /// ```
 /// use duckdb_neo::{environment::Environment, environment::StorageLocation};
-/// use duckdb_neo::connection_options::ConfigOptionValue;
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
-/// let option = ConfigOptionValue::new("worker_threads", "2")?;
-/// db.set_option(&option)?;
+/// db.set_option("worker_threads", "2")?;
 ///
 /// let resolved = db.get_option("threads")?;
 /// assert_eq!(resolved.setting()?, "2");
@@ -210,7 +208,7 @@ mod test {
         assert_eq!(db_option.canonical_name().unwrap(), "profiling_output");
         assert_eq!(
             db_option.description().unwrap(),
-            "The file to which profile output should be saved, or empty to print to the terminal"
+            "The file to which profiler output is written. When empty, the output is printed to the terminal."
         );
 
         Ok(())
