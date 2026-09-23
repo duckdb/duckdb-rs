@@ -5,6 +5,7 @@
 //! bind-time `ANY` logical type used in function signatures.
 
 use super::{DuckDBType, FromValue, ToValue};
+use crate::ffi;
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
@@ -12,7 +13,6 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
-use crate::ffi;
 
 /// The bind-time `ANY` logical type used in function signatures.
 pub struct Any;

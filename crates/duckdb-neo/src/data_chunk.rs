@@ -4,13 +4,13 @@ use std::ops::Deref;
 
 use crate::connection::{Connection, Context};
 use crate::error::check_api_call_no_err;
+use crate::ffi;
 use crate::logical_type::LogicalType;
 use crate::vector::VectorElement;
 use crate::{
     Result, check_api_call,
     vector::{Unknown, Vector},
 };
-use crate::ffi;
 
 trait DataChunkLink {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>>;
