@@ -232,3 +232,83 @@ fn aggregate_test_groups() -> crate::Result<()> {
 
     Ok(())
 }
+
+/// Reports a state size smaller than its `StateItem`, which must be rejected.
+struct UndersizedState;
+
+impl AggregateCallbacks for UndersizedState {
+    type BindData = ();
+    type StateItem = u64;
+    type IncomingType = i32;
+
+    fn bind(
+        &self,
+        _context: Context,
+        _arguments: Vec<BindArgument>,
+        _result_type_handle: ReturnTypeHandle<'_>,
+    ) -> crate::Result<Self::BindData> {
+        Ok(())
+    }
+
+    fn size(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<usize> {
+        Ok(1)
+    }
+
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<Self::StateItem> {
+        Ok(0)
+    }
+
+    fn update(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _collection: VectorCollection,
+        _states: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn combine(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _source: &States<'_, Self::StateItem>,
+        _dest: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _states: &[&Self::StateItem],
+        _result: Vector<'_, Unknown>,
+        _result_offset: usize,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn aggregate_test_undersized_state() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    AggregateFunctionBuilder::new(
+        "undersized",
+        SignatureBuilder::new(
+            [Parameter::normal("IN", i32::logical_type(&conn)?)],
+            u64::logical_type(&conn)?,
+        ),
+        UndersizedState,
+    )
+    .register(&conn)?;
+
+    let result = conn
+        .query("SELECT undersized(i::INTEGER) FROM range(10) AS t(i)", Parameters::None)
+        .and_then(|result| result.collect::<crate::Result<Vec<_>>>());
+
+    let err = result.expect_err("an undersized state must fail the query");
+    assert!(err.to_string().contains("smaller than size_of"), "{err}");
+
+    Ok(())
+}

@@ -20,14 +20,12 @@ name = "duckdb_neo"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = ["libduckdb-sys/capi-v2", "libduckdb-sys/buildtime_bindgen"]
+default = []
 bundled = ["libduckdb-sys/bundled"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 r2d2 = ["dep:r2d2"]
-# Warning: targets v2 C API surface that the bundled DuckDB does not provide yet.
-# Does not compile; kept for the next DuckDB bump. Never enable it in CI.
 
 [dependencies]
 libc = { workspace = true }

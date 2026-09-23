@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use libduckdb_sys::v2::DuckDBStr;
+
 use crate::{
     Result, check_api_call, check_api_call_no_err,
     connection::Connection,
@@ -118,7 +120,7 @@ impl Instance {
 
     /// Attach the database at `location` under its derived name.
     ///
-    /// The attached database does not become the default.
+    /// The attached database becomes the default.
     pub fn attach(&self, location: &StorageLocation) -> Result<&Self> {
         self.attach_with_options(location, None, None, true)?;
         Ok(self)
@@ -139,12 +141,15 @@ impl Instance {
     ) -> Result<()> {
         let location: String = location.into();
         let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| **o);
+        let alias_str: Option<DuckDBStr<'_>> = alias.as_ref().map(|a| (a).into());
 
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
             self.handle.lock().unwrap().handle,
             (&location).into(),
-            alias.as_ref().map_or(std::ptr::null_mut(), |a| &mut (a).into()),
+            alias_str
+                .as_ref()
+                .map_or(std::ptr::null_mut(), |a| a as *const _ as *mut _),
             options,
             default
         )?;

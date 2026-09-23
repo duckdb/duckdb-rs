@@ -4,20 +4,20 @@ use std::ops::Deref;
 
 use crate::connection::{Connection, Context};
 use crate::error::check_api_call_no_err;
-use crate::ffi;
 use crate::logical_type::LogicalType;
 use crate::vector::VectorElement;
 use crate::{
     Result, check_api_call,
     vector::{Unknown, Vector},
 };
+use crate::ffi;
 
 trait DataChunkLink {
-    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk>;
+    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>>;
 }
 
 impl DataChunkLink for Connection {
-    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk> {
+    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
         Ok(DataChunk::new(
             check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, **self, **chunk, RET)?,
             true,
@@ -26,7 +26,7 @@ impl DataChunkLink for Connection {
 }
 
 impl DataChunkLink for Context {
-    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk> {
+    fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
         Ok(DataChunk::new(
             check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_context, **self, **chunk, RET)?,
             true,
@@ -78,6 +78,29 @@ impl VectorCollection {
     pub fn row_count(&self) -> usize {
         self.row_count
     }
+
+    /// Wrap the callback's input vectors in a [`DataChunk`] without copying.
+    ///
+    /// The chunk's vectors reference the input's storage, so the chunk borrows
+    /// this collection and cannot outlive the callback. It is writable only when
+    /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
+    pub fn to_data_chunk(&self) -> crate::Result<DataChunk<'_>> {
+        let logical_types = self
+            .vectors()?
+            .iter()
+            .map(|v| v.logical_type().clone())
+            .collect::<Vec<_>>();
+
+        let chunk = DataChunk::create(&logical_types, self.is_writable)?;
+
+        for (i, handle) in self.handles.iter().enumerate() {
+            let chunk_handle = chunk.get_vector_handle_at(i)?;
+
+            check_api_call!(ffi::duckdb_v2_vector_reference, chunk_handle, *handle)?;
+        }
+
+        Ok(chunk)
+    }
 }
 
 /// A non-owning view of a DuckDB data chunk.
@@ -123,8 +146,12 @@ pub struct DataChunkRef<'a> {
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct DataChunk {
-    chunk: DataChunkRef<'static>,
+///
+/// Chunks created or copied by the caller are `DataChunk<'static>`. A chunk that
+/// references data owned elsewhere, such as one from
+/// [`VectorCollection::to_data_chunk`], borrows that data for `'a`.
+pub struct DataChunk<'a> {
+    pub(crate) chunk: DataChunkRef<'a>,
 }
 
 impl Deref for DataChunkRef<'_> {
@@ -182,9 +209,15 @@ impl<'a> DataChunkRef<'a> {
         vec.cast::<T>()
     }
 
+    pub(crate) fn get_vector_handle_at(&self, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
+        let vector: ffi::duckdb_v2_vector_handle =
+            check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, index as u64, RET)?;
+        Ok(vector)
+    }
+
     /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
     #[allow(private_bounds)]
-    pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk> {
+    pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk<'static>> {
         link.copy_data_chunk(self)
     }
 }
@@ -199,7 +232,7 @@ pub enum Allocator<'a> {
     Context(&'a Context),
 }
 
-impl DataChunk {
+impl<'a> DataChunk<'a> {
     pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
         Self {
             chunk: DataChunkRef::new(handle, is_writable),
@@ -246,21 +279,21 @@ impl DataChunk {
     }
 }
 
-impl Drop for DataChunk {
+impl Drop for DataChunk<'_> {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut self.chunk.handle).unwrap();
     }
 }
 
-impl Deref for DataChunk {
-    type Target = DataChunkRef<'static>;
+impl<'a> Deref for DataChunk<'a> {
+    type Target = DataChunkRef<'a>;
 
     fn deref(&self) -> &Self::Target {
         &self.chunk
     }
 }
 
-unsafe impl Send for DataChunk {}
+unsafe impl Send for DataChunk<'_> {}
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

@@ -2416,14 +2416,6 @@ unsafe extern "C" {
     #[doc = " Destroys the column description, releasing its resources.\n\n Null-safe: passing a null pointer or null handle is a no-op. The handle is set to null on return to prevent\n double-destruction. Any name or type borrowed from it becomes dangling.\n\n history:\n - stable: v2.0.0\n\n @param column The column description to destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_column_description_destroy(column: *mut duckdb_v2_column_description_handle) -> DUCKDB_V2_ERROR;
 }
-#[doc = " An opaque, owned handle to a snapshot of a query's execution progress, taken by\n `duckdb_v2_connection_query_progress()` at call time. Read it with the query_progress_get_* accessors; destroy it via\n `duckdb_v2_query_progress_destroy()`."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _duckdb_v2_query_progress {
-    pub internal_ptr: *mut ::std::os::raw::c_void,
-}
-#[doc = " An opaque, owned handle to a snapshot of a query's execution progress, taken by\n `duckdb_v2_connection_query_progress()` at call time. Read it with the query_progress_get_* accessors; destroy it via\n `duckdb_v2_query_progress_destroy()`."]
-pub type duckdb_v2_query_progress_handle = *mut _duckdb_v2_query_progress;
 unsafe extern "C" {
     #[doc = " Opens a connection to an instance, starting it if it has not started yet.\n\n Each connection carries its own client context and session-scoped (LOCAL) settings. Connections to the same instance\n share its catalog, buffer pool, and transaction manager. A connection may be created before any database is attached\n to the instance; until one is, only the system catalog and the connection's temporary catalog are visible. The caller\n destroys it via `duckdb_v2_connection_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param instance The instance to connect to.\n @param out_conn Receives the new connection handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_connection_create(
@@ -2480,40 +2472,14 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Captures a snapshot of the active query's execution progress.\n\n Writes the progress of the query currently executing on the connection into an owned snapshot handle; read it with\n the query_progress_get_* accessors and destroy it via `duckdb_v2_query_progress_destroy()`. Safe to call from any\n thread, including while another thread steps the query's result.\n\n Progress is published only while the enable_progress_bar option is set; this call does not enable tracking itself. A\n percentage of -1, with both row counts 0, means no information is available: tracking is disabled, no query is\n active, or nothing has been published yet.\n\n history:\n - stable: v2.0.0\n\n @param conn The connection.\n @param out_progress Receives the new progress snapshot handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_connection_query_progress(
+    #[doc = " Captures a snapshot of the active query's execution progress.\n\n Reads the percentage and row counts from one consistent snapshot of the query currently executing on the connection.\n Safe to call from any thread, including while another thread steps the query's result.\n\n Progress is published only when the enable_progress_bar option is set; the bridge does not enable tracking itself.\n Both row counts are 0 when no information is available. The percentage is -1 when tracking is disabled, no query is\n active, or no progress has been published yet.\n\n history:\n - stable: v2.0.0\n\n @param conn The connection.\n @param out_percentage Receives the percentage complete in [0, 100], -1 if tracking is disabled, no query is active,\n or no progress has been published yet.\n @param out_rows_processed Receives the number of rows processed so far.\n @param out_total_rows_to_process Receives the total number of rows the query will process.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_connection_progress_get(
         conn: duckdb_v2_connection_handle,
-        out_progress: *mut duckdb_v2_query_progress_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the snapshot's percentage complete.\n\n A percentage in [0, 100], or -1 when no progress information was available at capture time.\n\n history:\n - stable: v2.0.0\n\n @param progress The progress snapshot.\n @param out_percentage Receives the percentage.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_query_progress_get_percentage(
-        progress: duckdb_v2_query_progress_handle,
         out_percentage: *mut f64,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the snapshot's processed row count.\n\n history:\n - stable: v2.0.0\n\n @param progress The progress snapshot.\n @param out_rows_processed Receives the number of rows processed so far.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_query_progress_get_rows_processed(
-        progress: duckdb_v2_query_progress_handle,
         out_rows_processed: *mut u64,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the snapshot's total row count.\n\n history:\n - stable: v2.0.0\n\n @param progress The progress snapshot.\n @param out_total_rows_to_process Receives the total number of rows the query will process.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_query_progress_get_total_rows_to_process(
-        progress: duckdb_v2_query_progress_handle,
         out_total_rows_to_process: *mut u64,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Destroys a progress snapshot handle.\n\n Null-safe: passing nullptr or a slot already set to nullptr is a no-op. On success the slot is set to nullptr.\n\n history:\n - stable: v2.0.0\n\n @param progress The progress snapshot to destroy.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_query_progress_destroy(progress: *mut duckdb_v2_query_progress_handle) -> DUCKDB_V2_ERROR;
 }
 #[doc = " An owned opaque handle to a custom copy function being built: an output format for `COPY ... TO`, an input format for\n `COPY ... FROM`, or both. Created with `duckdb_v2_copy_function_create_with_connection()` or\n `duckdb_v2_copy_function_create_with_extension()`, configured with the setter functions (e.g.\n `duckdb_v2_copy_function_set_name()`, `duckdb_v2_copy_to_set_batch_callback()`,\n `duckdb_v2_copy_from_set_exec_callback()`, etc.), made available with `duckdb_v2_copy_function_register()`, and\n destroyed with `duckdb_v2_copy_function_destroy()`."]
 #[repr(C)]

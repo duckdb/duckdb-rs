@@ -69,7 +69,7 @@ pub enum QueryResultStep {
     /// The query was interrupted.
     Canceled,
     /// An owned data chunk is ready.
-    Chunk(DataChunk),
+    Chunk(DataChunk<'static>),
 }
 
 /// A lazy stream produced by executing a statement.
@@ -223,7 +223,7 @@ impl Drop for QueryResult<'_> {
 }
 
 impl Iterator for QueryResult<'_> {
-    type Item = Result<DataChunk>;
+    type Item = Result<DataChunk<'static>>;
 
     /// Block until the next owned chunk or the end of the stream.
     fn next(&mut self) -> Option<Self::Item> {

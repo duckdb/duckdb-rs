@@ -153,7 +153,7 @@ impl ColumnDataCollectionScan {
 }
 
 impl Iterator for ColumnDataCollectionScan {
-    type Item = Result<DataChunk>;
+    type Item = Result<DataChunk<'static>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let data_chunk = DataChunk::create(&self.collection.logical_types, false).unwrap();
@@ -200,7 +200,7 @@ impl ColumnDataCollectionAppender {
     /// Append a copy of `chunk` to the collection.
     ///
     /// A mismatched column count or type returns an error without copying data.
-    pub fn append(&mut self, chunk: &DataChunk) -> Result<()> {
+    pub fn append(&mut self, chunk: &DataChunk<'_>) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_column_data_collection_append,
             self.collection.handle,

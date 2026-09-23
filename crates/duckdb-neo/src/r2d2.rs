@@ -3,19 +3,20 @@ use std::sync::{Arc, Mutex};
 use crate::{
     Parameters,
     connection::Connection,
-    database::{Database, DatabaseHandle},
+    connection::InnerConnection,
+    database::{DatabaseHandle, Instance},
     error::{Error, check_api_call},
     ffi,
 };
 
-/// An [`r2d2::ManageConnection`] that opens connections to a shared [`Database`].
+/// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
 pub struct ConnectionManager {
     database_handle: Arc<Mutex<DatabaseHandle>>,
 }
 
 impl ConnectionManager {
     /// Create a manager that opens connections to `database`.
-    pub fn new(database: &Database) -> Self {
+    pub fn new(database: &Instance) -> Self {
         Self {
             database_handle: database.handle.clone(),
         }
@@ -29,10 +30,10 @@ impl r2d2::ManageConnection for ConnectionManager {
     fn connect(&self) -> std::result::Result<Self::Connection, Self::Error> {
         let db = self.database_handle.lock().unwrap();
 
-        let conn = check_api_call!(ffi::duckdb_v2_connect, db.handle, RET)?;
+        let handle = check_api_call!(ffi::duckdb_v2_connection_create, db.handle, RET)?;
 
         Ok(Connection {
-            handle: conn,
+            inner: Arc::new(InnerConnection { handle }),
             _db: self.database_handle.clone(),
         })
     }
@@ -54,7 +55,6 @@ impl r2d2::ManageConnection for ConnectionManager {
 }
 
 #[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
         Parameters,

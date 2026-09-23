@@ -191,7 +191,7 @@ impl<'a> PreparedStatement<'a> {
         let result: ffi::duckdb_v2_result_handle = check_api_call!(
             ffi::duckdb_v2_prepared_statement_execute,
             self.handle,
-            param_names.map_or(std::ptr::null(), |v| v.as_ptr()),
+            param_names.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
             param_values.as_ptr(),
             param_values.len() as u64,
             RET
@@ -242,6 +242,32 @@ mod tests {
 
             assert_eq!(vec.len(), 10);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepared_statement_named_parameters() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let mut statements = Statements::parse(
+            &conn,
+            "SELECT x FROM range(0, 100) as t(x) WHERE x >= $lo AND x < $hi ORDER BY x",
+        )?;
+        let statement = statements.next().unwrap()?.prepare(&conn, true)?;
+
+        // Bind in a different order than they appear in the SQL, so binding
+        // only succeeds if the names reach DuckDB intact.
+        let query = statement.execute(crate::Parameters::named(&[("hi", &15), ("lo", &10)]))?;
+
+        let mut values = Vec::new();
+        for chunk in query {
+            let chunk = chunk?;
+            values.extend(chunk.get_vector_at::<i64>(0)?.iter()?.flatten().copied());
+        }
+        assert_eq!(values, (10..15).collect::<Vec<i64>>());
 
         Ok(())
     }

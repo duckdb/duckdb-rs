@@ -128,9 +128,10 @@ unsafe extern "C" fn batch_size_callback<T: CopyToFunctionCallbacks>(
     handle_unwind(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_copy_to_batch_size_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_copy_to_batch_size_get_bind_data, info).unwrap();
+            let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_batch_size_get_bind_data, info, RET)?;
+            let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let target = T::batch_size(user_data, Context(context), bind_data);
+            let target = T::batch_size(user_data, Context(context), &bind_data.data);
 
             if let Some(target) = target {
                 check_api_call!(ffi::duckdb_v2_copy_to_batch_size_set_target, info, target as u64)

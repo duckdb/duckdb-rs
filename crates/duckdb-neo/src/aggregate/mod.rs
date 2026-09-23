@@ -14,7 +14,7 @@ use std::{
 use crate::ffi;
 
 use crate::{
-    Result,
+    Error, Result,
     bind_arguments::{BindArgument, BindMetadata, BindType},
     builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque},
     check_api_call,
@@ -143,6 +143,14 @@ unsafe extern "C" fn size_callback<T: AggregateCallbacks>(
             let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_size_get_bind_data, info);
 
             let size = T::size(user_data, bind_data)?;
+
+            // `init` writes a full `StateItem` into every state, so a smaller state would overflow.
+            let min_size = size_of::<T::StateItem>();
+            if size < min_size {
+                return Err(Error::api_error(format!(
+                    "aggregate state size {size} is smaller than size_of::<StateItem>() ({min_size})"
+                )));
+            }
 
             check_api_call!(ffi::duckdb_v2_aggregate_function_size_set_state_size, info, size as u64)
         },
@@ -450,6 +458,9 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     ) -> Result<Self::BindData>;
 
     /// **Size:** return the allocation size of one aggregate state.
+    ///
+    /// May be larger than `size_of::<StateItem>()` but never smaller; a smaller
+    /// size fails the query.
     fn size(&self, _bind_data: Option<&Self::BindData>) -> Result<usize> {
         Ok(size_of::<Self::StateItem>())
     }
