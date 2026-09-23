@@ -2087,6 +2087,49 @@ mod test {
     }
 
     #[test]
+    fn test_column_count_before_execution() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let stmt = db.prepare("SELECT 1 AS a, 'x' AS b, 3.0 AS c")?;
+
+        // The result column count is available from the prepared statement,
+        // without executing the query first.
+        assert_eq!(stmt.column_count(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_column_count_matches_after_execution() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let mut stmt = db.prepare("SELECT 1 AS a, 'x' AS b")?;
+
+        let before = stmt.column_count();
+        stmt.execute([])?;
+        let after = stmt.column_count();
+
+        // The count read from the prepared statement matches the count read
+        // from the executed result.
+        assert_eq!(before, 2);
+        assert_eq!(before, after);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_column_logical_type_before_execution() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let stmt = db.prepare("SELECT 1::INTEGER AS a, 'x'::VARCHAR AS b")?;
+
+        // Both the count and each column's logical type are readable before
+        // execution, so all result columns can be enumerated up front.
+        assert_eq!(stmt.column_count(), 2);
+        assert_eq!(stmt.column_logical_type(0).id(), LogicalTypeId::Integer);
+        assert_eq!(stmt.column_logical_type(1).id(), LogicalTypeId::Varchar);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_variant_result_decode_unsupported() -> Result<()> {
         let db = Connection::open_in_memory()?;
 

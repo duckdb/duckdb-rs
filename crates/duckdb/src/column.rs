@@ -43,35 +43,20 @@ impl Statement<'_> {
             .collect()
     }
 
-    /// Return the number of columns in the result set returned by the prepared
-    /// statement.
+    /// Return the number of columns in the result set returned by the
+    /// prepared statement.
     ///
-    /// If associated DB schema can be altered concurrently, you should make
-    /// sure that current statement has already been stepped once before
-    /// calling this method.
+    /// This can be called before the statement is executed.
     ///
     /// # Example
     ///
     /// ```rust,no_run
     /// # use duckdb::{Connection, Result};
     /// fn get_column_count(conn: &Connection) -> Result<usize> {
-    ///     let mut stmt = conn.prepare("SELECT id, name FROM people")?;
-    ///
-    ///     // Option 1: Execute first, then get column count
-    ///     stmt.execute([])?;
-    ///     let count = stmt.column_count();
-    ///
-    ///     // Option 2: Get column count from rows (avoids borrowing issues)
-    ///     let mut stmt2 = conn.prepare("SELECT id, name FROM people")?;
-    ///     let rows = stmt2.query([])?;
-    ///     let count2 = rows.as_ref().unwrap().column_count();
-    ///
-    ///     Ok(count)
+    ///     let stmt = conn.prepare("SELECT id, name FROM people")?;
+    ///     Ok(stmt.column_count())
     /// }
     /// ```
-    ///
-    /// # Caveats
-    /// Panics if the query has not been [`execute`](Statement::execute)d yet.
     #[inline]
     pub fn column_count(&self) -> usize {
         self.stmt.column_count()

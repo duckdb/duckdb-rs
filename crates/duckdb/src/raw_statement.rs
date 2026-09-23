@@ -92,7 +92,13 @@ impl RawStatement {
 
     #[inline]
     pub fn column_count(&self) -> usize {
-        self.schema_ref().fields().len()
+        // Prefer the executed result's schema when available; otherwise read the
+        // result column count directly from the prepared statement, so the count
+        // is available before execution (mirrors `column_logical_type`).
+        if let Some(result) = &self.result {
+            return result.schema_ref().fields().len();
+        }
+        unsafe { ffi::duckdb_prepared_statement_column_count(self.ptr) as usize }
     }
 
     #[inline]
