@@ -48,6 +48,10 @@ impl Statement<'_> {
     ///
     /// This can be called before the statement is executed.
     ///
+    /// If associated DB schema can be altered concurrently, the count returned
+    /// before execution may be stale: executing the statement rebinds it
+    /// against the current schema, which can change the number of columns.
+    ///
     /// # Example
     ///
     /// ```rust,no_run
