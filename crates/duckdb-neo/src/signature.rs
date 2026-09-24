@@ -4,26 +4,9 @@
 //! aggregate, or table functions. Built [`crate::signature::Signature`] values
 //! expose the resolved declaration.
 
-use std::ops::Deref;
-
 use crate::ffi;
 
 use crate::{Result, check_api_call, logical_type::LogicalType, value::Value};
-
-/// An owned function signature.
-///
-/// Fixed parameters retain their declaration order. A signature may also
-/// define a variadic tail and, depending on the function family, a return
-/// type.
-pub struct Signature(ffi::duckdb_v2_function_signature_handle);
-
-impl Deref for Signature {
-    type Target = ffi::duckdb_v2_function_signature_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
 
 /// A parameter declaration accepted by [`SignatureBuilder`].
 pub enum ParameterType {
@@ -133,7 +116,7 @@ impl SignatureBuilder {
     }
 
     /// Append parameters and apply configured types to a borrowed signature.
-    pub fn build(&self, handle: &ffi::duckdb_v2_function_signature_handle) -> Result<()> {
+    pub(crate) fn build(&self, handle: &ffi::duckdb_v2_function_signature_handle) -> Result<()> {
         if let Some(return_handle) = self.return_type.as_ref() {
             check_api_call!(
                 ffi::duckdb_v2_function_signature_set_return_type,

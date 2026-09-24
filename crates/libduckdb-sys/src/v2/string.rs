@@ -32,13 +32,6 @@ impl<'a> From<DuckDBStr<'a>> for &'a str {
     }
 }
 
-impl<'a> From<DuckDBStr<'a>> for String {
-    fn from(value: DuckDBStr<'a>) -> Self {
-        let s: &str = value.into();
-        s.to_string()
-    }
-}
-
 impl<'a> From<&'a duckdb_v2_bytes> for &'a str {
     fn from(value: &'a duckdb_v2_bytes) -> Self {
         unsafe {

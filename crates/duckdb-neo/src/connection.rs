@@ -66,7 +66,7 @@ impl IntoStatement for &str {
         names: Option<&[&str]>,
         values: &[&Value],
     ) -> Result<QueryResult<'conn>> {
-        execute_statements(conn, Statements::parse(conn, self)?, names, values)
+        execute_statement(conn, Statements::parse(conn, self)?, names, values)
     }
 }
 
@@ -77,7 +77,7 @@ impl IntoStatement for Statements {
         names: Option<&[&str]>,
         values: &[&Value],
     ) -> Result<QueryResult<'conn>> {
-        execute_statements(conn, self, names, values)
+        execute_statement(conn, self, names, values)
     }
 }
 
@@ -92,7 +92,7 @@ impl IntoStatement for Statement {
     }
 }
 
-fn execute_statements<'conn>(
+fn execute_statement<'conn>(
     conn: &'conn Connection,
     mut statements: Statements,
     names: Option<&[&str]>,

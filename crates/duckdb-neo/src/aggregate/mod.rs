@@ -9,6 +9,7 @@ use std::{
     any::Any,
     collections::HashMap,
     ops::{Index, IndexMut},
+    panic::AssertUnwindSafe,
 };
 
 use crate::ffi;
@@ -24,7 +25,7 @@ use crate::{
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     scalar::{FunctionBindHandles, ReturnTypeHandle},
     signature::SignatureBuilder,
-    vector::{Unknown, Vector, VectorElement},
+    vector::{Unknown, Vector},
 };
 
 /// [`States`] is a view over the aggregate states DuckDB passes to a callback.
@@ -169,30 +170,42 @@ unsafe extern "C" fn size_callback<T: AggregateCallbacks>(
 
 unsafe extern "C" fn init_callback<T: AggregateCallbacks>(
     info: ffi::duckdb_v2_aggregate_function_init_info_handle,
-    err: *mut ffi::duckdb_v2_error_info_handle,
+    _err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
-    handle_unwind(
-        || {
-            let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_init_get_user_data, info);
-            let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_init_get_bind_data, info);
+    // DuckDB runs `destroy_callback` on every state even when init fails, and
+    // that drops each state in place. Returning early would leave states
+    // uninitialized, so any failure here (error or panic) aborts instead.
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| -> Result<()> {
+        let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_init_get_user_data, info);
+        let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_init_get_bind_data, info);
 
-            let state_count = check_api_call!(ffi::duckdb_v2_aggregate_function_init_get_state_count, info, RET)?;
+        let state_count = check_api_call!(ffi::duckdb_v2_aggregate_function_init_get_state_count, info, RET)?;
 
-            let states_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_init_get_states, info, RET)?;
+        let states_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_init_get_states, info, RET)?;
 
-            let states: &[*mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts(states_ptr as *mut *mut T::StateItem, state_count as usize) };
+        let states: &[*mut T::StateItem] =
+            unsafe { std::slice::from_raw_parts(states_ptr as *mut *mut T::StateItem, state_count as usize) };
 
-            for &state_ptr in states {
-                unsafe {
-                    state_ptr.write(T::init(user_data, bind_data));
-                }
+        for &state_ptr in states {
+            unsafe {
+                state_ptr.write(T::init(user_data, bind_data));
             }
+        }
 
-            Ok(())
-        },
-        err,
-    );
+        Ok(())
+    }));
+
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            eprintln!("aggregate state initialization failed: {}", e.message);
+            std::process::abort();
+        }
+        Err(_) => {
+            eprintln!("aggregate state initialization panicked");
+            std::process::abort();
+        }
+    }
 }
 
 unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
@@ -453,8 +466,6 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     type BindData: Any + Send + Sync + PartialEq;
     /// Mutable state stored for each aggregate group.
     type StateItem: Any + Send + Sync;
-    /// The aggregate's declared input element type.
-    type IncomingType: VectorElement;
 
     /// **Bind:** validate a call site and create data shared by later phases.
     fn bind(
@@ -474,7 +485,9 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
 
     /// **Initialize:** create one empty aggregate state.
     ///
-    /// Infallible: validate in [`Self::bind`] instead. A panic here aborts the process.
+    /// Infallible: validate in [`Self::bind`] instead. A panic here aborts the
+    /// process, because DuckDB destroys every state afterwards and a state left
+    /// uninitialized cannot be dropped safely.
     fn init(&self, bind_data: Option<&Self::BindData>) -> Self::StateItem;
 
     /// **Update:** apply an input batch to its corresponding aggregate states.

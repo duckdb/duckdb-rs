@@ -69,6 +69,9 @@ impl<'a> ReplacementHandle<'a> {
     /// alive until the scan is destroyed. Store the collection in the callback
     /// struct (or somewhere with an equal or longer lifetime) to keep it valid
     /// for as long as any result or prepared statement reads it.
+    ///
+    /// The collection must also not outlive the connection it was created
+    /// from; see [`ColumnDataCollection`'s lifetime notes](crate::column_data_collection::ColumnDataCollection#lifetime).
     pub fn set_reference(&self, replacement_type: ReplacementType<'a>) -> Result<()> {
         match replacement_type {
             ReplacementType::Table(name) => {
@@ -132,6 +135,11 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
 /// Registering through a connection keeps the scan local to that connection
 /// until it closes. Registering through a database or extension makes the scan
 /// visible to all connections until the database closes.
+///
+/// The registration owns the callback until then. A [`ColumnDataCollection`]
+/// held by the callback must not outlive the connection it was created from:
+/// see the collection's
+/// [lifetime notes](crate::column_data_collection::ColumnDataCollection#lifetime).
 pub struct ReplacementScanBuilder<T> {
     implementation: OpaqueHandle<T>,
 }

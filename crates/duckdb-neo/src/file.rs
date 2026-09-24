@@ -56,7 +56,7 @@ impl<'link> FileBuilder<'link> {
         })
     }
 
-    /// Enable or disable write access.
+    /// Enable write access.
     pub fn write(self) -> Result<Self> {
         check_api_call!(
             ffi::duckdb_v2_file_open_options_set_flag,
@@ -66,7 +66,7 @@ impl<'link> FileBuilder<'link> {
         Ok(self)
     }
 
-    /// Enable or disable read access.
+    /// Enable read access.
     pub fn read(self) -> Result<Self> {
         check_api_call!(
             ffi::duckdb_v2_file_open_options_set_flag,
@@ -76,7 +76,7 @@ impl<'link> FileBuilder<'link> {
         Ok(self)
     }
 
-    /// Enable or disable creating the file when it does not exist.
+    /// Create the file when it does not exist.
     pub fn create(self) -> Result<Self> {
         check_api_call!(
             ffi::duckdb_v2_file_open_options_set_flag,
@@ -107,7 +107,7 @@ impl<'link> FileBuilder<'link> {
         Ok(new)
     }
 
-    /// Enable or disable append mode.
+    /// Enable append mode.
     pub fn append(self) -> Result<Self> {
         check_api_call!(
             ffi::duckdb_v2_file_open_options_set_flag,

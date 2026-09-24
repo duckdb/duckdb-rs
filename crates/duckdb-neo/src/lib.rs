@@ -91,9 +91,13 @@ pub fn library_version() -> Result<&'static str> {
     check_api_call!(ffi::duckdb_v2_library_version, RET).map(|v| v.into())
 }
 
-/// Validate that `text` is well-formed UTF-8, including bytes after any embedded NULs.
-pub fn validate_utf8<'a>(text: impl Into<DuckDBStr<'a>>) -> Result<()> {
-    check_api_call!(ffi::duckdb_v2_validate_utf8, text.into())
+/// Validate that `bytes` are well-formed UTF-8, including bytes after any embedded NULs.
+pub fn validate_utf8(bytes: &[u8]) -> Result<()> {
+    let text = DuckDBStr {
+        ptr: bytes.as_ptr() as *const _,
+        len: bytes.len() as ffi::idx_t,
+    };
+    check_api_call!(ffi::duckdb_v2_validate_utf8, text)
 }
 
 #[cfg(test)]
@@ -108,6 +112,13 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_validate_utf8() {
+        assert!(validate_utf8("héllo".as_bytes()).is_ok());
+        assert!(validate_utf8(b"a\0b").is_ok());
+        assert!(validate_utf8(b"a\0\xff").is_err());
+    }
 
     #[test]
     fn test_query_parameters() -> crate::Result<()> {

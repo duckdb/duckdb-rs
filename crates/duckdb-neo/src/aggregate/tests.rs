@@ -24,7 +24,6 @@ struct BasicAggregate<T> {
 impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T> {
     type BindData = Vec<f32>;
     type StateItem = Vec<i32>;
-    type IncomingType = i32;
 
     fn bind(
         &self,
@@ -64,7 +63,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
         collection: &VectorCollection,
         mut states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
-        let vec = collection.get_vector_at::<Self::IncomingType>(0)?;
+        let vec = collection.get_vector_at::<i32>(0)?;
 
         for (i, val) in vec.iter()?.enumerate() {
             if let Some(val) = val {
@@ -239,7 +238,6 @@ struct UndersizedState;
 impl AggregateCallbacks for UndersizedState {
     type BindData = ();
     type StateItem = u64;
-    type IncomingType = i32;
 
     fn bind(
         &self,

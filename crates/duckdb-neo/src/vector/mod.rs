@@ -576,6 +576,13 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         self.refresh_tree()
     }
 
+    fn set_not_writable(&mut self) {
+        self.writable = false;
+        for child in &mut self.children {
+            child.set_not_writable();
+        }
+    }
+
     /// Set the number of logical rows on writable output.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
         if !self.writable {
@@ -591,6 +598,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// `value` must have the vector's logical type. When `is_valid` is false,
     /// every logical row is `NULL`; otherwise each row contains `value`.
+    ///
+    /// The vector is no longer writable afterwards: a constant holds a single
+    /// slot, so per-row writes would go past its buffer.
     pub fn make_constant(&mut self, value: Value, is_valid: bool, count: usize) -> Result<()> {
         if !self.writable {
             return Err(not_writable());
@@ -604,7 +614,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, is_valid)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        *self = Vector::from_handle(&self.handle, self.writable)?.cast_unchecked();
+        *self = Vector::from_handle(&self.handle, false)?.cast_unchecked();
         self.len = count;
         Ok(())
     }
@@ -613,7 +623,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// Produces `count` values following `start + index * increment`. The
     /// sequence uses [`StorageKind::Other`] and must be flattened before typed
-    /// reads.
+    /// reads. The vector is no longer writable afterwards.
     pub fn make_sequence(&mut self, start: i64, increment: i64, count: usize) -> Result<()> {
         if !self.writable {
             return Err(not_writable());
@@ -627,6 +637,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         )?;
         self.kind = StorageKind::Other;
         self.len = count;
+        self.set_not_writable();
         self.refresh_buffers()
     }
 }
@@ -691,7 +702,8 @@ impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T
 fn not_writable() -> Error {
     Error {
         code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: "vector was not supplied as writable output".to_string(),
+        message: "vector is not writable: it was not supplied as writable output, or was made constant or a sequence"
+            .to_string(),
     }
 }
 

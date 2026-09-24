@@ -16,7 +16,7 @@ use crate::{
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
         ColumnDataCollectionWorkerScanStateHandle,
     },
-    links::{ColumnDataCollectionLink, DatabaseKeepAlive, KeepAlive},
+    links::ColumnDataCollectionLink,
     logical_type::LogicalType,
 };
 
@@ -25,6 +25,19 @@ use crate::{
 /// Move the collection into [`ColumnDataCollectionAppender`] to add rows or
 /// [`ColumnDataCollectionScan`] to iterate over its chunks. Each transition
 /// consumes the previous state, and the collection can be recovered afterward.
+///
+/// # Lifetime
+///
+/// A collection reads and writes its data through the buffer manager of the
+/// connection it was created from, and does not keep that connection alive.
+/// It must not be used or dropped after the connection is closed: doing so is
+/// undefined behavior. The same holds for a collection created from a callback
+/// [`Context`](crate::connection::Context), whose connection is the one running
+/// the callback.
+///
+/// Storing a collection in a replacement scan registered on its own connection
+/// is fine, because the scan, and the collection with it, is dropped when the
+/// connection closes.
 ///
 /// # Example
 /// ```
@@ -65,8 +78,6 @@ pub struct ColumnDataCollection {
     pub handle: ffi::duckdb_v2_column_data_collection_handle,
     /// The collection's column types, in storage order.
     pub logical_types: Vec<LogicalType>,
-    /// Dropped after the handle is destroyed.
-    pub(crate) database: Option<KeepAlive>,
 }
 
 impl Deref for ColumnDataCollection {
@@ -79,20 +90,16 @@ impl Deref for ColumnDataCollection {
 impl ColumnDataCollection {
     /// Create an empty collection using a [`Connection`](crate::connection::Connection)
     /// or callback [`Context`](crate::connection::Context)'s buffer manager.
+    ///
+    /// The collection must not outlive that connection; see the
+    /// [lifetime notes](Self#lifetime).
     #[allow(private_bounds)]
-    pub fn new<C: ColumnDataCollectionLink + DatabaseKeepAlive>(
-        link: &C,
-        logical_types: impl Into<Vec<LogicalType>>,
-    ) -> Result<Self> {
+    pub fn new<C: ColumnDataCollectionLink>(link: &C, logical_types: impl Into<Vec<LogicalType>>) -> Result<Self> {
         let logical_types = logical_types.into();
         let types = logical_types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
         let handle = link.create_column_data_collection(&types)?;
 
-        Ok(ColumnDataCollection {
-            handle,
-            logical_types,
-            database: link.keep_alive(),
-        })
+        Ok(ColumnDataCollection { handle, logical_types })
     }
 
     /// Return whether the collection contains no rows.
@@ -125,7 +132,7 @@ impl Drop for ColumnDataCollection {
 }
 
 // SAFETY: `&self` methods only read the row count; appending and scanning consume the
-// collection. The keep-alive is `Send + Sync`.
+// collection.
 unsafe impl Send for ColumnDataCollection {}
 unsafe impl Sync for ColumnDataCollection {}
 
@@ -228,16 +235,15 @@ impl ColumnDataCollectionAppender {
 
     /// Move all chunks from `other` into this collection.
     ///
-    /// The source collection is consumed.
+    /// The source collection is consumed. Its chunks keep using the buffer
+    /// manager of `other`'s connection, so the combined collection must not
+    /// outlive either connection.
     pub fn combine(&mut self, mut other: ColumnDataCollection) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_column_data_collection_combine,
             self.collection.handle,
             &mut other.handle
         )?;
-        if self.collection.database.is_none() {
-            self.collection.database = other.database.take();
-        }
 
         self.appender = self.collection.create_append_state()?;
 
@@ -486,35 +492,6 @@ mod test {
             assert_eq!(id.get(1)?, None);
             assert_eq!(is_active.get(1)?, None);
         }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_connection_collection_keeps_database_alive() -> crate::Result<()> {
-        let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
-        let types = [i32::logical_type(&conn)?];
-
-        let chunk = DataChunk::create(&types, true)?;
-        let mut values = chunk.get_vector_at::<i32>(0)?;
-        values.set_size(1)?;
-        values.write(0, Some(42))?;
-        drop(values);
-
-        let mut appender = ColumnDataCollection::new(&conn, types)?.to_append()?;
-        appender.append(&chunk)?;
-        let mut scan = appender.to_scan()?;
-
-        drop(conn);
-        drop(db);
-        assert_eq!(env.get_database_count()?, 1);
-
-        let scanned = scan.next_chunk()?.expect("expected a chunk");
-        assert_eq!(scanned.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
-        drop(scan);
-        assert_eq!(env.get_database_count()?, 0);
 
         Ok(())
     }

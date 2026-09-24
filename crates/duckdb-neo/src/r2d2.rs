@@ -1,24 +1,17 @@
-use std::sync::{Arc, Mutex};
-
-use crate::{
-    Parameters,
-    connection::Connection,
-    connection::InnerConnection,
-    database::{DatabaseHandle, Instance},
-    error::{Error, check_api_call},
-    ffi,
-};
+use crate::{Parameters, Result, connection::Connection, database::Instance, error::Error};
 
 /// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
 pub struct ConnectionManager {
-    database_handle: Arc<Mutex<DatabaseHandle>>,
+    database: Instance,
 }
 
 impl ConnectionManager {
     /// Create a manager that opens connections to `database`.
     pub fn new(database: &Instance) -> Self {
         Self {
-            database_handle: database.handle.clone(),
+            database: Instance {
+                handle: database.handle.clone(),
+            },
         }
     }
 }
@@ -27,16 +20,8 @@ impl r2d2::ManageConnection for ConnectionManager {
     type Connection = Connection;
     type Error = Error;
 
-    fn connect(&self) -> std::result::Result<Self::Connection, Self::Error> {
-        let db = self.database_handle.lock().unwrap();
-
-        let handle = check_api_call!(ffi::duckdb_v2_connection_create, db.handle, RET)?;
-
-        Ok(Connection {
-            inner: Arc::new(InnerConnection { handle }),
-            _db: self.database_handle.clone(),
-            _not_sync: std::marker::PhantomData,
-        })
+    fn connect(&self) -> Result<Connection> {
+        Connection::new(&self.database)
     }
 
     fn is_valid(&self, conn: &mut Self::Connection) -> std::result::Result<(), Self::Error> {

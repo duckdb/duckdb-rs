@@ -1568,6 +1568,33 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
         .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
         .collect();
     assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
+    assert!(!vector.is_writable());
+    assert!(vector.children().iter().all(|child| !child.is_writable()));
+
+    Ok(())
+}
+
+#[test]
+fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [i32::logical_type(&conn)?, i64::logical_type(&conn)?];
+
+    let chunk = DataChunk::create(&types, true)?;
+
+    let mut constant = chunk.get_vector_at::<i32>(0)?;
+    constant.make_constant(42_i32.value(&conn)?, true, 2048)?;
+    assert!(!constant.is_writable());
+    assert!(constant.write(5, Some(1)).is_err());
+    assert!(constant.write(0, None).is_err());
+    assert!(constant.set_size(1).is_err());
+
+    let mut sequence = chunk.get_vector_at::<i64>(1)?;
+    sequence.make_sequence(0, 1, 16)?;
+    assert!(!sequence.is_writable());
+    sequence.flatten()?;
+    assert!(sequence.write(3, Some(1)).is_err());
 
     Ok(())
 }

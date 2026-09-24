@@ -25,8 +25,9 @@ pub struct TokenData {
 ///
 /// Tokens are produced lazily by [`Iterator::next`], each carrying its
 /// [`TokenType`], byte offset, and length back into the source SQL. The
-/// iterator is created with [`SqlTokenIterator::new`] and holds a DuckDB
-/// tokenizer handle, so it must be dropped before the connection is destroyed.
+/// iterator is created with [`SqlTokenIterator::new`]; tokenizing copies every
+/// token up front, so the iterator borrows neither the SQL text nor the
+/// connection.
 pub struct SqlTokenIterator {
     handle: ffi::duckdb_v2_token_iterator_handle,
 }
@@ -42,9 +43,9 @@ impl SqlTokenIterator {
     ///
     /// The tokenizer consumes the SQL text immediately; tokens are then yielded
     /// on demand as the iterator is advanced.
-    pub fn new(conn: &Connection, sql: impl Into<DuckDBStr<'static>>) -> Result<SqlTokenIterator> {
+    pub fn new(conn: &Connection, sql: &str) -> Result<SqlTokenIterator> {
         Ok(Self {
-            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, sql.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, DuckDBStr::from(sql), RET)?,
         })
     }
 

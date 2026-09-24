@@ -132,7 +132,7 @@ impl Statement {
     /// Includes the trailing terminator and whitespace, but excludes whitespace
     /// and comments before the first token.
     pub fn get_text(&self) -> Result<String> {
-        check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET).map(|x| x.into())
+        check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET).map(|x| <&str>::from(x).to_owned())
     }
 
     /// Return the statement type as classified by the parser, before execution-time rewrites.
@@ -157,7 +157,7 @@ impl Statement {
             index as u64,
             RET
         )
-        .map(|x| x.into())
+        .map(|x| <&str>::from(x).to_owned())
     }
 }
 

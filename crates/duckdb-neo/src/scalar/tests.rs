@@ -356,3 +356,76 @@ fn test_scalar_override_result() -> crate::Result<()> {
 
     Ok(())
 }
+
+/// Records, per bind, whether the first argument was folded to a constant.
+struct FoldProbe {
+    folded: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
+}
+
+impl ScalarCallbacks for FoldProbe {
+    type BindData = ();
+    type InitData = ();
+
+    fn bind(
+        &self,
+        _context: &Context,
+        arguments: Vec<BindArgument>,
+        _result_type_handle: ReturnTypeHandle<'_>,
+    ) -> Result<Self::BindData> {
+        self.folded.lock().unwrap().push(arguments[0].value.is_some());
+        Ok(())
+    }
+
+    fn exec(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
+        input: &VectorCollection,
+        output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        let input = input.get_vector_at::<i32>(0)?;
+        let mut output = output.cast::<i32>()?;
+        output.set_size(input.len())?;
+        for (i, value) in input.iter()?.enumerate() {
+            output.write(i, value.copied())?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let folded = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    ScalarFunctionBuilder::new(
+        "fold_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("x", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        FoldProbe { folded: folded.clone() },
+    )
+    .register(&conn)?;
+
+    // An unbound prepared parameter is not a constant, so binding must not fail.
+    let statement = conn.parse("SELECT fold_probe(?::INTEGER)")?.next().unwrap()?;
+    let prepared = statement.prepare(&conn, true)?;
+    assert_eq!(folded.lock().unwrap().first(), Some(&false));
+
+    let chunk = prepared
+        .execute(Parameters::positional(&[&5_i32]))?
+        .next()
+        .expect("expected a result chunk")?;
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&5));
+
+    // A literal argument still folds.
+    folded.lock().unwrap().clear();
+    conn.query("SELECT fold_probe(3)", Parameters::None)?.next().unwrap()?;
+    assert_eq!(folded.lock().unwrap().first(), Some(&true));
+
+    Ok(())
+}

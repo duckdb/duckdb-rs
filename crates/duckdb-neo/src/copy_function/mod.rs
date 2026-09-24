@@ -94,18 +94,16 @@ unsafe extern "C" fn batch_to_callback<T: CopyToFunctionCallbacks>(
 ) {
     handle_unwind(
         || {
-            let input = check_api_call!(ffi::duckdb_v2_copy_to_batch_take_input, info, RET)?;
-
-            let user_data = get_user_data!(ffi::duckdb_v2_copy_to_batch_get_user_data, info);
             let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_batch_get_bind_data, info, RET)?;
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
-            let init_data = get_init_data!(ffi::duckdb_v2_copy_to_batch_get_init_data, info).unwrap();
 
             let collection = ColumnDataCollection {
-                handle: input,
+                handle: check_api_call!(ffi::duckdb_v2_copy_to_batch_take_input, info, RET)?,
                 logical_types: bind_data.logical_types.clone(),
-                database: None,
             };
+
+            let user_data = get_user_data!(ffi::duckdb_v2_copy_to_batch_get_user_data, info);
+            let init_data = get_init_data!(ffi::duckdb_v2_copy_to_batch_get_init_data, info).unwrap();
 
             let batch_data = T::batch(user_data, &Context(context), &bind_data.data, init_data, collection)?;
 
@@ -413,7 +411,7 @@ impl CopyToBindInfo {
     /// The initialization callback receives the actual file path, which may
     /// differ for temporary files or partitioned output.
     pub fn file_path(&self) -> Result<String> {
-        check_api_call!(ffi::duckdb_v2_copy_to_bind_get_file_path, self.handle, RET).map(|x| x.into())
+        check_api_call!(ffi::duckdb_v2_copy_to_bind_get_file_path, self.handle, RET).map(|x| <&str>::from(x).to_owned())
     }
 
     fn option_count(&self) -> Result<usize> {
@@ -432,7 +430,7 @@ impl CopyToBindInfo {
             let name = check_api_call!(ffi::duckdb_v2_copy_to_bind_get_option_name, self.handle, i as u64, RET)?;
             let handle = check_api_call!(ffi::duckdb_v2_copy_to_bind_get_option_value, self.handle, i as u64, RET)?;
 
-            items.insert(name.into(), Value { handle });
+            items.insert(<&str>::from(name).to_owned(), Value { handle });
         }
         Ok(items)
     }

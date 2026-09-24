@@ -50,7 +50,12 @@ impl<'a> BindMetadata<'a> {
             let value = match value_handle {
                 Ok(v) => Some(Value { handle: v }),
                 Err(e) => {
-                    if e.code == DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER {
+                    // Not foldable: a non-constant argument, or an unbound prepared parameter.
+                    if matches!(
+                        e.code,
+                        DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER
+                            | DuckDBError::DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED
+                    ) {
                         None
                     } else {
                         return Err(e);
@@ -77,7 +82,12 @@ impl<'a> BindMetadata<'a> {
             let value = match value_handle {
                 Ok(v) => Some(Value { handle: v }),
                 Err(e) => {
-                    if e.code == DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER {
+                    // Not foldable: a non-constant argument, or an unbound prepared parameter.
+                    if matches!(
+                        e.code,
+                        DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER
+                            | DuckDBError::DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED
+                    ) {
                         None
                     } else {
                         return Err(e);

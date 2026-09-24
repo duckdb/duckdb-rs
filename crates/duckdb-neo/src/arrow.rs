@@ -19,8 +19,9 @@ use crate::{
 ///
 /// Feed chunks with [`Self::append`] and drain completed arrays with [`Self::next_array`].
 ///
-/// The context's Arrow settings are copied at creation, so the exporter does
-/// not borrow the context.
+/// The context's Arrow settings are copied at creation, but the copy keeps a
+/// raw pointer to the client context, so the exporter borrows the context for
+/// `'ctx` and must not outlive it.
 pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
