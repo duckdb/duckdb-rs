@@ -146,8 +146,14 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 #[test]
 fn test_scalar_panic() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
-    let db = env
-        .open(StorageLocation::InMemory)
+    // DuckDB only invalidates the database when the internal error is raised on the
+    // client thread; if a worker thread raises it first, only the transaction is
+    // invalidated. A single thread makes the panic always run on the client thread.
+    // This has to be set before attaching: a later `SET threads = 1` still
+    // occasionally lets a worker thread execute the query.
+    let db = env.instance().expect("Failed to create instance");
+    db.set_option("threads", "1").expect("Failed to set threads");
+    db.attach(&StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
     let conn = db.connect().expect("Failed to connect to database");
 
