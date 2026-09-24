@@ -1,8 +1,7 @@
 //! Function parameter and return-type declarations.
 //!
 //! Use [`crate::signature::SignatureBuilder`] when registering scalar,
-//! aggregate, or table functions. Built [`crate::signature::Signature`] values
-//! expose the resolved declaration.
+//! aggregate, or table functions.
 
 use crate::ffi;
 
@@ -44,7 +43,7 @@ pub struct TailVarargParameter {
     pub logical_type: LogicalType,
 }
 
-/// A fixed parameter read from a built [`Signature`].
+/// A fixed parameter in a function signature.
 #[derive(Debug)]
 pub struct Parameter {
     /// The parameter name.

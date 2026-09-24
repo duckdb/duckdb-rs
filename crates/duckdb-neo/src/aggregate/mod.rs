@@ -494,7 +494,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     ///
     /// Rows of the same group share a state, so the view may contain the same
     /// state more than once. Mutable access is offered one state at a time
-    /// through [`States`]' [`IndexMut`](std::ops::IndexMut) implementation.
+    /// through [`States`]' [`IndexMut`] implementation.
     fn update(
         &self,
         bind_data: Option<&Self::BindData>,
@@ -504,7 +504,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     /// **Combine:** merge partial source states into target states.
     ///
     /// The source view is read-only; the target view offers mutable access one
-    /// state at a time through [`States`]' [`IndexMut`](std::ops::IndexMut)
+    /// state at a time through [`States`]' [`IndexMut`]
     /// implementation.
     fn combine(
         &self,
