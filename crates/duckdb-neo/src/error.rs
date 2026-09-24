@@ -184,11 +184,101 @@ macro_rules! check_api_call {
     }};
 }
 
+/// Read a caller-buffer C API string using a sizing call followed by a write.
+/// Appends `(buffer, capacity, out_length, err)`; the length excludes the NUL.
+/// Evaluates inputs once and returns `Result<String>`.
+///
+/// ```ignore
+/// check_api_call_string!(ffi::duckdb_v2_logical_type_to_text, self.handle)
+/// ```
+macro_rules! check_api_call_string {
+    ($call:expr $(, $arg:expr)* $(,)?) => {{
+        let call = $call;
+        $crate::error::check_api_call_string!(@bind call; (); 0; $($arg),*)
+    }};
+    (@bind $call:ident; ($($args:ident,)*); $i:tt; $head:expr $(, $rest:expr)*) => {{
+        paste::paste! {
+            let [<arg $i>] = $head;
+            $crate::error::check_api_call_string!(@bump $call; ($($args,)* [<arg $i>],); $i; $($rest),*)
+        }
+    }};
+    (@bump $call:ident; ($($args:ident,)*); 0; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 1; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 1; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 2; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 2; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 3; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 3; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 4; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 4; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 5; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 5; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 6; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 6; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 7; $($rest)*)
+    };
+    (@bump $call:ident; ($($args:ident,)*); 7; $($rest:tt)*) => {
+        $crate::error::check_api_call_string!(@bind $call; ($($args,)*); 8; $($rest)*)
+    };
+    (@bind $call:ident; ($($args:ident,)*); $i:tt; ) => {{
+        (|| -> $crate::Result<String> {
+            let length = $crate::check_api_call!($call, $($args,)* std::ptr::null_mut(), 0, RET)?;
+            let capacity = usize::try_from(length)
+                .ok()
+                .and_then(|length| length.checked_add(1))
+                .filter(|&capacity| capacity <= isize::MAX as usize)
+                .ok_or_else(|| $crate::error::Error::api_error("String too large".to_string()))?;
+            let mut text = vec![0u8; capacity];
+            let written = $crate::check_api_call!(
+                $call, $($args,)* text.as_mut_ptr().cast(), capacity as $crate::ffi::idx_t, RET
+            )?;
+            if written >= capacity as $crate::ffi::idx_t {
+                return Err($crate::error::Error::api_error("Invalid string length".to_string()));
+            }
+            text.truncate(written as usize);
+            String::from_utf8(text)
+                .map_err(|_| $crate::error::Error::api_error("Invalid UTF-8".to_string()))
+        })()
+    }};
+}
+
 pub(crate) use check_api_call;
 pub(crate) use check_api_call_no_err;
+pub(crate) use check_api_call_string;
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    use crate::{
+        ToValue,
+        environment::{Environment, StorageLocation},
+        logical_type::LogicalType,
+        qualified_name::QualifiedName,
+    };
+
+    #[test]
+    fn test_string_renderers() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let logical_type = LogicalType::from_text(&conn, "MAP(VARCHAR, INTEGER)")?;
+        assert_eq!(logical_type.to_string()?, "MAP(VARCHAR, INTEGER)");
+        for text in ["", "hello", "\u{e9}", &"long text".repeat(1024)] {
+            assert_eq!(text.value(&conn)?.dbg_string()?, text);
+        }
+        assert_eq!(crate::render_identifier_quoted("hello")?, "hello");
+        assert_eq!(crate::render_identifier_quoted("a\"b")?, "\"a\"\"b\"");
+        let name = QualifiedName::from_parts(&["main", "a\"b"])?;
+        assert_eq!(name.render()?, "main.\"a\"\"b\"");
+        Ok(())
+    }
+
     #[test]
     pub fn test_error_to_string() -> crate::Result<()> {
         let err = crate::error::Error {

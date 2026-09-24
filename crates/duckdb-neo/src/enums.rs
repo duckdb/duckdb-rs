@@ -1,4 +1,30 @@
-use crate::ffi;
+//! Enumerations mirrored from the C API, including token classes and function properties.
+
+use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
+
+ffi_enum_redeclaration! {
+    /// The lexical class of a token, as reported by [`SqlTokenIterator`](crate::tokens::SqlTokenIterator).
+    pub enum TokenType <- ffi::DUCKDB_V2_TOKEN_TYPE {
+        /// Not an actual token class; reported when tokenization fails.
+        Invalid = DUCKDB_V2_TOKEN_TYPE_INVALID,
+        /// A keyword of the connection's grammar.
+        Keyword = DUCKDB_V2_TOKEN_TYPE_KEYWORD,
+        /// A bare or double-quoted identifier, quotes included.
+        Identifier = DUCKDB_V2_TOKEN_TYPE_IDENTIFIER,
+        /// A quoted or dollar-quoted string, delimiters included.
+        StringLiteral = DUCKDB_V2_TOKEN_TYPE_STRING_LITERAL,
+        /// A numeric literal.
+        NumberLiteral = DUCKDB_V2_TOKEN_TYPE_NUMBER_LITERAL,
+        /// An operator or punctuation run other than the statement terminator.
+        Operator = DUCKDB_V2_TOKEN_TYPE_OPERATOR,
+        /// A line or block comment, delimiters included.
+        Comment = DUCKDB_V2_TOKEN_TYPE_COMMENT,
+        /// A statement-terminating semicolon.
+        Terminator = DUCKDB_V2_TOKEN_TYPE_TERMINATOR,
+        /// Not a token; reported once the input is exhausted.
+        EndOfInput = DUCKDB_V2_TOKEN_TYPE_END_OF_INPUT,
+    }
+}
 
 #[repr(u32)]
 /// How consistently a function maps the same inputs to the same result.

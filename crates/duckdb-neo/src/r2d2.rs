@@ -1,21 +1,17 @@
-use std::sync::{Arc, Mutex};
+use crate::{Parameters, Result, connection::Connection, database::Instance, error::Error};
 
-use crate::{
-    Parameters,
-    connection::Connection,
-    database::{Database, DatabaseHandle},
-    error::{Error, check_api_call},
-    ffi,
-};
-
+/// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
 pub struct ConnectionManager {
-    database_handle: Arc<Mutex<DatabaseHandle>>,
+    database: Instance,
 }
 
 impl ConnectionManager {
-    pub fn new(database: &Database) -> Self {
+    /// Create a manager that opens connections to `database`.
+    pub fn new(database: &Instance) -> Self {
         Self {
-            database_handle: database.handle.clone(),
+            database: Instance {
+                handle: database.handle.clone(),
+            },
         }
     }
 }
@@ -24,15 +20,8 @@ impl r2d2::ManageConnection for ConnectionManager {
     type Connection = Connection;
     type Error = Error;
 
-    fn connect(&self) -> std::result::Result<Self::Connection, Self::Error> {
-        let db = self.database_handle.lock().unwrap();
-
-        let conn = check_api_call!(ffi::duckdb_v2_connect, db.handle, RET)?;
-
-        Ok(Connection {
-            handle: conn,
-            _db: self.database_handle.clone(),
-        })
+    fn connect(&self) -> Result<Connection> {
+        Connection::new(&self.database)
     }
 
     fn is_valid(&self, conn: &mut Self::Connection) -> std::result::Result<(), Self::Error> {
@@ -45,8 +34,8 @@ impl r2d2::ManageConnection for ConnectionManager {
         Ok(())
     }
 
-    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        // Always true since duckdb lives in memory.
+    fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
+        // Always false since duckdb lives in memory.
         false
     }
 }
@@ -96,7 +85,7 @@ mod tests {
         }
 
         let (s1, r1) = mpsc::channel();
-        let (s2, r2) = mpsc::channel();
+        let (s2, _r2) = mpsc::channel();
 
         let pool1 = pool.clone();
         let t1 = thread::spawn(move || {

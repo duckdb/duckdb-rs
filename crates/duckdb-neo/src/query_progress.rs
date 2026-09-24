@@ -1,9 +1,10 @@
 //! Point-in-time progress for an executing query.
 
+use std::sync::Arc;
+
 use crate::{
     Result, check_api_call,
-    connection::{Connection, SettingScope},
-    connection_options::ConfigOptionValue,
+    connection::{Connection, InnerConnection, SettingScope},
     ffi,
 };
 
@@ -11,31 +12,25 @@ use crate::{
 ///
 /// Creating a tracker enables connection-local progress tracking and disables
 /// terminal progress output. These settings remain active after the tracker is
-/// dropped.
-pub struct QueryProgressTracker<'conn> {
-    connection: &'conn Connection,
+/// dropped. The tracker can be moved to another thread to take snapshots while
+/// the connection runs a query.
+pub struct QueryProgressTracker {
+    connection: Arc<InnerConnection>,
 }
 
-impl<'conn> QueryProgressTracker<'conn> {
+impl QueryProgressTracker {
     /// Enable progress tracking and retain the connection used for snapshots.
-    pub fn new(connection: &'conn Connection) -> Result<Self> {
-        connection.set_option(
-            &ConfigOptionValue::new("enable_progress_bar_print", "false")?,
-            Some(SettingScope::Local),
-        )?;
-        connection.set_option(
-            &ConfigOptionValue::new("enable_progress_bar", "true")?,
-            Some(SettingScope::Local),
-        )?;
-        Ok(Self { connection })
+    pub fn new(connection: &mut Connection) -> Result<Self> {
+        connection.set_option("enable_progress_bar_print", "false", Some(SettingScope::Local))?;
+        connection.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
+        Ok(Self {
+            connection: connection.inner.clone(),
+        })
     }
 
     /// Capture the active query's progress, or return `None` when unavailable.
-    ///
-    /// This may be called from a different thread while the query result is
-    /// being stepped.
     pub fn snapshot(&self) -> Result<Option<QueryProgress>> {
-        QueryProgress::new(self.connection)
+        QueryProgress::from_handle(self.connection.handle)
     }
 }
 
@@ -53,12 +48,16 @@ pub struct QueryProgress {
 impl QueryProgress {
     /// Capture progress, or return `None` when DuckDB has not published it.
     pub fn new(conn: &Connection) -> Result<Option<Self>> {
+        Self::from_handle(conn.inner.handle)
+    }
+
+    fn from_handle(handle: ffi::duckdb_v2_connection_handle) -> Result<Option<Self>> {
         let mut percentage = 0.0;
         let mut rows_processed = 0;
         let mut total_rows = 0;
         check_api_call!(
-            ffi::duckdb_v2_progress_get,
-            **conn,
+            ffi::duckdb_v2_connection_progress_get,
+            handle,
             &mut percentage,
             &mut rows_processed,
             &mut total_rows
@@ -79,20 +78,22 @@ impl QueryProgress {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::{Environment, Parameters, StorageLocation, query_progress::QueryProgressTracker};
+    use crate::{
+        Parameters, environment::Environment, environment::StorageLocation, query_progress::QueryProgressTracker,
+    };
 
     #[test]
     fn test_query_progress() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let mut conn = db.connect()?;
 
         conn.execute(
             "CREATE TABLE t1 as select * from range(0, 100_00) r(i)",
             Parameters::None,
         )?;
 
-        let tracker = QueryProgressTracker::new(&conn)?;
+        let tracker = QueryProgressTracker::new(&mut conn)?;
         assert!(tracker.snapshot()?.is_none());
 
         let mut statements = conn.parse(" SELECT * FROM t1 AS l, t1 AS r;")?;
@@ -115,8 +116,8 @@ mod tests {
     fn test_query_without_progress() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
-        let tracker = QueryProgressTracker::new(&conn)?;
+        let mut conn = db.connect()?;
+        let tracker = QueryProgressTracker::new(&mut conn)?;
 
         let mut statements = conn.parse("SELECT sum(sin(i)) FROM range(100000) AS t(i);")?;
         let statement = statements.next().expect("expected a statement")?;

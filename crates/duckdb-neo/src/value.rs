@@ -2,14 +2,12 @@
 
 use std::{fmt::Debug, ops::Deref};
 
-use libduckdb_sys::v2::{self as ffi};
+use crate::ffi;
 
 use crate::{
-    Result,
-    builder_helpers::context_and_connection_fn,
-    check_api_call, check_api_call_no_err,
+    Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::{Connection, Context, FFILink},
-    error::{DuckDBError, Error},
+    links::ValueCastLink,
     logical_type::LogicalType,
     types::FromValue,
 };
@@ -42,6 +40,10 @@ use crate::{
 pub struct Value {
     pub(crate) handle: ffi::duckdb_v2_value_handle,
 }
+
+// SAFETY: an owned, self-contained C++ `Value`; `&self` methods only read it.
+unsafe impl Send for Value {}
+unsafe impl Sync for Value {}
 
 #[doc(hidden)]
 pub enum ValueInput<'a> {
@@ -380,23 +382,10 @@ impl Value {
         Ok(Value { handle })
     }
 
-    context_and_connection_fn! {
-        /// Cast a value using a connection or callback context's registered casts.
-        pub fn cast_with_[context, connection](
-            &self,
-            target_type: LogicalType,
-        ) -> Result<Value>
-        {
-            context_fn: ffi::duckdb_v2_value_cast_with_context,
-            connection_fn: ffi::duckdb_v2_value_cast_with_connection,
-        }
-        let handle = check_api_call!(
-            api_fn!(),
-            **api_arg!(),
-            self.handle,
-            target_type.handle,
-            RET
-        )?;
+    /// Cast a value using a connection or callback context's registered casts.
+    #[allow(private_bounds)]
+    pub fn cast<C: ValueCastLink>(&self, link: &C, target_type: LogicalType) -> Result<Value> {
+        let handle = link.cast_value(self.handle, target_type.handle)?;
 
         Ok(Value { handle })
     }
@@ -514,32 +503,7 @@ impl Value {
 
     /// Render the value for diagnostics.
     pub fn dbg_string(&self) -> Result<String> {
-        let capacity = check_api_call!(
-            ffi::duckdb_v2_value_to_string,
-            self.handle,
-            std::ptr::null_mut(),
-            0,
-            RET
-        )?;
-
-        let buffer_capacity = capacity + 1;
-        let mut text = Vec::<u8>::with_capacity(buffer_capacity as usize);
-
-        let length = check_api_call!(
-            ffi::duckdb_v2_value_to_string,
-            self.handle,
-            text.as_mut_ptr() as *mut i8,
-            buffer_capacity,
-            RET
-        )?;
-        unsafe {
-            text.set_len(length as usize);
-        }
-
-        String::from_utf8(text).map_err(|_| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_API,
-            message: "Failed to convert value string to UTF-8".to_string(),
-        })
+        check_api_call_string!(ffi::duckdb_v2_value_to_string, self.handle)
     }
 }
 

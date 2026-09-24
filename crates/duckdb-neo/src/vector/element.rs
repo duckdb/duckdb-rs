@@ -6,6 +6,9 @@ pub trait VectorElement: Sized {
     /// The DuckDB logical type represented by this Rust type.
     const TYPE_ID: LogicalTypeID;
 
+    /// The unboxed type stored contiguously in the DuckDB vector's data buffer.
+    ///
+    /// Used by the raw accessors on [`Vector`] such as `as_slice`.
     type Internal;
 
     /// The borrowed value returned for one vector row.

@@ -1,10 +1,14 @@
-#[cfg(feature = "capi-v2-p2")]
+use crate::{
+    Result,
+    error::{DuckDBError, Error, check_api_call_no_err},
+    ffi,
+};
+
 pub(crate) struct OpaqueHandle<T> {
     data: *mut T,
     success: RefCell<bool>,
 }
 
-#[cfg(feature = "capi-v2-p2")]
 impl<T> OpaqueHandle<T> {
     pub(crate) fn new(data: T) -> Self {
         let boxed = Box::new(data);
@@ -27,7 +31,6 @@ impl<T> OpaqueHandle<T> {
         }
     }
 }
-#[cfg(feature = "capi-v2-p2")]
 impl<T> Drop for OpaqueHandle<T> {
     fn drop(&mut self) {
         if !*self.success.borrow() {
@@ -36,21 +39,22 @@ impl<T> Drop for OpaqueHandle<T> {
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, (&error.message).into())
         .expect("Failed to set error text");
 }
 
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) unsafe extern "C" fn drop_opaque<T>(ptr: *mut c_void) {
     if !ptr.is_null() {
         let _ = unsafe { Box::from_raw(ptr as *mut T) };
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
+unsafe extern "C" fn equals_opaque<T: PartialEq>(a: *mut c_void, b: *mut c_void) -> bool {
+    unsafe { *(a as *const T) == *(b as *const T) }
+}
+
 pub(crate) fn into_opaque<T>(value: T) -> ffi::duckdb_v2_opaque {
     let raw = Box::into_raw(Box::new(value));
 
@@ -61,7 +65,13 @@ pub(crate) fn into_opaque<T>(value: T) -> ffi::duckdb_v2_opaque {
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
+pub(crate) fn into_opaque_eq<T: PartialEq>(value: T) -> ffi::duckdb_v2_opaque {
+    ffi::duckdb_v2_opaque {
+        equals: Some(equals_opaque::<T>),
+        ..into_opaque(value)
+    }
+}
+
 pub(crate) unsafe fn get_opaque_data_ref<'a, T>(ptr: *mut c_void) -> Option<&'a T> {
     if ptr.is_null() {
         None
@@ -70,7 +80,6 @@ pub(crate) unsafe fn get_opaque_data_ref<'a, T>(ptr: *mut c_void) -> Option<&'a 
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) unsafe fn get_opaque_data_ref_mut<'a, T>(ptr: *mut c_void) -> Option<&'a mut T> {
     if ptr.is_null() {
         None
@@ -79,7 +88,6 @@ pub(crate) unsafe fn get_opaque_data_ref_mut<'a, T>(ptr: *mut c_void) -> Option<
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
 fn panic_message(panic: &(dyn Any + Send)) -> &str {
     if let Some(text) = panic.downcast_ref::<String>() {
         text.as_str()
@@ -90,7 +98,6 @@ fn panic_message(panic: &(dyn Any + Send)) -> &str {
     }
 }
 
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
     f: F,
     err: *mut ffi::duckdb_v2_error_info_handle,
@@ -100,7 +107,6 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
     match result {
         Ok(Ok(value)) => Some(value),
         Ok(Err(e)) => {
-            dbg!(&e);
             set_error(err, &e);
             None
         }
@@ -110,123 +116,12 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
                 code: DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
                 message: format!("Panic occurred: {text}"),
             };
-            dbg!(&error);
             set_error(err, &error);
             None
         }
     }
 }
 
-macro_rules! context_and_connection_fn {
-    (
-        $(#[$meta:meta])*
-        $vis:vis fn $prefix:ident [$context_suffix:ident, $connection_suffix:ident]
-        $(<$($gen:ident),+ $(,)?>)? (
-            &$receiver:ident $(, $arg_name:ident : $arg_ty:ty)* $(,)?
-        ) -> $ret:ty
-        {
-            context_fn: $ctx_fn:expr,
-            connection_fn: $conn_fn:expr,
-        }
-        $($body:tt)*
-    ) => {
-        paste::paste! {
-            $(#[$meta])*
-            $vis fn [<$prefix $context_suffix>] $(<$($gen),+>)? (
-                &$receiver,
-                context: &$crate::connection::Context,
-                $($arg_name: $arg_ty),*
-            ) -> $ret {
-                macro_rules! api_fn { () => { $ctx_fn } }
-                macro_rules! api_arg { () => { context } }
-                $($body)*
-            }
-
-            $(#[$meta])*
-            $vis fn [<$prefix $connection_suffix>] $(<$($gen),+>)? (
-                &$receiver,
-                connection: &$crate::connection::Connection,
-                $($arg_name: $arg_ty),*
-            ) -> $ret {
-                macro_rules! api_fn { () => { $conn_fn } }
-                macro_rules! api_arg { () => { connection } }
-                $($body)*
-            }
-        }
-    };
-    (
-        $(#[$meta:meta])*
-        $vis:vis fn $prefix:ident [$context_suffix:ident, $connection_suffix:ident]
-        $(<$($gen:ident),+ $(,)?>)? (
-            $($arg_name:ident : $arg_ty:ty),* $(,)?
-        ) -> $ret:ty
-        {
-            context_fn: $ctx_fn:expr,
-            connection_fn: $conn_fn:expr,
-        }
-        $($body:tt)*
-    ) => {
-        paste::paste! {
-            $(#[$meta])*
-            $vis fn [<$prefix $context_suffix>] $(<$($gen),+>)? (
-                context: &$crate::connection::Context,
-                $($arg_name: $arg_ty),*
-            ) -> $ret {
-                macro_rules! api_fn { () => { $ctx_fn } }
-                macro_rules! api_arg { () => { context } }
-                $($body)*
-            }
-
-            $(#[$meta])*
-            $vis fn [<$prefix $connection_suffix>] $(<$($gen),+>)? (
-                connection: &$crate::connection::Connection,
-                $($arg_name: $arg_ty),*
-            ) -> $ret {
-                macro_rules! api_fn { () => { $conn_fn } }
-                macro_rules! api_arg { () => { connection } }
-                $($body)*
-            }
-        }
-    };
-    (
-        $(#[$meta:meta])*
-        $vis:vis fn $prefix:ident [$context_suffix:ident, $connection_suffix:ident]
-        $(<$($gen:ident),+ $(,)?>)? (
-            $receiver:ident $(, $arg_name:ident : $arg_ty:ty)* $(,)?
-        ) -> $ret:ty
-        {
-            context_fn: $ctx_fn:expr,
-            connection_fn: $conn_fn:expr,
-        }
-        $($body:tt)*
-    ) => {
-        paste::paste! {
-            $(#[$meta])*
-            $vis fn [<$prefix $context_suffix>] $(<$($gen),+>)? (
-                $receiver,
-                context: &$crate::connection::Context,
-                $($arg_name: $arg_ty),*
-            ) -> $ret {
-                macro_rules! api_fn { () => { $ctx_fn } }
-                macro_rules! api_arg { () => { context } }
-                $($body)*
-            }
-
-            $(#[$meta])*
-            $vis fn [<$prefix $connection_suffix>] $(<$($gen),+>)? (
-                $receiver,
-                connection: &$crate::connection::Connection,
-                $($arg_name: $arg_ty),*
-            ) -> $ret {
-                macro_rules! api_fn { () => { $conn_fn } }
-                macro_rules! api_arg { () => { connection } }
-                $($body)*
-            }
-        }
-    };
-}
-
-#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_user_data {
     ($ffi_call:expr, $handle:expr) => {{
         let user_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -235,7 +130,6 @@ macro_rules! get_user_data {
     }};
 }
 
-#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_bind_data {
     ($ffi_call:expr, $handle:expr) => {{
         let bind_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -244,7 +138,6 @@ macro_rules! get_bind_data {
     }};
 }
 
-#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_init_data {
     ($ffi_call:expr, $handle:expr) => {{
         let bind_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -253,7 +146,6 @@ macro_rules! get_init_data {
     }};
 }
 
-#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_global_state {
     ($ffi_call:expr, $handle:expr) => {{
         let global_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -262,7 +154,6 @@ macro_rules! get_global_state {
     }};
 }
 
-#[cfg(feature = "capi-v2-p2")]
 macro_rules! get_local_state {
     ($ffi_call:expr, $handle:expr) => {{
         let local_data = check_api_call!($ffi_call, $handle, RET)?;
@@ -308,23 +199,17 @@ macro_rules! ffi_enum_redeclaration {
     };
 }
 
+use std::{any::Any, cell::RefCell, ffi::c_void, panic::AssertUnwindSafe};
+
 pub(crate) use ffi_enum_redeclaration;
 
-pub(crate) use context_and_connection_fn;
-
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_bind_data;
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_global_state;
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_init_data;
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_local_state;
-#[cfg(feature = "capi-v2-p2")]
 pub(crate) use get_user_data;
 
 #[cfg(test)]
-#[cfg(feature = "capi-v2-p2")]
 macro_rules! scalar_callback {
     ($name:ident, $result_type:ty, |$input:ident, $result:ident, $ctx:ident, $user_data:ident| $body:block) => {
         struct $name;
@@ -332,27 +217,20 @@ macro_rules! scalar_callback {
         impl $crate::scalar::ScalarCallbacks for $name {
             type BindData = ();
             type InitData = ();
-            type ResultType = $result_type;
 
             fn exec(
                 &self,
                 _bind_data: Option<&Self::BindData>,
-                _init_data: Option<&Self::InitData>,
-                $ctx: $crate::connection::Context,
-                $input: &$crate::data_chunk::DataChunk,
-                $result: $crate::vector::Vector<'_>,
+                _init_data: Option<&mut Self::InitData>,
+                $ctx: &$crate::connection::Context,
+                $input: &$crate::data_chunk::VectorCollection,
+                $result: $crate::vector::Vector<'_, crate::vector::Unknown>,
             ) -> $crate::Result<()> {
-                let $result = $result.cast::<Self::ResultType>()?;
+                let $result = $result.cast::<$result_type>()?;
                 $body
             }
         }
     };
-}
-
-#[cfg(not(feature = "capi-v2-p2"))]
-#[cfg(test)]
-macro_rules! scalar_callback {
-    ($name:ident, $result_type:ty, |$input:ident, $result:ident, $ctx:ident, $user_data:ident| $body:block) => {};
 }
 
 #[cfg(test)]
@@ -360,7 +238,6 @@ pub(crate) use scalar_callback;
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-#[cfg(feature = "capi-v2-p2")]
 mod tests {
     use super::panic_message;
     use std::any::Any;

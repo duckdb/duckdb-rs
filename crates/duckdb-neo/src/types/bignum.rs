@@ -6,6 +6,7 @@
 
 use super::string::owned_bytes;
 use super::{DuckDBType, FromValue, ToValue};
+use crate::ffi;
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
@@ -13,7 +14,6 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
 use std::fmt::Display;
 
 /// A borrowed encoded `BIGNUM` value from a vector.

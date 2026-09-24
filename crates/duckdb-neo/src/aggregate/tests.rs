@@ -3,12 +3,16 @@ use std::fmt::Display;
 use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VALUE};
 
 use crate::{
-    Context, DuckDBType, Environment, Parameters, StorageLocation,
-    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, BindMetadata, States},
-    connection_options::OptionValue,
-    data_chunk::DataChunk,
+    DuckDBType, Parameters,
+    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, States},
+    bind_arguments::BindArgument,
+    connection::Context,
+    data_chunk::VectorCollection,
+    environment::{Environment, StorageLocation},
+    logical_type::LogicalType,
+    scalar::ReturnTypeHandle,
     signature::{Parameter, SignatureBuilder},
-    vector::Vector,
+    vector::{Unknown, Vector},
 };
 
 struct BasicAggregate<T> {
@@ -17,24 +21,27 @@ struct BasicAggregate<T> {
 
 // Formula = (user_data + bind_data) +  median()
 
-impl<T: Display> AggregateCallbacks for BasicAggregate<T> {
+impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T> {
     type BindData = Vec<f32>;
     type StateItem = Vec<i32>;
-    type IncomingType = i32;
-    type ResultType = String;
 
-    fn bind(&self, context: Context, metadata: BindMetadata) -> crate::Result<Self::BindData> {
+    fn bind(
+        &self,
+        context: &Context,
+        arguments: Vec<BindArgument>,
+        result_type_handle: ReturnTypeHandle<'_>,
+    ) -> crate::Result<Self::BindData> {
         let mut bind_data: Vec<f32> = Vec::new();
 
-        for i in 0..metadata.arguments.len()? {
-            let name = metadata.arguments.name(i)?;
-            let arg_type = metadata.arguments.logical_type(i)?;
+        result_type_handle.override_return(LogicalType::from_text(context, "VARCHAR")?)?;
 
-            assert_eq!(arg_type, i32::logical_type(&context)?);
-            assert_eq!(name, "IN");
+        for argument in arguments {
+            let name = argument.value;
+            let arg_type = argument.logical_type;
+
+            assert_eq!(arg_type, i32::logical_type(context)?);
+            assert!(name.is_none());
         }
-
-        assert_eq!(metadata.function_name, "to_concatenated");
 
         bind_data.push(1.2);
         bind_data.push(3.4);
@@ -42,21 +49,21 @@ impl<T: Display> AggregateCallbacks for BasicAggregate<T> {
         Ok(bind_data)
     }
 
-    fn init(&self) -> crate::Result<Self::StateItem> {
-        Ok(vec![])
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        vec![]
     }
 
-    fn size(&self) -> crate::Result<usize> {
+    fn size(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<usize> {
         Ok(std::mem::size_of::<Self::StateItem>())
     }
 
     fn update(
         &self,
         _bind_data: Option<&Self::BindData>,
-        data_chunk: DataChunk,
-        states: &mut crate::aggregate::States<'_, Self::StateItem>,
+        collection: &VectorCollection,
+        mut states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
-        let vec = data_chunk.get_vector_at::<Self::IncomingType>(0)?;
+        let vec = collection.get_vector_at::<i32>(0)?;
 
         for (i, val) in vec.iter()?.enumerate() {
             if let Some(val) = val {
@@ -70,8 +77,8 @@ impl<T: Display> AggregateCallbacks for BasicAggregate<T> {
     fn combine(
         &self,
         _bind_data: Option<&Self::BindData>,
-        source: &crate::aggregate::States<'_, Self::StateItem>,
-        dest: &mut crate::aggregate::States<'_, Self::StateItem>,
+        source: &States<'_, Self::StateItem>,
+        mut dest: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         for i in 0..dest.len() {
             let values = source[i].clone();
@@ -84,10 +91,12 @@ impl<T: Display> AggregateCallbacks for BasicAggregate<T> {
     fn finalize(
         &self,
         bind_data: Option<&Self::BindData>,
-        states: &mut States<'_, Self::StateItem>,
-        result: &mut Vector<'_, Self::ResultType>,
+        states: &[&Self::StateItem],
+        result: Vector<'_, Unknown>,
         result_offset: usize,
     ) -> crate::Result<()> {
+        let mut result = result.cast::<String>()?;
+
         for (index, state) in states.iter().enumerate() {
             let mut to_write = state.iter().map(|value| value.to_string()).collect::<String>();
             to_write += &format!(
@@ -113,11 +122,11 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
         "to_concatenated",
         SignatureBuilder::new(
             [Parameter::normal("IN", i32::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
+            u8::logical_type(&conn)?, // Will be overwritten to String
         ),
         BasicAggregate::<f32> { item: 0.0 },
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let result = conn.query(
         "SELECT to_concatenated(i) AS result FROM (VALUES (1), (2), (NULL), (3), (4), (5)) AS t(i)",
@@ -142,7 +151,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
 
-    db.set_option(&OptionValue::new("threads", &1.to_string())?)?;
+    db.set_option("threads", &1.to_string())?;
 
     let conn = db.connect()?;
 
@@ -160,7 +169,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
         DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_VALUE_MAX_ENUM,
     );
 
-    let result = result.register_with_connection(&conn);
+    let result = result.register(&conn);
 
     assert!(result.is_err());
 
@@ -172,7 +181,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
         ),
         BasicAggregate::<i32> { item: 0 },
     )
-    .register_with_connection(&conn);
+    .register(&conn);
 
     assert!(result.is_err());
 
@@ -193,7 +202,7 @@ fn aggregate_test_groups() -> crate::Result<()> {
         ),
         BasicAggregate::<i32> { item: 0 },
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let result = conn.query(
         "SELECT
@@ -219,6 +228,85 @@ fn aggregate_test_groups() -> crate::Result<()> {
     }
 
     assert_eq!(groups, 40000);
+
+    Ok(())
+}
+
+/// Reports a state size smaller than its `StateItem`, which must be rejected.
+struct UndersizedState;
+
+impl AggregateCallbacks for UndersizedState {
+    type BindData = ();
+    type StateItem = u64;
+
+    fn bind(
+        &self,
+        _context: &Context,
+        _arguments: Vec<BindArgument>,
+        _result_type_handle: ReturnTypeHandle<'_>,
+    ) -> crate::Result<Self::BindData> {
+        Ok(())
+    }
+
+    fn size(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<usize> {
+        Ok(1)
+    }
+
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        0
+    }
+
+    fn update(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _collection: &VectorCollection,
+        _states: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn combine(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _source: &States<'_, Self::StateItem>,
+        _dest: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _states: &[&Self::StateItem],
+        _result: Vector<'_, Unknown>,
+        _result_offset: usize,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn aggregate_test_undersized_state() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    AggregateFunctionBuilder::new(
+        "undersized",
+        SignatureBuilder::new(
+            [Parameter::normal("IN", i32::logical_type(&conn)?)],
+            u64::logical_type(&conn)?,
+        ),
+        UndersizedState,
+    )
+    .register(&conn)?;
+
+    let result = conn
+        .query("SELECT undersized(i::INTEGER) FROM range(10) AS t(i)", Parameters::None)
+        .and_then(|result| result.collect::<crate::Result<Vec<_>>>());
+
+    let err = result.expect_err("an undersized state must fail the query");
+    assert!(err.to_string().contains("smaller than size_of"), "{err}");
 
     Ok(())
 }

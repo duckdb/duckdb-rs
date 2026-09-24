@@ -1,23 +1,30 @@
+use std::collections::HashMap;
+
+use crate::logical_type::LogicalTypeID;
+use crate::types::{Any, StructValue};
 use crate::{
-    Parameters,
+    Parameters, ToValue,
     builder_helpers::scalar_callback,
+    connection::FFILink,
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
-    error::DuckDBError,
+    error::{DuckDBError, Error},
+    logical_type::LogicalType,
+    query_result::QueryResultStep,
+    signature::Parameter,
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
-        Map, Struct, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue,
-        TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UuidValue,
+        List, Map, MapValue, Struct, StructSchema, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
+        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UnionSchema,
+        UnionValue, UuidValue, Variant, structs::StructWrite, union::UnionWriter,
     },
+    vector::StorageKind,
 };
 
-#[cfg(feature = "capi-v2-p2")]
 use crate::{scalar::ScalarFunctionBuilder, signature::SignatureBuilder};
 
-#[cfg(feature = "capi-v2-p2")]
 struct TestStruct;
 
-#[cfg(feature = "capi-v2-p2")]
 impl StructSchema for TestStruct {
     fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
         Ok(vec![
@@ -26,10 +33,8 @@ impl StructSchema for TestStruct {
         ])
     }
 }
-#[cfg(feature = "capi-v2-p2")]
 
 struct TestUnion;
-#[cfg(feature = "capi-v2-p2")]
 
 impl UnionSchema for TestUnion {
     fn members<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
@@ -70,7 +75,7 @@ scalar_callback!(UpperScalar, String, |input, output, _ctx, _user_data| {
 
 scalar_callback!(
     MapScalar,
-    crate::vector::Map<i32, String>,
+    Map<i32, String>,
     |input, result, _ctx, _user_data| {
     let keys = input.get_vector_at::<i32>(0)?;
     let values = input.get_vector_at::<String>(1)?;
@@ -143,7 +148,11 @@ scalar_callback!(StructScalar, Struct, |input, output, _ctx, _user_data| {
     for (index, (key, value)) in rows.iter().enumerate() {
         output.write(
             index,
-            Some(StructWrite::new().field::<i32>(Some(*key)).field::<String>(Some(value))),
+            Some(
+                StructWrite::default()
+                    .field::<i32>(Some(*key))
+                    .field::<String>(Some(value)),
+            ),
         )?;
     }
     for (row, (key, value)) in output.iter()?.zip(rows) {
@@ -163,8 +172,10 @@ scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
 });
 
 scalar_callback!(SequenceScalar, i32, |input, result, _ctx, _user_data| {
+    let input_len = input.vectors()?[0].len();
+
     let mut result = result;
-    result.make_sequence(42, 10, input.row_count()?)?;
+    result.make_sequence(42, 10, input_len)?;
     Ok(())
 });
 
@@ -181,8 +192,183 @@ scalar_callback!(CopyStringScalar, String, |input, result, _ctx, _user_data| {
     Ok(())
 });
 
+scalar_callback!(DictionaryProbeScalar, i32, |input, output, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    if vector.storage_kind() == StorageKind::Dictionary {
+        // Dictionary vectors expose a selection vector mapping each logical
+        // row into a shared physical child buffer. Reading through the
+        // normal iterator must already honour that indirection.
+        let selection = vector.get_view().unwrap().selection().unwrap().to_vec();
+        assert_eq!(selection.len(), 2);
+
+        let before: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(before, vec![Some(i32::MAX), None]);
+
+        // Flattening should collapse the dictionary into a flat vector while
+        // preserving the logical values.
+        vector.flatten()?;
+        assert_eq!(vector.storage_kind(), StorageKind::Flat);
+
+        let after: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(after, before);
+    } else if vector.storage_kind() == StorageKind::Other {
+        // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
+        // flattened before it can be read like the other storage kinds.
+        vector.flatten()?;
+    }
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
 #[test]
-#[cfg(feature = "capi-v2-p2")]
+pub fn test_vector_dictionary() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "dict_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        DictionaryProbeScalar,
+    )
+    .register(&conn)?;
+
+    // `test_vector_types` feeds its output straight into the projection
+    // below without an intervening `Fetch`, so `dict_probe` observes the
+    // table function's chunks in their native storage kind: FLAT, CONSTANT,
+    // DICTIONARY, then OTHER (SEQUENCE) - in that fixed order. The
+    // DICTIONARY chunk is the one asserted on inside `DictionaryProbeScalar`.
+    let result = conn.query(
+        "SELECT dict_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+
+    let mut values = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+        values.extend(vector.iter()?.map(|v| v.copied()));
+    }
+
+    assert_eq!(
+        values,
+        vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(3),
+            Some(5),
+            Some(7),
+        ]
+    );
+
+    Ok(())
+}
+
+scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    if vector.storage_kind() == StorageKind::Constant {
+        // DuckDB constant-folds scalar function calls whose arguments are
+        // all CONSTANT_VECTOR: it runs the callback on a single logical row
+        // and broadcasts the (constant) result back out to the real batch
+        // size afterwards, so the vector we observe here has length 1 and
+        // must not be flattened - flattening would defeat the broadcast.
+        assert_eq!(vector.len(), 1);
+
+        let view = vector.get_view().unwrap();
+        if let Some(selection) = view.selection() {
+            assert!(selection.iter().all(|&index| index == 0));
+        }
+        assert_eq!(unsafe { view.as_slice() }.unwrap().len(), 1);
+
+        let values: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(values, vec![Some(i32::MIN)]);
+    } else if vector.storage_kind() == StorageKind::Other {
+        // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
+        // flattened before it can be read like the other storage kinds.
+        vector.flatten()?;
+    }
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+pub fn test_vector_constant() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "const_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        ConstantProbeScalar,
+    )
+    .register(&conn)?;
+
+    // Same chunk sequence as `test_vector_dictionary` (FLAT, CONSTANT,
+    // DICTIONARY, then OTHER/SEQUENCE); this test asserts on the CONSTANT
+    // chunk inside `ConstantProbeScalar`. Note that DuckDB constant-folds
+    // the call for that chunk, so `const_probe` itself only observes a
+    // single logical row before DuckDB broadcasts the result back to the
+    // full batch size shown in `values` below.
+    let result = conn.query(
+        "SELECT const_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+
+    let mut values = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+        values.extend(vector.iter()?.map(|v| v.copied()));
+    }
+
+    assert_eq!(
+        values,
+        vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(3),
+            Some(5),
+            Some(7),
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_vector_read_write() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
     let db = env
@@ -198,7 +384,7 @@ fn test_vector_read_write() -> crate::Result<()> {
         ),
         NegateScalar,
     )
-    .register_with_connection(&conn)
+    .register(&conn)
     .expect("Failed to register scalar function");
 
     let statements = conn
@@ -243,7 +429,6 @@ fn test_logical_type_cast() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 fn test_vector_string() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -257,7 +442,7 @@ fn test_vector_string() -> crate::Result<()> {
         ),
         UpperScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let res = conn
         .query(
@@ -285,7 +470,6 @@ fn test_vector_string() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 fn test_vector_list() -> crate::Result<()> {
     scalar_callback!(ListMultScalar, List<i32>, |input, output, _ctx, _user_data| {
         let input = input.get_vector_at::<List<i32>>(0)?;
@@ -314,7 +498,7 @@ fn test_vector_list() -> crate::Result<()> {
         SignatureBuilder::new([Parameter::normal("IN", list_logical_type.clone())], list_logical_type),
         ListMultScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let res = conn
         .query(
@@ -518,7 +702,6 @@ pub fn test_vector_map() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn vector_complex_write() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -537,7 +720,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
         ),
         MapScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let mut statements = conn.parse(
         "SELECT UNNEST([to_map(12, 'AA'), to_map(15, 'BB')]); SELECT to_map(unnest([1,2,3]), unnest(['A', 'B', 'C']))",
@@ -550,7 +733,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
     for item in result {
         let item = item?;
 
-        let res = item.get_vector_at::<crate::vector::Map<i32, String>>(0)?;
+        let res = item.get_vector_at::<Map<i32, String>>(0)?;
 
         assert!(res.len() == 2);
         let mut reader = res.iter()?;
@@ -571,7 +754,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
     if let Some(item) = result.next() {
         let item = item?;
 
-        let res = item.get_vector_at::<crate::vector::Map<i32, String>>(0)?;
+        let res = item.get_vector_at::<Map<i32, String>>(0)?;
 
         assert_eq!(res.len(), 3);
         let expected = [(1, "A"), (2, "B"), (3, "C")];
@@ -589,7 +772,6 @@ pub fn vector_complex_write() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn vector_union_write() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -608,7 +790,7 @@ pub fn vector_union_write() -> crate::Result<()> {
         ),
         UnionScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let statement = conn
         .parse("SELECT to_union(unnest([1, 2, 2]), unnest(['WWWADWWWAample', 'OPAOPDAOADWADtablesss', NULL]))")?
@@ -636,7 +818,6 @@ pub fn vector_union_write() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn vector_struct_write() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -655,7 +836,7 @@ pub fn vector_struct_write() -> crate::Result<()> {
         ),
         StructScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let statement = conn
         .parse("SELECT to_struct(unnest([1, 2]), unnest(['A', 'B']))")?
@@ -899,7 +1080,6 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn test_vector_make_constant() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -913,7 +1093,7 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
         ),
         ConstantScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let mut statements = conn.parse("SELECT to_constant(unnest([1,2,3]));")?;
 
@@ -941,7 +1121,6 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn test_vector_make_sequence() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -955,7 +1134,7 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
         ),
         SequenceScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let mut statements = conn.parse("SELECT to_sequence(unnest([1,2,3]));")?;
 
@@ -983,7 +1162,6 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
 }
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn test_vector_types() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -997,7 +1175,7 @@ pub fn test_vector_types() -> crate::Result<()> {
         ),
         CopyStringScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let result = conn.query(
         r#"SELECT test(x) from test_vector_types(null::VARCHAR) as t(x);"#,
@@ -1036,11 +1214,11 @@ pub fn test_vector_types() -> crate::Result<()> {
 
 // TODO: This should not be a scalar, but an table function.
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn test_vector_set_value() -> crate::Result<()> {
     scalar_callback!(ToVariant, Variant, |input, output, ctx, _user_data| {
         let mut output = output;
-        output.set_size(input.row_count()? * input.vectors_count()?)?;
+
+        output.set_size(input.row_count() * input.vectors_count())?;
 
         let mut idx = 0;
 
@@ -1048,20 +1226,20 @@ pub fn test_vector_set_value() -> crate::Result<()> {
             for i in 0..vec.len() {
                 let value = if !vec.is_null(i)? {
                     match vec.logical_type().type_id() {
-                        DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
                             let val = vec.get_as_checked::<i32>(i)?.unwrap();
 
                             Some(val.value(&ctx)?)
                         }
-                        DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
                             let val = vec.get_as_checked::<bool>(i)?.unwrap();
 
                             Some(val.value(&ctx)?)
                         }
-                        DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY => {
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY => {
                             todo!()
                         }
-                        DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR => {
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR => {
                             todo!()
                         }
                         _ => None,
@@ -1072,7 +1250,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
 
                 if let Some(value) = value {
                     let lt = LogicalType::from_text(&ctx, "VARIANT")?;
-                    let result = value.cast_with_context(&ctx, lt)?;
+                    let result = value.cast(ctx, lt)?;
                     output.write_value_slow(idx, result)?;
                 } else {
                     output.set_null_slow(idx)?
@@ -1095,7 +1273,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         SignatureBuilder::new([Parameter::tail_vararg("in", Any::logical_type(&conn)?)], rt),
         ToVariant,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let result = conn.query(
         r#"SELECT to_variant(bool, "int") from test_all_types();"#, // r#"SELECT to_variant(x) from test_vector_types("TESTER") as t(x);"#
@@ -1142,7 +1320,6 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
 });
 
 #[test]
-#[cfg(feature = "capi-v2-p2")]
 pub fn test_vector_reference_input() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -1156,7 +1333,7 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
         ),
         RefScalar,
     )
-    .register_with_connection(&conn)?;
+    .register(&conn)?;
 
     let result = conn.query(
         r#"SELECT reference(x) from test_vector_types(null::VARCHAR) as t(x);"#,
@@ -1338,6 +1515,86 @@ fn test_raw_integer_access() -> crate::Result<()> {
     ];
 
     assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_copy_from_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let source = DataChunk::create(&types, true)?;
+    let mut src = source.get_vector_at::<List<i32>>(0)?;
+    src.set_size(2)?;
+    src.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
+    src.write(1, Some(vec![Some(4)]))?;
+
+    let target = DataChunk::create(&types, true)?;
+    let mut dst = target.get_vector_at::<List<i32>>(0)?;
+    dst.set_size(1)?;
+    dst.write(0, Some(vec![Some(9)]))?;
+
+    // SAFETY: `source` outlives every read of the referenced vector below.
+    let referenced = unsafe { dst.copy_from(&src)? };
+
+    let items: Vec<_> = referenced
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(4)])]);
+
+    Ok(())
+}
+
+#[test]
+fn test_make_constant_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let chunk = DataChunk::create(&types, true)?;
+    let mut vector = chunk.get_vector_at::<List<i32>>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(vec![Some(9)]))?;
+
+    vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, true, 3)?;
+
+    let items: Vec<_> = vector
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
+    assert!(!vector.is_writable());
+    assert!(vector.children().iter().all(|child| !child.is_writable()));
+
+    Ok(())
+}
+
+#[test]
+fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [i32::logical_type(&conn)?, i64::logical_type(&conn)?];
+
+    let chunk = DataChunk::create(&types, true)?;
+
+    let mut constant = chunk.get_vector_at::<i32>(0)?;
+    constant.make_constant(42_i32.value(&conn)?, true, 2048)?;
+    assert!(!constant.is_writable());
+    assert!(constant.write(5, Some(1)).is_err());
+    assert!(constant.write(0, None).is_err());
+    assert!(constant.set_size(1).is_err());
+
+    let mut sequence = chunk.get_vector_at::<i64>(1)?;
+    sequence.make_sequence(0, 1, 16)?;
+    assert!(!sequence.is_writable());
+    sequence.flatten()?;
+    assert!(sequence.write(3, Some(1)).is_err());
 
     Ok(())
 }

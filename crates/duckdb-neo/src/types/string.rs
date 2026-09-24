@@ -11,11 +11,11 @@ use crate::{
     check_api_call,
     connection::FFILink,
     error::Error,
+    ffi,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-use libduckdb_sys::v2 as ffi;
 
 pub(crate) fn owned_bytes(raw: ffi::DuckDBStr<'_>) -> Result<Vec<u8>> {
     if raw.len == 0 {

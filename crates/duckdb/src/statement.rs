@@ -1589,12 +1589,13 @@ mod test {
     fn test_execute_streaming_error_message() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
-        // Trigger a conversion error - should fail with a descriptive message
+        // Trigger a conversion error - should fail with a descriptive message.
+        // Newer DuckDB versions defer the error from execute to the first fetch.
         let mut stmt = db.prepare("SELECT CAST('not-a-number' AS INTEGER)")?;
-        let result = stmt.stmt.execute_streaming();
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
+        let err = match stmt.stmt.execute_streaming() {
+            Err(e) => e,
+            Ok(()) => stmt.stmt.step().expect_err("expected conversion error on first fetch"),
+        };
 
         let error_string = format!("{}", err);
         assert!(

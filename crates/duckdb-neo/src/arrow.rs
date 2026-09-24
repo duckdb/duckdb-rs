@@ -1,99 +1,201 @@
 //! Arrow C Data Interface conversion.
 //!
 //! Exported `ArrowSchema` and `ArrowArray` values follow Arrow's `release`
-//! callback ownership convention. Importing an array transfers its buffers to
-//! the resulting [`crate::data_chunk::DataChunk`].
+//! callback ownership convention. Importing copies array data into DuckDB
+//! chunks; the caller retains ownership of the input array.
+
+use libduckdb_sys::v2::DuckDBStr;
 
 use crate::{
-    Context, Result, check_api_call, check_api_call_no_err, data_chunk::DataChunk, ffi, logical_type::LogicalType,
+    Result, check_api_call, check_api_call_no_err,
+    connection::Context,
+    data_chunk::{DataChunk, DataChunkRef},
+    ffi,
+    logical_type::LogicalType,
     schema::Schema,
 };
 
-/// Convert logical types into an owned Arrow C schema.
+/// Converts DuckDB chunks into Arrow arrays using a fixed schema.
 ///
-/// Each Arrow field is named with the corresponding logical type's DuckDB
-/// name.
+/// Feed chunks with [`Self::append`] and drain completed arrays with [`Self::next_array`].
 ///
-/// The caller must invoke the returned schema's `release` callback.
-pub fn logical_types_to_arrow_schema(context: &Context, logical_types: &[LogicalType]) -> Result<ffi::ArrowSchema> {
-    let names = logical_types
-        .iter()
-        .map(|v| v.name().unwrap().into())
-        .collect::<Vec<ffi::duckdb_v2_str>>();
-
-    let types = logical_types.iter().map(|v| v.handle).collect::<Vec<_>>();
-
-    check_api_call!(
-        ffi::duckdb_v2_logical_types_to_arrow_schema,
-        **context,
-        types.as_ptr(),
-        names.as_ptr(),
-        logical_types.len() as u64,
-        RET
-    )
+/// The context's Arrow settings are copied at creation, but the copy keeps a
+/// raw pointer to the client context, so the exporter borrows the context for
+/// `'ctx` and must not outlive it.
+pub struct ArrowExporter<'ctx> {
+    handle: ffi::duckdb_v2_arrow_exporter_handle,
+    _context: std::marker::PhantomData<&'ctx Context>,
 }
 
-/// A reusable mapping from an Arrow schema to DuckDB logical types.
-///
-/// Build a plan once and reuse it for arrays with the same schema. Each
-/// imported array transfers ownership of its buffers to the returned
-/// [`DataChunk`].
-pub struct ConversionPlan {
-    /// The owned DuckDB Arrow-conversion-plan handle.
-    pub handle: ffi::duckdb_v2_arrow_conversion_plan_handle,
-}
-
-impl ConversionPlan {
-    /// Resolve an Arrow schema using a context's type configuration.
+impl<'ctx> ArrowExporter<'ctx> {
+    /// Capture the column schema and Arrow settings from an active transaction.
     ///
-    /// The schema remains caller-owned and may be released after this call.
-    pub fn new(context: &Context, schema: &mut ffi::ArrowSchema) -> Result<Self> {
-        Ok(Self {
-            handle: check_api_call!(ffi::duckdb_v2_arrow_conversion_plan_create, **context, schema, RET)?,
+    /// # Panics
+    /// Panics if `logical_types` and `names` differ in length.
+    ///
+    /// `None` or `Some(0)` imposes no batch-size limit.
+    pub fn new(
+        context: &'ctx Context,
+        logical_types: &[LogicalType],
+        names: &[String],
+        batch_size: Option<usize>,
+    ) -> Result<Self> {
+        let logical_type_handles = logical_types.iter().map(|x| x.handle).collect::<Vec<_>>();
+        let name_ptrs = names.iter().map(|x| x.into()).collect::<Vec<DuckDBStr<'_>>>();
+
+        assert_eq!(logical_types.len(), names.len());
+
+        let handle = check_api_call!(
+            ffi::duckdb_v2_arrow_exporter_create,
+            **context,
+            logical_type_handles.as_ptr(),
+            name_ptrs.as_ptr(),
+            logical_type_handles.len() as u64,
+            batch_size.unwrap_or(0) as u64,
+            RET
+        )?;
+
+        Ok(ArrowExporter {
+            handle,
+            _context: std::marker::PhantomData,
         })
     }
 
-    /// Import an Arrow array as an owned data chunk.
+    /// Copy a chunk into Arrow buffers, flushing any partial batch when `flush` is true.
     ///
-    /// Ownership transfers to the chunk and the array's `release` callback is
-    /// cleared; do not release the array afterward.
-    pub fn to_data_chunk(&self, context: &Context, array: &mut ffi::ArrowArray) -> Result<DataChunk> {
-        Ok(DataChunk {
-            handle: check_api_call!(
-                ffi::duckdb_v2_arrow_array_to_data_chunk,
-                **context,
-                array,
-                self.handle,
-                RET
-            )?,
-            is_owned: true,
-            is_writable: false,
+    /// Accepts an owned [`DataChunk`] or a chunk borrowed from a callback; the
+    /// chunk is only read.
+    pub fn append(&mut self, chunk: &DataChunkRef<'_>, flush: bool) -> Result<()> {
+        // With `consume` false DuckDB leaves the handle untouched, so a local copy suffices.
+        let mut handle = chunk.handle;
+        check_api_call!(
+            ffi::duckdb_v2_arrow_exporter_append,
+            self.handle,
+            &mut handle,
+            false,
+            flush
+        )
+    }
+
+    /// Return the Arrow schema; the caller must invoke its `release` callback when done.
+    pub fn schema(&self) -> Result<ffi::ArrowSchema> {
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_get_schema, self.handle, RET)
+    }
+
+    /// Take the next completed array, or an array with no `release` callback when none is ready.
+    ///
+    /// The caller must invoke each returned array's `release` callback when present.
+    pub fn next_array(&self) -> Result<ffi::ArrowArray> {
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, RET)
+    }
+}
+
+impl Drop for ArrowExporter<'_> {
+    fn drop(&mut self) {
+        check_api_call_no_err!(ffi::duckdb_v2_arrow_exporter_destroy, &mut self.handle).unwrap();
+    }
+}
+
+/// Converts Arrow arrays of a fixed schema into DuckDB chunks.
+///
+/// The importer runs every conversion under the context it was created with,
+/// so it borrows that context and cannot outlive it.
+pub struct ArrowImporter<'ctx> {
+    handle: ffi::duckdb_v2_arrow_importer_handle,
+    _context: std::marker::PhantomData<&'ctx Context>,
+}
+
+impl<'ctx> ArrowImporter<'ctx> {
+    /// Resolve an Arrow schema using the context's active transaction.
+    ///
+    /// The schema is only read: the caller keeps ownership and must still
+    /// release it. `None` or `Some(0)` imposes no chunk-size limit.
+    pub fn new(context: &'ctx Context, schema: &mut ffi::ArrowSchema, batch_size: Option<usize>) -> Result<Self> {
+        let handle = check_api_call!(
+            ffi::duckdb_v2_arrow_importer_create,
+            **context,
+            schema,
+            batch_size.unwrap_or(0) as u64,
+            RET
+        )?;
+        Ok(ArrowImporter {
+            handle,
+            _context: std::marker::PhantomData,
         })
     }
 
-    /// Return the resolved DuckDB field schema.
+    /// Queue an array for copying into chunks; `flush` releases any final partial batch.
+    ///
+    /// The caller keeps ownership of the array, and every produced chunk is a
+    /// copy that does not depend on it. Prefer [`Self::append_consumed`], which
+    /// avoids the copy and has no safety requirements.
+    ///
+    /// # Safety
+    ///
+    /// The importer keeps a pointer to `array` until it is drained, meaning
+    /// [`Self::chunk`] has returned `Ok(None)`. Until then the array must not be
+    /// released, mutated, or moved. If draining fails, those requirements hold
+    /// until the importer is dropped.
+    pub unsafe fn append_referenced(&self, array: &mut ffi::ArrowArray, flush: bool) -> Result<()> {
+        check_api_call!(ffi::duckdb_v2_arrow_importer_append, self.handle, array, false, flush)
+    }
+
+    /// Hand an array over for zero-copy conversion; `flush` releases any final partial batch.
+    ///
+    /// Produced chunks reference the array's buffers and keep them alive, so
+    /// they stay valid after the importer is dropped. On error the array is
+    /// released.
+    pub fn append_consumed(&self, mut array: ffi::ArrowArray, flush: bool) -> Result<()> {
+        if let Err(err) = check_api_call!(
+            ffi::duckdb_v2_arrow_importer_append,
+            self.handle,
+            &mut array,
+            true,
+            flush
+        ) {
+            if let Some(release) = array.release {
+                unsafe { release(&mut array) };
+            }
+            return Err(err);
+        }
+        Ok(())
+    }
+
+    /// Return the owned DuckDB schema resolved from the Arrow schema.
     pub fn schema(&self) -> Result<Schema> {
         Ok(Schema {
-            handle: check_api_call!(ffi::duckdb_v2_arrow_conversion_plan_get_schema, self.handle, RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET)?,
         })
+    }
+
+    /// Take the next chunk, or return `None` when the current array is drained.
+    pub fn chunk(&self) -> Result<Option<DataChunk<'static>>> {
+        let handle = check_api_call!(ffi::duckdb_v2_arrow_importer_next_chunk, self.handle, RET)?;
+
+        if handle.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(DataChunk::new(handle, true)))
+        }
     }
 }
 
-impl Drop for ConversionPlan {
+impl Drop for ArrowImporter<'_> {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_arrow_conversion_plan_destroy, &mut self.handle).unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_arrow_importer_destroy, &mut self.handle).unwrap();
     }
 }
 
 #[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
-        DuckDBType, Environment, Parameters, StorageLocation,
-        arrow::{ConversionPlan, logical_types_to_arrow_schema},
+        Parameters,
+        arrow::{ArrowExporter, ArrowImporter},
         builder_helpers::scalar_callback,
+        environment::{Environment, StorageLocation},
         scalar::ScalarFunctionBuilder,
         signature::{Parameter, SignatureBuilder},
+        types::DuckDBType,
     };
 
     scalar_callback!(ToArrowTest, i64, |input, result, ctx, user_data| {
@@ -105,46 +207,49 @@ mod tests {
 
         let mut result = result;
 
-        let mut arrow_schema = logical_types_to_arrow_schema(&ctx, &logical_types)?;
+        let data_chunk = input.to_data_chunk()?;
 
-        let conversion_plan = ConversionPlan::new(&ctx, &mut arrow_schema)?;
+        let mut arrow_exporter = ArrowExporter::new(
+            ctx,
+            &logical_types,
+            &["val1".to_string(), "val2".to_string(), "val3".to_string()],
+            None,
+        )?;
 
-        unsafe {
-            arrow_schema.release.unwrap()(&mut arrow_schema);
-        }
+        let mut schema = arrow_exporter.schema()?;
 
-        let schema = conversion_plan.schema()?;
+        arrow_exporter.append(&data_chunk, true)?;
 
-        println!("Schema: {:?}", schema.get_all()?);
+        let importer = ArrowImporter::new(ctx, &mut schema, None)?;
+        unsafe { schema.release.unwrap()(&mut schema) };
 
-        let mut arrow_array = input.to_arrow_array(&ctx)?;
+        importer.append_consumed(arrow_exporter.next_array()?, true)?;
 
-        dbg!(arrow_array);
+        let chunk = importer.chunk()?;
 
-        let data_chunk = conversion_plan.to_data_chunk(&ctx, &mut arrow_array)?;
+        assert!(chunk.is_some());
+        let chunk = chunk.unwrap();
 
-        assert_eq!(arrow_array.release.is_none(), true);
+        assert_eq!(chunk.row_count()?, 2);
 
-        assert_eq!(data_chunk.row_count()?, input.row_count()?);
-        assert_eq!(data_chunk.vectors_count()?, input.vectors_count()?);
+        let val1 = chunk.get_vector_at::<i64>(0)?;
+        let val2 = chunk.get_vector_at::<bool>(1)?;
+        let val3 = chunk.get_vector_at::<String>(2)?;
 
-        result.set_size(data_chunk.row_count()?)?;
+        result.set_size(chunk.row_count()?)?;
 
-        let vec1 = data_chunk.get_vector_at::<i64>(0)?;
-        let vec2 = data_chunk.get_vector_at::<bool>(1)?;
-        let vec3 = data_chunk.get_vector_at::<String>(2)?;
+        for row in 0..chunk.row_count()? {
+            let v1 = val1.get(row)?;
+            let v2 = val2.get(row)?;
+            let v3 = val3.get(row)?;
 
-        for i in 0..data_chunk.row_count()? {
-            let val1 = vec1.get(i)?;
-            let val2 = vec2.get(i)?;
-            let val3 = vec3.get(i)?;
+            println!("Row {}: val1={:?}, val2={:?}, val3={:?}", row, v1, v2, v3);
 
-            println!("Row {}: val1={:?}, val2={:?}, val3={:?}", i, val1, val2, val3);
+            let sum = *v1.unwrap_or(&0)
+                + v2.map_or(0, |x| if *x { 2 } else { 1 }) as i64
+                + v3.unwrap_or_default().len() as i64;
 
-            result.write(
-                i,
-                Some(*val1.unwrap_or(&0) + *val2.unwrap_or(&false) as i64 + val3.unwrap_or_default().len() as i64),
-            )?;
+            result.write(row, Some(sum))?;
         }
 
         Ok(())
@@ -168,7 +273,7 @@ mod tests {
             ),
             ToArrowTest,
         )
-        .register_with_connection(&conn)?;
+        .register(&conn)?;
 
         let result = conn.query(
             "SELECT to_arrow(a, b, c) FROM (VALUES (2, true, 'hello'), (1, false, 'world')) AS t(a, b, c)",
@@ -180,8 +285,8 @@ mod tests {
 
             let res = chunk.get_vector_at::<i64>(0)?;
 
-            assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 1 + 5);
-            assert_eq!(*res.get(1)?.unwrap_or(&0), 1 + 0 + 5);
+            assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 2 + 5);
+            assert_eq!(*res.get(1)?.unwrap_or(&0), 1 + 1 + 5);
         }
 
         Ok(())

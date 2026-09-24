@@ -74,6 +74,10 @@ impl StorageKind {
     }
 }
 
+/// A typed, borrowed view over a vector's physical storage.
+///
+/// Maps logical row indices to physical positions, accounting for constant,
+/// dictionary, and selection-vector layouts.
 pub struct VectorView<T> {
     view: ffi::duckdb_v2_vector_view,
     kind: StorageKind,
@@ -409,7 +413,8 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'chunk, T2>> {
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
-        Ok(self.cast_unchecked::<T2>())
+        // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
+        Ok(Vector::from_handle(&self.handle, self.writable)?.cast_unchecked::<T2>())
     }
 
     pub(crate) fn get_as_unchecked<U: VectorElement>(&self, index: usize) -> Option<U::Ref<'_>> {
@@ -561,11 +566,6 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         &self.children
     }
 
-    /// Return mutable access to the vector's children.
-    pub fn children_mut(&mut self) -> &mut [Vector<'chunk, Unknown>] {
-        &mut self.children
-    }
-
     /// Explicitly materialize the vector as flat storage.
     pub fn flatten(&mut self) -> Result<()> {
         if self.kind == StorageKind::Flat {
@@ -574,6 +574,13 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
         self.kind = StorageKind::Flat;
         self.refresh_tree()
+    }
+
+    fn set_not_writable(&mut self) {
+        self.writable = false;
+        for child in &mut self.children {
+            child.set_not_writable();
+        }
     }
 
     /// Set the number of logical rows on writable output.
@@ -591,6 +598,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// `value` must have the vector's logical type. When `is_valid` is false,
     /// every logical row is `NULL`; otherwise each row contains `value`.
+    ///
+    /// The vector is no longer writable afterwards: a constant holds a single
+    /// slot, so per-row writes would go past its buffer.
     pub fn make_constant(&mut self, value: Value, is_valid: bool, count: usize) -> Result<()> {
         if !self.writable {
             return Err(not_writable());
@@ -602,16 +612,18 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             count as u64
         )?;
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, is_valid)?;
-        self.kind = StorageKind::Constant;
+
+        // The constant brings its own buffer and child vectors, so rebuild from the handle.
+        *self = Vector::from_handle(&self.handle, false)?.cast_unchecked();
         self.len = count;
-        self.refresh_buffers()
+        Ok(())
     }
 
     /// Turn writable output into an arithmetic sequence.
     ///
     /// Produces `count` values following `start + index * increment`. The
     /// sequence uses [`StorageKind::Other`] and must be flattened before typed
-    /// reads.
+    /// reads. The vector is no longer writable afterwards.
     pub fn make_sequence(&mut self, start: i64, increment: i64, count: usize) -> Result<()> {
         if !self.writable {
             return Err(not_writable());
@@ -625,6 +637,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         )?;
         self.kind = StorageKind::Other;
         self.len = count;
+        self.set_not_writable();
         self.refresh_buffers()
     }
 }
@@ -689,7 +702,8 @@ impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T
 fn not_writable() -> Error {
     Error {
         code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: "vector was not supplied as writable output".to_string(),
+        message: "vector is not writable: it was not supplied as writable output, or was made constant or a sequence"
+            .to_string(),
     }
 }
 

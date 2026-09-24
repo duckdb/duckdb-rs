@@ -1,9 +1,10 @@
 //! Registration of named custom logical types.
 
-use libduckdb_sys::v2 as ffi;
+use crate::ffi;
 
 use crate::{
-    Result, builder_helpers::context_and_connection_fn, check_api_call, check_api_call_no_err,
+    Result, check_api_call,
+    handles::{CustomTypeBuilderHandle, CustomTypeBuilderLink},
     logical_type::LogicalType,
 };
 
@@ -16,7 +17,7 @@ use crate::{
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{DuckDBType, Environment, StorageLocation};
+/// use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
 /// use duckdb_neo::custom_type::CustomType;
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
@@ -25,9 +26,9 @@ use crate::{
 /// let conn = db.connect()?;
 ///
 /// let temperature = CustomType::new("TEMPERATURE", i32::logical_type(&conn)?)?;
-/// temperature.register_with_connection(&conn)?;
+/// temperature.register(&conn)?;
 ///
-/// let logical_type = i32::logical_type(&conn)?.to_alias("TEMPERATURE")?;
+/// let logical_type = i32::logical_type(&conn)?.to_alias(&conn, "TEMPERATURE")?;
 /// assert_eq!(logical_type.to_string()?, "TEMPERATURE");
 /// # Ok(())
 /// # }
@@ -35,21 +36,6 @@ use crate::{
 pub struct CustomType {
     base_type: LogicalType,
     name: String,
-}
-
-struct CustomTypeBuilderHandle(ffi::duckdb_v2_custom_type_builder_handle);
-
-impl Deref for CustomTypeBuilderHandle {
-    type Target = ffi::duckdb_v2_custom_type_builder_handle;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Drop for CustomTypeBuilderHandle {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_custom_type_builder_destroy, &mut self.0).unwrap();
-    }
 }
 
 impl CustomType {
@@ -61,49 +47,37 @@ impl CustomType {
         })
     }
 
-    fn build(&self) -> Result<CustomTypeBuilderHandle> {
-        let handle = CustomTypeBuilderHandle(check_api_call!(
-            ffi::duckdb_v2_custom_type_builder_create,
-            *handle,
-            RET
-        )?);
-
+    fn build(&self, handle: &CustomTypeBuilderHandle) -> Result<()> {
         check_api_call!(
-            ffi::duckdb_v2_custom_type_builder_set_base_type,
-            *handle,
+            ffi::duckdb_v2_custom_type_set_base_type,
+            **handle,
             self.base_type.handle
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_custom_type_builder_set_name,
-            *handle,
-            (&self.name).into(),
-        )?;
+        check_api_call!(ffi::duckdb_v2_custom_type_set_name, **handle, (&self.name).into(),)?;
 
-        Ok(handle)
+        Ok(())
     }
 
-    context_and_connection_fn! {
-        /// Register the type through a connection or callback context.
-        pub fn register_with_[context, connection](self) -> Result<()>
-        {
-            context_fn: ffi::duckdb_v2_custom_type_builder_register_with_context,
-            connection_fn: ffi::duckdb_v2_custom_type_builder_register_with_connection,
-        }
-        let handle = self.build()?;
+    /// Register through a connection or extension, consuming the builder.
+    #[allow(private_bounds)]
+    pub fn register<C: CustomTypeBuilderLink>(self, link: &C) -> Result<()> {
+        let handle = link.create_custom_type_handle()?;
+        self.build(&handle)?;
 
-        check_api_call!(
-            api_fn!(),
-            **api_arg!(),
-            *handle,
-        )
+        check_api_call!(ffi::duckdb_v2_custom_type_register, *handle)
     }
 }
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::{DuckDBType, Environment, StorageLocation, custom_type::CustomType, logical_type::LogicalTypeID};
+    use crate::{
+        DuckDBType,
+        custom_type::CustomType,
+        environment::{Environment, StorageLocation},
+        logical_type::LogicalTypeID,
+    };
 
     #[test]
     fn test_custom_type() -> crate::Result<()> {
@@ -113,10 +87,10 @@ mod tests {
 
         let custom_type = CustomType::new("TEMPERATURE", i32::logical_type(&conn)?)?;
 
-        custom_type.register_with_connection(&conn)?;
+        custom_type.register(&conn)?;
 
         let integer = i32::logical_type(&conn)?;
-        let temperature = integer.to_alias("TEMPERATURE")?;
+        let temperature = integer.to_alias(&conn, "TEMPERATURE")?;
 
         assert_eq!(temperature.to_string()?, "TEMPERATURE");
         assert_eq!(temperature.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);

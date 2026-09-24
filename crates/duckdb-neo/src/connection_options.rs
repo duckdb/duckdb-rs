@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use libduckdb_sys::v2::{self as ffi};
+use crate::ffi;
 
 use crate::{
     Result,
@@ -33,19 +33,17 @@ ffi_enum_redeclaration! {
 ///
 /// Fetched from a database or connection, this contains the effective setting
 /// and canonical metadata such as aliases, description, default setting, and
-/// target scope. Use [`ConfigOptionValue`] to set an option.
+/// target scope.
 ///
 /// # Example
 /// ```
 /// use duckdb_neo::{environment::Environment, environment::StorageLocation};
-/// use duckdb_neo::connection_options::ConfigOptionValue;
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
-/// let option = ConfigOptionValue::new("worker_threads", "2")?;
-/// db.set_option(&option)?;
+/// db.set_option("worker_threads", "2")?;
 ///
 /// let resolved = db.get_option("threads")?;
 /// assert_eq!(resolved.setting()?, "2");
@@ -56,39 +54,6 @@ ffi_enum_redeclaration! {
 pub struct ConfigOption {
     /// The owned DuckDB option handle.
     pub handle: ffi::duckdb_v2_option_handle,
-}
-
-/// A name and string-encoded setting to apply to DuckDB.
-///
-/// Create a value with [`ConfigOptionValue::new`], then pass it to a
-/// database or connection's `set_option` method. DuckDB resolves the name and
-/// validates the setting when it is applied.
-pub struct ConfigOptionValue {
-    /// The owned DuckDB option handle.
-    pub handle: ffi::duckdb_v2_option_handle,
-}
-
-impl ConfigOptionValue {
-    /// Create an option value from a name and string-encoded setting.
-    pub fn new(name: &str, setting: &str) -> Result<ConfigOptionValue> {
-        let handle = check_api_call!(ffi::duckdb_v2_option_create, name.into(), setting.into(), RET)?;
-
-        Ok(ConfigOptionValue { handle })
-    }
-}
-
-impl Drop for ConfigOptionValue {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_option_destroy, &mut self.handle).unwrap();
-    }
-}
-
-impl Deref for ConfigOptionValue {
-    type Target = ffi::duckdb_v2_option_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
 }
 
 impl Deref for ConfigOption {
@@ -178,7 +143,6 @@ impl Drop for ConfigOption {
 }
 
 #[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use crate::environment::{Environment, StorageLocation};
 
@@ -204,11 +168,9 @@ mod test {
     fn test_connection_option() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let mut conn = db.connect()?;
 
-        let option = ConfigOptionValue::new("worker_threads", &12.to_string())?;
-
-        conn.set_option(&option, None)?;
+        conn.set_option("worker_threads", &12.to_string(), None)?;
 
         let option_real = conn.get_option("threads")?;
 
@@ -246,7 +208,7 @@ mod test {
         assert_eq!(db_option.canonical_name().unwrap(), "profiling_output");
         assert_eq!(
             db_option.description().unwrap(),
-            "The file to which profile output should be saved, or empty to print to the terminal"
+            "The file to which profiler output is written. When empty, the output is printed to the terminal."
         );
 
         Ok(())
