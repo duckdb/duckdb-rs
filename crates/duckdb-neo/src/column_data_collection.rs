@@ -10,13 +10,13 @@ use crate::ffi;
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,
-    data_chunk::DataChunk,
+    data_chunk::{DataChunk, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
         ColumnDataCollectionWorkerScanStateHandle,
     },
-    links::ColumnDataCollectionLink,
+    links::{ColumnDataCollectionLink, DatabaseKeepAlive, KeepAlive},
     logical_type::LogicalType,
 };
 
@@ -50,7 +50,7 @@ use crate::{
 /// assert_eq!(appender.len()?, 2);
 ///
 /// let mut scan = appender.to_scan()?;
-/// let chunk = scan.next().transpose()?.expect("expected a chunk");
+/// let chunk = scan.next_chunk()?.expect("expected a chunk");
 /// let values = chunk.get_vector_at::<i32>(0)?;
 /// assert_eq!(values.get(0)?, Some(&10));
 /// assert_eq!(values.get(1)?, Some(&20));
@@ -65,6 +65,8 @@ pub struct ColumnDataCollection {
     pub handle: ffi::duckdb_v2_column_data_collection_handle,
     /// The collection's column types, in storage order.
     pub logical_types: Vec<LogicalType>,
+    /// Dropped after the handle is destroyed.
+    pub(crate) database: Option<KeepAlive>,
 }
 
 impl Deref for ColumnDataCollection {
@@ -76,14 +78,21 @@ impl Deref for ColumnDataCollection {
 
 impl ColumnDataCollection {
     /// Create an empty collection using a [`Connection`](crate::connection::Connection)
-    /// or callback [`Context`](crate::connection::Context)'s allocator.
+    /// or callback [`Context`](crate::connection::Context)'s buffer manager.
     #[allow(private_bounds)]
-    pub fn new<C: ColumnDataCollectionLink>(link: &C, logical_types: impl Into<Vec<LogicalType>>) -> Result<Self> {
+    pub fn new<C: ColumnDataCollectionLink + DatabaseKeepAlive>(
+        link: &C,
+        logical_types: impl Into<Vec<LogicalType>>,
+    ) -> Result<Self> {
         let logical_types = logical_types.into();
         let types = logical_types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
         let handle = link.create_column_data_collection(&types)?;
 
-        Ok(ColumnDataCollection { handle, logical_types })
+        Ok(ColumnDataCollection {
+            handle,
+            logical_types,
+            database: link.keep_alive(),
+        })
     }
 
     /// Return whether the collection contains no rows.
@@ -115,30 +124,64 @@ impl Drop for ColumnDataCollection {
     }
 }
 
+// SAFETY: `&self` methods only read the row count; appending and scanning consume the
+// collection. The keep-alive is `Send + Sync`.
 unsafe impl Send for ColumnDataCollection {}
 unsafe impl Sync for ColumnDataCollection {}
 
-/// An iterator over the chunks stored in a [`ColumnDataCollection`].
+/// A scan over the chunks stored in a [`ColumnDataCollection`].
 ///
 /// The scan owns the collection and its progress state. It can be consumed to
 /// recover the collection or switch directly to appending.
+///
+/// Chunks are read with [`next_chunk`](Self::next_chunk) rather than through
+/// [`Iterator`]: DuckDB does not copy the scanned data, so each chunk points
+/// into buffers that stay valid only until the next scan call.
 pub struct ColumnDataCollectionScan {
-    /// The collection being scanned.
-    pub collection: ColumnDataCollection,
     worker_scan_state: ColumnDataCollectionWorkerScanStateHandle,
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
+    /// Reused for every scan call; DuckDB resets it before filling it.
+    chunk: DataChunk<'static>,
+    /// Declared last: the states above unpin buffers through the connection it keeps alive.
+    collection: ColumnDataCollection,
 }
 
 impl ColumnDataCollectionScan {
     fn new(collection: ColumnDataCollection) -> Result<Self> {
         let worker_scan_state = collection.create_worker_scan_state()?;
         let shared_scan_state = collection.create_shared_scan_state()?;
+        let chunk = DataChunk::create(&collection.logical_types, false)?;
 
         Ok(ColumnDataCollectionScan {
             collection,
             worker_scan_state,
             shared_scan_state,
+            chunk,
         })
+    }
+
+    /// Return the next chunk, or `None` once every chunk has been scanned.
+    ///
+    /// The chunk points into buffers the scan keeps pinned, so it
+    /// is only valid until the next call. Copy it with
+    /// [`DataChunkRef::copy`] to keep its data longer.
+    ///
+    pub fn next_chunk(&mut self) -> Result<Option<DataChunkRef<'_>>> {
+        let did_produce_chunk: bool = check_api_call!(
+            ffi::duckdb_v2_column_data_collection_scan,
+            self.collection.handle,
+            *self.shared_scan_state,
+            *self.worker_scan_state,
+            **self.chunk,
+            RET
+        )?;
+
+        Ok(did_produce_chunk.then(|| DataChunkRef::new(**self.chunk, false)))
+    }
+
+    /// Return the collection being scanned.
+    pub fn collection(&self) -> &ColumnDataCollection {
+        &self.collection
     }
 
     /// Stop scanning and return the underlying collection.
@@ -152,42 +195,14 @@ impl ColumnDataCollectionScan {
     }
 }
 
-impl Iterator for ColumnDataCollectionScan {
-    type Item = Result<DataChunk<'static>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let data_chunk = DataChunk::create(&self.collection.logical_types, false).unwrap();
-
-        let result: Result<bool> = check_api_call!(
-            ffi::duckdb_v2_column_data_collection_scan,
-            self.collection.handle,
-            *self.shared_scan_state,
-            *self.worker_scan_state,
-            **data_chunk,
-            RET
-        );
-
-        match result {
-            Ok(did_produce_chunk) => {
-                if !did_produce_chunk {
-                    None
-                } else {
-                    Some(Ok(data_chunk))
-                }
-            }
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
-
 /// An owned append state for a [`ColumnDataCollection`].
 ///
 /// Chunks appended through this state must exactly match the collection's
 /// column count and types. The state can be consumed to recover, scan, or
 /// reset the collection.
 pub struct ColumnDataCollectionAppender {
-    collection: ColumnDataCollection,
     appender: ColumnDataCollectionAppendStateHandle,
+    collection: ColumnDataCollection,
 }
 
 impl ColumnDataCollectionAppender {
@@ -220,6 +235,9 @@ impl ColumnDataCollectionAppender {
             self.collection.handle,
             &mut other.handle
         )?;
+        if self.collection.database.is_none() {
+            self.collection.database = other.database.take();
+        }
 
         self.appender = self.collection.create_append_state()?;
 
@@ -276,7 +294,7 @@ mod test {
     #[test]
     fn test_collection_from_context() -> crate::Result<()> {
         scalar_callback!(CollectionIsEmpty, bool, |_input, output, context, _user_data| {
-            let collection = ColumnDataCollection::new(&context, [i32::logical_type(&context)?])?;
+            let collection = ColumnDataCollection::new(context, [i32::logical_type(context)?])?;
             let mut output = output;
             output.set_size(1)?;
             output.write(0, Some(collection.is_empty()?))
@@ -379,7 +397,7 @@ mod test {
         impl ReplacementScanCallbacks for A {
             fn scan<'a>(
                 &'a self,
-                _context: crate::connection::Context,
+                _context: &crate::connection::Context,
                 name: &crate::qualified_name::QualifiedName,
                 handle: crate::replacement_scan::ReplacementHandle<'a>,
             ) -> Result<()> {
@@ -422,7 +440,7 @@ mod test {
             assert_eq!(id.get(2)?, Some(&14));
             assert_eq!(is_active.get(2)?, Some(&true));
         } else {
-            assert!(false, "Expected a result chunk, but got none");
+            panic!("Expected a result chunk, but got none");
         }
 
         Ok(())
@@ -456,11 +474,9 @@ mod test {
 
         collection.append(&chunk)?;
 
-        let scan = collection.to_scan()?;
+        let mut scan = collection.to_scan()?;
 
-        for result in scan {
-            let chunk = result?;
-
+        while let Some(chunk) = scan.next_chunk()? {
             let id = chunk.get_vector_at::<i32>(0)?;
             let is_active = chunk.get_vector_at::<bool>(1)?;
 
@@ -470,6 +486,35 @@ mod test {
             assert_eq!(id.get(1)?, None);
             assert_eq!(is_active.get(1)?, None);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_connection_collection_keeps_database_alive() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let types = [i32::logical_type(&conn)?];
+
+        let chunk = DataChunk::create(&types, true)?;
+        let mut values = chunk.get_vector_at::<i32>(0)?;
+        values.set_size(1)?;
+        values.write(0, Some(42))?;
+        drop(values);
+
+        let mut appender = ColumnDataCollection::new(&conn, types)?.to_append()?;
+        appender.append(&chunk)?;
+        let mut scan = appender.to_scan()?;
+
+        drop(conn);
+        drop(db);
+        assert_eq!(env.get_database_count()?, 1);
+
+        let scanned = scan.next_chunk()?.expect("expected a chunk");
+        assert_eq!(scanned.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        drop(scan);
+        assert_eq!(env.get_database_count()?, 0);
 
         Ok(())
     }

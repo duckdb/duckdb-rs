@@ -45,7 +45,7 @@ mod tests {
     };
 
     scalar_callback!(LogCallback, i32, |_input, _result, ctx, _ud| {
-        Log::log_on_context(&ctx, LogLevel::Warn, "first message", "cpp_api_test")
+        Log::log_on_context(ctx, LogLevel::Warn, "first message", "cpp_api_test")
     });
 
     use crate::types::DuckDBType;
@@ -54,7 +54,7 @@ mod tests {
     fn test_log_on_context() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let mut conn = db.connect()?;
 
         conn.set_option("enable_logging", "true", Some(SettingScope::Global))?;
         conn.set_option("logging_level", "WARNING", Some(SettingScope::Global))?;

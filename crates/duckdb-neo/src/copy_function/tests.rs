@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, sync::Mutex};
 
 use crate::{
     DuckDBType, Parameters,
@@ -17,10 +17,10 @@ struct RapidCopy {
 
 impl CopyToFunctionCallbacks for RapidCopy {
     type BindData = i32;
-    type InitData = File;
+    type InitData = Mutex<File>;
     type BatchData = Vec<i32>;
 
-    fn bind(&self, _context: Context, column_info: super::CopyToBindInfo) -> crate::Result<Self::BindData> {
+    fn bind(&self, _context: &Context, column_info: &super::CopyToBindInfo) -> crate::Result<Self::BindData> {
         assert_eq!(column_info.len()?, 1);
         assert_eq!(column_info.get_column(0)?.0, "i");
         assert_eq!(
@@ -31,30 +31,30 @@ impl CopyToFunctionCallbacks for RapidCopy {
         Ok(10)
     }
 
-    fn batch_size(&self, _context: Context, _bind_data: &Self::BindData) -> Option<usize> {
+    fn batch_size(&self, _context: &Context, _bind_data: &Self::BindData) -> Option<usize> {
         Some(1)
     }
 
-    fn init(&self, context: Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
-        let fs = FileSystem::new(&context)?;
+    fn init(&self, context: &Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
+        let fs = FileSystem::new(context)?;
 
         let file = FileBuilder::new(&fs, file_path)?.write()?.create()?.open()?;
 
-        Ok(file)
+        Ok(Mutex::new(file))
     }
 
     fn batch(
         &self,
-        context: Context,
+        context: &Context,
         _bind_data: &Self::BindData,
         _init_data: &Self::InitData,
         input: crate::column_data_collection::ColumnDataCollection,
     ) -> crate::Result<Self::BatchData> {
         let scanner = input.to_scan()?;
         let mut result = Vec::new();
-        let mut to_append = ColumnDataCollection::new(&context, [i64::logical_type(&context)?])?.to_append()?;
+        let mut to_append = ColumnDataCollection::new(context, [i64::logical_type(context)?])?.to_append()?;
 
-        let data_chunk = DataChunk::create(&[i64::logical_type(&context)?], true)?;
+        let data_chunk = DataChunk::create(&[i64::logical_type(context)?], true)?;
         let mut vec = data_chunk.get_vector_at::<i64>(0)?;
         vec.set_size(1)?;
         vec.write(0, Some(10))?;
@@ -64,10 +64,9 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut scanner = scanner.to_append()?;
         scanner.combine(to_append.to_normal())?;
 
-        let scanner = scanner.to_scan()?;
+        let mut scanner = scanner.to_scan()?;
 
-        for chunk in scanner {
-            let chunk = chunk?;
+        while let Some(chunk) = scanner.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
 
             for item in in_vector.iter()?.flatten() {
@@ -83,32 +82,34 @@ impl CopyToFunctionCallbacks for RapidCopy {
 
     fn flush(
         &self,
-        _context: Context,
+        _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
         batch_data: &Self::BatchData,
     ) -> crate::Result<()> {
         assert_eq!(batch_data.len(), 10 + 1, "Expected 11 rows in batch data");
 
+        let file = init_data.lock().unwrap();
+
         for &value in batch_data {
             let buffer = (value.to_string() + ",").into_bytes();
-            let written = init_data.write(&buffer)?;
+            let written = file.write(&buffer)?;
 
             assert_eq!(written, buffer.len(), "Failed to write all bytes to file");
         }
 
-        init_data.sync()?;
+        file.sync()?;
 
         Ok(())
     }
 
     fn finalize(
         &self,
-        _context: Context,
+        _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
     ) -> crate::Result<()> {
-        init_data.close()?;
+        init_data.lock().unwrap().close()?;
         Ok(())
     }
 }
@@ -149,9 +150,9 @@ impl CopyFromFunctionCallbacks for RangeSource {
 
     fn bind(
         &self,
-        _context: Context,
+        _context: &Context,
         _file_path: &str,
-        bind_info: super::CopyFromBindInfo,
+        bind_info: &super::CopyFromBindInfo,
     ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
@@ -172,7 +173,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
     fn init_local_state(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _context: Context,
+        _context: &Context,
         _global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
         Ok(Some(0))
@@ -183,7 +184,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         _bind_data: Option<&Self::BindData>,
         _global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
-        _context: Context,
+        _context: &Context,
         output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
@@ -246,33 +247,33 @@ pub fn test_copy_from_function() -> crate::Result<()> {
 struct EchoFormat;
 
 impl CopyToFunctionCallbacks for EchoFormat {
-    type InitData = File;
+    type InitData = Mutex<File>;
     type BindData = ();
     type BatchData = Vec<i64>;
 
-    fn bind(&self, _context: Context, _column_info: super::CopyToBindInfo) -> crate::Result<Self::BindData> {
+    fn bind(&self, _context: &Context, _column_info: &super::CopyToBindInfo) -> crate::Result<Self::BindData> {
         Ok(())
     }
 
-    fn batch_size(&self, _context: Context, _bind_data: &Self::BindData) -> Option<usize> {
+    fn batch_size(&self, _context: &Context, _bind_data: &Self::BindData) -> Option<usize> {
         Some(1)
     }
 
-    fn init(&self, context: Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
-        let fs = FileSystem::new(&context)?;
-        FileBuilder::new(&fs, file_path)?.write()?.create()?.open()
+    fn init(&self, context: &Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
+        let fs = FileSystem::new(context)?;
+        Ok(Mutex::new(FileBuilder::new(&fs, file_path)?.write()?.create()?.open()?))
     }
 
     fn batch(
         &self,
-        _context: Context,
+        _context: &Context,
         _bind_data: &Self::BindData,
         _init_data: &Self::InitData,
         input: ColumnDataCollection,
     ) -> crate::Result<Self::BatchData> {
         let mut result = Vec::new();
-        for chunk in input.to_scan()? {
-            let chunk = chunk?;
+        let mut scan = input.to_scan()?;
+        while let Some(chunk) = scan.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
             result.extend(in_vector.iter()?.flatten().copied());
         }
@@ -281,25 +282,26 @@ impl CopyToFunctionCallbacks for EchoFormat {
 
     fn flush(
         &self,
-        _context: Context,
+        _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
         batch_data: &Self::BatchData,
     ) -> crate::Result<()> {
+        let file = init_data.lock().unwrap();
         for value in batch_data {
             let buffer = (value.to_string() + ",").into_bytes();
-            init_data.write(&buffer)?;
+            file.write(&buffer)?;
         }
         Ok(())
     }
 
     fn finalize(
         &self,
-        _context: Context,
+        _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
     ) -> crate::Result<()> {
-        init_data.close()
+        init_data.lock().unwrap().close()
     }
 }
 
@@ -310,9 +312,9 @@ impl CopyFromFunctionCallbacks for EchoFormat {
 
     fn bind(
         &self,
-        _context: Context,
+        _context: &Context,
         _file_path: &str,
-        _bind_info: super::CopyFromBindInfo,
+        _bind_info: &super::CopyFromBindInfo,
     ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
         Ok(((), None))
     }
@@ -320,7 +322,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
     fn init_local_state(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _context: Context,
+        _context: &Context,
         _global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
         Ok(Some(0))
@@ -331,7 +333,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         _bind_data: Option<&Self::BindData>,
         _global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
-        _context: Context,
+        _context: &Context,
         output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");

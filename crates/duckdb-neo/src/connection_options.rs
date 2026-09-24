@@ -168,7 +168,7 @@ mod test {
     fn test_connection_option() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let mut conn = db.connect()?;
 
         conn.set_option("worker_threads", &12.to_string(), None)?;
 

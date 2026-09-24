@@ -117,7 +117,7 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
                 handle: check_api_call!(ffi::duckdb_v2_replacement_scan_get_name, info, RET)?,
             };
 
-            T::scan(user_data, Context(context), &qname, ReplacementHandle { info: &info })
+            T::scan(user_data, &Context(context), &qname, ReplacementHandle { info: &info })
         },
         err,
     );
@@ -180,7 +180,7 @@ pub trait ReplacementScanCallbacks: Send + Sync + 'static {
     /// Call [`ReplacementHandle::set_reference`] to claim it, return without
     /// doing so to let the next replacement scan try, or return an error to
     /// reject the query.
-    fn scan<'a>(&'a self, context: Context, name: &QualifiedName, handle: ReplacementHandle<'a>) -> Result<()>;
+    fn scan<'a>(&'a self, context: &Context, name: &QualifiedName, handle: ReplacementHandle<'a>) -> Result<()>;
 }
 
 #[cfg(test)]

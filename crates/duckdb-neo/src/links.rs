@@ -1,9 +1,33 @@
 //! Internal dispatch for operations available through multiple FFI link types.
 
+use std::{any::Any, sync::Arc};
+
 use crate::{
     connection::{Connection, Context},
     ffi,
 };
+
+/// Keeps a connection and its database alive, and so their allocator and buffer managers.
+pub(crate) type KeepAlive = Arc<dyn Any + Send + Sync>;
+
+/// What an object allocated through a link must hold to keep its connection and database alive.
+///
+/// A [`Context`] gives none: it only exists inside callbacks, whose connection outlives them.
+pub(crate) trait DatabaseKeepAlive {
+    fn keep_alive(&self) -> Option<KeepAlive>;
+}
+
+impl DatabaseKeepAlive for Connection {
+    fn keep_alive(&self) -> Option<KeepAlive> {
+        Some(Arc::new((self.inner.clone(), self._db.clone())))
+    }
+}
+
+impl DatabaseKeepAlive for Context {
+    fn keep_alive(&self) -> Option<KeepAlive> {
+        None
+    }
+}
 
 // Share the Rust signature and FFI arguments; only the link type and C function vary.
 macro_rules! define_link {

@@ -5,6 +5,7 @@ use std::ops::Deref;
 use crate::connection::{Connection, Context};
 use crate::error::check_api_call_no_err;
 use crate::ffi;
+use crate::links::{DatabaseKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
 use crate::vector::VectorElement;
 use crate::{
@@ -18,10 +19,8 @@ trait DataChunkLink {
 
 impl DataChunkLink for Connection {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
-        Ok(DataChunk::new(
-            check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, **self, **chunk, RET)?,
-            true,
-        ))
+        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, **self, **chunk, RET)?;
+        Ok(DataChunk::new(handle, true).keep_alive(self))
     }
 }
 
@@ -152,6 +151,8 @@ pub struct DataChunkRef<'a> {
 /// [`VectorCollection::to_data_chunk`], borrows that data for `'a`.
 pub struct DataChunk<'a> {
     pub(crate) chunk: DataChunkRef<'a>,
+    /// Keeps the database behind a connection allocator alive; dropped after the chunk is destroyed.
+    database: Option<KeepAlive>,
 }
 
 impl Deref for DataChunkRef<'_> {
@@ -216,6 +217,10 @@ impl<'a> DataChunkRef<'a> {
     }
 
     /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
+    ///
+    /// A copy made through a [`Connection`] keeps its database alive. A copy made
+    /// through a [`Context`] must not outlive the database, for example by being
+    /// stored in a `static` or sent to code outside DuckDB.
     #[allow(private_bounds)]
     pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk<'static>> {
         link.copy_data_chunk(self)
@@ -226,9 +231,10 @@ impl<'a> DataChunkRef<'a> {
 pub enum Allocator<'a> {
     /// Allocate from the DuckDB default allocator.
     Default,
-    /// Allocate from the given connection.
+    /// Allocate from the given connection. The chunk keeps the connection's database alive.
     Connection(&'a Connection),
-    /// Allocate from the given callback context.
+    /// Allocate from the given callback context. The chunk must not outlive the
+    /// database, for example by being stored in a `static` or sent to code outside DuckDB.
     Context(&'a Context),
 }
 
@@ -236,7 +242,13 @@ impl<'a> DataChunk<'a> {
     pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
         Self {
             chunk: DataChunkRef::new(handle, is_writable),
+            database: None,
         }
+    }
+
+    fn keep_alive(mut self, link: &impl DatabaseKeepAlive) -> Self {
+        self.database = link.keep_alive();
+        self
     }
 
     /// Create an empty chunk with one vector per logical type.
@@ -260,13 +272,16 @@ impl<'a> DataChunk<'a> {
             Allocator::Default => {
                 check_api_call!(ffi::duckdb_v2_data_chunk_create, type_handles.as_ptr(), len as u64, RET)?
             }
-            Allocator::Connection(conn) => check_api_call!(
-                ffi::duckdb_v2_data_chunk_create_with_connection,
-                **conn,
-                type_handles.as_ptr(),
-                len as u64,
-                RET
-            )?,
+            Allocator::Connection(conn) => {
+                let handle = check_api_call!(
+                    ffi::duckdb_v2_data_chunk_create_with_connection,
+                    **conn,
+                    type_handles.as_ptr(),
+                    len as u64,
+                    RET
+                )?;
+                return Ok(DataChunk::new(handle, writable).keep_alive(conn));
+            }
             Allocator::Context(context) => check_api_call!(
                 ffi::duckdb_v2_data_chunk_create_with_context,
                 **context,
@@ -293,6 +308,7 @@ impl<'a> Deref for DataChunk<'a> {
     }
 }
 
+// SAFETY: an owned C++ `DataChunk` has no thread affinity, and its allocators free thread-safely.
 unsafe impl Send for DataChunk<'_> {}
 
 #[cfg(test)]
@@ -328,7 +344,7 @@ mod tests {
     fn test_copy_data_chunk() -> crate::Result<()> {
         scalar_callback!(ChunkCopy, i32, |input, result, context, _ud| {
             let dc =
-                DataChunk::create_with_allocator(&[i32::logical_type(&context)?], true, Allocator::Context(&context))?;
+                DataChunk::create_with_allocator(&[i32::logical_type(&context)?], true, Allocator::Context(context))?;
 
             let vec = dc.get_vector_at::<i32>(0)?;
 
@@ -337,7 +353,7 @@ mod tests {
             unsafe {
                 vec.copy_from(&input)?;
             };
-            let copy = dc.copy(&context)?;
+            let copy = dc.copy(context)?;
             let vec = copy.get_vector_at::<i32>(0)?;
 
             unsafe {
@@ -374,6 +390,33 @@ mod tests {
             assert_eq!(vec.get(3)?, Some(&4));
             assert!(vec.get(4).is_err());
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_connection_chunk_keeps_database_alive() -> crate::Result<()> {
+        let env = crate::environment::Environment::new()?;
+        let db = env.open(crate::environment::StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let types = [i32::logical_type(&conn)?];
+
+        let chunk = DataChunk::create_with_allocator(&types, true, Allocator::Connection(&conn))?;
+        let copy = chunk.copy(&conn)?;
+        let mut values = chunk.get_vector_at::<i32>(0)?;
+        values.set_size(1)?;
+        values.write(0, Some(42))?;
+        drop(values);
+
+        drop(conn);
+        drop(db);
+        assert_eq!(env.get_database_count()?, 1);
+
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        drop(chunk);
+        assert_eq!(env.get_database_count()?, 1);
+        drop(copy);
+        assert_eq!(env.get_database_count()?, 0);
 
         Ok(())
     }

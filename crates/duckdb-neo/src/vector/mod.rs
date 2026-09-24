@@ -413,7 +413,8 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'chunk, T2>> {
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
-        Ok(self.cast_unchecked::<T2>())
+        // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
+        Ok(Vector::from_handle(&self.handle, self.writable)?.cast_unchecked::<T2>())
     }
 
     pub(crate) fn get_as_unchecked<U: VectorElement>(&self, index: usize) -> Option<U::Ref<'_>> {
@@ -565,11 +566,6 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         &self.children
     }
 
-    /// Return mutable access to the vector's children.
-    pub fn children_mut(&mut self) -> &mut [Vector<'chunk, Unknown>] {
-        &mut self.children
-    }
-
     /// Explicitly materialize the vector as flat storage.
     pub fn flatten(&mut self) -> Result<()> {
         if self.kind == StorageKind::Flat {
@@ -606,9 +602,11 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             count as u64
         )?;
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, is_valid)?;
-        self.kind = StorageKind::Constant;
+
+        // The constant brings its own buffer and child vectors, so rebuild from the handle.
+        *self = Vector::from_handle(&self.handle, self.writable)?.cast_unchecked();
         self.len = count;
-        self.refresh_buffers()
+        Ok(())
     }
 
     /// Turn writable output into an arithmetic sequence.

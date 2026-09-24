@@ -14,7 +14,7 @@ struct CustomReplacementScan {
 }
 
 impl ReplacementScanCallbacks for CustomReplacementScan {
-    fn scan<'a>(&'a self, context: Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
+    fn scan<'a>(&'a self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
         let view = name.get_view()?;
 
         if let Some(table) = view.table
@@ -33,8 +33,8 @@ impl ReplacementScanCallbacks for CustomReplacementScan {
             dbg!(&split);
 
             replacement.set_reference(ReplacementType::Table("range".try_into()?))?;
-            replacement.add_parameter(split[0].value(&context)?)?;
-            replacement.add_parameter((split[1] + self.count).value(&context)?)?;
+            replacement.add_parameter(split[0].value(context)?)?;
+            replacement.add_parameter((split[1] + self.count).value(context)?)?;
         }
 
         Ok(())
@@ -44,7 +44,7 @@ impl ReplacementScanCallbacks for CustomReplacementScan {
 struct CustomNamedParameters {}
 
 impl ReplacementScanCallbacks for CustomNamedParameters {
-    fn scan<'a>(&'a self, context: Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
+    fn scan<'a>(&'a self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("alltypes")) {
@@ -52,8 +52,8 @@ impl ReplacementScanCallbacks for CustomNamedParameters {
             assert!(view.schema.is_none());
 
             replacement.set_reference(ReplacementType::Table("test_all_types".try_into()?))?;
-            replacement.add_parameter_with_name("use_large_bignum", true.value(&context)?)?;
-            replacement.add_parameter_with_name("use_large_enum", false.value(&context)?)?;
+            replacement.add_parameter_with_name("use_large_bignum", true.value(context)?)?;
+            replacement.add_parameter_with_name("use_large_enum", false.value(context)?)?;
         }
 
         Ok(())
@@ -65,7 +65,7 @@ struct CustomCdcScan {
 }
 
 impl ReplacementScanCallbacks for CustomCdcScan {
-    fn scan<'a>(&'a self, _context: Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
+    fn scan<'a>(&'a self, _context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("cdc")) {

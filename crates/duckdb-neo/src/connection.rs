@@ -12,6 +12,8 @@
 //! to extension callbacks.
 
 use std::{
+    cell::Cell,
+    marker::PhantomData,
     ops::Deref,
     sync::{Arc, Mutex},
 };
@@ -128,6 +130,8 @@ impl Drop for InnerConnection {
     }
 }
 
+// SAFETY: `Connection` is `!Sync`, so the only concurrent calls on this handle come from
+// `InterruptHandle` (an atomic store) and `QueryProgressTracker` (atomic progress reads).
 unsafe impl Send for InnerConnection {}
 unsafe impl Sync for InnerConnection {}
 
@@ -135,9 +139,15 @@ unsafe impl Sync for InnerConnection {}
 ///
 /// Connections have independent session settings and transactions while
 /// sharing their database's catalog and storage.
+///
+/// A connection can be moved to another thread but not shared between threads;
+/// use [`InterruptHandle`] or [`QueryProgressTracker`](crate::query_progress::QueryProgressTracker)
+/// from other threads.
 pub struct Connection {
     pub(crate) _db: Arc<Mutex<DatabaseHandle>>,
     pub(crate) inner: Arc<InnerConnection>,
+    // Not `Sync`: settings and connection-level registrations are not locked on the C side.
+    pub(crate) _not_sync: PhantomData<Cell<()>>,
 }
 
 impl Connection {
@@ -148,6 +158,7 @@ impl Connection {
         Ok(Connection {
             inner: Arc::new(InnerConnection { handle }),
             _db: db.handle.clone(),
+            _not_sync: PhantomData,
         })
     }
 
@@ -253,9 +264,8 @@ impl Connection {
     /// Set an option at `scope`, using its declared target scope when `None`.
     ///
     /// Global writes affect the database; local writes affect only this
-    /// session. Unknown options and scopes disallowed by the option return an
-    /// error.
-    pub fn set_option(&self, name: &str, value: &str, scope: Option<SettingScope>) -> Result<()> {
+    /// session. Unknown options and scopes disallowed by the option return an error.
+    pub fn set_option(&mut self, name: &str, value: &str, scope: Option<SettingScope>) -> Result<()> {
         let scope = scope.unwrap_or(SettingScope::Automatic);
 
         check_api_call!(
@@ -282,6 +292,7 @@ impl Connection {
     }
 }
 
+// SAFETY: a `ClientContext` has no thread affinity; it is used by one thread at a time.
 unsafe impl Send for Connection {}
 
 impl Deref for Connection {
@@ -342,7 +353,10 @@ impl Extension {
     /// Wrap a borrowed extension handle.
     /// # Safety
     ///
-    /// `handle` must be a valid [`ffi::duckdb_v2_context_handle`].
+    /// `handle` must be a valid [`ffi::duckdb_v2_extension_handle`] for the
+    /// extension currently being loaded, and the returned `Extension` (and
+    /// anything registered through it) must not be used after the extension's
+    /// entry point returns.
     pub unsafe fn from_raw(handle: ffi::duckdb_v2_extension_handle) -> Self {
         Extension(handle)
     }
@@ -366,7 +380,9 @@ impl Context {
     /// Wrap a borrowed context handle.
     /// # Safety
     ///
-    /// `handle` must be a valid [`ffi::duckdb_v2_context_handle`].
+    /// `handle` must be a valid [`ffi::duckdb_v2_context_handle`], and the
+    /// returned `Context` must not be used after the callback that supplied the
+    /// handle returns.
     pub unsafe fn from_raw(handle: ffi::duckdb_v2_context_handle) -> Self {
         Context(handle)
     }

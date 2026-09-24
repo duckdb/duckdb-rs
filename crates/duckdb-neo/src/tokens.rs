@@ -125,7 +125,7 @@ mod tests {
         // Each token's (start, length) must point back at the matching lexeme in the source.
         let lexemes = tokens
             .iter()
-            .map(|t| &sql[t.start as usize..(t.start + t.length) as usize])
+            .map(|t| &sql[t.start..(t.start + t.length)])
             .collect::<Vec<_>>();
         assert_eq!(lexemes, vec!["SELECT", "*", "FROM", "test_data", "(", "10", ")"]);
 

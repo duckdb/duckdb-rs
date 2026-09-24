@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use crate::ffi;
 
 use crate::bind_arguments::{BindArgument, BindMetadata, BindType};
-use crate::builder_helpers::{OpaqueHandle, get_bind_data, get_init_data, get_user_data, handle_unwind, into_opaque};
+use crate::builder_helpers::{
+    OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque, into_opaque_eq,
+};
 use crate::data_chunk::VectorCollection;
 use crate::enums::FunctionProperty;
 use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
@@ -36,7 +38,7 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
 
             let result = T::bind(
                 user_data,
-                Context(context),
+                &Context(context),
                 arguments,
                 ReturnTypeHandle {
                     handle: FunctionBindHandles::Scalar(&info),
@@ -46,7 +48,7 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
             check_api_call!(
                 ffi::duckdb_v2_scalar_function_bind_set_bind_data,
                 info,
-                &mut into_opaque(result)
+                &mut into_opaque_eq(result)
             )?;
 
             Ok(())
@@ -66,7 +68,7 @@ unsafe extern "C" fn init_callback<T: ScalarCallbacks>(
 
             let bind_data = get_bind_data!(ffi::duckdb_v2_scalar_function_init_get_bind_data, info);
 
-            let result = T::init(user_data, bind_data, Context(context))?;
+            let result = T::init(user_data, bind_data, &Context(context))?;
 
             check_api_call!(
                 ffi::duckdb_v2_scalar_function_init_set_init_data,
@@ -89,7 +91,8 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_exec_get_user_data, info);
             let bind_data = get_bind_data!(ffi::duckdb_v2_scalar_function_exec_get_bind_data, info);
-            let init_data = get_init_data!(ffi::duckdb_v2_scalar_function_exec_get_init_data, info);
+            let init_data = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_init_data, info, RET)?;
+            let init_data = unsafe { get_opaque_data_ref_mut::<T::InitData>(init_data) };
 
             let result_handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_result, info, RET)?;
             let result_vec = Vector::from_handle(&result_handle, true)?;
@@ -113,7 +116,7 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
                 user_data,
                 bind_data,
                 init_data,
-                Context(context),
+                &Context(context),
                 &collection,
                 result_vec,
             )?;
@@ -243,14 +246,14 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
 /// and invokes [`Self::exec`] for batches of rows.
 pub trait ScalarCallbacks: Send + Sync + 'static {
     /// Immutable data shared from binding through execution.
-    type BindData: Any + Send + Sync + Default;
+    type BindData: Any + Send + Sync + Default + PartialEq;
     /// Worker-local data shared across execution batches.
-    type InitData: Any + Send + Sync + Default;
+    type InitData: Any + Send + Default;
 
     /// **Bind:** validate a call site and create data shared by later phases.
     fn bind(
         &self,
-        _context: Context,
+        _context: &Context,
         _metadata: Vec<BindArgument>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
@@ -258,7 +261,7 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     }
 
     /// **Initialize:** create worker-local execution data.
-    fn init(&self, _bind_data: Option<&Self::BindData>, _context: Context) -> Result<Self::InitData> {
+    fn init(&self, _bind_data: Option<&Self::BindData>, _context: &Context) -> Result<Self::InitData> {
         Ok(Self::InitData::default())
     }
 
@@ -266,8 +269,8 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     fn exec(
         &self,
         bind_data: Option<&Self::BindData>,
-        init_data: Option<&Self::InitData>,
-        context: Context,
+        init_data: Option<&mut Self::InitData>,
+        context: &Context,
         vectors: &VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()>;

@@ -35,6 +35,7 @@ impl r2d2::ManageConnection for ConnectionManager {
         Ok(Connection {
             inner: Arc::new(InnerConnection { handle }),
             _db: self.database_handle.clone(),
+            _not_sync: std::marker::PhantomData,
         })
     }
 

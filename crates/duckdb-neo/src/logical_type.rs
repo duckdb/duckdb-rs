@@ -47,6 +47,8 @@ pub struct LogicalType {
     pub handle: ffi::duckdb_v2_logical_type_handle,
 }
 
+// SAFETY: an owned, self-contained C++ `LogicalType`; `&self` methods only read it, and its
+// `ExtraTypeInfo` is shared through an atomically reference-counted `shared_ptr`.
 unsafe impl Send for LogicalType {}
 unsafe impl Sync for LogicalType {}
 

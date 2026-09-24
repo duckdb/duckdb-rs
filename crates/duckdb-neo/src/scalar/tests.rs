@@ -17,30 +17,30 @@ impl ScalarCallbacks for ScalarWithData {
 
     fn bind(
         &self,
-        context: Context,
+        context: &Context,
         arguments: Vec<BindArgument>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
-        assert_eq!(arguments[0].logical_type, LogicalType::from_text(&context, "INTEGER")?);
+        assert_eq!(arguments[0].logical_type, LogicalType::from_text(context, "INTEGER")?);
         assert!(
             arguments[0]
                 .value
                 .as_ref()
-                .is_some_and(|v| i32::from_value(&v).unwrap() == Some(2))
+                .is_some_and(|v| i32::from_value(v).unwrap() == Some(2))
         );
 
         Ok(vec![1, 2, 3])
     }
 
-    fn init(&self, bind_data: Option<&Self::BindData>, _context: Context) -> Result<Self::InitData> {
+    fn init(&self, bind_data: Option<&Self::BindData>, _context: &Context) -> Result<Self::InitData> {
         Ok(bind_data.unwrap().iter().sum())
     }
 
     fn exec(
         &self,
         _bind_data: Option<&Self::BindData>,
-        init_data: Option<&Self::InitData>,
-        _context: Context,
+        init_data: Option<&mut Self::InitData>,
+        _context: &Context,
 
         input: &VectorCollection,
         output: Vector<'_, Unknown>,
@@ -73,8 +73,8 @@ impl ScalarCallbacks for BasicScalarFunction {
     fn exec(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _init_data: Option<&Self::InitData>,
-        _context: Context,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
         _input: &VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -94,9 +94,9 @@ impl ScalarCallbacks for BasicScalarPanicFunction {
 
     fn exec(
         &self,
-        _init_data: Option<&Self::InitData>,
         _bind_data: Option<&Self::BindData>,
-        _context: Context,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
         _input: &VectorCollection,
         _output: Vector<'_, Unknown>,
     ) -> Result<()> {
@@ -299,19 +299,19 @@ impl ScalarCallbacks for OverrideAbleScalar {
 
     fn bind(
         &self,
-        context: Context,
+        context: &Context,
         _arguments: Vec<BindArgument>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
-        result_type_handle.override_return(i8::logical_type(&context)?)?;
+        result_type_handle.override_return(i8::logical_type(context)?)?;
         Ok(())
     }
 
     fn exec(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _init_data: Option<&Self::InitData>,
-        _context: Context,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
         _input: &VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {

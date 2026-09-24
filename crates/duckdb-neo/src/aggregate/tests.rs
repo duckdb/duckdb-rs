@@ -28,19 +28,19 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
 
     fn bind(
         &self,
-        context: Context,
+        context: &Context,
         arguments: Vec<BindArgument>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> crate::Result<Self::BindData> {
         let mut bind_data: Vec<f32> = Vec::new();
 
-        result_type_handle.override_return(LogicalType::from_text(&context, "VARCHAR")?)?;
+        result_type_handle.override_return(LogicalType::from_text(context, "VARCHAR")?)?;
 
         for argument in arguments {
             let name = argument.value;
             let arg_type = argument.logical_type;
 
-            assert_eq!(arg_type, i32::logical_type(&context)?);
+            assert_eq!(arg_type, i32::logical_type(context)?);
             assert!(name.is_none());
         }
 
@@ -50,8 +50,8 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
         Ok(bind_data)
     }
 
-    fn init(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<Self::StateItem> {
-        Ok(vec![])
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        vec![]
     }
 
     fn size(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<usize> {
@@ -61,7 +61,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
     fn update(
         &self,
         _bind_data: Option<&Self::BindData>,
-        collection: VectorCollection,
+        collection: &VectorCollection,
         mut states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         let vec = collection.get_vector_at::<Self::IncomingType>(0)?;
@@ -243,7 +243,7 @@ impl AggregateCallbacks for UndersizedState {
 
     fn bind(
         &self,
-        _context: Context,
+        _context: &Context,
         _arguments: Vec<BindArgument>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> crate::Result<Self::BindData> {
@@ -254,14 +254,14 @@ impl AggregateCallbacks for UndersizedState {
         Ok(1)
     }
 
-    fn init(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<Self::StateItem> {
-        Ok(0)
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        0
     }
 
     fn update(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _collection: VectorCollection,
+        _collection: &VectorCollection,
         _states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         Ok(())

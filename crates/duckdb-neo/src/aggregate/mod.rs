@@ -16,7 +16,7 @@ use crate::ffi;
 use crate::{
     Error, Result,
     bind_arguments::{BindArgument, BindMetadata, BindType},
-    builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque},
+    builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque_eq},
     check_api_call,
     connection::Context,
     data_chunk::VectorCollection,
@@ -116,7 +116,7 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
 
             let result = T::bind(
                 user_data,
-                Context(context),
+                &Context(context),
                 metadata.get_arguments()?,
                 ReturnTypeHandle {
                     handle: FunctionBindHandles::Aggregate(&info),
@@ -126,7 +126,7 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
             check_api_call!(
                 ffi::duckdb_v2_aggregate_function_bind_set_bind_data,
                 info,
-                &mut into_opaque(result)
+                &mut into_opaque_eq(result)
             )
         },
         err,
@@ -149,6 +149,15 @@ unsafe extern "C" fn size_callback<T: AggregateCallbacks>(
             if size < min_size {
                 return Err(Error::api_error(format!(
                     "aggregate state size {size} is smaller than size_of::<StateItem>() ({min_size})"
+                )));
+            }
+
+            // DuckDB aligns each state to 8 bytes, so `init` and `States` would
+            // access a more strictly aligned `StateItem` through a misaligned pointer.
+            let align = align_of::<T::StateItem>();
+            if align > 8 {
+                return Err(Error::api_error(format!(
+                    "align_of::<StateItem>() ({align}) exceeds the 8-byte alignment of aggregate states"
                 )));
             }
 
@@ -175,10 +184,8 @@ unsafe extern "C" fn init_callback<T: AggregateCallbacks>(
                 unsafe { std::slice::from_raw_parts(states_ptr as *mut *mut T::StateItem, state_count as usize) };
 
             for &state_ptr in states {
-                let data = T::init(user_data, bind_data)?;
-
                 unsafe {
-                    state_ptr.write(data);
+                    state_ptr.write(T::init(user_data, bind_data));
                 }
             }
 
@@ -227,7 +234,7 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
 
             let states: States<'_, T::StateItem> = unsafe { States::new(states_slice) };
 
-            T::update(user_data, bind_data, vector_collection, states)
+            T::update(user_data, bind_data, &vector_collection, states)
         },
         err,
     );
@@ -443,7 +450,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 /// vectors. [`Self::destroy`] may override automatic Rust state cleanup.
 pub trait AggregateCallbacks: Send + Sync + 'static {
     /// Data shared from binding through execution.
-    type BindData: Any + Send + Sync;
+    type BindData: Any + Send + Sync + PartialEq;
     /// Mutable state stored for each aggregate group.
     type StateItem: Any + Send + Sync;
     /// The aggregate's declared input element type.
@@ -452,7 +459,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     /// **Bind:** validate a call site and create data shared by later phases.
     fn bind(
         &self,
-        context: Context,
+        context: &Context,
         metadata: Vec<BindArgument>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData>;
@@ -466,7 +473,9 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     }
 
     /// **Initialize:** create one empty aggregate state.
-    fn init(&self, bind_data: Option<&Self::BindData>) -> Result<Self::StateItem>;
+    ///
+    /// Infallible: validate in [`Self::bind`] instead. A panic here aborts the process.
+    fn init(&self, bind_data: Option<&Self::BindData>) -> Self::StateItem;
 
     /// **Update:** apply an input batch to its corresponding aggregate states.
     ///
@@ -476,7 +485,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     fn update(
         &self,
         bind_data: Option<&Self::BindData>,
-        data: VectorCollection,
+        data: &VectorCollection,
         states: States<'_, Self::StateItem>,
     ) -> Result<()>;
     /// **Combine:** merge partial source states into target states.

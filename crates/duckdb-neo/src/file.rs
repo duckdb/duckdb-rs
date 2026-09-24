@@ -2,22 +2,33 @@
 
 use std::marker::PhantomData;
 
-use crate::{Result, check_api_call, check_api_call_no_err, ffi, links::FileSystemLink, value::Value};
+use crate::{
+    Result, check_api_call, check_api_call_no_err, ffi,
+    links::{DatabaseKeepAlive, FileSystemLink, KeepAlive},
+    value::Value,
+};
 
 /// A borrowed handle to DuckDB's file system.
-pub struct FileSystem<'a> {
+pub struct FileSystem<'link> {
     handle: ffi::duckdb_v2_file_system_handle,
-    _marker: PhantomData<&'a ()>,
+    database: Option<KeepAlive>,
+    _marker: PhantomData<&'link ()>,
 }
 
-impl<'a> FileSystem<'a> {
+impl<'link> FileSystem<'link> {
     /// Borrow the file system associated with a connection or callback context.
+    ///
+    /// Files opened through a connection's file system keep that connection and its
+    /// database alive. Files opened through a context's file system must not outlive
+    /// the connection that ran the callback, for example by being stored in a `static`
+    /// or sent to code outside DuckDB.
     #[allow(private_bounds)]
-    pub fn new<C: FileSystemLink>(link: &'a C) -> Result<Self> {
+    pub fn new<C: FileSystemLink + DatabaseKeepAlive>(link: &'link C) -> Result<Self> {
         let handle = link.get_file_system()?;
 
         Ok(FileSystem {
             handle,
+            database: link.keep_alive(),
             _marker: PhantomData,
         })
     }
@@ -27,15 +38,15 @@ impl<'a> FileSystem<'a> {
 ///
 /// Access and creation flags are disabled by default and can be composed with
 /// the builder methods before calling [`FileBuilder::open`].
-pub struct FileBuilder<'a> {
-    fs: &'a FileSystem<'a>,
+pub struct FileBuilder<'link> {
+    fs: &'link FileSystem<'link>,
     handle: ffi::duckdb_v2_file_open_options_handle,
     path: String,
 }
 
-impl<'a> FileBuilder<'a> {
+impl<'link> FileBuilder<'link> {
     /// Create a builder for `path` with no flags enabled.
-    pub fn new(fs: &'a FileSystem<'a>, path: &str) -> Result<FileBuilder<'a>> {
+    pub fn new(fs: &'link FileSystem<'link>, path: &str) -> Result<FileBuilder<'link>> {
         let handle = check_api_call!(ffi::duckdb_v2_file_open_options_create, fs.handle, RET)?;
 
         Ok(FileBuilder {
@@ -175,11 +186,13 @@ impl Drop for FileBuilder<'_> {
 pub struct File {
     /// The owned DuckDB file handle.
     handle: ffi::duckdb_v2_file_handle,
+    /// Dropped after the handle is destroyed.
+    _database: Option<KeepAlive>,
 }
 
-// TODO verify
+// SAFETY: a `FileHandle` has no thread affinity. Not `Sync`: concurrent reads are only safe for
+// files opened with `FILE_FLAG_PARALLEL_ACCESS`.
 unsafe impl Send for File {}
-unsafe impl Sync for File {}
 
 impl File {
     /// Close the underlying file without destroying its handle.
@@ -198,6 +211,7 @@ impl File {
     ) -> crate::Result<Self> {
         Ok(File {
             handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, path.into(), flags, RET)?,
+            _database: fs.database.clone(),
         })
     }
 
@@ -330,6 +344,36 @@ mod tests {
 
         std::fs::remove_file("test_file.txt").unwrap();
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_connection_file_keeps_connection_alive() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let path = std::env::temp_dir().join("duckdb-rs-file-keep-alive.txt");
+
+        let file = {
+            let fs = FileSystem::new(&conn)?;
+            FileBuilder::new(&fs, path.to_str().unwrap())?
+                .read()?
+                .write()?
+                .create()?
+                .open()?
+        };
+
+        drop(conn);
+        drop(db);
+        assert_eq!(env.get_database_count()?, 1);
+
+        file.write(b"DuckDB")?;
+        file.seek(0)?;
+        assert_eq!(file.read(6)?, b"DuckDB");
+        drop(file);
+        assert_eq!(env.get_database_count()?, 0);
+
+        std::fs::remove_file(path).expect("failed to remove test file");
         Ok(())
     }
 }

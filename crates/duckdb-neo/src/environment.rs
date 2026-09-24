@@ -27,6 +27,8 @@ impl Drop for EnvironmentHandle {
         check_api_call_no_err!(ffi::duckdb_v2_environment_destroy, &mut self.handle).unwrap();
     }
 }
+// SAFETY: exposes only the raw handle, which is always used behind `Arc<Mutex<_>>`; the
+// environment's instance count is atomic.
 unsafe impl Send for EnvironmentHandle {}
 unsafe impl Sync for EnvironmentHandle {}
 

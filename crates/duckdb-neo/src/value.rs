@@ -41,6 +41,10 @@ pub struct Value {
     pub(crate) handle: ffi::duckdb_v2_value_handle,
 }
 
+// SAFETY: an owned, self-contained C++ `Value`; `&self` methods only read it.
+unsafe impl Send for Value {}
+unsafe impl Sync for Value {}
+
 #[doc(hidden)]
 pub enum ValueInput<'a> {
     Null(&'a LogicalType),

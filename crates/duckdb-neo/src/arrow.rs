@@ -21,11 +21,12 @@ use crate::{
 ///
 /// The context's Arrow settings are copied at creation, so the exporter does
 /// not borrow the context.
-pub struct ArrowExporter {
+pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
+    _context: std::marker::PhantomData<&'ctx Context>,
 }
 
-impl ArrowExporter {
+impl<'ctx> ArrowExporter<'ctx> {
     /// Capture the column schema and Arrow settings from an active transaction.
     ///
     /// # Panics
@@ -33,7 +34,7 @@ impl ArrowExporter {
     ///
     /// `None` or `Some(0)` imposes no batch-size limit.
     pub fn new(
-        context: &Context,
+        context: &'ctx Context,
         logical_types: &[LogicalType],
         names: &[String],
         batch_size: Option<usize>,
@@ -53,7 +54,10 @@ impl ArrowExporter {
             RET
         )?;
 
-        Ok(ArrowExporter { handle })
+        Ok(ArrowExporter {
+            handle,
+            _context: std::marker::PhantomData,
+        })
     }
 
     /// Copy a chunk into Arrow buffers, flushing any partial batch when `flush` is true.
@@ -85,7 +89,7 @@ impl ArrowExporter {
     }
 }
 
-impl Drop for ArrowExporter {
+impl Drop for ArrowExporter<'_> {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_arrow_exporter_destroy, &mut self.handle).unwrap();
     }
@@ -205,7 +209,7 @@ mod tests {
         let data_chunk = input.to_data_chunk()?;
 
         let mut arrow_exporter = ArrowExporter::new(
-            &ctx,
+            ctx,
             &logical_types,
             &["val1".to_string(), "val2".to_string(), "val3".to_string()],
             None,
@@ -215,7 +219,7 @@ mod tests {
 
         arrow_exporter.append(&data_chunk, true)?;
 
-        let importer = ArrowImporter::new(&ctx, &mut schema, None)?;
+        let importer = ArrowImporter::new(ctx, &mut schema, None)?;
         unsafe { schema.release.unwrap()(&mut schema) };
 
         importer.append_consumed(arrow_exporter.next_array()?, true)?;

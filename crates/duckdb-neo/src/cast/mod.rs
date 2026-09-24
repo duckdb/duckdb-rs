@@ -44,7 +44,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             )?;
             let output = output.cast::<T::OutputType>()?;
 
-            T::exec(user_data, Context(context), mode.try_into()?, input, output)
+            T::exec(user_data, &Context(context), mode.try_into()?, input, output)
         },
         err,
     );
@@ -130,7 +130,7 @@ pub trait CastFunctionCallbacks: Send + Sync + 'static {
     /// `NULL` for values that cannot be converted.
     fn exec(
         &self,
-        context: Context,
+        context: &Context,
         mode: CastMode,
         input: Vector<'_, Self::InputType>,
         output: Vector<'_, Self::OutputType>,
@@ -158,7 +158,7 @@ mod tests {
 
         fn exec(
             &self,
-            _context: crate::connection::Context,
+            _context: &crate::connection::Context,
             _mode: CastMode,
             input: crate::vector::Vector<'_, Self::InputType>,
             mut output: crate::vector::Vector<'_, Self::OutputType>,

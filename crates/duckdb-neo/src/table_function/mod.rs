@@ -63,7 +63,7 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
 
             let (bind_data, cardinality) = T::bind(
                 user_data,
-                Context(context),
+                &Context(context),
                 metadata.get_arguments()?,
                 BindFunctionHandle(&info),
             )?;
@@ -140,7 +140,7 @@ unsafe extern "C" fn exec_callback<T: TableFunctionCallbacks>(
                 bind_data,
                 global_state,
                 local_state,
-                Context(context),
+                &Context(context),
                 output_chunk,
                 ExecColumnInfo { handle: &info },
             )?;
@@ -274,7 +274,7 @@ unsafe extern "C" fn init_global_callback<T: TableFunctionCallbacks>(
             let (global_state, max_threads) = T::init_global_state(
                 user_data,
                 bind_data,
-                Context(context),
+                &Context(context),
                 InitColumnData { handle: Global(&info) },
             )?;
 
@@ -314,7 +314,7 @@ unsafe extern "C" fn init_local_callback<T: TableFunctionCallbacks>(
             let local_state = T::init_local_state(
                 user_data,
                 bind_data,
-                Context(context),
+                &Context(context),
                 global_state,
                 InitColumnData { handle: Local(&info) },
             )?;
@@ -344,7 +344,7 @@ unsafe extern "C" fn progress_callback<T: TableFunctionCallbacks>(
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_progress_get_bind_data, info);
             let global_state = get_global_state!(ffi::duckdb_v2_table_function_progress_get_global_state, info);
 
-            if let Some(progress) = T::progress(user_data, bind_data, global_state, Context(ctx))? {
+            if let Some(progress) = T::progress(user_data, bind_data, global_state, &Context(ctx))? {
                 check_api_call!(ffi::duckdb_v2_table_function_progress_set_progress, info, progress)?
             }
 
@@ -364,7 +364,7 @@ unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
             let user_data = get_user_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_user_data, info);
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_bind_data, info);
 
-            T::pushdown_filter(user_data, bind_data, Context(ctx), PushdownData { handle: &info })
+            T::pushdown_filter(user_data, bind_data, &Context(ctx), PushdownData { handle: &info })
         },
         err,
     );
@@ -504,7 +504,7 @@ unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
                 bind_data,
                 global_state,
                 local_state,
-                Context(ctx),
+                &Context(ctx),
                 PartitionData { handle: &info },
             )?;
 
@@ -533,7 +533,7 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partitioning_get_bind_data, info);
 
             let partition_info =
-                T::partitioning(user_data, bind_data, Context(ctx), PartitioningData { handle: &info })?;
+                T::partitioning(user_data, bind_data, &Context(ctx), PartitioningData { handle: &info })?;
 
             check_api_call!(
                 ffi::duckdb_v2_table_function_partitioning_set_partition_info,
@@ -553,6 +553,7 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     signature: SignatureBuilder,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
+    progress_callback: ffi::duckdb_v2_table_function_progress_callback_fn,
     filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
     partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
     partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
@@ -593,6 +594,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             signature,
             user_data: OpaqueHandle::new(implementation),
             projection_pushdown: false,
+            progress_callback: None,
             filter_pushdown_callback: None,
             partition_data_callback: None,
             partitioning_callback: None,
@@ -606,6 +608,14 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     /// projected columns in the reported order.
     pub fn set_projection_pushdown(mut self, projection_pushdown: bool) -> Self {
         self.projection_pushdown = projection_pushdown;
+        self
+    }
+
+    /// Report scan progress through [`TableFunctionCallbacks::progress`].
+    ///
+    /// Without this DuckDB treats the function's progress as unknown.
+    pub fn with_progress(mut self) -> Self {
+        self.progress_callback = Some(progress_callback::<T>);
         self
     }
 
@@ -645,11 +655,15 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             Some(init_global_callback::<T>)
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_table_function_set_progress_callback,
-            **handle,
-            Some(progress_callback::<T>)
-        )?;
+        // Only registered through `with_progress`: once a callback is set,
+        // DuckDB reports 0% instead of unknown progress when it sets no value.
+        if self.progress_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_progress_callback,
+                **handle,
+                self.progress_callback
+            )?;
+        }
 
         // Only registered through `with_filter_pushdown`, so that DuckDB does
         // not ask a function that cannot claim any filter.
@@ -735,7 +749,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         bind_data: Option<&Self::BindData>,
         global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
-        context: Context,
+        context: &Context,
         output: DataChunkRef<'_>,
         column_info: ExecColumnInfo<'_>,
     ) -> Result<()>;
@@ -743,17 +757,20 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     /// **Bind:** validate arguments, declare columns, and create shared data.
     fn bind(
         &self,
-        context: Context,
+        context: &Context,
         arguments: Vec<BindArgument>,
         bind_handle: BindFunctionHandle<'_>,
     ) -> Result<(Self::BindData, Option<TableFunctionCardinality>)>;
 
     /// **Progress:** report execution progress from `0.0` to `1.0`.
+    ///
+    /// Only called when the function is registered with
+    /// [`TableFunctionBuilder::with_progress`]. Returning `None` reports `0.0`.
     fn progress(
         &self,
         _bind_data: Option<&Self::BindData>,
         _global_state: Option<&Self::GlobalState>,
-        _context: Context,
+        _context: &Context,
     ) -> Result<Option<f64>> {
         Ok(None)
     }
@@ -762,7 +779,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     fn init_local_state(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _context: Context,
+        _context: &Context,
         _global_state: Option<&Self::GlobalState>,
         _column_data: InitColumnData<'_>,
     ) -> Result<Option<Self::LocalState>> {
@@ -773,7 +790,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
     fn init_global_state(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _context: Context,
+        _context: &Context,
         _column_data: InitColumnData<'_>,
     ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
         Ok((None, None))
@@ -796,7 +813,7 @@ pub trait TableFilterPushdownCallbacks: TableFunctionCallbacks {
     fn pushdown_filter(
         &self,
         bind_data: Option<&Self::BindData>,
-        context: Context,
+        context: &Context,
         column_data: PushdownData<'_>,
     ) -> Result<()>;
 }
@@ -832,7 +849,7 @@ pub trait TablePartitioningCallbacks: TableFunctionCallbacks {
         bind_data: Option<&Self::BindData>,
         global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
-        context: Context,
+        context: &Context,
         partition_data: PartitionData<'_>,
     ) -> Result<usize>;
 
@@ -850,7 +867,7 @@ pub trait TablePartitioningCallbacks: TableFunctionCallbacks {
     fn partitioning(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _context: Context,
+        _context: &Context,
         _partitioning_data: PartitioningData<'_>,
     ) -> Result<TablePartitionInfo> {
         Ok(TablePartitionInfo::NotPartitioned)

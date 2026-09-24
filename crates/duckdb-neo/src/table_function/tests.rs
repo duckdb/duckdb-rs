@@ -46,7 +46,7 @@ fn test_table_function() -> crate::Result<()> {
 
         fn bind(
             &self,
-            context: Context,
+            context: &Context,
             arguments: Vec<BindArgument>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
@@ -60,7 +60,7 @@ fn test_table_function() -> crate::Result<()> {
             );
             assert_eq!(val.as_ref().unwrap().dbg_string()?, "10");
 
-            bind_handle.add_result_column("out", i32::logical_type(&context)?)?;
+            bind_handle.add_result_column("out", i32::logical_type(context)?)?;
 
             Ok((
                 BindData {
@@ -77,7 +77,7 @@ fn test_table_function() -> crate::Result<()> {
         fn init_global_state(
             &self,
             _bind_data: Option<&Self::BindData>,
-            _context: Context,
+            _context: &Context,
             column_data: super::InitColumnData<'_>,
         ) -> crate::Result<(Option<Self::GlobalState>, Option<usize>)> {
             assert_eq!(column_data.get_column_count()?, 1);
@@ -94,7 +94,7 @@ fn test_table_function() -> crate::Result<()> {
         fn init_local_state(
             &self,
             _bind_data: Option<&Self::BindData>,
-            _context: Context,
+            _context: &Context,
             _global_state: Option<&Self::GlobalState>,
             _column_data: super::InitColumnData<'_>,
         ) -> crate::Result<Option<Self::LocalState>> {
@@ -105,7 +105,7 @@ fn test_table_function() -> crate::Result<()> {
             &self,
             _bind_data: Option<&Self::BindData>,
             global_state: Option<&Self::GlobalState>,
-            _context: Context,
+            _context: &Context,
         ) -> crate::Result<Option<f64>> {
             let global_state = global_state.unwrap();
             let prog = global_state
@@ -125,7 +125,7 @@ fn test_table_function() -> crate::Result<()> {
             bind_data: Option<&Self::BindData>,
             global_state: Option<&Self::GlobalState>,
             local_state: Option<&mut Self::LocalState>,
-            _context: Context,
+            _context: &Context,
             output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> crate::Result<()> {
@@ -168,7 +168,7 @@ fn test_table_function() -> crate::Result<()> {
         fn pushdown_filter(
             &self,
             bind_data: Option<&Self::BindData>,
-            context: Context,
+            context: &Context,
             column_data: super::PushdownData<'_>,
         ) -> crate::Result<()> {
             self.pushdown_called.store(true, Ordering::SeqCst);
@@ -189,7 +189,7 @@ fn test_table_function() -> crate::Result<()> {
 
             let constant = filter.child(1)?;
             assert_eq!(constant.expression_type()?, ExpressionType::ValueConstant);
-            assert_eq!(constant.return_type()?, i32::logical_type(&context)?);
+            assert_eq!(constant.return_type()?, i32::logical_type(context)?);
 
             let threshold = constant
                 .get_constant_value()?
@@ -207,7 +207,7 @@ fn test_table_function() -> crate::Result<()> {
     }
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let mut conn = db.connect()?;
 
     conn.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
 
@@ -222,6 +222,7 @@ fn test_table_function() -> crate::Result<()> {
         },
     )
     .with_filter_pushdown()
+    .with_progress()
     .register(&conn)?;
 
     conn.execute("SET preserve_insertion_order=false", Parameters::None)?;
@@ -292,12 +293,12 @@ fn test_table_function_partitioning() -> crate::Result<()> {
 
         fn bind(
             &self,
-            context: Context,
+            context: &Context,
             _arguments: Vec<BindArgument>,
             bind_handle: BindFunctionHandle<'_>,
         ) -> Result<(Self::BindData, Option<TableFunctionCardinality>)> {
-            bind_handle.add_result_column("part", i32::logical_type(&context)?)?;
-            bind_handle.add_result_column("val", i32::logical_type(&context)?)?;
+            bind_handle.add_result_column("part", i32::logical_type(context)?)?;
+            bind_handle.add_result_column("val", i32::logical_type(context)?)?;
 
             Ok(((), None))
         }
@@ -305,7 +306,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
         fn init_global_state(
             &self,
             _bind_data: Option<&Self::BindData>,
-            _context: Context,
+            _context: &Context,
             _column_data: super::InitColumnData<'_>,
         ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
             Ok((Some(AtomicUsize::new(0)), None))
@@ -314,7 +315,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
         fn init_local_state(
             &self,
             _bind_data: Option<&Self::BindData>,
-            _context: Context,
+            _context: &Context,
             _global_state: Option<&Self::GlobalState>,
             _column_data: super::InitColumnData<'_>,
         ) -> Result<Option<Self::LocalState>> {
@@ -326,7 +327,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
             _bind_data: Option<&Self::BindData>,
             global_state: Option<&Self::GlobalState>,
             local_state: Option<&mut Self::LocalState>,
-            _context: Context,
+            _context: &Context,
             output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
@@ -361,7 +362,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
         fn partitioning(
             &self,
             _bind_data: Option<&Self::BindData>,
-            _context: Context,
+            _context: &Context,
             partitioning_data: PartitioningData<'_>,
         ) -> Result<TablePartitionInfo> {
             self.partitioning_calls.fetch_add(1, Ordering::SeqCst);
@@ -383,7 +384,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
             _bind_data: Option<&Self::BindData>,
             _global_state: Option<&Self::GlobalState>,
             local_state: Option<&mut Self::LocalState>,
-            context: Context,
+            context: &Context,
             partition_data: PartitionData<'_>,
         ) -> Result<usize> {
             self.partition_data_calls.fetch_add(1, Ordering::SeqCst);
@@ -402,7 +403,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
                     // We only ever claim single-value partitions for `part`.
                     assert_eq!(partition_data.get_column_index(index)?, 0);
 
-                    partition_data.set_partition_value(index, &batch.part.value(&context)?)?;
+                    partition_data.set_partition_value(index, &batch.part.value(context)?)?;
                 }
             } else {
                 assert_eq!(partition_data.get_column_count()?, 0);

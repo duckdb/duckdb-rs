@@ -1250,7 +1250,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
 
                 if let Some(value) = value {
                     let lt = LogicalType::from_text(&ctx, "VARIANT")?;
-                    let result = value.cast(&ctx, lt)?;
+                    let result = value.cast(ctx, lt)?;
                     output.write_value_slow(idx, result)?;
                 } else {
                     output.set_null_slow(idx)?
@@ -1515,6 +1515,59 @@ fn test_raw_integer_access() -> crate::Result<()> {
     ];
 
     assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_copy_from_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let source = DataChunk::create(&types, true)?;
+    let mut src = source.get_vector_at::<List<i32>>(0)?;
+    src.set_size(2)?;
+    src.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
+    src.write(1, Some(vec![Some(4)]))?;
+
+    let target = DataChunk::create(&types, true)?;
+    let mut dst = target.get_vector_at::<List<i32>>(0)?;
+    dst.set_size(1)?;
+    dst.write(0, Some(vec![Some(9)]))?;
+
+    // SAFETY: `source` outlives every read of the referenced vector below.
+    let referenced = unsafe { dst.copy_from(&src)? };
+
+    let items: Vec<_> = referenced
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(4)])]);
+
+    Ok(())
+}
+
+#[test]
+fn test_make_constant_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let chunk = DataChunk::create(&types, true)?;
+    let mut vector = chunk.get_vector_at::<List<i32>>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(vec![Some(9)]))?;
+
+    vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, true, 3)?;
+
+    let items: Vec<_> = vector
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
 
     Ok(())
 }

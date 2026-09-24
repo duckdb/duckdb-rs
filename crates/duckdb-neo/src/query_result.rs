@@ -243,6 +243,7 @@ impl Iterator for QueryResult<'_> {
     }
 }
 
+// SAFETY: the C result holds a `shared_ptr<ClientContext>`, and fetching takes the context lock.
 unsafe impl Send for QueryResult<'_> {}
 
 #[cfg(test)]

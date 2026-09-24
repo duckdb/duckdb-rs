@@ -51,6 +51,10 @@ pub(crate) unsafe extern "C" fn drop_opaque<T>(ptr: *mut c_void) {
     }
 }
 
+unsafe extern "C" fn equals_opaque<T: PartialEq>(a: *mut c_void, b: *mut c_void) -> bool {
+    unsafe { *(a as *const T) == *(b as *const T) }
+}
+
 pub(crate) fn into_opaque<T>(value: T) -> ffi::duckdb_v2_opaque {
     let raw = Box::into_raw(Box::new(value));
 
@@ -58,6 +62,13 @@ pub(crate) fn into_opaque<T>(value: T) -> ffi::duckdb_v2_opaque {
         ptr: raw as *mut c_void,
         equals: None,
         destroy: Some(drop_opaque::<T>),
+    }
+}
+
+pub(crate) fn into_opaque_eq<T: PartialEq>(value: T) -> ffi::duckdb_v2_opaque {
+    ffi::duckdb_v2_opaque {
+        equals: Some(equals_opaque::<T>),
+        ..into_opaque(value)
     }
 }
 
@@ -210,8 +221,8 @@ macro_rules! scalar_callback {
             fn exec(
                 &self,
                 _bind_data: Option<&Self::BindData>,
-                _init_data: Option<&Self::InitData>,
-                $ctx: $crate::connection::Context,
+                _init_data: Option<&mut Self::InitData>,
+                $ctx: &$crate::connection::Context,
                 $input: &$crate::data_chunk::VectorCollection,
                 $result: $crate::vector::Vector<'_, crate::vector::Unknown>,
             ) -> $crate::Result<()> {

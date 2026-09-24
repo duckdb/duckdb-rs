@@ -30,6 +30,8 @@ impl Drop for DatabaseHandle {
     }
 }
 
+// SAFETY: exposes only the raw handle, which is always used behind `Arc<Mutex<_>>`; the
+// instance shims also take `CV2Instance::lock`.
 unsafe impl Send for DatabaseHandle {}
 unsafe impl Sync for DatabaseHandle {}
 
