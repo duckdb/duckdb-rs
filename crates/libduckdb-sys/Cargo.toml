@@ -21,7 +21,7 @@ edition = { workspace = true }
 rust-version = { workspace = true }
 
 [features]
-default = ["capi-v1", "vcpkg", "pkg-config"]
+default = ["capi-v1", "vcpkg", "pkg-config", "download-lib"]
 bundled = ["cc"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
@@ -34,6 +34,10 @@ tpcds = ["bundled-cmake"]
 tpch = ["bundled-cmake"]
 extensions-full = ["json", "parquet"]
 winduckdb = []
+# Download a pre-built libduckdb (by default when a `.duckdb-release` pin ships with the
+# crate, or when DUCKDB_DOWNLOAD_LIB=1). Pulls an HTTP client into the build script.
+# Not needed with `bundled`; opt out with `default-features = false`.
+download-lib = ["dep:ureq"]
 # Warning: experimental feature
 loadable-extension = ["prettyplease", "quote", "syn", "capi-v1"]
 # Generate bindings for the v1 C API header (`duckdb.h`), exposed as `libduckdb_sys::v1`
@@ -55,7 +59,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 syn = { workspace = true, optional = true }
 tar = { workspace = true }
-ureq = { version = "3", default-features = false, features = ["rustls"] }
+ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
 vcpkg = { workspace = true, optional = true }
 which = { version = "8", optional = true }
 

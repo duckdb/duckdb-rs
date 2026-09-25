@@ -326,6 +326,8 @@ You can adjust this behavior in a number of ways:
    DUCKDB_DOWNLOAD_LIB=0 cargo test    # use a system DuckDB instead
    ```
 
+   The download needs the `download-lib` feature, which pulls an HTTP client (`ureq`/`rustls`) into the build script. It is on by default; consumers building with `bundled` or a system DuckDB can drop it (and the HTTP client) with `default-features = false`, in which case the build probes the system unless `DUCKDB_DOWNLOAD_LIB=1` is set explicitly.
+
    The pinned staging archives do not ship `duckdb_v2.h` yet, so `buildtime_bindgen` together with `capi-v2` needs `DUCKDB_INCLUDE_DIR` or a `bundled` build until the pin moves to a newer DuckDB build.
 
 5. Installing the DuckDB development packages will usually be all that is required, but
