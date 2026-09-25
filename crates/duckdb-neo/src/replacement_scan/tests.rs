@@ -14,7 +14,7 @@ struct CustomReplacementScan {
 }
 
 impl ReplacementScanCallbacks for CustomReplacementScan {
-    fn scan<'a>(&'a self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
+    fn scan(&self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
         if let Some(table) = view.table
@@ -44,7 +44,7 @@ impl ReplacementScanCallbacks for CustomReplacementScan {
 struct CustomNamedParameters {}
 
 impl ReplacementScanCallbacks for CustomNamedParameters {
-    fn scan<'a>(&'a self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
+    fn scan(&self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("alltypes")) {
@@ -60,17 +60,15 @@ impl ReplacementScanCallbacks for CustomNamedParameters {
     }
 }
 
-struct CustomCdcScan {
-    collection: ColumnDataCollection,
-}
+struct CustomCdcScan;
 
 impl ReplacementScanCallbacks for CustomCdcScan {
-    fn scan<'a>(&'a self, _context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'a>) -> Result<()> {
+    fn scan(&self, _context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("cdc")) {
             replacement.set_reference(ReplacementType::NamedColumnDataCollection((
-                &self.collection,
+                "cdc",
                 vec!["id".to_string(), "is_active".to_string()],
             )))?;
         }
@@ -138,7 +136,9 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     appender.append(&chunk)?;
     let collection = appender.to_normal();
 
-    ReplacementScanBuilder::new(CustomCdcScan { collection }).register(&conn)?;
+    ReplacementScanBuilder::new(CustomCdcScan)
+        .collection("cdc", collection)
+        .register(&conn)?;
 
     let mut query = conn.query("SELECT * FROM cdc_scan", Parameters::None)?;
 
@@ -162,6 +162,91 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     assert_eq!(is_active.get(1)?, Some(&false));
 
     assert!(query.next().is_none());
+
+    Ok(())
+}
+
+fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnDataCollection<'_>> {
+    let logical_types = [i32::logical_type(conn)?, bool::logical_type(conn)?];
+    let chunk = DataChunk::create(&logical_types, true)?;
+    let mut id = chunk.get_vector_at::<i32>(0)?;
+    let mut is_active = chunk.get_vector_at::<bool>(1)?;
+    id.set_size(1)?;
+    is_active.set_size(1)?;
+    id.write(0, Some(1))?;
+    is_active.write(0, Some(true))?;
+
+    let mut appender = ColumnDataCollection::new(conn, &logical_types)?.to_append()?;
+    appender.append(&chunk)?;
+    Ok(appender.to_normal())
+}
+
+#[test]
+fn test_replacement_scan_cdc_rejects_other_connection() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let other = db.connect()?;
+
+    let result = ReplacementScanBuilder::new(CustomCdcScan)
+        .collection("cdc", single_row_collection(&other)?)
+        .register(&conn);
+    assert!(result.is_err());
+
+    let result = ReplacementScanBuilder::new(CustomCdcScan)
+        .collection("cdc", single_row_collection(&conn)?)
+        .register(&db);
+    assert!(result.is_err());
+
+    // Combining collections of two connections leaves one that neither can register.
+    let mut combined = single_row_collection(&conn)?.to_append()?;
+    combined.combine(single_row_collection(&other)?)?;
+    let result = ReplacementScanBuilder::new(CustomCdcScan)
+        .collection("cdc", combined.to_normal())
+        .register(&conn);
+    assert!(result.is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_replacement_scan_cdc_unknown_name() -> crate::Result<()> {
+    struct UnknownName;
+
+    impl ReplacementScanCallbacks for UnknownName {
+        fn scan(&self, _context: &Context, _name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+            assert!(replacement.collection("missing").is_none());
+            replacement.set_reference(ReplacementType::ColumnDataCollection("missing"))
+        }
+    }
+
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ReplacementScanBuilder::new(UnknownName).register(&conn)?;
+
+    assert!(conn.query("SELECT * FROM anything", Parameters::None).is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let mut conn = db.connect()?;
+
+    ReplacementScanBuilder::new(CustomCdcScan)
+        .collection("cdc", single_row_collection(&conn)?)
+        .register(&conn)?;
+
+    // The collection no longer borrows `conn`, so it can be mutated.
+    conn.set_option("threads", "1", None)?;
+
+    let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
+    let chunk = query.next().unwrap()?;
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&1));
 
     Ok(())
 }

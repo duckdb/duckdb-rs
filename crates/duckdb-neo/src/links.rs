@@ -3,7 +3,8 @@
 use std::{any::Any, sync::Arc};
 
 use crate::{
-    connection::{Connection, Context},
+    connection::{Connection, Context, Extension},
+    database::Instance,
     ffi,
 };
 
@@ -25,6 +26,37 @@ impl DatabaseKeepAlive for Connection {
 
 impl DatabaseKeepAlive for Context {
     fn keep_alive(&self) -> Option<KeepAlive> {
+        None
+    }
+}
+
+/// The connection a link belongs to, if it is one.
+///
+/// Used to check that a collection is registered only on the connection whose buffer manager it uses.
+pub(crate) trait ConnectionOrigin {
+    fn connection_origin(&self) -> Option<ffi::duckdb_v2_connection_handle>;
+}
+
+impl ConnectionOrigin for Connection {
+    fn connection_origin(&self) -> Option<ffi::duckdb_v2_connection_handle> {
+        Some(self.inner.handle)
+    }
+}
+
+impl ConnectionOrigin for Context {
+    fn connection_origin(&self) -> Option<ffi::duckdb_v2_connection_handle> {
+        None
+    }
+}
+
+impl ConnectionOrigin for Instance {
+    fn connection_origin(&self) -> Option<ffi::duckdb_v2_connection_handle> {
+        None
+    }
+}
+
+impl ConnectionOrigin for Extension {
+    fn connection_origin(&self) -> Option<ffi::duckdb_v2_connection_handle> {
         None
     }
 }

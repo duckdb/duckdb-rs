@@ -165,7 +165,7 @@ define_handle! {
     handle: ffi::duckdb_v2_column_data_collection_append_state_handle,
     destroy: ffi::duckdb_v2_column_data_collection_append_state_destroy,
     factories: {
-        ColumnDataCollection => ffi::duckdb_v2_column_data_collection_append_state_create,
+        ColumnDataCollection<'_> => ffi::duckdb_v2_column_data_collection_append_state_create,
     },
 }
 
@@ -176,7 +176,7 @@ define_handle! {
     handle: ffi::duckdb_v2_column_data_collection_worker_scan_state_handle,
     destroy: ffi::duckdb_v2_column_data_collection_worker_scan_state_destroy,
     factories: {
-        ColumnDataCollection => ffi::duckdb_v2_column_data_collection_worker_scan_state_create,
+        ColumnDataCollection<'_> => ffi::duckdb_v2_column_data_collection_worker_scan_state_create,
     },
 }
 
@@ -187,6 +187,6 @@ define_handle! {
     handle: ffi::duckdb_v2_column_data_collection_shared_scan_state_handle,
     destroy: ffi::duckdb_v2_column_data_collection_shared_scan_state_destroy,
     factories: {
-        ColumnDataCollection => ffi::duckdb_v2_column_data_collection_shared_scan_state_create,
+        ColumnDataCollection<'_> => ffi::duckdb_v2_column_data_collection_shared_scan_state_create,
     },
 }

@@ -97,15 +97,18 @@ unsafe extern "C" fn batch_to_callback<T: CopyToFunctionCallbacks>(
             let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_batch_get_bind_data, info, RET)?;
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
+            let context = Context(context);
             let collection = ColumnDataCollection {
                 handle: check_api_call!(ffi::duckdb_v2_copy_to_batch_take_input, info, RET)?,
                 logical_types: bind_data.logical_types.clone(),
+                origin: None,
+                _conn: std::marker::PhantomData,
             };
 
             let user_data = get_user_data!(ffi::duckdb_v2_copy_to_batch_get_user_data, info);
             let init_data = get_init_data!(ffi::duckdb_v2_copy_to_batch_get_init_data, info).unwrap();
 
-            let batch_data = T::batch(user_data, &Context(context), &bind_data.data, init_data, collection)?;
+            let batch_data = T::batch(user_data, &context, &bind_data.data, init_data, collection)?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_to_batch_set_batch_data,
@@ -762,14 +765,13 @@ pub trait CopyToFunctionCallbacks: Send + Sync + 'static {
 
     /// **Batch:** prepare one input collection for flushing.
     ///
-    /// `input` must not outlive the connection running the copy, for example by
-    /// being stored in a `static` or sent to code outside DuckDB.
-    fn batch(
+    /// `input` borrows `context`, so its rows must be copied out to be kept as batch data.
+    fn batch<'ctx>(
         &self,
-        context: &Context,
+        context: &'ctx Context,
         bind_data: &Self::BindData,
         init_data: &Self::InitData,
-        input: ColumnDataCollection,
+        input: ColumnDataCollection<'ctx>,
     ) -> Result<Self::BatchData>;
 
     /// **Batch size:** choose the target number of rows per batch during planning.

@@ -4,7 +4,7 @@
 //! appending or scanning state. Appended chunks are copied into storage owned
 //! by the collection.
 
-use std::ops::Deref;
+use std::{marker::PhantomData, ops::Deref};
 
 use crate::ffi;
 
@@ -16,7 +16,7 @@ use crate::{
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
         ColumnDataCollectionWorkerScanStateHandle,
     },
-    links::ColumnDataCollectionLink,
+    links::{ColumnDataCollectionLink, ConnectionOrigin},
     logical_type::LogicalType,
 };
 
@@ -29,15 +29,26 @@ use crate::{
 /// # Lifetime
 ///
 /// A collection reads and writes its data through the buffer manager of the
-/// connection it was created from, and does not keep that connection alive.
-/// It must not be used or dropped after the connection is closed: doing so is
-/// undefined behavior. The same holds for a collection created from a callback
-/// [`Context`](crate::connection::Context), whose connection is the one running
-/// the callback.
+/// connection it was created from, so it borrows that
+/// [`Connection`](crate::connection::Connection) or callback
+/// [`Context`](crate::connection::Context) for `'conn`.
 ///
-/// Storing a collection in a replacement scan registered on its own connection
-/// is fine, because the scan, and the collection with it, is dropped when the
-/// connection closes.
+/// To let queries read a collection after that borrow ends, hand it to a
+/// replacement scan registered on the same connection with
+/// [`ReplacementScanBuilder::collection`](crate::replacement_scan::ReplacementScanBuilder::collection).
+///
+/// ```compile_fail
+/// # use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
+/// # use duckdb_neo::column_data_collection::ColumnDataCollection;
+/// # fn main() -> duckdb_neo::Result<()> {
+/// let db = Environment::new()?.open(StorageLocation::InMemory)?;
+/// let collection = {
+///     let conn = db.connect()?;
+///     ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?
+/// }; // error: `conn` does not live long enough
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// # Example
 /// ```
@@ -73,33 +84,43 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-pub struct ColumnDataCollection {
+pub struct ColumnDataCollection<'conn> {
     /// The owned DuckDB collection handle.
     pub handle: ffi::duckdb_v2_column_data_collection_handle,
     /// The collection's column types, in storage order.
     pub logical_types: Vec<LogicalType>,
+    /// The connection whose buffer manager backs every chunk, if known and unique.
+    pub(crate) origin: Option<ffi::duckdb_v2_connection_handle>,
+    pub(crate) _conn: PhantomData<&'conn ()>,
 }
 
-impl Deref for ColumnDataCollection {
+impl Deref for ColumnDataCollection<'_> {
     type Target = ffi::duckdb_v2_column_data_collection_handle;
     fn deref(&self) -> &Self::Target {
         &self.handle
     }
 }
 
-impl ColumnDataCollection {
+impl<'conn> ColumnDataCollection<'conn> {
     /// Create an empty collection using a [`Connection`](crate::connection::Connection)
     /// or callback [`Context`](crate::connection::Context)'s buffer manager.
     ///
-    /// The collection must not outlive that connection; see the
-    /// [lifetime notes](Self#lifetime).
+    /// The collection borrows `link`; see the [lifetime notes](Self#lifetime).
     #[allow(private_bounds)]
-    pub fn new<C: ColumnDataCollectionLink>(link: &C, logical_types: impl Into<Vec<LogicalType>>) -> Result<Self> {
+    pub fn new<C: ColumnDataCollectionLink + ConnectionOrigin>(
+        link: &'conn C,
+        logical_types: impl Into<Vec<LogicalType>>,
+    ) -> Result<Self> {
         let logical_types = logical_types.into();
         let types = logical_types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
         let handle = link.create_column_data_collection(&types)?;
 
-        Ok(ColumnDataCollection { handle, logical_types })
+        Ok(ColumnDataCollection {
+            handle,
+            logical_types,
+            origin: link.connection_origin(),
+            _conn: PhantomData,
+        })
     }
 
     /// Return whether the collection contains no rows.
@@ -115,17 +136,17 @@ impl ColumnDataCollection {
     }
 
     /// Consume the collection and initialize it for appending.
-    pub fn to_append(self) -> Result<ColumnDataCollectionAppender> {
+    pub fn to_append(self) -> Result<ColumnDataCollectionAppender<'conn>> {
         ColumnDataCollectionAppender::new(self)
     }
 
     /// Consume the collection and initialize an iterator over its chunks.
-    pub fn to_scan(self) -> Result<ColumnDataCollectionScan> {
+    pub fn to_scan(self) -> Result<ColumnDataCollectionScan<'conn>> {
         ColumnDataCollectionScan::new(self)
     }
 }
 
-impl Drop for ColumnDataCollection {
+impl Drop for ColumnDataCollection<'_> {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_column_data_collection_destroy, &mut self.handle).unwrap();
     }
@@ -133,8 +154,8 @@ impl Drop for ColumnDataCollection {
 
 // SAFETY: `&self` methods only read the row count; appending and scanning consume the
 // collection.
-unsafe impl Send for ColumnDataCollection {}
-unsafe impl Sync for ColumnDataCollection {}
+unsafe impl Send for ColumnDataCollection<'_> {}
+unsafe impl Sync for ColumnDataCollection<'_> {}
 
 /// A scan over the chunks stored in a [`ColumnDataCollection`].
 ///
@@ -144,17 +165,16 @@ unsafe impl Sync for ColumnDataCollection {}
 /// Chunks are read with [`next_chunk`](Self::next_chunk) rather than through
 /// [`Iterator`]: DuckDB does not copy the scanned data, so each chunk points
 /// into buffers that stay valid only until the next scan call.
-pub struct ColumnDataCollectionScan {
+pub struct ColumnDataCollectionScan<'conn> {
     worker_scan_state: ColumnDataCollectionWorkerScanStateHandle,
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
     /// Reused for every scan call; DuckDB resets it before filling it.
     chunk: DataChunk<'static>,
-    /// Declared last: the states above unpin buffers through the connection it keeps alive.
-    collection: ColumnDataCollection,
+    collection: ColumnDataCollection<'conn>,
 }
 
-impl ColumnDataCollectionScan {
-    fn new(collection: ColumnDataCollection) -> Result<Self> {
+impl<'conn> ColumnDataCollectionScan<'conn> {
+    fn new(collection: ColumnDataCollection<'conn>) -> Result<Self> {
         let worker_scan_state = collection.create_worker_scan_state()?;
         let shared_scan_state = collection.create_shared_scan_state()?;
         let chunk = DataChunk::create(&collection.logical_types, false)?;
@@ -187,17 +207,17 @@ impl ColumnDataCollectionScan {
     }
 
     /// Return the collection being scanned.
-    pub fn collection(&self) -> &ColumnDataCollection {
+    pub fn collection(&self) -> &ColumnDataCollection<'conn> {
         &self.collection
     }
 
     /// Stop scanning and return the underlying collection.
-    pub fn to_normal(self) -> ColumnDataCollection {
+    pub fn to_normal(self) -> ColumnDataCollection<'conn> {
         self.collection
     }
 
     /// Stop scanning and initialize the collection for appending.
-    pub fn to_append(self) -> Result<ColumnDataCollectionAppender> {
+    pub fn to_append(self) -> Result<ColumnDataCollectionAppender<'conn>> {
         ColumnDataCollectionAppender::new(self.collection)
     }
 }
@@ -207,13 +227,13 @@ impl ColumnDataCollectionScan {
 /// Chunks appended through this state must exactly match the collection's
 /// column count and types. The state can be consumed to recover, scan, or
 /// reset the collection.
-pub struct ColumnDataCollectionAppender {
+pub struct ColumnDataCollectionAppender<'conn> {
     appender: ColumnDataCollectionAppendStateHandle,
-    collection: ColumnDataCollection,
+    collection: ColumnDataCollection<'conn>,
 }
 
-impl ColumnDataCollectionAppender {
-    fn new(collection: ColumnDataCollection) -> Result<Self> {
+impl<'conn> ColumnDataCollectionAppender<'conn> {
+    fn new(collection: ColumnDataCollection<'conn>) -> Result<Self> {
         let appender = collection.create_append_state()?;
 
         Ok(Self { collection, appender })
@@ -236,14 +256,18 @@ impl ColumnDataCollectionAppender {
     /// Move all chunks from `other` into this collection.
     ///
     /// The source collection is consumed. Its chunks keep using the buffer
-    /// manager of `other`'s connection, so the combined collection must not
-    /// outlive either connection.
-    pub fn combine(&mut self, mut other: ColumnDataCollection) -> Result<()> {
+    /// manager of `other`'s connection, so a collection combined from two
+    /// connections can no longer be handed to a replacement scan.
+    pub fn combine(&mut self, mut other: ColumnDataCollection<'conn>) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_column_data_collection_combine,
             self.collection.handle,
             &mut other.handle
         )?;
+
+        if self.collection.origin != other.origin {
+            self.collection.origin = None;
+        }
 
         self.appender = self.collection.create_append_state()?;
 
@@ -251,24 +275,24 @@ impl ColumnDataCollectionAppender {
     }
 
     /// Consume the appender and return an empty collection with its schema unchanged.
-    pub fn reset(self) -> Result<ColumnDataCollection> {
+    pub fn reset(self) -> Result<ColumnDataCollection<'conn>> {
         check_api_call!(ffi::duckdb_v2_column_data_collection_reset, self.collection.handle)?;
         Ok(self.collection)
     }
 
     /// Return an empty collection, retaining its schema and buffers.
-    pub fn clear(self) -> Result<ColumnDataCollection> {
+    pub fn clear(self) -> Result<ColumnDataCollection<'conn>> {
         check_api_call!(ffi::duckdb_v2_column_data_collection_clear, self.collection.handle)?;
         Ok(self.collection)
     }
 
     /// Finish appending and return the underlying collection.
-    pub fn to_normal(self) -> ColumnDataCollection {
+    pub fn to_normal(self) -> ColumnDataCollection<'conn> {
         self.collection
     }
 
     /// Finish appending and initialize an iterator over the stored chunks.
-    pub fn to_scan(self) -> Result<ColumnDataCollectionScan> {
+    pub fn to_scan(self) -> Result<ColumnDataCollectionScan<'conn>> {
         ColumnDataCollectionScan::new(self.collection)
     }
 
@@ -396,20 +420,18 @@ mod test {
 
         collection.combine(collection_2.to_normal())?;
 
-        struct A {
-            cdc: ColumnDataCollection,
-        }
+        struct A;
 
         impl ReplacementScanCallbacks for A {
-            fn scan<'a>(
-                &'a self,
+            fn scan(
+                &self,
                 _context: &crate::connection::Context,
                 name: &crate::qualified_name::QualifiedName,
-                handle: crate::replacement_scan::ReplacementHandle<'a>,
+                handle: crate::replacement_scan::ReplacementHandle<'_>,
             ) -> Result<()> {
                 if name.get_view()?.table == Some("A".into()) {
                     handle.set_reference(ReplacementType::NamedColumnDataCollection((
-                        &self.cdc,
+                        "A",
                         ["id".to_string(), "is_active".to_string()].into(),
                     )))?;
                 }
@@ -418,10 +440,9 @@ mod test {
             }
         }
 
-        ReplacementScanBuilder::new(A {
-            cdc: collection.to_normal(),
-        })
-        .register(&conn)?;
+        ReplacementScanBuilder::new(A)
+            .collection("A", collection.to_normal())
+            .register(&conn)?;
 
         let statement = statements.next().unwrap()?;
 

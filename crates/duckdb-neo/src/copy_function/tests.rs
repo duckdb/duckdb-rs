@@ -43,12 +43,12 @@ impl CopyToFunctionCallbacks for RapidCopy {
         Ok(Mutex::new(file))
     }
 
-    fn batch(
+    fn batch<'ctx>(
         &self,
-        context: &Context,
+        context: &'ctx Context,
         _bind_data: &Self::BindData,
         _init_data: &Self::InitData,
-        input: crate::column_data_collection::ColumnDataCollection,
+        input: ColumnDataCollection<'ctx>,
     ) -> crate::Result<Self::BatchData> {
         let scanner = input.to_scan()?;
         let mut result = Vec::new();
@@ -264,12 +264,12 @@ impl CopyToFunctionCallbacks for EchoFormat {
         Ok(Mutex::new(FileBuilder::new(&fs, file_path)?.write()?.create()?.open()?))
     }
 
-    fn batch(
+    fn batch<'ctx>(
         &self,
-        _context: &Context,
+        _context: &'ctx Context,
         _bind_data: &Self::BindData,
         _init_data: &Self::InitData,
-        input: ColumnDataCollection,
+        input: ColumnDataCollection<'ctx>,
     ) -> crate::Result<Self::BatchData> {
         let mut result = Vec::new();
         let mut scan = input.to_scan()?;
