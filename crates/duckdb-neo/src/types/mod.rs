@@ -40,6 +40,7 @@ pub(crate) mod map;
 pub(crate) mod structs;
 pub(crate) mod union;
 
+pub use self::uuid::UuidValueRaw;
 pub use array::Array;
 pub use bignum::{BigNum, BigNumValue};
 pub use decimal::{Decimal, DecimalValue, DecimalValueRaw, InternalDecimalType};
@@ -53,7 +54,6 @@ pub use temporal::{
     TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
 };
 pub use union::{Union, UnionSchema, UnionValue};
-pub use uuid::UuidValue;
 pub use variant::{Variant, VariantValue};
 
 /// Constructs the DuckDB logical type represented by a Rust type.
