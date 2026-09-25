@@ -16,7 +16,7 @@ use crate::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
         List, Map, MapValue, Struct, StructSchema, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
         TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UnionSchema,
-        UnionValue, UuidValue, Variant, structs::StructWrite, union::UnionWriter,
+        UnionValue, UuidValueRaw, Variant, structs::StructWrite, union::UnionWriter,
     },
     vector::StorageKind,
 };
@@ -918,7 +918,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     assert_round_trip!(TimestampNsValue(-7), TimestampNsValue);
     assert_round_trip!(TimestampTzValue(-8), TimestampTzValue);
     assert_round_trip!(TimestampTzNsValue(-9), TimestampTzNsValue);
-    assert_round_trip!(UuidValue(i128::MIN + 10), UuidValue);
+    assert_round_trip!(UuidValueRaw(i128::MIN + 10), UuidValueRaw);
     assert_round_trip!(
         IntervalValue {
             months: -1,
@@ -1000,7 +1000,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert_copy_write!(TimestampNsValue, TimestampNsValue(-7));
     assert_copy_write!(TimestampTzValue, TimestampTzValue(-8));
     assert_copy_write!(TimestampTzNsValue, TimestampTzNsValue(-9));
-    assert_copy_write!(UuidValue, UuidValue(i128::MIN + 10));
+    assert_copy_write!(UuidValueRaw, UuidValueRaw(i128::MIN + 10));
     assert_copy_write!(
         IntervalValue,
         IntervalValue {
