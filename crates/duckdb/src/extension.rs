@@ -50,4 +50,51 @@ mod test {
         assert!(db.query_row::<bool, _, _>("SELECT length(icu_sort_key('Ş', 'ro')) > 0;", [], |r| r.get(0))?);
         Ok(())
     }
+
+    #[cfg(feature = "httpfs")]
+    #[test]
+    fn test_extension_httpfs() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::{Config, OptionalExt};
+
+        let extension_directory = tempfile::tempdir()?;
+        let config = Config::default()
+            .with("extension_directory", extension_directory.path().to_string_lossy())?
+            .with("autoinstall_known_extensions", "false")?
+            .with("autoload_known_extensions", "false")?;
+        let connection = Connection::open_in_memory_with_flags(config)?;
+
+        connection.execute_batch("LOAD httpfs;")?;
+
+        let extension_state = connection
+            .query_row(
+                "SELECT installed, loaded, install_mode, install_path FROM duckdb_extensions() WHERE extension_name = 'httpfs'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, bool>(0)?,
+                        row.get::<_, bool>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                },
+            )
+            .optional()?
+            .expect("statically linked httpfs should be listed");
+        assert_eq!(
+            extension_state,
+            (
+                true,
+                true,
+                "STATICALLY_LINKED".to_owned(),
+                Some("(BUILT-IN)".to_owned())
+            ),
+            "statically linked httpfs should load without an installed artifact"
+        );
+        assert!(
+            extension_directory.path().read_dir()?.next().is_none(),
+            "loading statically linked httpfs must not write an extension artifact"
+        );
+
+        Ok(())
+    }
 }

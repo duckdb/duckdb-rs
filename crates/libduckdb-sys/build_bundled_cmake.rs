@@ -100,6 +100,9 @@ pub fn main(out_dir: &str) {
         }
     }
 
+    #[cfg(feature = "httpfs")]
+    configure_httpfs_dependencies(&mut config);
+
     let enabled_extensions = enabled_extensions();
     if !enabled_extensions.is_empty() {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
@@ -147,7 +150,38 @@ pub fn main(out_dir: &str) {
     }
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
+    #[cfg(feature = "httpfs")]
+    emit_httpfs_link_metadata();
     println!("cargo:lib_dir={}", lib_dir.display());
+}
+
+#[cfg(feature = "httpfs")]
+fn configure_httpfs_dependencies(config: &mut cmake::Config) {
+    if win_target() {
+        panic!("bundled-cmake httpfs is currently supported only on Linux and macOS");
+    }
+
+    // Only OpenSSL needs a hint (Homebrew keeps it keg-only). Do not hint curl:
+    // FindCURL locates the sysroot curl itself, and a pkg-config prefix may point
+    // at a different SDK than the compiler, breaking libc++ header ordering.
+    let openssl_prefix = pkg_config::get_variable("openssl", "prefix")
+        .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires openssl through pkg-config: {err}"));
+    config.define("OPENSSL_ROOT_DIR", openssl_prefix);
+}
+
+#[cfg(feature = "httpfs")]
+fn emit_httpfs_link_metadata() {
+    for name in ["libcurl", "openssl"] {
+        pkg_config::Config::new()
+            .probe(name)
+            .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires {name} through pkg-config: {err}"));
+    }
+    // HTTPFS's OpenSSL client reads the macOS certificate store. Mirror its
+    // CMake framework dependencies, which static archives do not carry over.
+    if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "macos") {
+        println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=framework=Security");
+    }
 }
 
 fn cmake_build_type() -> String {
@@ -455,6 +489,9 @@ fn enabled_extensions() -> Vec<&'static str> {
     }
     if cfg!(feature = "autocomplete") {
         extensions.push("autocomplete");
+    }
+    if cfg!(feature = "httpfs") {
+        extensions.push("httpfs");
     }
     if cfg!(feature = "icu") {
         extensions.push("icu");

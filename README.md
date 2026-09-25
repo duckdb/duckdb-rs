@@ -168,6 +168,7 @@ The `duckdb` crate provides a number of Cargo features that can be enabled to ad
 These extensions are only available through the CMake build backend and imply `bundled-cmake`.
 
 - `autocomplete` - DuckDB's autocomplete extension.
+- `httpfs` - Statically links DuckDB's HTTP(S) and S3 filesystem extension (Linux and macOS only).
 - `icu` - DuckDB's ICU extension for locale-aware operations.
 - `tpch` - DuckDB's TPC-H benchmark extension.
 - `tpcds` - DuckDB's TPC-DS benchmark extension.
@@ -260,7 +261,7 @@ You can adjust this behavior in a number of ways:
    duckdb = { version = "~1.20000.0", features = ["bundled"] }
    ```
 
-2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
+2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `httpfs` and `icu`.
 
    Example:
 
@@ -277,6 +278,7 @@ You can adjust this behavior in a number of ways:
    - Extension autoload/autoinstall are enabled to match `bundled`, despite upstream CMake defaults. Set `DUCKDB_DISABLE_EXTENSION_LOAD=1` or `DISABLE_EXTENSION_LOAD=1` to disable external extension install/load support and force autoload/autoinstall off. Statically linked extensions remain available.
    - If `ninja` is on `PATH`, the build uses Ninja by default. Set `CMAKE_GENERATOR` to override.
    - DuckDB builds in `Release` mode by default, even for Rust debug builds, avoiding DuckDB's much slower debug/sanitizer profile. Override with `DUCKDB_CMAKE_BUILD_TYPE` or `CMAKE_BUILD_TYPE`. `DUCKDB_CMAKE_BUILD_TYPE` takes precedence.
+   - `httpfs` requires CMake, a C++ compiler, pkg-config, and the libcurl and OpenSSL development libraries. On Debian/Ubuntu, install `cmake pkg-config libcurl4-openssl-dev libssl-dev`; on macOS, install `cmake pkg-config openssl@3` with Homebrew (the macOS SDK provides libcurl). OpenSSL must be discoverable through pkg-config; for a custom installation, set `PKG_CONFIG_PATH` to its `lib/pkgconfig` directory. Network access is required at CMake configure time to fetch the HTTPFS extension sources. Windows is currently unsupported for `httpfs`. Once built, `LOAD httpfs` needs no downloaded extension artifact, including when external extension loading is disabled.
    - `DUCKDB_EXTENSION_CONFIGS` is unsupported. Setting it fails fast.
    - Use `cargo build -vv -F bundled-cmake` for CMake configure/build logs.
    - On Windows (MSVC), keep the Cargo target directory short (e.g. `CARGO_TARGET_DIR=D:/t`). DuckDB's unity build includes sources by a path relative to the build directory, and deep paths exceed MSVC's 260-character limit with `C1083`. Alternatively set `DUCKDB_DISABLE_UNITY=1`.

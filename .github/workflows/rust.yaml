@@ -105,9 +105,9 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { name: Linux, os: ubuntu-latest }
-          - { name: macOS, os: macos-latest }
-          - { name: Windows, os: windows-latest }
+          - { name: Linux, os: ubuntu-latest, features: "icu httpfs" }
+          - { name: macOS, os: macos-latest, features: "icu httpfs" }
+          - { name: Windows, os: windows-latest, features: "icu" }
     runs-on: ${{ matrix.os }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -115,6 +115,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
       DUCKDB_DISABLE_EXTENSION_LOAD: "1"
+      CMAKE_FEATURES: ${{ matrix.features }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -143,19 +144,31 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
+      - name: Install HTTPFS dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libcurl4-openssl-dev libssl-dev
+
+      - name: Install HTTPFS dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkg-config openssl@3
+
+      - name: Check CMake without default features
+        if: runner.os == 'Linux'
+        run: cargo check -p libduckdb-sys --no-default-features --features "bundled-cmake capi-v1" --locked
+
       - name: Verify static linking with extension loading disabled
         shell: bash
         run: |
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
           echo "$output"
           grep -qF "STATICALLY_LINKED,(BUILT-IN)" <<<"$output"
 
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
           echo "$output"
           grep -qF "false,false" <<<"$output"
 
           set +e
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "LOAD sqlite_scanner;" 2>&1)
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "LOAD sqlite_scanner;" 2>&1)
           status=$?
           set -e
 
@@ -164,7 +177,13 @@ jobs:
           grep -qF "Loading external extensions is disabled through a compile time flag" <<<"$output"
 
       - name: ICU functional test
-        run: cargo test -p duckdb --features icu --lib extension::test::test_extension_icu -- --exact
+        shell: bash
+        run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_icu -- --exact
+
+      - name: HTTPFS loads without downloaded artifacts
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_httpfs -- --exact
 
   msrv:
     name: MSRV ${{ matrix.crate }}
