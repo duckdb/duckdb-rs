@@ -149,8 +149,6 @@ fn test_scalar_panic() -> crate::Result<()> {
     // DuckDB only invalidates the database when the internal error is raised on the
     // client thread; if a worker thread raises it first, only the transaction is
     // invalidated. A single thread makes the panic always run on the client thread.
-    // This has to be set before attaching: a later `SET threads = 1` still
-    // occasionally lets a worker thread execute the query.
     let db = env.instance().expect("Failed to create instance");
     db.set_option("threads", "1").expect("Failed to set threads");
     db.attach(&StorageLocation::InMemory)
