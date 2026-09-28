@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use libduckdb_sys::v2::DUCKDB_V2_LOGICAL_TYPE_ID;
 
+use crate::ffi_str::DuckDBStr;
 use crate::{
     Parameters, Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::FFILink,
@@ -128,7 +129,7 @@ impl LogicalType {
     pub fn name(&self) -> Result<&str> {
         let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_logical_type_get_name, self.handle, RET)?;
 
-        Ok(name.into())
+        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default())
     }
 
     /// Render the type as SQL text.
@@ -157,11 +158,7 @@ impl LogicalType {
             &mut value
         )?;
 
-        let name = if name.ptr.is_null() || name.len == 0 {
-            ""
-        } else {
-            name.into()
-        };
+        let name = DuckDBStr::from_raw(name).as_str().unwrap_or_default();
 
         Ok((name, Value { handle: value }))
     }

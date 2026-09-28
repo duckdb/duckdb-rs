@@ -2,6 +2,7 @@
 
 use crate::ffi;
 
+use crate::ffi_str::DuckDBStr;
 use crate::{
     Result, check_api_call, check_api_call_no_err, connection::Connection, logical_type::LogicalType,
     qualified_name::QualifiedName,
@@ -27,7 +28,7 @@ impl ColumnDescription {
     pub fn name(&self) -> Result<&str> {
         let name = check_api_call!(ffi::duckdb_v2_column_description_get_name, self.handle, RET)?;
 
-        Ok(name.into())
+        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default())
     }
 
     /// Return an owned copy of the column's logical type.

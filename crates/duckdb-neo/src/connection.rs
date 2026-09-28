@@ -103,7 +103,12 @@ fn execute_statement<'conn>(
         message: "No statements found in SQL string".to_string(),
     })??;
 
-    assert!(statements.next().is_none(), "Multiple statements found in SQL string");
+    if statements.next().is_some() {
+        return Err(Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+            message: "Multiple statements found in SQL string".to_string(),
+        });
+    }
 
     conn.execute_statement(statement, names, values)
 }
@@ -515,6 +520,17 @@ mod tests {
                 i += 1;
             }
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_connection_rejects_multiple_statements() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+
+        assert!(conn.execute("SELECT 1; SELECT 2", Parameters::None).is_err());
+        assert!(conn.query("SELECT 1; SELECT 2", Parameters::None).is_err());
+        assert!(conn.parse("SELECT '\0'").is_err());
 
         Ok(())
     }

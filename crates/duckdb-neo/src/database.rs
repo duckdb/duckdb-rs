@@ -5,8 +5,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use libduckdb_sys::v2::DuckDBStr;
-
 use crate::{
     Result, check_api_call, check_api_call_no_err,
     connection::Connection,
@@ -143,7 +141,7 @@ impl Instance {
     ) -> Result<()> {
         let location: String = location.into();
         let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| **o);
-        let alias_str: Option<DuckDBStr<'_>> = alias.as_ref().map(|a| (a).into());
+        let alias_str: Option<ffi::duckdb_v2_str> = alias.as_ref().map(|a| (a).into());
 
         check_api_call!(
             ffi::duckdb_v2_instance_attach,

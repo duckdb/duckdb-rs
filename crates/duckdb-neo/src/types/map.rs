@@ -140,7 +140,6 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
             return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
         };
 
-        let offset = vector.child_write_offset;
         let len = value.len();
         let mut children = std::mem::take(&mut vector.children).into_iter();
         let mut keys = children.next().expect("validated map key child").cast_unchecked::<K>();
@@ -150,18 +149,19 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
             .cast_unchecked::<V>();
 
         let result = (|| {
+            // Append after the child's elements, including any written through another wrapper.
+            let offset = keys.current_size()?;
             keys.set_size(offset + len)?;
             values.set_size(offset + len)?;
             for (child_index, (key, value)) in value.into_iter().enumerate() {
                 keys.write(offset + child_index, Some(key))?;
                 values.write(offset + child_index, Some(value))?;
             }
-            Ok(())
+            Ok(offset)
         })();
 
         vector.children = vec![keys.cast_unchecked::<Unknown>(), values.cast_unchecked::<Unknown>()];
-        result?;
-        vector.child_write_offset += len;
+        let offset = result?;
         vector.write_raw(
             index,
             Some(ffi::duckdb_v2_list_entry {

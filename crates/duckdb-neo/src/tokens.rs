@@ -1,7 +1,5 @@
 //! SQL tokenization into typed lexemes with source offsets.
 
-use libduckdb_sys::v2::DuckDBStr;
-
 use crate::{
     Result,
     connection::Connection,
@@ -45,7 +43,7 @@ impl SqlTokenIterator {
     /// on demand as the iterator is advanced.
     pub fn new(conn: &Connection, sql: &str) -> Result<SqlTokenIterator> {
         Ok(Self {
-            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, DuckDBStr::from(sql), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, From::from(sql), RET)?,
         })
     }
 

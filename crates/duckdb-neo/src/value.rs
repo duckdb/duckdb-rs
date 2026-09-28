@@ -7,6 +7,7 @@ use crate::ffi;
 use crate::{
     Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::{Connection, Context, FFILink},
+    error::{DuckDBError, Error},
     links::ValueCastLink,
     logical_type::LogicalType,
     types::FromValue,
@@ -108,15 +109,19 @@ pub enum ValueInput<'a> {
     },
 }
 
-fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {
-    values.iter().map(|value| value.handle).collect()
+/// The C API reads both arrays with one count, so a length mismatch would read past the shorter.
+fn check_same_len(what: &str, left: usize, right: usize) -> Result<()> {
+    if left == right {
+        return Ok(());
+    }
+    Err(Error {
+        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+        message: format!("{what}: lengths differ ({left} vs {right})"),
+    })
 }
 
-fn bytes(value: &[u8]) -> ffi::DuckDBStr<'_> {
-    ffi::DuckDBStr {
-        ptr: value.as_ptr().cast(),
-        len: value.len() as u64,
-    }
+fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {
+    values.iter().map(|value| value.handle).collect()
 }
 
 fn hugeint(value: i128) -> ffi::duckdb_v2_hugeint_t {
@@ -198,7 +203,7 @@ macro_rules! create_value_dispatch {
             ValueInput::HugeInt(value) => create_value!($hugeint, $link, hugeint(value)),
             ValueInput::UHugeInt(value) => create_value!($uhugeint, $link, uhugeint(value)),
             ValueInput::Varchar(value) => create_value!($varchar, $link, value.into()),
-            ValueInput::Blob(value) => create_value!($blob, $link, bytes(value)),
+            ValueInput::Blob(value) => create_value!($blob, $link, crate::ffi_str::bytes_arg(value)),
             ValueInput::Type(logical_type) => create_value!($type, $link, logical_type.handle),
             ValueInput::Date(value) => create_value!($date, $link, value),
             ValueInput::Time(value) => create_value!($time, $link, value),
@@ -215,8 +220,8 @@ macro_rules! create_value_dispatch {
             }
             ValueInput::Decimal { value, width, scale } => create_value!($decimal, $link, hugeint(value), width, scale),
             ValueInput::Uuid(value) => create_value!($uuid, $link, hugeint(value)),
-            ValueInput::Bit(value) => create_value!($bit, $link, bytes(value)),
-            ValueInput::BigNum(value) => create_value!($bignum, $link, bytes(value)),
+            ValueInput::Bit(value) => create_value!($bit, $link, crate::ffi_str::bytes_arg(value)),
+            ValueInput::BigNum(value) => create_value!($bignum, $link, crate::ffi_str::bytes_arg(value)),
             ValueInput::List { child_type, children } => {
                 let children = value_handles(children);
                 create_value!(
@@ -238,6 +243,7 @@ macro_rules! create_value_dispatch {
                 )
             }
             ValueInput::Struct { names, children } => {
+                check_same_len("STRUCT names and children", names.len(), children.len())?;
                 let names = names.iter().map(|name| (*name).into()).collect::<Vec<_>>();
                 let children = value_handles(children);
                 create_value!($struct, $link, names.as_ptr(), children.as_ptr(), children.len() as u64)
@@ -252,6 +258,7 @@ macro_rules! create_value_dispatch {
                 keys,
                 values,
             } => {
+                check_same_len("MAP keys and values", keys.len(), values.len())?;
                 let keys = value_handles(keys);
                 let values = value_handles(values);
                 create_value!(
@@ -512,10 +519,63 @@ impl Value {
 mod tests {
 
     use crate::{
-        ToValue,
+        Parameters, ToValue,
+        builder_helpers::scalar_callback,
+        connection::FFILink,
         environment::{Environment, StorageLocation},
-        types::BigNumValue,
+        scalar::ScalarFunctionBuilder,
+        signature::{Parameter, SignatureBuilder},
+        types::{BigNumValue, DuckDBType},
+        value::ValueInput,
     };
+
+    fn assert_length_mismatches_rejected<C: FFILink + ?Sized>(link: &C) -> crate::Result<()> {
+        let int = i32::logical_type(link)?;
+        let two = [1_i32.value(link)?, 2_i32.value(link)?];
+        let one = [3_i32.value(link)?];
+
+        let result = link.create_value(ValueInput::Struct {
+            names: &["a"],
+            children: &two,
+        });
+        assert!(result.is_err());
+
+        let result = link.create_value(ValueInput::Map {
+            key_type: &int,
+            value_type: &int,
+            keys: &two,
+            values: &one,
+        });
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    scalar_callback!(LengthCheckScalar, i32, |_input, output, ctx, _user_data| {
+        assert_length_mismatches_rejected(ctx)?;
+        let mut output = output;
+        output.set_size(1)?;
+        output.write(0, Some(1))
+    });
+
+    #[test]
+    fn test_nested_value_length_mismatch() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        assert_length_mismatches_rejected(&conn)?;
+
+        // The same check through a callback context.
+        ScalarFunctionBuilder::new(
+            "length_check",
+            SignatureBuilder::new(
+                [Parameter::normal("x", i32::logical_type(&conn)?)],
+                i32::logical_type(&conn)?,
+            ),
+            LengthCheckScalar,
+        )
+        .register(&conn)?;
+        conn.execute("SELECT length_check(1)", Parameters::None)?;
+
+        Ok(())
+    }
 
     #[test]
     fn test_value_create() -> crate::Result<()> {

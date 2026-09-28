@@ -7,7 +7,7 @@
 //! Specification: <https://arrow.apache.org/docs/format/CDataInterface.html>
 
 use std::{
-    ffi::{c_char, c_void},
+    ffi::{c_char, c_int, c_void},
     ptr,
 };
 
@@ -77,12 +77,39 @@ impl ArrowSchema {
     }
 }
 
+/// Arrow C stream interface.
+#[repr(C)]
+#[derive(Debug)]
+pub struct ArrowArrayStream {
+    pub get_schema: Option<unsafe extern "C" fn(*mut ArrowArrayStream, *mut ArrowSchema) -> c_int>,
+    pub get_next: Option<unsafe extern "C" fn(*mut ArrowArrayStream, *mut ArrowArray) -> c_int>,
+    pub get_last_error: Option<unsafe extern "C" fn(*mut ArrowArrayStream) -> *const c_char>,
+    pub release: Option<unsafe extern "C" fn(*mut ArrowArrayStream)>,
+    pub private_data: *mut c_void,
+}
+
+impl ArrowArrayStream {
+    /// Creates a null-release placeholder for a producer to fill.
+    pub const fn empty() -> Self {
+        Self {
+            get_schema: None,
+            get_next: None,
+            get_last_error: None,
+            release: None,
+            private_data: ptr::null_mut(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::mem::{align_of, offset_of, size_of};
 
-    use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
+    use arrow::{
+        ffi::{FFI_ArrowArray, FFI_ArrowSchema},
+        ffi_stream::FFI_ArrowArrayStream,
+    };
 
     macro_rules! assert_offsets {
         ($left:ty, $right:ty, $($field:ident),+ $(,)?) => {
@@ -127,6 +154,18 @@ mod tests {
             n_children,
             children,
             dictionary,
+            release,
+            private_data,
+        );
+
+        assert_eq!(size_of::<ArrowArrayStream>(), size_of::<FFI_ArrowArrayStream>());
+        assert_eq!(align_of::<ArrowArrayStream>(), align_of::<FFI_ArrowArrayStream>());
+        assert_offsets!(
+            ArrowArrayStream,
+            FFI_ArrowArrayStream,
+            get_schema,
+            get_next,
+            get_last_error,
             release,
             private_data,
         );

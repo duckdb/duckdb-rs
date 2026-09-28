@@ -5,6 +5,7 @@
 //! share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
 use super::{DuckDBType, FromValue, ToValue};
+use crate::ffi_str::{DuckDBStr, bytes_view};
 use crate::{
     Parameters, Result,
     bytes::DuckDBBytes,
@@ -17,16 +18,15 @@ use crate::{
     vector::{Vector, VectorElement, WritableVectorElement},
 };
 
-pub(crate) fn owned_bytes(raw: ffi::DuckDBStr<'_>) -> Result<Vec<u8>> {
+/// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
+pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
     if raw.len == 0 {
         return Ok(Vec::new());
     }
-    if raw.ptr.is_null() {
-        return Err(Error::api_error(
-            "DuckDB returned a null pointer for a non-empty value".to_string(),
-        ));
-    }
-    Ok(unsafe { std::slice::from_raw_parts(raw.ptr.cast(), raw.len as usize) }.to_vec())
+    DuckDBStr::from_raw(raw)
+        .as_bytes()
+        .map(<[u8]>::to_vec)
+        .ok_or_else(|| Error::api_error("DuckDB returned a null pointer for a non-empty value".to_string()))
 }
 
 impl FromValue for String {
@@ -155,7 +155,7 @@ impl VectorElement for String {
 
         let string_view = unsafe { &*data_ptr.add(physical) };
 
-        string_view.into()
+        std::str::from_utf8(bytes_view(string_view)).unwrap()
     }
 }
 

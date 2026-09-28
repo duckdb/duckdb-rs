@@ -6,20 +6,6 @@ pub const DUCKDB_V2_API_VERSION_PATCH: u32 = 0;
 pub const DUCKDB_V2_API_ALLOW_DEPRECATED: u32 = 1;
 pub const DUCKDB_V2_API_ALLOW_UNSTABLE: u32 = 0;
 pub const DUCKDB_V2_BYTES_INLINE_LENGTH: u32 = 12;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ArrowArrayStream {
-    pub get_schema: ::std::option::Option<
-        unsafe extern "C" fn(arg1: *mut ArrowArrayStream, out: *mut ArrowSchema) -> ::std::os::raw::c_int,
-    >,
-    pub get_next: ::std::option::Option<
-        unsafe extern "C" fn(arg1: *mut ArrowArrayStream, out: *mut ArrowArray) -> ::std::os::raw::c_int,
-    >,
-    pub get_last_error:
-        ::std::option::Option<unsafe extern "C" fn(arg1: *mut ArrowArrayStream) -> *const ::std::os::raw::c_char>,
-    pub release: ::std::option::Option<unsafe extern "C" fn(arg1: *mut ArrowArrayStream)>,
-    pub private_data: *mut ::std::os::raw::c_void,
-}
 pub type idx_t = u64;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

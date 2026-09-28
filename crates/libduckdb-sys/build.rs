@@ -422,13 +422,9 @@ mod build_linked {
         let source = DownloadSource::pinned().unwrap_or_else(DownloadSource::from_crate_version);
 
         // Cache downloads beside the profile directory so successive builds reuse them.
+        // An unrecognized layout only loses the shared cache, so fall back to OUT_DIR.
         let download_dir = crate::build_paths::download_root(Path::new(out_dir))
-            .ok_or_else(|| {
-                format!(
-                    "Could not determine DuckDB download directory from Cargo OUT_DIR '{out_dir}'. \
-                     Set DUCKDB_LIB_DIR to use an existing DuckDB library."
-                )
-            })?
+            .unwrap_or_else(|| Path::new(out_dir).join("duckdb-download"))
             .join(&target)
             .join(source.cache_key());
         fs::create_dir_all(&download_dir)?;
@@ -510,8 +506,8 @@ mod build_linked {
 
     // The release archives give libduckdb an @rpath-relative install name, and a
     // dependency's build script cannot add an rpath to the binaries Cargo links for
-    // the crates above it. Stage the library beside those binaries instead, so the
-    // loader path Cargo sets when it runs them resolves it.
+    // the crates above it. Stage the library where the loader path Cargo sets when
+    // it runs them will find it instead.
     //
     // Best effort: a static or header-only DUCKDB_LIB_DIR has nothing to stage, and
     // callers who point the loader at the original directory keep working either way.
@@ -537,29 +533,22 @@ mod build_linked {
 
         if let Err(error) = copy_libduckdb(lib_dir, archive.dynamic_lib, out_dir) {
             println!(
-                "cargo:warning=Could not stage {} beside the test binaries: {error}",
+                "cargo:warning=Could not stage {} for the loader: {error}",
                 archive.dynamic_lib
             );
         }
     }
 
-    // Copy libduckdb into target/<profile>/deps so executables/tests can load it via
-    // the loader path Cargo sets when it runs them.
+    // Copy libduckdb into OUT_DIR and add it as a link search path: Cargo puts search paths
+    // inside the target directory on the loader path when it runs binaries, in any layout.
     fn copy_libduckdb(source_dir: &Path, lib_filename: &str, out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(deps_dir) = crate::build_paths::profile_deps_dir(Path::new(out_dir)) else {
-            return Err(format!(
-                "Could not determine runtime library directory from Cargo OUT_DIR '{out_dir}'. \
-                 Set DUCKDB_LIB_DIR to use an existing DuckDB library."
-            )
-            .into());
-        };
-        fs::create_dir_all(&deps_dir)?;
         let source = source_dir.join(lib_filename);
-        let dest = deps_dir.join(lib_filename);
+        let dest = Path::new(out_dir).join(lib_filename);
         if dest.exists() {
             fs::remove_file(&dest)?;
         }
         fs::copy(&source, &dest)?;
+        println!("cargo:rustc-link-search=native={out_dir}");
         println!("cargo:warning=Copied libduckdb to {}", dest.display());
         Ok(())
     }
@@ -760,6 +749,7 @@ mod bindings {
             .allowlist_type("idx_t")
             .blocklist_type("ArrowArray")
             .blocklist_type("ArrowSchema")
+            .blocklist_type("ArrowArrayStream")
             .layout_tests(false) // causes problems on WASM builds
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
@@ -776,9 +766,6 @@ mod bindings {
                 // The v2 header spells its enums and macro constants in upper
                 // case, which the case-sensitive allowlist above would drop.
                 .allowlist_item(r#"DUCKDB_V2_\w*"#)
-                // Exported by the v2 header for Arrow interop; not reachable
-                // through the allowlist alone on every DuckDB version.
-                .allowlist_type("ArrowArrayStream")
                 // The v2 wrapper matches on real Rust enums rather than
                 // constified integer values.
                 .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#),

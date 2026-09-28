@@ -23,7 +23,7 @@ use crate::{
 /// table function.
 pub struct ReplacementHandle<'a> {
     info: &'a ffi::duckdb_v2_replacement_scan_info_handle,
-    collections: &'a HashMap<String, ColumnDataCollection<'static>>,
+    collections: &'a HashMap<String, ColumnDataCollection<'a>>,
 }
 
 /// A replacement source for an unresolved table reference, selected with
@@ -115,9 +115,9 @@ impl ReplacementHandle<'_> {
 }
 
 /// What the registration owns: the callback and the collections it can claim references with.
-struct ReplacementScanData<T> {
+struct ReplacementScanData<'conn, T> {
     implementation: T,
-    collections: HashMap<String, ColumnDataCollection<'static>>,
+    collections: HashMap<String, ColumnDataCollection<'conn>>,
 }
 
 unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
@@ -128,7 +128,7 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
     handle_unwind(
         || {
             let user_data = check_api_call!(ffi::duckdb_v2_replacement_scan_get_user_data, info, RET)?;
-            let data = unsafe { get_opaque_data_ref::<ReplacementScanData<T>>(user_data) }.unwrap();
+            let data = unsafe { get_opaque_data_ref::<ReplacementScanData<'_, T>>(user_data) }.unwrap();
 
             let qname = QualifiedName {
                 handle: check_api_call!(ffi::duckdb_v2_replacement_scan_get_name, info, RET)?,
@@ -205,18 +205,11 @@ where
             });
         }
 
-        // SAFETY: every collection comes from `link`'s connection, which drops the scan, and the
+        // Every collection comes from `link`'s connection, which drops this data, and the
         // collections with it, when it is destroyed. It keeps the database alive until then.
-        let collections = unsafe {
-            std::mem::transmute::<
-                HashMap<String, ColumnDataCollection<'conn>>,
-                HashMap<String, ColumnDataCollection<'static>>,
-            >(self.collections)
-        };
-
         let data = OpaqueHandle::new(ReplacementScanData {
             implementation: self.implementation,
-            collections,
+            collections: self.collections,
         });
 
         let handle = link.create_replacement_scan_handle()?;

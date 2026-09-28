@@ -64,6 +64,14 @@ impl<T: FromValue, const N: usize> FromValue for [Option<T>; N] {
     }
 }
 
+/// Read the element count of an `ARRAY` type.
+pub(crate) fn array_size(logical_type: &LogicalType) -> Result<usize> {
+    let (_, array_size) = logical_type.get_param(1)?;
+    Ok(array_size
+        .get::<u64>()?
+        .ok_or(Error::api_error("Failed to get array_size from logical type".into()))? as usize)
+}
+
 impl<T: VectorElement> VectorElement for Array<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY;
 
@@ -90,11 +98,9 @@ impl<T: VectorElement> VectorElement for Array<T> {
     where
         Self: Sized + 'a,
     {
-        let slice_size = vector.children[0].len() / vector.len();
-
         ArrayRef {
-            offset: physical * slice_size,
-            size: slice_size,
+            offset: physical * vector.array_size,
+            size: vector.array_size,
             _length: vector.children[0].len(),
             child: &vector.children[0],
             _marker: PhantomData,
@@ -109,11 +115,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         T: 'a;
 
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        let (_, array_size) = vector.logical_type().get_param(1)?;
-        let array_size = array_size
-            .get::<u64>()?
-            .ok_or(Error::api_error("Failed to get array_size from logical type".into()))?
-            as usize;
+        let array_size = vector.array_size;
 
         if let Some(values) = &value {
             if values.len() != array_size {
