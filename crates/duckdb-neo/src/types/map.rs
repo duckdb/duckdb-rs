@@ -71,7 +71,9 @@ impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
         }
 
         let entries = children
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .enumerate()
             .map(|(index, entry)| {
                 let key = K::from_value(&entry[0])?.ok_or_else(|| Error {

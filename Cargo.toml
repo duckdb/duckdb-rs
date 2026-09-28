@@ -18,7 +18,7 @@ keywords = ["duckdb", "database", "ffi"]
 license = "MIT"
 categories = ["database"]
 edition = "2024"
-rust-version = "1.85.1"
+rust-version = "1.88"
 
 [workspace.dependencies]
 duckdb = { version = "=1.20000.0", path = "crates/duckdb" }
@@ -26,7 +26,7 @@ duckdb-loadable-macros = { version = "=1.20000.0", path = "crates/duckdb-loadabl
 duckdb-neo = { version = "=1.20000.0", path = "crates/duckdb-neo" }
 libduckdb-sys = { version = "=1.20000.0", path = "crates/libduckdb-sys", default-features = false }
 
-arrow = { version = "59", default-features = false }
+arrow = { version = "60", default-features = false }
 bindgen = { version = "0.72.1", default-features = false }
 cast = "0.3"
 cc = "1.0"
