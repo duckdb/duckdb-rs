@@ -26,6 +26,7 @@ bundled = ["libduckdb-sys/bundled"]
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
 buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
 r2d2 = ["dep:r2d2"]
+uuid = ["dep:uuid"]
 
 [dependencies]
 libc = { workspace = true }
@@ -35,6 +36,7 @@ libc = { workspace = true }
 libduckdb-sys = { version = "=1.20000.0", path = "../libduckdb-sys", default-features = false, features = ["capi-v2", "pkg-config", "vcpkg", "download-lib"] }
 paste = { workspace = true }
 r2d2 = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 features = []
