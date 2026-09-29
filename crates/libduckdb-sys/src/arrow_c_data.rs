@@ -6,8 +6,10 @@
 //!
 //! Specification: <https://arrow.apache.org/docs/format/CDataInterface.html>
 
+#[cfg(any(test, feature = "capi-v2"))]
+use std::ffi::c_int;
 use std::{
-    ffi::{c_char, c_int, c_void},
+    ffi::{c_char, c_void},
     ptr,
 };
 
@@ -77,7 +79,8 @@ impl ArrowSchema {
     }
 }
 
-/// Arrow C stream interface.
+/// Arrow C stream interface. Only the v2 API exposes it; tests keep it for the layout check.
+#[cfg(any(test, feature = "capi-v2"))]
 #[repr(C)]
 #[derive(Debug)]
 pub struct ArrowArrayStream {
@@ -88,6 +91,7 @@ pub struct ArrowArrayStream {
     pub private_data: *mut c_void,
 }
 
+#[cfg(feature = "capi-v2")]
 impl ArrowArrayStream {
     /// Creates a null-release placeholder for a producer to fill.
     pub const fn empty() -> Self {
