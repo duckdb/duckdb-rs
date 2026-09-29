@@ -43,7 +43,7 @@ impl SqlTokenIterator {
     /// on demand as the iterator is advanced.
     pub fn new(conn: &Connection, sql: &str) -> Result<SqlTokenIterator> {
         Ok(Self {
-            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, From::from(sql), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, &sql.into(), RET)?,
         })
     }
 

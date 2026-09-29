@@ -200,10 +200,10 @@ macro_rules! create_value_dispatch {
             ValueInput::UBigInt(value) => create_value!($ubigint, $link, value),
             ValueInput::Float(value) => create_value!($float, $link, value),
             ValueInput::Double(value) => create_value!($double, $link, value),
-            ValueInput::HugeInt(value) => create_value!($hugeint, $link, hugeint(value)),
-            ValueInput::UHugeInt(value) => create_value!($uhugeint, $link, uhugeint(value)),
-            ValueInput::Varchar(value) => create_value!($varchar, $link, value.into()),
-            ValueInput::Blob(value) => create_value!($blob, $link, crate::ffi_str::bytes_arg(value)),
+            ValueInput::HugeInt(value) => create_value!($hugeint, $link, &hugeint(value)),
+            ValueInput::UHugeInt(value) => create_value!($uhugeint, $link, &uhugeint(value)),
+            ValueInput::Varchar(value) => create_value!($varchar, $link, &value.into()),
+            ValueInput::Blob(value) => create_value!($blob, $link, &crate::ffi_str::bytes_arg(value)),
             ValueInput::Type(logical_type) => create_value!($type, $link, logical_type.handle),
             ValueInput::Date(value) => create_value!($date, $link, value),
             ValueInput::Time(value) => create_value!($time, $link, value),
@@ -216,12 +216,14 @@ macro_rules! create_value_dispatch {
             ValueInput::TimestampTz(value) => create_value!($timestamp_tz, $link, value),
             ValueInput::TimestampTzNs(value) => create_value!($timestamp_tz_ns, $link, value),
             ValueInput::Interval { months, days, micros } => {
-                create_value!($interval, $link, ffi::duckdb_v2_interval_t { months, days, micros })
+                create_value!($interval, $link, &ffi::duckdb_v2_interval_t { months, days, micros })
             }
-            ValueInput::Decimal { value, width, scale } => create_value!($decimal, $link, hugeint(value), width, scale),
-            ValueInput::Uuid(value) => create_value!($uuid, $link, hugeint(value)),
-            ValueInput::Bit(value) => create_value!($bit, $link, crate::ffi_str::bytes_arg(value)),
-            ValueInput::BigNum(value) => create_value!($bignum, $link, crate::ffi_str::bytes_arg(value)),
+            ValueInput::Decimal { value, width, scale } => {
+                create_value!($decimal, $link, &hugeint(value), width, scale)
+            }
+            ValueInput::Uuid(value) => create_value!($uuid, $link, &hugeint(value)),
+            ValueInput::Bit(value) => create_value!($bit, $link, &crate::ffi_str::bytes_arg(value)),
+            ValueInput::BigNum(value) => create_value!($bignum, $link, &crate::ffi_str::bytes_arg(value)),
             ValueInput::List { child_type, children } => {
                 let children = value_handles(children);
                 create_value!(

@@ -54,7 +54,7 @@ impl QualifiedName {
     /// Parse a qualified name using DuckDB's SQL identifier rules.
     pub fn from_sql(sql: &str) -> Result<Self> {
         Ok(QualifiedName {
-            handle: check_api_call!(ffi::duckdb_v2_qname_parse, sql.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_qname_parse, &sql.into(), RET)?,
         })
     }
 

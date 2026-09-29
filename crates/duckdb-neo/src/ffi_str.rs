@@ -37,11 +37,39 @@ impl<'a> DuckDBStr<'a> {
         // SAFETY: `from_raw` requires `len` bytes valid for `'a`.
         Some(unsafe { std::slice::from_raw_parts(self.raw.ptr.cast(), self.raw.len as usize) })
     }
+
+    pub(crate) fn as_raw_ptr(&self) -> *const ffi::duckdb_v2_str {
+        &self.raw as *const ffi::duckdb_v2_str
+    }
 }
 
 impl From<DuckDBStr<'_>> for Option<String> {
     fn from(value: DuckDBStr<'_>) -> Self {
         value.as_str().map(str::to_owned)
+    }
+}
+
+impl From<ffi::duckdb_v2_str> for DuckDBStr<'_> {
+    fn from(value: ffi::duckdb_v2_str) -> Self {
+        Self::from_raw(value)
+    }
+}
+
+impl<'a> From<&'a str> for DuckDBStr<'a> {
+    fn from(value: &str) -> Self {
+        DuckDBStr::from(ffi::duckdb_v2_str {
+            ptr: value.as_ptr().cast(),
+            len: value.len() as ffi::idx_t,
+        })
+    }
+}
+
+impl<'a> From<&'a String> for DuckDBStr<'a> {
+    fn from(value: &String) -> Self {
+        DuckDBStr::from(ffi::duckdb_v2_str {
+            ptr: value.as_ptr().cast(),
+            len: value.len() as ffi::idx_t,
+        })
     }
 }
 

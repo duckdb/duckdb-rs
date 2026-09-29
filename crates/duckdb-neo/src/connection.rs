@@ -239,7 +239,7 @@ impl Connection {
     /// The setting resolves from this connection's local override, then the
     /// database's global value, then the static default.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_name, **self, name.into(), RET)?;
+        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_name, **self, &name.into(), RET)?;
 
         Ok(ConfigOption { handle })
     }
@@ -276,8 +276,8 @@ impl Connection {
         check_api_call!(
             ffi::duckdb_v2_connection_set_option,
             **self,
-            name.into(),
-            value.into(),
+            &name.into(),
+            &value.into(),
             scope.into()
         )?;
 
@@ -335,7 +335,7 @@ impl FFILink for Connection {
     }
 
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        self.create_logical_type_from_text(text)
+        self.create_logical_type_from_text(&text.into())
             .map(|handle| LogicalType { handle })
     }
 
@@ -395,7 +395,7 @@ impl Context {
     /// Return an effective option by canonical name or alias.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
         Ok(ConfigOption {
-            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, name.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, &name.into(), RET)?,
         })
     }
 
@@ -430,7 +430,7 @@ impl FFILink for Context {
     }
 
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        self.create_logical_type_from_text(text)
+        self.create_logical_type_from_text(&text.into())
             .map(|handle| LogicalType { handle })
     }
 

@@ -40,7 +40,7 @@ impl<'a> BindFunctionHandle<'a> {
         check_api_call!(
             ffi::duckdb_v2_table_function_bind_add_result_column,
             *self.0,
-            (name).into(),
+            &name.into(),
             *logical_type
         )?;
 

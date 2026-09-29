@@ -54,7 +54,7 @@ impl CustomType {
             self.base_type.handle
         )?;
 
-        check_api_call!(ffi::duckdb_v2_custom_type_set_name, **handle, (&self.name).into(),)?;
+        check_api_call!(ffi::duckdb_v2_custom_type_set_name, **handle, &(&self.name).into(),)?;
 
         Ok(())
     }

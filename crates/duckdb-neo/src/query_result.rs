@@ -189,13 +189,13 @@ impl<'a> QueryResult<'a> {
     }
 
     unsafe extern "C" fn copy_render_box(
-        text: ffi::duckdb_v2_str,
+        text: *const ffi::duckdb_v2_str,
         user_data: *mut std::os::raw::c_void,
         _err: *mut ffi::duckdb_v2_error_info_handle,
     ) {
         let string = unsafe { &mut *(user_data as *mut String) };
 
-        string.push_str(DuckDBStr::from_raw(text).as_str().unwrap_or_default());
+        string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
     }
 
     /// Consume the remaining rows and render DuckDB's box table.
@@ -220,7 +220,7 @@ impl<'a> QueryResult<'a> {
             max_rows as u64,
             max_width as u64,
             max_col_width as u64,
-            null_value,
+            &null_value,
             render_mode as u64,
             limit as u64,
             Some(Self::copy_render_box),

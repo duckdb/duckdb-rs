@@ -136,7 +136,7 @@ impl<'link> FileBuilder<'link> {
         check_api_call!(
             ffi::duckdb_v2_file_open_options_set_value,
             self.handle,
-            name.into(),
+            &name.into(),
             **value
         )?;
         Ok(self)
@@ -210,7 +210,7 @@ impl File {
         flags: ffi::duckdb_v2_file_open_options_handle,
     ) -> crate::Result<Self> {
         Ok(File {
-            handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, path.into(), flags, RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, &path.into(), flags, RET)?,
             _database: fs.database.clone(),
         })
     }

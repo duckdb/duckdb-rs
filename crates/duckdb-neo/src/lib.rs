@@ -84,7 +84,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Render a name as SQL, quoting and escaping it only when required.
 pub fn render_identifier_quoted(text: &str) -> Result<String> {
-    check_api_call_string!(ffi::duckdb_v2_identifier_render_quoted, text.into())
+    check_api_call_string!(ffi::duckdb_v2_identifier_render_quoted, &text.into())
 }
 
 /// Return the linked DuckDB library version.
@@ -96,7 +96,7 @@ pub fn library_version() -> Result<&'static str> {
 
 /// Validate that `bytes` are well-formed UTF-8, including bytes after any embedded NULs.
 pub fn validate_utf8(bytes: &[u8]) -> Result<()> {
-    check_api_call!(ffi::duckdb_v2_validate_utf8, ffi_str::bytes_arg(bytes))
+    check_api_call!(ffi::duckdb_v2_validate_utf8, &mut ffi_str::bytes_arg(bytes))
 }
 
 #[cfg(test)]

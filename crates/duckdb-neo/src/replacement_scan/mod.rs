@@ -57,7 +57,7 @@ impl ReplacementHandle<'_> {
         check_api_call!(
             ffi::duckdb_v2_replacement_scan_add_named_argument,
             *self.info,
-            name.into(),
+            &name.into(),
             value.handle,
         )
     }
@@ -81,7 +81,7 @@ impl ReplacementHandle<'_> {
                 check_api_call!(
                     ffi::duckdb_v2_replacement_scan_set_subquery,
                     *self.info,
-                    (&query).into()
+                    &(&query).into()
                 )
             }
             ReplacementType::ColumnDataCollection(name) => check_api_call!(
@@ -103,7 +103,7 @@ impl ReplacementHandle<'_> {
 
     /// Set the replacement's alias unless the query supplies one.
     pub fn set_alias(&self, name: &str) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_replacement_scan_set_alias, *self.info, name.into())
+        check_api_call!(ffi::duckdb_v2_replacement_scan_set_alias, *self.info, &name.into())
     }
 
     fn registered_collection(&self, name: &str) -> Result<&ColumnDataCollection<'_>> {

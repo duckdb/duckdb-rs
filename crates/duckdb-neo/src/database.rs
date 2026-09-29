@@ -48,7 +48,12 @@ impl AttachOptionsBuilder {
     /// Keys are matched case-insensitively; setting the same key again replaces
     /// the previous value.
     pub fn set_option(&mut self, key: &str, value: &str) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_attach_options_set, self.handle, key.into(), value.into())
+        check_api_call!(
+            ffi::duckdb_v2_attach_options_set,
+            self.handle,
+            &key.into(),
+            &value.into()
+        )
     }
 }
 
@@ -146,7 +151,7 @@ impl Instance {
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
             self.handle.lock().unwrap().handle,
-            (&location).into(),
+            &(&location).into(),
             alias_str
                 .as_ref()
                 .map_or(std::ptr::null_mut(), |a| a as *const _ as *mut _),
@@ -162,7 +167,7 @@ impl Instance {
         check_api_call!(
             ffi::duckdb_v2_instance_set_default,
             self.handle.lock().unwrap().handle,
-            (&location).into()
+            &(&location).into()
         )?;
         Ok(self)
     }
@@ -174,7 +179,7 @@ impl Instance {
         check_api_call!(
             ffi::duckdb_v2_instance_detach,
             self.handle.lock().unwrap().handle,
-            (&location).into()
+            &(&location).into()
         )?;
         Ok(self)
     }
@@ -200,7 +205,7 @@ impl Instance {
         let handle = check_api_call!(
             ffi::duckdb_v2_instance_get_option_by_name,
             self.handle.lock().unwrap().handle,
-            name.into(),
+            &name.into(),
             RET
         )?;
 
@@ -243,8 +248,8 @@ impl Instance {
         check_api_call!(
             ffi::duckdb_v2_instance_set_option,
             self.handle.lock().unwrap().handle,
-            key.into(),
-            value.into()
+            &key.into(),
+            &value.into()
         )?;
 
         Ok(())

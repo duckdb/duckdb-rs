@@ -130,7 +130,7 @@ impl SignatureBuilder {
                     check_api_call!(
                         ffi::duckdb_v2_function_signature_add_parameter,
                         *handle,
-                        (&param.name).into(),
+                        &(&param.name).into(),
                         param.logical_type.handle,
                         std::ptr::null_mut()
                     )?;
@@ -139,7 +139,7 @@ impl SignatureBuilder {
                     check_api_call!(
                         ffi::duckdb_v2_function_signature_add_parameter,
                         *handle,
-                        (&param.name).into(),
+                        &(&param.name).into(),
                         param.logical_type.handle,
                         param.default_value.handle
                     )?;
