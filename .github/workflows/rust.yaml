@@ -7,7 +7,7 @@ on:
       - "**/*.md"
       - "LICENSE"
   pull_request:
-    branches: [main]
+    branches: ["**"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
