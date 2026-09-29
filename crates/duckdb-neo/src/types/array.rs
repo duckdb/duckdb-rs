@@ -69,7 +69,7 @@ pub(crate) fn array_size(logical_type: &LogicalType) -> Result<usize> {
     let (_, array_size) = logical_type.get_param(1)?;
     Ok(array_size
         .get::<u64>()?
-        .ok_or(Error::api_error("Failed to get array_size from logical type".into()))? as usize)
+        .ok_or(Error::api_error("Failed to get array_size from logical type"))? as usize)
 }
 
 impl<T: VectorElement> VectorElement for Array<T> {

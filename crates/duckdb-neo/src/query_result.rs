@@ -2,6 +2,8 @@
 
 use libduckdb_sys::v2::duckdb_v2_str;
 
+use crate::builder_helpers::handle_unwind;
+use crate::error::Error;
 use crate::ffi_str::DuckDBStr;
 use crate::{
     Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err,
@@ -191,11 +193,22 @@ impl<'a> QueryResult<'a> {
     unsafe extern "C" fn copy_render_box(
         text: *const ffi::duckdb_v2_str,
         user_data: *mut std::os::raw::c_void,
-        _err: *mut ffi::duckdb_v2_error_info_handle,
+        err: *mut ffi::duckdb_v2_error_info_handle,
     ) {
-        let string = unsafe { &mut *(user_data as *mut String) };
+        handle_unwind(
+            || {
+                if text.is_null() || user_data.is_null() {
+                    return Err(Error::api_error("NULL value in copy_render_box"));
+                }
 
-        string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
+                let string = unsafe { &mut *(user_data as *mut String) };
+
+                string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
+
+                Ok(())
+            },
+            err,
+        );
     }
 
     /// Consume the remaining rows and render DuckDB's box table.

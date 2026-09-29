@@ -152,9 +152,7 @@ impl Instance {
             ffi::duckdb_v2_instance_attach,
             self.handle.lock().unwrap().handle,
             &(&location).into(),
-            alias_str
-                .as_ref()
-                .map_or(std::ptr::null_mut(), |a| a as *const _ as *mut _),
+            alias_str.as_ref().map_or(std::ptr::null(), |a| a as *const _),
             options,
             default
         )?;

@@ -49,15 +49,9 @@ impl From<DuckDBStr<'_>> for Option<String> {
     }
 }
 
-impl From<ffi::duckdb_v2_str> for DuckDBStr<'_> {
-    fn from(value: ffi::duckdb_v2_str) -> Self {
-        Self::from_raw(value)
-    }
-}
-
 impl<'a> From<&'a str> for DuckDBStr<'a> {
     fn from(value: &str) -> Self {
-        DuckDBStr::from(ffi::duckdb_v2_str {
+        DuckDBStr::from_raw(ffi::duckdb_v2_str {
             ptr: value.as_ptr().cast(),
             len: value.len() as ffi::idx_t,
         })
@@ -66,7 +60,7 @@ impl<'a> From<&'a str> for DuckDBStr<'a> {
 
 impl<'a> From<&'a String> for DuckDBStr<'a> {
     fn from(value: &String) -> Self {
-        DuckDBStr::from(ffi::duckdb_v2_str {
+        DuckDBStr::from_raw(ffi::duckdb_v2_str {
             ptr: value.as_ptr().cast(),
             len: value.len() as ffi::idx_t,
         })

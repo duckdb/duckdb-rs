@@ -96,7 +96,7 @@ pub fn library_version() -> Result<&'static str> {
 
 /// Validate that `bytes` are well-formed UTF-8, including bytes after any embedded NULs.
 pub fn validate_utf8(bytes: &[u8]) -> Result<()> {
-    check_api_call!(ffi::duckdb_v2_validate_utf8, &mut ffi_str::bytes_arg(bytes))
+    check_api_call!(ffi::duckdb_v2_validate_utf8, &ffi_str::bytes_arg(bytes))
 }
 
 #[cfg(test)]

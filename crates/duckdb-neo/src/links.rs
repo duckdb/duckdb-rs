@@ -6,7 +6,6 @@ use crate::{
     connection::{Connection, Context, Extension},
     database::Instance,
     ffi,
-    ffi_str::DuckDBStr,
 };
 
 /// Keeps a connection and its database alive, and so their allocator and buffer managers.
@@ -158,8 +157,8 @@ define_link! {
 
 define_link! {
     name: LogicalTypeFromTextLink,
-    method: fn create_logical_type_from_text(text: &DuckDBStr<'_>) -> ffi::duckdb_v2_logical_type_handle,
-    args: (text.as_raw_ptr(), RET),
+    method: fn create_logical_type_from_text(text: &str) -> ffi::duckdb_v2_logical_type_handle,
+    args: (&(text.into()), RET),
     implementations: {
         Connection => ffi::duckdb_v2_connection_create_type_from_text,
         Context => ffi::duckdb_v2_context_create_type_from_text,

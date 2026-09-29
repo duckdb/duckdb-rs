@@ -335,7 +335,7 @@ impl FFILink for Connection {
     }
 
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        self.create_logical_type_from_text(&text.into())
+        self.create_logical_type_from_text(text)
             .map(|handle| LogicalType { handle })
     }
 
@@ -430,7 +430,7 @@ impl FFILink for Context {
     }
 
     fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        self.create_logical_type_from_text(&text.into())
+        self.create_logical_type_from_text(text)
             .map(|handle| LogicalType { handle })
     }
 
