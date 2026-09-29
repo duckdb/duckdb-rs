@@ -16,7 +16,11 @@ mod build_paths;
 mod bindings {
     // Bindgen preserves DuckDB's C API comments verbatim. Some of those comments
     // contain C snippets and prose that rustdoc parses as Rust links or HTML.
-    #![allow(rustdoc::broken_intra_doc_links, rustdoc::invalid_html_tags)]
+    #![allow(
+        rustdoc::broken_intra_doc_links,
+        rustdoc::invalid_html_tags,
+        rustdoc::invalid_codeblock_attributes
+    )]
 
     // Bindgen references these blocklisted forward declarations unqualified.
     use crate::arrow_c_data::{ArrowArray, ArrowSchema};
