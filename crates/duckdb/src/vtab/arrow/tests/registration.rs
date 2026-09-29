@@ -88,7 +88,8 @@ fn test_arrow_rejects_non_ubigint_before_bind() -> Result<(), Box<dyn Error>> {
     let db = Connection::open_in_memory()?;
     db.register_table_function::<ArrowVTab>("arrow")?;
 
-    for argument in ["'abc'", "1", "1.5"] {
+    // Typed arguments: untyped literals implicitly cast to UBIGINT and would reach bind.
+    for argument in ["'abc'::VARCHAR", "1::INTEGER", "1.5::DOUBLE"] {
         let err = db
             .prepare(&format!("SELECT * FROM arrow({argument})"))
             .expect_err("non-UBIGINT argument reached ArrowVTab::bind");
