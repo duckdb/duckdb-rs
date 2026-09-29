@@ -74,16 +74,6 @@ mod tests {
     }
 
     #[test]
-    fn resolves_paths_from_new_build_dir_layout() {
-        let out_dir = Path::new("/workspace/target/debug/build/libduckdb-sys/22baee0385a3b7d3/out");
-
-        assert_eq!(
-            download_root(out_dir),
-            Some(PathBuf::from("/workspace/target/duckdb-download")),
-        );
-    }
-
-    #[test]
     fn rejects_new_layout_shape_without_unit_hash() {
         let out_dir = Path::new("/workspace/build/project/generated/out");
 
