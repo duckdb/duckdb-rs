@@ -20,21 +20,23 @@ name = "duckdb_neo"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = ["download-lib", "pkg-config"]
+default = ["buildtime-download", "buildtime-pkg-config", "buildtime-pregenerated"]
 # Features
 r2d2 = ["dep:r2d2"]
 uuid = ["dep:uuid"]
 
 # Buildtime features
-# Ways to find a prebuilt libduckdb. Not needed with `bundled`; opt out with `default-features = false`.
-download-lib = ["libduckdb-sys/download-lib"]
-pkg-config = ["libduckdb-sys/pkg-config"]
+# Where to find a prebuilt libduckdb. Not needed with `bundled`; opt out with `default-features = false`.
+buildtime-download = ["libduckdb-sys/download-lib"]
+buildtime-pkg-config = ["libduckdb-sys/pkg-config"]
 
-bundled = ["libduckdb-sys/bundled"]
-
-# Generate the v2 bindings with bindgen at build time instead of using the pregenerated ones.
+# Where the v2 bindings come from: the checked-in ones, or bindgen at build time.
+# `buildtime-bindgen` overrides `buildtime-pregenerated` when both are enabled.
+buildtime-pregenerated = []
 # Needs libclang and duckdb_v2.h (see DUCKDB_INCLUDE_DIR).
 buildtime-bindgen = ["libduckdb-sys/buildtime_bindgen"]
+
+bundled = ["libduckdb-sys/bundled"]
 
 bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
 # Extensions statically linked through the CMake build backend.
