@@ -119,7 +119,6 @@ mod tests {
         array::{Array, DictionaryArray, Int32Array, StructArray},
         datatypes::{DataType, Field, Fields, Int8Type},
         ffi::{FFI_ArrowArray, FFI_ArrowSchema},
-        ffi_stream::FFI_ArrowArrayStream,
     };
 
     // arrow-rs keeps the FFI fields private, so compare layouts by reading a
