@@ -21,12 +21,25 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
 default = []
-bundled = ["libduckdb-sys/bundled"]
-# Warning: experimental feature
-bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
-buildtime_bindgen = ["libduckdb-sys/buildtime_bindgen"]
+# Features
 r2d2 = ["dep:r2d2"]
 uuid = ["dep:uuid"]
+
+# Buildtime features 
+bundled = ["libduckdb-sys/bundled"]
+
+# Generate the v2 bindings with bindgen at build time instead of using the pregenerated ones.
+# Needs libclang and duckdb_v2.h (see DUCKDB_INCLUDE_DIR).
+buildtime-bindgen = ["libduckdb-sys/buildtime_bindgen"]
+
+bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake"]
+# Extensions statically linked through the CMake build backend.
+bundled-cmake-autocomplete = ["bundled-cmake", "libduckdb-sys/autocomplete"]
+bundled-cmake-httpfs = ["bundled-cmake", "libduckdb-sys/httpfs"]
+bundled-cmake-icu = ["bundled-cmake", "libduckdb-sys/icu"]
+bundled-cmake-tpcds = ["bundled-cmake", "libduckdb-sys/tpcds"]
+bundled-cmake-tpch = ["bundled-cmake", "libduckdb-sys/tpch"]
+
 
 [dependencies]
 libc = { workspace = true }

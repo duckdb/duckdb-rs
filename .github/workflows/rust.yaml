@@ -48,7 +48,7 @@ jobs:
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
-        run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full uuid" --locked -- -D warnings
+        run: cargo clippy --all-targets --features "buildtime_bindgen buildtime-bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full uuid" --locked -- -D warnings
 
       - name: Check rustdoc
         env:
