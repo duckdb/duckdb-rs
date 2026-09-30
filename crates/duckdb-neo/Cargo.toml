@@ -20,7 +20,7 @@ name = "duckdb_neo"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [features]
-default = ["download-lib", "pkg-config", "vcpkg"]
+default = ["download-lib", "pkg-config"]
 # Features
 r2d2 = ["dep:r2d2"]
 uuid = ["dep:uuid"]
@@ -29,7 +29,6 @@ uuid = ["dep:uuid"]
 # Ways to find a prebuilt libduckdb. Not needed with `bundled`; opt out with `default-features = false`.
 download-lib = ["libduckdb-sys/download-lib"]
 pkg-config = ["libduckdb-sys/pkg-config"]
-vcpkg = ["libduckdb-sys/vcpkg"]
 
 bundled = ["libduckdb-sys/bundled"]
 
