@@ -26,6 +26,7 @@ bundled-cmake = ["bundled", "libduckdb-sys/bundled-cmake", "parquet"]
 json = ["libduckdb-sys/json", "bundled"]
 parquet = ["libduckdb-sys/parquet", "bundled"]
 autocomplete = ["libduckdb-sys/autocomplete", "bundled-cmake"]
+httpfs = ["libduckdb-sys/httpfs", "bundled-cmake"]
 icu = ["libduckdb-sys/icu", "bundled-cmake"]
 tpcds = ["libduckdb-sys/tpcds", "bundled-cmake"]
 tpch = ["libduckdb-sys/tpch", "bundled-cmake"]
@@ -68,12 +69,6 @@ serde_json = { workspace = true, optional = true }
 strum = { workspace = true, features = ["derive"] }
 url = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
-
-# Not used directly. Pins the transitive version via arrow-cast so `cargo update`
-# honors our MSRV. comfy-table 7.2+ requires Rust 1.88 (if-let chains) but doesn't
-# declare rust-version, so cargo's MSRV-aware resolver can't filter it out.
-# Drop this pin when MSRV reaches 1.88.
-comfy-table = "~7.1"
 
 [dev-dependencies]
 doc-comment = { workspace = true }

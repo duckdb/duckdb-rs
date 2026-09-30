@@ -117,13 +117,13 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let array_size = vector.array_size;
 
-        if let Some(values) = &value {
-            if values.len() != array_size {
-                return Err(Error {
-                    code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                    message: format!("Array row has {} elements, expected {}", values.len(), array_size),
-                });
-            }
+        if let Some(values) = &value
+            && values.len() != array_size
+        {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
+                message: format!("Array row has {} elements, expected {}", values.len(), array_size),
+            });
         }
 
         let child_len = vector.len.checked_mul(array_size).ok_or_else(|| Error {

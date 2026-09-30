@@ -64,20 +64,16 @@ jobs:
     # crates/libduckdb-sys/.duckdb-release, so this job compiles no C++. The
     # bundled backends are covered by the lint job's clippy step (extensions-full
     # implies bundled), the CMake job, and the sanitizer job on main.
-    name: Test ${{ matrix.crate.name }} (${{ matrix.platform.name }})
+    # One runner per platform tests every crate in its own step, sharing the build cache.
+    name: Test (${{ matrix.name }})
     strategy:
       fail-fast: true
       matrix:
-        platform:
+        include:
           - { name: Linux, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
           - { name: macOS, target: aarch64-apple-darwin, os: macos-latest }
           - { name: Windows, target: x86_64-pc-windows-msvc, os: windows-latest }
-        crate:
-          - { name: duckdb, features: "modern-full vscalar vtab-full" }
-          - { name: duckdb-neo, features: "r2d2 uuid" }
-          - { name: libduckdb-sys, features: "" }
-          - { name: duckdb-loadable-macros, features: "" }
-    runs-on: ${{ matrix.platform.os }}
+    runs-on: ${{ matrix.os }}
     env:
       # Explicit for clarity; the pin file makes this the default anyway.
       DUCKDB_DOWNLOAD_LIB: "1"
@@ -87,27 +83,37 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          target: ${{ matrix.platform.target }}
+          target: ${{ matrix.target }}
           cache-on-failure: false
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
-      - name: Run cargo-test
-        run: cargo test -p ${{ matrix.crate.name }} --features "${{ matrix.crate.features }}" --locked
+      - name: Test duckdb
+        run: cargo test -p duckdb --features "modern-full vscalar vtab-full" --locked
 
       - name: Build loadable extension
-        if: matrix.crate.name == 'duckdb'
         run: cargo build --example hello-ext --features="loadable-extension" --locked
 
+      - name: Test duckdb-neo
+        run: cargo test -p duckdb-neo --features "uuid r2d2" --locked
+
+      - name: Test libduckdb-sys
+        run: cargo test -p libduckdb-sys --locked
+
+      - name: Test duckdb-loadable-macros
+        run: cargo test -p duckdb-loadable-macros --locked
+
   cmake:
+    # Slow bundled C++ build; only start once the fast linked-mode tests pass.
+    needs: test
     name: Bundled CMake ${{ matrix.name }}
     strategy:
       fail-fast: true
       matrix:
         include:
-          - { name: Linux, os: ubuntu-latest }
-          - { name: macOS, os: macos-latest }
-          - { name: Windows, os: windows-latest }
+          - { name: Linux, os: ubuntu-latest, features: "icu httpfs" }
+          - { name: macOS, os: macos-latest, features: "icu httpfs" }
+          - { name: Windows, os: windows-latest, features: "icu" }
     runs-on: ${{ matrix.os }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -115,6 +121,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
       DUCKDB_DISABLE_EXTENSION_LOAD: "1"
+      CMAKE_FEATURES: ${{ matrix.features }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -143,19 +150,31 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
+      - name: Install HTTPFS dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libcurl4-openssl-dev libssl-dev
+
+      - name: Install HTTPFS dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkg-config openssl@3
+
+      - name: Check CMake without default features
+        if: runner.os == 'Linux'
+        run: cargo check -p libduckdb-sys --no-default-features --features "bundled-cmake capi-v1" --locked
+
       - name: Verify static linking with extension loading disabled
         shell: bash
         run: |
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
           echo "$output"
           grep -qF "STATICALLY_LINKED,(BUILT-IN)" <<<"$output"
 
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
           echo "$output"
           grep -qF "false,false" <<<"$output"
 
           set +e
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "LOAD sqlite_scanner;" 2>&1)
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "LOAD sqlite_scanner;" 2>&1)
           status=$?
           set -e
 
@@ -164,14 +183,16 @@ jobs:
           grep -qF "Loading external extensions is disabled through a compile time flag" <<<"$output"
 
       - name: ICU functional test
-        run: cargo test -p duckdb --features icu --lib extension::test::test_extension_icu -- --exact
+        shell: bash
+        run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_icu -- --exact
+
+      - name: HTTPFS loads without downloaded artifacts
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_httpfs -- --exact
 
   msrv:
-    name: MSRV ${{ matrix.crate }}
-    strategy:
-      fail-fast: true
-      matrix:
-        crate: [duckdb, duckdb-loadable-macros, duckdb-neo, libduckdb-sys]
+    name: MSRV
     runs-on: ubuntu-latest
     env:
       # cargo check never links, so skip the pinned-library download.
@@ -185,7 +206,14 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cargo-binstall
       - run: cargo binstall --no-confirm cargo-msrv
-      - run: cargo msrv verify --path crates/${{ matrix.crate }}
+      - name: MSRV duckdb
+        run: cargo msrv verify --path crates/duckdb
+      - name: MSRV duckdb-loadable-macros
+        run: cargo msrv verify --path crates/duckdb-loadable-macros
+      - name: MSRV duckdb-neo
+        run: cargo msrv verify --path crates/duckdb-neo
+      - name: MSRV libduckdb-sys
+        run: cargo msrv verify --path crates/libduckdb-sys
 
   sanitizer:
     name: Address Sanitizer
