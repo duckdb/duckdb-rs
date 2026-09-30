@@ -121,6 +121,7 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
         .allowlist_type("idx_t")
         .blocklist_type("ArrowArray")
         .blocklist_type("ArrowSchema")
+        .blocklist_type("ArrowArrayStream")
         .layout_tests(false) // causes problems on WASM builds
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
@@ -137,9 +138,6 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
             // The v2 header spells its enums and macro constants in upper
             // case, which the case-sensitive allowlist above would drop.
             .allowlist_item(r#"DUCKDB_V2_\w*"#)
-            // Exported by the v2 header for Arrow interop; not reachable
-            // through the allowlist alone on every DuckDB version.
-            .allowlist_type("ArrowArrayStream")
             // The v2 wrapper matches on real Rust enums rather than
             // constified integer values.
             .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#),

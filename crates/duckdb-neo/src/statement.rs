@@ -1,10 +1,10 @@
 //! Parsing, binding, and preparing SQL statements.
 
-use libduckdb_sys::v2::DuckDBStr;
-
+use crate::ffi_str::DuckDBStr;
 use crate::{
     Parameters, Result, check_api_call, check_api_call_no_err,
     connection::Connection,
+    error::{DuckDBError, Error},
     ffi,
     query_result::{QueryResult, StatementType},
     schema::Schema,
@@ -46,7 +46,10 @@ pub struct Statements {
 impl Statements {
     /// Parse SQL using a connection's parser configuration.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
-        let query_str = std::ffi::CString::new(sql.as_ref()).expect("Failed to create CString from query");
+        let query_str = std::ffi::CString::new(sql.as_ref()).map_err(|_| Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+            message: "SQL string contains a NUL byte".to_string(),
+        })?;
 
         let handle: ffi::duckdb_v2_statement_iterator_handle =
             check_api_call!(ffi::duckdb_v2_parse_sql, **conn, query_str.as_ptr(), RET)?;
@@ -132,7 +135,8 @@ impl Statement {
     /// Includes the trailing terminator and whitespace, but excludes whitespace
     /// and comments before the first token.
     pub fn get_text(&self) -> Result<String> {
-        check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET).map(|x| <&str>::from(x).to_owned())
+        check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET)
+            .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the statement type as classified by the parser, before execution-time rewrites.
@@ -157,7 +161,7 @@ impl Statement {
             index as u64,
             RET
         )
-        .map(|x| <&str>::from(x).to_owned())
+        .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default().to_owned())
     }
 }
 
@@ -186,7 +190,7 @@ impl<'a> PreparedStatement<'a> {
             .iter()
             .map(|value| value.as_value().handle)
             .collect::<Vec<_>>();
-        let param_names = param_names.map(|x| x.iter().map(|s| (*s).into()).collect::<Vec<DuckDBStr<'_>>>());
+        let param_names = param_names.map(|x| x.iter().map(|s| (*s).into()).collect::<Vec<ffi::duckdb_v2_str>>());
 
         let result: ffi::duckdb_v2_result_handle = check_api_call!(
             ffi::duckdb_v2_prepared_statement_execute,

@@ -76,17 +76,17 @@ pub mod v2 {
         // Bindgen references these blocklisted forward declarations unqualified.
         // Whether the v2 header references them depends on the DuckDB version.
         #[allow(unused_imports)]
-        use crate::arrow_c_data::{ArrowArray, ArrowSchema};
+        use crate::arrow_c_data::{ArrowArray, ArrowArrayStream, ArrowSchema};
 
         include!(concat!(env!("OUT_DIR"), "/bindgen_v2.rs"));
     }
     #[allow(clippy::all)]
     pub use bindings::*;
 
-    pub use crate::arrow_c_data::{ArrowArray, ArrowSchema};
+    pub use crate::arrow_c_data::{ArrowArray, ArrowArrayStream, ArrowSchema};
 
+    // Trait impls only; nothing to re-export.
     mod string;
-    pub use string::*;
 }
 
 #[cfg(all(test, feature = "capi-v1"))]

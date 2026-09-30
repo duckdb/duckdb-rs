@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use crate::ffi;
 
+use crate::ffi_str::DuckDBStr;
 use crate::{
     Result,
     builder_helpers::ffi_enum_redeclaration,
@@ -69,32 +70,28 @@ impl ConfigOption {
     pub fn canonical_name(&self) -> Result<String> {
         let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_name, self.handle, RET)?;
 
-        let name: &str = name.into();
-        Ok(name.to_string())
+        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the option's string-encoded setting.
     pub fn setting(&self) -> Result<String> {
         let setting: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_setting, self.handle, RET)?;
 
-        let setting: &str = setting.into();
-        Ok(setting.to_string())
+        Ok(DuckDBStr::from_raw(setting).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the option's static default setting.
     pub fn default_setting(&self) -> Result<String> {
         let setting: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_default_setting, self.handle, RET)?;
 
-        let setting: &str = setting.into();
-        Ok(setting.to_string())
+        Ok(DuckDBStr::from_raw(setting).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the option's human-readable description.
     pub fn description(&self) -> Result<String> {
         let description: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_description, self.handle, RET)?;
 
-        let description: &str = description.into();
-        Ok(description.to_string())
+        Ok(DuckDBStr::from_raw(description).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the scopes where DuckDB permits this option to be set.
@@ -118,8 +115,7 @@ impl ConfigOption {
         let alias: ffi::duckdb_v2_str =
             check_api_call!(ffi::duckdb_v2_option_get_alias, self.handle, index as u64, RET)?;
 
-        let alias: &str = alias.into();
-        Ok(alias.to_string())
+        Ok(DuckDBStr::from_raw(alias).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return all registered aliases.

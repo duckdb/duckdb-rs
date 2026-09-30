@@ -1312,9 +1312,9 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
 
     // SAFETY: DuckDB keeps the callback input alive while consuming the
     // referenced output, and neither vector is accessed concurrently here.
-    unsafe {
-        output.copy_from(&input)?;
-    }
+    let referenced = unsafe { output.copy_from(&input)? };
+    // Writes would land in DuckDB's read-only input, so the reference is read-only too.
+    assert!(!referenced.is_writable());
 
     Ok(())
 });
@@ -1595,6 +1595,194 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     assert!(!sequence.is_writable());
     sequence.flatten()?;
     assert!(sequence.write(3, Some(1)).is_err());
+
+    Ok(())
+}
+
+scalar_callback!(FlatListScalar, i32, |input, output, _ctx, _user_data| {
+    let mut list = input.get_vector_at::<List<i32>>(1)?;
+    let mut output = output;
+    output.set_size(list.len())?;
+    list.flatten()?;
+
+    for (i, row) in list.iter()?.enumerate() {
+        output.write(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
+    }
+    Ok(())
+});
+
+#[test]
+fn test_flatten_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "flat_list",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("row", i64::logical_type(&conn)?),
+                Parameter::normal("list", Vec::<Option<i32>>::logical_type(&conn)?),
+            ],
+            i32::logical_type(&conn)?,
+        ),
+        FlatListScalar,
+    )
+    .register(&conn)?;
+
+    let result = conn.query("SELECT flat_list(range, [1, 2, 3]) FROM range(5)", Parameters::None)?;
+    let mut values = vec![];
+    for chunk in result {
+        let chunk = chunk?;
+        values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
+    }
+    assert_eq!(values, vec![Some(6); 5]);
+
+    Ok(())
+}
+
+scalar_callback!(SlowWriteInputScalar, i32, |input, output, ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    assert!(!vector.is_writable());
+    assert!(vector.write_value_slow(0, 999_i32.value(ctx)?).is_err());
+    assert!(vector.set_null_slow(0).is_err());
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "mutate",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        SlowWriteInputScalar,
+    )
+    .register(&conn)?;
+
+    conn.execute(
+        "CREATE TABLE t AS SELECT range::INTEGER AS x FROM range(3)",
+        Parameters::None,
+    )?;
+    conn.execute("SELECT mutate(x) FROM t", Parameters::None)?;
+
+    let chunk = conn
+        .query("SELECT x FROM t ORDER BY x", Parameters::None)?
+        .next()
+        .unwrap()?;
+    let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
+    assert_eq!(values, [Some(0), Some(1), Some(2)]);
+
+    Ok(())
+}
+
+scalar_callback!(ArraySumScalar, i32, |input, output, _ctx, _user_data| {
+    let array = input.get_vector_at::<Array<i32>>(1)?;
+    let mut output = output;
+    output.set_size(array.len())?;
+
+    for (i, row) in array.iter()?.enumerate() {
+        output.write(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
+    }
+    Ok(())
+});
+
+#[test]
+fn test_array_reads_use_type_size() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "arr_sum",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("row", i64::logical_type(&conn)?),
+                Parameter::normal("arr", <[i32; 3]>::logical_type(&conn)?),
+            ],
+            i32::logical_type(&conn)?,
+        ),
+        ArraySumScalar,
+    )
+    .register(&conn)?;
+
+    // A constant array argument next to a flat one.
+    let mut values = vec![];
+    for chunk in conn.query(
+        "SELECT arr_sum(range, [1, 2, 3]::INTEGER[3]) FROM range(5)",
+        Parameters::None,
+    )? {
+        values.extend(chunk?.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
+    }
+    assert_eq!(values, vec![Some(6); 5]);
+
+    // Flat, constant and dictionary arrays, checked against DuckDB's own sum.
+    let chunk = conn
+        .query(
+            "SELECT count(*) FILTER (arr_sum(0, v) IS DISTINCT FROM list_sum(list_transform(v::INTEGER[], lambda x: coalesce(x, 0)))::INTEGER), count(*)
+             FROM test_vector_types(NULL::INTEGER[3]) AS t(v)",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
+    assert!(chunk.get_vector_at::<i64>(1)?.get(0)?.copied().unwrap() > 0);
+
+    Ok(())
+}
+
+#[test]
+fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let list_chunk = DataChunk::create(&[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
+    {
+        let mut first = list_chunk.get_vector_at::<List<i32>>(0)?;
+        first.set_size(2)?;
+        first.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
+    }
+    list_chunk
+        .get_vector_at::<List<i32>>(0)?
+        .write(1, Some(vec![Some(9)]))?;
+
+    let lists = list_chunk.get_vector_at::<List<i32>>(0)?;
+    let items: Vec<_> = lists
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(9)])]);
+
+    let map_chunk = DataChunk::create(&[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    {
+        let mut first = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
+        first.set_size(2)?;
+        first.write(0, Some(HashMap::from([(1, 10), (2, 20)])))?;
+    }
+    map_chunk
+        .get_vector_at::<Map<i32, i32>>(0)?
+        .write(1, Some(HashMap::from([(3, 30)])))?;
+
+    let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
+    let mut rows = maps.iter()?;
+    let row = rows.next().unwrap().unwrap();
+    assert_eq!((row.get(&1)?, row.get(&2)?), (Some(&10), Some(&20)));
+    let row = rows.next().unwrap().unwrap();
+    assert_eq!(row.keys()?, vec![&3]);
+    assert_eq!(row.get(&3)?, Some(&30));
 
     Ok(())
 }

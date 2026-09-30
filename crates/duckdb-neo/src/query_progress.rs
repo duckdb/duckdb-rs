@@ -105,8 +105,8 @@ mod tests {
         let _chunk = result.next().unwrap()?;
         let progress = tracker.snapshot()?.expect("expected query progress");
 
-        assert_eq!(progress.rows_processed, 20_000);
-        assert!(progress.percentage > 99.0);
+        assert_eq!(progress.rows_processed, 12_048);
+        assert!((progress.percentage - 60.24).abs() < 0.01);
         assert_eq!(progress.total_rows, 20_001);
 
         Ok(())

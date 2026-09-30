@@ -143,7 +143,9 @@ pub fn main(out_dir: &str) {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
     // loader → extensions → duckdb_static (which satisfies all core symbols).
-    link_static_library(&lib_dir, &cmake_build_type, "duckdb_generated_extension_loader");
+    let mut linked_extensions = vec!["core_functions"];
+    linked_extensions.extend(enabled_extensions.iter().copied());
+    build_static_extension_loader(source_dir, out_dir, &linked_extensions);
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
     for extension in enabled_extensions {
         link_static_library(&lib_dir, &cmake_build_type, &format!("{extension}_extension"));
@@ -388,6 +390,55 @@ fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_
             unexpected.join(", ")
         );
     }
+}
+
+/// Renders `extension/loader/static_extension_loader.c.in` for `extensions`, mirroring
+/// `duckdb_write_static_extension_loader` in `extension/extension_build_tools.cmake`.
+fn render_static_extension_loader(template: &str, extensions: &[&str]) -> String {
+    let declarations = extensions
+        .iter()
+        .map(|ext| format!("int32_t duckdb_extension_{ext}_describe(duckdb_extension_descriptor *descriptor);"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let registrations = extensions
+        .iter()
+        .map(|ext| {
+            format!("\tif (duckdb_register_static_extension(duckdb_extension_{ext}_describe) != 0) {{\n\t\tresult = 1;\n\t}}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    template
+        .replace("@LINK_EXTENSION_LIST@", &extensions.join(" "))
+        .replace("@DESCRIBE_DECLARATIONS@", &declarations)
+        .replace("@DESCRIBE_REGISTRATIONS@", &registrations)
+}
+
+/// Builds the loader that registers `extensions` before `main`. CMake only generates it for executables
+/// and the shared library, not for `duckdb_static`.
+fn build_static_extension_loader(source_dir: &Path, out_dir: &str, extensions: &[&str]) {
+    let loader_dir = source_dir.join("extension/loader");
+    let template_path = loader_dir.join("static_extension_loader.c.in");
+    let autoregister_path = loader_dir.join("static_extension_autoregister.cpp");
+    let template = fs::read_to_string(&template_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", template_path.display()));
+
+    // Compiled as C++ so it shares a compiler with the autoregister file; the template is extern "C".
+    let loader_path = Path::new(out_dir).join("static_extension_loader.cpp");
+    fs::write(&loader_path, render_static_extension_loader(&template, extensions))
+        .unwrap_or_else(|err| panic!("failed to write {}: {err}", loader_path.display()));
+
+    let lib_name = "duckdb_static_extension_loader";
+    cc::Build::new()
+        .cpp(true)
+        .file(&loader_path)
+        .file(&autoregister_path)
+        .include(source_dir.join("src/include"))
+        .define("DUCKDB_STATIC_BUILD", None)
+        .cargo_metadata(false)
+        .compile(lib_name);
+    println!("cargo:rustc-link-search=native={out_dir}");
+    // Nothing references the autoregister object, so keep the linker from dropping its static initializer.
+    println!("cargo:rustc-link-lib=static:+whole-archive={lib_name}");
 }
 
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {

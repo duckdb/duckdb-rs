@@ -1,10 +1,13 @@
 //! Lazy, streaming query results.
 
-use libduckdb_sys::v2::{ArrowArrayStream, duckdb_v2_str};
+use libduckdb_sys::v2::duckdb_v2_str;
 
+use crate::builder_helpers::handle_unwind;
+use crate::error::Error;
+use crate::ffi_str::DuckDBStr;
 use crate::{
-    Result, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err, connection::Connection,
-    data_chunk::DataChunk, ffi, schema::Schema,
+    Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err,
+    connection::Connection, data_chunk::DataChunk, ffi, schema::Schema,
 };
 
 ffi_enum_redeclaration! {
@@ -107,7 +110,7 @@ pub struct QueryResult<'a> {
     pub handle: ffi::duckdb_v2_result_handle,
 }
 
-impl QueryResult<'_> {
+impl<'a> QueryResult<'a> {
     /// Run one bounded unit of execution and return its state.
     pub fn step(&mut self) -> Result<QueryResultStep> {
         let mut step = ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_WAITING;
@@ -156,16 +159,30 @@ impl QueryResult<'_> {
     /// Consume the result into a lazy Arrow C Data Interface stream.
     ///
     /// The stream contains only rows not already consumed. A `batch_size` of
-    /// zero selects DuckDB's default of 131,072 rows. The caller must invoke
-    /// the stream's `release` callback to unpin the transaction and make the
-    /// connection available for another query.
-    pub fn to_arrow_stream(mut self, batch_size: usize) -> Result<ArrowArrayStream> {
-        check_api_call!(
+    /// zero selects DuckDB's default of 131,072 rows. Dropping the stream
+    /// releases it and makes the connection available for another query.
+    ///
+    /// The query runs while the stream is read, so the stream borrows the connection:
+    ///
+    /// ```compile_fail
+    /// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// let mut conn = db.connect()?;
+    /// let stream = conn.query("SELECT 42", Parameters::None)?.to_arrow_stream(0)?;
+    /// conn.set_option("threads", "1", None)?; // error: `conn` is still borrowed by `stream`
+    /// drop(stream);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn to_arrow_stream(mut self, batch_size: usize) -> Result<ArrowStream<'a>> {
+        let stream = check_api_call!(
             ffi::duckdb_v2_result_to_arrow_stream,
             &mut self.handle,
             batch_size as u64,
             RET
-        )
+        )?;
+        Ok(ArrowStream::new(stream))
     }
 
     /// Return whether the result contains rows, changed rows, or no output.
@@ -174,13 +191,24 @@ impl QueryResult<'_> {
     }
 
     unsafe extern "C" fn copy_render_box(
-        text: ffi::duckdb_v2_str,
+        text: *const ffi::duckdb_v2_str,
         user_data: *mut std::os::raw::c_void,
-        _err: *mut ffi::duckdb_v2_error_info_handle,
+        err: *mut ffi::duckdb_v2_error_info_handle,
     ) {
-        let string = unsafe { &mut *(user_data as *mut String) };
+        handle_unwind(
+            || {
+                if text.is_null() || user_data.is_null() {
+                    return Err(Error::api_error("NULL value in copy_render_box"));
+                }
 
-        string.push_str(text.into());
+                let string = unsafe { &mut *(user_data as *mut String) };
+
+                string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
+
+                Ok(())
+            },
+            err,
+        );
     }
 
     /// Consume the remaining rows and render DuckDB's box table.
@@ -205,7 +233,7 @@ impl QueryResult<'_> {
             max_rows as u64,
             max_width as u64,
             max_col_width as u64,
-            null_value,
+            &null_value,
             render_mode as u64,
             limit as u64,
             Some(Self::copy_render_box),
@@ -249,7 +277,7 @@ unsafe impl Send for QueryResult<'_> {}
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use libduckdb_sys::v2::{ArrowArray, ArrowArrayStream};
+    use libduckdb_sys::v2::ArrowArray;
 
     use crate::{
         Parameters,
@@ -356,7 +384,7 @@ mod tests {
 
         let stmt = statements.next().unwrap()?;
         let result = conn.query(stmt, Parameters::None)?;
-        let mut arrow_stream = result.to_arrow_stream(1024)?;
+        let arrow_stream = result.to_arrow_stream(1024)?;
 
         let mut array = ArrowArray {
             length: 0,
@@ -371,24 +399,23 @@ mod tests {
             private_data: std::ptr::null_mut(),
         };
 
-        let res = unsafe {
-            arrow_stream.get_next.unwrap()(
-                &mut arrow_stream as *mut ArrowArrayStream,
-                &mut array as *mut ArrowArray,
-            )
-        };
+        // Released below, before the connection is used again.
+        let mut stream = arrow_stream.into_raw();
+        let res = unsafe { stream.get_next.unwrap()(&mut stream, &mut array as *mut ArrowArray) };
 
         assert_eq!(res, 0);
 
         assert_eq!(array.length, 3);
 
         unsafe {
-            arrow_stream.release.unwrap()(&mut arrow_stream);
-        }
-
-        unsafe {
+            stream.release.unwrap()(&mut stream);
             array.release.unwrap()(&mut array);
         }
+
+        // Dropping an unread stream releases it and frees the connection.
+        let unread = conn.query("SELECT 1", Parameters::None)?.to_arrow_stream(0)?;
+        drop(unread);
+        assert_eq!(conn.execute("SELECT 1", Parameters::None)?, 0);
 
         Ok(())
     }

@@ -3,6 +3,7 @@
 use std::ops::Deref;
 
 use crate::ffi;
+use crate::ffi_str::DuckDBStr;
 use crate::{Result, check_api_call, check_api_call_no_err, check_api_call_string, error::Error};
 
 /// Owned identifier parts extracted from a [`QualifiedName`].
@@ -53,7 +54,7 @@ impl QualifiedName {
     /// Parse a qualified name using DuckDB's SQL identifier rules.
     pub fn from_sql(sql: &str) -> Result<Self> {
         Ok(QualifiedName {
-            handle: check_api_call!(ffi::duckdb_v2_qname_parse, sql.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_qname_parse, &sql.into(), RET)?,
         })
     }
 
@@ -112,9 +113,7 @@ impl QualifiedName {
     pub fn part(&self, index: usize) -> Result<String> {
         let data = check_api_call!(ffi::duckdb_v2_qname_get_part, self.handle, index as u64, RET)?;
 
-        let reference: &str = data.into();
-
-        Ok(reference.to_string())
+        Ok(DuckDBStr::from_raw(data).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return all identifier parts, ordered outermost first.

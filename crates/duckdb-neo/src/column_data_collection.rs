@@ -193,6 +193,23 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     /// is only valid until the next call. Copy it with
     /// [`DataChunkRef::copy`] to keep its data longer.
     ///
+    /// The chunk borrows the scan, so it cannot outlive it:
+    ///
+    /// ```compile_fail
+    /// # use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
+    /// # use duckdb_neo::column_data_collection::ColumnDataCollection;
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// # let conn = db.connect()?;
+    /// # let collection = ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?;
+    /// let chunk = {
+    ///     let mut scan = collection.to_scan()?;
+    ///     scan.next_chunk()?
+    /// }; // error: `scan` does not live long enough
+    /// # drop(chunk);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn next_chunk(&mut self) -> Result<Option<DataChunkRef<'_>>> {
         let did_produce_chunk: bool = check_api_call!(
             ffi::duckdb_v2_column_data_collection_scan,

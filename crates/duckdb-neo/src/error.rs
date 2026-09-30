@@ -69,10 +69,10 @@ impl Error {
     }
 
     /// Create an API-classified error with a human-readable message.
-    pub fn api_error(message: String) -> Self {
+    pub fn api_error(message: impl Into<String>) -> Self {
         Error {
             code: DuckDBError::DUCKDB_V2_ERROR_API,
-            message,
+            message: message.into(),
         }
     }
 }
@@ -118,7 +118,7 @@ macro_rules! check_api_call_no_err {
 /// # Usage
 /// ```ignore
 /// // Without an out-parameter, evaluates to `Result<()>`
-/// check_api_call!(ffi::duckdb_v2_statement_add_collection, handle, name.into())?;
+/// check_api_call!(ffi::duckdb_v2_statement_add_collection, handle, &name.into())?;
 ///
 /// // With an out-parameter, evaluates to `Result<T>`
 /// let handle = check_api_call!(ffi::duckdb_v2_create_environment, RET)?;

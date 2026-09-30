@@ -25,8 +25,8 @@ impl Log {
             ffi::duckdb_v2_context_log,
             **ctx,
             level.into(),
-            log_type.into(),
-            message.into()
+            &log_type.into(),
+            &message.into()
         )
     }
 }

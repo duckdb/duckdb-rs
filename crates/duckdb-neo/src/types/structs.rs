@@ -77,12 +77,22 @@ impl<S: StructSchema> DuckDBType for StructValue<'_, S> {
 
 impl<S: StructSchema> ToValue for StructValue<'_, S> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        let fields = S::fields(link)?;
+        if self.fields.len() != fields.len() {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: format!(
+                    "StructValue has {} fields, its schema has {}",
+                    self.fields.len(),
+                    fields.len()
+                ),
+            });
+        }
         let children = self
             .fields
             .iter()
             .map(|field| field.create_value(&link))
             .collect::<Result<Vec<_>>>()?;
-        let fields = S::fields(link)?;
         let names = fields.iter().map(|(name, _)| *name).collect::<Vec<_>>();
         link.create_value(ValueInput::Struct {
             names: &names,
