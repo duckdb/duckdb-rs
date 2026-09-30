@@ -110,11 +110,12 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # Both crates link the same extensions, so their two DuckDB builds share sccache objects.
         include:
-          - { name: Linux, os: ubuntu-latest, features: "icu httpfs", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
-          - { name: macOS, os: macos-latest, features: "icu httpfs", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          - { name: Linux, os: ubuntu-latest, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          - { name: macOS, os: macos-latest, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
           # httpfs is only supported on Linux and macOS.
-          - { name: Windows, os: windows-latest, features: "icu", neo_features: "bundled-cmake-autocomplete bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          - { name: Windows, os: windows-latest, features: "autocomplete icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
     runs-on: ${{ matrix.os }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -145,6 +146,16 @@ jobs:
               ;;
           esac
           echo "CARGO_TARGET_DIR=$runner_drive:/t" >> "$GITHUB_ENV"
+
+      # Each crate builds DuckDB in its own OUT_DIR; strip those paths from sccache keys.
+      - name: Configure sccache base directories
+        shell: bash
+        run: |
+          if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+            echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE;$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -193,9 +204,7 @@ jobs:
         shell: bash
         run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_httpfs -- --exact
 
-      # Includes tests/extensions.rs, which checks each enabled extension is statically linked.
       - name: "duckdb-neo: Test with bundled extensions"
-        shell: bash
         run: cargo test -p duckdb-neo --features "$NEO_CMAKE_FEATURES" --locked
 
   msrv:
