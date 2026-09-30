@@ -2,6 +2,7 @@
 
 use crate::ffi;
 
+use crate::ffi_str::DuckDBStr;
 use crate::{Result, check_api_call, check_api_call_no_err, logical_type::LogicalType};
 
 /// An owned, ordered list of field names and logical types.
@@ -73,7 +74,10 @@ impl Schema {
         // LogicalType owns a handle it may destroy.
         let owned_type = check_api_call!(ffi::duckdb_v2_logical_type_copy, out_type, RET)?;
 
-        Ok((out_name.into(), LogicalType { handle: owned_type }))
+        Ok((
+            DuckDBStr::from_raw(out_name).as_str().unwrap_or_default(),
+            LogicalType { handle: owned_type },
+        ))
     }
 
     /// Return all fields in declaration order.

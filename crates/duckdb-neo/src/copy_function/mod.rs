@@ -10,6 +10,7 @@
 
 use std::{any::Any, collections::HashMap};
 
+use crate::ffi_str::DuckDBStr;
 use crate::{
     Result,
     builder_helpers::{
@@ -71,7 +72,8 @@ unsafe extern "C" fn init_to_callback<T: CopyToFunctionCallbacks>(
             let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_init_get_bind_data, info, RET)?;
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let file_path = check_api_call!(ffi::duckdb_v2_copy_to_init_get_file_path, info, RET).map(|x| x.into())?;
+            let file_path = check_api_call!(ffi::duckdb_v2_copy_to_init_get_file_path, info, RET)
+                .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default())?;
 
             let init_data = T::init(user_data, &Context(context), &bind_data.data, file_path)?;
 
@@ -406,7 +408,7 @@ impl CopyToBindInfo {
 
         let logical_type = LogicalType { handle: borrowed_type };
 
-        Ok((name.into(), logical_type))
+        Ok((DuckDBStr::from_raw(name).as_str().unwrap_or_default(), logical_type))
     }
 
     /// Return the output path as written in the `COPY TO` statement.
@@ -414,7 +416,8 @@ impl CopyToBindInfo {
     /// The initialization callback receives the actual file path, which may
     /// differ for temporary files or partitioned output.
     pub fn file_path(&self) -> Result<String> {
-        check_api_call!(ffi::duckdb_v2_copy_to_bind_get_file_path, self.handle, RET).map(|x| <&str>::from(x).to_owned())
+        check_api_call!(ffi::duckdb_v2_copy_to_bind_get_file_path, self.handle, RET)
+            .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default().to_owned())
     }
 
     fn option_count(&self) -> Result<usize> {
@@ -433,7 +436,10 @@ impl CopyToBindInfo {
             let name = check_api_call!(ffi::duckdb_v2_copy_to_bind_get_option_name, self.handle, i as u64, RET)?;
             let handle = check_api_call!(ffi::duckdb_v2_copy_to_bind_get_option_value, self.handle, i as u64, RET)?;
 
-            items.insert(<&str>::from(name).to_owned(), Value { handle });
+            items.insert(
+                DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned(),
+                Value { handle },
+            );
         }
         Ok(items)
     }
@@ -453,7 +459,12 @@ unsafe extern "C" fn bind_from_callback<T: CopyFromFunctionCallbacks>(
 
             let bind_info = CopyFromBindInfo { handle: info };
 
-            let (bind_data, cardinality) = T::bind(user_data, &Context(context), file_path.into(), &bind_info)?;
+            let (bind_data, cardinality) = T::bind(
+                user_data,
+                &Context(context),
+                DuckDBStr::from_raw(file_path).as_str().unwrap_or_default(),
+                &bind_info,
+            )?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_from_bind_set_bind_data,
@@ -627,7 +638,10 @@ impl CopyFromBindInfo {
             RET
         )?;
 
-        Ok((name.into(), LogicalType { handle: owned_type }))
+        Ok((
+            DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
+            LogicalType { handle: owned_type },
+        ))
     }
 
     /// Return the number of options the `COPY` statement passed to the function.
@@ -659,7 +673,10 @@ impl CopyFromBindInfo {
             RET
         )?;
 
-        Ok((name.into(), Value { handle: value }))
+        Ok((
+            DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
+            Value { handle: value },
+        ))
     }
 }
 

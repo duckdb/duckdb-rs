@@ -103,7 +103,12 @@ fn execute_statement<'conn>(
         message: "No statements found in SQL string".to_string(),
     })??;
 
-    assert!(statements.next().is_none(), "Multiple statements found in SQL string");
+    if statements.next().is_some() {
+        return Err(Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+            message: "Multiple statements found in SQL string".to_string(),
+        });
+    }
 
     conn.execute_statement(statement, names, values)
 }
@@ -234,7 +239,7 @@ impl Connection {
     /// The setting resolves from this connection's local override, then the
     /// database's global value, then the static default.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_name, **self, name.into(), RET)?;
+        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_name, **self, &name.into(), RET)?;
 
         Ok(ConfigOption { handle })
     }
@@ -271,8 +276,8 @@ impl Connection {
         check_api_call!(
             ffi::duckdb_v2_connection_set_option,
             **self,
-            name.into(),
-            value.into(),
+            &name.into(),
+            &value.into(),
             scope.into()
         )?;
 
@@ -390,7 +395,7 @@ impl Context {
     /// Return an effective option by canonical name or alias.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
         Ok(ConfigOption {
-            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, name.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, &name.into(), RET)?,
         })
     }
 
@@ -515,6 +520,17 @@ mod tests {
                 i += 1;
             }
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_connection_rejects_multiple_statements() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+
+        assert!(conn.execute("SELECT 1; SELECT 2", Parameters::None).is_err());
+        assert!(conn.query("SELECT 1; SELECT 2", Parameters::None).is_err());
+        assert!(conn.parse("SELECT '\0'").is_err());
 
         Ok(())
     }

@@ -2,6 +2,7 @@ use crate::{
     Result,
     error::{DuckDBError, Error, check_api_call_no_err},
     ffi,
+    ffi_str::DuckDBStr,
 };
 
 pub(crate) struct OpaqueHandle<T> {
@@ -41,7 +42,10 @@ impl<T> Drop for OpaqueHandle<T> {
 
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
-    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, (&error.message).into())
+
+    let message: DuckDBStr<'_> = (&error.message).into();
+
+    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, message.as_raw_ptr())
         .expect("Failed to set error text");
 }
 

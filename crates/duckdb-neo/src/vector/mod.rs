@@ -41,7 +41,7 @@ use crate::{
     check_api_call,
     error::{DuckDBError, Error},
     ffi,
-    logical_type::LogicalType,
+    logical_type::{LogicalType, LogicalTypeID},
     value::Value,
 };
 
@@ -254,7 +254,8 @@ pub struct Vector<'chunk, T: VectorElement> {
     pub(crate) writable: bool,
     heap: Option<ffi::duckdb_v2_arena_handle>,
     pub(crate) children: Vec<Vector<'chunk, Unknown>>,
-    pub(crate) child_write_offset: usize,
+    /// Elements per row of an `ARRAY` vector, read once from its type; 0 otherwise.
+    pub(crate) array_size: usize,
     _chunk: PhantomData<&'chunk ()>,
     _type: PhantomData<T>,
 }
@@ -274,6 +275,14 @@ impl<'chunk> Vector<'chunk, Unknown> {
 
         let kind = StorageKind::from_ffi(vector_type);
         let view = Self::acquire_view(*handle, kind)?;
+        let logical_type = LogicalType {
+            handle: logical_type_handle,
+        };
+        let array_size = if logical_type.type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
+            crate::types::array::array_size(&logical_type)?
+        } else {
+            0
+        };
 
         let mut children = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
@@ -283,16 +292,14 @@ impl<'chunk> Vector<'chunk, Unknown> {
 
         Ok(Vector {
             handle: *handle,
-            logical_type: LogicalType {
-                handle: logical_type_handle,
-            },
+            logical_type,
             kind,
             len: len as usize,
             view,
             writable,
             heap: None,
             children,
-            child_write_offset: 0,
+            array_size,
             _chunk: PhantomData,
             _type: PhantomData,
         })
@@ -337,14 +344,6 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         Ok(())
     }
 
-    fn refresh_tree(&mut self) -> Result<()> {
-        self.refresh_buffers()?;
-        for child in &mut self.children {
-            child.refresh_tree()?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'chunk, U> {
         Vector {
             handle: self.handle,
@@ -355,7 +354,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             writable: self.writable,
             heap: self.heap,
             children: self.children,
-            child_write_offset: self.child_write_offset,
+            array_size: self.array_size,
             _chunk: self._chunk,
             _type: PhantomData,
         }
@@ -414,7 +413,8 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
         // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
-        Ok(Vector::from_handle(&self.handle, self.writable)?.cast_unchecked::<T2>())
+        // Writes would land in the source's storage, so only a writable source stays writable.
+        Ok(Vector::from_handle(&self.handle, self.writable && source.writable)?.cast_unchecked::<T2>())
     }
 
     pub(crate) fn get_as_unchecked<U: VectorElement>(&self, index: usize) -> Option<U::Ref<'_>> {
@@ -442,6 +442,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
+        if self.kind != StorageKind::Flat {
+            return Err(not_writable());
+        }
 
         let is_valid = value.is_some();
         if let Some(value) = value {
@@ -457,6 +460,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     pub(crate) fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
+        }
+        if self.kind != StorageKind::Flat {
+            return Err(not_writable());
         }
         let handle = self.handle;
         let view = self.view.as_mut().ok_or_else(not_writable)?;
@@ -514,6 +520,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// This is the slow path; prefer [`Self::write`] for typed vector access.
     pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
+        if !self.writable {
+            return Err(not_writable());
+        }
         check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)
     }
 
@@ -521,6 +530,9 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// This is the slow path; prefer [`Self::write`] with `None`.
     pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
+        if !self.writable {
+            return Err(not_writable());
+        }
         check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
         self.refresh_buffers()
     }
@@ -534,6 +546,12 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         // The element type is represented only by PhantomData.
         let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
         U::write(typed, index, value)
+    }
+
+    /// Read the current size from DuckDB, which may have changed through another wrapper.
+    pub(crate) fn current_size(&self) -> Result<usize> {
+        let len: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET)?;
+        Ok(len as usize)
     }
 
     /// Return the number of logical rows.
@@ -572,8 +590,10 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             return Ok(());
         }
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
-        self.kind = StorageKind::Flat;
-        self.refresh_tree()
+
+        // Flattening replaces the buffer and child vectors, so rebuild from the handle.
+        *self = Vector::from_handle(&self.handle, self.writable)?.cast_unchecked();
+        Ok(())
     }
 
     fn set_not_writable(&mut self) {

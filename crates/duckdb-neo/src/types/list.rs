@@ -106,7 +106,6 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
             return vector.write_raw::<List<T>>(index, None);
         };
 
-        let offset = vector.child_write_offset;
         let len = values.len();
         let mut child = std::mem::take(&mut vector.children)
             .into_iter()
@@ -114,15 +113,16 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
             .expect("validated list child")
             .cast_unchecked::<T>();
         let result = (|| {
+            // Append after the child's elements, including any written through another wrapper.
+            let offset = child.current_size()?;
             child.set_size(offset + len)?;
             for (child_index, value) in values.into_iter().enumerate() {
                 child.write(offset + child_index, value)?;
             }
-            Ok(())
+            Ok(offset)
         })();
         vector.children = vec![child.into_unknown()];
-        result?;
-        vector.child_write_offset += len;
+        let offset = result?;
         vector.write_raw::<List<T>>(
             index,
             Some(List {

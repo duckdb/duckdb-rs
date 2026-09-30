@@ -29,7 +29,7 @@
 //! # }
 //! ```
 
-use libduckdb_sys::v2::{self as ffi, DuckDBStr};
+use libduckdb_sys::v2::{self as ffi};
 
 mod builder_helpers;
 pub mod connection_options;
@@ -42,6 +42,7 @@ pub mod data_chunk;
 pub mod database;
 pub mod environment;
 pub mod error;
+pub(crate) mod ffi_str;
 pub mod logical_type;
 pub(crate) mod parameter;
 pub mod query_result;
@@ -83,21 +84,19 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Render a name as SQL, quoting and escaping it only when required.
 pub fn render_identifier_quoted(text: &str) -> Result<String> {
-    check_api_call_string!(ffi::duckdb_v2_identifier_render_quoted, text.into())
+    check_api_call_string!(ffi::duckdb_v2_identifier_render_quoted, &text.into())
 }
 
 /// Return the linked DuckDB library version.
 pub fn library_version() -> Result<&'static str> {
-    check_api_call!(ffi::duckdb_v2_library_version, RET).map(|v| v.into())
+    // The version string is static in the library.
+    check_api_call!(ffi::duckdb_v2_library_version, RET)
+        .map(|v| ffi_str::DuckDBStr::from_raw(v).as_str().unwrap_or_default())
 }
 
 /// Validate that `bytes` are well-formed UTF-8, including bytes after any embedded NULs.
 pub fn validate_utf8(bytes: &[u8]) -> Result<()> {
-    let text = DuckDBStr {
-        ptr: bytes.as_ptr() as *const _,
-        len: bytes.len() as ffi::idx_t,
-    };
-    check_api_call!(ffi::duckdb_v2_validate_utf8, text)
+    check_api_call!(ffi::duckdb_v2_validate_utf8, &ffi_str::bytes_arg(bytes))
 }
 
 #[cfg(test)]
@@ -237,12 +236,7 @@ mod tests {
 
     #[test]
     fn test_identifier_render_quoted() -> crate::Result<()> {
-        let identifier = ffi::duckdb_v2_str {
-            ptr: "10".as_ptr() as *const i8,
-            len: "10".len() as u64,
-        };
-
-        let quoted = render_identifier_quoted(identifier.into())?;
+        let quoted = render_identifier_quoted("10")?;
         assert_eq!(quoted, "\"10\"");
 
         Ok(())

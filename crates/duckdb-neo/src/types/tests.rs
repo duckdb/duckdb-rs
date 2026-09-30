@@ -440,6 +440,15 @@ fn test_complex_values() -> crate::Result<()> {
         .value(&conn)?;
     assert_eq!(struct_value.dbg_string()?, "{'id': 42, 'name': duck}");
 
+    // The field count must match the schema.
+    let too_many = StructValue::<TestStruct>::new()
+        .field(1_i32)
+        .field(2_i32)
+        .field(3_i32)
+        .field(4_i32);
+    assert!(too_many.value(&conn).is_err());
+    assert!(StructValue::<TestStruct>::new().value(&conn).is_err());
+
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(
         union.fetch_logical_type()?.type_id(),

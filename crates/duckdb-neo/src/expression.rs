@@ -2,6 +2,7 @@
 
 use crate::ffi;
 
+use crate::ffi_str::DuckDBStr;
 use crate::{
     Result, builder_helpers::ffi_enum_redeclaration, cast::CastMode, check_api_call, logical_type::LogicalType,
     qualified_name::QualifiedName, value::Value,
@@ -106,8 +107,7 @@ impl<'a> Expression<'a> {
     pub fn function_name(&self) -> Result<String> {
         let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_expression_function_get_name, self.handle, RET)?;
 
-        let name: &str = name.into();
-        Ok(name.to_string())
+        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the function's owned name, qualified by catalog and schema where known.

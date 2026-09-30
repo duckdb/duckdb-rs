@@ -158,7 +158,7 @@ define_link! {
 define_link! {
     name: LogicalTypeFromTextLink,
     method: fn create_logical_type_from_text(text: &str) -> ffi::duckdb_v2_logical_type_handle,
-    args: (text.into(), RET),
+    args: (&(text.into()), RET),
     implementations: {
         Connection => ffi::duckdb_v2_connection_create_type_from_text,
         Context => ffi::duckdb_v2_context_create_type_from_text,
@@ -171,7 +171,7 @@ define_link! {
         logical_type: ffi::duckdb_v2_logical_type_handle,
         alias: &str,
     ) -> ffi::duckdb_v2_logical_type_handle,
-    args: (logical_type, alias.into(), RET),
+    args: (logical_type, &alias.into(), RET),
     implementations: {
         Connection => ffi::duckdb_v2_connection_create_type_with_alias,
         Context => ffi::duckdb_v2_context_create_type_with_alias,
