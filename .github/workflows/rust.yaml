@@ -61,9 +61,9 @@ jobs:
 
   test:
     # Linked mode: libduckdb-sys downloads the DuckDB build pinned in
-    # crates/libduckdb-sys/.duckdb-release, so this job compiles no C++. The
-    # bundled backends are covered by the lint job's clippy step (extensions-full
-    # implies bundled), the CMake job, and the sanitizer job on main.
+    # crates/libduckdb-sys/.duckdb-release. The bundled backends are covered by
+    # the Linux "Test bundled (cc) extensions" step, the CMake job, and the
+    # sanitizer job on main.
     # One runner per platform tests every crate in its own step, sharing the build cache.
     name: Test (${{ matrix.name }})
     strategy:
@@ -102,6 +102,15 @@ jobs:
 
       - name: Test duckdb-loadable-macros
         run: cargo test -p duckdb-loadable-macros --locked
+
+      # Clippy compiles the bundled (cc) backend but never links or runs it; this
+      # checks that its statically linked extensions register instead of autoloading.
+      - name: Test bundled (cc) extensions
+        if: runner.os == 'Linux'
+        env:
+          CC: "sccache cc"
+          CXX: "sccache c++"
+        run: cargo test -p duckdb --features extensions-full --lib extension::test --locked
 
   cmake:
     # Slow bundled C++ build; only start once the fast linked-mode tests pass.
