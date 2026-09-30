@@ -133,7 +133,7 @@ jobs:
         # passing silently, which is what an --exact filter would do.
         run: |
           cargo test -p duckdb --features buildtime_bindgen --test nightly -- --ignored
-          cargo test -p duckdb -p duckdb-neo --features buildtime_bindgen
+          cargo test -p duckdb -p duckdb-neo --features "duckdb/buildtime_bindgen duckdb-neo/buildtime-bindgen"
 
   report:
     name: Report release status

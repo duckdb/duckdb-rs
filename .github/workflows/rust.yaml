@@ -48,7 +48,7 @@ jobs:
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
-        run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full uuid r2d2" --locked -- -D warnings
+        run: cargo clippy --all-targets --features "buildtime_bindgen buildtime-bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full uuid r2d2" --locked -- -D warnings
 
       - name: Check rustdoc
         env:
@@ -119,10 +119,12 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # Both crates link the same extensions, so their two DuckDB builds share sccache objects.
         include:
-          - { name: Linux, os: ubuntu-latest, features: "icu httpfs" }
-          - { name: macOS, os: macos-latest, features: "icu httpfs" }
-          - { name: Windows, os: windows-latest, features: "icu" }
+          - { name: Linux, os: ubuntu-latest, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          - { name: macOS, os: macos-latest, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          # httpfs is only supported on Linux and macOS.
+          - { name: Windows, os: windows-latest, features: "autocomplete icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
     runs-on: ${{ matrix.os }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -131,6 +133,7 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
       DUCKDB_DISABLE_EXTENSION_LOAD: "1"
       CMAKE_FEATURES: ${{ matrix.features }}
+      NEO_CMAKE_FEATURES: ${{ matrix.neo_features }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -153,6 +156,16 @@ jobs:
           esac
           echo "CARGO_TARGET_DIR=$runner_drive:/t" >> "$GITHUB_ENV"
 
+      # Each crate builds DuckDB in its own OUT_DIR; strip those paths from sccache keys.
+      - name: Configure sccache base directories
+        shell: bash
+        run: |
+          if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+            echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE;$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-on-failure: false
@@ -167,11 +180,11 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install pkg-config openssl@3
 
-      - name: Check CMake without default features
+      - name: "libduckdb-sys: Check CMake without default features"
         if: runner.os == 'Linux'
         run: cargo check -p libduckdb-sys --no-default-features --features "bundled-cmake capi-v1" --locked
 
-      - name: Verify static linking with extension loading disabled
+      - name: "duckdb: Verify static linking with extension loading disabled"
         shell: bash
         run: |
           output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
@@ -191,14 +204,17 @@ jobs:
           test $status -ne 0
           grep -qF "Loading external extensions is disabled through a compile time flag" <<<"$output"
 
-      - name: ICU functional test
+      - name: "duckdb: ICU functional test"
         shell: bash
         run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_icu -- --exact
 
-      - name: HTTPFS loads without downloaded artifacts
+      - name: "duckdb: HTTPFS loads without downloaded artifacts"
         if: runner.os != 'Windows'
         shell: bash
         run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_httpfs -- --exact
+
+      - name: "duckdb-neo: Test with bundled extensions"
+        run: cargo test -p duckdb-neo --features "$NEO_CMAKE_FEATURES" --locked
 
   msrv:
     name: MSRV
