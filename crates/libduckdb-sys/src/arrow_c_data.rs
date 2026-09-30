@@ -116,9 +116,11 @@ mod tests {
     };
 
     use arrow::{
-        array::{Array, DictionaryArray, Int32Array, StructArray},
-        datatypes::{DataType, Field, Fields, Int8Type},
+        array::{Array, DictionaryArray, Int32Array, RecordBatch, RecordBatchIterator, StructArray},
+        datatypes::{DataType, Field, Fields, Int8Type, Schema},
+        error::ArrowError,
         ffi::{FFI_ArrowArray, FFI_ArrowSchema},
+        ffi_stream::FFI_ArrowArrayStream,
     };
 
     // arrow-rs keeps the FFI fields private, so compare layouts by reading a
@@ -186,5 +188,41 @@ mod tests {
         assert!(ptr::eq(child.dictionary as *const FFI_ArrowSchema, dictionary));
         assert_eq!(ours.release.map(|f| f as usize), ffi.release().map(|f| f as usize));
         assert_eq!(ours.private_data, ffi.private_data());
+    }
+
+    // Drives an arrow-rs stream through our callback fields, so a misplaced field calls the wrong function.
+    #[test]
+    fn matches_arrow_rs_stream_layout() {
+        assert_eq!(size_of::<ArrowArrayStream>(), size_of::<FFI_ArrowArrayStream>());
+        assert_eq!(align_of::<ArrowArrayStream>(), align_of::<FFI_ArrowArrayStream>());
+
+        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int32, false)]));
+        let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
+        let batches = vec![Ok(batch), Err(ArrowError::ComputeError("boom".into()))];
+        let mut ffi = FFI_ArrowArrayStream::new(Box::new(RecordBatchIterator::new(batches, schema.clone())));
+        let release = ffi.release().map(|f| f as usize);
+        let private_data = ffi.private_data();
+
+        let ours = &mut ffi as *mut FFI_ArrowArrayStream as *mut ArrowArrayStream;
+        unsafe {
+            assert_eq!((*ours).release.map(|f| f as usize), release);
+            assert_eq!((*ours).private_data, private_data);
+
+            let mut out_schema = FFI_ArrowSchema::empty();
+            let rc = (*ours).get_schema.unwrap()(ours, &mut out_schema as *mut FFI_ArrowSchema as *mut ArrowSchema);
+            assert_eq!(rc, 0);
+            assert_eq!(Schema::try_from(&out_schema).unwrap(), *schema);
+
+            let mut out_array = FFI_ArrowArray::empty();
+            let rc = (*ours).get_next.unwrap()(ours, &mut out_array as *mut FFI_ArrowArray as *mut ArrowArray);
+            assert_eq!(rc, 0);
+            assert_eq!(out_array.len(), 3);
+
+            let mut failed = FFI_ArrowArray::empty();
+            let rc = (*ours).get_next.unwrap()(ours, &mut failed as *mut FFI_ArrowArray as *mut ArrowArray);
+            assert_ne!(rc, 0);
+            let err = CStr::from_ptr((*ours).get_last_error.unwrap()(ours));
+            assert!(err.to_str().unwrap().contains("boom"));
+        }
     }
 }
