@@ -51,6 +51,9 @@ paste = { workspace = true }
 r2d2 = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [package.metadata.docs.rs]
 features = []
 all-features = false
