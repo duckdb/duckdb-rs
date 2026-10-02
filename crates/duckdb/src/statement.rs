@@ -10,7 +10,8 @@ use crate::{
     arrow_batch::{Arrow, ArrowStream},
     error::result_from_duckdb_prepare,
     types::{
-        ToSql, ToSqlOutput, binding_unsupported_value, to_duckdb_hugeint, to_duckdb_uhugeint, value_ref_from_value,
+        ToSql, ToSqlOutput, binding_unsupported_value, create_owned_container, is_owned_container, to_duckdb_hugeint,
+        to_duckdb_uhugeint, value_ref_from_value,
     },
 };
 #[cfg(feature = "polars")]
@@ -595,6 +596,14 @@ impl Statement<'_> {
         let value = param.to_sql()?;
 
         let ptr = unsafe { self.stmt.ptr() };
+        if let ToSqlOutput::Owned(ref owned) = value
+            && is_owned_container(owned)
+        {
+            let duck_value = create_owned_container(owned)?;
+            let rc = unsafe { ffi::duckdb_bind_value(ptr, col as u64, duck_value.as_raw()) };
+            drop(duck_value);
+            return result_from_duckdb_prepare(rc, ptr);
+        }
         let value = match value {
             ToSqlOutput::Borrowed(v) => v,
             ToSqlOutput::Owned(ref v) => value_ref_from_value(v, binding_unsupported_value)?,
@@ -695,7 +704,7 @@ mod test {
         Connection, Error, Result, Statement,
         core::{LogicalTypeId, RawLogicalTypeId},
         params_from_iter,
-        types::{Decimal, ListType, ToSql, ToSqlOutput, Type, ValueRef},
+        types::{Decimal, ListType, OrderedMap, ToSql, ToSqlOutput, Type, Value, ValueRef},
     };
 
     struct BorrowedList(ListArray);
@@ -2231,11 +2240,8 @@ mod test {
         Ok(())
     }
 
-    // Unsupported Value variants must surface an error instead of panicking.
     #[test]
-    fn test_bind_unsupported_container_type_returns_error() -> Result<()> {
-        use crate::types::Value;
-
+    fn test_bind_owned_list_inserts_and_borrowed_list_errors() -> Result<()> {
         struct OwnedList;
         impl ToSql for OwnedList {
             fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
@@ -2246,18 +2252,157 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute("CREATE TABLE t (id INTEGER, numbers INTEGER[])", [])?;
 
-        let list = OwnedList;
-        let err = db
-            .execute("INSERT INTO t VALUES (?, ?)", crate::params![1, list])
-            .unwrap_err();
-
-        assert_binding_list_error(err);
+        db.execute("INSERT INTO t VALUES (?, ?)", crate::params![1, OwnedList])?;
+        let got: Value = db.query_row("SELECT numbers FROM t", [], |row| row.get(0))?;
+        assert_eq!(got, Value::List(vec![Value::Int(1), Value::Int(2)]));
 
         let borrowed_list = BorrowedList::new();
         let err = db
             .execute("INSERT INTO t VALUES (?, ?)", crate::params![2, borrowed_list])
             .unwrap_err();
         assert_binding_list_error(err);
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))?;
+        assert_eq!(count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_owned_containers() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let quote = "o'reilly";
+        let names = Value::List(vec![Value::Text("alpha".to_string()), Value::Text(quote.to_string())]);
+        let empty = Value::List(vec![]);
+        let empty_array = Value::Array(vec![]);
+        let empty_struct = Value::Struct(OrderedMap::<String, Value>::from(vec![]));
+        let empty_map = Value::Map(OrderedMap::<Value, Value>::from(vec![]));
+        let with_null = Value::List(vec![Value::Int(1), Value::Null, Value::Int(2)]);
+        let nested = Value::List(vec![
+            Value::List(vec![Value::Int(1)]),
+            Value::List(vec![Value::Int(2), Value::Int(3)]),
+        ]);
+        let array = Value::Array(vec![Value::Int(1), Value::Int(2)]);
+        let structure = Value::Struct(OrderedMap::from(vec![
+            ("k".to_string(), Value::Int(1)),
+            ("name".to_string(), Value::Text("a'b".to_string())),
+        ]));
+        let map = Value::Map(OrderedMap::from(vec![(
+            Value::Text("alpha".to_string()),
+            Value::Int(2),
+        )]));
+
+        fn round_trip(db: &Connection, value: &Value) -> Result<Value> {
+            db.query_row("SELECT ?", [value], |row| row.get(0))
+        }
+
+        let empty_type: String = db.query_row("SELECT typeof(?)", [&empty], |row| row.get(0))?;
+        assert_eq!(empty_type, "VARCHAR[]");
+        let empty_array_type: String = db.query_row("SELECT typeof(?)", [&empty_array], |row| row.get(0))?;
+        // DuckDB prints an array size of 0 as ANY.
+        assert_eq!(empty_array_type, "VARCHAR[ANY]");
+        let empty_struct_type: String = db.query_row("SELECT typeof(?)", [&empty_struct], |row| row.get(0))?;
+        assert_eq!(empty_struct_type, "STRUCT");
+        let empty_map_type: String = db.query_row("SELECT typeof(?)", [&empty_map], |row| row.get(0))?;
+        assert_eq!(empty_map_type, "MAP(VARCHAR, VARCHAR)");
+        assert_eq!(round_trip(&db, &empty_array)?, empty_array);
+        assert_eq!(round_trip(&db, &empty_struct)?, empty_struct);
+        assert_eq!(round_trip(&db, &empty_map)?, empty_map);
+        assert_eq!(round_trip(&db, &names)?, names);
+        assert_eq!(round_trip(&db, &with_null)?, with_null);
+        assert_eq!(round_trip(&db, &nested)?, nested);
+        assert_eq!(round_trip(&db, &array)?, array);
+        assert_eq!(round_trip(&db, &structure)?, structure);
+        assert_eq!(round_trip(&db, &map)?, map);
+
+        db.execute_batch(
+            "CREATE TABLE items(name VARCHAR);
+             INSERT INTO items VALUES ('alpha'), ('other');",
+        )?;
+        // The quote is data. It must not change which rows the predicate matches.
+        db.execute("INSERT INTO items VALUES (?)", [quote])?;
+        let matched = db
+            .prepare("SELECT name FROM items WHERE name IN $names ORDER BY name")?
+            .query_map(crate::named_params! { "names": names }, |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(matched, vec!["alpha".to_string(), quote.to_string()]);
+
+        let err = db
+            .query_row::<i32, _, _>(
+                "SELECT 1 WHERE ? IS NOT NULL",
+                [Value::List(vec![Value::Int(1), Value::Text("a".to_string())])],
+                |row| row.get(0),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("cannot bind List with mixed element types"),
+            "unexpected message: {err}"
+        );
+        let err = db
+            .query_row::<i32, _, _>("SELECT ?", [Value::Enum("variant".to_string())], |row| row.get(0))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("binding Enum parameters is not yet supported"),
+            "unexpected message: {err}"
+        );
+        let err = db
+            .query_row::<i32, _, _>("SELECT ?", [Value::Union(Box::new(Value::Int(1)))], |row| row.get(0))
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("binding Union parameters is not yet supported"),
+            "unexpected message: {err}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_map_rejects_null_and_duplicate_keys() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let null_key = Value::Map(OrderedMap::from(vec![(Value::Null, Value::Int(1))]));
+        let err = db
+            .query_row::<i32, _, _>("SELECT ?", [null_key], |row| row.get(0))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("cannot bind Map with a NULL key"),
+            "unexpected message: {err}"
+        );
+
+        let duplicate = Value::Map(OrderedMap::from(vec![
+            (Value::Int(1), Value::Int(2)),
+            (Value::Int(1), Value::Int(3)),
+        ]));
+        let err = db
+            .query_row::<i32, _, _>("SELECT ?", [duplicate], |row| row.get(0))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("cannot bind Map with duplicate keys"),
+            "unexpected message: {err}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_container_time_matches_scalar_micros() -> Result<()> {
+        use crate::types::TimeUnit;
+
+        let db = Connection::open_in_memory()?;
+        let second = Value::Timestamp(TimeUnit::Second, 1);
+        let millis = Value::Timestamp(TimeUnit::Millisecond, 1_000);
+        let nanos = Value::Timestamp(TimeUnit::Nanosecond, 1_500_000);
+        let scalar_second: Value = db.query_row("SELECT ?", [&second], |row| row.get(0))?;
+        let scalar_millis: Value = db.query_row("SELECT ?", [&millis], |row| row.get(0))?;
+        let scalar_nanos: Value = db.query_row("SELECT ?", [&nanos], |row| row.get(0))?;
+        let timestamps = Value::List(vec![second, millis, nanos]);
+        let got_timestamps: Value = db.query_row("SELECT ?", [&timestamps], |row| row.get(0))?;
+        assert_eq!(
+            got_timestamps,
+            Value::List(vec![scalar_second, scalar_millis, scalar_nanos])
+        );
+
+        let time_nanos = Value::Time64(TimeUnit::Nanosecond, 2_500_000);
+        let scalar_time: Value = db.query_row("SELECT ?", [&time_nanos], |row| row.get(0))?;
+        let times = Value::List(vec![time_nanos]);
+        let got_times: Value = db.query_row("SELECT ?", [&times], |row| row.get(0))?;
+        assert_eq!(got_times, Value::List(vec![scalar_time]));
         Ok(())
     }
 
