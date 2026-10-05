@@ -207,6 +207,30 @@ macro_rules! params {
 ///     )
 /// }
 /// ```
+///
+/// An owned list is a [`Value::List`](crate::types::Value::List).
+/// Pass that value under a bare name.
+/// Write the SQL placeholder as `$names`, with no parentheses around it.
+///
+/// ```rust
+/// use duckdb::types::Value;
+/// use duckdb::{Connection, Result, named_params};
+///
+/// fn main() -> Result<()> {
+///     let conn = Connection::open_in_memory()?;
+///     conn.execute_batch(
+///         "CREATE TABLE items(name VARCHAR);
+///          INSERT INTO items VALUES ('alpha'), ('other');",
+///     )?;
+///     let names = Value::List(vec![Value::Text("alpha".to_string())]);
+///     let mut stmt = conn.prepare("SELECT name FROM items WHERE name IN $names ORDER BY name")?;
+///     let found: Vec<String> = stmt
+///         .query_map(named_params! { "names": names }, |row| row.get(0))?
+///         .collect::<Result<_>>()?;
+///     assert_eq!(found, vec!["alpha".to_string()]);
+///     Ok(())
+/// }
+/// ```
 #[macro_export]
 macro_rules! named_params {
     ($($name:literal : $param:expr),* $(,)?) => {
