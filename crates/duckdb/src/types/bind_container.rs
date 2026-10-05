@@ -113,106 +113,142 @@ enum Shape {
     },
 }
 
-fn create_list(items: &[Value]) -> Result<OwnedDuckValue> {
-    let child_shape = sequence_shape(items, "List")?;
-    create_list_with_shape(items, &child_shape)
+/// A logical type and the child types that nested values reuse.
+///
+/// DuckDB copies this type into each value it creates. Every sibling that
+/// shares the shape uses this same handle.
+struct BuiltType {
+    handle: LogicalTypeHandle,
+    nested: NestedType,
 }
 
-fn create_list_with_shape(items: &[Value], child_shape: &Shape) -> Result<OwnedDuckValue> {
-    let child_type = shape_to_logical_type(child_shape)?;
+enum NestedType {
+    Flat,
+    Child(Box<BuiltType>),
+    Fields(Vec<BuiltType>),
+    Map { key: Box<BuiltType>, value: Box<BuiltType> },
+}
+
+fn create_list(items: &[Value]) -> Result<OwnedDuckValue> {
+    let child_shape = sequence_shape(items, "List")?;
+    let child_type = build_type(&child_shape)?;
+    create_list_with_shape(items, &child_shape, &child_type)
+}
+
+fn create_list_with_shape(items: &[Value], child_shape: &Shape, child_type: &BuiltType) -> Result<OwnedDuckValue> {
     let mut children = Vec::with_capacity(items.len());
     for item in items {
-        children.push(create_value_with_shape(item, child_shape)?);
+        children.push(create_value_with_shape(item, child_shape, child_type)?);
     }
     let ptrs = raw_values(&children);
-    // SAFETY: `child_type` is a live logical type. `ptrs` owns the child
-    // values and outlives this call. `nonnull_mut` is only read by DuckDB,
-    // which copies the children. An empty slice is a dangling
-    // non-null pointer with a count of 0, and that call does not dereference it.
-    let created = unsafe { ffi::duckdb_create_list_value(child_type.ptr, nonnull_mut(&ptrs), ptrs.len() as u64) };
+    // SAFETY: `child_type.handle` stays alive for this call. DuckDB copies
+    // that logical type and the child values. `nonnull_mut` is only read.
+    // An empty slice is a dangling non-null pointer with a count of 0, and
+    // that call does not dereference it.
+    let created =
+        unsafe { ffi::duckdb_create_list_value(child_type.handle.ptr, nonnull_mut(&ptrs), ptrs.len() as u64) };
     OwnedDuckValue::from_raw(created, "List")
 }
 
 fn create_array(items: &[Value]) -> Result<OwnedDuckValue> {
     let child_shape = sequence_shape(items, "Array")?;
-    create_array_with_shape(items, &child_shape)
+    let child_type = build_type(&child_shape)?;
+    create_array_with_shape(items, &child_shape, &child_type)
 }
 
-fn create_array_with_shape(items: &[Value], child_shape: &Shape) -> Result<OwnedDuckValue> {
-    let child_type = shape_to_logical_type(child_shape)?;
+fn create_array_with_shape(items: &[Value], child_shape: &Shape, child_type: &BuiltType) -> Result<OwnedDuckValue> {
     let mut children = Vec::with_capacity(items.len());
     for item in items {
-        children.push(create_value_with_shape(item, child_shape)?);
+        children.push(create_value_with_shape(item, child_shape, child_type)?);
     }
     let ptrs = raw_values(&children);
-    // SAFETY: same contract as `create_list`. DuckDB copies the children and
-    // does not write through `nonnull_mut`.
-    let created = unsafe { ffi::duckdb_create_array_value(child_type.ptr, nonnull_mut(&ptrs), ptrs.len() as u64) };
+    // SAFETY: same contract as `create_list`. DuckDB copies the logical type
+    // and the children, and it does not write through `nonnull_mut`.
+    let created =
+        unsafe { ffi::duckdb_create_array_value(child_type.handle.ptr, nonnull_mut(&ptrs), ptrs.len() as u64) };
     OwnedDuckValue::from_raw(created, "Array")
 }
 
 fn create_struct(fields: &OrderedMap<String, Value>) -> Result<OwnedDuckValue> {
     let expected = struct_fields(fields)?;
-    create_struct_with_shape(fields, &expected)
+    let built = build_struct_type(&expected)?;
+    let NestedType::Fields(field_types) = &built.nested else {
+        return Err(conversion("internal error: struct shape has no field types"));
+    };
+    create_struct_with_shape(fields, &expected, &built.handle, field_types)
 }
 
 fn create_struct_with_shape(
     fields: &OrderedMap<String, Value>,
     expected: &[(String, Shape)],
+    struct_type: &LogicalTypeHandle,
+    field_types: &[BuiltType],
 ) -> Result<OwnedDuckValue> {
     if fields.iter().count() != expected.len() {
         return Err(conversion("cannot bind Struct with mismatched fields"));
     }
-    let mut names = Vec::with_capacity(expected.len());
+    if field_types.len() != expected.len() {
+        return Err(conversion("internal error: struct shape has no field types"));
+    }
     let mut children = Vec::with_capacity(expected.len());
-    let mut type_handles = Vec::with_capacity(expected.len());
-    for ((name, field), (expected_name, expected_shape)) in fields.iter().zip(expected.iter()) {
+    for ((name, field), ((expected_name, expected_shape), field_type)) in
+        fields.iter().zip(expected.iter().zip(field_types))
+    {
         if name != expected_name {
             return Err(conversion("cannot bind Struct with mismatched fields"));
         }
-        names.push(name.as_str());
-        type_handles.push(shape_to_logical_type(expected_shape)?);
-        children.push(create_value_with_shape(field, expected_shape)?);
+        children.push(create_value_with_shape(field, expected_shape, field_type)?);
     }
-    let logical = struct_logical_type(&names, &type_handles)?;
     let ptrs = raw_values(&children);
-    // SAFETY: `logical` is a struct type whose field count equals `ptrs`.
-    // The child values outlive this call. DuckDB copies them and does
-    // not write through the pointer. An empty struct passes a dangling
-    // non-null pointer, and the C loop does not run when the field count is 0.
-    let created = unsafe { ffi::duckdb_create_struct_value(logical.ptr, nonnull_mut(&ptrs)) };
+    // SAFETY: `struct_type` stays alive for this call. DuckDB copies that
+    // struct type and the child values. It does not write through the
+    // pointer. An empty struct passes a dangling non-null pointer, and the
+    // C loop does not run when the field count is 0.
+    let created = unsafe { ffi::duckdb_create_struct_value(struct_type.ptr, nonnull_mut(&ptrs)) };
     OwnedDuckValue::from_raw(created, "Struct")
 }
 
 fn create_map(entries: &OrderedMap<Value, Value>) -> Result<OwnedDuckValue> {
     let (key_shape, value_shape) = map_shapes(entries)?;
-    create_map_with_shape(entries, &key_shape, &value_shape)
+    let shape = Shape::Map {
+        key: Box::new(key_shape),
+        value: Box::new(value_shape),
+    };
+    let built = build_type(&shape)?;
+    let Shape::Map { key, value } = &shape else {
+        return Err(conversion("internal error: map shape has no key type"));
+    };
+    let NestedType::Map {
+        key: key_type,
+        value: value_type,
+    } = &built.nested
+    else {
+        return Err(conversion("internal error: map shape has no key type"));
+    };
+    create_map_with_shape(entries, key, value, &built.handle, key_type, value_type)
 }
 
 fn create_map_with_shape(
     entries: &OrderedMap<Value, Value>,
     key_shape: &Shape,
     value_shape: &Shape,
+    map_type: &LogicalTypeHandle,
+    key_type: &BuiltType,
+    value_type: &BuiltType,
 ) -> Result<OwnedDuckValue> {
-    let key_type = shape_to_logical_type(key_shape)?;
-    let value_type = shape_to_logical_type(value_shape)?;
-    let map_type = LogicalTypeHandle::map(&key_type, &value_type);
-    if map_type.ptr.is_null() {
-        return Err(rejected("Map"));
-    }
     let entry_count = entries.iter().count();
     let mut keys = Vec::with_capacity(entry_count);
     let mut values = Vec::with_capacity(entry_count);
     for (key, value) in entries.iter() {
-        keys.push(create_value_with_shape(key, key_shape)?);
-        values.push(create_value_with_shape(value, value_shape)?);
+        keys.push(create_value_with_shape(key, key_shape, key_type)?);
+        values.push(create_value_with_shape(value, value_shape, value_type)?);
     }
     let key_ptrs = raw_values(&keys);
     let value_ptrs = raw_values(&values);
-    // SAFETY: `map_type` is a live map type. Key and value slices have the
-    // same length and outlive this call. DuckDB copies both and does not
-    // write through the pointers. Empty slices use a dangling non-null pointer
-    // with a count of 0, which the C loop does not dereference.
+    // SAFETY: `map_type` stays alive for this call. DuckDB copies that map
+    // type and both slices. It does not write through the pointers. Empty
+    // slices use a dangling non-null pointer with a count of 0, which the C
+    // loop does not dereference.
     let created = unsafe {
         ffi::duckdb_create_map_value(
             map_type.ptr,
@@ -224,15 +260,30 @@ fn create_map_with_shape(
     OwnedDuckValue::from_raw(created, "Map")
 }
 
-fn create_value_with_shape(value: &Value, shape: &Shape) -> Result<OwnedDuckValue> {
+fn create_value_with_shape(value: &Value, shape: &Shape, ty: &BuiltType) -> Result<OwnedDuckValue> {
     if matches!(value, Value::Null) {
         return null_value();
     }
     match (value, shape) {
-        (Value::List(items), Shape::List(child)) => create_list_with_shape(items, child),
-        (Value::Array(items), Shape::Array { child, .. }) => create_array_with_shape(items, child),
-        (Value::Struct(fields), Shape::Struct(expected)) => create_struct_with_shape(fields, expected),
-        (Value::Map(entries), Shape::Map { key, value }) => create_map_with_shape(entries, key, value),
+        (Value::List(items), Shape::List(child)) => match &ty.nested {
+            NestedType::Child(child_type) => create_list_with_shape(items, child, child_type),
+            _ => Err(conversion("internal error: list shape has no child type")),
+        },
+        (Value::Array(items), Shape::Array { child, .. }) => match &ty.nested {
+            NestedType::Child(child_type) => create_array_with_shape(items, child, child_type),
+            _ => Err(conversion("internal error: array shape has no child type")),
+        },
+        (Value::Struct(fields), Shape::Struct(expected)) => match &ty.nested {
+            NestedType::Fields(field_types) => create_struct_with_shape(fields, expected, &ty.handle, field_types),
+            _ => Err(conversion("internal error: struct shape has no field types")),
+        },
+        (Value::Map(entries), Shape::Map { key, value }) => match &ty.nested {
+            NestedType::Map {
+                key: key_type,
+                value: value_type,
+            } => create_map_with_shape(entries, key, value, &ty.handle, key_type, value_type),
+            _ => Err(conversion("internal error: map shape has no key type")),
+        },
         (Value::Decimal(decimal), Shape::Decimal { width, scale }) => create_decimal(*decimal, *width, *scale),
         _ => create_value(value),
     }
@@ -545,8 +596,64 @@ fn map_shapes(entries: &OrderedMap<Value, Value>) -> Result<(Shape, Shape)> {
     ))
 }
 
-fn shape_to_logical_type(shape: &Shape) -> Result<LogicalTypeHandle> {
-    let handle = match shape {
+fn build_type(shape: &Shape) -> Result<BuiltType> {
+    match shape {
+        Shape::List(child) => {
+            let child = build_type(child)?;
+            let handle = live_type(LogicalTypeHandle::list(&child.handle), "logical type")?;
+            Ok(BuiltType {
+                handle,
+                nested: NestedType::Child(Box::new(child)),
+            })
+        }
+        Shape::Array { child, len } => {
+            let child = build_type(child)?;
+            let handle = live_type(LogicalTypeHandle::array(&child.handle, *len as u64), "logical type")?;
+            Ok(BuiltType {
+                handle,
+                nested: NestedType::Child(Box::new(child)),
+            })
+        }
+        Shape::Struct(fields) => build_struct_type(fields),
+        Shape::Map { key, value } => {
+            let key = build_type(key)?;
+            let value = build_type(value)?;
+            let handle = live_type(LogicalTypeHandle::map(&key.handle, &value.handle), "Map")?;
+            Ok(BuiltType {
+                handle,
+                nested: NestedType::Map {
+                    key: Box::new(key),
+                    value: Box::new(value),
+                },
+            })
+        }
+        flat => {
+            let handle = live_type(scalar_logical_type(flat), "logical type")?;
+            Ok(BuiltType {
+                handle,
+                nested: NestedType::Flat,
+            })
+        }
+    }
+}
+
+fn build_struct_type(fields: &[(String, Shape)]) -> Result<BuiltType> {
+    let mut names = Vec::with_capacity(fields.len());
+    let mut children = Vec::with_capacity(fields.len());
+    for (name, field) in fields {
+        names.push(name.as_str());
+        children.push(build_type(field)?);
+    }
+    let type_refs: Vec<&LogicalTypeHandle> = children.iter().map(|child| &child.handle).collect();
+    let handle = struct_logical_type(&names, &type_refs)?;
+    Ok(BuiltType {
+        handle,
+        nested: NestedType::Fields(children),
+    })
+}
+
+fn scalar_logical_type(shape: &Shape) -> LogicalTypeHandle {
+    match shape {
         Shape::Boolean => LogicalTypeHandle::from(LogicalTypeId::Boolean),
         Shape::TinyInt => LogicalTypeHandle::from(LogicalTypeId::Tinyint),
         Shape::SmallInt => LogicalTypeHandle::from(LogicalTypeId::Smallint),
@@ -567,36 +674,20 @@ fn shape_to_logical_type(shape: &Shape) -> Result<LogicalTypeHandle> {
         Shape::Date => LogicalTypeHandle::from(LogicalTypeId::Date),
         Shape::Time => LogicalTypeHandle::from(LogicalTypeId::Time),
         Shape::Interval => LogicalTypeHandle::from(LogicalTypeId::Interval),
-        Shape::List(child) => {
-            let child = shape_to_logical_type(child)?;
-            LogicalTypeHandle::list(&child)
+        Shape::List(_) | Shape::Array { .. } | Shape::Struct(_) | Shape::Map { .. } => {
+            LogicalTypeHandle::from(LogicalTypeId::Varchar)
         }
-        Shape::Array { child, len } => {
-            let child = shape_to_logical_type(child)?;
-            LogicalTypeHandle::array(&child, *len as u64)
-        }
-        Shape::Struct(fields) => {
-            let mut names = Vec::with_capacity(fields.len());
-            let mut types = Vec::with_capacity(fields.len());
-            for (name, field) in fields {
-                names.push(name.as_str());
-                types.push(shape_to_logical_type(field)?);
-            }
-            return struct_logical_type(&names, &types);
-        }
-        Shape::Map { key, value } => {
-            let key = shape_to_logical_type(key)?;
-            let value = shape_to_logical_type(value)?;
-            LogicalTypeHandle::map(&key, &value)
-        }
-    };
+    }
+}
+
+fn live_type(handle: LogicalTypeHandle, kind: &str) -> Result<LogicalTypeHandle> {
     if handle.ptr.is_null() {
-        return Err(rejected("logical type"));
+        return Err(rejected(kind));
     }
     Ok(handle)
 }
 
-fn struct_logical_type(names: &[&str], types: &[LogicalTypeHandle]) -> Result<LogicalTypeHandle> {
+fn struct_logical_type(names: &[&str], types: &[&LogicalTypeHandle]) -> Result<LogicalTypeHandle> {
     let c_names = names
         .iter()
         .map(|name| CString::new(*name))
