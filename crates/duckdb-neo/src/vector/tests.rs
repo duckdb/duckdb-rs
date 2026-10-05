@@ -1801,7 +1801,7 @@ fn test_vector_decimal() -> crate::Result<()> {
         let vector = chunk.get_vector_at::<Decimal<crate::get_decimal_size!(5)>>(0)?;
 
         if let Some(item) = vector.iter()?.next() {
-            let decimal = item.unwrap().to_rust_decimal(2);
+            let decimal = item.unwrap().to_rust_decimal(2).unwrap();
             assert_eq!(decimal, rust_decimal::Decimal::new(12345, 2));
             return Ok(());
         }
