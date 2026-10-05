@@ -73,7 +73,7 @@ pub(crate) fn create_owned_container(value: &Value) -> Result<OwnedDuckValue> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum Shape {
+enum Shape<'a> {
     Boolean,
     TinyInt,
     SmallInt,
@@ -101,15 +101,15 @@ enum Shape {
     Date,
     Time,
     Interval,
-    List(Box<Shape>),
+    List(Box<Shape<'a>>),
     Array {
-        child: Box<Shape>,
+        child: Box<Shape<'a>>,
         len: usize,
     },
-    Struct(Vec<(String, Shape)>),
+    Struct(Vec<(&'a str, Shape<'a>)>),
     Map {
-        key: Box<Shape>,
-        value: Box<Shape>,
+        key: Box<Shape<'a>>,
+        value: Box<Shape<'a>>,
     },
 }
 
@@ -135,7 +135,7 @@ fn create_list(items: &[Value]) -> Result<OwnedDuckValue> {
     create_list_with_shape(items, &child_shape, &child_type)
 }
 
-fn create_list_with_shape(items: &[Value], child_shape: &Shape, child_type: &BuiltType) -> Result<OwnedDuckValue> {
+fn create_list_with_shape(items: &[Value], child_shape: &Shape<'_>, child_type: &BuiltType) -> Result<OwnedDuckValue> {
     let mut children = Vec::with_capacity(items.len());
     for item in items {
         children.push(create_value_with_shape(item, child_shape, child_type)?);
@@ -156,7 +156,7 @@ fn create_array(items: &[Value]) -> Result<OwnedDuckValue> {
     create_array_with_shape(items, &child_shape, &child_type)
 }
 
-fn create_array_with_shape(items: &[Value], child_shape: &Shape, child_type: &BuiltType) -> Result<OwnedDuckValue> {
+fn create_array_with_shape(items: &[Value], child_shape: &Shape<'_>, child_type: &BuiltType) -> Result<OwnedDuckValue> {
     let mut children = Vec::with_capacity(items.len());
     for item in items {
         children.push(create_value_with_shape(item, child_shape, child_type)?);
@@ -180,7 +180,7 @@ fn create_struct(fields: &OrderedMap<String, Value>) -> Result<OwnedDuckValue> {
 
 fn create_struct_with_shape(
     fields: &OrderedMap<String, Value>,
-    expected: &[(String, Shape)],
+    expected: &[(&str, Shape<'_>)],
     struct_type: &LogicalTypeHandle,
     field_types: &[BuiltType],
 ) -> Result<OwnedDuckValue> {
@@ -230,8 +230,8 @@ fn create_map(entries: &OrderedMap<Value, Value>) -> Result<OwnedDuckValue> {
 
 fn create_map_with_shape(
     entries: &OrderedMap<Value, Value>,
-    key_shape: &Shape,
-    value_shape: &Shape,
+    key_shape: &Shape<'_>,
+    value_shape: &Shape<'_>,
     map_type: &LogicalTypeHandle,
     key_type: &BuiltType,
     value_type: &BuiltType,
@@ -260,7 +260,7 @@ fn create_map_with_shape(
     OwnedDuckValue::from_raw(created, "Map")
 }
 
-fn create_value_with_shape(value: &Value, shape: &Shape, ty: &BuiltType) -> Result<OwnedDuckValue> {
+fn create_value_with_shape(value: &Value, shape: &Shape<'_>, ty: &BuiltType) -> Result<OwnedDuckValue> {
     if matches!(value, Value::Null) {
         return null_value();
     }
@@ -398,7 +398,7 @@ fn create_time(unit: TimeUnit, value: i64) -> ffi::duckdb_value {
 /// A nested container uses these same rules for each child.
 /// When the shapes do not match, the function returns an error.
 /// The error text is `cannot bind {kind} with mixed element types`.
-fn merge_shape(left: Shape, right: Shape, kind: &str) -> Result<Shape> {
+fn merge_shape<'a>(left: Shape<'a>, right: Shape<'a>, kind: &str) -> Result<Shape<'a>> {
     match (left, right) {
         // 1. `Unknown` takes the other shape.
         (Shape::Unknown, other) | (other, Shape::Unknown) => Ok(other),
@@ -468,7 +468,7 @@ fn merge_shape(left: Shape, right: Shape, kind: &str) -> Result<Shape> {
     }
 }
 
-fn absorb(found: &mut Option<Shape>, next: Shape, kind: &str) -> Result<()> {
+fn absorb<'a>(found: &mut Option<Shape<'a>>, next: Shape<'a>, kind: &str) -> Result<()> {
     match found.take() {
         None => *found = Some(next),
         Some(existing) => *found = Some(merge_shape(existing, next, kind)?),
@@ -476,7 +476,7 @@ fn absorb(found: &mut Option<Shape>, next: Shape, kind: &str) -> Result<()> {
     Ok(())
 }
 
-fn absorb_message(found: &mut Option<Shape>, next: Shape, message: &'static str) -> Result<()> {
+fn absorb_message<'a>(found: &mut Option<Shape<'a>>, next: Shape<'a>, message: &'static str) -> Result<()> {
     match found.take() {
         None => *found = Some(next),
         Some(existing) => {
@@ -495,7 +495,7 @@ fn mixed(kind: &str) -> Error {
 /// Null children do not choose the type. An empty sequence, or a sequence of
 /// only nulls, is `Unknown`. `Unknown` takes a sibling's shape. A real
 /// `VARCHAR` child still does not match an integer.
-fn sequence_shape(items: &[Value], kind: &str) -> Result<Shape> {
+fn sequence_shape<'a>(items: &'a [Value], kind: &str) -> Result<Shape<'a>> {
     let mut found = None;
     for item in items {
         if matches!(item, Value::Null) {
@@ -506,7 +506,7 @@ fn sequence_shape(items: &[Value], kind: &str) -> Result<Shape> {
     Ok(found.unwrap_or(Shape::Unknown))
 }
 
-fn field_shape(value: &Value) -> Result<Shape> {
+fn field_shape<'a>(value: &'a Value) -> Result<Shape<'a>> {
     if matches!(value, Value::Null) {
         Ok(Shape::Unknown)
     } else {
@@ -514,18 +514,18 @@ fn field_shape(value: &Value) -> Result<Shape> {
     }
 }
 
-fn struct_fields(fields: &OrderedMap<String, Value>) -> Result<Vec<(String, Shape)>> {
+fn struct_fields<'a>(fields: &'a OrderedMap<String, Value>) -> Result<Vec<(&'a str, Shape<'a>)>> {
     let mut shapes = Vec::with_capacity(fields.iter().count());
     for (name, field) in fields.iter() {
         if name.as_bytes().contains(&0) {
             return Err(conversion("struct field name contains an interior NUL"));
         }
-        shapes.push((name.clone(), field_shape(field)?));
+        shapes.push((name.as_str(), field_shape(field)?));
     }
     Ok(shapes)
 }
 
-fn value_shape(value: &Value) -> Result<Shape> {
+fn value_shape<'a>(value: &'a Value) -> Result<Shape<'a>> {
     Ok(match value {
         Value::Null => return Err(conversion("internal error: NULL has no container child type")),
         Value::Boolean(_) => Shape::Boolean,
@@ -569,7 +569,7 @@ fn value_shape(value: &Value) -> Result<Shape> {
     })
 }
 
-fn map_shapes(entries: &OrderedMap<Value, Value>) -> Result<(Shape, Shape)> {
+fn map_shapes<'a>(entries: &'a OrderedMap<Value, Value>) -> Result<(Shape<'a>, Shape<'a>)> {
     let mut key_shape = None;
     let mut found_value_shape = None;
     for (key, value) in entries.iter() {
@@ -596,7 +596,7 @@ fn map_shapes(entries: &OrderedMap<Value, Value>) -> Result<(Shape, Shape)> {
     ))
 }
 
-fn build_type(shape: &Shape) -> Result<BuiltType> {
+fn build_type(shape: &Shape<'_>) -> Result<BuiltType> {
     match shape {
         Shape::List(child) => {
             let child = build_type(child)?;
@@ -637,11 +637,11 @@ fn build_type(shape: &Shape) -> Result<BuiltType> {
     }
 }
 
-fn build_struct_type(fields: &[(String, Shape)]) -> Result<BuiltType> {
+fn build_struct_type(fields: &[(&str, Shape<'_>)]) -> Result<BuiltType> {
     let mut names = Vec::with_capacity(fields.len());
     let mut children = Vec::with_capacity(fields.len());
     for (name, field) in fields {
-        names.push(name.as_str());
+        names.push(*name);
         children.push(build_type(field)?);
     }
     let type_refs: Vec<&LogicalTypeHandle> = children.iter().map(|child| &child.handle).collect();
@@ -652,7 +652,7 @@ fn build_struct_type(fields: &[(String, Shape)]) -> Result<BuiltType> {
     })
 }
 
-fn scalar_logical_type(shape: &Shape) -> LogicalTypeHandle {
+fn scalar_logical_type(shape: &Shape<'_>) -> LogicalTypeHandle {
     match shape {
         Shape::Boolean => LogicalTypeHandle::from(LogicalTypeId::Boolean),
         Shape::TinyInt => LogicalTypeHandle::from(LogicalTypeId::Tinyint),
