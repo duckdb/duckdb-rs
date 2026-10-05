@@ -67,7 +67,7 @@ pub(crate) use decimal::to_duckdb_decimal;
 pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
 
 mod bind_container;
-pub(crate) use bind_container::{create_owned_container, is_owned_container, validate_owned_container};
+pub(crate) use bind_container::{OwnedDuckValue, create_owned_container, is_owned_container};
 
 use arrow::datatypes::DataType;
 use std::fmt;

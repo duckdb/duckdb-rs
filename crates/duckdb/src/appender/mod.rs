@@ -5,8 +5,8 @@ use crate::{
     Error,
     error::{error_from_appender_code, result_from_duckdb_appender},
     types::{
-        ToSql, ToSqlOutput, create_owned_container, is_owned_container, to_duckdb_hugeint, to_duckdb_uhugeint,
-        validate_owned_container, value_ref_from_value,
+        OwnedDuckValue, ToSql, ToSqlOutput, create_owned_container, is_owned_container, to_duckdb_hugeint,
+        to_duckdb_uhugeint, value_ref_from_value,
     },
 };
 
@@ -157,9 +157,9 @@ impl Appender<'_> {
             .map(ToSql::to_sql)
             .collect::<Result<Vec<ToSqlOutput<'_>>>>()?;
 
-        self.validate_parameter_values(&values)?;
+        let containers = self.prepare_owned_containers(&values)?;
 
-        if let Err(err) = self.bind_parameter_values(&values) {
+        if let Err(err) = self.bind_parameter_values(&values, containers) {
             // A failed bind can leave DuckDB with a partial row. End the row
             // only to let DuckDB mark the appender invalid, then preserve the
             // original bind error; the cleanup failure is usually less useful.
@@ -177,35 +177,41 @@ impl Appender<'_> {
         result_from_duckdb_appender(rc, &mut self.app)
     }
 
-    fn validate_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+    /// Build every owned container before the appender writes a column.
+    ///
+    /// A duplicate map key fails inside this build. No column of the row has
+    /// been appended, so the caller does not end the row and does not destroy
+    /// the appender. The returned value is the one `bind_parameter` appends.
+    fn prepare_owned_containers(&self, values: &[ToSqlOutput<'_>]) -> Result<Vec<Option<OwnedDuckValue>>> {
+        let mut built = Vec::with_capacity(values.len());
         for value in values {
             if let ToSqlOutput::Owned(owned) = value
                 && is_owned_container(owned)
             {
-                // Reject a bad container before DuckDB starts the row.
-                // Bind builds the value once.
-                validate_owned_container(owned)?;
+                built.push(Some(create_owned_container(owned)?));
                 continue;
             }
             let value = to_value_ref(value)?;
             validate_appender_value_ref(value)?;
+            built.push(None);
+        }
+        Ok(built)
+    }
+
+    fn bind_parameter_values(
+        &mut self,
+        values: &[ToSqlOutput<'_>],
+        containers: Vec<Option<OwnedDuckValue>>,
+    ) -> Result<()> {
+        for (value, container) in values.iter().zip(containers) {
+            self.bind_parameter(value, container)?;
         }
         Ok(())
     }
 
-    fn bind_parameter_values(&mut self, values: &[ToSqlOutput<'_>]) -> Result<()> {
-        for value in values {
-            self.bind_parameter(value)?;
-        }
-        Ok(())
-    }
-
-    fn bind_parameter(&mut self, value: &ToSqlOutput<'_>) -> Result<()> {
+    fn bind_parameter(&mut self, value: &ToSqlOutput<'_>, container: Option<OwnedDuckValue>) -> Result<()> {
         let ptr = self.app;
-        if let ToSqlOutput::Owned(owned) = value
-            && is_owned_container(owned)
-        {
-            let duck_value = create_owned_container(owned)?;
+        if let Some(duck_value) = container {
             let rc = unsafe { ffi::duckdb_append_value(ptr, duck_value.as_raw()) };
             drop(duck_value);
             if rc != 0 {
@@ -400,7 +406,7 @@ mod test {
     use super::Appender;
     use crate::{
         Connection, Error, Result, params,
-        types::{Decimal, Value},
+        types::{Decimal, OrderedMap, Value},
     };
 
     #[test]
@@ -583,6 +589,44 @@ mod test {
                 (3, Value::List(vec![Value::Int(3)])),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_duplicate_map_key_keeps_appender() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, payload MAP(INTEGER, INTEGER))")?;
+
+        let mut app = db.appender("foo")?;
+        app.append_row(params![
+            1,
+            Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Int(2))]))
+        ])?;
+        let err = app
+            .append_row(params![
+                2,
+                Value::Map(OrderedMap::from(vec![
+                    (Value::Int(1), Value::Int(2)),
+                    (Value::Int(1), Value::Int(3)),
+                ]))
+            ])
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("DuckDB rejected the Map value"),
+            "unexpected message: {err}"
+        );
+        assert!(!app.app.is_null());
+        app.append_row(params![
+            3,
+            Value::Map(OrderedMap::from(vec![(Value::Int(4), Value::Int(5))]))
+        ])?;
+        app.flush()?;
+
+        let rows = db
+            .prepare("SELECT id FROM foo ORDER BY id")?
+            .query_map([], |row| row.get::<_, i32>(0))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(rows, vec![1, 3]);
         Ok(())
     }
 

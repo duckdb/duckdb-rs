@@ -2374,7 +2374,7 @@ mod test {
             .query_row::<i32, _, _>("SELECT ?", [duplicate], |row| row.get(0))
             .unwrap_err();
         assert!(
-            err.to_string().contains("cannot bind Map with duplicate keys"),
+            err.to_string().contains("DuckDB rejected the Map value"),
             "unexpected message: {err}"
         );
         Ok(())
@@ -2403,6 +2403,45 @@ mod test {
         let times = Value::List(vec![time_nanos]);
         let got_times: Value = db.query_row("SELECT ?", [&times], |row| row.get(0))?;
         assert_eq!(got_times, Value::List(vec![scalar_time]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_container_children_with_compatible_types() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let struct_gen = |a: Value| Value::Struct(OrderedMap::from(vec![("a".to_string(), a)]));
+        let cases = [
+            Value::List(vec![Value::List(vec![]), Value::List(vec![Value::Int(1)])]),
+            Value::List(vec![struct_gen(Value::Int(1)), struct_gen(Value::Null)]),
+            Value::List(vec![
+                Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Int(2))])),
+                Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Null)])),
+            ]),
+        ];
+        for value in cases {
+            let got: Value = db.query_row("SELECT ?", [&value], |row| row.get(0))?;
+            assert_eq!(got, value);
+        }
+
+        let narrow = Decimal::new(2, 1, 15)?;
+        let wide = Decimal::new(3, 1, 125)?;
+        let decimals = Value::List(vec![Value::Decimal(narrow), Value::Decimal(wide)]);
+        let decimal_type: String = db.query_row("SELECT typeof(?)", [&decimals], |row| row.get(0))?;
+        assert_eq!(decimal_type, "DECIMAL(3,1)[]");
+        let got: Value = db.query_row("SELECT ?", [&decimals], |row| row.get(0))?;
+        let Value::List(items) = got else {
+            panic!("expected a list, got {got:?}");
+        };
+        let mut payloads = Vec::new();
+        for item in items {
+            let Value::Decimal(decimal) = item else {
+                panic!("expected a decimal, got {item:?}");
+            };
+            assert_eq!(decimal.width(), 3);
+            assert_eq!(decimal.scale(), 1);
+            payloads.push(decimal.value());
+        }
+        assert_eq!(payloads, vec![15, 125]);
         Ok(())
     }
 

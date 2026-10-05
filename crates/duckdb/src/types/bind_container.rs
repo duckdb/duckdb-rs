@@ -1,6 +1,6 @@
 //! Owned `List`, `Array`, `Struct`, and `Map` values for parameter binding.
 //!
-//! DuckDB 1.5.5 `duckdb_create_list_value` and `duckdb_create_array_value` take
+//! DuckDB `duckdb_create_list_value` and `duckdb_create_array_value` take
 //! the child logical type. Both return null when the child pointer is null,
 //! including a count of zero, so an empty container passes a non-null dangling
 //! pointer. `duckdb_bind_value` and `duckdb_append_value` copy the value. This
@@ -14,9 +14,7 @@ use crate::core::{LogicalTypeHandle, LogicalTypeId};
 use crate::ffi;
 use crate::{Error, Result};
 
-use super::{
-    OrderedMap, TimeUnit, Value, binding_unsupported_value, to_duckdb_decimal, to_duckdb_hugeint, to_duckdb_uhugeint,
-};
+use super::{Decimal, OrderedMap, TimeUnit, Value, binding_unsupported_value, to_duckdb_hugeint, to_duckdb_uhugeint};
 
 /// A `duckdb_value` this module owns.
 ///
@@ -62,20 +60,6 @@ pub(crate) fn is_owned_container(value: &Value) -> bool {
     container_type_name(value).is_some()
 }
 
-/// Reject a container that cannot be bound, without building a `duckdb_value`.
-///
-/// Callers that append a row use this before DuckDB starts the row, then build
-/// the value once at bind time.
-pub(crate) fn validate_owned_container(value: &Value) -> Result<()> {
-    match value {
-        Value::List(_) | Value::Array(_) | Value::Struct(_) | Value::Map(_) => {
-            value_shape(value)?;
-            Ok(())
-        }
-        _ => Err(conversion("internal error: value is not a bindable container")),
-    }
-}
-
 pub(crate) fn create_owned_container(value: &Value) -> Result<OwnedDuckValue> {
     match value {
         Value::List(items) => create_list(items),
@@ -103,27 +87,47 @@ enum Shape {
     UBigInt,
     Float,
     Double,
-    Decimal { width: u8, scale: u8 },
+    Decimal {
+        width: u8,
+        scale: u8,
+    },
     Timestamp,
     Varchar,
+    /// No concrete child yet. An empty container or a NULL field uses this
+    /// until a sibling supplies a type. It becomes `VARCHAR` only when nothing
+    /// concrete is merged in.
+    Unknown,
     Blob,
     Date,
     Time,
     Interval,
     List(Box<Shape>),
-    Array { child: Box<Shape>, len: usize },
+    Array {
+        child: Box<Shape>,
+        len: usize,
+    },
     Struct(Vec<(String, Shape)>),
-    Map { key: Box<Shape>, value: Box<Shape> },
+    Map {
+        key: Box<Shape>,
+        value: Box<Shape>,
+    },
 }
 
 fn create_list(items: &[Value]) -> Result<OwnedDuckValue> {
     let child_shape = sequence_shape(items, "List")?;
-    let child_type = shape_to_logical_type(&child_shape)?;
-    let children = create_children(items)?;
+    create_list_with_shape(items, &child_shape)
+}
+
+fn create_list_with_shape(items: &[Value], child_shape: &Shape) -> Result<OwnedDuckValue> {
+    let child_type = shape_to_logical_type(child_shape)?;
+    let mut children = Vec::with_capacity(items.len());
+    for item in items {
+        children.push(create_value_with_shape(item, child_shape)?);
+    }
     let ptrs = raw_values(&children);
     // SAFETY: `child_type` is a live logical type. `ptrs` owns the child
-    // values and outlives this call. `nonnull_mut` is only read by DuckDB
-    // 1.5.5, which copies the children. An empty slice is a dangling
+    // values and outlives this call. `nonnull_mut` is only read by DuckDB,
+    // which copies the children. An empty slice is a dangling
     // non-null pointer with a count of 0, and that call does not dereference it.
     let created = unsafe { ffi::duckdb_create_list_value(child_type.ptr, nonnull_mut(&ptrs), ptrs.len() as u64) };
     OwnedDuckValue::from_raw(created, "List")
@@ -131,8 +135,15 @@ fn create_list(items: &[Value]) -> Result<OwnedDuckValue> {
 
 fn create_array(items: &[Value]) -> Result<OwnedDuckValue> {
     let child_shape = sequence_shape(items, "Array")?;
-    let child_type = shape_to_logical_type(&child_shape)?;
-    let children = create_children(items)?;
+    create_array_with_shape(items, &child_shape)
+}
+
+fn create_array_with_shape(items: &[Value], child_shape: &Shape) -> Result<OwnedDuckValue> {
+    let child_type = shape_to_logical_type(child_shape)?;
+    let mut children = Vec::with_capacity(items.len());
+    for item in items {
+        children.push(create_value_with_shape(item, child_shape)?);
+    }
     let ptrs = raw_values(&children);
     // SAFETY: same contract as `create_list`. DuckDB copies the children and
     // does not write through `nonnull_mut`.
@@ -141,23 +152,32 @@ fn create_array(items: &[Value]) -> Result<OwnedDuckValue> {
 }
 
 fn create_struct(fields: &OrderedMap<String, Value>) -> Result<OwnedDuckValue> {
-    let field_count = fields.iter().count();
-    let mut names = Vec::with_capacity(field_count);
-    let mut shapes = Vec::with_capacity(field_count);
-    let mut children = Vec::with_capacity(field_count);
-    for (name, field) in fields.iter() {
-        names.push(name.as_str());
-        shapes.push(field_shape(field)?);
-        children.push(create_value(field)?);
+    let expected = struct_fields(fields)?;
+    create_struct_with_shape(fields, &expected)
+}
+
+fn create_struct_with_shape(
+    fields: &OrderedMap<String, Value>,
+    expected: &[(String, Shape)],
+) -> Result<OwnedDuckValue> {
+    if fields.iter().count() != expected.len() {
+        return Err(conversion("cannot bind Struct with mismatched fields"));
     }
-    let mut type_handles = Vec::with_capacity(shapes.len());
-    for shape in &shapes {
-        type_handles.push(shape_to_logical_type(shape)?);
+    let mut names = Vec::with_capacity(expected.len());
+    let mut children = Vec::with_capacity(expected.len());
+    let mut type_handles = Vec::with_capacity(expected.len());
+    for ((name, field), (expected_name, expected_shape)) in fields.iter().zip(expected.iter()) {
+        if name != expected_name {
+            return Err(conversion("cannot bind Struct with mismatched fields"));
+        }
+        names.push(name.as_str());
+        type_handles.push(shape_to_logical_type(expected_shape)?);
+        children.push(create_value_with_shape(field, expected_shape)?);
     }
     let logical = struct_logical_type(&names, &type_handles)?;
     let ptrs = raw_values(&children);
     // SAFETY: `logical` is a struct type whose field count equals `ptrs`.
-    // The child values outlive this call. DuckDB 1.5.5 copies them and does
+    // The child values outlive this call. DuckDB copies them and does
     // not write through the pointer. An empty struct passes a dangling
     // non-null pointer, and the C loop does not run when the field count is 0.
     let created = unsafe { ffi::duckdb_create_struct_value(logical.ptr, nonnull_mut(&ptrs)) };
@@ -166,8 +186,16 @@ fn create_struct(fields: &OrderedMap<String, Value>) -> Result<OwnedDuckValue> {
 
 fn create_map(entries: &OrderedMap<Value, Value>) -> Result<OwnedDuckValue> {
     let (key_shape, value_shape) = map_shapes(entries)?;
-    let key_type = shape_to_logical_type(&key_shape)?;
-    let value_type = shape_to_logical_type(&value_shape)?;
+    create_map_with_shape(entries, &key_shape, &value_shape)
+}
+
+fn create_map_with_shape(
+    entries: &OrderedMap<Value, Value>,
+    key_shape: &Shape,
+    value_shape: &Shape,
+) -> Result<OwnedDuckValue> {
+    let key_type = shape_to_logical_type(key_shape)?;
+    let value_type = shape_to_logical_type(value_shape)?;
     let map_type = LogicalTypeHandle::map(&key_type, &value_type);
     if map_type.ptr.is_null() {
         return Err(rejected("Map"));
@@ -176,8 +204,8 @@ fn create_map(entries: &OrderedMap<Value, Value>) -> Result<OwnedDuckValue> {
     let mut keys = Vec::with_capacity(entry_count);
     let mut values = Vec::with_capacity(entry_count);
     for (key, value) in entries.iter() {
-        keys.push(create_value(key)?);
-        values.push(create_value(value)?);
+        keys.push(create_value_with_shape(key, key_shape)?);
+        values.push(create_value_with_shape(value, value_shape)?);
     }
     let key_ptrs = raw_values(&keys);
     let value_ptrs = raw_values(&values);
@@ -196,12 +224,38 @@ fn create_map(entries: &OrderedMap<Value, Value>) -> Result<OwnedDuckValue> {
     OwnedDuckValue::from_raw(created, "Map")
 }
 
-fn create_children(items: &[Value]) -> Result<Vec<OwnedDuckValue>> {
-    let mut children = Vec::with_capacity(items.len());
-    for item in items {
-        children.push(create_value(item)?);
+fn create_value_with_shape(value: &Value, shape: &Shape) -> Result<OwnedDuckValue> {
+    if matches!(value, Value::Null) {
+        return null_value();
     }
-    Ok(children)
+    match (value, shape) {
+        (Value::List(items), Shape::List(child)) => create_list_with_shape(items, child),
+        (Value::Array(items), Shape::Array { child, .. }) => create_array_with_shape(items, child),
+        (Value::Struct(fields), Shape::Struct(expected)) => create_struct_with_shape(fields, expected),
+        (Value::Map(entries), Shape::Map { key, value }) => create_map_with_shape(entries, key, value),
+        (Value::Decimal(decimal), Shape::Decimal { width, scale }) => create_decimal(*decimal, *width, *scale),
+        _ => create_value(value),
+    }
+}
+
+fn null_value() -> Result<OwnedDuckValue> {
+    // SAFETY: `duckdb_create_null_value` returns a new value this module owns.
+    // A null return is rejected by `OwnedDuckValue::from_raw`.
+    let ptr = unsafe { ffi::duckdb_create_null_value() };
+    OwnedDuckValue::from_raw(ptr, "scalar")
+}
+
+fn create_decimal(decimal: Decimal, width: u8, scale: u8) -> Result<OwnedDuckValue> {
+    // SAFETY: `width`, `scale`, and the payload are plain integers. DuckDB
+    // copies them into a new value. A null return is rejected by `from_raw`.
+    let ptr = unsafe {
+        ffi::duckdb_create_decimal(ffi::duckdb_decimal {
+            width,
+            scale,
+            value: to_duckdb_hugeint(decimal.value()),
+        })
+    };
+    OwnedDuckValue::from_raw(ptr, "scalar")
 }
 
 fn create_value(value: &Value) -> Result<OwnedDuckValue> {
@@ -224,13 +278,17 @@ fn create_value(value: &Value) -> Result<OwnedDuckValue> {
             Value::UBigInt(v) => ffi::duckdb_create_uint64(*v),
             Value::Float(v) => ffi::duckdb_create_float(*v),
             Value::Double(v) => ffi::duckdb_create_double(*v),
-            Value::Decimal(decimal) => ffi::duckdb_create_decimal(to_duckdb_decimal(*decimal)),
+            Value::Decimal(decimal) => ffi::duckdb_create_decimal(ffi::duckdb_decimal {
+                width: decimal.width(),
+                scale: decimal.scale(),
+                value: to_duckdb_hugeint(decimal.value()),
+            }),
             Value::Timestamp(unit, v) => create_timestamp(*unit, *v),
             Value::Text(text) => {
                 let bytes = text.as_bytes();
                 ffi::duckdb_create_varchar_length(bytes.as_ptr().cast(), bytes.len() as u64)
             }
-            // GEOMETRY has no C value constructor in DuckDB 1.5.5. Scalar binds
+            // GEOMETRY has no C value constructor. Scalar binds
             // already send the WKB bytes as a blob.
             Value::Blob(bytes) | Value::Geometry(bytes) => ffi::duckdb_create_blob(bytes.as_ptr(), bytes.len() as u64),
             Value::Date32(days) => ffi::duckdb_create_date(ffi::duckdb_date { days: *days }),
@@ -271,36 +329,149 @@ fn create_time(unit: TimeUnit, value: i64) -> ffi::duckdb_value {
     }
 }
 
+/// Combines two child shapes into one shape.
+///
+/// A shape is the type of one container child.
+/// `Unknown` means that the child has no concrete type yet.
+///
+/// The function returns a shape in these cases:
+///
+/// 1. `Unknown` takes the other shape.
+/// 2. Two decimals with the same scale use the larger width.
+/// 3. Two lists combine their child shapes.
+/// 4. Two maps combine their key shapes and their value shapes.
+/// 5. Two arrays with the same length combine their child shapes.
+/// 6. Two structs with the same field names and the same field order combine each field.
+/// 7. Two equal shapes return the left shape.
+///
+/// A nested container uses these same rules for each child.
+/// When the shapes do not match, the function returns an error.
+/// The error text is `cannot bind {kind} with mixed element types`.
+fn merge_shape(left: Shape, right: Shape, kind: &str) -> Result<Shape> {
+    match (left, right) {
+        // 1. `Unknown` takes the other shape.
+        (Shape::Unknown, other) | (other, Shape::Unknown) => Ok(other),
+        // 2. Two decimals with the same scale use the larger width.
+        (
+            Shape::Decimal {
+                width: left_width,
+                scale: left_scale,
+            },
+            Shape::Decimal {
+                width: right_width,
+                scale: right_scale,
+            },
+        ) if left_scale == right_scale => Ok(Shape::Decimal {
+            width: left_width.max(right_width),
+            scale: left_scale,
+        }),
+        // 3. Two lists combine their child shapes.
+        (Shape::List(left_child), Shape::List(right_child)) => {
+            Ok(Shape::List(Box::new(merge_shape(*left_child, *right_child, kind)?)))
+        }
+        // 4. Two maps combine their key shapes and their value shapes.
+        (
+            Shape::Map {
+                key: left_key,
+                value: left_value,
+            },
+            Shape::Map {
+                key: right_key,
+                value: right_value,
+            },
+        ) => Ok(Shape::Map {
+            key: Box::new(merge_shape(*left_key, *right_key, kind)?),
+            value: Box::new(merge_shape(*left_value, *right_value, kind)?),
+        }),
+        // 5. Two arrays with the same length combine their child shapes.
+        (
+            Shape::Array {
+                child: left_child,
+                len: left_len,
+            },
+            Shape::Array {
+                child: right_child,
+                len: right_len,
+            },
+        ) if left_len == right_len => Ok(Shape::Array {
+            child: Box::new(merge_shape(*left_child, *right_child, kind)?),
+            len: left_len,
+        }),
+        // 6. Two structs with the same field names and the same field order combine each field.
+        (Shape::Struct(left_fields), Shape::Struct(right_fields)) => {
+            if left_fields.len() != right_fields.len() {
+                return Err(mixed(kind));
+            }
+            let mut fields = Vec::with_capacity(left_fields.len());
+            for ((left_name, left_shape), (right_name, right_shape)) in left_fields.into_iter().zip(right_fields) {
+                if left_name != right_name {
+                    return Err(mixed(kind));
+                }
+                fields.push((left_name, merge_shape(left_shape, right_shape, kind)?));
+            }
+            Ok(Shape::Struct(fields))
+        }
+        // 7. Two equal shapes return the left shape.
+        (left, right) if left == right => Ok(left),
+        _ => Err(mixed(kind)),
+    }
+}
+
+fn absorb(found: &mut Option<Shape>, next: Shape, kind: &str) -> Result<()> {
+    match found.take() {
+        None => *found = Some(next),
+        Some(existing) => *found = Some(merge_shape(existing, next, kind)?),
+    }
+    Ok(())
+}
+
+fn absorb_message(found: &mut Option<Shape>, next: Shape, message: &'static str) -> Result<()> {
+    match found.take() {
+        None => *found = Some(next),
+        Some(existing) => {
+            *found = Some(merge_shape(existing, next, "Map").map_err(|_| conversion(message))?);
+        }
+    }
+    Ok(())
+}
+
+fn mixed(kind: &str) -> Error {
+    conversion(format!("cannot bind {kind} with mixed element types"))
+}
+
 /// Element type of a list or array.
 ///
 /// Null children do not choose the type. An empty sequence, or a sequence of
-/// only nulls, uses `VARCHAR`.
-/// Children must share one shape. An empty nested list is `VARCHAR[]`, so it
-/// does not match a list of integers.
+/// only nulls, is `Unknown`. `Unknown` takes a sibling's shape. A real
+/// `VARCHAR` child still does not match an integer.
 fn sequence_shape(items: &[Value], kind: &str) -> Result<Shape> {
     let mut found = None;
     for item in items {
         if matches!(item, Value::Null) {
             continue;
         }
-        let shape = value_shape(item)?;
-        match &found {
-            None => found = Some(shape),
-            Some(existing) if existing == &shape => {}
-            Some(_) => {
-                return Err(conversion(format!("cannot bind {kind} with mixed element types")));
-            }
-        }
+        absorb(&mut found, value_shape(item)?, kind)?;
     }
-    Ok(found.unwrap_or(Shape::Varchar))
+    Ok(found.unwrap_or(Shape::Unknown))
 }
 
 fn field_shape(value: &Value) -> Result<Shape> {
     if matches!(value, Value::Null) {
-        Ok(Shape::Varchar)
+        Ok(Shape::Unknown)
     } else {
         value_shape(value)
     }
+}
+
+fn struct_fields(fields: &OrderedMap<String, Value>) -> Result<Vec<(String, Shape)>> {
+    let mut shapes = Vec::with_capacity(fields.iter().count());
+    for (name, field) in fields.iter() {
+        if name.as_bytes().contains(&0) {
+            return Err(conversion("struct field name contains an interior NUL"));
+        }
+        shapes.push((name.clone(), field_shape(field)?));
+    }
+    Ok(shapes)
 }
 
 fn value_shape(value: &Value) -> Result<Shape> {
@@ -334,16 +505,7 @@ fn value_shape(value: &Value) -> Result<Shape> {
             child: Box::new(sequence_shape(items, "Array")?),
             len: items.len(),
         },
-        Value::Struct(fields) => {
-            let mut shapes = Vec::new();
-            for (name, field) in fields.iter() {
-                if name.as_bytes().contains(&0) {
-                    return Err(conversion("struct field name contains an interior NUL"));
-                }
-                shapes.push((name.clone(), field_shape(field)?));
-            }
-            Shape::Struct(shapes)
-        }
+        Value::Struct(fields) => Shape::Struct(struct_fields(fields)?),
         Value::Map(entries) => {
             let (key, value) = map_shapes(entries)?;
             Shape::Map {
@@ -359,34 +521,27 @@ fn value_shape(value: &Value) -> Result<Shape> {
 fn map_shapes(entries: &OrderedMap<Value, Value>) -> Result<(Shape, Shape)> {
     let mut key_shape = None;
     let mut found_value_shape = None;
-    let mut seen_keys = Vec::new();
     for (key, value) in entries.iter() {
         if matches!(key, Value::Null) {
             return Err(conversion("cannot bind Map with a NULL key"));
         }
-        if seen_keys.contains(&key) {
-            return Err(conversion("cannot bind Map with duplicate keys"));
-        }
-        seen_keys.push(key);
-        let next_key = value_shape(key)?;
-        match &key_shape {
-            None => key_shape = Some(next_key),
-            Some(existing) if existing == &next_key => {}
-            Some(_) => return Err(conversion("cannot bind Map with mixed key types")),
-        }
+        absorb_message(
+            &mut key_shape,
+            value_shape(key)?,
+            "cannot bind Map with mixed key types",
+        )?;
         if matches!(value, Value::Null) {
             continue;
         }
-        let next_value = value_shape(value)?;
-        match &found_value_shape {
-            None => found_value_shape = Some(next_value),
-            Some(existing) if existing == &next_value => {}
-            Some(_) => return Err(conversion("cannot bind Map with mixed value types")),
-        }
+        absorb_message(
+            &mut found_value_shape,
+            value_shape(value)?,
+            "cannot bind Map with mixed value types",
+        )?;
     }
     Ok((
-        key_shape.unwrap_or(Shape::Varchar),
-        found_value_shape.unwrap_or(Shape::Varchar),
+        key_shape.unwrap_or(Shape::Unknown),
+        found_value_shape.unwrap_or(Shape::Unknown),
     ))
 }
 
@@ -407,7 +562,7 @@ fn shape_to_logical_type(shape: &Shape) -> Result<LogicalTypeHandle> {
         Shape::Double => LogicalTypeHandle::from(LogicalTypeId::Double),
         Shape::Decimal { width, scale } => LogicalTypeHandle::decimal(*width, *scale),
         Shape::Timestamp => LogicalTypeHandle::from(LogicalTypeId::Timestamp),
-        Shape::Varchar => LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        Shape::Varchar | Shape::Unknown => LogicalTypeHandle::from(LogicalTypeId::Varchar),
         Shape::Blob => LogicalTypeHandle::from(LogicalTypeId::Blob),
         Shape::Date => LogicalTypeHandle::from(LogicalTypeId::Date),
         Shape::Time => LogicalTypeHandle::from(LogicalTypeId::Time),
@@ -466,7 +621,7 @@ fn raw_values(values: &[OwnedDuckValue]) -> Vec<ffi::duckdb_value> {
     values.iter().map(OwnedDuckValue::as_raw).collect()
 }
 
-/// Pointer DuckDB 1.5.5 can read.
+/// Pointer DuckDB can read.
 ///
 /// An empty slice cannot be a null pointer. `duckdb_create_list_value`,
 /// `duckdb_create_array_value`, and `duckdb_create_struct_type` return null
