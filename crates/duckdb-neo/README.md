@@ -93,6 +93,7 @@ Execute the program with `cargo run` and watch DuckDB in action!
 
 ### Integrations
 
+- `chrono` - Convert DuckDB `DATE`, `TIME`, and `TIMESTAMP` values to [`chrono`](https://docs.rs/chrono) types.
 - `r2d2` - `duckdb_neo::r2d2::ConnectionManager`, a connection pool manager for [r2d2](https://github.com/sfackler/r2d2).
 - `uuid` - Read and write DuckDB `UUID` values as [`uuid::Uuid`](https://docs.rs/uuid).
 

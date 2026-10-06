@@ -30,7 +30,7 @@ arrow = { version = "60", default-features = false }
 bindgen = { version = "0.72.1", default-features = false }
 cast = "0.3"
 cc = "1.0"
-chrono = { version = "0.4.22", default-features = false, features = [
+chrono = { version = "0.4.42", default-features = false, features = [
     "std",
     "clock",
 ] }
