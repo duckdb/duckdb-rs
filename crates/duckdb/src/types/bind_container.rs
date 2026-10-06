@@ -151,7 +151,7 @@ fn create_list_with_shape(items: &[Value], child_shape: &Shape<'_>, child_type: 
 }
 
 fn create_array(items: &[Value]) -> Result<OwnedDuckValue> {
-    let child_shape = sequence_shape(items, "Array")?;
+    let child_shape = array_shape(items)?;
     let child_type = build_type(&child_shape)?;
     create_array_with_shape(items, &child_shape, &child_type)
 }
@@ -506,6 +506,16 @@ fn sequence_shape<'a>(items: &'a [Value], kind: &str) -> Result<Shape<'a>> {
     Ok(found.unwrap_or(Shape::Unknown))
 }
 
+/// Element type of an array.
+///
+/// DuckDB has no valid zero-size ARRAY type.
+fn array_shape<'a>(items: &'a [Value]) -> Result<Shape<'a>> {
+    if items.is_empty() {
+        return Err(conversion("cannot bind an empty Array"));
+    }
+    sequence_shape(items, "Array")
+}
+
 fn field_shape<'a>(value: &'a Value) -> Result<Shape<'a>> {
     if matches!(value, Value::Null) {
         Ok(Shape::Unknown)
@@ -515,10 +525,16 @@ fn field_shape<'a>(value: &'a Value) -> Result<Shape<'a>> {
 }
 
 fn struct_fields<'a>(fields: &'a OrderedMap<String, Value>) -> Result<Vec<(&'a str, Shape<'a>)>> {
-    let mut shapes = Vec::with_capacity(fields.iter().count());
+    let mut shapes: Vec<(&'a str, Shape<'a>)> = Vec::with_capacity(fields.iter().count());
     for (name, field) in fields.iter() {
         if name.as_bytes().contains(&0) {
             return Err(conversion("struct field name contains an interior NUL"));
+        }
+        // DuckDB compares struct field names case-insensitively.
+        if shapes.iter().any(|(seen, _)| seen.eq_ignore_ascii_case(name)) {
+            return Err(conversion(format!(
+                "cannot bind Struct with duplicate field name {name:?}"
+            )));
         }
         shapes.push((name.as_str(), field_shape(field)?));
     }
@@ -553,7 +569,7 @@ fn value_shape<'a>(value: &'a Value) -> Result<Shape<'a>> {
         Value::Interval { .. } => Shape::Interval,
         Value::List(items) => Shape::List(Box::new(sequence_shape(items, "List")?)),
         Value::Array(items) => Shape::Array {
-            child: Box::new(sequence_shape(items, "Array")?),
+            child: Box::new(array_shape(items)?),
             len: items.len(),
         },
         Value::Struct(fields) => Shape::Struct(struct_fields(fields)?),

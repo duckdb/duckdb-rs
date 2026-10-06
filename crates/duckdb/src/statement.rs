@@ -2272,7 +2272,6 @@ mod test {
         let quote = "o'reilly";
         let names = Value::List(vec![Value::Text("alpha".to_string()), Value::Text(quote.to_string())]);
         let empty = Value::List(vec![]);
-        let empty_array = Value::Array(vec![]);
         let empty_struct = Value::Struct(OrderedMap::<String, Value>::from(vec![]));
         let empty_map = Value::Map(OrderedMap::<Value, Value>::from(vec![]));
         let with_null = Value::List(vec![Value::Int(1), Value::Null, Value::Int(2)]);
@@ -2296,14 +2295,10 @@ mod test {
 
         let empty_type: String = db.query_row("SELECT typeof(?)", [&empty], |row| row.get(0))?;
         assert_eq!(empty_type, "VARCHAR[]");
-        let empty_array_type: String = db.query_row("SELECT typeof(?)", [&empty_array], |row| row.get(0))?;
-        // DuckDB prints an array size of 0 as ANY.
-        assert_eq!(empty_array_type, "VARCHAR[ANY]");
         let empty_struct_type: String = db.query_row("SELECT typeof(?)", [&empty_struct], |row| row.get(0))?;
         assert_eq!(empty_struct_type, "STRUCT");
         let empty_map_type: String = db.query_row("SELECT typeof(?)", [&empty_map], |row| row.get(0))?;
         assert_eq!(empty_map_type, "MAP(VARCHAR, VARCHAR)");
-        assert_eq!(round_trip(&db, &empty_array)?, empty_array);
         assert_eq!(round_trip(&db, &empty_struct)?, empty_struct);
         assert_eq!(round_trip(&db, &empty_map)?, empty_map);
         assert_eq!(round_trip(&db, &names)?, names);
@@ -2351,6 +2346,38 @@ mod test {
                 .contains("binding Union parameters is not yet supported"),
             "unexpected message: {err}"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_bind_rejects_empty_array_and_duplicate_struct_fields() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let struct_of = |names: &[&str]| {
+            Value::Struct(OrderedMap::from(
+                names
+                    .iter()
+                    .map(|name| (name.to_string(), Value::Int(1)))
+                    .collect::<Vec<_>>(),
+            ))
+        };
+        let cases = [
+            (Value::Array(vec![]), "cannot bind an empty Array"),
+            (Value::List(vec![Value::Array(vec![])]), "cannot bind an empty Array"),
+            (struct_of(&["a", "a"]), "cannot bind Struct with duplicate field name"),
+            (struct_of(&["a", "A"]), "cannot bind Struct with duplicate field name"),
+            (
+                Value::List(vec![struct_of(&["k", "K"])]),
+                "cannot bind Struct with duplicate field name",
+            ),
+        ];
+        for (value, expected) in cases {
+            match db.query_row::<Value, _, _>("SELECT ?", [&value], |row| row.get(0)) {
+                Err(Error::ToSqlConversionFailure(e)) => {
+                    assert!(e.to_string().contains(expected), "{value:?}: unexpected message {e}")
+                }
+                other => panic!("{value:?}: expected ToSqlConversionFailure, got {other:?}"),
+            }
+        }
         Ok(())
     }
 
