@@ -265,7 +265,7 @@ impl From<TimestampTzNsValue> for Option<chrono::DateTime<chrono::Utc>> {
 
 #[cfg(test)]
 #[cfg(feature = "chrono")]
-mod chrono_tests {
+mod tests {
     use crate::{
         Parameters,
         environment::{Environment, StorageLocation},
@@ -442,6 +442,27 @@ mod chrono_tests {
                 chrono::NaiveTime::parse_from_str("15:30:00.123456789", "%H:%M:%S%.f").unwrap()
             );
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_interval_conversion() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let mut result = conn.query(
+            "SELECT INTERVAL '1 year 2 months 3 days 4 hours 5 minutes 6 seconds';",
+            Parameters::None,
+        )?;
+        let chunk = result.next().unwrap()?;
+        let vec = chunk.get_vector_at::<super::IntervalValue>(0)?;
+        let val = *(vec.get(0)?.unwrap());
+
+        assert_eq!(val.months, 14);
+        assert_eq!(val.days, 3);
+        assert_eq!(val.micros, 14706000000);
 
         Ok(())
     }
