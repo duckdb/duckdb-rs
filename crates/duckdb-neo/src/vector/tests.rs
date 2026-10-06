@@ -13,10 +13,11 @@ use crate::{
     query_result::QueryResultStep,
     signature::Parameter,
     types::{
-        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
-        List, Map, MapValue, Struct, StructSchema, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
-        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UnionSchema,
-        UnionValue, UuidValueRaw, Variant, structs::StructWrite, union::UnionWriter,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
+        IntervalValue, List, LongDecimal, Map, MapValue, ShortDecimal, Struct, StructSchema, TimeNsValue, TimeTzValue,
+        TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue,
+        TimestampValue, Union, UnionSchema, UnionValue, UuidValueRaw, Variant, WordDecimal, structs::StructWrite,
+        union::UnionWriter,
     },
     vector::StorageKind,
 };
@@ -663,7 +664,7 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(res.vectors_count()?, 1);
 
-    let vector = res.get_vector_at::<Map<i32, Decimal<i16>>>(0)?;
+    let vector = res.get_vector_at::<Map<i32, ShortDecimal>>(0)?;
     let mut reader = vector.iter()?;
 
     assert_eq!(vector.len(), 3);
@@ -672,29 +673,29 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let hmap = row.to_hash_map()?;
 
-    assert_eq!(hmap.get(&1).unwrap(), &Some(&DecimalValue(121)));
-    assert_eq!(hmap.get(&2).unwrap(), &Some(&DecimalValue(412)));
+    assert_eq!(hmap.get(&1).unwrap(), &Some(&ShortDecimal(121)));
+    assert_eq!(hmap.get(&2).unwrap(), &Some(&ShortDecimal(412)));
 
     assert_eq!(row.keys()?, vec![&1, &2]);
-    assert_eq!(row.values()?, vec![&DecimalValue(121), &DecimalValue(412)]);
+    assert_eq!(row.values()?, vec![&ShortDecimal(121), &ShortDecimal(412)]);
 
-    assert_eq!(row.get(&1)?, Some(&DecimalValue(121)));
-    assert_eq!(row.get(&2)?, Some(&DecimalValue(412)));
+    assert_eq!(row.get(&1)?, Some(&ShortDecimal(121)));
+    assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get(&1)?, Some(&DecimalValue(1121)));
-    assert_eq!(row.get(&2)?, Some(&DecimalValue(1412)));
+    assert_eq!(row.get(&1)?, Some(&ShortDecimal(1121)));
+    assert_eq!(row.get(&2)?, Some(&ShortDecimal(1412)));
 
     let row = reader.next().unwrap().unwrap();
 
     let hmap = row.to_hash_map()?;
 
     assert_eq!(hmap.get(&1), Some(&None));
-    assert_eq!(hmap.get(&2), Some(&Some(&DecimalValue(412))));
+    assert_eq!(hmap.get(&2), Some(&Some(&ShortDecimal(412))));
 
     assert_eq!(row.get(&1)?, None);
-    assert_eq!(row.get(&2)?, Some(&DecimalValue(412)));
+    assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
 
     assert!(reader.next().is_none());
 
@@ -930,11 +931,11 @@ pub fn vector_value_types() -> crate::Result<()> {
 
     let mut result = conn.query(
         "SELECT $1",
-        Parameters::positional(&[&DecimalValue::<i64, 18, 3>(-123_456)]),
+        Parameters::positional(&[&DecimalValue::from_primitive(-123_456i64, 18, 3)]),
     )?;
     let chunk = result.next().unwrap()?;
-    let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
-    assert_eq!(vector.get(0)?, Some(&DecimalValue(-123_456)));
+    let vector = chunk.get_vector_at::<LongDecimal>(0)?;
+    assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     drop(vector);
     drop(chunk);
     drop(result);
@@ -1010,13 +1011,14 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
         }
     );
 
-    let chunk = DataChunk::create(&[DecimalValue::<i64, 18, 3>::logical_type(&conn)?], true)?;
-    assert!(chunk.get_vector_at::<Decimal<i32>>(0).is_err());
-    let mut vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    let chunk = DataChunk::create(&[DecimalSignature { width: 18, scale: 3 }.logical_type(&conn)?], true)?;
+    assert!(chunk.get_vector_at::<WordDecimal>(0).is_err());
+    assert!(chunk.get_vector_at::<i64>(0).is_err());
+    let mut vector = chunk.get_vector_at::<LongDecimal>(0)?;
     vector.set_size(2)?;
-    vector.write(0, Some(-123_456))?;
+    vector.write(0, Some(LongDecimal(-123_456)))?;
     vector.write(1, None)?;
-    assert_eq!(vector.get(0)?, Some(&DecimalValue(-123_456)));
+    assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     assert_eq!(vector.get(1)?, None);
 
     let chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
@@ -1798,10 +1800,10 @@ fn test_vector_decimal() -> crate::Result<()> {
 
     for chunk in result {
         let chunk = chunk?;
-        let vector = chunk.get_vector_at::<Decimal<crate::get_decimal_size!(5)>>(0)?;
+        let vector = chunk.get_vector_at::<WordDecimal>(0)?;
 
         if let Some(item) = vector.iter()?.next() {
-            let decimal = item.unwrap().to_rust_decimal(2).unwrap();
+            let decimal = rust_decimal::Decimal::try_from(DecimalValue::from_primitive(*item.unwrap(), 5, 2)).unwrap();
             assert_eq!(decimal, rust_decimal::Decimal::new(12345, 2));
             return Ok(());
         }

@@ -43,7 +43,9 @@ pub(crate) mod union;
 pub use self::uuid::UuidValueRaw;
 pub use array::Array;
 pub use bignum::{BigNum, BigNumValue};
-pub use decimal::{Decimal, DecimalValue, DecimalValueRaw, InternalDecimalType};
+pub use decimal::{
+    DecimalContainer, DecimalSignature, DecimalValue, HugeDecimal, LongDecimal, ShortDecimal, WordDecimal,
+};
 pub use list::List;
 pub use map::{Map, MapValue};
 pub use primitive::Any;
