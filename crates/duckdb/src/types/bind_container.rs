@@ -349,10 +349,11 @@ fn create_value(value: &Value) -> Result<OwnedDuckValue> {
                 days: *days,
                 micros: nanos / 1000,
             }),
-            Value::List(items) => return create_list(items),
-            Value::Array(items) => return create_array(items),
-            Value::Struct(fields) => return create_struct(fields),
-            Value::Map(entries) => return create_map(entries),
+            Value::List(_) | Value::Array(_) | Value::Struct(_) | Value::Map(_) => {
+                return Err(conversion(
+                    "internal error: Containers must go through `create_value_with_shape` to share the sibling type.",
+                ));
+            }
             Value::Enum(_) => return Err(unsupported_variant("Enum")),
             Value::Union(_) => return Err(unsupported_variant("Union")),
         }
