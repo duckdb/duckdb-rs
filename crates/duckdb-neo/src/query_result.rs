@@ -77,7 +77,7 @@ pub enum QueryResultStep {
 
 /// A lazy stream produced by executing a statement.
 ///
-/// Iteration blocks for each [`DataChunk`], while [`QueryResult::step`] exposes
+/// [`QueryResult::next_chunk`] blocks for each [`DataChunk`], while [`QueryResult::step`] exposes
 /// incremental execution. Side-effecting statements must be consumed or
 /// [`QueryResult::drain`]ed to take effect. A connection supports one live
 /// result at a time.
@@ -97,8 +97,9 @@ pub enum QueryResultStep {
 /// let mut statements = conn.parse("SELECT * FROM range(3)")?;
 /// let statement = statements.next().expect("expected a statement")?;
 ///
-/// for chunk in conn.query(statement, Parameters::None)? {
-///     println!("Fetched {} row(s)", chunk?.row_count()?);
+/// let mut result = conn.query(statement, Parameters::None)?;
+/// while let Some(chunk) = result.next_chunk()? {
+///     println!("Fetched {} row(s)", chunk.row_count()?);
 /// }
 /// # Ok(())
 /// # }
@@ -111,6 +112,13 @@ pub struct QueryResult<'a> {
 }
 
 impl<'a> QueryResult<'a> {
+    pub(crate) fn new(handle: ffi::duckdb_v2_result_handle) -> Self {
+        Self {
+            phantom: std::marker::PhantomData,
+            handle,
+        }
+    }
+
     /// Run one bounded unit of execution and return its state.
     pub fn step(&mut self) -> Result<QueryResultStep> {
         let mut step = ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_WAITING;
@@ -132,6 +140,17 @@ impl<'a> QueryResult<'a> {
     /// Block until another execution step can make progress.
     pub fn wait(&self) -> Result<()> {
         check_api_call!(ffi::duckdb_v2_result_wait, self.handle)
+    }
+
+    /// Block until the next owned chunk or the end of the stream.
+    pub fn next_chunk(&mut self) -> Result<Option<DataChunk<'static>>> {
+        let handle = check_api_call!(ffi::duckdb_v2_result_fetch_chunk, self.handle, RET)?;
+
+        if handle.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(DataChunk::new(handle, false)?))
+        }
     }
 
     /// Run to completion, discarding rows and returning the changed-row count.
@@ -250,27 +269,6 @@ impl Drop for QueryResult<'_> {
     }
 }
 
-impl Iterator for QueryResult<'_> {
-    type Item = Result<DataChunk<'static>>;
-
-    /// Block until the next owned chunk or the end of the stream.
-    fn next(&mut self) -> Option<Self::Item> {
-        let result: Result<ffi::duckdb_v2_data_chunk_handle> =
-            check_api_call!(ffi::duckdb_v2_result_fetch_chunk, self.handle, RET);
-
-        match result {
-            Ok(out_chunk) => {
-                if out_chunk.is_null() {
-                    None
-                } else {
-                    Some(DataChunk::new(out_chunk, false))
-                }
-            }
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
-
 // SAFETY: the C result holds a `shared_ptr<ClientContext>`, and fetching takes the context lock.
 unsafe impl Send for QueryResult<'_> {}
 
@@ -314,6 +312,28 @@ mod tests {
 
         let rows_changed = result.drain()?;
         assert_eq!(rows_changed, 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_chunks_outlive_result() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let mut result = conn.query("SELECT * FROM range(5000)", Parameters::None)?;
+        let first = result.next_chunk()?.unwrap();
+        let second = result.next_chunk()?.unwrap();
+        drop(result);
+
+        assert_eq!(first.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
+        assert_eq!(second.get_vector_at::<i64>(0)?.get(0)?, Some(&2048));
+
+        // The temporary result is dropped at the end of the statement, freeing the connection.
+        let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
+        assert_eq!(conn.execute("SELECT 1", Parameters::None)?, 0);
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
 
         Ok(())
     }

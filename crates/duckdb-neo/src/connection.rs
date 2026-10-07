@@ -221,10 +221,7 @@ impl Connection {
             RET
         )?;
 
-        Ok(QueryResult {
-            phantom: std::marker::PhantomData {},
-            handle: result,
-        })
+        Ok(QueryResult::new(result))
     }
 
     /// Return the number of options visible to this connection.
@@ -494,25 +491,25 @@ mod tests {
     fn test_connection_query() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 
-        let result = conn.query(
-            "SELECT $1::INTEGER WHERE $2 = 'hello'",
-            Parameters::positional(&[&10_i32, &"hello"]),
-        )?;
-        let chunk = result.into_iter().next().unwrap()?;
+        let chunk = conn
+            .query(
+                "SELECT $1::INTEGER WHERE $2 = 'hello'",
+                Parameters::positional(&[&10_i32, &"hello"]),
+            )?
+            .next_chunk()?
+            .unwrap();
         assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&10));
 
         conn.execute("SELECT $1", Parameters::positional(&[&(42_i32, "duck")]))?;
 
-        let result = conn.query(
+        let mut result = conn.query(
             "SELECT * FROM range(0, 20000) as x where x % $mod = 0",
             Parameters::named(&[("mod", &5)]),
         )?;
 
         let mut i = 0;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<i64>(0)?;
 
             for value in vector.iter()? {
@@ -542,8 +539,8 @@ mod tests {
         let conn = db.connect()?;
 
         let statements = conn.parse("SELECT 42")?;
-        let result = conn.query(statements, Parameters::None)?;
-        let chunk = result.into_iter().next().unwrap()?;
+        let mut result = conn.query(statements, Parameters::None)?;
+        let chunk = result.next_chunk()?.unwrap();
 
         assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
 

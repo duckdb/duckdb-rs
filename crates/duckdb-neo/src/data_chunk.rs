@@ -377,11 +377,8 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 /// let conn = db.connect()?;
 /// let mut statements = conn.parse("SELECT * FROM (VALUES (10), (20))")?;
 /// let statement = statements.next().expect("expected a statement")?;
-/// let chunk = conn
-///     .query(statement, Parameters::None)?
-///     .next()
-///     .transpose()?
-///     .expect("expected rows");
+/// let mut result = conn.query(statement, Parameters::None)?;
+/// let chunk = result.next_chunk()?.expect("expected rows");
 ///
 /// let values = chunk.get_vector_at::<i32>(0)?;
 /// assert_eq!(chunk.row_count()?, 2);
@@ -702,11 +699,9 @@ mod tests {
         )
         .register(&conn)?;
 
-        let query = conn.query("SELECT chunk_copy(unnest([1,2,3,4]))", crate::Parameters::None)?;
+        let mut query = conn.query("SELECT chunk_copy(unnest([1,2,3,4]))", crate::Parameters::None)?;
 
-        for chunk in query {
-            let chunk = chunk?;
-
+        while let Some(chunk) = query.next_chunk()? {
             let vec = chunk.get_vector_at::<i32>(0)?;
 
             assert_eq!(vec.get(0)?, Some(&1));

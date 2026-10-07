@@ -201,10 +201,7 @@ impl<'a> PreparedStatement<'a> {
             RET
         )?;
 
-        Ok(QueryResult {
-            phantom: std::marker::PhantomData,
-            handle: result,
-        })
+        Ok(QueryResult::new(result))
     }
 
     /// Return whether executions reuse the compiled plan.
@@ -237,11 +234,9 @@ mod tests {
         let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?")?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
-        let query = statement.execute(crate::Parameters::Positional(&[&10]))?;
+        let mut query = statement.execute(crate::Parameters::Positional(&[&10]))?;
 
-        for chunk in query {
-            let chunk = chunk?;
-
+        while let Some(chunk) = query.next_chunk()? {
             let vec = chunk.get_vector_at::<i64>(0)?;
 
             assert_eq!(vec.len(), 10);
@@ -264,11 +259,10 @@ mod tests {
 
         // Bind in a different order than they appear in the SQL, so binding
         // only succeeds if the names reach DuckDB intact.
-        let query = statement.execute(crate::Parameters::named(&[("hi", &15), ("lo", &10)]))?;
+        let mut query = statement.execute(crate::Parameters::named(&[("hi", &15), ("lo", &10)]))?;
 
         let mut values = Vec::new();
-        for chunk in query {
-            let chunk = chunk?;
+        while let Some(chunk) = query.next_chunk()? {
             values.extend(chunk.get_vector_at::<i64>(0)?.iter()?.flatten().copied());
         }
         assert_eq!(values, (10..15).collect::<Vec<i64>>());
