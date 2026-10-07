@@ -133,7 +133,7 @@ unsafe extern "C" fn exec_callback<T: TableFunctionCallbacks>(
             let output_chunk = DataChunkRef::new(
                 check_api_call!(ffi::duckdb_v2_table_function_exec_get_output_chunk, info, RET)?,
                 true,
-            );
+            )?;
 
             T::exec(
                 user_data,

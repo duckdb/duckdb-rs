@@ -2,11 +2,12 @@ use super::{DecimalSignature, DecimalValue, MAX_DECIMAL_WIDTH};
 use crate::{
     Result,
     connection::FFILink,
+    data_chunk::VectorCollection,
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     types::{FromValue, ToValue},
     value::Value,
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// Widest `DECIMAL` whose values all fit `rust_decimal`'s 96-bit mantissa.
@@ -60,7 +61,7 @@ impl VectorElement for rust_decimal::Decimal {
 
     type Ref<'a> = rust_decimal::Decimal;
 
-    fn validate(other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }
@@ -230,8 +231,8 @@ mod tests {
 
         for width in [4, 9, 18, 28] {
             let logical_type = DecimalSignature { width, scale: 2 }.logical_type(&conn)?;
-            let chunk = DataChunk::create(&[logical_type], true)?;
-            let mut vector = chunk.get_vector_at::<rust_decimal::Decimal>(0)?;
+            let mut chunk = DataChunk::create(&[logical_type], true)?;
+            let mut vector = chunk.get_vector_at_mut::<rust_decimal::Decimal>(0)?;
             vector.set_size(4)?;
             vector.write(0, Some(dec("1.5")))?;
             vector.write(1, Some(dec("-12.300")))?;

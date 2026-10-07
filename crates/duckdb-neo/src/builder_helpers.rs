@@ -227,7 +227,7 @@ macro_rules! scalar_callback {
                 _bind_data: Option<&Self::BindData>,
                 _init_data: Option<&mut Self::InitData>,
                 $ctx: &$crate::connection::Context,
-                $input: &$crate::data_chunk::VectorCollection,
+                $input: &mut $crate::data_chunk::VectorCollection,
                 $result: $crate::vector::Vector<'_, crate::vector::Unknown>,
             ) -> $crate::Result<()> {
                 let $result = $result.cast::<$result_type>()?;

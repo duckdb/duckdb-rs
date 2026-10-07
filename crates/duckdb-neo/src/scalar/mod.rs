@@ -14,12 +14,12 @@ use crate::bind_arguments::{BindArgument, BindMetadata, BindType};
 use crate::builder_helpers::{
     OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque, into_opaque_eq,
 };
-use crate::data_chunk::VectorCollection;
+use crate::data_chunk::{RowCount, VectorCollection};
 use crate::enums::FunctionProperty;
 use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
 use crate::signature::SignatureBuilder;
-use crate::vector::{Unknown, Vector};
+use crate::vector::{Access, Unknown, Vector};
 use crate::{Result, check_api_call, connection::Context};
 
 unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
@@ -95,7 +95,7 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
             let init_data = unsafe { get_opaque_data_ref_mut::<T::InitData>(init_data) };
 
             let result_handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_result, info, RET)?;
-            let result_vec = Vector::from_handle(&result_handle, true)?;
+            let result_vec = Vector::from_handle(&result_handle, Access::Writable)?;
 
             let arg_count = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg_count, info, RET)? as usize;
             let row_count = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_row_count, info, RET)? as usize;
@@ -106,18 +106,14 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
                 handles.push(handle);
             }
 
-            let collection = VectorCollection {
-                handles,
-                is_writable: false,
-                row_count,
-            };
+            let mut collection = VectorCollection::new(handles, Access::Exclusive, RowCount::Fixed(row_count));
 
             T::exec(
                 user_data,
                 bind_data,
                 init_data,
                 &Context(context),
-                &collection,
+                &mut collection,
                 result_vec,
             )?;
 
@@ -271,7 +267,7 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
         bind_data: Option<&Self::BindData>,
         init_data: Option<&mut Self::InitData>,
         context: &Context,
-        vectors: &VectorCollection,
+        vectors: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()>;
 }

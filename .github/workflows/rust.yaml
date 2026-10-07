@@ -95,7 +95,7 @@ jobs:
         run: cargo build --example hello-ext --features="loadable-extension" --locked
 
       - name: Test duckdb-neo
-        run: cargo test -p duckdb-neo --features "uuid r2d2 rust_decimal" --locked
+        run: cargo test -p duckdb-neo --features "chrono uuid r2d2 rust_decimal" --locked
 
       - name: Test libduckdb-sys
         run: cargo test -p libduckdb-sys --locked

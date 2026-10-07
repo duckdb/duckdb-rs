@@ -13,14 +13,15 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use super::{DuckDBType, FromValue, ToValue};
+use crate::data_chunk::VectorCollection;
+use crate::ffi;
 use crate::{
     Error, Parameters, Result,
     connection::FFILink,
     error::check_api_call,
-    ffi,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// The widest `DECIMAL` DuckDB supports.
@@ -65,7 +66,7 @@ macro_rules! decimal_storage {
 
                 type Ref<'a> = &'a $name;
 
-                fn validate(other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
+                fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
                     if other.type_id() != Self::TYPE_ID {
                         return Ok(false);
                     }
@@ -237,7 +238,7 @@ where
 
     type Ref<'a> = &'a Self;
 
-    fn validate(other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }
@@ -475,8 +476,8 @@ mod tests {
         assert!(chunk.get_vector_at::<Decimal<18, 2>>(0).is_err());
         assert!(chunk.get_vector_at::<Decimal<17, 3>>(0).is_err());
 
-        let chunk = DataChunk::create(&[Decimal::<9, 2>::logical_type(&conn)?], true)?;
-        let mut vector = chunk.get_vector_at::<Decimal<9, 2>>(0)?;
+        let mut chunk = DataChunk::create(&[Decimal::<9, 2>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
         vector.write(0, Some(Decimal::new(-1)))?;
         vector.write(1, None)?;

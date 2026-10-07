@@ -6,6 +6,7 @@ use super::{DuckDBType, ToValue};
 use crate::{
     Result,
     connection::FFILink,
+    data_chunk::VectorCollection,
     error::{DuckDBError, Error},
     logical_type::{LogicalType, LogicalTypeID},
     parameter::{Parameters, QueryParameter},
@@ -67,16 +68,18 @@ impl VectorElement for Union {
 
     type Internal = Union;
 
-    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }
 
-        let tag = children.first().ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "Union vector is missing its tag child".to_string(),
-        })?;
-        tag.validate_as::<u8>()
+        let Some(children) = children.filter(|children| children.col_count() > 0) else {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: "Union vector is missing its tag child".to_string(),
+            });
+        };
+        children.get_untyped_vector_at(0)?.validate_as::<u8>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -84,7 +87,7 @@ impl VectorElement for Union {
         Self: Sized + 'a,
     {
         UnionRow {
-            children: &vector.children,
+            children: vector.children().expect("validated nested vector has children"),
             logical: physical,
         }
     }
@@ -92,37 +95,36 @@ impl VectorElement for Union {
 
 /// A borrowed union row with access to its tag and member child vectors.
 pub struct UnionRow<'a> {
-    children: &'a [Vector<'a, Unknown>],
+    children: &'a VectorCollection,
     logical: usize,
 }
 
 impl<'a> UnionRow<'a> {
     /// Return the active union member index.
     pub fn member(&self) -> u8 {
-        *self.children[0].get_as_unchecked::<u8>(self.logical).unwrap()
+        *self
+            .children
+            .cached_unchecked(0)
+            .get_as_unchecked::<u8>(self.logical)
+            .unwrap()
     }
 
     /// Return a union member by index after validating its logical type.
     pub fn get<T: VectorElement>(&self, index: usize) -> Result<Option<T::Ref<'a>>> {
         let index = index + 1;
 
-        if index >= self.children.len() {
+        if index >= self.children.col_count() {
             return Err(Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
                 message: format!(
                     "Union member index {} is out of bounds ({} members)",
                     index - 1,
-                    self.children.len() - 1
+                    self.children.col_count() - 1
                 ),
             });
         }
 
-        let child = self.children.get(index).ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("Union member {} is missing its child vector", index - 1),
-        })?;
-
-        child.get_as_checked::<T>(self.logical)
+        self.children.cached_unchecked(index).get_as_checked::<T>(self.logical)
     }
 }
 
@@ -170,13 +172,20 @@ impl WritableVectorElement for Union {
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             vector.set_row_validity(index, false)?;
-            for child in &mut vector.children {
-                child.set_row_validity(index, false)?;
+            let children = vector
+                .children_collection_mut()
+                .expect("validated nested vector has children");
+            children.cached_mut::<u8>(0)?.set_row_validity(index, false)?;
+            for i in 1..children.col_count() {
+                children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
             }
             return Ok(());
         };
 
-        let member_count = vector.children.len().saturating_sub(1);
+        let member_count = vector
+            .children()
+            .map_or(0, VectorCollection::col_count)
+            .saturating_sub(1);
         if value.tag as usize >= member_count {
             return Err(Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
@@ -188,10 +197,15 @@ impl WritableVectorElement for Union {
         }
 
         vector.set_row_validity(index, true)?;
-        vector.children[0].write_as::<u8>(index, Some(value.tag))?;
-        for child in &mut vector.children[1..] {
-            child.set_row_validity(index, false)?;
+        let children = vector
+            .children_collection_mut()
+            .expect("validated nested vector has children");
+        children.cached_mut::<u8>(0)?.write(index, Some(value.tag))?;
+        for i in 1..children.col_count() {
+            children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
         }
-        value.value.write(&mut vector.children[1 + value.tag as usize], index)
+        value
+            .value
+            .write(children.cached_mut::<Unknown>(1 + value.tag as usize)?, index)
     }
 }
