@@ -95,6 +95,7 @@ Execute the program with `cargo run` and watch DuckDB in action!
 
 - `r2d2` - `duckdb_neo::r2d2::ConnectionManager`, a connection pool manager for [r2d2](https://github.com/sfackler/r2d2).
 - `uuid` - Read and write DuckDB `UUID` values as [`uuid::Uuid`](https://docs.rs/uuid).
+- `rust_decimal` - Read and write DuckDB `DECIMAL` values as [`rust_decimal::Decimal`](https://docs.rs/rust_decimal). Vectors support `DECIMAL` widths up to 28.
 
 ### Linking against a prebuilt DuckDB
 
