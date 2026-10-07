@@ -25,7 +25,7 @@ use crate::{
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     scalar::{FunctionBindHandles, ReturnTypeHandle},
     signature::SignatureBuilder,
-    vector::{Unknown, Vector},
+    vector::{Access, Unknown, Vector},
 };
 
 /// [`States`] is a view over the aggregate states DuckDB passes to a callback.
@@ -247,7 +247,7 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
 
             let states: States<'_, T::StateItem> = unsafe { States::new(states_slice) };
 
-            T::update(user_data, bind_data, &vector_collection, states)
+            T::update(user_data, bind_data, &mut vector_collection, states)
         },
         err,
     );
@@ -306,7 +306,7 @@ unsafe extern "C" fn finalize_callback<T: AggregateCallbacks>(
             let result_vector_handle =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result, info, RET)?;
 
-            let result_vector = Vector::from_handle(&result_vector_handle, true)?;
+            let result_vector = Vector::from_handle(&result_vector_handle, Access::Writable)?;
 
             let result_offset: u64 =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result_offset, info, RET)?;
@@ -498,7 +498,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     fn update(
         &self,
         bind_data: Option<&Self::BindData>,
-        data: &VectorCollection,
+        data: &mut VectorCollection,
         states: States<'_, Self::StateItem>,
     ) -> Result<()>;
     /// **Combine:** merge partial source states into target states.

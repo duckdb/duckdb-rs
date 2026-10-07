@@ -7,11 +7,31 @@ use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{DatabaseKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
-use crate::vector::VectorElement;
+use crate::vector::{Access, VectorElement};
 use crate::{
     Result, check_api_call,
     vector::{Unknown, Vector},
 };
+
+fn check_distinct(indices: &[usize]) -> Result<()> {
+    for (i, index) in indices.iter().enumerate() {
+        if indices[..i].contains(index) {
+            return Err(crate::error::Error {
+                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
+                message: format!("vector index {index} was requested more than once"),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn collect_array<V, const N: usize>(results: [Result<V>; N]) -> Result<[V; N]> {
+    let vectors = results.into_iter().collect::<Result<Vec<_>>>()?;
+    match vectors.try_into() {
+        Ok(array) => Ok(array),
+        Err(_) => unreachable!("collected exactly N vectors"),
+    }
+}
 
 trait DataChunkLink {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>>;
@@ -44,32 +64,55 @@ pub struct VectorCollection {
 }
 
 impl VectorCollection {
-    /// Return all vectors as logically untyped borrowed views.
-    pub fn vectors(&self) -> Result<Vec<Vector<'_, Unknown>>> {
-        let mut vectors = vec![];
-
-        for handle in &self.handles {
-            vectors.push(Vector::from_handle(handle, self.is_writable)?);
+    fn mut_access(&self) -> Access {
+        if self.is_writable {
+            Access::Writable
+        } else {
+            Access::Exclusive
         }
-
-        Ok(vectors)
     }
 
-    /// Return the vector at `index`, narrowed to `T`.
+    pub fn get_unchecked_vector_at(&self, index: usize) -> Result<Vector<'_, Unknown>> {
+        Vector::from_handle(&self.handles[index], Access::Shared)
+    }
+
+    /// Return a read-only view of the vector at `index`, narrowed to `T`.
     ///
-    /// A logical type incompatible with `T` returns an error.
+    /// A logical type incompatible with `T` returns an error. Use
+    /// [`Self::get_vector_at_mut`] to flatten the vector.
     ///
     /// # Panics
     ///
     /// Panics if `index` is out of range.
     pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<Vector<'_, T>> {
-        let vec = Vector::from_handle(&self.handles[index], self.is_writable)?;
+        Vector::from_handle(&self.handles[index], Access::Shared)?.cast::<T>()
+    }
 
-        vec.cast::<T>()
+    /// Return the vector at `index`, narrowed to `T`, borrowed mutably.
+    /// The exclusive borrow allows reshaping the vector, e.g. with
+    /// [`Vector::flatten`]. Writing requires writable input.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of range.
+    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+        Vector::from_handle(&self.handles[index], self.mut_access())?.cast::<T>()
+    }
+
+    /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
+    /// Duplicate indices return an error. Narrow each vector with [`Vector::cast`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if an index is out of range.
+    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
+        check_distinct(&indices)?;
+        let access = self.mut_access();
+        collect_array(indices.map(|index| Vector::from_handle(&self.handles[index], access)))
     }
 
     /// Return the number of vectors, which is the column count.
-    pub fn vectors_count(&self) -> usize {
+    pub fn col_count(&self) -> usize {
         self.handles.len()
     }
 
@@ -84,11 +127,12 @@ impl VectorCollection {
     /// this collection and cannot outlive the callback. It is writable only when
     /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
     pub fn to_data_chunk(&self) -> crate::Result<DataChunk<'_>> {
-        let logical_types = self
-            .vectors()?
-            .iter()
-            .map(|v| v.logical_type().clone())
-            .collect::<Vec<_>>();
+        let mut logical_types = Vec::with_capacity(self.col_count());
+
+        for i in 0..self.col_count() {
+            let vector = Vector::from_handle(&self.handles[i], Access::Shared)?;
+            logical_types.push(vector.logical_type().clone());
+        }
 
         let chunk = DataChunk::create(&logical_types, self.is_writable)?;
 
@@ -181,33 +225,73 @@ impl<'a> DataChunkRef<'a> {
     ///
     /// Narrow a vector with [`Vector::cast`] before typed access.
     pub fn vectors(&self) -> Result<Vec<Vector<'_, Unknown>>> {
-        let count = self.vectors_count()?;
+        let count = self.col_count()?;
 
         let mut vectors = Vec::with_capacity(count);
         for i in 0..count {
             let vector: ffi::duckdb_v2_vector_handle =
                 check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, i as u64, RET)?;
-            vectors.push(Vector::from_handle(&vector, self.is_writable)?);
+            vectors.push(Vector::from_handle(&vector, Access::Shared)?);
         }
         Ok(vectors)
     }
 
     /// Return the number of vectors, which is the column count.
-    pub fn vectors_count(&self) -> Result<usize> {
+    pub fn col_count(&self) -> Result<usize> {
         let out_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_vector_count, self.handle, RET)?;
         Ok(out_count as usize)
     }
 
-    /// Return the vector at `index`, narrowed to `T`.
+    /// Return a read-only view of the vector at `index`, narrowed to `T`.
     ///
     /// An out-of-range index or a logical type incompatible with `T` returns an
-    /// error.
+    /// error. Use [`Self::get_vector_at_mut`] to write or flatten the vector.
     pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<Vector<'_, T>> {
-        let vector: ffi::duckdb_v2_vector_handle =
-            check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, index as u64, RET)?;
-        let vec = Vector::from_handle(&vector, self.is_writable)?;
+        Vector::from_handle(&self.get_vector_handle_at(index)?, Access::Shared)?.cast::<T>()
+    }
 
-        vec.cast::<T>()
+    /// Return the vector at `index`, narrowed to `T`, borrowed mutably.
+    ///
+    /// The exclusive borrow allows reshaping the vector, e.g. with
+    /// [`Vector::flatten`], and writing to it when the chunk is writable. An
+    /// out-of-range index or a logical type incompatible with `T` returns an
+    /// error.
+    ///
+    /// The borrow rules out other views of the chunk while the vector is alive:
+    ///
+    /// ```compile_fail,E0502
+    /// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let env = Environment::new()?;
+    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    /// let mut chunk = DataChunk::create(&[i32::logical_type(&conn)?], true)?;
+    /// let shared = chunk.get_vector_at::<i32>(0)?;
+    /// let mut exclusive = chunk.get_vector_at_mut::<i32>(0)?;
+    /// exclusive.write(0, Some(1))?;
+    /// let _ = shared.get(0)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+        Vector::from_handle(&self.get_vector_handle_at(index)?, self.mut_access())?.cast::<T>()
+    }
+
+    /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
+    ///
+    /// Duplicate or out-of-range indices return an error. Narrow each vector
+    /// with [`Vector::cast`].
+    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
+        check_distinct(&indices)?;
+        let access = self.mut_access();
+        collect_array(indices.map(|index| Vector::from_handle(&self.get_vector_handle_at(index)?, access)))
+    }
+
+    fn mut_access(&self) -> Access {
+        if self.is_writable {
+            Access::Writable
+        } else {
+            Access::Exclusive
+        }
     }
 
     pub(crate) fn get_vector_handle_at(&self, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
@@ -292,6 +376,16 @@ impl<'a> DataChunk<'a> {
         };
         Ok(DataChunk::new(handle, writable))
     }
+
+    /// See [`DataChunkRef::get_vector_at_mut`].
+    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+        self.chunk.get_vector_at_mut(index)
+    }
+
+    /// See [`DataChunkRef::get_vector_array_mut`].
+    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
+        self.chunk.get_vector_array_mut(indices)
+    }
 }
 
 impl Drop for DataChunk<'_> {
@@ -335,7 +429,7 @@ mod tests {
             DataChunk::create_with_allocator(&[i32::logical_type(&conn)?], true, super::Allocator::Connection(&conn))?;
 
         assert_eq!(data_chunk.row_count()?, 0);
-        assert_eq!(data_chunk.vectors_count()?, 1);
+        assert_eq!(data_chunk.col_count()?, 1);
 
         Ok(())
     }
@@ -343,10 +437,10 @@ mod tests {
     #[test]
     fn test_copy_data_chunk() -> crate::Result<()> {
         scalar_callback!(ChunkCopy, i32, |input, result, context, _ud| {
-            let dc =
+            let mut dc =
                 DataChunk::create_with_allocator(&[i32::logical_type(&context)?], true, Allocator::Context(context))?;
 
-            let vec = dc.get_vector_at::<i32>(0)?;
+            let vec = dc.get_vector_at_mut::<i32>(0)?;
 
             let input = input.get_vector_at::<i32>(0)?;
 
@@ -395,15 +489,63 @@ mod tests {
     }
 
     #[test]
+    fn test_shared_vectors_cannot_change_storage() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?, i64::logical_type(&conn)?], true)?;
+        chunk.get_vector_at_mut::<i64>(1)?.make_sequence(0, 1, 4)?;
+
+        let mut shared = chunk.get_vector_at::<i64>(0)?;
+        assert!(!shared.is_writable());
+        assert!(shared.set_size(1).is_err());
+        assert!(shared.write(0, Some(1)).is_err());
+
+        let mut sequence = chunk.get_vector_at::<i64>(1)?;
+        assert!(sequence.flatten().is_err());
+        drop((shared, sequence));
+
+        let mut sequence = chunk.get_vector_at_mut::<i64>(1)?;
+        sequence.flatten()?;
+        assert_eq!(sequence.get(3)?, Some(&3));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_vector_array_mut() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let mut chunk = DataChunk::create(&[i32::logical_type(&conn)?, bool::logical_type(&conn)?], true)?;
+
+        assert!(chunk.get_vector_array_mut([0, 0]).is_err());
+        assert!(chunk.get_vector_array_mut([0, 2]).is_err());
+
+        let [ids, flags] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut ids, mut flags) = (ids.cast::<i32>()?, flags.cast::<bool>()?);
+        ids.set_size(1)?;
+        flags.set_size(1)?;
+        ids.write(0, Some(7))?;
+        flags.write(0, Some(true))?;
+        drop((ids, flags));
+
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&7));
+        assert_eq!(chunk.get_vector_at::<bool>(1)?.get(0)?, Some(&true));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_connection_chunk_keeps_database_alive() -> crate::Result<()> {
         let env = crate::environment::Environment::new()?;
         let db = env.open(crate::environment::StorageLocation::InMemory)?;
         let conn = db.connect()?;
         let types = [i32::logical_type(&conn)?];
 
-        let chunk = DataChunk::create_with_allocator(&types, true, Allocator::Connection(&conn))?;
+        let mut chunk = DataChunk::create_with_allocator(&types, true, Allocator::Connection(&conn))?;
         let copy = chunk.copy(&conn)?;
-        let mut values = chunk.get_vector_at::<i32>(0)?;
+        let mut values = chunk.get_vector_at_mut::<i32>(0)?;
         values.set_size(1)?;
         values.write(0, Some(42))?;
         drop(values);

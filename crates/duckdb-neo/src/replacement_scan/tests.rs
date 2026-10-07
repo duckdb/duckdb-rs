@@ -105,7 +105,7 @@ fn test_replacement_scan() -> crate::Result<()> {
         chunk.get_vector_at::<bool>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
     );
 
-    assert_eq!(chunk.vectors_count()?, 59);
+    assert_eq!(chunk.col_count()?, 59);
 
     Ok(())
 }
@@ -120,9 +120,9 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
     let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-    let chunk = DataChunk::create(&logical_types, true)?;
-    let mut id = chunk.get_vector_at::<i32>(0)?;
-    let mut is_active = chunk.get_vector_at::<bool>(1)?;
+    let mut chunk = DataChunk::create(&logical_types, true)?;
+    let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+    let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
     id.set_size(2)?;
     is_active.set_size(2)?;
@@ -168,9 +168,9 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
 fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnDataCollection<'_>> {
     let logical_types = [i32::logical_type(conn)?, bool::logical_type(conn)?];
-    let chunk = DataChunk::create(&logical_types, true)?;
-    let mut id = chunk.get_vector_at::<i32>(0)?;
-    let mut is_active = chunk.get_vector_at::<bool>(1)?;
+    let mut chunk = DataChunk::create(&logical_types, true)?;
+    let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+    let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
     is_active.set_size(1)?;
     id.write(0, Some(1))?;

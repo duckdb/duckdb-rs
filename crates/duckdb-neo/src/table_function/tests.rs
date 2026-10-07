@@ -126,10 +126,10 @@ fn test_table_function() -> crate::Result<()> {
             global_state: Option<&Self::GlobalState>,
             local_state: Option<&mut Self::LocalState>,
             _context: &Context,
-            output: DataChunkRef<'_>,
+            mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> crate::Result<()> {
-            let mut output_vector = output.get_vector_at::<i32>(0)?;
+            let mut output_vector = output.get_vector_at_mut::<i32>(0)?;
 
             let global_state = global_state.unwrap();
             let mut count = global_state.count.lock().unwrap();
@@ -328,13 +328,13 @@ fn test_table_function_partitioning() -> crate::Result<()> {
             global_state: Option<&Self::GlobalState>,
             local_state: Option<&mut Self::LocalState>,
             _context: &Context,
-            output: DataChunkRef<'_>,
+            mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> Result<()> {
             let batch_index = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
 
-            let mut parts = output.get_vector_at::<i32>(0)?;
-            let mut values = output.get_vector_at::<i32>(1)?;
+            let [parts, values] = output.get_vector_array_mut([0, 1])?;
+            let (mut parts, mut values) = (parts.cast::<i32>()?, values.cast::<i32>()?);
 
             if batch_index >= BATCH_COUNT {
                 parts.set_size(0)?;

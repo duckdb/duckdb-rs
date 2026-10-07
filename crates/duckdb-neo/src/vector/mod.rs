@@ -241,29 +241,40 @@ impl<T: VectorElement> VectorView<T> {
     }
 }
 
+/// How a [`Vector`] wrapper may touch the underlying DuckDB vector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Access {
+    /// Other wrappers of the same vector may exist, so its state must not change.
+    Shared,
+    /// The only wrapper; may reshape the vector (e.g. flatten) but not write rows.
+    Exclusive,
+    /// The only wrapper of writable output.
+    Writable,
+}
+
 /// A typed view of a DuckDB vector borrowed from its owning data chunk.
 ///
 /// Storage representation and writability are runtime properties. Casting only
 /// changes the logical element type and preserves the chunk lifetime.
-pub struct Vector<'chunk, T: VectorElement> {
+pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) logical_type: LogicalType,
     pub(crate) kind: StorageKind,
     pub(crate) len: usize,
     pub(crate) view: Option<VectorView<T>>,
-    pub(crate) writable: bool,
+    pub(crate) access: Access,
     heap: Option<ffi::duckdb_v2_arena_handle>,
-    pub(crate) children: Vec<Vector<'chunk, Unknown>>,
+    pub(crate) children: Vec<Vector<'a, Unknown>>,
     /// Elements per row of an `ARRAY` vector, read once from its type; 0 otherwise.
     pub(crate) array_size: usize,
-    _chunk: PhantomData<&'chunk ()>,
+    _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
 
-impl<'chunk> Vector<'chunk, Unknown> {
+impl<'a> Vector<'a, Unknown> {
     /// # Safety
     /// The caller must ensure that the handle is valid and that the vector's lifetime is tied to the lifetime of the chunk.
-    pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, writable: bool) -> Result<Self> {
+    pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
         let logical_type_handle = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)?;
 
         let vector_type: ffi::DUCKDB_V2_VECTOR_TYPE =
@@ -287,7 +298,7 @@ impl<'chunk> Vector<'chunk, Unknown> {
         let mut children = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
             let child_handle = check_api_call!(ffi::duckdb_v2_vector_get_child, *handle, index, RET)?;
-            children.push(Self::from_handle(&child_handle, writable)?);
+            children.push(Self::from_handle(&child_handle, access)?);
         }
 
         Ok(Vector {
@@ -296,7 +307,7 @@ impl<'chunk> Vector<'chunk, Unknown> {
             kind,
             len: len as usize,
             view,
-            writable,
+            access,
             heap: None,
             children,
             array_size,
@@ -306,13 +317,13 @@ impl<'chunk> Vector<'chunk, Unknown> {
     }
 
     /// Validate and attach a logical element type.
-    pub fn cast<T: VectorElement>(self) -> Result<Vector<'chunk, T>> {
+    pub fn cast<T: VectorElement>(self) -> Result<Vector<'a, T>> {
         self.validate_as::<T>()?;
         Ok(self.cast_unchecked())
     }
 }
 
-impl<'chunk, T: VectorElement> Vector<'chunk, T> {
+impl<'a, T: VectorElement> Vector<'a, T> {
     /// Borrow the readable storage view.
     ///
     /// Returns `None` for [`StorageKind::Other`] until the vector is
@@ -344,14 +355,14 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         Ok(())
     }
 
-    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'chunk, U> {
+    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'a, U> {
         Vector {
             handle: self.handle,
             logical_type: self.logical_type,
             kind: self.kind,
             len: self.len,
             view: self.view.map(|view| unsafe { view.cast_owned::<U>() }),
-            writable: self.writable,
+            access: self.access,
             heap: self.heap,
             children: self.children,
             array_size: self.array_size,
@@ -360,7 +371,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         }
     }
 
-    pub(crate) fn into_unknown(self) -> Vector<'chunk, Unknown> {
+    pub(crate) fn into_unknown(self) -> Vector<'a, Unknown> {
         self.cast_unchecked()
     }
 
@@ -403,18 +414,29 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
 
     /// Make this vector reference another vector's storage without copying.
     ///
+    /// The vector must be borrowed mutably, e.g. through
+    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`].
+    ///
     /// # Safety
     ///
     /// The source's storage must remain valid and must not be mutated
     /// concurrently for as long as the destination vector may be read. This
     /// requirement applies to the destination's owning chunk, even after the
     /// returned vector is dropped.
-    pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'chunk, T2>> {
+    pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
+        if self.access == Access::Shared {
+            return Err(not_exclusive());
+        }
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
         // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
         // Writes would land in the source's storage, so only a writable source stays writable.
-        Ok(Vector::from_handle(&self.handle, self.writable && source.writable)?.cast_unchecked::<T2>())
+        let access = if self.is_writable() && source.is_writable() {
+            Access::Writable
+        } else {
+            Access::Exclusive
+        };
+        Ok(Vector::from_handle(&self.handle, access)?.cast_unchecked::<T2>())
     }
 
     pub(crate) fn get_as_unchecked<U: VectorElement>(&self, index: usize) -> Option<U::Ref<'_>> {
@@ -520,7 +542,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// This is the slow path; prefer [`Self::write`] for typed vector access.
     pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
-        if !self.writable {
+        if !self.is_writable() {
             return Err(not_writable());
         }
         check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)
@@ -530,7 +552,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     ///
     /// This is the slow path; prefer [`Self::write`] with `None`.
     pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
-        if !self.writable {
+        if !self.is_writable() {
             return Err(not_writable());
         }
         check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
@@ -574,30 +596,37 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         &self.logical_type
     }
 
-    /// Return whether DuckDB supplied this vector as writable output.
+    /// Return whether this vector is writable output that was borrowed mutably.
     pub fn is_writable(&self) -> bool {
-        self.writable
+        self.access == Access::Writable
     }
 
     /// Return the vector's child vectors.
-    pub fn children(&self) -> &[Vector<'chunk, Unknown>] {
+    pub fn children(&self) -> &[Vector<'a, Unknown>] {
         &self.children
     }
 
     /// Explicitly materialize the vector as flat storage.
+    ///
+    /// The vector must be borrowed mutably, e.g. through
+    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`], since flattening
+    /// replaces storage that other wrappers could still reference.
     pub fn flatten(&mut self) -> Result<()> {
         if self.kind == StorageKind::Flat {
             return Ok(());
         }
+        if self.access == Access::Shared {
+            return Err(not_exclusive());
+        }
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
 
         // Flattening replaces the buffer and child vectors, so rebuild from the handle.
-        *self = Vector::from_handle(&self.handle, self.writable)?.cast_unchecked();
+        *self = Vector::from_handle(&self.handle, self.access)?.cast_unchecked();
         Ok(())
     }
 
     fn set_not_writable(&mut self) {
-        self.writable = false;
+        self.access = Access::Exclusive;
         for child in &mut self.children {
             child.set_not_writable();
         }
@@ -605,7 +634,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
 
     /// Set the number of logical rows on writable output.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
-        if !self.writable {
+        if !self.is_writable() {
             return Err(not_writable());
         }
         check_api_call!(ffi::duckdb_v2_vector_set_size, self.handle, len as u64)?;
@@ -622,7 +651,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     /// The vector is no longer writable afterwards: a constant holds a single
     /// slot, so per-row writes would go past its buffer.
     pub fn make_constant(&mut self, value: Value, is_valid: bool, count: usize) -> Result<()> {
-        if !self.writable {
+        if !self.is_writable() {
             return Err(not_writable());
         }
         check_api_call!(
@@ -634,7 +663,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, is_valid)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        *self = Vector::from_handle(&self.handle, false)?.cast_unchecked();
+        *self = Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked();
         self.len = count;
         Ok(())
     }
@@ -645,7 +674,7 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
     /// sequence uses [`StorageKind::Other`] and must be flattened before typed
     /// reads. The vector is no longer writable afterwards.
     pub fn make_sequence(&mut self, start: i64, increment: i64, count: usize) -> Result<()> {
-        if !self.writable {
+        if !self.is_writable() {
             return Err(not_writable());
         }
         check_api_call!(
@@ -693,7 +722,7 @@ impl<T: WritableVectorElement> Vector<'_, T> {
     /// The vector must be writable with flat storage, and `index` must be in
     /// range. Pass `None` to write SQL `NULL`.
     pub fn write(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
-        if !self.writable {
+        if !self.is_writable() {
             return Err(not_writable());
         }
         T::write(self, index, value)
@@ -701,8 +730,8 @@ impl<T: WritableVectorElement> Vector<'_, T> {
 }
 
 /// Iterates over the logical rows of a vector.
-pub struct VectorIter<'vector, 'chunk, T: VectorElement> {
-    vector: &'vector Vector<'chunk, T>,
+pub struct VectorIter<'vector, 'a, T: VectorElement> {
+    vector: &'vector Vector<'a, T>,
     index: usize,
 }
 
@@ -722,8 +751,15 @@ impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T
 fn not_writable() -> Error {
     Error {
         code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: "vector is not writable: it was not supplied as writable output, or was made constant or a sequence"
+        message: "vector is not writable: it was not supplied as writable output, was borrowed with get_vector_at, or was made constant or a sequence"
             .to_string(),
+    }
+}
+
+fn not_exclusive() -> Error {
+    Error {
+        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+        message: "vector is borrowed shared: use get_vector_at_mut to change its storage".to_string(),
     }
 }
 

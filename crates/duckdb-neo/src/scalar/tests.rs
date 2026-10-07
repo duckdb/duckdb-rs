@@ -42,7 +42,7 @@ impl ScalarCallbacks for ScalarWithData {
         init_data: Option<&mut Self::InitData>,
         _context: &Context,
 
-        input: &VectorCollection,
+        input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
         let mut output: Vector<'_, i32> = output.cast::<i32>()?;
@@ -75,7 +75,7 @@ impl ScalarCallbacks for BasicScalarFunction {
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
         _context: &Context,
-        _input: &VectorCollection,
+        _input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
         let mut output: Vector<'_, i32> = output.cast::<i32>()?;
@@ -97,7 +97,7 @@ impl ScalarCallbacks for BasicScalarPanicFunction {
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
         _context: &Context,
-        _input: &VectorCollection,
+        _input: &mut VectorCollection,
         _output: Vector<'_, Unknown>,
     ) -> Result<()> {
         panic!("This function panics");
@@ -316,7 +316,7 @@ impl ScalarCallbacks for OverrideAbleScalar {
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
         _context: &Context,
-        _input: &VectorCollection,
+        _input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
         let mut output = output.cast::<i8>()?;
@@ -385,7 +385,7 @@ impl ScalarCallbacks for FoldProbe {
         _bind_data: Option<&Self::BindData>,
         _init_data: Option<&mut Self::InitData>,
         _context: &Context,
-        input: &VectorCollection,
+        input: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()> {
         let input = input.get_vector_at::<i32>(0)?;

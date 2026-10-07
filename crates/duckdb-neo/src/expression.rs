@@ -183,10 +183,10 @@ mod tests {
             _global_state: Option<&Self::GlobalState>,
             _local_state: Option<&mut Self::LocalState>,
             _context: &Context,
-            output: DataChunkRef<'_>,
+            mut output: DataChunkRef<'_>,
             _column_info: ExecColumnInfo<'_>,
         ) -> crate::Result<()> {
-            let mut vec = output.get_vector_at::<i32>(0)?;
+            let mut vec = output.get_vector_at_mut::<i32>(0)?;
 
             vec.set_size(0)?;
 

@@ -60,7 +60,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
     fn update(
         &self,
         _bind_data: Option<&Self::BindData>,
-        collection: &VectorCollection,
+        collection: &mut VectorCollection,
         mut states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         let vec = collection.get_vector_at::<i32>(0)?;
@@ -259,7 +259,7 @@ impl AggregateCallbacks for UndersizedState {
     fn update(
         &self,
         _bind_data: Option<&Self::BindData>,
-        _collection: &VectorCollection,
+        _collection: &mut VectorCollection,
         _states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         Ok(())

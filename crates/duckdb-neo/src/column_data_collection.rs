@@ -63,8 +63,8 @@ use crate::{
 /// let types = [i32::logical_type(&conn)?];
 ///
 /// let collection = ColumnDataCollection::new(&conn, &types)?;
-/// let chunk = DataChunk::create(&types, true)?;
-/// let mut values = chunk.get_vector_at::<i32>(0)?;
+/// let mut chunk = DataChunk::create(&types, true)?;
+/// let mut values = chunk.get_vector_at_mut::<i32>(0)?;
 /// values.set_size(2)?;
 /// values.write(0, Some(10))?;
 /// values.write(1, Some(20))?;
@@ -390,10 +390,10 @@ mod test {
 
         let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-        let chunk = DataChunk::create(&logical_types, true)?;
+        let mut chunk = DataChunk::create(&logical_types, true)?;
 
-        let mut id = chunk.get_vector_at::<i32>(0)?;
-        let mut is_active = chunk.get_vector_at::<bool>(1)?;
+        let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
         id.set_size(2)?;
         is_active.set_size(2)?;
@@ -411,6 +411,8 @@ mod test {
 
         assert_eq!(collection.len()?, 0);
 
+        let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
         id.write(0, Some(10))?;
         id.write(1, Some(12))?;
         is_active.write(0, Some(false))?;
@@ -422,9 +424,9 @@ mod test {
 
         assert_eq!(collection.len()?, 2);
 
-        let chunk_2 = DataChunk::create(&logical_types, true)?;
-        let mut id = chunk_2.get_vector_at::<i32>(0)?;
-        let mut is_active = chunk_2.get_vector_at::<bool>(1)?;
+        let mut chunk_2 = DataChunk::create(&logical_types, true)?;
+        let [id, is_active] = chunk_2.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
         id.set_size(1)?;
         is_active.set_size(1)?;
@@ -500,10 +502,10 @@ mod test {
 
         let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-        let chunk = DataChunk::create(&logical_types, true)?;
+        let mut chunk = DataChunk::create(&logical_types, true)?;
 
-        let mut id = chunk.get_vector_at::<i32>(0)?;
-        let mut is_active = chunk.get_vector_at::<bool>(1)?;
+        let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
         id.set_size(2)?;
         is_active.set_size(2)?;
