@@ -39,7 +39,7 @@ use crate::{
     Result,
     bytes::DuckDBBytes,
     check_api_call,
-    data_chunk::{RowCount, VectorCollection},
+    data_chunk::{ChildrenMut, RowCount, VectorCollection},
     error::{DuckDBError, Error},
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
@@ -629,8 +629,26 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
     ///
-    /// Children get at most the access of this vector.
-    pub fn children_mut(&mut self) -> Option<&mut VectorCollection> {
+    /// Children get at most the access of this vector. The children cannot be
+    /// swapped with another vector's, since readers trust their validated types:
+    ///
+    /// ```compile_fail,E0596
+    /// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let env = Environment::new()?;
+    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    /// let types = [Vec::<Option<String>>::logical_type(&conn)?, Vec::<Option<i64>>::logical_type(&conn)?];
+    /// let mut chunk = DataChunk::create(&types, true)?;
+    /// let [mut a, mut b] = chunk.get_vector_array_mut([0, 1])?;
+    /// std::mem::swap(&mut *a.children_mut().unwrap(), &mut *b.children_mut().unwrap());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn children_mut(&mut self) -> Option<ChildrenMut<'_>> {
+        self.children.as_mut().map(ChildrenMut)
+    }
+
+    pub(crate) fn children_collection_mut(&mut self) -> Option<&mut VectorCollection> {
         self.children.as_mut()
     }
 

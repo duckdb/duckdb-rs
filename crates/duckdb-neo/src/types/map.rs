@@ -111,8 +111,8 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
             });
         };
 
-        children.get_unchecked_vector_at(0)?.validate_as::<K>()?;
-        children.get_unchecked_vector_at(1)?.validate_as::<V>()
+        children.get_untyped_vector_at(0)?.validate_as::<K>()?;
+        children.get_untyped_vector_at(1)?.validate_as::<V>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -148,7 +148,9 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         let len = value.len();
         // Write one child at a time, so only one child wrapper is borrowed.
         let (keys, values): (Vec<_>, Vec<_>) = value.into_iter().unzip();
-        let children = vector.children_mut().expect("validated nested vector has children");
+        let children = vector
+            .children_collection_mut()
+            .expect("validated nested vector has children");
 
         let result = (|| {
             // Append after the child's elements, including any written through another wrapper.

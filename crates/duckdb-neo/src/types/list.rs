@@ -78,7 +78,7 @@ impl<L: VectorElement> VectorElement for List<L> {
                 message: "List vector must have exactly one child".to_string(),
             });
         };
-        children.get_unchecked_vector_at(0)?.validate_as::<L>()
+        children.get_untyped_vector_at(0)?.validate_as::<L>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -112,7 +112,7 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
         vector.check_row_writable(index)?;
         let len = values.len();
         let child = vector
-            .children_mut()
+            .children_collection_mut()
             .expect("validated nested vector has children")
             .cached_mut::<T>(0)?;
 

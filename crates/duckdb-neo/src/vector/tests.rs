@@ -117,9 +117,9 @@ scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
 
     let mut output = output;
     output.set_size(rows.len())?;
-    let children = output.children_mut().unwrap();
+    let mut children = output.children_mut().unwrap();
     for i in 0..children.col_count() {
-        children.get_unchecked_vector_at_mut(i)?.set_size(rows.len())?;
+        children.get_untyped_vector_at_mut(i)?.set_size(rows.len())?;
     }
 
     for (index, (key, value)) in rows.iter().enumerate() {
@@ -1061,7 +1061,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
     vector.set_size(2)?;
     vector.write(1, None)?;
-    assert_eq!(vector.children().unwrap().get_unchecked_vector_at(0)?.len(), 6);
+    assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 6);
     assert!(vector.write(0, Some(vec![Some(1), Some(2)])).is_err());
     vector.write(0, Some(vec![Some(1), None, Some(3)]))?;
     assert_eq!(
@@ -1222,7 +1222,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         let mut idx = 0;
 
         for i in 0..input.col_count() {
-            let vec = input.get_unchecked_vector_at(i)?;
+            let vec = input.get_untyped_vector_at(i)?;
 
             for i in 0..vec.len() {
                 let value = if !vec.is_null(i)? {
@@ -1571,7 +1571,7 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
     assert!(!vector.is_writable());
     for i in 0..vector.children().unwrap().col_count() {
-        assert!(!vector.children().unwrap().get_unchecked_vector_at(i)?.is_writable());
+        assert!(!vector.children().unwrap().get_untyped_vector_at(i)?.is_writable());
     }
 
     Ok(())
@@ -1856,9 +1856,9 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         assert_eq!(structs.get(0)?.unwrap().get::<i32>("key")?, Some(&7));
         array.set_size(3000)?;
         structs.set_size(3000)?;
-        // Writes take fresh child wrappers, so check the cached child views directly.
-        assert_eq!(array.children().unwrap().get_unchecked_vector_at(0)?.len(), 3000);
-        assert_eq!(structs.children().unwrap().get_unchecked_vector_at(0)?.len(), 3000);
+        // Growing the parents evicted the cached child views, so fresh views see the new size.
+        assert_eq!(array.children().unwrap().get_untyped_vector_at(0)?.len(), 3000);
+        assert_eq!(structs.children().unwrap().get_untyped_vector_at(0)?.len(), 3000);
         array.write(2999, Some(vec![Some(4)]))?;
         structs.write(
             2999,
@@ -1886,7 +1886,7 @@ fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
     lists.write(0, Some(vec![Some(vec![Some(0)])]))?;
     lists.write(1, Some(vec![Some(vec![Some(1)])]))?;
     // The cache keeps the writer's wrapper rather than a fresh shared view.
-    assert!(lists.children().unwrap().get_unchecked_vector_at(0)?.is_writable());
+    assert!(lists.children().unwrap().get_untyped_vector_at(0)?.is_writable());
 
     // Grow both child levels past their initial capacity while the wrappers are reused.
     for row in 2..3000 {

@@ -295,7 +295,7 @@ mod tests {
         let mut logical_types = Vec::with_capacity(input.col_count());
 
         for i in 0..input.col_count() {
-            logical_types.push(input.get_unchecked_vector_at(i)?.logical_type().clone());
+            logical_types.push(input.get_untyped_vector_at(i)?.logical_type().clone());
         }
 
         let mut result = result;

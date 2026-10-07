@@ -176,7 +176,9 @@ impl WritableVectorElement for Struct {
 
         vector.set_row_validity(index, true)?;
         let vector_len = vector.len();
-        let children = vector.children_mut().expect("validated nested vector has children");
+        let children = vector
+            .children_collection_mut()
+            .expect("validated nested vector has children");
         for (i, field) in value.fields.into_iter().enumerate() {
             let child = children.cached_mut::<Unknown>(i)?;
             if child.len() != vector_len {

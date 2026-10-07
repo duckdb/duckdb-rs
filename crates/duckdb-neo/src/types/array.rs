@@ -94,7 +94,7 @@ impl<T: VectorElement> VectorElement for Array<T> {
                 message: "Array vector must have exactly one child".to_string(),
             });
         };
-        children.get_unchecked_vector_at(0)?.validate_as::<T>()
+        children.get_untyped_vector_at(0)?.validate_as::<T>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -138,7 +138,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
             message: "Array child length overflow".to_string(),
         })?;
         let child = vector
-            .children_mut()
+            .children_collection_mut()
             .expect("validated nested vector has children")
             .cached_mut::<T>(0)?;
         if child.len() != child_len {

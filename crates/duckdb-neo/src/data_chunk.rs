@@ -188,12 +188,21 @@ impl VectorCollection {
         self.complete.set(false);
     }
 
+    fn check_index(&self, index: usize) {
+        assert!(
+            index < self.col_count(),
+            "vector index {index} is out of range for {} vectors",
+            self.col_count()
+        );
+    }
+
     /// Return a read-only view of the vector at `index` without a logical type.
     ///
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_unchecked_vector_at(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
+    pub fn get_untyped_vector_at(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
+        self.check_index(index);
         self.cached(index)
     }
 
@@ -202,7 +211,8 @@ impl VectorCollection {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_unchecked_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
+    pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
+        self.check_index(index);
         self.evict(index);
         Vector::from_handle(&self.handles[index], self.access)
     }
@@ -216,7 +226,7 @@ impl VectorCollection {
     ///
     /// Panics if `index` is out of range.
     pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
-        self.cached(index)?.cast_ref::<T>()
+        self.get_untyped_vector_at(index)?.cast_ref::<T>()
     }
 
     /// Return the vector at `index`, narrowed to `T`, borrowed mutably.
@@ -228,7 +238,7 @@ impl VectorCollection {
     ///
     /// Panics if `index` is out of range.
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.get_unchecked_vector_at_mut(index)?.cast::<T>()
+        self.get_untyped_vector_at_mut(index)?.cast::<T>()
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
@@ -239,6 +249,9 @@ impl VectorCollection {
     ///
     /// Panics if an index is out of range.
     pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
+        for index in indices {
+            self.check_index(index);
+        }
         check_distinct(&indices)?;
         for index in indices {
             self.evict(index);
@@ -282,11 +295,48 @@ impl VectorCollection {
         let chunk = DataChunk::create(&logical_types, self.access == Access::Writable)?;
 
         for (i, handle) in self.handles.iter().enumerate() {
-            let chunk_handle = chunk.get_vector_handle_at(i)?;
+            let chunk_handle = chunk.get_vector_handle_at(i);
 
             check_api_call!(ffi::duckdb_v2_vector_reference, chunk_handle, *handle)?;
         }
         Ok(chunk)
+    }
+}
+
+/// The child vectors of a [`Vector`], borrowed mutably from it.
+///
+/// Readers trust the children validated when the parent was cast, so this
+/// never hands out `&mut VectorCollection`, which could be swapped with another
+/// vector's children. Read-only access goes through [`Deref`].
+pub struct ChildrenMut<'a>(pub(crate) &'a mut VectorCollection);
+
+impl Deref for ChildrenMut<'_> {
+    type Target = VectorCollection;
+
+    fn deref(&self) -> &VectorCollection {
+        self.0
+    }
+}
+
+impl ChildrenMut<'_> {
+    /// See [`VectorCollection::get_untyped_vector_at_mut`].
+    pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
+        self.0.get_untyped_vector_at_mut(index)
+    }
+
+    /// See [`VectorCollection::get_vector_at_mut`].
+    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
+        self.0.get_vector_at_mut(index)
+    }
+
+    /// See [`VectorCollection::get_vector_array_mut`].
+    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
+        self.0.get_vector_array_mut(indices)
+    }
+
+    /// See [`VectorCollection::to_data_chunk`].
+    pub fn to_data_chunk(&mut self) -> Result<DataChunk<'_>> {
+        self.0.to_data_chunk()
     }
 }
 
@@ -407,24 +457,10 @@ impl<'a> DataChunkRef<'a> {
         Ok(self.vectors.col_count())
     }
 
-    fn check_index(&self, index: usize) -> Result<()> {
-        if index < self.vectors.col_count() {
-            Ok(())
-        } else {
-            Err(crate::error::Error {
-                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!(
-                    "vector index {index} is out of range for a chunk with {} vectors",
-                    self.vectors.col_count()
-                ),
-            })
-        }
-    }
-
     /// Return a read-only view of the vector at `index`, narrowed to `T`.
     ///
-    /// An out-of-range index or a logical type incompatible with `T` returns an
-    /// error. The view is cached until the vector is borrowed mutably. Use
+    /// A logical type incompatible with `T` returns an error. The view is
+    /// cached until the vector is borrowed mutably. Use
     /// [`Self::get_vector_at_mut`] to write or flatten the vector:
     ///
     /// ```compile_fail,E0596
@@ -437,17 +473,19 @@ impl<'a> DataChunkRef<'a> {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of range.
     pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
-        self.check_index(index)?;
         self.vectors.get_vector_at(index)
     }
 
     /// Return the vector at `index`, narrowed to `T`, borrowed mutably.
     ///
     /// The exclusive borrow allows reshaping the vector, e.g. with
-    /// [`Vector::flatten`], and writing to it when the chunk is writable. An
-    /// out-of-range index or a logical type incompatible with `T` returns an
-    /// error.
+    /// [`Vector::flatten`], and writing to it when the chunk is writable. A
+    /// logical type incompatible with `T` returns an error.
     ///
     /// The borrow rules out other views of the chunk while the vector is alive:
     ///
@@ -464,25 +502,28 @@ impl<'a> DataChunkRef<'a> {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of range.
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.check_index(index)?;
         self.vectors.get_vector_at_mut(index)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
     ///
-    /// Duplicate or out-of-range indices return an error. Narrow each vector
-    /// with [`Vector::cast`].
+    /// Duplicate indices return an error. Narrow each vector with [`Vector::cast`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if an index is out of range.
     pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
-        for index in indices {
-            self.check_index(index)?;
-        }
         self.vectors.get_vector_array_mut(indices)
     }
 
-    pub(crate) fn get_vector_handle_at(&self, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
-        self.check_index(index)?;
-        Ok(self.vectors.handles[index])
+    pub(crate) fn get_vector_handle_at(&self, index: usize) -> ffi::duckdb_v2_vector_handle {
+        self.vectors.check_index(index);
+        self.vectors.handles[index]
     }
 
     /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
@@ -684,7 +725,6 @@ mod tests {
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?, i64::logical_type(&conn)?], true)?;
         assert!(chunk.get_vector_array_mut([0, 0]).is_err());
-        assert!(chunk.get_vector_array_mut([0, 2]).is_err());
         let [_, sequence] = chunk.get_vector_array_mut([0, 1])?;
         sequence.cast::<i64>()?.make_sequence(0, 1, 4)?;
 
@@ -694,6 +734,18 @@ mod tests {
         assert!(std::ptr::eq(shared, chunk.get_vector_at::<i64>(1)?));
         chunk.get_vector_at_mut::<i64>(1)?.flatten()?;
         assert_eq!(chunk.get_vector_at::<i64>(1)?.get(3)?, Some(&3));
+        Ok(())
+    }
+
+    #[test]
+    fn test_vector_index_out_of_range_panics() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?], true)?;
+        let panics = |f: &mut dyn FnMut()| std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err();
+        assert!(panics(&mut || drop(chunk.get_vector_at::<i64>(1))));
+        assert!(panics(&mut || drop(chunk.get_vector_at_mut::<i64>(1))));
+        assert!(panics(&mut || drop(chunk.get_vector_array_mut([0, 1]))));
         Ok(())
     }
 

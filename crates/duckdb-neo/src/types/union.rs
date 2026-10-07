@@ -79,7 +79,7 @@ impl VectorElement for Union {
                 message: "Union vector is missing its tag child".to_string(),
             });
         };
-        children.get_unchecked_vector_at(0)?.validate_as::<u8>()
+        children.get_untyped_vector_at(0)?.validate_as::<u8>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -172,7 +172,9 @@ impl WritableVectorElement for Union {
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             vector.set_row_validity(index, false)?;
-            let children = vector.children_mut().expect("validated nested vector has children");
+            let children = vector
+                .children_collection_mut()
+                .expect("validated nested vector has children");
             children.cached_mut::<u8>(0)?.set_row_validity(index, false)?;
             for i in 1..children.col_count() {
                 children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
@@ -195,7 +197,9 @@ impl WritableVectorElement for Union {
         }
 
         vector.set_row_validity(index, true)?;
-        let children = vector.children_mut().expect("validated nested vector has children");
+        let children = vector
+            .children_collection_mut()
+            .expect("validated nested vector has children");
         children.cached_mut::<u8>(0)?.write(index, Some(value.tag))?;
         for i in 1..children.col_count() {
             children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
