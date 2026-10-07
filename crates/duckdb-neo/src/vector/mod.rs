@@ -42,11 +42,34 @@ use crate::{
     error::{DuckDBError, Error},
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
+    types::DecimalSignature,
     value::Value,
 };
 
 mod element;
 pub use element::*;
+
+/// Logical-type parameters read once per vector, so row access skips the FFI lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeParams {
+    None,
+    Array { size: usize },
+    Decimal(DecimalSignature),
+}
+
+impl TypeParams {
+    fn read(logical_type: &LogicalType) -> Result<Self> {
+        Ok(match logical_type.type_id() {
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
+                size: crate::types::array::array_size(logical_type)?,
+            },
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL => {
+                Self::Decimal(DecimalSignature::from_logical_type(logical_type)?)
+            }
+            _ => Self::None,
+        })
+    }
+}
 
 /// Runtime view of a vector's storage kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,8 +277,7 @@ pub struct Vector<'chunk, T: VectorElement> {
     pub(crate) writable: bool,
     heap: Option<ffi::duckdb_v2_arena_handle>,
     pub(crate) children: Vec<Vector<'chunk, Unknown>>,
-    /// Elements per row of an `ARRAY` vector, read once from its type; 0 otherwise.
-    pub(crate) array_size: usize,
+    pub(crate) params: TypeParams,
     _chunk: PhantomData<&'chunk ()>,
     _type: PhantomData<T>,
 }
@@ -278,11 +300,7 @@ impl<'chunk> Vector<'chunk, Unknown> {
         let logical_type = LogicalType {
             handle: logical_type_handle,
         };
-        let array_size = if logical_type.type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
-            crate::types::array::array_size(&logical_type)?
-        } else {
-            0
-        };
+        let params = TypeParams::read(&logical_type)?;
 
         let mut children = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
@@ -299,7 +317,7 @@ impl<'chunk> Vector<'chunk, Unknown> {
             writable,
             heap: None,
             children,
-            array_size,
+            params,
             _chunk: PhantomData,
             _type: PhantomData,
         })
@@ -354,9 +372,25 @@ impl<'chunk, T: VectorElement> Vector<'chunk, T> {
             writable: self.writable,
             heap: self.heap,
             children: self.children,
-            array_size: self.array_size,
+            params: self.params,
             _chunk: self._chunk,
             _type: PhantomData,
+        }
+    }
+
+    /// Elements per row of an `ARRAY` vector; 0 otherwise.
+    pub(crate) fn array_size(&self) -> usize {
+        match self.params {
+            TypeParams::Array { size } => size,
+            _ => 0,
+        }
+    }
+
+    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
+    pub fn decimal_signature(&self) -> Option<DecimalSignature> {
+        match self.params {
+            TypeParams::Decimal(signature) => Some(signature),
+            _ => None,
         }
     }
 

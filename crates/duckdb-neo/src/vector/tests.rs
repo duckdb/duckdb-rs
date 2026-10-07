@@ -931,7 +931,7 @@ pub fn vector_value_types() -> crate::Result<()> {
 
     let mut result = conn.query(
         "SELECT $1",
-        Parameters::positional(&[&DecimalValue::from_primitive(-123_456i64, 18, 3)]),
+        Parameters::positional(&[&DecimalValue::new(-123_456i64, 18, 3)]),
     )?;
     let chunk = result.next().unwrap()?;
     let vector = chunk.get_vector_at::<LongDecimal>(0)?;
@@ -1787,26 +1787,4 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     assert_eq!(row.get(&3)?, Some(&30));
 
     Ok(())
-}
-
-#[test]
-#[cfg(feature = "rust_decimal")]
-fn test_vector_decimal() -> crate::Result<()> {
-    let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
-
-    let result = conn.query("SELECT CAST('123.45' AS DECIMAL(5, 2));", Parameters::None)?;
-
-    for chunk in result {
-        let chunk = chunk?;
-        let vector = chunk.get_vector_at::<WordDecimal>(0)?;
-
-        if let Some(item) = vector.iter()?.next() {
-            let decimal = rust_decimal::Decimal::try_from(DecimalValue::from_primitive(*item.unwrap(), 5, 2)).unwrap();
-            assert_eq!(decimal, rust_decimal::Decimal::new(12345, 2));
-            return Ok(());
-        }
-    }
-    Err(Error::api_error("chunk not found"))
 }

@@ -99,8 +99,8 @@ impl<T: VectorElement> VectorElement for Array<T> {
         Self: Sized + 'a,
     {
         ArrayRef {
-            offset: physical * vector.array_size,
-            size: vector.array_size,
+            offset: physical * vector.array_size(),
+            size: vector.array_size(),
             _length: vector.children[0].len(),
             child: &vector.children[0],
             _marker: PhantomData,
@@ -115,7 +115,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         T: 'a;
 
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        let array_size = vector.array_size;
+        let array_size = vector.array_size();
 
         if let Some(values) = &value
             && values.len() != array_size

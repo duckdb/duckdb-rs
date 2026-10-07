@@ -287,7 +287,7 @@ fn test_raw_value_getters() -> crate::Result<()> {
     };
     assert_eq!(interval.value(&conn)?.get::<IntervalValue>()?, Some(interval));
 
-    let decimal = DecimalValue::from_primitive(-123_456i64, 18, 3).value(&conn)?;
+    let decimal = DecimalValue::new(-123_456i64, 18, 3).value(&conn)?;
     assert_eq!(
         decimal.get::<DecimalValue>()?,
         Some(DecimalValue {
@@ -418,7 +418,7 @@ fn test_complex_values() -> crate::Result<()> {
 
     assert_eq!("hello".value(&conn)?.dbg_string()?, "hello");
 
-    let decimal = DecimalValue::from_primitive(1234i32, 9, 2).value(&conn)?;
+    let decimal = DecimalValue::new(1234i32, 9, 2).value(&conn)?;
     assert_eq!(decimal.dbg_string()?, "12.34");
 
     let bignum = BigNumValue {

@@ -44,7 +44,8 @@ pub use self::uuid::UuidValueRaw;
 pub use array::Array;
 pub use bignum::{BigNum, BigNumValue};
 pub use decimal::{
-    DecimalContainer, DecimalSignature, DecimalValue, HugeDecimal, LongDecimal, ShortDecimal, WordDecimal,
+    Decimal, DecimalContainer, DecimalSignature, DecimalValue, DecimalWidth, HugeDecimal, LongDecimal,
+    MAX_DECIMAL_WIDTH, ShortDecimal, Width, WordDecimal,
 };
 pub use list::List;
 pub use map::{Map, MapValue};
@@ -58,6 +59,8 @@ pub use temporal::{
 pub use union::{Union, UnionSchema, UnionValue};
 pub use variant::{Variant, VariantValue};
 
+#[cfg(feature = "rust_decimal")]
+pub mod rust_decimal;
 /// Constructs the DuckDB logical type represented by a Rust type.
 pub trait DuckDBType {
     /// Return the DuckDB logical type represented by this Rust type.

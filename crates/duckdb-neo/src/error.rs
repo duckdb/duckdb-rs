@@ -75,6 +75,14 @@ impl Error {
             message: message.into(),
         }
     }
+
+    /// Crate an Invalid input error with a human-readable message.
+    pub fn invalid_input(message: impl Into<String>) -> Error {
+        Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+            message: message.into(),
+        }
+    }
 }
 
 impl std::error::Error for Error {}
