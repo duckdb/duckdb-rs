@@ -220,7 +220,9 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
             RET
         )?;
 
-        Ok(did_produce_chunk.then(|| DataChunkRef::new(**self.chunk, false)))
+        did_produce_chunk
+            .then(|| DataChunkRef::new(**self.chunk, false))
+            .transpose()
     }
 
     /// Return the collection being scanned.

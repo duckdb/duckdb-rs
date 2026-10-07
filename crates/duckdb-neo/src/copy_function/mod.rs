@@ -563,7 +563,7 @@ unsafe extern "C" fn exec_from_callback<T: CopyFromFunctionCallbacks>(
             let output_chunk = DataChunkRef::new(
                 check_api_call!(ffi::duckdb_v2_copy_from_exec_get_output_chunk, info, RET)?,
                 true,
-            );
+            )?;
 
             T::exec(
                 user_data,

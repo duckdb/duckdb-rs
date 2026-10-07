@@ -6,6 +6,7 @@ use super::{DuckDBType, ToValue};
 use crate::{
     Result,
     connection::FFILink,
+    data_chunk::VectorCollection,
     error::{DuckDBError, Error},
     logical_type::{LogicalType, LogicalTypeID},
     parameter::{Parameters, QueryParameter},
@@ -112,7 +113,7 @@ impl VectorElement for Struct {
         Self: Sized + 'a,
     {
         StructRow {
-            children: &vector.children,
+            children: vector.children().expect("validated nested vector has children"),
             logical_type: vector.logical_type(),
             logical,
         }
@@ -162,23 +163,26 @@ impl WritableVectorElement for Struct {
         let Some(value) = value else {
             return vector.set_row_validity(index, false);
         };
-        if value.fields.len() != vector.children.len() {
+        if value.fields.len() != vector.children().map_or(0, VectorCollection::col_count) {
             return Err(Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
                 message: format!(
                     "Struct row has {} fields, expected {}",
                     value.fields.len(),
-                    vector.children.len()
+                    vector.children().map_or(0, VectorCollection::col_count)
                 ),
             });
         }
 
         vector.set_row_validity(index, true)?;
-        for (field, child) in value.fields.into_iter().zip(&mut vector.children) {
-            if child.len() != vector.len {
-                child.set_size(vector.len)?;
+        let vector_len = vector.len();
+        let children = vector.children_mut().expect("validated nested vector has children");
+        for (i, field) in value.fields.into_iter().enumerate() {
+            let mut child = children.get_unchecked_vector_at_mut(i)?;
+            if child.len() != vector_len {
+                child.set_size(vector_len)?;
             }
-            field.write(child, index)?;
+            field.write(&mut child, index)?;
         }
         Ok(())
     }
@@ -186,7 +190,7 @@ impl WritableVectorElement for Struct {
 
 /// A borrowed struct row that resolves named fields to child vectors.
 pub struct StructRow<'a> {
-    children: &'a [Vector<'a, Unknown>],
+    children: &'a VectorCollection,
     logical_type: &'a LogicalType,
     logical: usize,
 }
@@ -204,10 +208,12 @@ impl<'a> StructRow<'a> {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
                 message: format!("Field '{}' not found in struct", name),
             })?;
-        let child = self.children.get(index).ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("Struct field '{}' is missing its child vector", name),
-        })?;
+        let child = (index < self.children.col_count())
+            .then(|| self.children.cached_unchecked(index))
+            .ok_or_else(|| Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: format!("Struct field '{}' is missing its child vector", name),
+            })?;
 
         if child.logical_type().type_id() != T::TYPE_ID {
             return Err(Error {

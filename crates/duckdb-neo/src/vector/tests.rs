@@ -117,7 +117,10 @@ scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
 
     let mut output = output;
     output.set_size(rows.len())?;
-    output.children.iter_mut().for_each(|v| v.set_size(rows.len()).unwrap());
+    let children = output.children_mut().unwrap();
+    for i in 0..children.col_count() {
+        children.get_unchecked_vector_at_mut(i)?.set_size(rows.len())?;
+    }
 
     for (index, (key, value)) in rows.iter().enumerate() {
         match *key {
@@ -172,7 +175,7 @@ scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
 });
 
 scalar_callback!(SequenceScalar, i32, |input, result, _ctx, _user_data| {
-    let input_len = input.row_count();
+    let input_len = input.row_count()?;
 
     let mut result = result;
     result.make_sequence(42, 10, input_len)?;
@@ -902,7 +905,6 @@ pub fn vector_value_types() -> crate::Result<()> {
             let chunk = result.next().unwrap()?;
             let vector = chunk.get_vector_at::<$type>(0)?;
             assert_eq!(vector.get(0)?, Some(&input));
-            drop(vector);
             drop(chunk);
             drop(result);
         }};
@@ -935,7 +937,6 @@ pub fn vector_value_types() -> crate::Result<()> {
     let chunk = result.next().unwrap()?;
     let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
     assert_eq!(vector.get(0)?, Some(&-123_456));
-    drop(vector);
     drop(chunk);
     drop(result);
 
@@ -944,7 +945,6 @@ pub fn vector_value_types() -> crate::Result<()> {
     let chunk = result.next().unwrap()?;
     let vector = chunk.get_vector_at::<BlobValue>(0)?;
     assert_eq!(vector.get(0)?, Some(blob.0.as_slice()));
-    drop(vector);
     drop(chunk);
     drop(result);
 
@@ -953,7 +953,6 @@ pub fn vector_value_types() -> crate::Result<()> {
     let chunk = result.next().unwrap()?;
     let vector = chunk.get_vector_at::<BitValue>(0)?;
     assert_eq!(vector.get(0)?, Some(bit.0.as_slice()));
-    drop(vector);
     drop(chunk);
     drop(result);
 
@@ -1062,7 +1061,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
     vector.set_size(2)?;
     vector.write(1, None)?;
-    assert_eq!(vector.children[0].len(), 6);
+    assert_eq!(vector.children().unwrap().get_unchecked_vector_at(0)?.len(), 6);
     assert!(vector.write(0, Some(vec![Some(1), Some(2)])).is_err());
     vector.write(0, Some(vec![Some(1), None, Some(3)]))?;
     assert_eq!(
@@ -1218,7 +1217,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     scalar_callback!(ToVariant, Variant, |input, output, ctx, _user_data| {
         let mut output = output;
 
-        output.set_size(input.row_count() * input.col_count())?;
+        output.set_size(input.row_count()? * input.col_count())?;
 
         let mut idx = 0;
 
@@ -1289,7 +1288,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         let item = item?;
 
         for vector in item.vectors()? {
-            let vector = vector.cast::<Variant>()?;
+            let vector = vector.cast_ref::<Variant>()?;
             for row in vector.iter()? {
                 match row {
                     None => {
@@ -1314,7 +1313,7 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
 
     // SAFETY: DuckDB keeps the callback input alive while consuming the
     // referenced output, and neither vector is accessed concurrently here.
-    let referenced = unsafe { output.copy_from(&input)? };
+    let referenced = unsafe { output.copy_from(input)? };
     // Writes would land in DuckDB's read-only input, so the reference is read-only too.
     assert!(!referenced.is_writable());
 
@@ -1348,7 +1347,7 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
         let item = item?;
 
         for vector in item.vectors()? {
-            let vector = vector.cast::<String>()?;
+            let vector = vector.cast_ref::<String>()?;
             for row in vector.iter()? {
                 match row {
                     None => {
@@ -1571,7 +1570,9 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
         .collect();
     assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
     assert!(!vector.is_writable());
-    assert!(vector.children().iter().all(|child| !child.is_writable()));
+    for i in 0..vector.children().unwrap().col_count() {
+        assert!(!vector.children().unwrap().get_unchecked_vector_at(i)?.is_writable());
+    }
 
     Ok(())
 }
@@ -1785,6 +1786,83 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     let row = rows.next().unwrap().unwrap();
     assert_eq!(row.keys()?, vec![&3]);
     assert_eq!(row.get(&3)?, Some(&30));
+
+    Ok(())
+}
+
+#[test]
+fn test_children_access_follows_parent() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let mut chunk = DataChunk::create(&[Vec::<Option<i64>>::logical_type(&conn)?], true)?;
+    {
+        let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
+        list.set_size(1)?;
+        list.children_mut()
+            .unwrap()
+            .get_vector_at_mut::<i64>(0)?
+            .make_sequence(0, 1, 4)?;
+        list.write_raw::<List<i64>>(
+            0,
+            Some(List {
+                offset: 0,
+                length: 4,
+                _marker: std::marker::PhantomData,
+            }),
+        )?;
+    }
+
+    // Children of a read-only parent stay read-only.
+    let mut read_only = DataChunk::create(&[Vec::<Option<i64>>::logical_type(&conn)?], false)?;
+    let mut parent = read_only.get_vector_at_mut::<List<i64>>(0)?;
+    let mut child = parent.children_mut().unwrap().get_vector_at_mut::<i64>(0)?;
+    assert!(!child.is_writable());
+    assert!(child.set_size(1).is_err());
+    drop(child);
+    drop(parent);
+
+    let shared = chunk.get_vector_at::<List<i64>>(0)?;
+    assert_eq!(
+        shared.children().unwrap().get_unchecked_vector_at(0)?.storage_kind(),
+        StorageKind::Other
+    );
+
+    let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
+    list.children_mut().unwrap().get_vector_at_mut::<i64>(0)?.flatten()?;
+    // The read cache is rebuilt after `children_mut`, so rows see the flattened child.
+    let row = list.get(0)?.unwrap();
+    assert_eq!(
+        row.iter().map(|v| v.copied()).collect::<Vec<_>>(),
+        [Some(0), Some(1), Some(2), Some(3)]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_children_are_optional_and_row_count_is_live() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let mut chunk = DataChunk::create(
+        &[i32::logical_type(&conn)?, Vec::<Option<i32>>::logical_type(&conn)?],
+        true,
+    )?;
+
+    assert!(chunk.get_vector_at::<i32>(0)?.children().is_none());
+    assert!(chunk.get_vector_at_mut::<i32>(0)?.children_mut().is_none());
+
+    let mut list = chunk.get_vector_at_mut::<List<i32>>(1)?;
+    assert_eq!(list.children().unwrap().row_count()?, 0);
+    // Writing past the end must not append to the child.
+    assert!(list.write(0, Some(vec![Some(1), Some(2), Some(3)])).is_err());
+    assert_eq!(list.children().unwrap().row_count()?, 0);
+    list.set_size(1)?;
+    list.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
+    // The child grew through a separate wrapper; the count is read again, not cached.
+    assert_eq!(list.children().unwrap().row_count()?, 3);
 
     Ok(())
 }

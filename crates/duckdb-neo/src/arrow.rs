@@ -268,7 +268,7 @@ impl<'ctx> ArrowImporter<'ctx> {
         if handle.is_null() {
             Ok(None)
         } else {
-            Ok(Some(DataChunk::new(handle, false)))
+            Ok(Some(DataChunk::new(handle, false)?))
         }
     }
 }

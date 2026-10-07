@@ -6,6 +6,7 @@ use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
     connection::FFILink,
+    data_chunk::VectorCollection,
     error::{DuckDBError, Error},
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
@@ -82,27 +83,33 @@ impl<T: VectorElement> VectorElement for Array<T> {
 
     type Internal = Array<T>;
 
-    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }
 
-        let child = children.first().ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "Array vector is missing its child vector".to_string(),
-        })?;
-        child.validate_as::<T>()
+        let Some(children) = children.filter(|children| children.col_count() == 1) else {
+            return Err(Error {
+                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                message: "Array vector must have exactly one child".to_string(),
+            });
+        };
+        children.get_unchecked_vector_at(0)?.validate_as::<T>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
+        let child = vector
+            .children()
+            .expect("validated nested vector has children")
+            .cached_unchecked(0);
         ArrayRef {
             offset: physical * vector.array_size,
             size: vector.array_size,
-            _length: vector.children[0].len(),
-            child: &vector.children[0],
+            _length: child.len(),
+            child,
             _marker: PhantomData,
         }
     }
@@ -130,7 +137,10 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
             code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
             message: "Array child length overflow".to_string(),
         })?;
-        let child = vector.children.first_mut().expect("validated array child");
+        let mut child = vector
+            .children_mut()
+            .expect("validated nested vector has children")
+            .get_vector_at_mut::<T>(0)?;
         if child.len() != child_len {
             child.set_size(child_len)?;
         }
@@ -144,7 +154,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
             message: "Array child offset overflow".to_string(),
         })?;
         for (child_index, value) in values.into_iter().enumerate() {
-            child.write_as::<T>(offset + child_index, value)?;
+            child.write(offset + child_index, value)?;
         }
         vector.set_row_validity(index, true)
     }

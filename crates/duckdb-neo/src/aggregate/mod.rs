@@ -20,7 +20,7 @@ use crate::{
     builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque_eq},
     check_api_call,
     connection::Context,
-    data_chunk::VectorCollection,
+    data_chunk::{RowCount, VectorCollection},
     enums::FunctionProperty,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     scalar::{FunctionBindHandles, ReturnTypeHandle},
@@ -223,20 +223,16 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
             let row_count =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_row_count, info, RET)? as usize;
 
-            let mut vector_collection = VectorCollection {
-                handles: Vec::with_capacity(arg_count),
-                is_writable: false,
-                row_count,
-            };
-
+            let mut handles = Vec::with_capacity(arg_count);
             for i in 0..arg_count {
-                vector_collection.handles.push(check_api_call!(
+                handles.push(check_api_call!(
                     ffi::duckdb_v2_aggregate_function_update_get_arg,
                     info,
                     i as u32,
                     RET
                 )?);
             }
+            let mut vector_collection = VectorCollection::new(handles, Access::Exclusive, RowCount::Fixed(row_count));
 
             let states_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_states, info, RET)?;
 

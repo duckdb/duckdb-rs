@@ -1,5 +1,6 @@
 //! Columnar batches exchanged with DuckDB.
 
+use std::cell::{Cell, OnceCell};
 use std::ops::Deref;
 
 use crate::connection::{Connection, Context};
@@ -40,40 +41,118 @@ trait DataChunkLink {
 impl DataChunkLink for Connection {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
         let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, **self, **chunk, RET)?;
-        Ok(DataChunk::new(handle, true).keep_alive(self))
+        Ok(DataChunk::new(handle, true)?.keep_alive(self))
     }
 }
 
 impl DataChunkLink for Context {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
-        Ok(DataChunk::new(
+        DataChunk::new(
             check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_context, **self, **chunk, RET)?,
             true,
-        ))
+        )
     }
 }
 
-/// Read-only input vectors and their row count for scalar and aggregate callbacks.
+/// Input vectors and their row count for scalar and aggregate callbacks, and
+/// the child vectors of nested vectors.
 ///
-/// Vectors follow argument order and borrow DuckDB's data for the duration of
-/// the callback.
+/// Vectors follow argument (or child) order and borrow DuckDB's data for the
+/// duration of the callback. Shared views are cached, so repeated
+/// [`Self::get_vector_at`] calls are cheap; mutable access drops the cached view.
 pub struct VectorCollection {
     pub(crate) handles: Vec<ffi::duckdb_v2_vector_handle>,
-    pub(crate) is_writable: bool,
-    pub(crate) row_count: usize,
+    pub(crate) access: Access,
+    rows: RowCount,
+    /// `'static` because the collection has no lifetime; views are only handed out as `&Vector<'_, _>`.
+    cache: Vec<OnceCell<Vector<'static, Unknown>>>,
+    /// Whether every view, including nested children, is cached.
+    complete: Cell<bool>,
+}
+
+/// Where a [`VectorCollection`] reads its row count from.
+pub(crate) enum RowCount {
+    /// A callback batch size; inputs are not writable, so it cannot change.
+    Fixed(usize),
+    /// The current size of a data chunk.
+    Chunk(ffi::duckdb_v2_data_chunk_handle),
+    /// The current size of the first vector, or 0 without vectors.
+    FirstVector,
 }
 
 impl VectorCollection {
-    fn mut_access(&self) -> Access {
-        if self.is_writable {
-            Access::Writable
-        } else {
-            Access::Exclusive
+    pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
+        let cache = handles.iter().map(|_| OnceCell::new()).collect();
+        Self {
+            handles,
+            access,
+            rows,
+            cache,
+            complete: Cell::new(false),
         }
     }
 
-    pub fn get_unchecked_vector_at(&self, index: usize) -> Result<Vector<'_, Unknown>> {
-        Vector::from_handle(&self.handles[index], Access::Shared)
+    fn cached(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
+        let slot = &self.cache[index];
+        if let Some(vector) = slot.get() {
+            return Ok(vector);
+        }
+        let _ = slot.set(Vector::from_handle(&self.handles[index], Access::Shared)?);
+        Ok(slot.get().expect("view was just cached"))
+    }
+
+    /// Cache every view, recursively, so nested row types can borrow them infallibly.
+    pub(crate) fn cache_all(&self) -> Result<()> {
+        if self.complete.get() {
+            return Ok(());
+        }
+        for index in 0..self.handles.len() {
+            if let Some(children) = self.cached(index)?.children() {
+                children.cache_all()?;
+            }
+        }
+        self.complete.set(true);
+        Ok(())
+    }
+
+    /// Borrow a view cached by [`Self::cache_all`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the view is not cached.
+    pub(crate) fn cached_unchecked(&self, index: usize) -> &Vector<'_, Unknown> {
+        self.cache[index].get().expect("vector views are cached before reads")
+    }
+
+    /// Drop the cached view of `index`, which a mutable wrapper may reshape.
+    fn evict(&mut self, index: usize) {
+        self.cache[index].take();
+        self.complete.set(false);
+    }
+
+    /// Drop every cached view after an operation that may have changed the vectors.
+    pub(crate) fn evict_all(&mut self) {
+        self.cache.iter_mut().for_each(|slot| drop(slot.take()));
+        self.complete.set(false);
+    }
+
+    /// Return a read-only view of the vector at `index` without a logical type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of range.
+    pub fn get_unchecked_vector_at(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
+        self.cached(index)
+    }
+
+    /// Return the vector at `index` without a logical type, borrowed mutably.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of range.
+    pub fn get_unchecked_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
+        self.evict(index);
+        Vector::from_handle(&self.handles[index], self.access)
     }
 
     /// Return a read-only view of the vector at `index`, narrowed to `T`.
@@ -84,22 +163,24 @@ impl VectorCollection {
     /// # Panics
     ///
     /// Panics if `index` is out of range.
-    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<Vector<'_, T>> {
-        Vector::from_handle(&self.handles[index], Access::Shared)?.cast::<T>()
+    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
+        self.cached(index)?.cast_ref::<T>()
     }
 
     /// Return the vector at `index`, narrowed to `T`, borrowed mutably.
+    ///
     /// The exclusive borrow allows reshaping the vector, e.g. with
-    /// [`Vector::flatten`]. Writing requires writable input.
+    /// [`Vector::flatten`]. Writing requires writable vectors.
     ///
     /// # Panics
     ///
     /// Panics if `index` is out of range.
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        Vector::from_handle(&self.handles[index], self.mut_access())?.cast::<T>()
+        self.get_unchecked_vector_at_mut(index)?.cast::<T>()
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
+    ///
     /// Duplicate indices return an error. Narrow each vector with [`Vector::cast`].
     ///
     /// # Panics
@@ -107,8 +188,10 @@ impl VectorCollection {
     /// Panics if an index is out of range.
     pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
         check_distinct(&indices)?;
-        let access = self.mut_access();
-        collect_array(indices.map(|index| Vector::from_handle(&self.handles[index], access)))
+        for index in indices {
+            self.evict(index);
+        }
+        collect_array(indices.map(|index| Vector::from_handle(&self.handles[index], self.access)))
     }
 
     /// Return the number of vectors, which is the column count.
@@ -116,9 +199,20 @@ impl VectorCollection {
         self.handles.len()
     }
 
-    /// Return the number of input rows in this callback batch.
-    pub fn row_count(&self) -> usize {
-        self.row_count
+    /// Return the number of rows, read from DuckDB on every call.
+    ///
+    /// This is the batch size for callback inputs, the chunk size for a
+    /// [`DataChunkRef`], and the first child's size for child vectors.
+    pub fn row_count(&self) -> Result<usize> {
+        let rows: ffi::idx_t = match self.rows {
+            RowCount::Fixed(rows) => return Ok(rows),
+            RowCount::Chunk(chunk) => check_api_call!(ffi::duckdb_v2_data_chunk_get_size, chunk, RET)?,
+            RowCount::FirstVector => match self.handles.first() {
+                Some(vector) => check_api_call!(ffi::duckdb_v2_vector_get_size, *vector, RET)?,
+                None => 0,
+            },
+        };
+        Ok(rows as usize)
     }
 
     /// Wrap the callback's input vectors in a [`DataChunk`] without copying.
@@ -128,13 +222,11 @@ impl VectorCollection {
     /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
     pub fn to_data_chunk(&self) -> crate::Result<DataChunk<'_>> {
         let mut logical_types = Vec::with_capacity(self.col_count());
-
-        for i in 0..self.col_count() {
-            let vector = Vector::from_handle(&self.handles[i], Access::Shared)?;
-            logical_types.push(vector.logical_type().clone());
+        for index in 0..self.col_count() {
+            logical_types.push(self.cached(index)?.logical_type().clone());
         }
 
-        let chunk = DataChunk::create(&logical_types, self.is_writable)?;
+        let chunk = DataChunk::create(&logical_types, self.access == Access::Writable)?;
 
         for (i, handle) in self.handles.iter().enumerate() {
             let chunk_handle = chunk.get_vector_handle_at(i)?;
@@ -150,11 +242,18 @@ impl VectorCollection {
 ///
 /// Provides vector access for both owned [`DataChunk`] values and borrowed
 /// callback chunks. Vectors borrowed from this view cannot outlive it.
-#[derive(Debug)]
 pub struct DataChunkRef<'a> {
     pub(crate) handle: ffi::duckdb_v2_data_chunk_handle,
-    is_writable: bool,
+    vectors: VectorCollection,
     _marker: std::marker::PhantomData<&'a ()>,
+}
+
+impl std::fmt::Debug for DataChunkRef<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataChunkRef")
+            .field("handle", &self.handle)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A columnar batch whose vectors share one row count.
@@ -207,47 +306,82 @@ impl Deref for DataChunkRef<'_> {
 }
 
 impl<'a> DataChunkRef<'a> {
-    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
-        Self {
-            handle,
-            is_writable,
-            _marker: std::marker::PhantomData,
+    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Result<Self> {
+        let count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_vector_count, handle, RET)?;
+        let mut handles = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            handles.push(check_api_call!(
+                ffi::duckdb_v2_data_chunk_get_vector,
+                handle,
+                index,
+                RET
+            )?);
         }
+        let access = if is_writable {
+            Access::Writable
+        } else {
+            Access::Exclusive
+        };
+
+        Ok(Self {
+            handle,
+            vectors: VectorCollection::new(handles, access, RowCount::Chunk(handle)),
+            _marker: std::marker::PhantomData,
+        })
     }
 
     /// Return the number of rows shared by the chunk's vectors.
     pub fn row_count(&self) -> Result<usize> {
-        let row_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_size, self.handle, RET)?;
-        Ok(row_count as usize)
+        self.vectors.row_count()
     }
 
     /// Return all vectors as logically untyped borrowed views.
     ///
-    /// Narrow a vector with [`Vector::cast`] before typed access.
-    pub fn vectors(&self) -> Result<Vec<Vector<'_, Unknown>>> {
-        let count = self.col_count()?;
-
-        let mut vectors = Vec::with_capacity(count);
-        for i in 0..count {
-            let vector: ffi::duckdb_v2_vector_handle =
-                check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, i as u64, RET)?;
-            vectors.push(Vector::from_handle(&vector, Access::Shared)?);
-        }
-        Ok(vectors)
+    /// Narrow a vector with [`Vector::cast_ref`] before typed access.
+    pub fn vectors(&self) -> Result<Vec<&Vector<'_, Unknown>>> {
+        (0..self.vectors.col_count())
+            .map(|index| self.vectors.get_unchecked_vector_at(index))
+            .collect()
     }
 
     /// Return the number of vectors, which is the column count.
     pub fn col_count(&self) -> Result<usize> {
-        let out_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_data_chunk_get_vector_count, self.handle, RET)?;
-        Ok(out_count as usize)
+        Ok(self.vectors.col_count())
+    }
+
+    fn check_index(&self, index: usize) -> Result<()> {
+        if index < self.vectors.col_count() {
+            Ok(())
+        } else {
+            Err(crate::error::Error {
+                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
+                message: format!(
+                    "vector index {index} is out of range for a chunk with {} vectors",
+                    self.vectors.col_count()
+                ),
+            })
+        }
     }
 
     /// Return a read-only view of the vector at `index`, narrowed to `T`.
     ///
     /// An out-of-range index or a logical type incompatible with `T` returns an
-    /// error. Use [`Self::get_vector_at_mut`] to write or flatten the vector.
-    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<Vector<'_, T>> {
-        Vector::from_handle(&self.get_vector_handle_at(index)?, Access::Shared)?.cast::<T>()
+    /// error. The view is cached until the vector is borrowed mutably. Use
+    /// [`Self::get_vector_at_mut`] to write or flatten the vector:
+    ///
+    /// ```compile_fail,E0596
+    /// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let env = Environment::new()?;
+    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    /// let chunk = DataChunk::create(&[i32::logical_type(&conn)?], true)?;
+    /// chunk.get_vector_at::<i32>(0)?.set_size(1)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_vector_at<T: VectorElement>(&self, index: usize) -> Result<&Vector<'_, T>> {
+        self.check_index(index)?;
+        self.vectors.get_vector_at(index)
     }
 
     /// Return the vector at `index`, narrowed to `T`, borrowed mutably.
@@ -273,7 +407,8 @@ impl<'a> DataChunkRef<'a> {
     /// # }
     /// ```
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        Vector::from_handle(&self.get_vector_handle_at(index)?, self.mut_access())?.cast::<T>()
+        self.check_index(index)?;
+        self.vectors.get_vector_at_mut(index)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
@@ -281,23 +416,15 @@ impl<'a> DataChunkRef<'a> {
     /// Duplicate or out-of-range indices return an error. Narrow each vector
     /// with [`Vector::cast`].
     pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
-        check_distinct(&indices)?;
-        let access = self.mut_access();
-        collect_array(indices.map(|index| Vector::from_handle(&self.get_vector_handle_at(index)?, access)))
-    }
-
-    fn mut_access(&self) -> Access {
-        if self.is_writable {
-            Access::Writable
-        } else {
-            Access::Exclusive
+        for index in indices {
+            self.check_index(index)?;
         }
+        self.vectors.get_vector_array_mut(indices)
     }
 
     pub(crate) fn get_vector_handle_at(&self, index: usize) -> Result<ffi::duckdb_v2_vector_handle> {
-        let vector: ffi::duckdb_v2_vector_handle =
-            check_api_call!(ffi::duckdb_v2_data_chunk_get_vector, self.handle, index as u64, RET)?;
-        Ok(vector)
+        self.check_index(index)?;
+        Ok(self.vectors.handles[index])
     }
 
     /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
@@ -323,11 +450,16 @@ pub enum Allocator<'a> {
 }
 
 impl<'a> DataChunk<'a> {
-    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Self {
-        Self {
-            chunk: DataChunkRef::new(handle, is_writable),
-            database: None,
-        }
+    pub(crate) fn new(handle: ffi::duckdb_v2_data_chunk_handle, is_writable: bool) -> Result<Self> {
+        let chunk = match DataChunkRef::new(handle, is_writable) {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                let mut handle = handle;
+                check_api_call_no_err!(ffi::duckdb_v2_data_chunk_destroy, &mut handle)?;
+                return Err(err);
+            }
+        };
+        Ok(Self { chunk, database: None })
     }
 
     fn keep_alive(mut self, link: &impl DatabaseKeepAlive) -> Self {
@@ -364,7 +496,7 @@ impl<'a> DataChunk<'a> {
                     len as u64,
                     RET
                 )?;
-                return Ok(DataChunk::new(handle, writable).keep_alive(conn));
+                return Ok(DataChunk::new(handle, writable)?.keep_alive(conn));
             }
             Allocator::Context(context) => check_api_call!(
                 ffi::duckdb_v2_data_chunk_create_with_context,
@@ -374,7 +506,7 @@ impl<'a> DataChunk<'a> {
                 RET
             )?,
         };
-        Ok(DataChunk::new(handle, writable))
+        DataChunk::new(handle, writable)
     }
 
     /// See [`DataChunkRef::get_vector_at_mut`].
@@ -414,6 +546,7 @@ mod tests {
     use crate::scalar::ScalarFunctionBuilder;
     use crate::signature::{Parameter, SignatureBuilder};
     use crate::types::DuckDBType;
+    use crate::vector::StorageKind;
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
@@ -445,13 +578,13 @@ mod tests {
             let input = input.get_vector_at::<i32>(0)?;
 
             unsafe {
-                vec.copy_from(&input)?;
+                vec.copy_from(input)?;
             };
             let copy = dc.copy(context)?;
             let vec = copy.get_vector_at::<i32>(0)?;
 
             unsafe {
-                result.copy_from(&vec)?;
+                result.copy_from(vec)?;
             }
 
             Ok(())
@@ -489,25 +622,23 @@ mod tests {
     }
 
     #[test]
-    fn test_shared_vectors_cannot_change_storage() -> crate::Result<()> {
+    fn test_shared_vectors_are_cached_until_mutable_access() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
-        let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?, i64::logical_type(&conn)?], true)?;
-        chunk.get_vector_at_mut::<i64>(1)?.make_sequence(0, 1, 4)?;
+        let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?], true)?;
+        chunk.get_vector_at_mut::<i64>(0)?.make_sequence(0, 1, 4)?;
 
-        let mut shared = chunk.get_vector_at::<i64>(0)?;
-        assert!(!shared.is_writable());
-        assert!(shared.set_size(1).is_err());
-        assert!(shared.write(0, Some(1)).is_err());
+        let first = chunk.get_vector_at::<i64>(0)?;
+        assert!(!first.is_writable());
+        assert_eq!(first.storage_kind(), StorageKind::Other);
+        assert!(std::ptr::eq(first, chunk.get_vector_at::<i64>(0)?));
 
-        let mut sequence = chunk.get_vector_at::<i64>(1)?;
-        assert!(sequence.flatten().is_err());
-        drop((shared, sequence));
-
-        let mut sequence = chunk.get_vector_at_mut::<i64>(1)?;
-        sequence.flatten()?;
-        assert_eq!(sequence.get(3)?, Some(&3));
+        // Mutable access drops the cached view, so later reads see the flattened storage.
+        chunk.get_vector_at_mut::<i64>(0)?.flatten()?;
+        let flat = chunk.get_vector_at::<i64>(0)?;
+        assert_eq!(flat.storage_kind(), StorageKind::Flat);
+        assert_eq!(flat.get(3)?, Some(&3));
 
         Ok(())
     }

@@ -39,6 +39,7 @@ use crate::{
     Result,
     bytes::DuckDBBytes,
     check_api_call,
+    data_chunk::{RowCount, VectorCollection},
     error::{DuckDBError, Error},
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
@@ -78,6 +79,8 @@ impl StorageKind {
 ///
 /// Maps logical row indices to physical positions, accounting for constant,
 /// dictionary, and selection-vector layouts.
+// `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
+#[repr(C)]
 pub struct VectorView<T> {
     view: ffi::duckdb_v2_vector_view,
     kind: StorageKind,
@@ -256,6 +259,8 @@ pub(crate) enum Access {
 ///
 /// Storage representation and writability are runtime properties. Casting only
 /// changes the logical element type and preserves the chunk lifetime.
+// `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
+#[repr(C)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) logical_type: LogicalType,
@@ -264,7 +269,8 @@ pub struct Vector<'a, T: VectorElement> {
     pub(crate) view: Option<VectorView<T>>,
     pub(crate) access: Access,
     heap: Option<ffi::duckdb_v2_arena_handle>,
-    pub(crate) children: Vec<Vector<'a, Unknown>>,
+    /// Child vectors of nested types; `None` for vectors without children.
+    children: Option<VectorCollection>,
     /// Elements per row of an `ARRAY` vector, read once from its type; 0 otherwise.
     pub(crate) array_size: usize,
     _chunk: PhantomData<&'a ()>,
@@ -282,8 +288,6 @@ impl<'a> Vector<'a, Unknown> {
 
         let len: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET)?;
 
-        let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
-
         let kind = StorageKind::from_ffi(vector_type);
         let view = Self::acquire_view(*handle, kind)?;
         let logical_type = LogicalType {
@@ -295,11 +299,13 @@ impl<'a> Vector<'a, Unknown> {
             0
         };
 
-        let mut children = Vec::with_capacity(child_count as usize);
+        let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
+        let mut child_handles = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
-            let child_handle = check_api_call!(ffi::duckdb_v2_vector_get_child, *handle, index, RET)?;
-            children.push(Self::from_handle(&child_handle, access)?);
+            child_handles.push(check_api_call!(ffi::duckdb_v2_vector_get_child, *handle, index, RET)?);
         }
+        let children =
+            (!child_handles.is_empty()).then(|| VectorCollection::new(child_handles, access, RowCount::FirstVector));
 
         Ok(Vector {
             handle: *handle,
@@ -320,6 +326,13 @@ impl<'a> Vector<'a, Unknown> {
     pub fn cast<T: VectorElement>(self) -> Result<Vector<'a, T>> {
         self.validate_as::<T>()?;
         Ok(self.cast_unchecked())
+    }
+
+    /// Validate and attach a logical element type to a borrowed vector.
+    pub fn cast_ref<T: VectorElement>(&self) -> Result<&Vector<'a, T>> {
+        self.validate_as::<T>()?;
+        // SAFETY: `Vector` is `repr(C)` and `T` only appears in `PhantomData`.
+        Ok(unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) })
     }
 }
 
@@ -352,6 +365,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
         self.heap = None;
+        if let Some(children) = &mut self.children {
+            children.evict_all();
+        }
         Ok(())
     }
 
@@ -371,12 +387,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
     }
 
-    pub(crate) fn into_unknown(self) -> Vector<'a, Unknown> {
-        self.cast_unchecked()
-    }
-
     pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<bool> {
-        match U::validate(self.logical_type(), &self.children) {
+        match U::validate(self.logical_type(), self.children.as_ref()) {
             Ok(true) => Ok(true),
             Ok(false) => Err(Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
@@ -457,16 +469,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     pub(crate) fn get_as_checked<U: VectorElement>(&self, index: usize) -> Result<Option<U::Ref<'_>>> {
         self.validate_as::<U>()?;
+        self.cache_children()?;
         Ok(self.get_as_unchecked::<U>(index))
     }
 
-    pub(crate) fn write_raw<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
+    /// Check that `index` is a row `write_raw` can write.
+    pub(crate) fn check_row_writable(&self, index: usize) -> Result<()> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
         if self.kind != StorageKind::Flat {
             return Err(not_writable());
         }
+        Ok(())
+    }
+
+    pub(crate) fn write_raw<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
+        self.check_row_writable(index)?;
 
         let is_valid = value.is_some();
         if let Some(value) = value {
@@ -545,7 +564,12 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)
+        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
+        // Nested values are written into the child vectors.
+        if let Some(children) = &mut self.children {
+            children.evict_all();
+        }
+        Ok(())
     }
 
     /// Set one row to `NULL` through DuckDB's generic value API.
@@ -601,9 +625,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.access == Access::Writable
     }
 
-    /// Return the vector's child vectors.
-    pub fn children(&self) -> &[Vector<'a, Unknown>] {
-        &self.children
+    /// Return the vector's child vectors, or `None` if it has no children.
+    pub fn children(&self) -> Option<&VectorCollection> {
+        self.children.as_ref()
+    }
+
+    /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
+    ///
+    /// Children get at most the access of this vector.
+    pub fn children_mut(&mut self) -> Option<&mut VectorCollection> {
+        self.children.as_mut()
+    }
+
+    fn cache_children(&self) -> Result<()> {
+        match &self.children {
+            Some(children) => children.cache_all(),
+            None => Ok(()),
+        }
     }
 
     /// Explicitly materialize the vector as flat storage.
@@ -627,8 +665,10 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     fn set_not_writable(&mut self) {
         self.access = Access::Exclusive;
-        for child in &mut self.children {
-            child.set_not_writable();
+        if let Some(children) = &mut self.children
+            && children.access == Access::Writable
+        {
+            children.access = Access::Exclusive;
         }
     }
 
@@ -700,6 +740,7 @@ impl<T: VectorElement> Vector<'_, T> {
         if self.view.is_none() {
             return Err(other_not_readable());
         }
+        self.cache_children()?;
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
         }
@@ -711,6 +752,7 @@ impl<T: VectorElement> Vector<'_, T> {
         if self.view.is_none() {
             return Err(other_not_readable());
         }
+        self.cache_children()?;
 
         Ok(VectorIter { vector: self, index: 0 })
     }

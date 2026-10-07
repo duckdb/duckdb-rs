@@ -14,7 +14,7 @@ use crate::bind_arguments::{BindArgument, BindMetadata, BindType};
 use crate::builder_helpers::{
     OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque, into_opaque_eq,
 };
-use crate::data_chunk::VectorCollection;
+use crate::data_chunk::{RowCount, VectorCollection};
 use crate::enums::FunctionProperty;
 use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
@@ -106,11 +106,7 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
                 handles.push(handle);
             }
 
-            let mut collection = VectorCollection {
-                handles,
-                is_writable: false,
-                row_count,
-            };
+            let mut collection = VectorCollection::new(handles, Access::Exclusive, RowCount::Fixed(row_count));
 
             T::exec(
                 user_data,
