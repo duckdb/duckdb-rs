@@ -268,7 +268,7 @@ impl<'ctx> ArrowImporter<'ctx> {
         if handle.is_null() {
             Ok(None)
         } else {
-            Ok(Some(DataChunk::new(handle, false)))
+            Ok(Some(DataChunk::new(handle, false)?))
         }
     }
 }
@@ -292,11 +292,11 @@ mod tests {
     };
 
     scalar_callback!(ToArrowTest, i64, |input, result, ctx, user_data| {
-        let logical_types = input
-            .vectors()?
-            .iter()
-            .map(|v| v.logical_type().clone())
-            .collect::<Vec<_>>();
+        let mut logical_types = Vec::with_capacity(input.col_count());
+
+        for i in 0..input.col_count() {
+            logical_types.push(input.get_untyped_vector_at(i)?.logical_type().clone());
+        }
 
         let mut result = result;
 
@@ -324,18 +324,18 @@ mod tests {
         let chunk = importer.chunk()?;
 
         assert!(chunk.is_some());
-        let chunk = chunk.unwrap();
+        let mut chunk = chunk.unwrap();
 
         assert_eq!(chunk.row_count()?, 2);
+
+        // Imported vectors may share Arrow or dictionary buffers, so they are read-only.
+        let mut imported = chunk.get_vector_at_mut::<i64>(0)?;
+        assert!(!imported.is_writable());
+        assert!(imported.write(0, Some(1)).is_err());
 
         let val1 = chunk.get_vector_at::<i64>(0)?;
         let val2 = chunk.get_vector_at::<bool>(1)?;
         let val3 = chunk.get_vector_at::<String>(2)?;
-
-        // Imported vectors may share Arrow or dictionary buffers, so they are read-only.
-        let mut imported = chunk.get_vector_at::<i64>(0)?;
-        assert!(!imported.is_writable());
-        assert!(imported.write(0, Some(1)).is_err());
 
         result.set_size(chunk.row_count()?)?;
 

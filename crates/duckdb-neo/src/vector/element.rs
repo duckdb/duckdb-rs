@@ -1,3 +1,4 @@
+use crate::data_chunk::VectorCollection;
 use crate::logical_type::{LogicalType, LogicalTypeID};
 use crate::{Result, vector::Vector};
 
@@ -17,7 +18,7 @@ pub trait VectorElement: Sized {
         Self: 'a;
 
     /// Validate nested children before values are read.
-    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         let _ = children;
         Ok(other.type_id() == Self::TYPE_ID)
     }

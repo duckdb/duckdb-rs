@@ -161,8 +161,8 @@ mod external {
                 assert_eq!(parsed, Some(uuid));
             }
 
-            let chunk = DataChunk::create(&[Uuid::logical_type(&conn)?], true)?;
-            let mut values = chunk.get_vector_at::<Uuid>(0)?;
+            let mut chunk = DataChunk::create(&[Uuid::logical_type(&conn)?], true)?;
+            let mut values = chunk.get_vector_at_mut::<Uuid>(0)?;
             values.set_size(expected.len() + 1)?;
             for (index, uuid) in expected.into_iter().enumerate() {
                 values.write(index, Some(uuid))?;

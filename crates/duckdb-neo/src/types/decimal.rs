@@ -6,13 +6,14 @@
 //! runtime width, scale, and scaled integer generically.
 
 use super::{DuckDBType, FromValue, ToValue};
+use crate::data_chunk::VectorCollection;
 use crate::ffi;
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// Marks integer types supported as the physical storage of [`Decimal`].
@@ -70,7 +71,7 @@ impl<T: InternalDecimalType> VectorElement for Decimal<T> {
     where
         Self: 'a;
 
-    fn validate(other: &LogicalType, _children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }

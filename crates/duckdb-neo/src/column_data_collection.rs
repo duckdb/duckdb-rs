@@ -10,7 +10,7 @@ use crate::ffi;
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,
-    data_chunk::{DataChunk, DataChunkRef},
+    data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
@@ -63,14 +63,14 @@ use crate::{
 /// let types = [i32::logical_type(&conn)?];
 ///
 /// let collection = ColumnDataCollection::new(&conn, &types)?;
-/// let chunk = DataChunk::create(&types, true)?;
-/// let mut values = chunk.get_vector_at::<i32>(0)?;
+/// let mut chunk = DataChunk::create(&types, true)?;
+/// let mut values = chunk.get_vector_at_mut::<i32>(0)?;
 /// values.set_size(2)?;
 /// values.write(0, Some(10))?;
 /// values.write(1, Some(20))?;
 ///
 /// let mut appender = collection.to_append()?;
-/// appender.append(&chunk)?;
+/// appender.append(&mut chunk)?;
 /// assert_eq!(appender.len()?, 2);
 ///
 /// let mut scan = appender.to_scan()?;
@@ -220,7 +220,9 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
             RET
         )?;
 
-        Ok(did_produce_chunk.then(|| DataChunkRef::new(**self.chunk, false)))
+        did_produce_chunk
+            .then(|| DataChunkRef::new(**self.chunk, false))
+            .transpose()
     }
 
     /// Return the collection being scanned.
@@ -256,18 +258,22 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         Ok(Self { collection, appender })
     }
 
-    /// Append a copy of `chunk` to the collection.
+    /// Append a copy of `chunk`, an owned [`DataChunk`] or a borrowed [`DataChunkRef`], to the collection.
     ///
-    /// A mismatched column count or type returns an error without copying data.
-    pub fn append(&mut self, chunk: &DataChunk<'_>) -> Result<()> {
-        check_api_call!(
+    /// DuckDB may flatten nested columns of `chunk` in place, so it is borrowed
+    /// mutably. A mismatched column count or type returns an error without
+    /// copying data.
+    #[allow(private_bounds)]
+    pub fn append<C: DataChunkMut>(&mut self, chunk: &mut C) -> Result<()> {
+        let result = check_api_call!(
             ffi::duckdb_v2_column_data_collection_append,
             self.collection.handle,
             *self.appender,
-            ***chunk
-        )?;
-
-        Ok(())
+            chunk.chunk_handle()
+        );
+        // DuckDB may flatten nested columns in place, even when the append fails.
+        chunk.evict_cached();
+        result
     }
 
     /// Move all chunks from `other` into this collection.
@@ -390,10 +396,10 @@ mod test {
 
         let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-        let chunk = DataChunk::create(&logical_types, true)?;
+        let mut chunk = DataChunk::create(&logical_types, true)?;
 
-        let mut id = chunk.get_vector_at::<i32>(0)?;
-        let mut is_active = chunk.get_vector_at::<bool>(1)?;
+        let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
         id.set_size(2)?;
         is_active.set_size(2)?;
@@ -403,7 +409,7 @@ mod test {
 
         let mut collection = collection.to_append()?;
 
-        collection.append(&chunk)?;
+        collection.append(&mut chunk)?;
 
         assert_eq!(collection.len()?, 2);
 
@@ -411,6 +417,8 @@ mod test {
 
         assert_eq!(collection.len()?, 0);
 
+        let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
         id.write(0, Some(10))?;
         id.write(1, Some(12))?;
         is_active.write(0, Some(false))?;
@@ -418,13 +426,13 @@ mod test {
 
         let mut collection = collection.to_append()?;
 
-        collection.append(&chunk)?;
+        collection.append(&mut chunk)?;
 
         assert_eq!(collection.len()?, 2);
 
-        let chunk_2 = DataChunk::create(&logical_types, true)?;
-        let mut id = chunk_2.get_vector_at::<i32>(0)?;
-        let mut is_active = chunk_2.get_vector_at::<bool>(1)?;
+        let mut chunk_2 = DataChunk::create(&logical_types, true)?;
+        let [id, is_active] = chunk_2.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
         id.set_size(1)?;
         is_active.set_size(1)?;
@@ -433,7 +441,7 @@ mod test {
         is_active.write(0, Some(true))?;
 
         let mut collection_2 = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
-        collection_2.append(&chunk_2)?;
+        collection_2.append(&mut chunk_2)?;
 
         collection.combine(collection_2.to_normal())?;
 
@@ -500,10 +508,10 @@ mod test {
 
         let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-        let chunk = DataChunk::create(&logical_types, true)?;
+        let mut chunk = DataChunk::create(&logical_types, true)?;
 
-        let mut id = chunk.get_vector_at::<i32>(0)?;
-        let mut is_active = chunk.get_vector_at::<bool>(1)?;
+        let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+        let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
         id.set_size(2)?;
         is_active.set_size(2)?;
@@ -516,7 +524,7 @@ mod test {
 
         let mut collection = collection.to_append()?;
 
-        collection.append(&chunk)?;
+        collection.append(&mut chunk)?;
 
         let mut scan = collection.to_scan()?;
 

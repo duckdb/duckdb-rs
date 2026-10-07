@@ -9,7 +9,7 @@ use crate::{
     connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::LogicalType,
-    vector::{Vector, VectorElement},
+    vector::{Access, Vector, VectorElement},
 };
 
 ffi_enum_redeclaration! {
@@ -33,14 +33,14 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
 
             let input = Vector::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
-                false,
+                Access::Exclusive,
             )?;
             let input = input.cast::<T::InputType>()?;
 
             let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
             let output = Vector::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
-                true,
+                Access::Writable,
             )?;
             let output = output.cast::<T::OutputType>()?;
 

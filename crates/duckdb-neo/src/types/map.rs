@@ -8,11 +8,12 @@ use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
     connection::FFILink,
+    data_chunk::VectorCollection,
     error::{DuckDBError, Error},
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// Reads a `MAP` vector with key type `K` and value type `V`.
@@ -98,20 +99,20 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
 
     type Internal = super::List<()>;
 
-    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }
 
-        if children.len() != 2 {
+        let Some(children) = children.filter(|children| children.col_count() == 2) else {
             return Err(Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
                 message: "Map vector must have exactly two children".to_string(),
             });
-        }
+        };
 
-        children[0].validate_as::<K>()?;
-        children[1].validate_as::<V>()
+        children.get_untyped_vector_at(0)?.validate_as::<K>()?;
+        children.get_untyped_vector_at(1)?.validate_as::<V>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -122,7 +123,7 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         let list = unsafe { &*data_ptr.add(physical) };
 
         MapRow::<K, V> {
-            children: &vector.children,
+            children: vector.children().expect("validated nested vector has children"),
             offset: list.offset as usize,
             length: list.length as usize,
             _marker: PhantomData,
@@ -142,27 +143,31 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
             return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
         };
 
+        // Reject the row before appending, or a failed write would leave orphaned child elements.
+        vector.check_row_writable(index)?;
         let len = value.len();
-        let mut children = std::mem::take(&mut vector.children).into_iter();
-        let mut keys = children.next().expect("validated map key child").cast_unchecked::<K>();
-        let mut values = children
-            .next()
-            .expect("validated map value child")
-            .cast_unchecked::<V>();
+        // Write one child at a time, so only one child wrapper is borrowed.
+        let (keys, values): (Vec<_>, Vec<_>) = value.into_iter().unzip();
+        let children = vector
+            .children_collection_mut()
+            .expect("validated nested vector has children");
 
         let result = (|| {
             // Append after the child's elements, including any written through another wrapper.
-            let offset = keys.current_size()?;
-            keys.set_size(offset + len)?;
-            values.set_size(offset + len)?;
-            for (child_index, (key, value)) in value.into_iter().enumerate() {
-                keys.write(offset + child_index, Some(key))?;
-                values.write(offset + child_index, Some(value))?;
+            let key_vector = children.cached_mut::<K>(0)?;
+            let offset = key_vector.current_size()?;
+            key_vector.set_size(offset + len)?;
+            for (child_index, key) in keys.into_iter().enumerate() {
+                key_vector.write(offset + child_index, Some(key))?;
+            }
+            let value_vector = children.cached_mut::<V>(1)?;
+            value_vector.set_size(offset + len)?;
+            for (child_index, value) in values.into_iter().enumerate() {
+                value_vector.write(offset + child_index, Some(value))?;
             }
             Ok(offset)
         })();
 
-        vector.children = vec![keys.cast_unchecked::<Unknown>(), values.cast_unchecked::<Unknown>()];
         let offset = result?;
         vector.write_raw(
             index,
@@ -176,7 +181,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
 
 /// A borrowed map row backed by matching ranges in key and value vectors.
 pub struct MapRow<'a, K, V> {
-    pub(crate) children: &'a [Vector<'a, Unknown>],
+    pub(crate) children: &'a VectorCollection,
     pub(crate) offset: usize,
     pub(crate) length: usize,
     pub(crate) _marker: PhantomData<(K, V)>,
@@ -196,8 +201,8 @@ where
         map.reserve(self.length);
 
         for logical in self.offset..self.offset + self.length {
-            if let Some(key) = { self.children[0].get_as_unchecked::<K>(logical) } {
-                if let Some(value) = self.children[1].get_as_unchecked::<V>(logical) {
+            if let Some(key) = { self.children.cached_unchecked(0).get_as_unchecked::<K>(logical) } {
+                if let Some(value) = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical) {
                     map.insert(key, Some(value));
                 } else {
                     map.insert(key, None);
@@ -219,7 +224,9 @@ where
         let mut index = None;
 
         for logical in self.offset..self.offset + self.length {
-            if self.children[0]
+            if self
+                .children
+                .cached_unchecked(0)
                 .get_as_unchecked::<K>(logical)
                 .is_some_and(|value| value == key)
             {
@@ -235,17 +242,17 @@ where
             });
         }
 
-        Ok(self.children[1].get_as_unchecked::<V>(index.unwrap()))
+        Ok(self.children.cached_unchecked(1).get_as_unchecked::<V>(index.unwrap()))
     }
 
     /// Return the map's keys.
     pub fn keys(&self) -> Result<Vec<K::Ref<'a>>> {
         let mut keys = Vec::new();
 
-        self.children[0].validate_as::<K>()?;
+        self.children.cached_unchecked(0).validate_as::<K>()?;
 
         for logical in self.offset..self.offset + self.length {
-            if let Some(key) = self.children[0].get_as_unchecked::<K>(logical) {
+            if let Some(key) = self.children.cached_unchecked(0).get_as_unchecked::<K>(logical) {
                 keys.push(key);
             }
         }
@@ -256,10 +263,10 @@ where
     pub fn values(&self) -> Result<Vec<V::Ref<'a>>> {
         let mut values: Vec<_> = Vec::new();
 
-        self.children[1].validate_as::<V>()?;
+        self.children.cached_unchecked(1).validate_as::<V>()?;
 
         for logical in self.offset..self.offset + self.length {
-            if let Some(value) = self.children[1].get_as_unchecked::<V>(logical) {
+            if let Some(value) = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical) {
                 values.push(value);
             }
         }

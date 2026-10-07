@@ -172,7 +172,7 @@ mod test {
     use super::*;
 
     scalar_callback!(DefaultParameterScalar, u64, |input, result, _ctx, _user_data| {
-        let vectors_len = input.vectors_count();
+        let vectors_len = input.col_count();
         let vector = input.get_vector_at::<i32>(2)?;
         let mut result = result;
         result.set_size(1)?;
@@ -181,7 +181,7 @@ mod test {
     });
 
     scalar_callback!(VarargScalar, u64, |input, result, _ctx, _user_data| {
-        let vectors_len = input.vectors_count();
+        let vectors_len = input.col_count();
         let mut result = result;
         result.set_size(1)?;
         result.write(0, Some(vectors_len as u64))?;

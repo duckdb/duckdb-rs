@@ -10,6 +10,7 @@ use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
     connection::FFILink,
+    data_chunk::VectorCollection,
     error::{DuckDBError, Error},
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
@@ -66,20 +67,18 @@ impl<L: VectorElement> VectorElement for List<L> {
 
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST;
 
-    fn validate(other: &LogicalType, children: &[Vector<'_, Unknown>]) -> Result<bool> {
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.type_id() != Self::TYPE_ID {
             return Ok(false);
         }
 
-        if children.len() != 1 {
+        let Some(children) = children.filter(|children| children.col_count() == 1) else {
             return Err(Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
                 message: "List vector must have exactly one child".to_string(),
             });
-        }
-
-        let child = children.first().unwrap();
-        child.validate_as::<L>()
+        };
+        children.get_untyped_vector_at(0)?.validate_as::<L>()
     }
 
     fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -90,7 +89,10 @@ impl<L: VectorElement> VectorElement for List<L> {
         let list = unsafe { &*data_ptr.add(physical) };
         ListRef {
             list,
-            child: &vector.children[0],
+            child: vector
+                .children()
+                .expect("validated nested vector has children")
+                .cached_unchecked(0),
         }
     }
 }
@@ -106,12 +108,14 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
             return vector.write_raw::<List<T>>(index, None);
         };
 
+        // Reject the row before appending, or a failed write would leave orphaned child elements.
+        vector.check_row_writable(index)?;
         let len = values.len();
-        let mut child = std::mem::take(&mut vector.children)
-            .into_iter()
-            .next()
-            .expect("validated list child")
-            .cast_unchecked::<T>();
+        let child = vector
+            .children_collection_mut()
+            .expect("validated nested vector has children")
+            .cached_mut::<T>(0)?;
+
         let result = (|| {
             // Append after the child's elements, including any written through another wrapper.
             let offset = child.current_size()?;
@@ -121,7 +125,6 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
             }
             Ok(offset)
         })();
-        vector.children = vec![child.into_unknown()];
         let offset = result?;
         vector.write_raw::<List<T>>(
             index,

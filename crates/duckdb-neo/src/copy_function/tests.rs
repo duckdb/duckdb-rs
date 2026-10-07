@@ -54,12 +54,12 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut result = Vec::new();
         let mut to_append = ColumnDataCollection::new(context, [i64::logical_type(context)?])?.to_append()?;
 
-        let data_chunk = DataChunk::create(&[i64::logical_type(context)?], true)?;
-        let mut vec = data_chunk.get_vector_at::<i64>(0)?;
+        let mut data_chunk = DataChunk::create(&[i64::logical_type(context)?], true)?;
+        let mut vec = data_chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(1)?;
         vec.write(0, Some(10))?;
 
-        to_append.append(&data_chunk)?;
+        to_append.append(&mut data_chunk)?;
 
         let mut scanner = scanner.to_append()?;
         scanner.combine(to_append.to_normal())?;
@@ -185,13 +185,13 @@ impl CopyFromFunctionCallbacks for RangeSource {
         _global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
         _context: &Context,
-        output: DataChunkRef<'_>,
+        mut output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
         let remaining = self.total_rows.saturating_sub(*produced);
         let batch = remaining.min(3);
 
-        let mut vec = output.get_vector_at::<i64>(0)?;
+        let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
             vec.write(row, Some((*produced + row) as i64))?;
@@ -334,12 +334,12 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         _global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
         _context: &Context,
-        output: DataChunkRef<'_>,
+        mut output: DataChunkRef<'_>,
     ) -> crate::Result<()> {
         let produced = local_state.expect("local state must be set");
         let batch = if *produced == 0 { 2 } else { 0 };
 
-        let mut vec = output.get_vector_at::<i64>(0)?;
+        let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
             vec.write(row, Some((*produced + row) as i64))?;
