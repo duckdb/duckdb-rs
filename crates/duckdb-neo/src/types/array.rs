@@ -137,10 +137,10 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
             code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
             message: "Array child length overflow".to_string(),
         })?;
-        let mut child = vector
+        let child = vector
             .children_mut()
             .expect("validated nested vector has children")
-            .get_vector_at_mut::<T>(0)?;
+            .cached_mut::<T>(0)?;
         if child.len() != child_len {
             child.set_size(child_len)?;
         }

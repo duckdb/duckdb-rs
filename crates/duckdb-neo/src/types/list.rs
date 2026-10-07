@@ -111,10 +111,10 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
         // Reject the row before appending, or a failed write would leave orphaned child elements.
         vector.check_row_writable(index)?;
         let len = values.len();
-        let mut child = vector
+        let child = vector
             .children_mut()
             .expect("validated nested vector has children")
-            .get_vector_at_mut::<T>(0)?;
+            .cached_mut::<T>(0)?;
 
         let result = (|| {
             // Append after the child's elements, including any written through another wrapper.

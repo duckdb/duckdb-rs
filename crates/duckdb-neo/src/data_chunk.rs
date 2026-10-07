@@ -7,7 +7,7 @@ use crate::connection::{Connection, Context};
 use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{DatabaseKeepAlive, KeepAlive};
-use crate::logical_type::LogicalType;
+use crate::logical_type::{LogicalType, LogicalTypeID};
 use crate::vector::{Access, VectorElement};
 use crate::{
     Result, check_api_call,
@@ -155,6 +155,27 @@ impl VectorCollection {
         self.cache[index].get().expect("vector views are cached before reads")
     }
 
+    /// Borrow the cached wrapper of `index` for writing, so nested writers reuse it across rows.
+    ///
+    /// The wrapper is only validated as `T` when built, so callers must use the
+    /// same `T` for an index; nested writers do, since the parent's type fixes it.
+    pub(crate) fn cached_mut<T: VectorElement>(&mut self, index: usize) -> Result<&mut Vector<'static, T>> {
+        // Writes through the wrapper may evict its own children.
+        self.complete.set(false);
+        let slot = &mut self.cache[index];
+        if slot.get().is_none_or(|vector| vector.access != self.access) {
+            let vector = Vector::from_handle(&self.handles[index], self.access)?;
+            // An untyped wrapper needs no validation; `Unknown` matches no logical type.
+            if T::TYPE_ID != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNKNOWN {
+                vector.validate_as::<T>()?;
+            }
+            *slot = OnceCell::from(vector);
+        }
+        let vector = slot.get_mut().expect("view was just cached");
+        // SAFETY: `Vector` is `repr(C)`, `T` only appears in `PhantomData`, and the wrapper was validated as `T`.
+        Ok(unsafe { &mut *(vector as *mut Vector<'static, Unknown> as *mut Vector<'static, T>) })
+    }
+
     /// Drop the cached view of `index`, which a mutable wrapper may reshape.
     fn evict(&mut self, index: usize) {
         self.cache[index].take();
@@ -251,11 +272,12 @@ impl VectorCollection {
     /// The chunk's vectors reference the input's storage, so the chunk borrows
     /// this collection and cannot outlive the callback. It is writable only when
     /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
-    pub fn to_data_chunk(&self) -> crate::Result<DataChunk<'_>> {
+    pub fn to_data_chunk(&mut self) -> crate::Result<DataChunk<'_>> {
         let mut logical_types = Vec::with_capacity(self.col_count());
         for index in 0..self.col_count() {
             logical_types.push(self.cached(index)?.logical_type().clone());
         }
+        self.evict_all();
 
         let chunk = DataChunk::create(&logical_types, self.access == Access::Writable)?;
 
@@ -264,7 +286,6 @@ impl VectorCollection {
 
             check_api_call!(ffi::duckdb_v2_vector_reference, chunk_handle, *handle)?;
         }
-
         Ok(chunk)
     }
 }
@@ -379,15 +400,6 @@ impl<'a> DataChunkRef<'a> {
     /// Return the number of rows shared by the chunk's vectors.
     pub fn row_count(&self) -> Result<usize> {
         self.vectors.row_count()
-    }
-
-    /// Return all vectors as logically untyped borrowed views.
-    ///
-    /// Narrow a vector with [`Vector::cast_ref`] before typed access.
-    pub fn vectors(&self) -> Result<Vec<&Vector<'_, Unknown>>> {
-        (0..self.vectors.col_count())
-            .map(|index| self.vectors.get_unchecked_vector_at(index))
-            .collect()
     }
 
     /// Return the number of vectors, which is the column count.

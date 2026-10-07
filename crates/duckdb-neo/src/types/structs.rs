@@ -178,11 +178,11 @@ impl WritableVectorElement for Struct {
         let vector_len = vector.len();
         let children = vector.children_mut().expect("validated nested vector has children");
         for (i, field) in value.fields.into_iter().enumerate() {
-            let mut child = children.get_unchecked_vector_at_mut(i)?;
+            let child = children.cached_mut::<Unknown>(i)?;
             if child.len() != vector_len {
                 child.set_size(vector_len)?;
             }
-            field.write(&mut child, index)?;
+            field.write(child, index)?;
         }
         Ok(())
     }

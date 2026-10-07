@@ -146,20 +146,22 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         // Reject the row before appending, or a failed write would leave orphaned child elements.
         vector.check_row_writable(index)?;
         let len = value.len();
-        let [keys, values] = vector
-            .children_mut()
-            .expect("validated nested vector has children")
-            .get_vector_array_mut([0, 1])?;
-        let (mut keys, mut values) = (keys.cast::<K>()?, values.cast::<V>()?);
+        // Write one child at a time, so only one child wrapper is borrowed.
+        let (keys, values): (Vec<_>, Vec<_>) = value.into_iter().unzip();
+        let children = vector.children_mut().expect("validated nested vector has children");
 
         let result = (|| {
             // Append after the child's elements, including any written through another wrapper.
-            let offset = keys.current_size()?;
-            keys.set_size(offset + len)?;
-            values.set_size(offset + len)?;
-            for (child_index, (key, value)) in value.into_iter().enumerate() {
-                keys.write(offset + child_index, Some(key))?;
-                values.write(offset + child_index, Some(value))?;
+            let key_vector = children.cached_mut::<K>(0)?;
+            let offset = key_vector.current_size()?;
+            key_vector.set_size(offset + len)?;
+            for (child_index, key) in keys.into_iter().enumerate() {
+                key_vector.write(offset + child_index, Some(key))?;
+            }
+            let value_vector = children.cached_mut::<V>(1)?;
+            value_vector.set_size(offset + len)?;
+            for (child_index, value) in values.into_iter().enumerate() {
+                value_vector.write(offset + child_index, Some(value))?;
             }
             Ok(offset)
         })();

@@ -1287,8 +1287,8 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     for item in result {
         let item = item?;
 
-        for vector in item.vectors()? {
-            let vector = vector.cast_ref::<Variant>()?;
+        for index in 0..item.col_count()? {
+            let vector = item.get_vector_at::<Variant>(index)?;
             for row in vector.iter()? {
                 match row {
                     None => {
@@ -1346,8 +1346,8 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
     for item in result {
         let item = item?;
 
-        for vector in item.vectors()? {
-            let vector = vector.cast_ref::<String>()?;
+        for index in 0..item.col_count()? {
+            let vector = item.get_vector_at::<String>(index)?;
             for row in vector.iter()? {
                 match row {
                     None => {
@@ -1873,6 +1873,30 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         chunk.get_vector_at::<List<i32>>(2)?.get(0)?.unwrap().iter().last(),
         Some(Some(&4999))
     );
+    Ok(())
+}
+
+#[test]
+fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&[Vec::<Option<Vec<Option<i32>>>>::logical_type(&conn)?], true)?;
+    let mut lists = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
+    lists.set_size(3000)?;
+    lists.write(0, Some(vec![Some(vec![Some(0)])]))?;
+    lists.write(1, Some(vec![Some(vec![Some(1)])]))?;
+    // The cache keeps the writer's wrapper rather than a fresh shared view.
+    assert!(lists.children().unwrap().get_unchecked_vector_at(0)?.is_writable());
+
+    // Grow both child levels past their initial capacity while the wrappers are reused.
+    for row in 2..3000 {
+        lists.write(row, Some(vec![Some(vec![Some(row as i32), None]), None]))?;
+    }
+    for row in [0, 1, 2047, 2999] {
+        let outer = lists.get(row)?.unwrap();
+        let inner = list_values(outer.iter().next().unwrap());
+        assert_eq!(inner.unwrap()[0], Some(row as i32));
+    }
     Ok(())
 }
 

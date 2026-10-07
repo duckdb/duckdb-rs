@@ -173,10 +173,9 @@ impl WritableVectorElement for Union {
         let Some(value) = value else {
             vector.set_row_validity(index, false)?;
             let children = vector.children_mut().expect("validated nested vector has children");
-            for i in 0..children.col_count() {
-                children
-                    .get_unchecked_vector_at_mut(i)?
-                    .set_row_validity(index, false)?;
+            children.cached_mut::<u8>(0)?.set_row_validity(index, false)?;
+            for i in 1..children.col_count() {
+                children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
             }
             return Ok(());
         };
@@ -197,15 +196,12 @@ impl WritableVectorElement for Union {
 
         vector.set_row_validity(index, true)?;
         let children = vector.children_mut().expect("validated nested vector has children");
-        children.get_vector_at_mut::<u8>(0)?.write(index, Some(value.tag))?;
+        children.cached_mut::<u8>(0)?.write(index, Some(value.tag))?;
         for i in 1..children.col_count() {
-            children
-                .get_unchecked_vector_at_mut(i)?
-                .set_row_validity(index, false)?;
+            children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
         }
-        value.value.write(
-            &mut children.get_unchecked_vector_at_mut(1 + value.tag as usize)?,
-            index,
-        )
+        value
+            .value
+            .write(children.cached_mut::<Unknown>(1 + value.tag as usize)?, index)
     }
 }
