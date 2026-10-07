@@ -59,7 +59,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         vec.set_size(1)?;
         vec.write(0, Some(10))?;
 
-        to_append.append(&data_chunk)?;
+        to_append.append(&mut data_chunk)?;
 
         let mut scanner = scanner.to_append()?;
         scanner.combine(to_append.to_normal())?;

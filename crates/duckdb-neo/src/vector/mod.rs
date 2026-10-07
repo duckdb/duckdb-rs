@@ -565,11 +565,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(not_writable());
         }
         check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
-        // Nested values are written into the child vectors.
-        if let Some(children) = &mut self.children {
-            children.evict_all();
-        }
-        Ok(())
+        // DuckDB may allocate a validity mask or write nested values into the children.
+        self.refresh_buffers()
     }
 
     /// Set one row to `NULL` through DuckDB's generic value API.

@@ -133,7 +133,7 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     is_active.write(1, Some(false))?;
 
     let mut appender = collection.to_append()?;
-    appender.append(&chunk)?;
+    appender.append(&mut chunk)?;
     let collection = appender.to_normal();
 
     ReplacementScanBuilder::new(CustomCdcScan)
@@ -177,7 +177,7 @@ fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnD
     is_active.write(0, Some(true))?;
 
     let mut appender = ColumnDataCollection::new(conn, &logical_types)?.to_append()?;
-    appender.append(&chunk)?;
+    appender.append(&mut chunk)?;
     Ok(appender.to_normal())
 }
 

@@ -1790,79 +1790,132 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     Ok(())
 }
 
+fn list_values(row: Option<crate::types::list::ListRef<'_, i32>>) -> Option<Vec<Option<i32>>> {
+    row.map(|row| row.iter().map(|v| v.copied()).collect())
+}
+
 #[test]
-fn test_children_access_follows_parent() -> crate::Result<()> {
+fn test_children_follow_parent() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = [i32::logical_type(&conn)?, Vec::<Option<i32>>::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&[Vec::<Option<i64>>::logical_type(&conn)?], true)?;
-    {
-        let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
-        list.set_size(1)?;
-        list.children_mut()
+    // Children are optional and never get more access than their parent.
+    let mut read_only = DataChunk::create(&types, false)?;
+    assert!(read_only.get_vector_at::<i32>(0)?.children().is_none());
+    let mut parent = read_only.get_vector_at_mut::<List<i32>>(1)?;
+    assert!(
+        parent
+            .children_mut()
             .unwrap()
-            .get_vector_at_mut::<i64>(0)?
-            .make_sequence(0, 1, 4)?;
-        list.write_raw::<List<i64>>(
-            0,
-            Some(List {
-                offset: 0,
-                length: 4,
-                _marker: std::marker::PhantomData,
-            }),
-        )?;
-    }
-
-    // Children of a read-only parent stay read-only.
-    let mut read_only = DataChunk::create(&[Vec::<Option<i64>>::logical_type(&conn)?], false)?;
-    let mut parent = read_only.get_vector_at_mut::<List<i64>>(0)?;
-    let mut child = parent.children_mut().unwrap().get_vector_at_mut::<i64>(0)?;
-    assert!(!child.is_writable());
-    assert!(child.set_size(1).is_err());
-    drop(child);
-    drop(parent);
-
-    let shared = chunk.get_vector_at::<List<i64>>(0)?;
-    assert_eq!(
-        shared.children().unwrap().get_unchecked_vector_at(0)?.storage_kind(),
-        StorageKind::Other
+            .get_vector_at_mut::<i32>(0)?
+            .set_size(1)
+            .is_err()
     );
 
-    let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
-    list.children_mut().unwrap().get_vector_at_mut::<i64>(0)?.flatten()?;
-    // The read cache is rebuilt after `children_mut`, so rows see the flattened child.
-    let row = list.get(0)?.unwrap();
-    assert_eq!(
-        row.iter().map(|v| v.copied()).collect::<Vec<_>>(),
-        [Some(0), Some(1), Some(2), Some(3)]
-    );
-
+    let mut chunk = DataChunk::create(&types, true)?;
+    let mut list = chunk.get_vector_at_mut::<List<i32>>(1)?;
+    // An out-of-range row must not append to the child.
+    assert!(list.write(0, Some(vec![Some(1)])).is_err());
+    list.set_size(1)?;
+    list.write(0, Some(vec![Some(1), Some(2)]))?;
+    // The row count is read live, and the cached child view is rebuilt after `children_mut`.
+    assert_eq!(list.children().unwrap().row_count()?, 2);
+    list.children_mut().unwrap().get_vector_at_mut::<i32>(0)?.flatten()?;
+    assert_eq!(list_values(list.get(0)?), Some(vec![Some(1), Some(2)]));
     Ok(())
 }
 
 #[test]
-fn test_children_are_optional_and_row_count_is_live() -> crate::Result<()> {
+fn test_nested_children_survive_reallocation() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    // Each step grows the child past its initial capacity, so DuckDB reallocates it.
+    let mut chunk = DataChunk::create(
+        &[
+            <[i32; 1]>::logical_type(&conn)?,
+            StructValue::<TestStruct>::logical_type(&conn)?,
+            Vec::<Option<i32>>::logical_type(&conn)?,
+        ],
+        true,
+    )?;
+    {
+        let [array, structs, list] = chunk.get_vector_array_mut([0, 1, 2])?;
+        let mut array = array.cast::<Array<i32>>()?;
+        let mut structs = structs.cast::<Struct>()?;
+        let mut list = list.cast::<List<i32>>()?;
+        array.set_size(1)?;
+        structs.set_size(1)?;
+        array.write(0, Some(vec![Some(3)]))?;
+        structs.write(
+            0,
+            Some(StructWrite::default().field::<i32>(Some(7)).field::<String>(Some("a"))),
+        )?;
+        // Reads cache the child views, which growing the parent must invalidate.
+        assert_eq!(array.get(0)?.unwrap().iter().next(), Some(Some(&3)));
+        assert_eq!(structs.get(0)?.unwrap().get::<i32>("key")?, Some(&7));
+        array.set_size(3000)?;
+        structs.set_size(3000)?;
+        // Writes take fresh child wrappers, so check the cached child views directly.
+        assert_eq!(array.children().unwrap().get_unchecked_vector_at(0)?.len(), 3000);
+        assert_eq!(structs.children().unwrap().get_unchecked_vector_at(0)?.len(), 3000);
+        array.write(2999, Some(vec![Some(4)]))?;
+        structs.write(
+            2999,
+            Some(StructWrite::default().field::<i32>(Some(8)).field::<String>(Some("b"))),
+        )?;
+        assert_eq!(array.get(2999)?.unwrap().iter().next(), Some(Some(&4)));
+        assert_eq!(structs.get(2999)?.unwrap().get::<i32>("key")?, Some(&8));
+        list.set_size(1)?;
+        list.write(0, Some((0..5000).map(Some).collect()))?;
+    }
+    assert_eq!(
+        chunk.get_vector_at::<List<i32>>(2)?.get(0)?.unwrap().iter().last(),
+        Some(Some(&4999))
+    );
+    Ok(())
+}
+
+#[test]
+fn test_write_value_slow_null_is_visible() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let logical_type = i32::logical_type(&conn)?;
+    let mut chunk = DataChunk::create(std::slice::from_ref(&logical_type), true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(1)?;
+    vector.write_value_slow(0, crate::value::Value::null(&logical_type)?)?;
+    assert!(vector.is_null(0)?);
+    Ok(())
+}
+
+#[test]
+fn test_collection_append() -> crate::Result<()> {
+    use crate::column_data_collection::ColumnDataCollection;
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
-    let mut chunk = DataChunk::create(
-        &[i32::logical_type(&conn)?, Vec::<Option<i32>>::logical_type(&conn)?],
-        true,
-    )?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+    let mut chunk = DataChunk::create(&types, true)?;
+    chunk
+        .get_vector_at_mut::<List<i32>>(0)?
+        .make_constant(vec![Some(1), Some(2)].value(&conn)?, true, 3)?;
+    assert_eq!(
+        chunk.get_vector_at::<List<i32>>(0)?.storage_kind(),
+        StorageKind::Constant
+    );
 
-    assert!(chunk.get_vector_at::<i32>(0)?.children().is_none());
-    assert!(chunk.get_vector_at_mut::<i32>(0)?.children_mut().is_none());
+    // Appending flattens nested columns in place, so cached views must be dropped.
+    let mut source = ColumnDataCollection::new(&conn, &types)?.to_append()?;
+    source.append(&mut chunk)?;
+    assert_eq!(chunk.get_vector_at::<List<i32>>(0)?.storage_kind(), StorageKind::Flat);
 
-    let mut list = chunk.get_vector_at_mut::<List<i32>>(1)?;
-    assert_eq!(list.children().unwrap().row_count()?, 0);
-    // Writing past the end must not append to the child.
-    assert!(list.write(0, Some(vec![Some(1), Some(2), Some(3)])).is_err());
-    assert_eq!(list.children().unwrap().row_count()?, 0);
-    list.set_size(1)?;
-    list.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
-    // The child grew through a separate wrapper; the count is read again, not cached.
-    assert_eq!(list.children().unwrap().row_count()?, 3);
-
+    // Borrowed chunks from a scan can be appended too.
+    let mut target = ColumnDataCollection::new(&conn, &types)?.to_append()?;
+    let mut scan = source.to_scan()?;
+    while let Some(mut scanned) = scan.next_chunk()? {
+        target.append(&mut scanned)?;
+    }
+    assert_eq!(target.len()?, 3);
     Ok(())
 }

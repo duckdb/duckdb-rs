@@ -34,6 +34,37 @@ fn collect_array<V, const N: usize>(results: [Result<V>; N]) -> Result<[V; N]> {
     }
 }
 
+/// A chunk that DuckDB may change in place, e.g. by flattening nested columns.
+///
+/// Implemented for owned and borrowed chunks without handing out `&mut DataChunkRef`
+/// for an owned chunk: swapping that out would separate the chunk from its keep-alive.
+pub(crate) trait DataChunkMut {
+    fn chunk_handle(&self) -> ffi::duckdb_v2_data_chunk_handle;
+
+    /// Drop cached views after DuckDB changed the chunk's vectors.
+    fn evict_cached(&mut self);
+}
+
+impl DataChunkMut for DataChunkRef<'_> {
+    fn chunk_handle(&self) -> ffi::duckdb_v2_data_chunk_handle {
+        self.handle
+    }
+
+    fn evict_cached(&mut self) {
+        self.vectors.evict_all();
+    }
+}
+
+impl DataChunkMut for DataChunk<'_> {
+    fn chunk_handle(&self) -> ffi::duckdb_v2_data_chunk_handle {
+        self.chunk.handle
+    }
+
+    fn evict_cached(&mut self) {
+        self.chunk.evict_cached();
+    }
+}
+
 trait DataChunkLink {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>>;
 }
@@ -292,6 +323,21 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 /// Chunks created or copied by the caller are `DataChunk<'static>`. A chunk that
 /// references data owned elsewhere, such as one from
 /// [`VectorCollection::to_data_chunk`], borrows that data for `'a`.
+///
+/// The inner [`DataChunkRef`] is only reachable by shared reference, so it
+/// cannot be swapped away from the chunk that owns and keeps it alive:
+///
+/// ```compile_fail,E0596
+/// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
+/// # fn main() -> duckdb_neo::Result<()> {
+/// # let env = Environment::new()?;
+/// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+/// let mut a = DataChunk::create(&[i32::logical_type(&conn)?], true)?;
+/// let mut b = DataChunk::create(&[i32::logical_type(&conn)?], true)?;
+/// std::mem::swap(&mut *a, &mut *b);
+/// # Ok(())
+/// # }
+/// ```
 pub struct DataChunk<'a> {
     pub(crate) chunk: DataChunkRef<'a>,
     /// Keeps the database behind a connection allocator alive; dropped after the chunk is destroyed.
@@ -546,7 +592,6 @@ mod tests {
     use crate::scalar::ScalarFunctionBuilder;
     use crate::signature::{Parameter, SignatureBuilder};
     use crate::types::DuckDBType;
-    use crate::vector::StorageKind;
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
@@ -622,48 +667,21 @@ mod tests {
     }
 
     #[test]
-    fn test_shared_vectors_are_cached_until_mutable_access() -> crate::Result<()> {
+    fn test_vector_access() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
-        let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?], true)?;
-        chunk.get_vector_at_mut::<i64>(0)?.make_sequence(0, 1, 4)?;
-
-        let first = chunk.get_vector_at::<i64>(0)?;
-        assert!(!first.is_writable());
-        assert_eq!(first.storage_kind(), StorageKind::Other);
-        assert!(std::ptr::eq(first, chunk.get_vector_at::<i64>(0)?));
-
-        // Mutable access drops the cached view, so later reads see the flattened storage.
-        chunk.get_vector_at_mut::<i64>(0)?.flatten()?;
-        let flat = chunk.get_vector_at::<i64>(0)?;
-        assert_eq!(flat.storage_kind(), StorageKind::Flat);
-        assert_eq!(flat.get(3)?, Some(&3));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_get_vector_array_mut() -> crate::Result<()> {
-        let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
-        let mut chunk = DataChunk::create(&[i32::logical_type(&conn)?, bool::logical_type(&conn)?], true)?;
-
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&[i64::logical_type(&conn)?, i64::logical_type(&conn)?], true)?;
         assert!(chunk.get_vector_array_mut([0, 0]).is_err());
         assert!(chunk.get_vector_array_mut([0, 2]).is_err());
+        let [_, sequence] = chunk.get_vector_array_mut([0, 1])?;
+        sequence.cast::<i64>()?.make_sequence(0, 1, 4)?;
 
-        let [ids, flags] = chunk.get_vector_array_mut([0, 1])?;
-        let (mut ids, mut flags) = (ids.cast::<i32>()?, flags.cast::<bool>()?);
-        ids.set_size(1)?;
-        flags.set_size(1)?;
-        ids.write(0, Some(7))?;
-        flags.write(0, Some(true))?;
-        drop((ids, flags));
-
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&7));
-        assert_eq!(chunk.get_vector_at::<bool>(1)?.get(0)?, Some(&true));
-
+        // Shared views are cached until the vector is borrowed mutably.
+        let shared = chunk.get_vector_at::<i64>(1)?;
+        assert!(!shared.is_writable());
+        assert!(std::ptr::eq(shared, chunk.get_vector_at::<i64>(1)?));
+        chunk.get_vector_at_mut::<i64>(1)?.flatten()?;
+        assert_eq!(chunk.get_vector_at::<i64>(1)?.get(3)?, Some(&3));
         Ok(())
     }
 

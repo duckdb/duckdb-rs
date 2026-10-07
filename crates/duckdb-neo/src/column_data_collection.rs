@@ -10,7 +10,7 @@ use crate::ffi;
 
 use crate::{
     Result, check_api_call, check_api_call_no_err,
-    data_chunk::{DataChunk, DataChunkRef},
+    data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
@@ -70,7 +70,7 @@ use crate::{
 /// values.write(1, Some(20))?;
 ///
 /// let mut appender = collection.to_append()?;
-/// appender.append(&chunk)?;
+/// appender.append(&mut chunk)?;
 /// assert_eq!(appender.len()?, 2);
 ///
 /// let mut scan = appender.to_scan()?;
@@ -258,18 +258,22 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         Ok(Self { collection, appender })
     }
 
-    /// Append a copy of `chunk` to the collection.
+    /// Append a copy of `chunk`, an owned [`DataChunk`] or a borrowed [`DataChunkRef`], to the collection.
     ///
-    /// A mismatched column count or type returns an error without copying data.
-    pub fn append(&mut self, chunk: &DataChunk<'_>) -> Result<()> {
-        check_api_call!(
+    /// DuckDB may flatten nested columns of `chunk` in place, so it is borrowed
+    /// mutably. A mismatched column count or type returns an error without
+    /// copying data.
+    #[allow(private_bounds)]
+    pub fn append<C: DataChunkMut>(&mut self, chunk: &mut C) -> Result<()> {
+        let result = check_api_call!(
             ffi::duckdb_v2_column_data_collection_append,
             self.collection.handle,
             *self.appender,
-            ***chunk
-        )?;
-
-        Ok(())
+            chunk.chunk_handle()
+        );
+        // DuckDB may flatten nested columns in place, even when the append fails.
+        chunk.evict_cached();
+        result
     }
 
     /// Move all chunks from `other` into this collection.
@@ -405,7 +409,7 @@ mod test {
 
         let mut collection = collection.to_append()?;
 
-        collection.append(&chunk)?;
+        collection.append(&mut chunk)?;
 
         assert_eq!(collection.len()?, 2);
 
@@ -422,7 +426,7 @@ mod test {
 
         let mut collection = collection.to_append()?;
 
-        collection.append(&chunk)?;
+        collection.append(&mut chunk)?;
 
         assert_eq!(collection.len()?, 2);
 
@@ -437,7 +441,7 @@ mod test {
         is_active.write(0, Some(true))?;
 
         let mut collection_2 = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
-        collection_2.append(&chunk_2)?;
+        collection_2.append(&mut chunk_2)?;
 
         collection.combine(collection_2.to_normal())?;
 
@@ -520,7 +524,7 @@ mod test {
 
         let mut collection = collection.to_append()?;
 
-        collection.append(&chunk)?;
+        collection.append(&mut chunk)?;
 
         let mut scan = collection.to_scan()?;
 
