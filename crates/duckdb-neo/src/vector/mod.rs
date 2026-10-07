@@ -43,11 +43,34 @@ use crate::{
     error::{DuckDBError, Error},
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
+    types::DecimalSignature,
     value::Value,
 };
 
 mod element;
 pub use element::*;
+
+/// Logical-type parameters read once per vector, so row access skips the FFI lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeParams {
+    None,
+    Array { size: usize },
+    Decimal(DecimalSignature),
+}
+
+impl TypeParams {
+    fn read(logical_type: &LogicalType) -> Result<Self> {
+        Ok(match logical_type.type_id() {
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
+                size: crate::types::array::array_size(logical_type)?,
+            },
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL => {
+                Self::Decimal(DecimalSignature::from_logical_type(logical_type)?)
+            }
+            _ => Self::None,
+        })
+    }
+}
 
 /// Runtime view of a vector's storage kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,8 +294,7 @@ pub struct Vector<'a, T: VectorElement> {
     heap: Option<ffi::duckdb_v2_arena_handle>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
-    /// Elements per row of an `ARRAY` vector, read once from its type; 0 otherwise.
-    pub(crate) array_size: usize,
+    pub(crate) params: TypeParams,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -293,11 +315,7 @@ impl<'a> Vector<'a, Unknown> {
         let logical_type = LogicalType {
             handle: logical_type_handle,
         };
-        let array_size = if logical_type.type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
-            crate::types::array::array_size(&logical_type)?
-        } else {
-            0
-        };
+        let params = TypeParams::read(&logical_type)?;
 
         let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);
@@ -316,7 +334,7 @@ impl<'a> Vector<'a, Unknown> {
             access,
             heap: None,
             children,
-            array_size,
+            params,
             _chunk: PhantomData,
             _type: PhantomData,
         })
@@ -381,9 +399,25 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             access: self.access,
             heap: self.heap,
             children: self.children,
-            array_size: self.array_size,
+            params: self.params,
             _chunk: self._chunk,
             _type: PhantomData,
+        }
+    }
+
+    /// Elements per row of an `ARRAY` vector; 0 otherwise.
+    pub(crate) fn array_size(&self) -> usize {
+        match self.params {
+            TypeParams::Array { size } => size,
+            _ => 0,
+        }
+    }
+
+    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
+    pub fn decimal_signature(&self) -> Option<DecimalSignature> {
+        match self.params {
+            TypeParams::Decimal(signature) => Some(signature),
+            _ => None,
         }
     }
 

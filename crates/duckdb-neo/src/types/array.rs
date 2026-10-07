@@ -106,8 +106,8 @@ impl<T: VectorElement> VectorElement for Array<T> {
             .expect("validated nested vector has children")
             .cached_unchecked(0);
         ArrayRef {
-            offset: physical * vector.array_size,
-            size: vector.array_size,
+            offset: physical * vector.array_size(),
+            size: vector.array_size(),
             _length: child.len(),
             child,
             _marker: PhantomData,
@@ -122,7 +122,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         T: 'a;
 
     fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        let array_size = vector.array_size;
+        let array_size = vector.array_size();
 
         if let Some(values) = &value
             && values.len() != array_size
