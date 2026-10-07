@@ -146,7 +146,7 @@ mod external {
 
             let query_one = |sql: &str, params: Parameters<'_>| -> Result<Option<Uuid>> {
                 let mut result = conn.query(sql, params)?;
-                let chunk = result.next().expect("query returned no rows")?;
+                let chunk = result.next_chunk()?.expect("query returned no rows");
                 chunk.get_vector_at::<Uuid>(0)?.get(0)
             };
 

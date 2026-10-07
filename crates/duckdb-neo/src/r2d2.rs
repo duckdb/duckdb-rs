@@ -108,7 +108,7 @@ mod tests {
             {
                 let mut result = conn.query("SELECT * FROM test", Parameters::None).unwrap();
 
-                let chunk = result.next().unwrap().unwrap();
+                let chunk = result.next_chunk().unwrap().unwrap();
 
                 let vec = chunk.get_vector_at::<i32>(0).unwrap();
 
