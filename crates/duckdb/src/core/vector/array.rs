@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child};
+use libduckdb_sys::v1::{duckdb_array_type_array_size, duckdb_array_vector_get_child};
 
 use crate::{
     Result,

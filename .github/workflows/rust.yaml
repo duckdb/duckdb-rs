@@ -16,33 +16,66 @@ env:
   RUST_BACKTRACE: full
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
-  cancel-in-progress: true
+  # PRs share one group per PR, so a new push cancels the older run.
+  # Pushes to main get a group per commit, so every main run completes.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  lint:
+    # Workspace-wide checks; run once on Linux rather than per crate.
+    name: Lint
+    runs-on: ubuntu-latest
+    env:
+      DUCKDB_DOWNLOAD_LIB: "1"
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-on-failure: false
+          cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: mozilla-actions/sccache-action@v0.0.10
+
+      - run: cargo fmt --all -- --check
+
+      - name: run cargo clippy
+        # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
+        # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
+        # That also makes buildtime_bindgen read duckdb_v2.h from the bundled tree,
+        # which the pinned download archive may not ship yet.
+        env:
+          CC: "sccache cc"
+          CXX: "sccache c++"
+        run: cargo clippy --all-targets --features "buildtime_bindgen buildtime-bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full uuid r2d2" --locked -- -D warnings
+
+      - name: Check rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        # Keep this feature list in sync with [package.metadata.docs.rs] in crates/duckdb and crates/duckdb-neo.
+        run: cargo doc --workspace --no-deps --features "modern-full vscalar vscalar-arrow vtab-full uuid r2d2"
+
+      - name: Package crates (publish check, no upload path)
+        run: cargo package --workspace --locked
+
   test:
-    # - Linux uses DUCKDB_DOWNLOAD_LIB (non-bundled)
-    # - Windows uses pre-downloaded archives via DUCKDB_LIB_DIR
-    # - bundled feature covered by the Ubuntu clippy feature set below
-    name: Test ${{ matrix.name }}
+    # Linked mode: libduckdb-sys downloads the DuckDB build pinned in
+    # crates/libduckdb-sys/.duckdb-release. The bundled backends are covered by
+    # the Linux "Test bundled (cc) extensions" step, the CMake job, and the
+    # sanitizer job on main.
+    # One runner per platform tests every crate in its own step, sharing the build cache.
+    name: Test (${{ matrix.name }})
     strategy:
       fail-fast: true
       matrix:
         include:
-          - {
-              name: Windows,
-              target: x86_64-pc-windows-msvc,
-              os: windows-latest,
-              duckdb: libduckdb-windows-amd64.zip,
-            }
-          - {
-              name: Linux,
-              target: x86_64-unknown-linux-gnu,
-              os: ubuntu-latest,
-              duckdb: libduckdb-linux-amd64.zip,
-            }
+          - { name: Linux, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { name: macOS, target: aarch64-apple-darwin, os: macos-latest }
+          - { name: Windows, target: x86_64-pc-windows-msvc, os: windows-latest }
     runs-on: ${{ matrix.os }}
     env:
+      # Explicit for clarity; the pin file makes this the default anyway.
       DUCKDB_DOWNLOAD_LIB: "1"
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
@@ -55,81 +88,43 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
-      - uses: robinraju/release-downloader@v1.4
-        name: Download duckdb
-        if: matrix.os == 'windows-latest'
-        with:
-          repository: "duckdb/duckdb"
-          tag: "v1.5.5"
-          fileName: ${{ matrix.duckdb }}
-          out-file-path: .
+      - name: Test duckdb
+        run: cargo test -p duckdb --features "modern-full vscalar vtab-full" --locked
 
-      - run: cargo fmt --all -- --check
-        if: matrix.os == 'ubuntu-latest'
+      - name: Build loadable extension
+        run: cargo build --example hello-ext --features="loadable-extension" --locked
 
-      - name: run cargo clippy
-        if: matrix.os == 'ubuntu-latest'
-        # `bundled-cmake` is checkout-only and covered in the dedicated CMake job below.
-        # extensions-full pulls in the bundled (cc) backend; wrap CC/CXX for sccache.
+      - name: Test duckdb-neo
+        run: cargo test -p duckdb-neo --features "chrono uuid r2d2" --locked
+
+      - name: Test libduckdb-sys
+        run: cargo test -p libduckdb-sys --locked
+
+      - name: Test duckdb-loadable-macros
+        run: cargo test -p duckdb-loadable-macros --locked
+
+      # Clippy compiles the bundled (cc) backend but never links or runs it; this
+      # checks that its statically linked extensions register instead of autoloading.
+      - name: Test bundled (cc) extensions
+        if: runner.os == 'Linux'
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
-        run: cargo clippy --all-targets --features "buildtime_bindgen extensions-full loadable-extension modern-full vscalar vscalar-arrow vtab-full" --locked -- -D warnings
-
-      - name: Check rustdoc
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          RUSTDOCFLAGS: -D warnings
-        # Keep this feature list in sync with crates/duckdb/Cargo.toml [package.metadata.docs.rs].
-        run: cargo doc --workspace --no-deps --features "modern-full vscalar vscalar-arrow vtab-full"
-
-      - name: Dry-run release of crates
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo publish --workspace --dry-run
-
-      # For windows
-      - name: Windows extract duckdb
-        if: matrix.os == 'windows-latest'
-        uses: DuckSoft/extract-7z-action@v1.0
-        with:
-          pathSource: D:\a\duckdb-rs\duckdb-rs\${{ matrix.duckdb }}
-          pathTarget: ${{ github.workspace }}/libduckdb
-
-      - name: Add path to PATH environment variable
-        if: matrix.os == 'windows-latest'
-        uses: myci-actions/export-env-var-powershell@1
-        with:
-          name: PATH
-          value: $env:PATH;${{ github.workspace }}/libduckdb
-
-      - name: Run cargo-test
-        if: matrix.os == 'windows-latest'
-        run: cargo test --features "modern-full vscalar vtab-full"
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-
-      - name: Build loadable extension
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo build --example hello-ext --features="loadable-extension"
-
-      - name: Build loadable extension (windows)
-        if: matrix.os == 'windows-latest'
-        run: cargo build --example hello-ext --features="loadable-extension"
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libduckdb
+        run: cargo test -p duckdb --features extensions-full --lib extension::test --locked
 
   cmake:
+    # Slow bundled C++ build; only start once the fast linked-mode tests pass.
+    needs: test
     name: Bundled CMake ${{ matrix.name }}
     strategy:
       fail-fast: true
       matrix:
+        # Both crates link the same extensions, so their two DuckDB builds share sccache objects.
         include:
-          - { name: Linux, os: ubuntu-latest }
-          - { name: macOS, os: macos-latest }
-          - { name: Windows, os: windows-latest }
+          - { name: Linux, os: ubuntu-latest, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          - { name: macOS, os: macos-latest, features: "autocomplete httpfs icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-httpfs bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
+          # httpfs is only supported on Linux and macOS.
+          - { name: Windows, os: windows-latest, features: "autocomplete icu tpch tpcds", neo_features: "bundled-cmake-autocomplete bundled-cmake-icu bundled-cmake-tpch bundled-cmake-tpcds" }
     runs-on: ${{ matrix.os }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -137,29 +132,71 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: sccache
       CMAKE_CXX_COMPILER_LAUNCHER: sccache
       DUCKDB_DISABLE_EXTENSION_LOAD: "1"
+      CMAKE_FEATURES: ${{ matrix.features }}
+      NEO_CMAKE_FEATURES: ${{ matrix.neo_features }}
     steps:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
+
+      # DuckDB's unity build includes sources by a path relative to the build
+      # directory. With a deep OUT_DIR that unnormalized include exceeds MSVC's
+      # 260-char limit (C1083). Keep Windows build output at the drive root,
+      # as the nightly workflow does.
+      - name: Shorten Windows Cargo target directory
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          case "$RUNNER_TEMP" in
+            [A-Za-z]:[\\/]*) runner_drive=${RUNNER_TEMP%%:*} ;;
+            *)
+              echo "::error::Cannot derive a Windows drive from RUNNER_TEMP=$RUNNER_TEMP"
+              exit 1
+              ;;
+          esac
+          echo "CARGO_TARGET_DIR=$runner_drive:/t" >> "$GITHUB_ENV"
+
+      # Each crate builds DuckDB in its own OUT_DIR; strip those paths from sccache keys.
+      - name: Configure sccache base directories
+        shell: bash
+        run: |
+          if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+            echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE;$CARGO_TARGET_DIR" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-on-failure: false
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@v0.0.10
 
-      - name: Verify static linking with extension loading disabled
+      - name: Install HTTPFS dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libcurl4-openssl-dev libssl-dev
+
+      - name: Install HTTPFS dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install pkg-config openssl@3
+
+      - name: "libduckdb-sys: Check CMake without default features"
+        if: runner.os == 'Linux'
+        run: cargo check -p libduckdb-sys --no-default-features --features "bundled-cmake capi-v1" --locked
+
+      - name: "duckdb: Verify static linking with extension loading disabled"
         shell: bash
         run: |
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT install_mode || ',' || install_path FROM duckdb_extensions() WHERE extension_name = 'icu';")
           echo "$output"
           grep -qF "STATICALLY_LINKED,(BUILT-IN)" <<<"$output"
 
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
           echo "$output"
           grep -qF "false,false" <<<"$output"
 
           set +e
-          output=$(cargo run -p duckdb --example repl --features icu -- -c "LOAD sqlite_scanner;" 2>&1)
+          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "LOAD sqlite_scanner;" 2>&1)
           status=$?
           set -e
 
@@ -167,12 +204,24 @@ jobs:
           test $status -ne 0
           grep -qF "Loading external extensions is disabled through a compile time flag" <<<"$output"
 
-      - name: ICU functional test
-        run: cargo test -p duckdb --features icu --lib extension::test::test_extension_icu -- --exact
+      - name: "duckdb: ICU functional test"
+        shell: bash
+        run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_icu -- --exact
+
+      - name: "duckdb: HTTPFS loads without downloaded artifacts"
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cargo test -p duckdb --features "$CMAKE_FEATURES" --lib extension::test::test_extension_httpfs -- --exact
+
+      - name: "duckdb-neo: Test with bundled extensions"
+        run: cargo test -p duckdb-neo --features "$NEO_CMAKE_FEATURES" --locked
 
   msrv:
-    name: MSRV Check
+    name: MSRV
     runs-on: ubuntu-latest
+    env:
+      # cargo check never links, so skip the pinned-library download.
+      DUCKDB_DOWNLOAD_LIB: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -182,9 +231,14 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@cargo-binstall
       - run: cargo binstall --no-confirm cargo-msrv
-      - run: cargo msrv verify --path crates/duckdb
-      - run: cargo msrv verify --path crates/duckdb-loadable-macros
-      - run: cargo msrv verify --path crates/libduckdb-sys
+      - name: MSRV duckdb
+        run: cargo msrv verify --path crates/duckdb
+      - name: MSRV duckdb-loadable-macros
+        run: cargo msrv verify --path crates/duckdb-loadable-macros
+      - name: MSRV duckdb-neo
+        run: cargo msrv verify --path crates/duckdb-neo
+      - name: MSRV libduckdb-sys
+        run: cargo msrv verify --path crates/libduckdb-sys
 
   sanitizer:
     name: Address Sanitizer
@@ -202,10 +256,9 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
       - name: Tests with asan
         env:
-          # PRs use a downloaded libduckdb for speed (no bundled C++ ASAN coverage).
+          # PRs link the pinned libduckdb download for speed (no bundled C++ ASAN coverage).
           # Pushes to main keep extensions-full/bundled to preserve deeper coverage.
           ASAN_FEATURES: ${{ github.ref == 'refs/heads/main' && 'serde_json url r2d2 uuid polars vscalar vscalar-arrow extensions-full' || 'serde_json url r2d2 uuid polars vscalar vscalar-arrow' }}
-          DUCKDB_DOWNLOAD_LIB: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
           RUSTFLAGS: -Zsanitizer=address -C debuginfo=0
           RUSTDOCFLAGS: -Zsanitizer=address
           ASAN_OPTIONS: "detect_stack_use_after_return=1:detect_leaks=1:symbolize=1"
@@ -215,4 +268,4 @@ jobs:
           CXX: "sccache c++"
         # We cannot run "modern-full" with asan as the chrono feature will auto-load release binaries of
         # the ICU-extension, which are not built with ASAN and will cause a crash.
-        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb
+        run: cargo test --lib --tests --features "${ASAN_FEATURES}" --target x86_64-unknown-linux-gnu --package duckdb --package duckdb-neo

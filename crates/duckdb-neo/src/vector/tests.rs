@@ -1,0 +1,1788 @@
+use std::collections::HashMap;
+
+use crate::logical_type::LogicalTypeID;
+use crate::types::{Any, StructValue};
+use crate::{
+    Parameters, ToValue,
+    builder_helpers::scalar_callback,
+    connection::FFILink,
+    data_chunk::DataChunk,
+    environment::{Environment, StorageLocation},
+    error::{DuckDBError, Error},
+    logical_type::LogicalType,
+    query_result::QueryResultStep,
+    signature::Parameter,
+    types::{
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
+        List, Map, MapValue, Struct, StructSchema, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
+        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UnionSchema,
+        UnionValue, UuidValueRaw, Variant, structs::StructWrite, union::UnionWriter,
+    },
+    vector::StorageKind,
+};
+
+use crate::{scalar::ScalarFunctionBuilder, signature::SignatureBuilder};
+
+struct TestStruct;
+
+impl StructSchema for TestStruct {
+    fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
+        Ok(vec![
+            ("key", i32::logical_type(link)?),
+            ("value", String::logical_type(link)?),
+        ])
+    }
+}
+
+struct TestUnion;
+
+impl UnionSchema for TestUnion {
+    fn members<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
+        Ok(vec![
+            ("key", i32::logical_type(link)?),
+            ("value", String::logical_type(link)?),
+        ])
+    }
+}
+
+scalar_callback!(NegateScalar, i32, |input, output, _ctx, _user_data| {
+    let input = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(input.len())?;
+    for (i, v) in input.iter()?.enumerate() {
+        match v {
+            Some(x) => output.write(i, Some(-x))?,
+            None => output.write(i, None)?,
+        }
+    }
+    let written: Vec<_> = output.iter()?.map(|value| value.copied()).collect();
+    assert_eq!(written, vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]);
+    Ok(())
+});
+
+scalar_callback!(UpperScalar, String, |input, output, _ctx, _user_data| {
+    let input = input.get_vector_at::<String>(0)?;
+    let mut output = output;
+    output.set_size(input.len())?;
+    for (i, v) in input.iter()?.enumerate() {
+        match v {
+            Some(s) => output.write(i, Some(&s.to_uppercase()))?,
+            None => output.write(i, None)?,
+        }
+    }
+    Ok(())
+});
+
+scalar_callback!(
+    MapScalar,
+    Map<i32, String>,
+    |input, result, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let values = input.get_vector_at::<String>(1)?;
+    let total_len = keys.len();
+    let rows: Vec<_> = keys
+        .iter()?
+        .zip(values.iter()?)
+        .map(|(key, value)| {
+            (
+                key.copied().expect("key must not be null"),
+                value.expect("value must not be null").to_string(),
+            )
+        })
+        .collect();
+    let mut result = result;
+    result.set_size(total_len)?;
+    for (index, (key, value)) in rows.iter().enumerate() {
+        result.write(
+            index,
+            Some(HashMap::from([(*key, value.as_str())])),
+        )?;
+    }
+    let written: Vec<_> = result.iter()?.collect();
+    for (row, (key, value)) in written.into_iter().zip(&rows) {
+        assert_eq!(row.as_ref().unwrap().get(key)?, Some(value.as_str()));
+    }
+    Ok(())
+    }
+);
+
+scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let values = input.get_vector_at::<String>(1)?;
+    let rows: Vec<(i32, Option<&str>)> = keys
+        .iter()?
+        .zip(values.iter()?)
+        .map(|(key, value)| (*key.unwrap(), value))
+        .collect();
+
+    let mut output = output;
+    output.set_size(rows.len())?;
+    output.children.iter_mut().for_each(|v| v.set_size(rows.len()).unwrap());
+
+    for (index, (key, value)) in rows.iter().enumerate() {
+        match *key {
+            1 => output.write(
+                index,
+                Some(UnionWriter::set_value::<i32>(
+                    0u8,
+                    value.map_or(None, |v| Some(v.len() as i32)),
+                )),
+            )?,
+            2 => output.write(index, Some(UnionWriter::set_value::<String>(1u8, *value)))?,
+            _ => unimplemented!("Unexpected key value: {}", key),
+        }
+    }
+    Ok(())
+});
+
+scalar_callback!(StructScalar, Struct, |input, output, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let values = input.get_vector_at::<String>(1)?;
+    let rows: Vec<_> = keys
+        .iter()?
+        .zip(values.iter()?)
+        .map(|(key, value)| (*key.unwrap(), value.unwrap().to_string()))
+        .collect();
+    let mut output = output;
+    output.set_size(rows.len())?;
+    for (index, (key, value)) in rows.iter().enumerate() {
+        output.write(
+            index,
+            Some(
+                StructWrite::default()
+                    .field::<i32>(Some(*key))
+                    .field::<String>(Some(value)),
+            ),
+        )?;
+    }
+    for (row, (key, value)) in output.iter()?.zip(rows) {
+        let row = row.unwrap();
+        assert_eq!(row.get::<i32>("key")?, Some(&key));
+        assert_eq!(row.get::<String>("value")?, Some(value.as_str()));
+    }
+    Ok(())
+});
+
+scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
+    let mut result = result;
+    let val = 42_i32.value(&ctx)?;
+    result.make_constant(val, true, 10)?;
+    assert_eq!(unsafe { result.get_view().unwrap().as_slice() }.unwrap(), &[42]);
+    Ok(())
+});
+
+scalar_callback!(SequenceScalar, i32, |input, result, _ctx, _user_data| {
+    let input_len = input.vectors()?[0].len();
+
+    let mut result = result;
+    result.make_sequence(42, 10, input_len)?;
+    Ok(())
+});
+
+scalar_callback!(CopyStringScalar, String, |input, result, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<String>(0)?;
+    if vector.storage_kind() == StorageKind::Other {
+        vector.flatten()?;
+    }
+    let mut result = result;
+    result.set_size(vector.len())?;
+    for (i, item) in vector.iter()?.enumerate() {
+        result.write(i, item)?;
+    }
+    Ok(())
+});
+
+scalar_callback!(DictionaryProbeScalar, i32, |input, output, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    if vector.storage_kind() == StorageKind::Dictionary {
+        // Dictionary vectors expose a selection vector mapping each logical
+        // row into a shared physical child buffer. Reading through the
+        // normal iterator must already honour that indirection.
+        let selection = vector.get_view().unwrap().selection().unwrap().to_vec();
+        assert_eq!(selection.len(), 2);
+
+        let before: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(before, vec![Some(i32::MAX), None]);
+
+        // Flattening should collapse the dictionary into a flat vector while
+        // preserving the logical values.
+        vector.flatten()?;
+        assert_eq!(vector.storage_kind(), StorageKind::Flat);
+
+        let after: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(after, before);
+    } else if vector.storage_kind() == StorageKind::Other {
+        // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
+        // flattened before it can be read like the other storage kinds.
+        vector.flatten()?;
+    }
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+pub fn test_vector_dictionary() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "dict_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        DictionaryProbeScalar,
+    )
+    .register(&conn)?;
+
+    // `test_vector_types` feeds its output straight into the projection
+    // below without an intervening `Fetch`, so `dict_probe` observes the
+    // table function's chunks in their native storage kind: FLAT, CONSTANT,
+    // DICTIONARY, then OTHER (SEQUENCE) - in that fixed order. The
+    // DICTIONARY chunk is the one asserted on inside `DictionaryProbeScalar`.
+    let result = conn.query(
+        "SELECT dict_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+
+    let mut values = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+        values.extend(vector.iter()?.map(|v| v.copied()));
+    }
+
+    assert_eq!(
+        values,
+        vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(3),
+            Some(5),
+            Some(7),
+        ]
+    );
+
+    Ok(())
+}
+
+scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    if vector.storage_kind() == StorageKind::Constant {
+        // DuckDB constant-folds scalar function calls whose arguments are
+        // all CONSTANT_VECTOR: it runs the callback on a single logical row
+        // and broadcasts the (constant) result back out to the real batch
+        // size afterwards, so the vector we observe here has length 1 and
+        // must not be flattened - flattening would defeat the broadcast.
+        assert_eq!(vector.len(), 1);
+
+        let view = vector.get_view().unwrap();
+        if let Some(selection) = view.selection() {
+            assert!(selection.iter().all(|&index| index == 0));
+        }
+        assert_eq!(unsafe { view.as_slice() }.unwrap().len(), 1);
+
+        let values: Vec<_> = vector.iter()?.map(|v| v.copied()).collect();
+        assert_eq!(values, vec![Some(i32::MIN)]);
+    } else if vector.storage_kind() == StorageKind::Other {
+        // The SEQUENCE-encoded chunk emitted by `test_vector_types` must be
+        // flattened before it can be read like the other storage kinds.
+        vector.flatten()?;
+    }
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+pub fn test_vector_constant() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "const_probe",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        ConstantProbeScalar,
+    )
+    .register(&conn)?;
+
+    // Same chunk sequence as `test_vector_dictionary` (FLAT, CONSTANT,
+    // DICTIONARY, then OTHER/SEQUENCE); this test asserts on the CONSTANT
+    // chunk inside `ConstantProbeScalar`. Note that DuckDB constant-folds
+    // the call for that chunk, so `const_probe` itself only observes a
+    // single logical row before DuckDB broadcasts the result back to the
+    // full batch size shown in `values` below.
+    let result = conn.query(
+        "SELECT const_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+
+    let mut values = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+        values.extend(vector.iter()?.map(|v| v.copied()));
+    }
+
+    assert_eq!(
+        values,
+        vec![
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MIN),
+            Some(i32::MAX),
+            None,
+            Some(3),
+            Some(5),
+            Some(7),
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_vector_read_write() -> crate::Result<()> {
+    let env = Environment::new().expect("Failed to create environment");
+    let db = env
+        .open(StorageLocation::InMemory)
+        .expect("Failed to open in-memory database");
+    let conn = db.connect().expect("Failed to connect to database");
+
+    ScalarFunctionBuilder::new(
+        "test",
+        SignatureBuilder::new(
+            [Parameter::normal("input", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        NegateScalar,
+    )
+    .register(&conn)
+    .expect("Failed to register scalar function");
+
+    let statements = conn
+        .parse("SELECT test(unnest([1, 2, 3, 4, 5]))")
+        .expect("Failed to parse query");
+
+    for stmt in statements {
+        let stmt = stmt.expect("Failed to get statement");
+        let mut result = conn.query(stmt, Parameters::None).expect("Failed to execute statement");
+
+        loop {
+            match result.step().expect("Failed to step result") {
+                QueryResultStep::Chunk(chunk) => {
+                    let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector");
+
+                    let out: Vec<Option<i32>> = vector.iter()?.map(|x| x.copied()).collect();
+                    assert_eq!(out, vec![Some(-1), Some(-2), Some(-3), Some(-4), Some(-5)]);
+                }
+                QueryResultStep::Waiting => continue,
+                QueryResultStep::Canceled => panic!("Query canceled unexpectedly"),
+                QueryResultStep::Finished => break,
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_logical_type_cast() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let res = conn.query("SELECT 1", Parameters::None)?.next().unwrap()?;
+
+    let vector = res.get_vector_at::<i32>(0)?;
+
+    for item in vector.iter()? {
+        assert_eq!(item, Some(&1));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_vector_string() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "to_upper",
+        SignatureBuilder::new(
+            [Parameter::normal("IN", String::logical_type(&conn)?)],
+            String::logical_type(&conn)?,
+        ),
+        UpperScalar,
+    )
+    .register(&conn)?;
+
+    let res = conn
+        .query(
+            "SELECT to_upper(unnest(['hello', 'world', '123456789012', 'longerthaninline']))",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+
+    let vector = res.get_vector_at::<String>(0)?;
+    let data: Vec<_> = vector.iter()?.collect();
+
+    assert!(data.len() == 4, "Expected 4 rows, got {}", data.len());
+
+    assert_eq!(
+        data,
+        vec![
+            Some("HELLO"),
+            Some("WORLD"),
+            Some("123456789012"),
+            Some("LONGERTHANINLINE"),
+        ],
+    );
+    Ok(())
+}
+
+#[test]
+fn test_vector_list() -> crate::Result<()> {
+    scalar_callback!(ListMultScalar, List<i32>, |input, output, _ctx, _user_data| {
+        let input = input.get_vector_at::<List<i32>>(0)?;
+        let mut output = output;
+        output.set_size(input.len())?;
+        for (i, v) in input.iter()?.enumerate() {
+            match v {
+                Some(list) => {
+                    let new_list: Vec<Option<i32>> = list.iter().map(|x| x.map(|v| v * 2)).collect();
+                    output.write(i, Some(new_list))?;
+                }
+                None => output.write(i, None)?,
+            }
+        }
+        Ok(())
+    });
+
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let list_logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
+
+    ScalarFunctionBuilder::new(
+        "list_mult",
+        SignatureBuilder::new([Parameter::normal("IN", list_logical_type.clone())], list_logical_type),
+        ListMultScalar,
+    )
+    .register(&conn)?;
+
+    let res = conn
+        .query(
+            "SELECT list_mult(unnest([[1, 2], [3, NULL, 5], [], NULL]))",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+
+    let vector = res.get_vector_at::<List<i32>>(0)?;
+
+    let items: Vec<_> = vector
+        .iter()?
+        .map(|r| r.map(|v| v.iter().collect::<Vec<_>>()))
+        .collect();
+
+    let expected = [
+        Some(vec![Some(&2), Some(&4)]),
+        Some(vec![Some(&6), None, Some(&10)]),
+        Some(vec![]),
+        None,
+    ];
+
+    assert_eq!(items, expected);
+    Ok(())
+}
+
+struct MyStruct {
+    key1: Option<String>,
+    key2: Option<i32>,
+}
+
+#[test]
+fn test_vector_struct() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let res = conn
+        .query(
+            "SELECT unnest([{'key1': 'value1', 'key2': 42}, {'key1': NULL, 'key2': NULL}])",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+
+    let vector = res.get_vector_at::<Struct>(0)?;
+
+    let mut reader = vector.iter()?;
+
+    let row = reader.next().unwrap().unwrap();
+
+    let item = MyStruct {
+        key1: row.get::<String>("key1")?.map(str::to_string),
+        key2: row.get::<i32>("key2")?.copied(),
+    };
+
+    assert_eq!(item.key1, Some("value1".to_string()));
+    assert_eq!(item.key2, Some(42));
+
+    let row = reader.next().unwrap().unwrap();
+
+    let item = MyStruct {
+        key1: row.get::<String>("key1")?.map(str::to_string),
+        key2: row.get::<i32>("key2")?.copied(),
+    };
+
+    assert_eq!(item.key1, None);
+    Ok(())
+}
+
+#[test]
+pub fn test_vector_array() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let res = conn
+        .query(
+            "SELECT unnest([array_value(1, NULL, 3), array_value(3, 4, 5), NULL])",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+
+    let vector = res.get_vector_at::<Array<i32>>(0)?;
+    let mut reader = vector.iter()?;
+
+    let item = reader.next().unwrap().unwrap();
+    assert_eq!(item.size(), 3);
+
+    let reader = vector.iter()?;
+
+    let items: Vec<_> = reader.map(|r| r.map(|v| v.iter().collect::<Vec<_>>())).collect();
+
+    let expected = [
+        Some(vec![Some(&1), None, Some(&3)]),
+        Some(vec![Some(&3), Some(&4), Some(&5)]),
+        None,
+    ];
+
+    assert_eq!(items, expected);
+    Ok(())
+}
+
+#[test]
+pub fn test_vector_union() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let mut statements = conn.parse(
+        "CREATE TABLE tbl1 (u UNION(num INTEGER, str VARCHAR));
+        INSERT INTO tbl1 VALUES (1), (42), (NULL), ('two'), (union_value(str := 'three'));
+        SELECT u FROM tbl1;",
+    )?;
+
+    conn.execute(statements.next().unwrap()?, Parameters::None)?;
+    conn.execute(statements.next().unwrap()?, Parameters::None)?;
+
+    let res = conn
+        .query(statements.next().unwrap()?, Parameters::None)?
+        .next()
+        .unwrap()?;
+
+    let vector = res.get_vector_at::<Union>(0)?;
+    assert_eq!(vector.len(), 5);
+    let mut reader = vector.iter()?;
+
+    assert_eq!(
+        reader.next().unwrap().unwrap().member(),
+        0,
+        "Expected first union member to be 0 (num)"
+    );
+
+    assert_eq!(reader.next().unwrap().unwrap().get::<i32>(0)?, Some(&42));
+
+    assert!(reader.next().unwrap().is_none());
+    assert_eq!(reader.next().unwrap().unwrap().get::<String>(1)?, Some("two"));
+
+    // check if failed cast errors
+    assert_eq!(
+        reader.next().unwrap().unwrap().get::<i32>(1).unwrap_err().code,
+        DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID
+    );
+    Ok(())
+}
+
+#[test]
+pub fn test_vector_map() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let res = conn
+        .query(
+            "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: NULL, 2: 41.2}]);",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+
+    assert_eq!(res.vectors_count()?, 1);
+
+    let vector = res.get_vector_at::<Map<i32, Decimal<i16>>>(0)?;
+    let mut reader = vector.iter()?;
+
+    assert_eq!(vector.len(), 3);
+
+    let row = reader.next().unwrap().unwrap();
+
+    let hmap = row.to_hash_map()?;
+
+    assert_eq!(hmap.get(&1).unwrap(), &Some(&121i16));
+    assert_eq!(hmap.get(&2).unwrap(), &Some(&412i16));
+
+    assert_eq!(row.keys()?, vec![&1, &2]);
+    assert_eq!(row.values()?, vec![&121, &412]);
+
+    assert_eq!(row.get(&1)?, Some(&121));
+    assert_eq!(row.get(&2)?, Some(&412));
+
+    let row = reader.next().unwrap().unwrap();
+
+    assert_eq!(row.get(&1)?, Some(&1121));
+    assert_eq!(row.get(&2)?, Some(&1412));
+
+    let row = reader.next().unwrap().unwrap();
+
+    let hmap = row.to_hash_map()?;
+
+    assert_eq!(hmap.get(&1), Some(&None));
+    assert_eq!(hmap.get(&2), Some(&Some(&412i16)));
+
+    assert_eq!(row.get(&1)?, None);
+    assert_eq!(row.get(&2)?, Some(&412));
+
+    assert!(reader.next().is_none());
+
+    Ok(())
+}
+
+#[test]
+pub fn vector_complex_write() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let ltype = MapValue::<i32, String>::logical_type(&conn)?;
+
+    ScalarFunctionBuilder::new(
+        "to_map",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("key", i32::logical_type(&conn)?),
+                Parameter::normal("value", String::logical_type(&conn)?),
+            ],
+            ltype,
+        ),
+        MapScalar,
+    )
+    .register(&conn)?;
+
+    let mut statements = conn.parse(
+        "SELECT UNNEST([to_map(12, 'AA'), to_map(15, 'BB')]); SELECT to_map(unnest([1,2,3]), unnest(['A', 'B', 'C']))",
+    )?;
+
+    let statement = statements.next().unwrap()?;
+
+    let result = conn.query(statement, Parameters::None)?;
+
+    for item in result {
+        let item = item?;
+
+        let res = item.get_vector_at::<Map<i32, String>>(0)?;
+
+        assert!(res.len() == 2);
+        let mut reader = res.iter()?;
+
+        let item = reader.next().unwrap().unwrap();
+
+        assert_eq!(item.get(&12)?, Some("AA"));
+
+        let item = reader.next().unwrap().unwrap();
+
+        assert_eq!(item.get(&15)?, Some("BB"));
+    }
+
+    let statement = statements.next().unwrap()?;
+
+    let mut result = conn.query(statement, Parameters::None)?;
+
+    if let Some(item) = result.next() {
+        let item = item?;
+
+        let res = item.get_vector_at::<Map<i32, String>>(0)?;
+
+        assert_eq!(res.len(), 3);
+        let expected = [(1, "A"), (2, "B"), (3, "C")];
+
+        for (item, (key, value)) in res.iter()?.zip(expected) {
+            assert_eq!(item.unwrap().get(&key)?, Some(value));
+        }
+
+        return Ok(());
+    }
+    Err(Error {
+        code: DuckDBError::DUCKDB_V2_ERROR_API,
+        message: "Not found".to_string(),
+    })
+}
+
+#[test]
+pub fn vector_union_write() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let union_type = UnionValue::<TestUnion, i32>::logical_type(&conn)?;
+
+    ScalarFunctionBuilder::new(
+        "to_union",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("key", i32::logical_type(&conn)?),
+                Parameter::normal("value", String::logical_type(&conn)?),
+            ],
+            union_type,
+        ),
+        UnionScalar,
+    )
+    .register(&conn)?;
+
+    let statement = conn
+        .parse("SELECT to_union(unnest([1, 2, 2]), unnest(['WWWADWWWAample', 'OPAOPDAOADWADtablesss', NULL]))")?
+        .next()
+        .unwrap()?;
+    for chunk in conn.query(statement, Parameters::None)? {
+        let chunk = chunk?;
+        let mut vector = chunk.get_vector_at::<Union>(0)?;
+        vector.flatten()?;
+        let rows: Vec<_> = vector.iter()?.collect();
+
+        assert_eq!(rows[0].as_ref().unwrap().member(), 0);
+        assert_eq!(rows[1].as_ref().unwrap().member(), 1);
+
+        assert_eq!(rows[0].as_ref().unwrap().get::<i32>(0)?, Some(&14));
+        assert_eq!(
+            rows[1].as_ref().unwrap().get::<String>(1)?,
+            Some("OPAOPDAOADWADtablesss")
+        );
+
+        assert_eq!(rows[2].as_ref().unwrap().member(), 1);
+        assert_eq!(rows[2].as_ref().unwrap().get::<String>(1)?, None);
+    }
+    Ok(())
+}
+
+#[test]
+pub fn vector_struct_write() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let struct_type = StructValue::<TestStruct>::logical_type(&conn)?;
+
+    ScalarFunctionBuilder::new(
+        "to_struct",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("key", i32::logical_type(&conn)?),
+                Parameter::normal("value", String::logical_type(&conn)?),
+            ],
+            struct_type,
+        ),
+        StructScalar,
+    )
+    .register(&conn)?;
+
+    let statement = conn
+        .parse("SELECT to_struct(unnest([1, 2]), unnest(['A', 'B']))")?
+        .next()
+        .unwrap()?;
+    for chunk in conn.query(statement, Parameters::None)? {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<Struct>(0)?;
+        let rows: Vec<_> = vector.iter()?.collect();
+        assert_eq!(rows[0].as_ref().unwrap().get::<i32>("key")?, Some(&1));
+        assert_eq!(rows[1].as_ref().unwrap().get::<String>("value")?, Some("B"));
+    }
+    Ok(())
+}
+
+#[test]
+pub fn vector_test_bignum() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query(
+        "select unnest([1090812098190281092901::BIGNUM, 1090812098190281092902::BIGNUM, -1090812098190281092903::BIGNUM])",
+        Parameters::None,
+    )?;
+
+    for item in result {
+        let item = item?;
+
+        let res = item.get_vector_at::<BigNum>(0)?;
+
+        assert!(res.len() == 3);
+        let reader = res.iter()?;
+
+        let expected = [
+            Some("1090812098190281092901"),
+            Some("1090812098190281092902"),
+            Some("-1090812098190281092903"),
+        ];
+
+        for (i, item) in reader.enumerate() {
+            let decoded = item.unwrap().decode()?;
+
+            let result = decoded.to_string();
+
+            assert_eq!(Some(result.as_str()), expected[i]);
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+pub fn vector_value_types() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    macro_rules! assert_round_trip {
+        ($value:expr, $type:ty) => {{
+            let input = $value;
+            let mut result = conn.query("SELECT $1", Parameters::positional(&[&input]))?;
+            let chunk = result.next().unwrap()?;
+            let vector = chunk.get_vector_at::<$type>(0)?;
+            assert_eq!(vector.get(0)?, Some(&input));
+            drop(vector);
+            drop(chunk);
+            drop(result);
+        }};
+    }
+
+    assert_round_trip!(DateValue(-1), DateValue);
+    assert_round_trip!(TimeValue(1), TimeValue);
+    assert_round_trip!(TimeNsValue(2), TimeNsValue);
+    assert_round_trip!(TimeTzValue(3), TimeTzValue);
+    assert_round_trip!(TimestampValue(-4), TimestampValue);
+    assert_round_trip!(TimestampSecValue(-5), TimestampSecValue);
+    assert_round_trip!(TimestampMsValue(-6), TimestampMsValue);
+    assert_round_trip!(TimestampNsValue(-7), TimestampNsValue);
+    assert_round_trip!(TimestampTzValue(-8), TimestampTzValue);
+    assert_round_trip!(TimestampTzNsValue(-9), TimestampTzNsValue);
+    assert_round_trip!(UuidValueRaw(i128::MIN + 10), UuidValueRaw);
+    assert_round_trip!(
+        IntervalValue {
+            months: -1,
+            days: 2,
+            micros: -3,
+        },
+        IntervalValue
+    );
+
+    let mut result = conn.query(
+        "SELECT $1",
+        Parameters::positional(&[&DecimalValue::<i64, 18, 3>(-123_456)]),
+    )?;
+    let chunk = result.next().unwrap()?;
+    let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    assert_eq!(vector.get(0)?, Some(&-123_456));
+    drop(vector);
+    drop(chunk);
+    drop(result);
+
+    let blob = BlobValue(vec![0_u8, 1, 255]);
+    let mut result = conn.query("SELECT $1", Parameters::positional(&[&blob]))?;
+    let chunk = result.next().unwrap()?;
+    let vector = chunk.get_vector_at::<BlobValue>(0)?;
+    assert_eq!(vector.get(0)?, Some(blob.0.as_slice()));
+    drop(vector);
+    drop(chunk);
+    drop(result);
+
+    let bit = BitValue(vec![3_u8, 0b0001_0101]);
+    let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
+    let chunk = result.next().unwrap()?;
+    let vector = chunk.get_vector_at::<BitValue>(0)?;
+    assert_eq!(vector.get(0)?, Some(bit.0.as_slice()));
+    drop(vector);
+    drop(chunk);
+    drop(result);
+
+    let bignum = BigNumValue {
+        is_negative: true,
+        magnitude: vec![1, 2, 3, 4, 5],
+    };
+    let mut result = conn.query("SELECT $1", Parameters::positional(&[&bignum]))?;
+    let chunk = result.next().unwrap()?;
+    let vector = chunk.get_vector_at::<BigNumValue>(0)?;
+    let decoded = vector.get(0)?.unwrap().decode()?;
+    assert_eq!(decoded.is_negative, bignum.is_negative);
+    assert_eq!(decoded.magnitude, bignum.magnitude);
+
+    Ok(())
+}
+
+#[test]
+pub fn vector_writable_value_types() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    macro_rules! assert_copy_write {
+        ($type:ty, $value:expr) => {{
+            let chunk = DataChunk::create(&[<$type>::logical_type(&conn)?], true)?;
+            let mut vector = chunk.get_vector_at::<$type>(0)?;
+            vector.set_size(2)?;
+            let value = $value;
+            vector.write(0, Some(value))?;
+            vector.write(1, None)?;
+            assert_eq!(vector.get(0)?, Some(&value));
+            assert_eq!(vector.get(1)?, None);
+        }};
+    }
+
+    assert_copy_write!(DateValue, DateValue(-1));
+    assert_copy_write!(TimeValue, TimeValue(1));
+    assert_copy_write!(TimeNsValue, TimeNsValue(2));
+    assert_copy_write!(TimeTzValue, TimeTzValue(3));
+    assert_copy_write!(TimestampValue, TimestampValue(-4));
+    assert_copy_write!(TimestampSecValue, TimestampSecValue(-5));
+    assert_copy_write!(TimestampMsValue, TimestampMsValue(-6));
+    assert_copy_write!(TimestampNsValue, TimestampNsValue(-7));
+    assert_copy_write!(TimestampTzValue, TimestampTzValue(-8));
+    assert_copy_write!(TimestampTzNsValue, TimestampTzNsValue(-9));
+    assert_copy_write!(UuidValueRaw, UuidValueRaw(i128::MIN + 10));
+    assert_copy_write!(
+        IntervalValue,
+        IntervalValue {
+            months: -1,
+            days: 2,
+            micros: -3,
+        }
+    );
+
+    let chunk = DataChunk::create(&[DecimalValue::<i64, 18, 3>::logical_type(&conn)?], true)?;
+    assert!(chunk.get_vector_at::<Decimal<i32>>(0).is_err());
+    let mut vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(-123_456))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some(&-123_456));
+    assert_eq!(vector.get(1)?, None);
+
+    let chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BlobValue>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(&[0_u8, 1, 255]))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some([0_u8, 1, 255].as_slice()));
+    assert_eq!(vector.get(1)?, None);
+
+    let chunk = DataChunk::create(&[BitValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BitValue>(0)?;
+    vector.set_size(2)?;
+    assert!(vector.write(0, Some(&[])).is_err());
+    vector.write(0, Some(&[3_u8, 0b0001_0101]))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?, Some([3_u8, 0b0001_0101].as_slice()));
+    assert_eq!(vector.get(1)?, None);
+
+    let bignum = BigNumValue {
+        is_negative: true,
+        magnitude: vec![1, 2, 3, 4, 5],
+    };
+    let chunk = DataChunk::create(&[BigNumValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BigNumValue>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(&bignum))?;
+    vector.write(1, None)?;
+    assert_eq!(vector.get(0)?.unwrap().decode()?, bignum);
+    assert!(vector.get(1)?.is_none());
+
+    let mut source = conn.query("SELECT 12345678901234567890::BIGNUM", Parameters::None)?;
+    let source_chunk = source.next().unwrap()?;
+    let source_vector = source_chunk.get_vector_at::<BigNum>(0)?;
+    let borrowed = source_vector.get(0)?.unwrap();
+    let chunk = DataChunk::create(&[BigNum::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<BigNum>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(borrowed))?;
+    assert_eq!(vector.get(0)?.unwrap().decode()?.to_string(), "12345678901234567890");
+
+    let chunk = DataChunk::create(&[<[i32; 3]>::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at::<Array<i32>>(0)?;
+    vector.set_size(2)?;
+    vector.write(1, None)?;
+    assert_eq!(vector.children[0].len(), 6);
+    assert!(vector.write(0, Some(vec![Some(1), Some(2)])).is_err());
+    vector.write(0, Some(vec![Some(1), None, Some(3)]))?;
+    assert_eq!(
+        vector
+            .get(0)?
+            .unwrap()
+            .iter()
+            .map(|value| value.copied())
+            .collect::<Vec<_>>(),
+        vec![Some(1), None, Some(3)]
+    );
+    assert!(vector.get(1)?.is_none());
+
+    Ok(())
+}
+
+#[test]
+pub fn test_vector_make_constant() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "to_constant",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        ConstantScalar,
+    )
+    .register(&conn)?;
+
+    let mut statements = conn.parse("SELECT to_constant(unnest([1,2,3]));")?;
+
+    let statement = statements.next().unwrap()?;
+
+    assert!(statements.next().is_none());
+
+    let result = conn.query(statement, Parameters::None)?;
+
+    for item in result {
+        let item = item?;
+
+        let res = item.get_vector_at::<i32>(0)?;
+
+        assert!(res.len() == 3);
+        let mut reader = res.iter()?;
+
+        assert_eq!(reader.next(), Some(Some(&42)));
+        assert_eq!(reader.next(), Some(Some(&42)));
+        assert_eq!(reader.next(), Some(Some(&42)));
+        assert_eq!(reader.next(), None);
+    }
+
+    Ok(())
+}
+
+#[test]
+pub fn test_vector_make_sequence() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "to_sequence",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        SequenceScalar,
+    )
+    .register(&conn)?;
+
+    let mut statements = conn.parse("SELECT to_sequence(unnest([1,2,3]));")?;
+
+    let statement = statements.next().unwrap()?;
+
+    assert!(statements.next().is_none());
+
+    let result = conn.query(statement, Parameters::None)?;
+
+    for item in result {
+        let item = item?;
+
+        let res = item.get_vector_at::<i32>(0)?;
+
+        assert!(res.len() == 3);
+        let mut reader = res.iter()?;
+
+        assert_eq!(reader.next(), Some(Some(&42)));
+        assert_eq!(reader.next(), Some(Some(&52)));
+        assert_eq!(reader.next(), Some(Some(&62)));
+        assert_eq!(reader.next(), None);
+    }
+
+    Ok(())
+}
+
+#[test]
+pub fn test_vector_types() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "test",
+        SignatureBuilder::new(
+            [Parameter::normal("in", String::logical_type(&conn)?)],
+            String::logical_type(&conn)?,
+        ),
+        CopyStringScalar,
+    )
+    .register(&conn)?;
+
+    let result = conn.query(
+        r#"SELECT test(x) from test_vector_types(null::VARCHAR) as t(x);"#,
+        Parameters::None,
+    )?;
+
+    let mut concatenated = vec![];
+
+    for item in result {
+        let item = item?;
+
+        let vector = item.get_vector_at::<String>(0)?;
+
+        concatenated.extend(vector.iter()?.map(|x| x.map(str::to_string)));
+    }
+
+    assert_eq!(
+        concatenated,
+        vec![
+            Some("🦆🦆🦆🦆🦆🦆".to_string()),
+            Some("goo\0se".to_string()),
+            None,
+            Some("🦆🦆🦆🦆🦆🦆".to_string()),
+            Some("🦆🦆🦆🦆🦆🦆".to_string()),
+            Some("🦆🦆🦆🦆🦆🦆".to_string()),
+            Some("goo\0se".to_string()),
+            None,
+            Some("🦆🦆🦆🦆🦆🦆".to_string()),
+            Some("goo\0se".to_string()),
+            None
+        ]
+    );
+
+    Ok(())
+}
+
+// TODO: This should not be a scalar, but an table function.
+#[test]
+pub fn test_vector_set_value() -> crate::Result<()> {
+    scalar_callback!(ToVariant, Variant, |input, output, ctx, _user_data| {
+        let mut output = output;
+
+        output.set_size(input.row_count() * input.vectors_count())?;
+
+        let mut idx = 0;
+
+        for vec in input.vectors()? {
+            for i in 0..vec.len() {
+                let value = if !vec.is_null(i)? {
+                    match vec.logical_type().type_id() {
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
+                            let val = vec.get_as_checked::<i32>(i)?.unwrap();
+
+                            Some(val.value(&ctx)?)
+                        }
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
+                            let val = vec.get_as_checked::<bool>(i)?.unwrap();
+
+                            Some(val.value(&ctx)?)
+                        }
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY => {
+                            todo!()
+                        }
+                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR => {
+                            todo!()
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(value) = value {
+                    let lt = LogicalType::from_text(&ctx, "VARIANT")?;
+                    let result = value.cast(ctx, lt)?;
+                    output.write_value_slow(idx, result)?;
+                } else {
+                    output.set_null_slow(idx)?
+                }
+                idx += 1;
+            }
+        }
+
+        Ok(())
+    });
+
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let rt = LogicalType::from_text(&conn, "VARIANT")?;
+
+    ScalarFunctionBuilder::new(
+        "to_variant",
+        SignatureBuilder::new([Parameter::tail_vararg("in", Any::logical_type(&conn)?)], rt),
+        ToVariant,
+    )
+    .register(&conn)?;
+
+    let result = conn.query(
+        r#"SELECT to_variant(bool, "int") from test_all_types();"#, // r#"SELECT to_variant(x) from test_vector_types("TESTER") as t(x);"#
+        Parameters::None,
+    )?;
+
+    let expected = ["false", "true", "NULL"];
+    let mut results: Vec<String> = Vec::new();
+
+    for item in result {
+        let item = item?;
+
+        for vector in item.vectors()? {
+            let vector = vector.cast::<Variant>()?;
+            for row in vector.iter()? {
+                match row {
+                    None => {
+                        results.push("NULL".into());
+                    }
+                    Some(value) => {
+                        results.push(value.dbg_string()?);
+                    }
+                }
+            }
+        }
+    }
+
+    assert_eq!(results, expected);
+
+    Ok(())
+}
+
+scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
+    let input = input.get_vector_at::<String>(0)?;
+    let output = output;
+
+    // SAFETY: DuckDB keeps the callback input alive while consuming the
+    // referenced output, and neither vector is accessed concurrently here.
+    let referenced = unsafe { output.copy_from(&input)? };
+    // Writes would land in DuckDB's read-only input, so the reference is read-only too.
+    assert!(!referenced.is_writable());
+
+    Ok(())
+});
+
+#[test]
+pub fn test_vector_reference_input() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "reference",
+        SignatureBuilder::new(
+            [Parameter::normal("in", String::logical_type(&conn)?)],
+            String::logical_type(&conn)?,
+        ),
+        RefScalar,
+    )
+    .register(&conn)?;
+
+    let result = conn.query(
+        r#"SELECT reference(x) from test_vector_types(null::VARCHAR) as t(x);"#,
+        Parameters::None,
+    )?;
+
+    let mut results: Vec<String> = Vec::new();
+
+    for item in result {
+        let item = item?;
+
+        for vector in item.vectors()? {
+            let vector = vector.cast::<String>()?;
+            for row in vector.iter()? {
+                match row {
+                    None => {
+                        results.push("NULL".into());
+                    }
+                    Some(value) => {
+                        results.push(value.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    assert_eq!(
+        results,
+        vec![
+            "🦆🦆🦆🦆🦆🦆".to_string(),
+            "goo\0se".to_string(),
+            "NULL".to_string(),
+            "🦆🦆🦆🦆🦆🦆".to_string(),
+            "🦆🦆🦆🦆🦆🦆".to_string(),
+            "🦆🦆🦆🦆🦆🦆".to_string(),
+            "goo\0se".to_string(),
+            "NULL".to_string(),
+            "🦆🦆🦆🦆🦆🦆".to_string(),
+            "goo\0se".to_string(),
+            "NULL".to_string()
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_vector_tstring() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
+
+    let expected = [
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+    ];
+
+    let mut results: Vec<Option<String>> = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<BlobValue>(0)?;
+
+        for item in vector.iter()? {
+            if let Some(value) = item {
+                let string = String::from_utf8_lossy(value);
+                results.push(Some(string.to_string()));
+            } else {
+                results.push(None);
+            }
+        }
+    }
+
+    assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_raw_string_access() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
+
+    let mut results = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<BlobValue>(0)?;
+
+        let view = vector.get_view().unwrap();
+        let slice = unsafe { view.as_slice() }.unwrap();
+
+        dbg!(slice.len());
+
+        for (index, item) in slice.iter().enumerate() {
+            if view.is_null(index) {
+                results.push(None);
+            } else {
+                let string = String::from_utf8_lossy(item.get_data());
+                println!("{}", string);
+
+                results.push(Some(string.to_string()));
+            }
+        }
+    }
+
+    let expected = [
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+        Some("thisisalongblob\x00withnullbytes".to_string()),
+        Some("\x00\x00\x00a".to_string()),
+        None,
+    ];
+
+    assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_raw_integer_access() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let result = conn.query("SELECT * FROM test_vector_types(NULL::INTEGER)", Parameters::None)?;
+
+    let mut results = vec![];
+
+    for chunk in result {
+        let chunk = chunk?;
+        let vector = chunk.get_vector_at::<i32>(0)?;
+
+        let view = vector.get_view().unwrap();
+        let slice = unsafe { view.as_slice() }.unwrap();
+        assert!(std::panic::catch_unwind(|| view.is_null(view.len())).is_err());
+
+        for (index, item) in slice.iter().enumerate() {
+            if view.is_null(index) {
+                results.push(None);
+            } else {
+                results.push(Some(*item));
+            }
+        }
+    }
+
+    let expected = [
+        Some(i32::MIN),
+        Some(i32::MAX),
+        None,
+        Some(i32::MIN),
+        Some(i32::MIN),
+        Some(i32::MIN),
+        Some(i32::MAX),
+        None,
+        Some(3),
+        Some(5),
+        Some(7),
+    ];
+
+    assert_eq!(results, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_copy_from_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let source = DataChunk::create(&types, true)?;
+    let mut src = source.get_vector_at::<List<i32>>(0)?;
+    src.set_size(2)?;
+    src.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
+    src.write(1, Some(vec![Some(4)]))?;
+
+    let target = DataChunk::create(&types, true)?;
+    let mut dst = target.get_vector_at::<List<i32>>(0)?;
+    dst.set_size(1)?;
+    dst.write(0, Some(vec![Some(9)]))?;
+
+    // SAFETY: `source` outlives every read of the referenced vector below.
+    let referenced = unsafe { dst.copy_from(&src)? };
+
+    let items: Vec<_> = referenced
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(4)])]);
+
+    Ok(())
+}
+
+#[test]
+fn test_make_constant_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let chunk = DataChunk::create(&types, true)?;
+    let mut vector = chunk.get_vector_at::<List<i32>>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(vec![Some(9)]))?;
+
+    vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, true, 3)?;
+
+    let items: Vec<_> = vector
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, vec![Some(vec![Some(7), Some(8)]); 3]);
+    assert!(!vector.is_writable());
+    assert!(vector.children().iter().all(|child| !child.is_writable()));
+
+    Ok(())
+}
+
+#[test]
+fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [i32::logical_type(&conn)?, i64::logical_type(&conn)?];
+
+    let chunk = DataChunk::create(&types, true)?;
+
+    let mut constant = chunk.get_vector_at::<i32>(0)?;
+    constant.make_constant(42_i32.value(&conn)?, true, 2048)?;
+    assert!(!constant.is_writable());
+    assert!(constant.write(5, Some(1)).is_err());
+    assert!(constant.write(0, None).is_err());
+    assert!(constant.set_size(1).is_err());
+
+    let mut sequence = chunk.get_vector_at::<i64>(1)?;
+    sequence.make_sequence(0, 1, 16)?;
+    assert!(!sequence.is_writable());
+    sequence.flatten()?;
+    assert!(sequence.write(3, Some(1)).is_err());
+
+    Ok(())
+}
+
+scalar_callback!(FlatListScalar, i32, |input, output, _ctx, _user_data| {
+    let mut list = input.get_vector_at::<List<i32>>(1)?;
+    let mut output = output;
+    output.set_size(list.len())?;
+    list.flatten()?;
+
+    for (i, row) in list.iter()?.enumerate() {
+        output.write(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
+    }
+    Ok(())
+});
+
+#[test]
+fn test_flatten_rebuilds_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "flat_list",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("row", i64::logical_type(&conn)?),
+                Parameter::normal("list", Vec::<Option<i32>>::logical_type(&conn)?),
+            ],
+            i32::logical_type(&conn)?,
+        ),
+        FlatListScalar,
+    )
+    .register(&conn)?;
+
+    let result = conn.query("SELECT flat_list(range, [1, 2, 3]) FROM range(5)", Parameters::None)?;
+    let mut values = vec![];
+    for chunk in result {
+        let chunk = chunk?;
+        values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
+    }
+    assert_eq!(values, vec![Some(6); 5]);
+
+    Ok(())
+}
+
+scalar_callback!(SlowWriteInputScalar, i32, |input, output, ctx, _user_data| {
+    let mut vector = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(vector.len())?;
+
+    assert!(!vector.is_writable());
+    assert!(vector.write_value_slow(0, 999_i32.value(ctx)?).is_err());
+    assert!(vector.set_null_slow(0).is_err());
+
+    for (i, v) in vector.iter()?.enumerate() {
+        output.write(i, v.copied())?;
+    }
+    Ok(())
+});
+
+#[test]
+fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "mutate",
+        SignatureBuilder::new(
+            [Parameter::normal("in", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        SlowWriteInputScalar,
+    )
+    .register(&conn)?;
+
+    conn.execute(
+        "CREATE TABLE t AS SELECT range::INTEGER AS x FROM range(3)",
+        Parameters::None,
+    )?;
+    conn.execute("SELECT mutate(x) FROM t", Parameters::None)?;
+
+    let chunk = conn
+        .query("SELECT x FROM t ORDER BY x", Parameters::None)?
+        .next()
+        .unwrap()?;
+    let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
+    assert_eq!(values, [Some(0), Some(1), Some(2)]);
+
+    Ok(())
+}
+
+scalar_callback!(ArraySumScalar, i32, |input, output, _ctx, _user_data| {
+    let array = input.get_vector_at::<Array<i32>>(1)?;
+    let mut output = output;
+    output.set_size(array.len())?;
+
+    for (i, row) in array.iter()?.enumerate() {
+        output.write(i, row.map(|v| v.iter().map(|x| x.copied().unwrap_or(0)).sum()))?;
+    }
+    Ok(())
+});
+
+#[test]
+fn test_array_reads_use_type_size() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "arr_sum",
+        SignatureBuilder::new(
+            [
+                Parameter::normal("row", i64::logical_type(&conn)?),
+                Parameter::normal("arr", <[i32; 3]>::logical_type(&conn)?),
+            ],
+            i32::logical_type(&conn)?,
+        ),
+        ArraySumScalar,
+    )
+    .register(&conn)?;
+
+    // A constant array argument next to a flat one.
+    let mut values = vec![];
+    for chunk in conn.query(
+        "SELECT arr_sum(range, [1, 2, 3]::INTEGER[3]) FROM range(5)",
+        Parameters::None,
+    )? {
+        values.extend(chunk?.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
+    }
+    assert_eq!(values, vec![Some(6); 5]);
+
+    // Flat, constant and dictionary arrays, checked against DuckDB's own sum.
+    let chunk = conn
+        .query(
+            "SELECT count(*) FILTER (arr_sum(0, v) IS DISTINCT FROM list_sum(list_transform(v::INTEGER[], lambda x: coalesce(x, 0)))::INTEGER), count(*)
+             FROM test_vector_types(NULL::INTEGER[3]) AS t(v)",
+            Parameters::None,
+        )?
+        .next()
+        .unwrap()?;
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
+    assert!(chunk.get_vector_at::<i64>(1)?.get(0)?.copied().unwrap() > 0);
+
+    Ok(())
+}
+
+#[test]
+fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let list_chunk = DataChunk::create(&[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
+    {
+        let mut first = list_chunk.get_vector_at::<List<i32>>(0)?;
+        first.set_size(2)?;
+        first.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
+    }
+    list_chunk
+        .get_vector_at::<List<i32>>(0)?
+        .write(1, Some(vec![Some(9)]))?;
+
+    let lists = list_chunk.get_vector_at::<List<i32>>(0)?;
+    let items: Vec<_> = lists
+        .iter()?
+        .map(|r| r.map(|v| v.iter().map(|x| x.copied()).collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(9)])]);
+
+    let map_chunk = DataChunk::create(&[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    {
+        let mut first = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
+        first.set_size(2)?;
+        first.write(0, Some(HashMap::from([(1, 10), (2, 20)])))?;
+    }
+    map_chunk
+        .get_vector_at::<Map<i32, i32>>(0)?
+        .write(1, Some(HashMap::from([(3, 30)])))?;
+
+    let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
+    let mut rows = maps.iter()?;
+    let row = rows.next().unwrap().unwrap();
+    assert_eq!((row.get(&1)?, row.get(&2)?), (Some(&10), Some(&20)));
+    let row = rows.next().unwrap().unwrap();
+    assert_eq!(row.keys()?, vec![&3]);
+    assert_eq!(row.get(&3)?, Some(&30));
+
+    Ok(())
+}

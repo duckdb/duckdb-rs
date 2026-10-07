@@ -27,38 +27,66 @@ fn is_compiler(compiler_name: &str) -> bool {
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
-    let out_path = Path::new(&out_dir).join("bindgen.rs");
     #[cfg(feature = "bundled")]
-    build_bundled_backend::main(&out_dir, &out_path);
+    build_bundled_backend::main(&out_dir);
     #[cfg(not(feature = "bundled"))]
-    build_linked::main(&out_dir, &out_path)
+    build_linked::main(&out_dir)
+}
+
+/// Which DuckDB C API header a set of bindings is generated from.
+///
+/// `V1` is `duckdb.h` (or `duckdb_extension.h` for loadable extensions) and is
+/// always emitted as `bindgen.rs`. `V2` is `duckdb_v2.h`, emitted as
+/// `bindgen_v2.rs` only when the `capi-v2` feature is enabled.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CApi {
+    V1,
+    V2,
+}
+
+/// Emit every bindings artifact this build needs into `out_dir`, either by
+/// running bindgen (`buildtime_bindgen`) or by copying the pregenerated files.
+pub(crate) fn write_all_bindings(header: &HeaderLocation, out_dir: &Path) {
+    #[cfg(feature = "capi-v1")]
+    write_api_bindings(header, CApi::V1, &out_dir.join("bindgen.rs"));
+    #[cfg(feature = "capi-v2")]
+    write_api_bindings(header, CApi::V2, &out_dir.join("bindgen_v2.rs"));
+    #[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
+    let _ = (header, out_dir);
+}
+
+fn write_api_bindings(header: &HeaderLocation, api: CApi, out_path: &Path) {
+    #[cfg(feature = "buildtime_bindgen")]
+    buildtime_bindgen::write_to_out_dir(header, api, out_path);
+
+    #[cfg(not(feature = "buildtime_bindgen"))]
+    {
+        let _ = header;
+        copy_pregenerated_bindings(api, out_path);
+    }
+}
+
+/// Bundled backends know the include directory of the unpacked source tree.
+#[cfg(feature = "bundled")]
+pub(crate) fn write_bindings(header_dir: &Path, out_dir: &str) {
+    let header = HeaderLocation::IncludeDir(header_dir.to_path_buf());
+    write_all_bindings(&header, Path::new(out_dir));
 }
 
 #[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
 mod build_bundled_cc;
 #[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
 mod build_bundled_cmake;
+#[cfg(not(feature = "bundled"))]
+mod build_linked;
+/// Generates the bindings with bindgen from the DuckDB headers.
+#[cfg(feature = "buildtime_bindgen")]
+mod buildtime_bindgen;
 
 #[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
 use crate::build_bundled_cc as build_bundled_backend;
 #[cfg(all(feature = "bundled", feature = "bundled-cmake"))]
 use crate::build_bundled_cmake as build_bundled_backend;
-
-#[cfg(feature = "bundled")]
-pub(crate) fn write_bindings(header_dir: &Path, out_path: &Path) {
-    #[cfg(feature = "buildtime_bindgen")]
-    {
-        use crate::{HeaderLocation, bindings};
-        let header = HeaderLocation::IncludeDir(header_dir.to_path_buf());
-        bindings::write_to_out_dir(header, out_path);
-    }
-
-    #[cfg(not(feature = "buildtime_bindgen"))]
-    {
-        let _ = header_dir;
-        copy_pregenerated_bindings(out_path);
-    }
-}
 
 /// Link the Windows system libraries DuckDB needs but that neither `cc` nor a
 /// static CMake link adds automatically. Mirrors DuckDB's `DUCKDB_SYSTEM_LIBS`
@@ -76,11 +104,11 @@ pub(crate) fn link_windows_system_libs() {
 }
 
 #[cfg(not(feature = "buildtime_bindgen"))]
-fn copy_pregenerated_bindings(out_path: &Path) {
-    let bindings_path = if is_loadable_extension() {
-        "src/bindgen_bundled_version_loadable.rs"
-    } else {
-        "src/bindgen_bundled_version.rs"
+fn copy_pregenerated_bindings(api: CApi, out_path: &Path) {
+    let bindings_path = match api {
+        CApi::V1 if is_loadable_extension() => "src/bindgen_bundled_version_loadable.rs",
+        CApi::V1 => "src/bindgen_bundled_version.rs",
+        CApi::V2 => "src/bindgen_bundled_version_v2.rs",
     };
     println!("cargo:rerun-if-changed={bindings_path}");
     std::fs::copy(bindings_path, out_path).expect("Could not copy bindings to output directory");
@@ -98,11 +126,11 @@ fn is_loadable_extension() -> bool {
 }
 
 #[allow(dead_code)]
-fn header_filename() -> &'static str {
-    if is_loadable_extension() {
-        "duckdb_extension.h"
-    } else {
-        "duckdb.h"
+fn header_filename(api: CApi) -> &'static str {
+    match api {
+        CApi::V1 if is_loadable_extension() => "duckdb_extension.h",
+        CApi::V1 => "duckdb.h",
+        CApi::V2 => "duckdb_v2.h",
     }
 }
 
@@ -112,7 +140,7 @@ impl HeaderLocation {
         if let Ok(include_dir) = env::var("DUCKDB_INCLUDE_DIR") {
             return HeaderLocation::IncludeDir(PathBuf::from(include_dir));
         }
-        let header_path = lib_dir.join(header_filename());
+        let header_path = lib_dir.join(header_filename(CApi::V1));
         if header_path.exists() {
             HeaderLocation::IncludeDir(lib_dir.to_path_buf())
         } else {
@@ -121,14 +149,14 @@ impl HeaderLocation {
     }
 
     #[cfg(feature = "buildtime_bindgen")]
-    fn header_path(&self) -> PathBuf {
+    fn header_path(&self, api: CApi) -> PathBuf {
         match self {
-            HeaderLocation::IncludeDir(path) => path.join(header_filename()),
-            HeaderLocation::HeaderPath(path) => path.clone(),
-            HeaderLocation::Wrapper => PathBuf::from(if is_loadable_extension() {
-                "wrapper_ext.h"
-            } else {
-                "wrapper.h"
+            HeaderLocation::IncludeDir(path) => path.join(header_filename(api)),
+            HeaderLocation::HeaderPath(path) => path.with_file_name(header_filename(api)),
+            HeaderLocation::Wrapper => PathBuf::from(match api {
+                CApi::V1 if is_loadable_extension() => "wrapper_ext.h",
+                CApi::V1 => "wrapper.h",
+                CApi::V2 => "wrapper_v2.h",
             }),
         }
     }
@@ -138,518 +166,5 @@ impl HeaderLocation {
             HeaderLocation::IncludeDir(path) => Some(path),
             HeaderLocation::HeaderPath(_) | HeaderLocation::Wrapper => None,
         }
-    }
-}
-
-#[cfg(not(feature = "bundled"))]
-mod build_linked {
-    #[cfg(feature = "vcpkg")]
-    extern crate vcpkg;
-
-    #[cfg(feature = "buildtime_bindgen")]
-    use super::bindings;
-
-    use super::{HeaderLocation, is_compiler, is_loadable_extension, win_target};
-    use std::{env, fs, io, path::Path};
-
-    pub fn main(out_dir: &str, out_path: &Path) {
-        // We need this to config the LD_LIBRARY_PATH
-        let header = find_duckdb(out_dir);
-
-        // Publish the resolved include directory so downstream crates
-        // that compile their own C/C++ code can read it from
-        // `DEP_DUCKDB_INCLUDE`. Wrapper-only mode (no explicit dir
-        // from env / vcpkg / pkg-config / download) intentionally
-        // skips the emission — there's no single directory to point
-        // at; the system header is on the default search path already.
-        if let Some(include_dir) = header.include_dir() {
-            println!("cargo:include={}", include_dir.display());
-        }
-
-        #[cfg(not(feature = "buildtime_bindgen"))]
-        super::copy_pregenerated_bindings(out_path);
-
-        #[cfg(feature = "buildtime_bindgen")]
-        bindings::write_to_out_dir(header, out_path);
-    }
-
-    fn link_directive() -> &'static str {
-        // If the user specifies DUCKDB_STATIC, do static
-        // linking, unless it's explicitly set to 0.
-        match env::var("DUCKDB_STATIC") {
-            Ok(v) if v != "0" => "static=duckdb_static",
-            _ => "dylib=duckdb",
-        }
-    }
-
-    fn emit_link_lib(link_directive: &str) {
-        if !is_loadable_extension() {
-            println!("cargo:rustc-link-lib={link_directive}");
-        }
-    }
-
-    #[cfg(feature = "pkg-config")]
-    fn duckdb_pkg_config() -> pkg_config::Config {
-        let mut config = pkg_config::Config::new();
-        if is_loadable_extension() {
-            config.cargo_metadata(false);
-        }
-        config
-    }
-
-    // Prints the necessary cargo link commands and returns the path to the header.
-    fn find_duckdb(out_dir: &str) -> HeaderLocation {
-        println!("cargo:rerun-if-env-changed=DUCKDB_DOWNLOAD_LIB");
-        if !is_loadable_extension() {
-            println!("cargo:rerun-if-env-changed=DUCKDB_INCLUDE_DIR");
-            println!("cargo:rerun-if-env-changed=DUCKDB_LIB_DIR");
-            println!("cargo:rerun-if-env-changed=DUCKDB_STATIC");
-            if cfg!(feature = "vcpkg") && is_compiler("msvc") {
-                println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
-            }
-
-            // dependents can access `DEP_DUCKDB_LINK_TARGET` (`duckdb` being the
-            // `links=` value in our Cargo.toml) to get this value. This might be
-            // useful if you need to ensure whatever crypto library sqlcipher relies
-            // on is available, for example.
-            println!("cargo:link-target=duckdb");
-        }
-
-        if win_target() && cfg!(feature = "winduckdb") {
-            emit_link_lib("dylib=duckdb");
-            return HeaderLocation::Wrapper;
-        }
-        // Allow users to specify where to find DuckDB.
-        if let Ok(dir) = env::var("DUCKDB_LIB_DIR") {
-            println!("cargo:rustc-env=LD_LIBRARY_PATH={dir}");
-            // Try to use pkg-config to determine link commands
-            let pkgconfig_path = Path::new(&dir).join("pkgconfig");
-            unsafe { env::set_var("PKG_CONFIG_PATH", pkgconfig_path) };
-
-            #[cfg(feature = "pkg-config")]
-            let lib_found = duckdb_pkg_config().probe("duckdb").is_ok();
-            #[cfg(not(feature = "pkg-config"))]
-            let lib_found = false;
-
-            if !lib_found {
-                // Otherwise just emit the bare minimum link commands.
-                emit_link_lib(link_directive());
-                println!("cargo:rustc-link-search={dir}");
-            }
-
-            stage_runtime_lib(Path::new(&dir), out_dir);
-
-            return HeaderLocation::from_env(Path::new(&dir));
-        }
-
-        if should_download_libduckdb() {
-            return download_libduckdb(out_dir).unwrap_or_else(|err| panic!("Failed to set up libduckdb: {err}"));
-        }
-
-        if let Some(header) = try_vcpkg() {
-            return header;
-        }
-
-        // See if pkg-config can do everything for us.
-        #[cfg(feature = "pkg-config")]
-        {
-            match duckdb_pkg_config().print_system_libs(false).probe("duckdb") {
-                Ok(mut lib) => {
-                    if let Some(header) = lib.include_paths.pop() {
-                        HeaderLocation::IncludeDir(header)
-                    } else {
-                        HeaderLocation::Wrapper
-                    }
-                }
-                Err(_) => {
-                    // No env var set and pkg-config couldn't help; just output the link-lib
-                    // request and hope that the library exists on the system paths. We used to
-                    // output /usr/lib explicitly, but that can introduce other linking problems;
-                    // see https://github.com/rusqlite/rusqlite/issues/207.
-                    emit_link_lib(link_directive());
-                    HeaderLocation::Wrapper
-                }
-            }
-        }
-        #[cfg(not(feature = "pkg-config"))]
-        {
-            // No pkg-config available; just output the link-lib request and hope
-            // that the library exists on the system paths.
-            emit_link_lib(link_directive());
-            HeaderLocation::Wrapper
-        }
-    }
-
-    fn try_vcpkg() -> Option<HeaderLocation> {
-        #[cfg(feature = "vcpkg")]
-        if is_compiler("msvc") {
-            // See if vcpkg can find it.
-            if let Ok(mut lib) = vcpkg::Config::new().probe("duckdb") {
-                if let Some(header) = lib.include_paths.pop() {
-                    return Some(HeaderLocation::IncludeDir(header));
-                }
-            }
-        }
-        None
-    }
-
-    fn should_download_libduckdb() -> bool {
-        env::var("DUCKDB_DOWNLOAD_LIB")
-            .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true"))
-            .unwrap_or(false)
-    }
-
-    fn download_libduckdb(out_dir: &str) -> Result<HeaderLocation, Box<dyn std::error::Error>> {
-        let target = env::var("TARGET")?;
-        let archive = LibduckdbArchive::for_target(&target)
-            .ok_or_else(|| format!("No pre-built libduckdb available for target '{target}'"))?;
-
-        let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
-
-        // Cache downloads beside the profile directory so successive builds reuse them.
-        let download_dir = crate::build_paths::download_root(Path::new(out_dir))
-            .ok_or_else(|| {
-                format!(
-                    "Could not determine DuckDB download directory from Cargo OUT_DIR '{out_dir}'. \
-                     Set DUCKDB_LIB_DIR to use an existing DuckDB library."
-                )
-            })?
-            .join(&target)
-            .join(&version);
-        fs::create_dir_all(&download_dir)?;
-
-        let archive_path = download_dir.join(archive.archive_name);
-        let lib_marker = download_dir.join(archive.dynamic_lib);
-
-        if lib_marker.exists() {
-            println!("cargo:warning=Reusing libduckdb from {}", download_dir.display());
-        } else {
-            let url = archive.download_url(&version);
-            ensure_libduckdb(&url, &archive_path)?;
-            extract_libduckdb(&archive_path, &download_dir)?;
-            if !lib_marker.exists() {
-                return Err(format!(
-                    "Downloaded archive did not contain expected library '{}'",
-                    archive.dynamic_lib
-                )
-                .into());
-            }
-        }
-
-        configure_link_search(&download_dir);
-
-        copy_libduckdb(&download_dir, archive.dynamic_lib, out_dir)?;
-
-        Ok(HeaderLocation::IncludeDir(download_dir))
-    }
-
-    fn configure_link_search(lib_dir: &Path) {
-        println!("cargo:rustc-link-search=native={}", lib_dir.display());
-        emit_link_lib(link_directive());
-    }
-
-    // Ensures the libduckdb archive exists: reuses an existing zip or
-    // downloads it into a temp file and atomically renames it into place.
-    fn ensure_libduckdb(url: &str, archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        if archive_path.exists() {
-            println!("cargo:warning=libduckdb already present at {}", archive_path.display());
-            return Ok(());
-        }
-        let tmp_path = archive_path.with_extension("download");
-        if let Some(parent) = archive_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut response = http_client().get(url).call()?;
-        let mut tmp_file = fs::File::create(&tmp_path)?;
-        io::copy(&mut response.body_mut().as_reader(), &mut tmp_file)?;
-        fs::rename(&tmp_path, archive_path)?;
-        println!("cargo:warning=Downloaded libduckdb from {url}");
-        Ok(())
-    }
-
-    fn extract_libduckdb(archive_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        let file = fs::File::open(archive_path)?;
-        let mut archive = zip::ZipArchive::new(file)?;
-        archive.extract(destination)?;
-        println!("cargo:warning=Extracted libduckdb to {}", destination.display());
-        Ok(())
-    }
-
-    // The release archives give libduckdb an @rpath-relative install name, and a
-    // dependency's build script cannot add an rpath to the binaries Cargo links for
-    // the crates above it. Stage the library beside those binaries instead, so the
-    // loader path Cargo sets when it runs them resolves it.
-    //
-    // Best effort: a static or header-only DUCKDB_LIB_DIR has nothing to stage, and
-    // callers who point the loader at the original directory keep working either way.
-    fn stage_runtime_lib(lib_dir: &Path, out_dir: &str) {
-        // Nothing to stage unless we asked rustc to link a shared library.
-        if is_loadable_extension() || !link_directive().starts_with("dylib=") {
-            return;
-        }
-        let Ok(target) = env::var("TARGET") else {
-            return;
-        };
-        let Some(archive) = LibduckdbArchive::for_target(&target) else {
-            return;
-        };
-        let source = lib_dir.join(archive.dynamic_lib);
-        if !source.is_file() {
-            return;
-        }
-
-        // Refresh the copy when the original is rebuilt in place, so the staged
-        // library can never shadow it with stale bytes.
-        println!("cargo:rerun-if-changed={}", source.display());
-
-        if let Err(error) = copy_libduckdb(lib_dir, archive.dynamic_lib, out_dir) {
-            println!(
-                "cargo:warning=Could not stage {} beside the test binaries: {error}",
-                archive.dynamic_lib
-            );
-        }
-    }
-
-    // Copy libduckdb into target/<profile>/deps so executables/tests can load it via
-    // the loader path Cargo sets when it runs them.
-    fn copy_libduckdb(source_dir: &Path, lib_filename: &str, out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(deps_dir) = crate::build_paths::profile_deps_dir(Path::new(out_dir)) else {
-            return Err(format!(
-                "Could not determine runtime library directory from Cargo OUT_DIR '{out_dir}'. \
-                 Set DUCKDB_LIB_DIR to use an existing DuckDB library."
-            )
-            .into());
-        };
-        fs::create_dir_all(&deps_dir)?;
-        let source = source_dir.join(lib_filename);
-        let dest = deps_dir.join(lib_filename);
-        if dest.exists() {
-            fs::remove_file(&dest)?;
-        }
-        fs::copy(&source, &dest)?;
-        println!("cargo:warning=Copied libduckdb to {}", dest.display());
-        Ok(())
-    }
-
-    fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
-        // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
-        let encoded = pkg_version
-            .split('.')
-            .nth(1)
-            .expect("CARGO_PKG_VERSION should use the documented 1.MAJOR_MINOR_PATCH.x format")
-            .parse::<u32>()
-            .expect("CARGO_PKG_VERSION should encode the DuckDB version as an integer in its second component");
-        let duckdb_major = encoded / 10_000;
-        let duckdb_minor = (encoded / 100) % 100;
-        let duckdb_patch = encoded % 100;
-        format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
-    }
-
-    struct LibduckdbArchive {
-        archive_name: &'static str,
-        dynamic_lib: &'static str,
-    }
-
-    impl LibduckdbArchive {
-        fn for_target(target: &str) -> Option<Self> {
-            match target {
-                t if t.ends_with("apple-darwin") => Some(Self {
-                    archive_name: "libduckdb-osx-universal.zip",
-                    dynamic_lib: "libduckdb.dylib",
-                }),
-                "x86_64-unknown-linux-gnu" => Some(Self {
-                    archive_name: "libduckdb-linux-amd64.zip",
-                    dynamic_lib: "libduckdb.so",
-                }),
-                "aarch64-unknown-linux-gnu" => Some(Self {
-                    archive_name: "libduckdb-linux-arm64.zip",
-                    dynamic_lib: "libduckdb.so",
-                }),
-                "x86_64-pc-windows-msvc" => Some(Self {
-                    archive_name: "libduckdb-windows-amd64.zip",
-                    dynamic_lib: "duckdb.dll",
-                }),
-                "aarch64-pc-windows-msvc" => Some(Self {
-                    archive_name: "libduckdb-windows-arm64.zip",
-                    dynamic_lib: "duckdb.dll",
-                }),
-                _ => None,
-            }
-        }
-
-        fn download_url(&self, version: &str) -> String {
-            format!(
-                "https://github.com/duckdb/duckdb/releases/download/v{version}/{}",
-                self.archive_name
-            )
-        }
-    }
-
-    fn http_client() -> ureq::Agent {
-        let timeout = env::var("CARGO_HTTP_TIMEOUT")
-            .or_else(|_| env::var("HTTP_TIMEOUT"))
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(90);
-        ureq::Agent::new_with_config(
-            ureq::Agent::config_builder()
-                .timeout_global(Some(std::time::Duration::from_secs(timeout)))
-                .build(),
-        )
-    }
-}
-
-#[cfg(feature = "buildtime_bindgen")]
-mod bindings {
-    use super::{HeaderLocation, is_loadable_extension};
-
-    use std::{fs::OpenOptions, io::Write, path::Path};
-
-    #[cfg(feature = "loadable-extension")]
-    fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
-        let syn::Type::Path(type_path) = ty else {
-            return None;
-        };
-        let segment = type_path.path.segments.last()?;
-        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-            return None;
-        };
-        let Some(syn::GenericArgument::Type(ty)) = args.args.first() else {
-            return None;
-        };
-        let syn::Type::BareFn(method) = ty else {
-            return None;
-        };
-        Some(method)
-    }
-
-    #[cfg(feature = "loadable-extension")]
-    fn generate_functions(mut output: String) -> String {
-        // (1) parse sqlite3_api_routines fields from bindgen output
-        let ast: syn::File = syn::parse_str(&output).expect("could not parse bindgen output");
-        let duckdb_ext_api_v1: syn::ItemStruct = ast
-            .items
-            .into_iter()
-            .find_map(|i| {
-                if let syn::Item::Struct(s) = i {
-                    if s.ident == "duckdb_ext_api_v1" { Some(s) } else { None }
-                } else {
-                    None
-                }
-            })
-            .expect("could not find duckdb_ext_api_v1");
-
-        let p_api = quote::format_ident!("p_api");
-        let mut stores = Vec::new();
-
-        for field in duckdb_ext_api_v1.fields {
-            let ident = field.ident.expect("unnamed field");
-            let span = ident.span();
-            let function_name = ident.to_string();
-            let ptr_name = syn::Ident::new(format!("__{}", function_name.to_uppercase()).as_ref(), span);
-
-            // Create syntax name
-            let duckdb_fn_name = syn::Ident::new(&function_name, span);
-
-            let method = extract_method(&field.ty).unwrap_or_else(|| panic!("unexpected type for {function_name}"));
-
-            let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> =
-                method.inputs.iter().map(|i| &i.name.as_ref().unwrap().0).collect();
-
-            let args = &method.inputs;
-
-            let ty = &method.output;
-
-            let tokens = quote::quote! {
-                static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-                pub unsafe fn #duckdb_fn_name(#args) #ty {
-                    let function_ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
-                    assert!(!function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
-                    let fun: unsafe extern "C" fn(#args) #ty = ::std::mem::transmute(function_ptr);
-                    (fun)(#arg_names)
-                }
-            };
-
-            output.push_str(&prettyplease::unparse(
-                &syn::parse2(tokens).expect("could not parse quote output"),
-            ));
-
-            output.push('\n');
-
-            stores.push(quote::quote! {
-                if let Some(fun) = (*#p_api).#ident {
-                    #ptr_name.store(
-                        fun as usize as *mut (),
-                        ::std::sync::atomic::Ordering::Release,
-                    );
-                }
-            });
-        }
-
-        // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
-        let tokens = quote::quote! {
-            /// Like DUCKDB_EXTENSION_API_INIT macro
-            pub unsafe fn duckdb_rs_extension_api_init(info: duckdb_extension_info, access: *const duckdb_extension_access, version: &str) -> ::std::result::Result<bool, &'static str> {
-                let version_c_string = std::ffi::CString::new(version).unwrap();
-                let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v1;
-                if #p_api.is_null() {
-                    // get_api can return a nullptr when the version is not matched. In this case, we don't need to set
-                    // an error, but can instead just stop the initialization process and let duckdb handle things
-                    return Ok(false);
-                }
-                #(#stores)*
-                Ok(true)
-            }
-        };
-        output.push_str(&prettyplease::unparse(
-            &syn::parse2(tokens).expect("could not parse quote output"),
-        ));
-        output.push('\n');
-        output
-    }
-
-    pub fn write_to_out_dir(header: HeaderLocation, out_path: &Path) {
-        let header = header.header_path().to_string_lossy().into_owned();
-        let mut output = Vec::new();
-        let mut builder = bindgen::builder();
-
-        if is_loadable_extension() {
-            builder = builder.ignore_functions();
-        }
-
-        // ONLY generate bindings for symbols containing "duckdb" in their name
-        // and for the type `idx_t`
-        // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
-        // until we figure out how to feature gate the generated API
-        builder
-            .trust_clang_mangling(false)
-            .header(header.clone())
-            .allowlist_item(r#"(\w*duckdb\w*)"#)
-            .allowlist_type("idx_t")
-            // Use the concrete ABI layouts from src/arrow_c_data.rs.
-            .blocklist_type("ArrowArray")
-            .blocklist_type("ArrowSchema")
-            .layout_tests(false) // causes problems on WASM builds
-            .clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
-            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-            .generate()
-            .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
-            .write(Box::new(&mut output))
-            .expect("could not write output of bindgen");
-
-        let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
-
-        #[cfg(feature = "loadable-extension")]
-        let output = generate_functions(output);
-
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(out_path)
-            .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
-
-        file.write_all(output.as_bytes())
-            .unwrap_or_else(|_| panic!("Could not write to {out_path:?}"));
     }
 }

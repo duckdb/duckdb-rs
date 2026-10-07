@@ -66,6 +66,9 @@ pub use self::{
 pub(crate) use decimal::to_duckdb_decimal;
 pub(crate) use value_ref::{binding_unsupported_value, value_ref_from_value};
 
+mod bind_container;
+pub(crate) use bind_container::{OwnedDuckValue, create_owned_container, is_owned_container};
+
 use arrow::datatypes::DataType;
 use std::fmt;
 
@@ -436,9 +439,7 @@ mod test {
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo")?;
         let mut rows = stmt.query([])?;
         let row = rows.next()?.unwrap();
-        // NOTE: this is different from SQLite
-        // assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
-        assert_eq!(Value::Blob(vec![120, 48, 49, 48, 50]), row.get::<_, Value>(0)?);
+        assert_eq!(Value::Blob(vec![1, 2]), row.get::<_, Value>(0)?);
         assert_eq!(Value::Text(String::from("text")), row.get::<_, Value>(1)?);
         assert_eq!(Value::Int(1), row.get::<_, Value>(2)?);
         match row.get::<_, Value>(3)? {

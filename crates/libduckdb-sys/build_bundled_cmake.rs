@@ -12,7 +12,7 @@ struct Generator {
     make_program: Option<String>,
 }
 
-pub fn main(out_dir: &str, out_path: &Path) {
+pub fn main(out_dir: &str) {
     let source_dir = Path::new("duckdb-sources");
     let cmake_lists = source_dir.join("CMakeLists.txt");
     if !cmake_lists.exists() {
@@ -36,7 +36,7 @@ pub fn main(out_dir: &str, out_path: &Path) {
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
 
     let include_path = source_dir.join("src/include").canonicalize().unwrap();
-    write_bindings(&include_path, out_path);
+    write_bindings(&include_path, out_dir);
 
     // Publish the include directory so downstream crates that compile
     // their own C/C++ code can read it from `DEP_DUCKDB_INCLUDE`.
@@ -100,6 +100,9 @@ pub fn main(out_dir: &str, out_path: &Path) {
         }
     }
 
+    #[cfg(feature = "httpfs")]
+    configure_httpfs_dependencies(&mut config);
+
     let enabled_extensions = enabled_extensions();
     if !enabled_extensions.is_empty() {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
@@ -127,24 +130,60 @@ pub fn main(out_dir: &str, out_path: &Path) {
         );
 
     // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
-    // CMAKE_OBJECT_PATH_MAX), so a deep OUT_DIR can exceed 260 chars and fail late with
-    // `C1083: Cannot open compiler generated file: ''`. The build script can't move
-    // OUT_DIR — shorten the path (short CARGO_TARGET_DIR, drop `--target`, or check out
-    // nearer the drive root).
+    // CMAKE_OBJECT_PATH_MAX), and since DuckDB 2.0 the unity build includes each
+    // source by a path relative to the build directory (`#include "../../.../src/x.cpp"`),
+    // which MSVC measures unnormalized. A deep OUT_DIR therefore fails with
+    // `C1083: Cannot open compiler generated file: ''` or `C1083: Cannot open include
+    // file: '../../..'`. The build script can't move OUT_DIR — shorten the path (short
+    // CARGO_TARGET_DIR such as `D:/t`, drop `--target`, or check out nearer the drive
+    // root), or set DUCKDB_DISABLE_UNITY=1 to compile each file individually.
     let dst = config.build();
     let lib_dir = dst.join("lib");
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
     // loader → extensions → duckdb_static (which satisfies all core symbols).
-    link_static_library(&lib_dir, &cmake_build_type, "duckdb_generated_extension_loader");
+    let mut linked_extensions = vec!["core_functions"];
+    linked_extensions.extend(enabled_extensions.iter().copied());
+    build_static_extension_loader(source_dir, out_dir, &linked_extensions);
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
     for extension in enabled_extensions {
         link_static_library(&lib_dir, &cmake_build_type, &format!("{extension}_extension"));
     }
     link_static_library(&lib_dir, &cmake_build_type, "duckdb_static");
     link_system_libs();
+    #[cfg(feature = "httpfs")]
+    emit_httpfs_link_metadata();
     println!("cargo:lib_dir={}", lib_dir.display());
+}
+
+#[cfg(feature = "httpfs")]
+fn configure_httpfs_dependencies(config: &mut cmake::Config) {
+    if win_target() {
+        panic!("bundled-cmake httpfs is currently supported only on Linux and macOS");
+    }
+
+    // Only OpenSSL needs a hint (Homebrew keeps it keg-only). Do not hint curl:
+    // FindCURL locates the sysroot curl itself, and a pkg-config prefix may point
+    // at a different SDK than the compiler, breaking libc++ header ordering.
+    let openssl_prefix = pkg_config::get_variable("openssl", "prefix")
+        .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires openssl through pkg-config: {err}"));
+    config.define("OPENSSL_ROOT_DIR", openssl_prefix);
+}
+
+#[cfg(feature = "httpfs")]
+fn emit_httpfs_link_metadata() {
+    for name in ["libcurl", "openssl"] {
+        pkg_config::Config::new()
+            .probe(name)
+            .unwrap_or_else(|err| panic!("bundled-cmake httpfs requires {name} through pkg-config: {err}"));
+    }
+    // HTTPFS's OpenSSL client reads the macOS certificate store. Mirror its
+    // CMake framework dependencies, which static archives do not carry over.
+    if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "macos") {
+        println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=framework=Security");
+    }
 }
 
 fn cmake_build_type() -> String {
@@ -353,6 +392,55 @@ fn validate_extension_libraries(lib_dir: &Path, cmake_build_type: &str, enabled_
     }
 }
 
+/// Renders `extension/loader/static_extension_loader.c.in` for `extensions`, mirroring
+/// `duckdb_write_static_extension_loader` in `extension/extension_build_tools.cmake`.
+fn render_static_extension_loader(template: &str, extensions: &[&str]) -> String {
+    let declarations = extensions
+        .iter()
+        .map(|ext| format!("int32_t duckdb_extension_{ext}_describe(duckdb_extension_descriptor *descriptor);"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let registrations = extensions
+        .iter()
+        .map(|ext| {
+            format!("\tif (duckdb_register_static_extension(duckdb_extension_{ext}_describe) != 0) {{\n\t\tresult = 1;\n\t}}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    template
+        .replace("@LINK_EXTENSION_LIST@", &extensions.join(" "))
+        .replace("@DESCRIBE_DECLARATIONS@", &declarations)
+        .replace("@DESCRIBE_REGISTRATIONS@", &registrations)
+}
+
+/// Builds the loader that registers `extensions` before `main`. CMake only generates it for executables
+/// and the shared library, not for `duckdb_static`.
+fn build_static_extension_loader(source_dir: &Path, out_dir: &str, extensions: &[&str]) {
+    let loader_dir = source_dir.join("extension/loader");
+    let template_path = loader_dir.join("static_extension_loader.c.in");
+    let autoregister_path = loader_dir.join("static_extension_autoregister.cpp");
+    let template = fs::read_to_string(&template_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", template_path.display()));
+
+    // Compiled as C++ so it shares a compiler with the autoregister file; the template is extern "C".
+    let loader_path = Path::new(out_dir).join("static_extension_loader.cpp");
+    fs::write(&loader_path, render_static_extension_loader(&template, extensions))
+        .unwrap_or_else(|err| panic!("failed to write {}: {err}", loader_path.display()));
+
+    let lib_name = "duckdb_static_extension_loader";
+    cc::Build::new()
+        .cpp(true)
+        .file(&loader_path)
+        .file(&autoregister_path)
+        .include(source_dir.join("src/include"))
+        .define("DUCKDB_STATIC_BUILD", None)
+        .cargo_metadata(false)
+        .compile(lib_name);
+    println!("cargo:rustc-link-search=native={out_dir}");
+    // Nothing references the autoregister object, so keep the linker from dropping its static initializer.
+    println!("cargo:rustc-link-lib=static:+whole-archive={lib_name}");
+}
+
 fn link_static_library(lib_dir: &Path, cmake_build_type: &str, name: &str) {
     let Some(library_path) = resolve_static_library(lib_dir, cmake_build_type, name) else {
         let filename = static_library_filename(name);
@@ -452,6 +540,9 @@ fn enabled_extensions() -> Vec<&'static str> {
     }
     if cfg!(feature = "autocomplete") {
         extensions.push("autocomplete");
+    }
+    if cfg!(feature = "httpfs") {
+        extensions.push("httpfs");
     }
     if cfg!(feature = "icu") {
         extensions.push("icu");

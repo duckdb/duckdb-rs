@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
 };
 
-use crate::duckdb_free;
+use super::duckdb_free;
 
 pub struct DuckDbString {
     // Invariant: ptr[0..len+1] is valid C string, i.e. ptr[len] is NUL byte.

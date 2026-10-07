@@ -649,9 +649,9 @@ fn test_irregular_nested_list_cast_uses_recorded_child_counts() -> Result<(), Bo
 
     let schema = Schema::new(vec![Field::new("a", list_of_lists.data_type().clone(), true)]);
     let batch = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(list_of_lists) as ArrayRef])?;
-    let param = arrow_recordbatch_to_query_params(batch);
-    let mut stmt = db.prepare("SELECT a::VARCHAR FROM arrow(?, ?)")?;
-    let rb = stmt.query_arrow(param)?.next().expect("no record batch");
+    let reg = ArrowBatchRegistration::new(batch);
+    let mut stmt = db.prepare("SELECT a::VARCHAR FROM arrow(?)")?;
+    let rb = stmt.query_arrow([&reg])?.next().expect("no record batch");
     let output = rb.column(0).as_any().downcast_ref::<StringArray>().unwrap();
 
     assert_eq!(output.value(0), "[[1, 2], [], [3, NULL, 5]]");
@@ -695,9 +695,9 @@ fn test_array_of_structs() -> Result<(), Box<dyn Error>> {
     let schema = Schema::new(vec![Field::new("a", array.data_type().clone(), true)]);
     let rb = RecordBatch::try_new(Arc::new(schema), vec![Arc::new(array)])?;
 
-    let param = arrow_recordbatch_to_query_params(rb);
-    let mut stmt = db.prepare("SELECT a[1].foo, a[2].foo FROM arrow(?, ?)")?;
-    let mut arr = stmt.query_arrow(param)?;
+    let reg = ArrowBatchRegistration::new(rb);
+    let mut stmt = db.prepare("SELECT a[1].foo, a[2].foo FROM arrow(?)")?;
+    let mut arr = stmt.query_arrow([&reg])?;
     let rb = arr.next().expect("no record batch");
 
     let first_item = rb.column(0).as_any().downcast_ref::<Int64Array>().unwrap();

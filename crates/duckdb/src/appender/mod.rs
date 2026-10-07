@@ -4,7 +4,10 @@ use std::{ffi::c_void, fmt, os::raw::c_char};
 use crate::{
     Error,
     error::{error_from_appender_code, result_from_duckdb_appender},
-    types::{ToSql, ToSqlOutput, to_duckdb_hugeint, to_duckdb_uhugeint, value_ref_from_value},
+    types::{
+        OwnedDuckValue, ToSql, ToSqlOutput, create_owned_container, is_owned_container, to_duckdb_hugeint,
+        to_duckdb_uhugeint, value_ref_from_value,
+    },
 };
 
 /// Appender for fast import data
@@ -154,9 +157,9 @@ impl Appender<'_> {
             .map(ToSql::to_sql)
             .collect::<Result<Vec<ToSqlOutput<'_>>>>()?;
 
-        self.validate_parameter_values(&values)?;
+        let containers = self.prepare_owned_containers(&values)?;
 
-        if let Err(err) = self.bind_parameter_values(&values) {
+        if let Err(err) = self.bind_parameter_values(&values, containers) {
             // A failed bind can leave DuckDB with a partial row. End the row
             // only to let DuckDB mark the appender invalid, then preserve the
             // original bind error; the cleanup failure is usually less useful.
@@ -174,23 +177,48 @@ impl Appender<'_> {
         result_from_duckdb_appender(rc, &mut self.app)
     }
 
-    fn validate_parameter_values(&self, values: &[ToSqlOutput<'_>]) -> Result<()> {
+    /// Build every owned container before the appender writes a column.
+    ///
+    /// A duplicate map key fails inside this build. No column of the row has
+    /// been appended, so the caller does not end the row and does not destroy
+    /// the appender. The returned value is the one `bind_parameter` appends.
+    fn prepare_owned_containers(&self, values: &[ToSqlOutput<'_>]) -> Result<Vec<Option<OwnedDuckValue>>> {
+        let mut built = Vec::with_capacity(values.len());
         for value in values {
+            if let ToSqlOutput::Owned(owned) = value
+                && is_owned_container(owned)
+            {
+                built.push(Some(create_owned_container(owned)?));
+                continue;
+            }
             let value = to_value_ref(value)?;
             validate_appender_value_ref(value)?;
+            built.push(None);
+        }
+        Ok(built)
+    }
+
+    fn bind_parameter_values(
+        &mut self,
+        values: &[ToSqlOutput<'_>],
+        containers: Vec<Option<OwnedDuckValue>>,
+    ) -> Result<()> {
+        for (value, container) in values.iter().zip(containers) {
+            self.bind_parameter(value, container)?;
         }
         Ok(())
     }
 
-    fn bind_parameter_values(&mut self, values: &[ToSqlOutput<'_>]) -> Result<()> {
-        for value in values {
-            self.bind_parameter(value)?;
-        }
-        Ok(())
-    }
-
-    fn bind_parameter(&mut self, value: &ToSqlOutput<'_>) -> Result<()> {
+    fn bind_parameter(&mut self, value: &ToSqlOutput<'_>, container: Option<OwnedDuckValue>) -> Result<()> {
         let ptr = self.app;
+        if let Some(duck_value) = container {
+            let rc = unsafe { ffi::duckdb_append_value(ptr, duck_value.as_raw()) };
+            drop(duck_value);
+            if rc != 0 {
+                return Err(error_from_appender_code(rc, self.app));
+            }
+            return Ok(());
+        }
         let value = to_value_ref(value)?;
         // TODO: append more
         let rc = match value {
@@ -378,7 +406,7 @@ mod test {
     use super::Appender;
     use crate::{
         Connection, Error, Result, params,
-        types::{Decimal, Value},
+        types::{Decimal, OrderedMap, Value},
     };
 
     #[test]
@@ -470,15 +498,8 @@ mod test {
 
         use crate::{
             ToSql,
-            types::{ListType, ToSqlOutput, Value, ValueRef},
+            types::{ListType, ToSqlOutput, ValueRef},
         };
-
-        struct OwnedList;
-        impl ToSql for OwnedList {
-            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
-            }
-        }
 
         struct BorrowedList(ListArray);
         impl BorrowedList {
@@ -510,15 +531,10 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(id INTEGER, name TEXT)")?;
 
-        let list = OwnedList;
         let mut app = db.appender("foo")?;
         app.append_row(params![10, "before"])?;
         app.append_row(params![11, "also before"])?;
-        let err = app.append_row(params![1, list]).unwrap_err();
-        assert_unsupported_list_error(err);
-
-        let borrowed_list = BorrowedList::new();
-        let err = app.append_row(params![3, borrowed_list]).unwrap_err();
+        let err = app.append_row(params![3, BorrowedList::new()]).unwrap_err();
         assert_unsupported_list_error(err);
         app.append_row(params![2, "ok"])?;
         app.flush()?;
@@ -537,6 +553,114 @@ mod test {
         );
         let count: i32 = db.query_row("SELECT COUNT(*) FROM foo", [], |row| row.get(0))?;
         assert_eq!(count, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_owned_list() -> Result<()> {
+        use crate::{
+            ToSql,
+            types::{ToSqlOutput, Value},
+        };
+
+        struct OwnedList;
+        impl ToSql for OwnedList {
+            fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+                Ok(ToSqlOutput::Owned(Value::List(vec![Value::Int(1), Value::Int(2)])))
+            }
+        }
+
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, numbers INTEGER[])")?;
+
+        let mut app = db.appender("foo")?;
+        app.append_row(params![1, OwnedList])?;
+        app.append_row(params![3, Value::List(vec![Value::Int(3)])])?;
+        app.flush()?;
+
+        let rows = db
+            .prepare("SELECT id, numbers FROM foo ORDER BY id")?
+            .query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, Value>(1)?)))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(
+            rows,
+            vec![
+                (1, Value::List(vec![Value::Int(1), Value::Int(2)])),
+                (3, Value::List(vec![Value::Int(3)])),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_duplicate_map_key_keeps_appender() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, payload MAP(INTEGER, INTEGER))")?;
+
+        let mut app = db.appender("foo")?;
+        app.append_row(params![
+            1,
+            Value::Map(OrderedMap::from(vec![(Value::Int(1), Value::Int(2))]))
+        ])?;
+        let err = app
+            .append_row(params![
+                2,
+                Value::Map(OrderedMap::from(vec![
+                    (Value::Int(1), Value::Int(2)),
+                    (Value::Int(1), Value::Int(3)),
+                ]))
+            ])
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("DuckDB rejected the Map value"),
+            "unexpected message: {err}"
+        );
+        assert!(!app.app.is_null());
+        app.append_row(params![
+            3,
+            Value::Map(OrderedMap::from(vec![(Value::Int(4), Value::Int(5))]))
+        ])?;
+        app.flush()?;
+
+        let rows = db
+            .prepare("SELECT id FROM foo ORDER BY id")?
+            .query_map([], |row| row.get::<_, i32>(0))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(rows, vec![1, 3]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_mixed_list_fails_before_row_starts() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(id INTEGER, name TEXT)")?;
+
+        let mut app = db.appender("foo")?;
+        app.append_row(params![10, "before"])?;
+        let err = app
+            .append_row(params![
+                1,
+                Value::List(vec![Value::Int(1), Value::Text("a".to_string())])
+            ])
+            .unwrap_err();
+        match err {
+            Error::ToSqlConversionFailure(e) => {
+                assert!(
+                    e.to_string().contains("cannot bind List with mixed element types"),
+                    "unexpected message: {e}"
+                );
+            }
+            other => panic!("expected ToSqlConversionFailure, got {other:?}"),
+        }
+        assert!(!app.app.is_null());
+        app.append_row(params![2, "ok"])?;
+        app.flush()?;
+
+        let rows = db
+            .prepare("SELECT id, name FROM foo ORDER BY id")?
+            .query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(rows, vec![(2, "ok".to_string()), (10, "before".to_string())]);
         Ok(())
     }
 

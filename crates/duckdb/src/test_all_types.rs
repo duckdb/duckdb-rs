@@ -60,7 +60,8 @@ fn test_large_arrow_types() -> crate::Result<()> {
 }
 
 fn test_with_database(database: &Connection) -> crate::Result<()> {
-    let excluded = ["time_tz", "time_ns", "bignum"];
+    // `tuple` is a DuckDB 2.0 type that the v1 wrapper does not model yet.
+    let excluded = ["time_tz", "time_ns", "bignum", "tuple"];
 
     let mut binding = database.prepare(&format!(
         "SELECT * EXCLUDE ({}) FROM test_all_types()",
@@ -192,6 +193,11 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
         "timestamp_tz" => match idx {
             0 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Microsecond, -9223372022400000000)),
             1 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Microsecond, 9223372036854775806)),
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "timestamp_tz_ns" => match idx {
+            0 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Nanosecond, -9223286400000000000)),
+            1 => assert_eq!(value, ValueRef::Timestamp(TimeUnit::Nanosecond, 9223372036854775806)),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "dec_4_1" => match idx {
@@ -392,6 +398,10 @@ fn test_single(idx: &mut i32, column: String, value: ValueRef<'_>) {
                     ],)
                 )
             }
+            _ => assert_eq!(value, ValueRef::Null),
+        },
+        "empty_struct" => match idx {
+            0 | 1 => assert_eq!(value.to_owned(), Value::Struct(OrderedMap::from(vec![]))),
             _ => assert_eq!(value, ValueRef::Null),
         },
         "struct" => match idx {

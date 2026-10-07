@@ -1,0 +1,27 @@
+name: Forward PR events to pr-tracker
+
+# Thin caller. All forwarding logic lives in the shared composite action
+# (duckdb/duckdb-ci/pr-tracker/forward), so changes there reach every tracked repo
+# with no per-repo edit. Only the triggers below and the token are per-repo — keep
+# the trigger list a generous superset so this file rarely needs to change.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled, review_requested]
+  issue_comment:
+    types: [created]
+  check_suite:
+    types: [completed]
+  status:
+
+permissions:
+  contents: read
+
+jobs:
+  forward:
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request != null }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: duckdb/duckdb-ci/pr-tracker/forward@main
+        with:
+          token: ${{ secrets.PR_DISPATCH_TOKEN }}

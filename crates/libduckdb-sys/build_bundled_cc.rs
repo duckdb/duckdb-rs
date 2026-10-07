@@ -55,11 +55,34 @@ fn untar_archive(out_dir: &str) {
     archive.unpack(out_dir).expect("archive");
 }
 
-pub fn main(out_dir: &str, out_path: &Path) {
+const STATIC_EXTENSION_AUTOREGISTER: &str = "duckdb/extension/loader/static_extension_autoregister.cpp";
+
+fn build_static_extension_autoregister(out_dir: &str) {
+    let lib_name = "duckdb_static_extension_autoregister";
+    // The upstream file has no global symbols, which makes ranlib warn about an empty table of contents.
+    let wrapper = Path::new(out_dir).join("static_extension_autoregister_rs.cpp");
+    std::fs::write(
+        &wrapper,
+        "#include \"static_extension_autoregister.cpp\"\nextern \"C\" int duckdb_rs_static_extension_autoregister = 1;\n",
+    )
+    .expect("writing static extension autoregister wrapper");
+    let source_dir = Path::new(out_dir).join(STATIC_EXTENSION_AUTOREGISTER);
+    cc::Build::new()
+        .cpp(true)
+        .file(&wrapper)
+        .include(source_dir.parent().expect("autoregister source directory"))
+        .warnings(false)
+        .cargo_metadata(false)
+        .compile(lib_name);
+    println!("cargo:rustc-link-search=native={out_dir}");
+    println!("cargo:rustc-link-lib=static:+whole-archive={lib_name}");
+}
+
+pub fn main(out_dir: &str) {
     untar_archive(out_dir);
 
     let include_path = Path::new(out_dir).join("duckdb/src/include");
-    write_bindings(&include_path, out_path);
+    write_bindings(&include_path, out_dir);
 
     // Publish the include directory so downstream crates that compile
     // their own C/C++ code (e.g. extension shims that #include
@@ -98,6 +121,12 @@ pub fn main(out_dir: &str, out_path: &Path) {
 
     println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
+    // Inside libduckdb.a nothing references the autoregister object, so the linker would drop it
+    // and linked extensions would never register. Link it whole-archive, before libduckdb.
+    if cpp_files.remove(STATIC_EXTENSION_AUTOREGISTER) {
+        build_static_extension_autoregister(out_dir);
+    }
+
     cfg.include("duckdb");
     cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/duckdb/{dir}")));
 
@@ -107,8 +136,10 @@ pub fn main(out_dir: &str, out_path: &Path) {
         cfg.file(f);
     }
 
+    // DuckDB 2.0 requires C++17 (mirrors CMAKE_CXX_STANDARD in duckdb-sources/CMakeLists.txt).
     cfg.cpp(true)
-        .flag_if_supported("-std=c++11")
+        .flag_if_supported("-std=c++17")
+        .flag_if_supported("/std:c++17")
         .flag_if_supported("/utf-8")
         .flag_if_supported("/bigobj")
         .warnings(false)
@@ -128,7 +159,12 @@ pub fn main(out_dir: &str, out_path: &Path) {
         Ok(v) => v != "false" && v != "0",
         Err(_) => false,
     };
-    if !is_debug {
+    // Mirror DuckDB's CMake build types: Debug defines DEBUG (enables D_ASSERT
+    // and the debug-only verification paths), Release defines NDEBUG. DuckDB's
+    // sources assume exactly one of the two is set.
+    if is_debug {
+        cfg.define("DEBUG", None);
+    } else {
         cfg.define("NDEBUG", None);
     }
 

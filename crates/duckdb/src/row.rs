@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     #[cfg(feature = "vtab-arrow")]
     fn test_fixed_size_binary_via_arrow() -> Result<()> {
-        use crate::vtab::arrow::{ArrowVTab, arrow_recordbatch_to_query_params};
+        use crate::vtab::arrow::{ArrowBatchRegistration, ArrowVTab};
         use arrow::array::{Array, ArrayRef, BinaryArray, FixedSizeBinaryArray};
         use arrow::datatypes::{DataType, Field, Schema};
         use arrow::record_batch::RecordBatch;
@@ -1241,8 +1241,8 @@ mod tests {
         let schema = Schema::new(vec![Field::new("data", DataType::FixedSizeBinary(16), false)]);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![arc]).unwrap();
 
-        let mut stmt = conn.prepare("SELECT data FROM arrow(?, ?)")?;
-        let mut arr = stmt.query_arrow(arrow_recordbatch_to_query_params(batch))?;
+        let mut stmt = conn.prepare("SELECT data FROM arrow(?)")?;
+        let mut arr = stmt.query_arrow([&ArrowBatchRegistration::new(batch)])?;
         let rb = arr.next().expect("no record batch");
 
         // DuckDB converts FixedSizeBinary to regular Binary
@@ -1264,7 +1264,7 @@ mod tests {
     #[test]
     #[cfg(feature = "vtab-arrow")]
     fn test_fixed_size_binary_with_nulls_via_arrow() -> Result<()> {
-        use crate::vtab::arrow::{ArrowVTab, arrow_recordbatch_to_query_params};
+        use crate::vtab::arrow::{ArrowBatchRegistration, ArrowVTab};
         use arrow::array::{Array, ArrayRef, BinaryArray, FixedSizeBinaryArray};
         use arrow::datatypes::{DataType, Field, Schema};
         use arrow::record_batch::RecordBatch;
@@ -1285,8 +1285,8 @@ mod tests {
         let schema = Schema::new(vec![Field::new("data", DataType::FixedSizeBinary(8), true)]);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![arc]).unwrap();
 
-        let mut stmt = conn.prepare("SELECT data FROM arrow(?, ?)")?;
-        let mut arr = stmt.query_arrow(arrow_recordbatch_to_query_params(batch))?;
+        let mut stmt = conn.prepare("SELECT data FROM arrow(?)")?;
+        let mut arr = stmt.query_arrow([&ArrowBatchRegistration::new(batch)])?;
         let rb = arr.next().expect("no record batch");
 
         let column = rb.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
@@ -1303,7 +1303,7 @@ mod tests {
     #[test]
     #[cfg(feature = "vtab-arrow")]
     fn test_fixed_size_binary_different_sizes_via_arrow() -> Result<()> {
-        use crate::vtab::arrow::{ArrowVTab, arrow_recordbatch_to_query_params};
+        use crate::vtab::arrow::{ArrowBatchRegistration, ArrowVTab};
         use arrow::array::{ArrayRef, FixedSizeBinaryArray};
         use arrow::datatypes::{DataType, Field, Schema};
         use arrow::record_batch::RecordBatch;
@@ -1320,8 +1320,8 @@ mod tests {
         let schema = Schema::new(vec![Field::new("data", DataType::FixedSizeBinary(4), false)]);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![arc]).unwrap();
 
-        let mut stmt = conn.prepare("SELECT data FROM arrow(?, ?)")?;
-        let mut rows = stmt.query(arrow_recordbatch_to_query_params(batch))?;
+        let mut stmt = conn.prepare("SELECT data FROM arrow(?)")?;
+        let mut rows = stmt.query([&ArrowBatchRegistration::new(batch)])?;
 
         // Read via Row interface
         let row = rows.next()?.unwrap();
@@ -1339,7 +1339,7 @@ mod tests {
     #[cfg(feature = "vtab-arrow")]
     fn test_fixed_size_binary_value_ref_via_arrow() -> Result<()> {
         use crate::types::ValueRef;
-        use crate::vtab::arrow::{ArrowVTab, arrow_recordbatch_to_query_params};
+        use crate::vtab::arrow::{ArrowBatchRegistration, ArrowVTab};
         use arrow::array::{ArrayRef, FixedSizeBinaryArray};
         use arrow::datatypes::{DataType, Field, Schema};
         use arrow::record_batch::RecordBatch;
@@ -1355,8 +1355,8 @@ mod tests {
         let schema = Schema::new(vec![Field::new("data", DataType::FixedSizeBinary(4), true)]);
         let batch = RecordBatch::try_new(Arc::new(schema), vec![arc]).unwrap();
 
-        let mut stmt = conn.prepare("SELECT data FROM arrow(?, ?)")?;
-        let mut rows = stmt.query(arrow_recordbatch_to_query_params(batch))?;
+        let mut stmt = conn.prepare("SELECT data FROM arrow(?)")?;
+        let mut rows = stmt.query([&ArrowBatchRegistration::new(batch)])?;
 
         // First row - non-null
         let row = rows.next()?.unwrap();

@@ -12,7 +12,7 @@ use arrow::{
     datatypes::*,
     record_batch::RecordBatch,
 };
-use libduckdb_sys::duckdb_vector;
+use libduckdb_sys::v1::duckdb_vector;
 use num::{ToPrimitive, cast::AsPrimitive};
 
 use crate::{
@@ -110,7 +110,7 @@ where
     F: FnOnce(LogicalTypeId) -> bool,
 {
     let logical_type =
-        unsafe { crate::core::LogicalTypeHandle::new(libduckdb_sys::duckdb_vector_get_column_type(ptr)) };
+        unsafe { crate::core::LogicalTypeHandle::new(libduckdb_sys::v1::duckdb_vector_get_column_type(ptr)) };
     let actual = logical_type.id();
     assert!(
         matches_expected(actual),

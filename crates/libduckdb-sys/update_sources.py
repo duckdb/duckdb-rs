@@ -31,6 +31,18 @@ ARCHIVE_MTIME = 946684800  # 2000-01-01T00:00:00Z
 # but not included in the final build unless they're explicitly enabled.
 EXTENSIONS = ["core_functions", "parquet", "json"]
 
+# DuckDB 2.0 lists third_party/jemalloc as a core third-party source, but its
+# CMake build only enables it on 64-bit Linux, and the `cc` backend compiles
+# every listed file as C++, which jemalloc's C sources do not survive. Drop it
+# from the bundled tree; the `bundled-cmake` backend still gets jemalloc
+# through ENABLE_JEMALLOC.
+EXCLUDED_THIRD_PARTY = ["third_party/jemalloc"]
+
+
+def is_excluded(path):
+    normalized = Path(path).as_posix()
+    return any(f"/{excluded}" in f"/{normalized}" for excluded in EXCLUDED_THIRD_PARTY)
+
 # Clear the duckdb directory
 try:
     shutil.rmtree(TARGET_DIR)
@@ -72,6 +84,9 @@ def get_sources(extensions, default_linked_extensions=None):
         for x in source_list
     ]
 
+    source_list = [x for x in source_list if not is_excluded(x)]
+    include_list = [x for x in include_list if not is_excluded(x)]
+
     return set(source_list), set(include_list)
 
 
@@ -100,6 +115,9 @@ manifest = {
     },
     "extensions": extension_sources,
 }
+
+for excluded in EXCLUDED_THIRD_PARTY:
+    shutil.rmtree(TARGET_DIR / excluded, ignore_errors=True)
 
 with (TARGET_DIR / "manifest.json").open("w") as f:
     json.dump(manifest, f, indent=2, sort_keys=True)
