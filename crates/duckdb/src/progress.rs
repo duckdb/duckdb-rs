@@ -32,9 +32,11 @@
 //!
 //! # Caveats
 //!
-//! A snapshot describes whichever query the connection is running at the time,
-//! and the estimate only advances while a thread is inside DuckDB's execution
-//! loop — for a streaming result, as the consumer pulls batches.
+//! A snapshot describes whichever query the connection is running at the time.
+//! The estimate is refreshed only when the thread running the query executes
+//! work itself, not by DuckDB's worker threads. For a streaming result, that
+//! is when the consumer has to refill the result buffer, so with multiple
+//! threads the estimate can stall while buffered batches are read, then jump.
 //!
 //! DuckDB cannot estimate every plan, and the quality varies by source: a
 //! table scan reports an estimate that advances, while some plans report a row
@@ -80,7 +82,8 @@ impl QueryProgress {
     /// `0.0..=100.0`.
     ///
     /// `None` when no estimate is available: tracking is off, no query is
-    /// running, or the plan is one DuckDB cannot estimate.
+    /// running, the query has not reported progress yet, or the plan is one
+    /// DuckDB cannot estimate.
     #[inline]
     pub fn percentage(&self) -> Option<f64> {
         self.is_available().then_some(self.percentage)
@@ -101,7 +104,9 @@ impl QueryProgress {
     /// Whether DuckDB reported an estimate at all.
     #[inline]
     pub fn is_available(&self) -> bool {
-        self.percentage >= 0.0
+        // DuckDB reports 0% with no rows at query start, before it knows
+        // whether the plan can be estimated at all.
+        self.percentage >= 0.0 && (self.rows_processed != 0 || self.total_rows_to_process != 0)
     }
 }
 
@@ -218,8 +223,8 @@ mod test {
         time::Duration,
     };
 
-    use super::ProgressHandle;
-    use crate::{Connection, Result};
+    use super::{ProgressHandle, QueryProgress};
+    use crate::{Connection, Result, ffi};
 
     /// A scan reports an advancing estimate, where a `range()` cross product
     /// reports a row total it never makes progress against.
@@ -239,6 +244,9 @@ mod test {
     /// batches of [`SCAN_QUERY`] leave the scan in flight.
     fn scan_connection() -> Result<Connection> {
         let conn = tracked_connection()?;
+        // Worker threads can fill the stream buffer without refreshing the
+        // estimate; with one thread the consumer runs every task.
+        conn.execute_batch("set threads = 1")?;
         conn.execute_batch("create table t as select i, i::varchar as s from range(4000000) t(i)")?;
         Ok(conn)
     }
@@ -320,6 +328,23 @@ mod test {
     }
 
     #[test]
+    fn progress_is_unavailable_before_the_query_reports() {
+        let raw = |percentage, rows_processed, total_rows_to_process| {
+            QueryProgress::from_raw(ffi::duckdb_query_progress_type {
+                percentage,
+                rows_processed,
+                total_rows_to_process,
+            })
+        };
+
+        // The state DuckDB publishes at query start.
+        assert_eq!(raw(0.0, 0, 0).percentage(), None);
+        assert_eq!(raw(-1.0, 0, 0).percentage(), None);
+        assert_eq!(raw(0.0, 0, 100).percentage(), Some(0.0));
+        assert_eq!(raw(50.0, 50, 100).percentage(), Some(50.0));
+    }
+
+    #[test]
     fn progress_is_unavailable_when_no_query_is_running() -> Result<()> {
         let conn = tracked_connection()?;
         assert_eq!(conn.query_progress().percentage(), None);
@@ -334,8 +359,9 @@ mod test {
         Ok(())
     }
 
-    /// Consuming the stream drives execution from this thread, so the estimate
-    /// advances on demand rather than on a race with a background query.
+    /// With one thread, consuming the stream drives execution from this
+    /// thread, so the estimate advances on demand rather than on a race with
+    /// worker threads.
     #[test]
     fn progress_advances_as_a_streaming_result_is_consumed() -> Result<()> {
         let conn = scan_connection()?;
