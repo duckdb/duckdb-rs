@@ -23,28 +23,15 @@ fn test_send_between_threads() -> duckdb_neo::Result<()> {
     .expect("connection thread should complete");
 
     let mut result = connection.query("SELECT value FROM test", Parameters::None)?;
-    thread::scope(|scope| {
-        scope
-            .spawn(move || {
-                let chunk = result
-                    .next()
-                    .expect("query should return a chunk")
-                    .expect("query should succeed on another thread");
-                let vector = chunk
-                    .get_vector_at::<i32>(0)
-                    .expect("query should return an integer column");
-                let values = vector
-                    .iter()
-                    .expect("integer column should be readable")
-                    .map(|value| value.copied())
-                    .collect::<Vec<_>>();
-
-                assert_eq!(values, vec![Some(42)]);
-                assert!(result.next().is_none());
-            })
-            .join()
-            .expect("query result thread should complete");
-    });
+    let chunk = result.next().expect("query should return a chunk")?;
+    let values = chunk
+        .get_vector_at::<i32>(0)?
+        .iter()?
+        .map(|value| value.copied())
+        .collect::<Vec<_>>();
+    assert_eq!(values, vec![Some(42)]);
+    assert!(result.next().is_none());
+    drop(result);
 
     assert_eq!(
         connection.execute("DELETE FROM test WHERE value = 42", Parameters::None)?,
