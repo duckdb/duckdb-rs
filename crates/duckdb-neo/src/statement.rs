@@ -2,7 +2,7 @@
 
 use crate::ffi_str::DuckDBStr;
 use crate::{
-    Parameters, Result, check_api_call, check_api_call_no_err,
+    AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err,
     connection::Connection,
     error::{DuckDBError, Error},
     ffi,
@@ -39,6 +39,7 @@ pub struct SchemaBind {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(AsRaw, FromRaw)]
 pub struct Statements {
     pub(crate) handle: ffi::duckdb_v2_statement_iterator_handle,
 }
@@ -87,9 +88,10 @@ impl Iterator for Statements {
 /// A statement can be bound to inspect its input and output schemas,
 /// prepared for repeated execution, or passed to
 /// [`Connection::query`].
+#[derive(AsRaw, FromRaw)]
 pub struct Statement {
     /// The owned DuckDB statement handle.
-    pub handle: ffi::duckdb_v2_sql_statement_handle,
+    pub(crate) handle: ffi::duckdb_v2_sql_statement_handle,
 }
 
 impl Statement {
@@ -176,10 +178,11 @@ impl Drop for Statement {
 /// Execution accepts named or positional [`Parameters`] and is
 /// lazy: work begins when the returned [`QueryResult`] is consumed. The
 /// prepared statement remains associated with the connection used to create it.
+#[derive(AsRaw)]
 pub struct PreparedStatement<'a> {
     connection: &'a Connection,
     /// The owned DuckDB prepared-statement handle.
-    pub handle: ffi::duckdb_v2_prepared_statement_handle,
+    pub(crate) handle: ffi::duckdb_v2_prepared_statement_handle,
 }
 
 impl<'a> PreparedStatement<'a> {

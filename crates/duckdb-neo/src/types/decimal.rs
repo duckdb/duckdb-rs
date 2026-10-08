@@ -17,8 +17,24 @@ use crate::{
     vector::{Vector, VectorElement, WritableVectorElement},
 };
 
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// Marks integer types supported as the physical storage of [`Decimal`].
-pub trait InternalDecimalType {
+///
+/// Sealed: vector reads reinterpret DuckDB's storage as `Self`, so only
+/// `i16`, `i32`, `i64` and `i128` implement it.
+///
+/// ```compile_fail,E0277
+/// struct Fake(&'static str);
+/// impl duckdb_neo::types::InternalDecimalType for Fake {
+///     fn to_i128(&self) -> i128 {
+///         0
+///     }
+/// }
+/// ```
+pub trait InternalDecimalType: sealed::Sealed {
     /// Convert the physical decimal storage to its scaled integer.
     fn to_i128(&self) -> i128;
 }
@@ -26,6 +42,8 @@ pub trait InternalDecimalType {
 macro_rules! impl_internal_decimal_type {
     ($($type:ty),+ $(,)?) => {
         $(
+            impl sealed::Sealed for $type {}
+
             impl InternalDecimalType for $type {
                 fn to_i128(&self) -> i128 {
                     *self as i128
