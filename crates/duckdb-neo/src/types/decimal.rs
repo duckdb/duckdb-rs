@@ -105,6 +105,7 @@ decimal_storage! {
 }
 
 /// Marks a `DECIMAL` width; [`DecimalWidth`] is implemented for 1 through 38.
+#[derive(Debug)]
 pub struct Width<const WIDTH: u8>;
 
 /// Maps a `DECIMAL` width to the integer DuckDB stores it in.
