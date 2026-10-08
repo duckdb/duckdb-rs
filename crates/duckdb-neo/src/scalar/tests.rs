@@ -123,12 +123,11 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
     .register(&conn)
     .expect("Failed to register scalar function");
 
-    let result = conn
+    let mut result = conn
         .query("SELECT custom_scalar(2)", Parameters::None)
         .expect("Failed to execute query");
 
-    for chunk in result {
-        let chunk = chunk.expect("Failed to get result chunk");
+    while let Some(chunk) = result.next_chunk().expect("Failed to get result chunk") {
         let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector from chunk");
         let mut reader = vector.iter().unwrap();
 
@@ -244,13 +243,11 @@ fn test_scalar_building() -> crate::Result<()> {
     .register(&conn)
     .expect("Failed to register scalar function");
 
-    let result = conn
+    let mut result = conn
         .query("SELECT basic(10)", Parameters::None)
         .expect("Failed to execute query");
 
-    for chunk in result {
-        let chunk = chunk.expect("Failed to get result chunk");
-
+    while let Some(chunk) = result.next_chunk().expect("Failed to get result chunk") {
         let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector from chunk");
 
         assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
@@ -280,9 +277,8 @@ fn test_scalar_property() -> crate::Result<()> {
     .set_property(FunctionProperty::HasSpecialNullHandling(false))
     .register(&conn)?;
 
-    for chunk in conn.query("SELECT basic(NULL)", Parameters::None)? {
-        let chunk = chunk?;
-
+    let mut result = conn.query("SELECT basic(NULL)", Parameters::None)?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
 
         assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
@@ -344,11 +340,9 @@ fn test_scalar_override_result() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query("SELECT override(42)", Parameters::None)?;
+    let mut result = conn.query("SELECT override(42)", Parameters::None)?;
 
-    for chunk in result {
-        let chunk = chunk?;
-
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i8>(0)?;
 
         assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
@@ -422,13 +416,15 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
 
     let chunk = prepared
         .execute(Parameters::positional(&[&5_i32]))?
-        .next()
-        .expect("expected a result chunk")?;
+        .next_chunk()?
+        .expect("expected a result chunk");
     assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&5));
 
     // A literal argument still folds.
     folded.lock().unwrap().clear();
-    conn.query("SELECT fold_probe(3)", Parameters::None)?.next().unwrap()?;
+    conn.query("SELECT fold_probe(3)", Parameters::None)?
+        .next_chunk()?
+        .unwrap();
     assert_eq!(folded.lock().unwrap().first(), Some(&true));
 
     Ok(())

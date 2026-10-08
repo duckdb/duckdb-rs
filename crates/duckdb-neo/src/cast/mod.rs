@@ -205,14 +205,12 @@ mod tests {
         )
         .register(&conn)?;
 
-        let result = conn.query(
+        let mut result = conn.query(
             "SELECT CAST(x as TEMPERATURE) FROM VALUES ('32'), (NULL)  as t(x)",
             Parameters::None,
         )?;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<f32>(0)?;
 
             assert_eq!(vector.get(0)?, Some(&42.0));

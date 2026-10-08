@@ -411,7 +411,7 @@ mod tests {
             "SELECT -1.5::DECIMAL(4, 1), 12.345::DECIMAL(9, 3), 1.5::DECIMAL(18, 1), 1.5::DECIMAL(38, 1), 1::INTEGER",
             Parameters::None,
         )?;
-        let chunk = result.next().expect("query returned no rows")?;
+        let chunk = result.next_chunk()?.expect("query returned no rows");
 
         assert_eq!(
             chunk.get_vector_at::<ShortDecimal>(0)?.get(0)?,
@@ -466,7 +466,7 @@ mod tests {
                 &vec![Decimal::<5, 2>::new(12_345)],
             ]),
         )?;
-        let chunk = result.next().expect("query returned no rows")?;
+        let chunk = result.next_chunk()?.expect("query returned no rows");
         assert_eq!(chunk.get_vector_at::<Decimal<18, 3>>(0)?.get(0)?, Some(&decimal));
         assert_eq!(chunk.get_vector_at::<Decimal<4, 1>>(1)?.get(0)?, None);
         assert_eq!(

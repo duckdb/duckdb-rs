@@ -27,9 +27,9 @@ fn test_send_between_threads() -> duckdb_neo::Result<()> {
         scope
             .spawn(move || {
                 let chunk = result
-                    .next()
-                    .expect("query should return a chunk")
-                    .expect("query should succeed on another thread");
+                    .next_chunk()
+                    .expect("query should succeed on another thread")
+                    .expect("query should return a chunk");
                 let vector = chunk
                     .get_vector_at::<i32>(0)
                     .expect("query should return an integer column");
@@ -40,7 +40,12 @@ fn test_send_between_threads() -> duckdb_neo::Result<()> {
                     .collect::<Vec<_>>();
 
                 assert_eq!(values, vec![Some(42)]);
-                assert!(result.next().is_none());
+                assert!(
+                    result
+                        .next_chunk()
+                        .expect("query should succeed on another thread")
+                        .is_none()
+                );
             })
             .join()
             .expect("query result thread should complete");

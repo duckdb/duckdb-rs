@@ -376,14 +376,12 @@ mod tests {
         )
         .register(&conn)?;
 
-        let result = conn.query(
+        let mut result = conn.query(
             "SELECT to_arrow(a, b, c) FROM (VALUES (2, true, 'hello'), (1, false, 'world')) AS t(a, b, c)",
             Parameters::None,
         )?;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let res = chunk.get_vector_at::<i64>(0)?;
 
             assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 2 + 5);

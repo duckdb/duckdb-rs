@@ -13,7 +13,7 @@ fn test_owned_progress_snapshots() -> duckdb_neo::Result<()> {
 
     connection.execute("CREATE TABLE data AS SELECT * FROM range(10000)", Parameters::None)?;
     let mut result = connection.query("SELECT * FROM data AS a, data AS b", Parameters::None)?;
-    assert!(result.next().transpose()?.is_some());
+    assert!(result.next_chunk()?.is_some());
     let progress = tracker.snapshot()?.expect("query should publish progress");
     assert!((0.0..=100.0).contains(&progress.percentage));
     assert!(progress.rows_processed > 0);
@@ -31,7 +31,7 @@ fn test_progress_snapshot_from_other_thread() -> duckdb_neo::Result<()> {
 
     connection.execute("CREATE TABLE data AS SELECT * FROM range(10000)", Parameters::None)?;
     let mut result = connection.query("SELECT * FROM data AS a, data AS b", Parameters::None)?;
-    assert!(result.next().transpose()?.is_some());
+    assert!(result.next_chunk()?.is_some());
 
     let progress = std::thread::spawn(move || tracker.snapshot()).join().unwrap()?;
     assert!(progress.is_some_and(|p| p.rows_processed > 0));

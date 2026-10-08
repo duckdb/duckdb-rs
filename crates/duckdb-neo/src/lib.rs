@@ -21,7 +21,7 @@
 //! let connection = database.connect()?;
 //!
 //! let mut result = connection.query("SELECT $1::INTEGER", Parameters::positional(&[&42]))?;
-//! let chunk = result.next().transpose()?.expect("query returned no rows");
+//! let chunk = result.next_chunk()?.expect("query returned no rows");
 //! let values = chunk.get_vector_at::<i32>(0)?;
 //!
 //! assert_eq!(values.get(0)?, Some(&42));
@@ -127,8 +127,8 @@ mod tests {
 
         let result = conn
             .query("SELECT $1", Parameters::positional(&[&1]))?
-            .next()
-            .unwrap()?;
+            .next_chunk()?
+            .unwrap();
 
         let vector = result.get_vector_at::<i32>(0).unwrap();
         let value = vector.iter().unwrap().next().unwrap();
@@ -136,8 +136,8 @@ mod tests {
 
         let result = conn
             .query("SELECT $test", Parameters::named(&[("test", &2)]))?
-            .next()
-            .unwrap()?;
+            .next_chunk()?
+            .unwrap();
 
         let vector = result.get_vector_at::<i32>(0).unwrap();
         let value = vector.iter().unwrap().next().unwrap();
@@ -159,11 +159,9 @@ mod tests {
         for stmt in statements {
             let stmt = stmt?;
 
-            let result = conn.query(stmt, Parameters::None)?;
+            let mut result = conn.query(stmt, Parameters::None)?;
 
-            for chunk in result {
-                let chunk = chunk?;
-
+            while let Some(chunk) = result.next_chunk()? {
                 let vector = chunk.get_vector_at::<i32>(0)?;
 
                 let type_id = vector.logical_type().type_id();
@@ -208,11 +206,9 @@ mod tests {
         let mut to_be_prepared = conn.parse("SELECT 2 * x FROM t")?;
         let prepared = to_be_prepared.next().unwrap()?.prepare(&conn, false)?;
 
-        let result = prepared.execute(Parameters::None)?;
+        let mut result = prepared.execute(Parameters::None)?;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<i32>(0)?;
 
             assert_eq!(vector.len(), 3);
@@ -250,7 +246,7 @@ mod tests {
 
         let mut result = conn.query("SELECT * from range(0,10_000)", Parameters::None)?;
 
-        let _ = result.next().unwrap()?;
+        let _ = result.next_chunk()?.unwrap();
 
         conn.interrupt_query()?;
 
@@ -274,12 +270,12 @@ mod tests {
         let t1 = std::thread::spawn(move || {
             let mut query = conn.query("SELECT * from range(0,10_000)", Parameters::None).unwrap();
 
-            let _ = query.next().unwrap().unwrap();
+            let _ = query.next_chunk().unwrap().unwrap();
 
             sender.send(()).unwrap();
             receiver_2.recv().unwrap();
 
-            let error = query.next().unwrap().err().unwrap();
+            let error = query.next_chunk().err().unwrap();
 
             assert!(error.code == DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERRUPT);
         });
@@ -304,8 +300,8 @@ mod tests {
         let conn1 = db.connect()?;
         let conn2 = db_2.connect()?;
 
-        let result1 = conn1.query("SELECT 1", Parameters::None)?.next().unwrap()?;
-        let result2 = conn2.query("SELECT 2", Parameters::None)?.next().unwrap()?;
+        let result1 = conn1.query("SELECT 1", Parameters::None)?.next_chunk()?.unwrap();
+        let result2 = conn2.query("SELECT 2", Parameters::None)?.next_chunk()?.unwrap();
 
         let vector1 = result1.get_vector_at::<i32>(0)?;
         let vector2 = result2.get_vector_at::<i32>(0)?;

@@ -21,9 +21,9 @@ fn connect(extension_directory: &std::path::Path) -> duckdb_neo::Result<Connecti
 fn query_string(connection: &Connection, sql: &str) -> duckdb_neo::Result<Option<String>> {
     let chunk = connection
         .query(sql, Parameters::None)?
-        .next()
-        .transpose()?
-        .expect("query should return a chunk");
+        .next_chunk()
+        .expect("query should return a chunk")
+        .unwrap();
     let vector = chunk.get_vector_at::<String>(0)?;
     Ok(vector.get(0)?.map(str::to_owned))
 }

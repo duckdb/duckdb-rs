@@ -365,7 +365,7 @@ mod test {
         .register(&conn)?;
 
         let mut result = conn.query("SELECT collection_is_empty()", Parameters::None)?;
-        let chunk = result.next().expect("expected a result chunk")?;
+        let chunk = result.next_chunk()?.expect("expected a result chunk");
         assert_eq!(chunk.get_vector_at::<bool>(0)?.get(0)?, Some(&true));
         Ok(())
     }
@@ -475,11 +475,9 @@ mod test {
         assert_eq!(rows_changed, 3);
 
         let statement = statements.next().unwrap()?;
-        let result = conn.query(statement, Parameters::None)?;
+        let mut result = conn.query(statement, Parameters::None)?;
 
-        if let Some(chunk) = result.into_iter().next() {
-            let chunk = chunk?;
-
+        if let Some(chunk) = result.next_chunk()? {
             let id = chunk.get_vector_at::<i32>(0)?;
             let is_active = chunk.get_vector_at::<bool>(1)?;
 

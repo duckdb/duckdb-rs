@@ -89,17 +89,17 @@ fn test_replacement_scan() -> crate::Result<()> {
 
     let mut query = conn.query("SELECT * FROM test.main.num_10_20", Parameters::None)?;
 
-    let chunk = query.next().unwrap()?;
+    let chunk = query.next_chunk()?.unwrap();
 
     assert!(chunk.get_vector_at::<i64>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
 
     assert_eq!(chunk.row_count()?, 10 + 42);
 
-    assert!(query.next().is_none());
+    assert!(query.next_chunk()?.is_none());
 
     let mut query = conn.query("SELECT * FROM alltypes", Parameters::None)?;
 
-    let chunk = query.next().unwrap()?;
+    let chunk = query.next_chunk()?.unwrap();
 
     assert!(
         chunk.get_vector_at::<bool>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
@@ -142,7 +142,7 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
     let mut query = conn.query("SELECT * FROM cdc_scan", Parameters::None)?;
 
-    let chunk = query.next().unwrap()?;
+    let chunk = query.next_chunk()?.unwrap();
 
     assert!(
         chunk.get_vector_at::<i32>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
@@ -161,7 +161,7 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     assert_eq!(is_active.get(0)?, Some(&true));
     assert_eq!(is_active.get(1)?, Some(&false));
 
-    assert!(query.next().is_none());
+    assert!(query.next_chunk()?.is_none());
 
     Ok(())
 }
@@ -245,7 +245,7 @@ fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
     conn.set_option("threads", "1", None)?;
 
     let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
-    let chunk = query.next().unwrap()?;
+    let chunk = query.next_chunk()?.unwrap();
     assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&1));
 
     Ok(())

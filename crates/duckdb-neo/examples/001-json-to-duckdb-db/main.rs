@@ -23,16 +23,14 @@ fn main() -> Result<()> {
         Parameters::None,
     )?;
 
-    let csv_data = conn.query(
+    let mut csv_data = conn.query(
         "SELECT id, first_name, email, birth_day, birth_month, birth_year, FROM 'crates/duckdb-neo/examples/001-json-to-duckdb-db/data/001.csv' WHERE country != $1",
         Parameters::positional(&[&"CHILE"]),
     )?;
 
     let mut customers = vec![];
 
-    for chunk in csv_data {
-        let chunk = chunk?;
-
+    while let Some(chunk) = csv_data.next_chunk()? {
         let id = chunk.get_vector_at::<i64>(0)?;
         let name = chunk.get_vector_at::<String>(1)?;
         let email = chunk.get_vector_at::<String>(2)?;
@@ -66,11 +64,9 @@ fn main() -> Result<()> {
         )?;
     }
 
-    let db_customers = conn.query("SELECT * FROM customers", Parameters::None)?;
+    let mut db_customers = conn.query("SELECT * FROM customers", Parameters::None)?;
 
-    for chunk in db_customers {
-        let chunk = chunk?;
-
+    while let Some(chunk) = db_customers.next_chunk()? {
         let id = chunk.get_vector_at::<i32>(0)?;
         let name = chunk.get_vector_at::<String>(1)?;
         let email = chunk.get_vector_at::<String>(2)?;

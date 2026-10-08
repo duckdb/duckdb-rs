@@ -159,7 +159,7 @@ mod tests {
             assert_eq!(value.get::<rust_decimal::Decimal>()?, Some(decimal));
 
             let mut result = conn.query("SELECT $1::VARCHAR", Parameters::positional(&[&decimal]))?;
-            let chunk = result.next().expect("query returned no rows")?;
+            let chunk = result.next_chunk()?.expect("query returned no rows");
             let text_vector = chunk.get_vector_at::<String>(0)?;
             assert_eq!(text_vector.get(0)?.map(|s| s.to_string()), Some(text.to_string()));
         }
@@ -196,7 +196,7 @@ mod tests {
                  MAP {1: 1.21::DECIMAL(4, 2)}",
             Parameters::None,
         )?;
-        let chunk = result.next().expect("query returned no rows")?;
+        let chunk = result.next_chunk()?.expect("query returned no rows");
 
         assert_eq!(
             chunk.get_vector_at::<rust_decimal::Decimal>(0)?.get(0)?,
