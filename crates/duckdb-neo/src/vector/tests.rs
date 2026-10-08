@@ -926,8 +926,8 @@ pub fn vector_value_types() -> crate::Result<()> {
         Parameters::positional(&[&DecimalValue::new(-123_456i64, 18, 3)]),
     )?;
     let chunk = result.next_chunk()?.unwrap();
-    let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
-    assert_eq!(vector.get(0)?, Some(&-123_456));
+    let vector = chunk.get_vector_at::<LongDecimal>(0)?;
+    assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     drop(chunk);
     drop(result);
 
