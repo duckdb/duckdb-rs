@@ -16,6 +16,7 @@ ffi_enum_redeclaration! {
 }
 
 /// Emits records through DuckDB's configured logging system.
+#[derive(Debug)]
 pub struct Log;
 
 impl Log {

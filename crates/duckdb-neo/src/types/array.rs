@@ -15,6 +15,7 @@ use crate::{
 
 /// A fixed-length array element parameterized by its child element type.
 #[repr(C)]
+#[derive(Debug)]
 pub struct Array<T> {
     offset: u64,
     length: u64,
@@ -157,6 +158,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
 }
 
 /// A borrowed array row backed by a contiguous range in its child vector.
+#[derive(Debug)]
 pub struct ArrayRef<'a, T> {
     offset: usize,
     size: usize,
@@ -184,6 +186,7 @@ impl<'a, T: VectorElement> ArrayRef<'a, T> {
 }
 
 /// Traverses the child-vector range belonging to an [`ArrayRef`].
+#[derive(Debug)]
 pub struct ArrayIterator<'a, T> {
     child: &'a Vector<'a, Unknown>,
     offset: usize,

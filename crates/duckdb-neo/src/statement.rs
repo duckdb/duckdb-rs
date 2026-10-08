@@ -11,6 +11,7 @@ use crate::{
 };
 
 /// Schemas resolved while binding a statement.
+#[derive(Debug)]
 pub struct SchemaBind {
     /// The statement's result columns.
     pub schema: Schema,
@@ -38,6 +39,7 @@ pub struct SchemaBind {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Statements {
     /// The owned DuckDB statement-iterator handle.
     pub handle: ffi::duckdb_v2_statement_iterator_handle,
@@ -85,6 +87,7 @@ impl Iterator for Statements {
 /// A statement can be bound to inspect its input and output schemas,
 /// prepared for repeated execution, or passed to
 /// [`Connection::query`].
+#[derive(Debug)]
 pub struct Statement {
     /// The owned DuckDB statement handle.
     pub handle: ffi::duckdb_v2_sql_statement_handle,
@@ -174,6 +177,7 @@ impl Drop for Statement {
 /// Execution accepts named or positional [`Parameters`] and is
 /// lazy: work begins when the returned [`QueryResult`] is consumed. The
 /// prepared statement remains associated with the connection used to create it.
+#[derive(Debug)]
 pub struct PreparedStatement<'a> {
     connection: &'a Connection,
     /// The owned DuckDB prepared-statement handle.

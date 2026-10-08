@@ -17,9 +17,11 @@ use crate::{
 };
 
 /// Reads a `MAP` vector with key type `K` and value type `V`.
+#[derive(Debug)]
 pub struct Map<K, V>(pub ffi::duckdb_v2_list_entry, pub PhantomData<(K, V)>);
 
 /// Key-value entries represented as a DuckDB `MAP`.
+#[derive(Debug)]
 pub struct MapValue<K, V> {
     /// Entries in insertion order.
     pub entries: Vec<(K, V)>,
@@ -175,6 +177,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
 }
 
 /// A borrowed map row backed by matching ranges in key and value vectors.
+#[derive(Debug)]
 pub struct MapRow<'a, K, V> {
     pub(crate) children: &'a VectorCollection,
     pub(crate) offset: usize,

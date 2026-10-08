@@ -19,6 +19,7 @@ use crate::{
 
 /// A physical list entry parameterized by its child element type.
 #[repr(C)]
+#[derive(Debug)]
 pub struct List<L> {
     pub(crate) offset: u64,
     pub(crate) length: u64,
@@ -135,6 +136,7 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
 }
 
 /// A borrowed list row backed by a range in its child vector.
+#[derive(Debug)]
 pub struct ListRef<'a, T> {
     list: &'a List<T>,
     child: &'a Vector<'a, Unknown>,
@@ -176,6 +178,7 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
 }
 
 /// Traverses the child-vector range belonging to a [`ListRef`].
+#[derive(Debug)]
 pub struct ListIterator<'a, T> {
     child: &'a Vector<'a, Unknown>,
     offset: usize,

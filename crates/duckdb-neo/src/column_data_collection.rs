@@ -84,6 +84,7 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct ColumnDataCollection<'conn> {
     /// The owned DuckDB collection handle.
     pub handle: ffi::duckdb_v2_column_data_collection_handle,
@@ -165,6 +166,7 @@ unsafe impl Sync for ColumnDataCollection<'_> {}
 /// Chunks are read with [`next_chunk`](Self::next_chunk) rather than through
 /// [`Iterator`]: DuckDB does not copy the scanned data, so each chunk points
 /// into buffers that stay valid only until the next scan call.
+#[derive(Debug)]
 pub struct ColumnDataCollectionScan<'conn> {
     worker_scan_state: ColumnDataCollectionWorkerScanStateHandle,
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
@@ -246,6 +248,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
 /// Chunks appended through this state must exactly match the collection's
 /// column count and types. The state can be consumed to recover, scan, or
 /// reset the collection.
+#[derive(Debug)]
 pub struct ColumnDataCollectionAppender<'conn> {
     appender: ColumnDataCollectionAppendStateHandle,
     collection: ColumnDataCollection<'conn>,

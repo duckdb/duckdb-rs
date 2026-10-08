@@ -8,6 +8,7 @@ use crate::ffi;
 use crate::{Result, check_api_call, logical_type::LogicalType, value::Value};
 
 /// A parameter declaration accepted by [`SignatureBuilder`].
+#[derive(Debug)]
 pub enum ParameterType {
     /// A required fixed parameter.
     Normal(NormalParameter),
@@ -18,6 +19,7 @@ pub enum ParameterType {
 }
 
 /// A required fixed parameter.
+#[derive(Debug)]
 pub struct NormalParameter {
     /// The parameter name.
     pub name: String,
@@ -26,6 +28,7 @@ pub struct NormalParameter {
 }
 
 /// A fixed parameter with a default value.
+#[derive(Debug)]
 pub struct WithDefaultParameter {
     /// The parameter name.
     pub name: String,
@@ -36,6 +39,7 @@ pub struct WithDefaultParameter {
 }
 
 /// A variadic tail parameter.
+#[derive(Debug)]
 pub struct TailVarargParameter {
     /// The tail label; built signatures retain only its type.
     pub name: String,
@@ -92,6 +96,7 @@ impl Parameter {
 /// Parameters with defaults must follow required parameters, and parameter
 /// names must be unique. DuckDB checks these structural rules when the
 /// function is registered.
+#[derive(Debug)]
 pub struct SignatureBuilder {
     parameters: Vec<ParameterType>,
     return_type: Option<LogicalType>,

@@ -14,6 +14,7 @@ use crate::{
 /// terminal progress output. These settings remain active after the tracker is
 /// dropped. The tracker can be moved to another thread to take snapshots while
 /// the connection runs a query.
+#[derive(Debug)]
 pub struct QueryProgressTracker {
     connection: Arc<InnerConnection>,
 }

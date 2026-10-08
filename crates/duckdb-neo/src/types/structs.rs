@@ -15,6 +15,7 @@ use crate::{
 };
 
 /// Reads a `STRUCT` vector as named fields.
+#[derive(Debug)]
 pub struct Struct;
 
 /// Defines the named fields of a [`StructValue`].
@@ -37,6 +38,14 @@ impl<T: ToValue> StructFieldValue for T {
 pub struct StructValue<'a, S> {
     fields: Vec<Box<dyn StructFieldValue + 'a>>,
     _schema: PhantomData<S>,
+}
+
+impl<S> std::fmt::Debug for StructValue<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StructValue")
+            .field("fields", &self.fields.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a, S> StructValue<'a, S> {
@@ -121,6 +130,7 @@ trait StructFieldWrite {
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
 }
 
+#[derive(Debug)]
 struct TypedStructField<'a, T: WritableVectorElement + 'a> {
     value: Option<T::Write<'a>>,
 }
@@ -139,6 +149,14 @@ where
 #[derive(Default)]
 pub struct StructWrite<'a> {
     fields: Vec<Box<dyn StructFieldWrite + 'a>>,
+}
+
+impl std::fmt::Debug for StructWrite<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StructWrite")
+            .field("fields", &self.fields.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> StructWrite<'a> {
@@ -185,6 +203,7 @@ impl WritableVectorElement for Struct {
 }
 
 /// A borrowed struct row that resolves named fields to child vectors.
+#[derive(Debug)]
 pub struct StructRow<'a> {
     children: &'a VectorCollection,
     logical_type: &'a LogicalType,

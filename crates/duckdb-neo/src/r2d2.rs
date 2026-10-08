@@ -1,6 +1,7 @@
 use crate::{Parameters, Result, connection::Connection, database::Instance, error::Error};
 
 /// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
+#[derive(Debug)]
 pub struct ConnectionManager {
     database: Instance,
 }

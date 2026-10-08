@@ -5,6 +5,7 @@ use crate::{
     ffi_str::DuckDBStr,
 };
 
+#[derive(Debug)]
 pub(crate) struct OpaqueHandle<T> {
     data: *mut T,
     success: RefCell<bool>,

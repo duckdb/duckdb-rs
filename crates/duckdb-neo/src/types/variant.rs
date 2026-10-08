@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// Reads a `VARIANT` row as an owned [`Value`].
+#[derive(Debug)]
 pub struct Variant;
 
 impl VectorElement for Variant {
@@ -40,6 +41,7 @@ impl WritableVectorElement for Variant {
 }
 
 /// A value converted to DuckDB's self-describing `VARIANT` type.
+#[derive(Debug)]
 pub struct VariantValue<T>(pub T);
 
 impl<T> DuckDBType for VariantValue<T> {

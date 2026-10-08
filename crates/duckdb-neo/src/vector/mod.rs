@@ -104,6 +104,7 @@ impl StorageKind {
 /// dictionary, and selection-vector layouts.
 // `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
 #[repr(C)]
+#[derive(Debug)]
 pub struct VectorView<T> {
     view: ffi::duckdb_v2_vector_view,
     kind: StorageKind,
@@ -284,6 +285,7 @@ pub(crate) enum Access {
 /// changes the logical element type and preserves the chunk lifetime.
 // `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
 #[repr(C)]
+#[derive(Debug)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) logical_type: LogicalType,
@@ -815,6 +817,7 @@ impl<T: WritableVectorElement> Vector<'_, T> {
 }
 
 /// Iterates over the logical rows of a vector.
+#[derive(Debug)]
 pub struct VectorIter<'vector, 'a, T: VectorElement> {
     vector: &'vector Vector<'a, T>,
     index: usize,

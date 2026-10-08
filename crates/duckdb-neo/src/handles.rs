@@ -45,6 +45,7 @@ macro_rules! define_handle {
         handle: $handle:ty,
         destroy: $destroy:expr $(,)?
     ) => {
+        #[derive(Debug)]
         pub(crate) struct $name($handle);
 
         impl ::std::ops::Drop for $name {

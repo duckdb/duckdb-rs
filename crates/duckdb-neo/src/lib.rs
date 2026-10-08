@@ -2,6 +2,7 @@
     html_logo_url = "https://upload.wikimedia.org/wikipedia/commons/4/40/DuckDB_logo.svg?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original"
 )]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#![warn(missing_debug_implementations)]
 //! Safe Rust bindings for [DuckDB's](https://duckdb.org/) C API V2.
 //!
 //! Use this crate to embed DuckDB in a Rust application, open databases, execute

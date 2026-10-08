@@ -21,6 +21,7 @@ use crate::{
 /// Use [`Self::set_reference`] to replace it with a table function, column data
 /// collection, or subquery. Parameters can be added only after selecting a
 /// table function.
+#[derive(Debug)]
 pub struct ReplacementHandle<'a> {
     info: &'a ffi::duckdb_v2_replacement_scan_info_handle,
     collections: &'a HashMap<String, ColumnDataCollection<'a>>,
@@ -32,6 +33,7 @@ pub struct ReplacementHandle<'a> {
 /// The column-data-collection forms name a collection added with
 /// [`ReplacementScanBuilder::collection`]; the registration keeps it alive for
 /// as long as any result or prepared statement reads it.
+#[derive(Debug)]
 pub enum ReplacementType<'a> {
     /// A table function's name, optionally qualified by schema and catalog.
     Table(QualifiedName),
@@ -116,6 +118,7 @@ impl ReplacementHandle<'_> {
 }
 
 /// What the registration owns: the callback and the collections it can claim references with.
+#[derive(Debug)]
 struct ReplacementScanData<'conn, T> {
     implementation: T,
     collections: HashMap<String, ColumnDataCollection<'conn>>,
@@ -158,6 +161,7 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
 ///
 /// The registration owns the callback and any collections added with
 /// [`Self::collection`] until then.
+#[derive(Debug)]
 pub struct ReplacementScanBuilder<'conn, T> {
     implementation: T,
     collections: HashMap<String, ColumnDataCollection<'conn>>,

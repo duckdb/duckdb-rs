@@ -104,6 +104,7 @@ pub enum QueryResultStep {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct QueryResult<'a> {
     /// Ties the result lifetime to its connection.
     pub phantom: std::marker::PhantomData<&'a mut Connection>,

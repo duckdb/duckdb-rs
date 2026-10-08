@@ -110,6 +110,7 @@ fn execute_statement<'conn>(
 }
 
 /// A handle that allows interrupting long-running queries. Can be used from other threads.
+#[derive(Debug)]
 pub struct InterruptHandle {
     conn: Arc<InnerConnection>,
 }
@@ -121,6 +122,7 @@ impl InterruptHandle {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct InnerConnection {
     pub handle: ffi::duckdb_v2_connection_handle,
 }
@@ -144,6 +146,7 @@ unsafe impl Sync for InnerConnection {}
 /// A connection can be moved to another thread but not shared between threads;
 /// use [`InterruptHandle`] or [`QueryProgressTracker`](crate::query_progress::QueryProgressTracker)
 /// from other threads.
+#[derive(Debug)]
 pub struct Connection {
     pub(crate) _db: Arc<Mutex<DatabaseHandle>>,
     pub(crate) inner: Arc<InnerConnection>,
@@ -345,6 +348,7 @@ impl FFILink for Connection {
 /// extension load callback. Registering through it makes the item visible to
 /// every connection on that database.
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 
 impl Extension {
@@ -372,6 +376,7 @@ impl Deref for Extension {
 ///
 /// This wrapper does not own the underlying handle and must not outlive the callback invocation.
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
 
 impl Context {

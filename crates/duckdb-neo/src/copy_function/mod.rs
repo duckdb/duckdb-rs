@@ -27,6 +27,7 @@ use crate::{
     value::Value,
 };
 
+#[derive(Debug)]
 struct CopyFunctionBindData<T> {
     data: T,
     logical_types: Vec<LogicalType>,
@@ -196,6 +197,7 @@ unsafe extern "C" fn finalize_to_callback<T: CopyToFunctionCallbacks>(
 }
 
 /// Builds and registers a user-defined `COPY TO` format.
+#[derive(Debug)]
 pub struct CopyFunctionBuilder<T> {
     user_data: OpaqueHandle<T>,
     name: String,
@@ -362,6 +364,7 @@ impl<T: CopyToFunctionCallbacks + CopyFromFunctionCallbacks> CopyFunctionBuilder
 ///
 /// Column order matches the input relation being copied. Returned logical
 /// types are owned copies.
+#[derive(Debug)]
 pub struct CopyToBindInfo {
     handle: ffi::duckdb_v2_copy_to_bind_info_handle,
 }
@@ -606,6 +609,7 @@ unsafe extern "C" fn progress_from_callback<T: CopyFromFunctionCallbacks>(
 ///
 /// Column order and types are fixed by the target table: the exec callback's
 /// output chunk must carry them, in this order.
+#[derive(Debug)]
 pub struct CopyFromBindInfo {
     handle: ffi::duckdb_v2_copy_from_bind_info_handle,
 }
@@ -681,6 +685,7 @@ impl CopyFromBindInfo {
 }
 
 /// A `COPY ... FROM` read's estimated or exact row count.
+#[derive(Debug)]
 pub struct CopyFromCardinality {
     /// The estimated number of rows the read will produce.
     pub cardinality: usize,

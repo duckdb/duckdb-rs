@@ -47,6 +47,7 @@ unsafe impl Send for Value {}
 unsafe impl Sync for Value {}
 
 #[doc(hidden)]
+#[derive(Debug)]
 pub enum ValueInput<'a> {
     Null(&'a LogicalType),
     Bool(bool),

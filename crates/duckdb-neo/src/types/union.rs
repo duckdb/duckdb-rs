@@ -15,6 +15,7 @@ use crate::{
 };
 
 /// Reads a `UNION` vector through its tag and member child vectors.
+#[derive(Debug)]
 pub struct Union;
 
 /// Defines the named members of a [`UnionValue`].
@@ -24,6 +25,7 @@ pub trait UnionSchema {
 }
 
 /// An active member represented as a DuckDB `UNION` with schema `S`.
+#[derive(Debug)]
 pub struct UnionValue<S, T> {
     /// The active member value.
     pub value: T,
@@ -91,6 +93,7 @@ impl VectorElement for Union {
 }
 
 /// A borrowed union row with access to its tag and member child vectors.
+#[derive(Debug)]
 pub struct UnionRow<'a> {
     children: &'a VectorCollection,
     logical: usize,
@@ -126,6 +129,7 @@ trait UnionFieldWrite {
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
 }
 
+#[derive(Debug)]
 struct TypedUnionField<'a, T: WritableVectorElement + 'a> {
     member: Option<T::Write<'a>>,
 }
@@ -144,6 +148,14 @@ where
 pub struct UnionWriter<'a> {
     tag: u8,
     value: Box<dyn UnionFieldWrite + 'a>,
+}
+
+impl std::fmt::Debug for UnionWriter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnionWriter")
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> UnionWriter<'a> {

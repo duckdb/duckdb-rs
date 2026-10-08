@@ -3,6 +3,7 @@
 use crate::ffi;
 use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
 
+#[derive(Debug)]
 pub(crate) enum BindType<'a> {
     Scalar(&'a ffi::duckdb_v2_scalar_function_bind_info_handle),
     Table(&'a ffi::duckdb_v2_table_function_bind_info_handle),
@@ -13,11 +14,13 @@ pub(crate) enum BindType<'a> {
 ///
 /// The argument list follows signature-slot order: fixed parameters first,
 /// followed by expanded variadic arguments.
+#[derive(Debug)]
 pub struct BindMetadata<'a> {
     pub(crate) bind_type: BindType<'a>,
 }
 
 /// An owned argument type and optional constant value supplied to a bind callback.
+#[derive(Debug)]
 pub struct BindArgument {
     /// The argument's resolved logical type.
     pub logical_type: LogicalType,
