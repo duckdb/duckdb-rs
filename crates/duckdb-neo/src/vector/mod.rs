@@ -463,7 +463,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         if view.is_null_physical(physical) {
             None
         } else {
-            Some(U::get(self, physical, index))
+            // SAFETY: callers validated this vector as `U` and cached its children; the row is in bounds and valid.
+            Some(unsafe { U::get(self, physical, index) })
         }
     }
 
@@ -585,10 +586,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         index: usize,
         value: Option<U::Write<'_>>,
     ) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
         self.validate_as::<U>()?;
         // The element type is represented only by PhantomData.
         let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
-        U::write(typed, index, value)
+        // SAFETY: checked writable above.
+        unsafe { U::write(typed, index, value) }
     }
 
     /// Read the current size from DuckDB, which may have changed through another wrapper.
@@ -782,7 +787,8 @@ impl<T: WritableVectorElement> Vector<'_, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        T::write(self, index, value)
+        // SAFETY: checked writable above.
+        unsafe { T::write(self, index, value) }
     }
 }
 

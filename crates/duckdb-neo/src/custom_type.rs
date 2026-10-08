@@ -6,6 +6,7 @@ use crate::{
     Result, check_api_call,
     handles::{CustomTypeBuilderHandle, CustomTypeBuilderLink},
     logical_type::LogicalType,
+    raw::RawExt,
 };
 
 /// A builder for a named logical type backed by an existing type.
@@ -50,11 +51,11 @@ impl CustomType {
     fn build(&self, handle: &CustomTypeBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_custom_type_set_base_type,
-            **handle,
+            handle.raw(),
             self.base_type.handle
         )?;
 
-        check_api_call!(ffi::duckdb_v2_custom_type_set_name, **handle, &(&self.name).into(),)?;
+        check_api_call!(ffi::duckdb_v2_custom_type_set_name, handle.raw(), &(&self.name).into(),)?;
 
         Ok(())
     }
@@ -65,7 +66,7 @@ impl CustomType {
         let handle = link.create_custom_type_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_custom_type_register, *handle)
+        check_api_call!(ffi::duckdb_v2_custom_type_register, handle.raw())
     }
 }
 

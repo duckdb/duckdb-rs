@@ -20,7 +20,7 @@ impl VectorElement for Variant {
 
     type Ref<'a> = Value;
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -31,7 +31,7 @@ impl VectorElement for Variant {
 impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         match value {
             Some(value) => vector.write_value_slow(index, value),
             None => vector.write_raw::<Unknown>(index, None),

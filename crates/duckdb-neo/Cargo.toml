@@ -50,6 +50,7 @@ bundled-cmake-tpch = ["bundled-cmake", "libduckdb-sys/tpch"]
 
 [dependencies]
 chrono = { workspace = true, optional = true }
+duckdb-loadable-macros = { workspace = true, features = ["neo"] }
 libc = { workspace = true }
 # Not inherited from the workspace: cargo does not allow overriding
 # `default-features` on an inherited dependency. Only the v2 bindings are

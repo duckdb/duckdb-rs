@@ -11,6 +11,7 @@ use crate::logical_type::{LogicalType, LogicalTypeID};
 use crate::vector::{Access, VectorElement};
 use crate::{
     Result, check_api_call,
+    raw::RawExt,
     vector::{Unknown, Vector},
 };
 
@@ -71,7 +72,7 @@ trait DataChunkLink {
 
 impl DataChunkLink for Connection {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
-        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, **self, **chunk, RET)?;
+        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, self.raw(), **chunk, RET)?;
         Ok(DataChunk::new(handle, true)?.keep_alive(self))
     }
 }
@@ -79,7 +80,7 @@ impl DataChunkLink for Connection {
 impl DataChunkLink for Context {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
         DataChunk::new(
-            check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_context, **self, **chunk, RET)?,
+            check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_context, self.raw(), **chunk, RET)?,
             true,
         )
     }
@@ -590,7 +591,7 @@ impl<'a> DataChunk<'a> {
             Allocator::Connection(conn) => {
                 let handle = check_api_call!(
                     ffi::duckdb_v2_data_chunk_create_with_connection,
-                    **conn,
+                    conn.raw(),
                     type_handles.as_ptr(),
                     len as u64,
                     RET
@@ -599,7 +600,7 @@ impl<'a> DataChunk<'a> {
             }
             Allocator::Context(context) => check_api_call!(
                 ffi::duckdb_v2_data_chunk_create_with_context,
-                **context,
+                context.raw(),
                 type_handles.as_ptr(),
                 len as u64,
                 RET

@@ -10,6 +10,7 @@ use crate::{
     data_chunk::{DataChunk, DataChunkRef},
     ffi,
     logical_type::LogicalType,
+    raw::RawExt,
     schema::Schema,
 };
 
@@ -141,7 +142,7 @@ impl<'ctx> ArrowExporter<'ctx> {
 
         let handle = check_api_call!(
             ffi::duckdb_v2_arrow_exporter_create,
-            **context,
+            context.raw(),
             logical_type_handles.as_ptr(),
             name_ptrs.as_ptr(),
             logical_type_handles.len() as u64,
@@ -210,7 +211,7 @@ impl<'ctx> ArrowImporter<'ctx> {
         let mut schema = ArrowSchema { raw: schema.into() };
         let handle = check_api_call!(
             ffi::duckdb_v2_arrow_importer_create,
-            **context,
+            context.raw(),
             &mut schema.raw,
             batch_size.unwrap_or(0) as u64,
             RET

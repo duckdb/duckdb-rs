@@ -82,7 +82,7 @@ impl VectorElement for Union {
         children.get_untyped_vector_at(0)?.validate_as::<u8>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -169,7 +169,7 @@ impl<'a> UnionWriter<'a> {
 impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             vector.set_row_validity(index, false)?;
             let children = vector

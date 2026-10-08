@@ -104,10 +104,8 @@ pub enum QueryResultStep {
 /// # }
 /// ```
 pub struct QueryResult<'a> {
-    /// Ties the result lifetime to its connection.
-    pub phantom: std::marker::PhantomData<&'a mut Connection>,
-    /// The owned DuckDB result handle.
-    pub handle: ffi::duckdb_v2_result_handle,
+    pub(crate) handle: ffi::duckdb_v2_result_handle,
+    pub(crate) phantom: std::marker::PhantomData<&'a mut Connection>,
 }
 
 impl<'a> QueryResult<'a> {

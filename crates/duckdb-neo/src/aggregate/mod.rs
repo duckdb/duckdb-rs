@@ -23,6 +23,7 @@ use crate::{
     data_chunk::{RowCount, VectorCollection},
     enums::FunctionProperty,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
+    raw::RawExt,
     scalar::{FunctionBindHandles, ReturnTypeHandle},
     signature::SignatureBuilder,
     vector::{Access, Unknown, Vector},
@@ -379,63 +380,68 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
     fn build(&self, handle: &AggregateFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_name,
-            **handle,
+            handle.raw(),
             &mut (&self.name).into()
         )?;
 
-        let signature = check_api_call!(ffi::duckdb_v2_aggregate_function_get_signature, **handle, RET)?;
+        let signature = check_api_call!(ffi::duckdb_v2_aggregate_function_get_signature, handle.raw(), RET)?;
 
         self.signature.build(&signature)?;
 
         for (key, value) in &self.properties {
-            check_api_call!(ffi::duckdb_v2_aggregate_function_set_property, **handle, *key, *value)?;
+            check_api_call!(
+                ffi::duckdb_v2_aggregate_function_set_property,
+                handle.raw(),
+                *key,
+                *value
+            )?;
         }
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_user_data,
-            **handle,
+            handle.raw(),
             &mut self.user_data.to_handle()
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_init_callback,
-            **handle,
+            handle.raw(),
             Some(init_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_size_callback,
-            **handle,
+            handle.raw(),
             Some(size_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_update_callback,
-            **handle,
+            handle.raw(),
             Some(update_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_combine_callback,
-            **handle,
+            handle.raw(),
             Some(combine_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_finalize_callback,
-            **handle,
+            handle.raw(),
             Some(finalize_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_destroy_callback,
-            **handle,
+            handle.raw(),
             Some(destroy_callback::<T>)
         )?;
 
@@ -448,7 +454,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
         let handle = link.create_aggregate_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_aggregate_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_aggregate_function_register, handle.raw())
     }
 }
 

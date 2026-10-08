@@ -108,7 +108,7 @@ impl VectorElement for Struct {
 
     type Internal = Struct;
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -159,7 +159,7 @@ impl<'a> StructWrite<'a> {
 impl WritableVectorElement for Struct {
     type Write<'a> = StructWrite<'a>;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.set_row_validity(index, false);
         };

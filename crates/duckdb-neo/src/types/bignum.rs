@@ -11,6 +11,7 @@ use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
+    raw::RawExt,
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
@@ -66,7 +67,7 @@ impl VectorElement for BigNum {
 
     type Ref<'a> = &'a BigNum;
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -78,7 +79,7 @@ impl VectorElement for BigNum {
 impl WritableVectorElement for BigNum {
     type Write<'a> = &'a BigNum;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_bytes(index, value.map(BigNum::encoded))
     }
 }
@@ -104,7 +105,7 @@ impl ToValue for BigNumValue {
 
 impl FromValue for BigNumValue {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, **value, RET)?;
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, value.raw(), RET)?;
         let encoded = owned_bytes(raw)?;
         let (is_negative, magnitude) = Value::decode_bignum(&encoded)?;
         Ok(Self { is_negative, magnitude })
@@ -119,18 +120,19 @@ impl VectorElement for BigNumValue {
 
     type Ref<'a> = &'a BigNum;
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: 'a,
     {
-        BigNum::get(vector, physical, logical)
+        // SAFETY: same storage as `BigNum`; the caller upholds the contract.
+        unsafe { BigNum::get(vector, physical, logical) }
     }
 }
 
 impl WritableVectorElement for BigNumValue {
     type Write<'a> = &'a BigNumValue;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let encoded = value
             .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
             .transpose()?;

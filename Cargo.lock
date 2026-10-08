@@ -858,6 +858,7 @@ name = "duckdb-neo"
 version = "1.20000.0"
 dependencies = [
  "chrono",
+ "duckdb-loadable-macros",
  "libc",
  "libduckdb-sys",
  "paste",

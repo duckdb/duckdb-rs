@@ -4,12 +4,12 @@
 //! appending or scanning state. Appended chunks are copied into storage owned
 //! by the collection.
 
-use std::{marker::PhantomData, ops::Deref};
+use std::marker::PhantomData;
 
 use crate::ffi;
 
 use crate::{
-    Result, check_api_call, check_api_call_no_err,
+    AsRaw, Result, check_api_call, check_api_call_no_err,
     data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
@@ -18,6 +18,7 @@ use crate::{
     },
     links::{ColumnDataCollectionLink, ConnectionOrigin},
     logical_type::LogicalType,
+    raw::RawExt,
 };
 
 /// An owned collection of data chunks with a fixed column schema.
@@ -84,21 +85,15 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
+#[derive(AsRaw)]
 pub struct ColumnDataCollection<'conn> {
     /// The owned DuckDB collection handle.
-    pub handle: ffi::duckdb_v2_column_data_collection_handle,
+    pub(crate) handle: ffi::duckdb_v2_column_data_collection_handle,
     /// The collection's column types, in storage order.
     pub logical_types: Vec<LogicalType>,
     /// The connection whose buffer manager backs every chunk, if known and unique.
     pub(crate) origin: Option<ffi::duckdb_v2_connection_handle>,
     pub(crate) _conn: PhantomData<&'conn ()>,
-}
-
-impl Deref for ColumnDataCollection<'_> {
-    type Target = ffi::duckdb_v2_column_data_collection_handle;
-    fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
 }
 
 impl<'conn> ColumnDataCollection<'conn> {
@@ -214,8 +209,8 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
         let did_produce_chunk: bool = check_api_call!(
             ffi::duckdb_v2_column_data_collection_scan,
             self.collection.handle,
-            *self.shared_scan_state,
-            *self.worker_scan_state,
+            self.shared_scan_state.raw(),
+            self.worker_scan_state.raw(),
             **self.chunk,
             RET
         )?;
@@ -268,7 +263,7 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         let result = check_api_call!(
             ffi::duckdb_v2_column_data_collection_append,
             self.collection.handle,
-            *self.appender,
+            self.appender.raw(),
             chunk.chunk_handle()
         );
         // DuckDB may flatten nested columns in place, even when the append fails.

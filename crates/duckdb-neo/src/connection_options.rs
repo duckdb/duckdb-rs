@@ -1,12 +1,10 @@
 //! Configuration options shared with databases and connections.
 
-use std::ops::Deref;
-
 use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;
 use crate::{
-    Result,
+    AsRaw, FromRaw, Result,
     builder_helpers::ffi_enum_redeclaration,
     error::{check_api_call, check_api_call_no_err},
 };
@@ -52,17 +50,10 @@ ffi_enum_redeclaration! {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(AsRaw, FromRaw)]
 pub struct ConfigOption {
     /// The owned DuckDB option handle.
-    pub handle: ffi::duckdb_v2_option_handle,
-}
-
-impl Deref for ConfigOption {
-    type Target = ffi::duckdb_v2_option_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
+    pub(crate) handle: ffi::duckdb_v2_option_handle,
 }
 
 impl ConfigOption {

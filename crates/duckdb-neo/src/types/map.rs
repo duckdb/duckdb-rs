@@ -115,7 +115,7 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         children.get_untyped_vector_at(1)?.validate_as::<V>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -138,7 +138,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         K: 'a,
         V: 'a;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
         };

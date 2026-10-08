@@ -7,6 +7,7 @@ use crate::{
     error::{DuckDBError, Error},
     ffi,
     query_result::{QueryResult, StatementType},
+    raw::RawExt,
     schema::Schema,
 };
 
@@ -39,8 +40,7 @@ pub struct SchemaBind {
 /// # }
 /// ```
 pub struct Statements {
-    /// The owned DuckDB statement-iterator handle.
-    pub handle: ffi::duckdb_v2_statement_iterator_handle,
+    pub(crate) handle: ffi::duckdb_v2_statement_iterator_handle,
 }
 
 impl Statements {
@@ -52,7 +52,7 @@ impl Statements {
         })?;
 
         let handle: ffi::duckdb_v2_statement_iterator_handle =
-            check_api_call!(ffi::duckdb_v2_parse_sql, **conn, query_str.as_ptr(), RET)?;
+            check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)?;
 
         Ok(Statements { handle })
     }
@@ -99,7 +99,7 @@ impl Statement {
 
         let out_schema = check_api_call!(
             ffi::duckdb_v2_statement_bind,
-            **conn,
+            conn.raw(),
             self.handle,
             RET,
             &mut out_parameters
@@ -118,7 +118,7 @@ impl Statement {
     pub fn prepare<'a>(&self, conn: &'a Connection, require_cacheable: bool) -> Result<PreparedStatement<'a>> {
         let prepared_handle = check_api_call!(
             ffi::duckdb_v2_prepared_statement_create,
-            **conn,
+            conn.raw(),
             self.handle,
             require_cacheable,
             RET

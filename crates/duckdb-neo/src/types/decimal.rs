@@ -12,6 +12,7 @@ use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
+    raw::RawExt,
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
@@ -91,7 +92,7 @@ impl<T: InternalDecimalType> VectorElement for Decimal<T> {
         Ok(size_of::<T>() == storage_size)
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -107,7 +108,7 @@ impl<T: InternalDecimalType + 'static> WritableVectorElement for Decimal<T> {
     where
         T: 'a;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_raw(index, value)
     }
 }
@@ -127,7 +128,13 @@ impl FromValue for DecimalValueRaw {
     fn _get_inner(value: &Value) -> Result<Self> {
         let mut width = 0;
         let mut scale = 0;
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_decimal, **value, RET, &mut width, &mut scale)?;
+        let raw = check_api_call!(
+            ffi::duckdb_v2_value_get_decimal,
+            value.raw(),
+            RET,
+            &mut width,
+            &mut scale
+        )?;
         Ok(Self {
             value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
             width,
