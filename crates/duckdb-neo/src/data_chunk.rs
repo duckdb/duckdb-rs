@@ -17,10 +17,9 @@ use crate::{
 fn check_distinct(indices: &[usize]) -> Result<()> {
     for (i, index) in indices.iter().enumerate() {
         if indices[..i].contains(index) {
-            return Err(crate::error::Error {
-                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("vector index {index} was requested more than once"),
-            });
+            return Err(crate::error::Error::invalid_parameter(format!(
+                "vector index {index} was requested more than once"
+            )));
         }
     }
     Ok(())

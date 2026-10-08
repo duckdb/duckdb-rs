@@ -7,7 +7,7 @@ use crate::{
     Result,
     connection::FFILink,
     data_chunk::VectorCollection,
-    error::{DuckDBError, Error},
+    error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     parameter::{Parameters, QueryParameter},
     value::Value,
@@ -74,10 +74,7 @@ impl VectorElement for Union {
         }
 
         let Some(children) = children.filter(|children| children.col_count() > 0) else {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: "Union vector is missing its tag child".to_string(),
-            });
+            return Err(Error::invalid_input("Union vector is missing its tag child"));
         };
         children.get_untyped_vector_at(0)?.validate_as::<u8>()
     }
@@ -114,14 +111,11 @@ impl<'a> UnionRow<'a> {
         let index = index + 1;
 
         if index >= self.children.col_count() {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!(
-                    "Union member index {} is out of bounds ({} members)",
-                    index - 1,
-                    self.children.col_count() - 1
-                ),
-            });
+            return Err(Error::invalid_parameter(format!(
+                "Union member index {} is out of bounds ({} members)",
+                index - 1,
+                self.children.col_count() - 1
+            )));
         }
 
         self.children.cached_unchecked(index).get_as_checked::<T>(self.logical)
@@ -187,13 +181,10 @@ impl WritableVectorElement for Union {
             .map_or(0, VectorCollection::col_count)
             .saturating_sub(1);
         if value.tag as usize >= member_count {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!(
-                    "Union member index {} is out of bounds ({} members)",
-                    value.tag, member_count
-                ),
-            });
+            return Err(Error::invalid_parameter(format!(
+                "Union member index {} is out of bounds ({} members)",
+                value.tag, member_count
+            )));
         }
 
         vector.set_row_validity(index, true)?;

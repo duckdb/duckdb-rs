@@ -8,7 +8,7 @@ use crate::{
     check_api_call,
     column_data_collection::ColumnDataCollection,
     connection::Context,
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     handles::ReplacementScanBuilderLink,
     links::ConnectionOrigin,
@@ -107,9 +107,10 @@ impl ReplacementHandle<'_> {
     }
 
     fn registered_collection(&self, name: &str) -> Result<&ColumnDataCollection<'_>> {
-        self.collection(name).ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("No collection named \"{name}\" is registered on this replacement scan"),
+        self.collection(name).ok_or_else(|| {
+            Error::invalid_input(format!(
+                "No collection named \"{name}\" is registered on this replacement scan"
+            ))
         })
     }
 }
@@ -197,12 +198,9 @@ where
             .iter()
             .find(|(_, collection)| origin.is_none() || collection.origin != origin)
         {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "Collection \"{name}\" can only be registered on a replacement scan of the connection it was created from"
-                ),
-            });
+            return Err(Error::invalid_input(format!(
+                "Collection \"{name}\" can only be registered on a replacement scan of the connection it was created from"
+            )));
         }
 
         // Every collection comes from `link`'s connection, which drops this data, and the

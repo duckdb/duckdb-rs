@@ -11,7 +11,7 @@ use crate::{
     Parameters, Result,
     connection::FFILink,
     data_chunk::VectorCollection,
-    error::{DuckDBError, Error},
+    error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
     vector::{Unknown, Vector, VectorElement, VectorView, WritableVectorElement},
@@ -47,10 +47,10 @@ impl<T: FromValue> FromValue for Vec<Option<T>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.fetch_logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!("Expected LIST value, found {}", logical_type.to_string()?),
-            });
+            return Err(Error::invalid_input(format!(
+                "Expected LIST value, found {}",
+                logical_type.to_string()?
+            )));
         }
 
         value.children()?.iter().map(T::from_value).collect::<Result<Vec<_>>>()
@@ -73,10 +73,7 @@ impl<L: VectorElement> VectorElement for List<L> {
         }
 
         let Some(children) = children.filter(|children| children.col_count() == 1) else {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: "List vector must have exactly one child".to_string(),
-            });
+            return Err(Error::invalid_input("List vector must have exactly one child"));
         };
         children.get_untyped_vector_at(0)?.validate_as::<L>()
     }

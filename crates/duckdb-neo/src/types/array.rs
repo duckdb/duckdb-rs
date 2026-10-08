@@ -7,7 +7,7 @@ use crate::{
     Parameters, Result,
     connection::FFILink,
     data_chunk::VectorCollection,
-    error::{DuckDBError, Error},
+    error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
@@ -44,23 +44,22 @@ impl<T: FromValue, const N: usize> FromValue for [Option<T>; N] {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.fetch_logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!("Expected ARRAY value, found {}", logical_type.to_string()?),
-            });
+            return Err(Error::invalid_input(format!(
+                "Expected ARRAY value, found {}",
+                logical_type.to_string()?
+            )));
         }
 
         let children = value.children()?;
         if children.len() != N {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!("ARRAY has {} elements, expected {N}", children.len()),
-            });
+            return Err(Error::invalid_input(format!(
+                "ARRAY has {} elements, expected {N}",
+                children.len()
+            )));
         }
         let values = children.iter().map(T::from_value).collect::<Result<Vec<_>>>()?;
-        values.try_into().map_err(|values: Vec<Option<T>>| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("ARRAY has {} elements, expected {N}", values.len()),
+        values.try_into().map_err(|values: Vec<Option<T>>| {
+            Error::invalid_input(format!("ARRAY has {} elements, expected {N}", values.len()))
         })
     }
 }
@@ -89,10 +88,7 @@ impl<T: VectorElement> VectorElement for Array<T> {
         }
 
         let Some(children) = children.filter(|children| children.col_count() == 1) else {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: "Array vector must have exactly one child".to_string(),
-            });
+            return Err(Error::invalid_input("Array vector must have exactly one child"));
         };
         children.get_untyped_vector_at(0)?.validate_as::<T>()
     }
@@ -127,16 +123,17 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         if let Some(values) = &value
             && values.len() != array_size
         {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("Array row has {} elements, expected {}", values.len(), array_size),
-            });
+            return Err(Error::invalid_parameter(format!(
+                "Array row has {} elements, expected {}",
+                values.len(),
+                array_size
+            )));
         }
 
-        let child_len = vector.len.checked_mul(array_size).ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "Array child length overflow".to_string(),
-        })?;
+        let child_len = vector
+            .len
+            .checked_mul(array_size)
+            .ok_or_else(|| Error::invalid_input("Array child length overflow"))?;
         let child = vector
             .children_collection_mut()
             .expect("validated nested vector has children")
@@ -149,10 +146,9 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
             return vector.set_null_slow(index);
         };
 
-        let offset = index.checked_mul(array_size).ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "Array child offset overflow".to_string(),
-        })?;
+        let offset = index
+            .checked_mul(array_size)
+            .ok_or_else(|| Error::invalid_input("Array child offset overflow"))?;
         for (child_index, value) in values.into_iter().enumerate() {
             child.write(offset + child_index, value)?;
         }

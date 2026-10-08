@@ -28,7 +28,7 @@ impl r2d2::ManageConnection for ConnectionManager {
         let res = conn.execute("SELECT 1", Parameters::None);
 
         if !res.is_ok() {
-            return Err(Error::api_error("Connection is not valid".to_string()));
+            return Err(Error::api_error("Connection is not valid"));
         }
 
         Ok(())

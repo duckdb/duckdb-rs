@@ -4,7 +4,7 @@ use crate::ffi_str::DuckDBStr;
 use crate::{
     Parameters, Result, check_api_call, check_api_call_no_err,
     connection::Connection,
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     query_result::{QueryResult, StatementType},
     schema::Schema,
@@ -46,10 +46,8 @@ pub struct Statements {
 impl Statements {
     /// Parse SQL using a connection's parser configuration.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
-        let query_str = std::ffi::CString::new(sql.as_ref()).map_err(|_| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "SQL string contains a NUL byte".to_string(),
-        })?;
+        let query_str =
+            std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
         let handle: ffi::duckdb_v2_statement_iterator_handle =
             check_api_call!(ffi::duckdb_v2_parse_sql, **conn, query_str.as_ptr(), RET)?;

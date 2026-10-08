@@ -761,10 +761,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
         return Ok(());
     }
-    Err(Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_API,
-        message: "Not found".to_string(),
-    })
+    Err(Error::api_error("Not found"))
 }
 
 #[test]
