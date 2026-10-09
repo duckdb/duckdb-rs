@@ -2166,7 +2166,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = " Closes the pending result and de-allocates all memory allocated for the result.\n\n history:\n - stable: v0.5.0\n\n @param pending_result The pending result to destroy.\n @return void"]
+    #[doc = " Closes the pending result and de-allocates all memory allocated for the result.\n\n Destroying a pending result whose statement has not completed aborts the statement. On autocommit, its writes are\n rolled back. Inside a transaction, a statement that may write invalidates the transaction, and a read-only statement\n just stops. Preparing or running another statement on the connection aborts a statement that has not completed the\n same way, so a COMMIT issued before a statement that may write completed rolls the transaction back.\n `duckdb_pending_execution_is_finished` reporting true does not mean that the statement completed. To make sure a\n statement takes effect, complete it before destroying the pending result: call `duckdb_execute_pending`, and fetch a\n streaming result until `duckdb_fetch_chunk` returns NULL. A NULL chunk is also returned on an error, so check\n `duckdb_result_error` afterwards.\n\n history:\n - stable: v0.5.0\n\n @param pending_result The pending result to destroy.\n @return void"]
     pub fn duckdb_destroy_pending(pending_result: *mut duckdb_pending_result);
 }
 unsafe extern "C" {
@@ -2498,7 +2498,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = " Closes the result and de-allocates all memory allocated for that result.\n\n history:\n - stable: v0.1.0\n\n @param result The result to destroy.\n @return void"]
+    #[doc = " Closes the result and de-allocates all memory allocated for that result.\n\n Destroying a streaming result whose statement has not completed aborts the statement. On autocommit, its writes are\n rolled back. Inside a transaction, a statement that may write invalidates the transaction, and a read-only statement\n just stops. Preparing or running another statement on the connection aborts a statement that has not completed the\n same way, so a COMMIT issued before a statement that may write completed rolls the transaction back. To make sure the\n statement takes effect, complete it by fetching until `duckdb_fetch_chunk` returns NULL before destroying the result.\n A NULL chunk is also returned on an error, so check `duckdb_result_error` afterwards.\n\n history:\n - stable: v0.1.0\n\n @param result The result to destroy.\n @return void"]
     pub fn duckdb_destroy_result(result: *mut duckdb_result);
 }
 unsafe extern "C" {
