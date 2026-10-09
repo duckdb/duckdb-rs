@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     )?;
 
     let csv_data = conn.query(
-        "SELECT id, first_name, email, birth_day, birth_month, birth_year, FROM 'crates/duckdb-neo/examples/001-json-to-duckdb-db/data/001.csv' WHERE country != $1",
+        "SELECT id, first_name, email, make_date(birth_year, birth_month, birth_day) FROM 'crates/duckdb-neo/examples/001-json-to-duckdb-db/data/001.csv' WHERE country != $1",
         Parameters::positional(&[&"CHILE"]),
     )?;
 
@@ -36,22 +36,15 @@ fn main() -> Result<()> {
         let id = chunk.get_vector_at::<i64>(0)?;
         let name = chunk.get_vector_at::<String>(1)?;
         let email = chunk.get_vector_at::<String>(2)?;
-        let birth_day = chunk.get_vector_at::<i64>(3)?;
-        let birth_month = chunk.get_vector_at::<i64>(4)?;
-        let birth_year = chunk.get_vector_at::<i64>(5)?;
+        // `make_date` handles leap years and month lengths.
+        let birthday = chunk.get_vector_at::<DateValue>(3)?;
 
         for i in 0..chunk.row_count()? {
-            let birthday = DateValue(
-                ((*birth_year.get(i)?.unwrap() - 1970) * 365i64
-                    + *birth_month.get(i)?.unwrap() * 30
-                    + *birth_day.get(i)?.unwrap()) as i32,
-            );
-
             let customer = Customer {
                 id: *id.get(i)?.unwrap(),
                 name: name.get(i)?.unwrap().to_string(),
                 email: email.get(i)?.unwrap().to_string(),
-                birthday,
+                birthday: *birthday.get(i)?.unwrap(),
             };
 
             customers.push(customer);
@@ -66,7 +59,10 @@ fn main() -> Result<()> {
         )?;
     }
 
-    let db_customers = conn.query("SELECT * FROM customers", Parameters::None)?;
+    let db_customers = conn.query(
+        "SELECT id, first_name, email, birthday::VARCHAR FROM customers",
+        Parameters::None,
+    )?;
 
     for chunk in db_customers {
         let chunk = chunk?;
@@ -74,7 +70,7 @@ fn main() -> Result<()> {
         let id = chunk.get_vector_at::<i32>(0)?;
         let name = chunk.get_vector_at::<String>(1)?;
         let email = chunk.get_vector_at::<String>(2)?;
-        let birthday = chunk.get_vector_at::<DateValue>(3)?;
+        let birthday = chunk.get_vector_at::<String>(3)?;
 
         for i in 0..chunk.row_count()? {
             println!(

@@ -378,7 +378,8 @@ mod test {
             is_active    BOOLEAN
          );
 
-         INSERT INTO employees FROM A;
+         -- BY NAME fails unless the replacement scan's custom names are applied.
+         INSERT INTO employees BY NAME SELECT * FROM A;
 
          SELECT * FROM employees;
         "#,
