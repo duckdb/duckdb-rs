@@ -22,7 +22,7 @@ use crate::{
     builder_helpers::ffi_enum_redeclaration,
     connection_options::ConfigOption,
     database::{DatabaseHandle, Instance},
-    error::{DuckDBError, Error, check_api_call, check_api_call_no_err},
+    error::{Error, check_api_call, check_api_call_no_err},
     ffi,
     links::LogicalTypeFromTextLink,
     logical_type::{LogicalType, LogicalTypeID},
@@ -97,22 +97,19 @@ fn execute_statement<'conn>(
     names: Option<&[&str]>,
     values: &[&Value],
 ) -> Result<QueryResult<'conn>> {
-    let statement = statements.next().ok_or(Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_API,
-        message: "No statements found in SQL string".to_string(),
-    })??;
+    let statement = statements
+        .next()
+        .ok_or(Error::api_error("No statements found in SQL string"))??;
 
     if statements.next().is_some() {
-        return Err(Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "Multiple statements found in SQL string".to_string(),
-        });
+        return Err(Error::invalid_input("Multiple statements found in SQL string"));
     }
 
     conn.execute_statement(statement, names, values)
 }
 
 /// A handle that allows interrupting long-running queries. Can be used from other threads.
+#[derive(Debug)]
 pub struct InterruptHandle {
     conn: Weak<InnerConnection>,
 }
@@ -135,6 +132,7 @@ impl InterruptHandle {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct InnerConnection {
     pub handle: ffi::duckdb_v2_connection_handle,
 }
@@ -158,6 +156,7 @@ unsafe impl Sync for InnerConnection {}
 /// A connection can be moved to another thread but not shared between threads;
 /// use [`InterruptHandle`] or [`QueryProgressTracker`](crate::query_progress::QueryProgressTracker)
 /// from other threads.
+#[derive(Debug)]
 pub struct Connection {
     pub(crate) _db: Arc<Mutex<DatabaseHandle>>,
     pub(crate) inner: Arc<InnerConnection>,
@@ -231,10 +230,7 @@ impl Connection {
             RET
         )?;
 
-        Ok(QueryResult {
-            phantom: std::marker::PhantomData {},
-            handle: result,
-        })
+        Ok(QueryResult::new(result))
     }
 
     /// Return the number of options visible to this connection.
@@ -378,6 +374,7 @@ impl FFILink for Connection {
 /// through it, must not be used after the extension's entry point returns.
 #[derive(AsRaw, FromRaw)]
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 
 /// A non-owning DuckDB context supplied for the duration of a callback.
@@ -386,6 +383,7 @@ pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 /// callback invocation, including when wrapped with [`FromRaw::from_raw`].
 #[derive(AsRaw, FromRaw)]
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
 
 impl Context {
@@ -483,25 +481,25 @@ mod tests {
     fn test_connection_query() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
 
-        let result = conn.query(
-            "SELECT $1::INTEGER WHERE $2 = 'hello'",
-            Parameters::positional(&[&10_i32, &"hello"]),
-        )?;
-        let chunk = result.into_iter().next().unwrap()?;
+        let chunk = conn
+            .query(
+                "SELECT $1::INTEGER WHERE $2 = 'hello'",
+                Parameters::positional(&[&10_i32, &"hello"]),
+            )?
+            .next_chunk()?
+            .unwrap();
         assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&10));
 
         conn.execute("SELECT $1", Parameters::positional(&[&(42_i32, "duck")]))?;
 
-        let result = conn.query(
+        let mut result = conn.query(
             "SELECT * FROM range(0, 20000) as x where x % $mod = 0",
             Parameters::named(&[("mod", &5)]),
         )?;
 
         let mut i = 0;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<i64>(0)?;
 
             for value in vector.iter()? {
@@ -531,8 +529,8 @@ mod tests {
         let conn = db.connect()?;
 
         let statements = conn.parse("SELECT 42")?;
-        let result = conn.query(statements, Parameters::None)?;
-        let chunk = result.into_iter().next().unwrap()?;
+        let mut result = conn.query(statements, Parameters::None)?;
+        let chunk = result.next_chunk()?.unwrap();
 
         assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
 
@@ -551,13 +549,13 @@ mod tests {
 
         let mut result = conn.query(statements, Parameters::None)?;
 
-        let _ = result.next().unwrap().unwrap();
+        let _ = result.next_chunk()?.unwrap();
 
         assert!(interrupt.is_alive());
 
         interrupt.interrupt()?;
 
-        assert!(result.next().unwrap().is_err());
+        assert!(result.next_chunk().is_err());
 
         drop(result);
         drop(conn);

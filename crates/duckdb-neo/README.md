@@ -67,8 +67,8 @@ fn main() -> Result<()> {
 
     // Results arrive as chunks of column vectors.
     let mut ducks = Vec::new();
-    for chunk in conn.query("FROM ducks ORDER BY id", Parameters::None)? {
-        let chunk = chunk?;
+    let mut result = conn.query("FROM ducks ORDER BY id", Parameters::None)?;
+    while let Some(chunk) = result.next_chunk()? {
         let ids = chunk.get_vector_at::<i32>(0)?;
         let names = chunk.get_vector_at::<String>(1)?;
         for (id, name) in ids.iter()?.zip(names.iter()?) {
@@ -96,6 +96,7 @@ Execute the program with `cargo run` and watch DuckDB in action!
 - `chrono` - Convert DuckDB `DATE`, `TIME`, and `TIMESTAMP` values to [`chrono`](https://docs.rs/chrono) types.
 - `r2d2` - `duckdb_neo::r2d2::ConnectionManager`, a connection pool manager for [r2d2](https://github.com/sfackler/r2d2).
 - `uuid` - Read and write DuckDB `UUID` values as [`uuid::Uuid`](https://docs.rs/uuid).
+- `rust_decimal` - Read and write DuckDB `DECIMAL` values as [`rust_decimal::Decimal`](https://docs.rs/rust_decimal). Vectors support `DECIMAL` widths up to 28.
 
 ### Linking against a prebuilt DuckDB
 

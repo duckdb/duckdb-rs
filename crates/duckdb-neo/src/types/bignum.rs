@@ -23,6 +23,12 @@ use std::fmt::Display;
 #[repr(transparent)]
 pub struct BigNum(ffi::duckdb_v2_bignum_t);
 
+impl std::fmt::Debug for BigNum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("BigNum").field(&self.encoded()).finish()
+    }
+}
+
 impl BigNum {
     fn encoded(&self) -> &[u8] {
         let length = unsafe { self.0.value.inlined.length };

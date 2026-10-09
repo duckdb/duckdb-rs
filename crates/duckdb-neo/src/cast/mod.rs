@@ -56,6 +56,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
 /// A negative `implicit_cast_cost` makes the cast explicit-only. Non-negative
 /// costs allow implicit selection, with lower costs preferred when DuckDB
 /// resolves alternatives.
+#[derive(Debug)]
 pub struct CastFunctionBuilder<T: CastFunctionCallbacks> {
     source_type: LogicalType,
     target_type: LogicalType,
@@ -206,14 +207,12 @@ mod tests {
         )
         .register(&conn)?;
 
-        let result = conn.query(
+        let mut result = conn.query(
             "SELECT CAST(x as TEMPERATURE) FROM VALUES ('32'), (NULL)  as t(x)",
             Parameters::None,
         )?;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<f32>(0)?;
 
             assert_eq!(vector.get(0)?, Some(&42.0));

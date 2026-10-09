@@ -10,16 +10,23 @@ on:
     types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled, review_requested]
   issue_comment:
     types: [created]
-  check_suite:
+  # CI signal: auto-assign a reviewer once CI finishes. check_suite/status don't fire
+  # for GitHub-Actions CI, so react to this repo's CI workflow completing.
+  workflow_run:
+    workflows: ["CI"]
     types: [completed]
-  status:
 
 permissions:
   contents: read
 
 jobs:
   forward:
-    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request != null }}
+    # issue_comment fires for issues too — only forward comments on PRs. For a
+    # workflow_run, only forward runs that came from a PR (skip pushes to branches).
+    if: >-
+      ${{ (github.event_name != 'issue_comment' || github.event.issue.pull_request != null)
+          && (github.event_name != 'workflow_run'
+              || contains(fromJSON('["pull_request","pull_request_target"]'), github.event.workflow_run.event)) }}
     runs-on: ubuntu-latest
     steps:
       - uses: duckdb/duckdb-ci/pr-tracker/forward@main

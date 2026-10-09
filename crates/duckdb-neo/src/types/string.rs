@@ -27,13 +27,13 @@ pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
     DuckDBStr::from_raw(raw)
         .as_bytes()
         .map(<[u8]>::to_vec)
-        .ok_or_else(|| Error::api_error("DuckDB returned a null pointer for a non-empty value".to_string()))
+        .ok_or_else(|| Error::api_error("DuckDB returned a null pointer for a non-empty value"))
 }
 
 impl FromValue for String {
     fn _get_inner(value: &Value) -> Result<Self> {
         let raw = check_api_call!(ffi::duckdb_v2_value_get_varchar, value.raw(), RET)?;
-        String::from_utf8(owned_bytes(raw)?).map_err(|_| Error::api_error("DuckDB returned invalid UTF-8".to_string()))
+        String::from_utf8(owned_bytes(raw)?).map_err(|_| Error::api_error("DuckDB returned invalid UTF-8"))
     }
 }
 

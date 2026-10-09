@@ -18,10 +18,9 @@ use crate::{
 fn check_distinct(indices: &[usize]) -> Result<()> {
     for (i, index) in indices.iter().enumerate() {
         if indices[..i].contains(index) {
-            return Err(crate::error::Error {
-                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("vector index {index} was requested more than once"),
-            });
+            return Err(crate::error::Error::invalid_parameter(format!(
+                "vector index {index} was requested more than once"
+            )));
         }
     }
     Ok(())
@@ -92,6 +91,7 @@ impl DataChunkLink for Context {
 /// Vectors follow argument (or child) order and borrow DuckDB's data for the
 /// duration of the callback. Shared views are cached, so repeated
 /// [`Self::get_vector_at`] calls are cheap; mutable access drops the cached view.
+#[derive(Debug)]
 pub struct VectorCollection {
     pub(crate) handles: Vec<ffi::duckdb_v2_vector_handle>,
     pub(crate) access: Access,
@@ -103,6 +103,7 @@ pub struct VectorCollection {
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
+#[derive(Debug)]
 pub(crate) enum RowCount {
     /// A callback batch size; inputs are not writable, so it cannot change.
     Fixed(usize),
@@ -309,6 +310,7 @@ impl VectorCollection {
 /// Readers trust the children validated when the parent was cast, so this
 /// never hands out `&mut VectorCollection`, which could be swapped with another
 /// vector's children. Read-only access goes through [`Deref`].
+#[derive(Debug)]
 pub struct ChildrenMut<'a>(pub(crate) &'a mut VectorCollection);
 
 impl Deref for ChildrenMut<'_> {
@@ -378,11 +380,8 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 /// let conn = db.connect()?;
 /// let mut statements = conn.parse("SELECT * FROM (VALUES (10), (20))")?;
 /// let statement = statements.next().expect("expected a statement")?;
-/// let chunk = conn
-///     .query(statement, Parameters::None)?
-///     .next()
-///     .transpose()?
-///     .expect("expected rows");
+/// let mut result = conn.query(statement, Parameters::None)?;
+/// let chunk = result.next_chunk()?.expect("expected rows");
 ///
 /// let values = chunk.get_vector_at::<i32>(0)?;
 /// assert_eq!(chunk.row_count()?, 2);
@@ -539,6 +538,7 @@ impl<'a> DataChunkRef<'a> {
 }
 
 /// Selects where a chunk's vectors are allocated.
+#[derive(Debug)]
 pub enum Allocator<'a> {
     /// Allocate from the DuckDB default allocator.
     Default,
@@ -703,11 +703,9 @@ mod tests {
         )
         .register(&conn)?;
 
-        let query = conn.query("SELECT chunk_copy(unnest([1,2,3,4]))", crate::Parameters::None)?;
+        let mut query = conn.query("SELECT chunk_copy(unnest([1,2,3,4]))", crate::Parameters::None)?;
 
-        for chunk in query {
-            let chunk = chunk?;
-
+        while let Some(chunk) = query.next_chunk()? {
             let vec = chunk.get_vector_at::<i32>(0)?;
 
             assert_eq!(vec.get(0)?, Some(&1));

@@ -23,14 +23,14 @@ fn test_send_between_threads() -> duckdb_neo::Result<()> {
     .expect("connection thread should complete");
 
     let mut result = connection.query("SELECT value FROM test", Parameters::None)?;
-    let chunk = result.next().expect("query should return a chunk")?;
+    let chunk = result.next_chunk()?.expect("query should return a chunk");
     let values = chunk
         .get_vector_at::<i32>(0)?
         .iter()?
         .map(|value| value.copied())
         .collect::<Vec<_>>();
     assert_eq!(values, vec![Some(42)]);
-    assert!(result.next().is_none());
+    assert!(result.next_chunk()?.is_none());
     drop(result);
 
     assert_eq!(

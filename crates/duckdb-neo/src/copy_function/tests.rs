@@ -228,8 +228,8 @@ pub fn test_copy_from_function() -> crate::Result<()> {
         .expect("valid statement");
 
     let mut values = Vec::new();
-    for chunk in conn.query(statement, Parameters::None).expect("Failed to query") {
-        let chunk = chunk.expect("Failed to fetch chunk");
+    let mut result = conn.query(statement, Parameters::None).expect("Failed to query");
+    while let Some(chunk) = result.next_chunk().expect("Failed to fetch chunk") {
         let column = chunk.get_vector_at::<i64>(0).expect("Failed to get column");
         for item in column.iter().expect("Failed to iterate").flatten() {
             values.push(*item);

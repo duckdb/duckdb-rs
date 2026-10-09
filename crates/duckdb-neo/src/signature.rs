@@ -8,6 +8,7 @@ use crate::ffi;
 use crate::{Result, check_api_call, logical_type::LogicalType, value::Value};
 
 /// A parameter declaration accepted by [`SignatureBuilder`].
+#[derive(Debug)]
 pub enum ParameterType {
     /// A required fixed parameter.
     Normal(NormalParameter),
@@ -18,6 +19,7 @@ pub enum ParameterType {
 }
 
 /// A required fixed parameter.
+#[derive(Debug)]
 pub struct NormalParameter {
     /// The parameter name.
     pub name: String,
@@ -26,6 +28,7 @@ pub struct NormalParameter {
 }
 
 /// A fixed parameter with a default value.
+#[derive(Debug)]
 pub struct WithDefaultParameter {
     /// The parameter name.
     pub name: String,
@@ -36,6 +39,7 @@ pub struct WithDefaultParameter {
 }
 
 /// A variadic tail parameter.
+#[derive(Debug)]
 pub struct TailVarargParameter {
     /// The tail label; built signatures retain only its type.
     pub name: String,
@@ -92,6 +96,7 @@ impl Parameter {
 /// Parameters with defaults must follow required parameters, and parameter
 /// names must be unique. DuckDB checks these structural rules when the
 /// function is registered.
+#[derive(Debug)]
 pub struct SignatureBuilder {
     parameters: Vec<ParameterType>,
     return_type: Option<LogicalType>,
@@ -209,11 +214,9 @@ mod test {
 
         ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
 
-        let statements = conn.query("SELECT test(10, 'AA')", Parameters::None)?;
+        let mut statements = conn.query("SELECT test(10, 'AA')", Parameters::None)?;
 
-        for chunk in statements {
-            let chunk = chunk?;
-
+        while let Some(chunk) = statements.next_chunk()? {
             let vector = chunk.get_vector_at::<u64>(0)?;
 
             assert_eq!(vector.get(0)?, Some(&45u64));
@@ -241,11 +244,9 @@ mod test {
 
         ScalarFunctionBuilder::new("test", sig, VarargScalar).register(&conn)?;
 
-        let statements = conn.query("SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)", Parameters::None)?;
+        let mut statements = conn.query("SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)", Parameters::None)?;
 
-        for chunk in statements {
-            let chunk = chunk?;
-
+        while let Some(chunk) = statements.next_chunk()? {
             let vector = chunk.get_vector_at::<u64>(0)?;
 
             assert_eq!(vector.get(0)?, Some(&11u64));

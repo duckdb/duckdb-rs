@@ -16,6 +16,14 @@ pub struct DuckDBBytes {
     data: ffi::duckdb_v2_bytes,
 }
 
+impl std::fmt::Debug for DuckDBBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DuckDBBytes")
+            .field("size", &self.size())
+            .finish_non_exhaustive()
+    }
+}
+
 type DuckDBV2BytesUnion = ffi::duckdb_v2_bytes__bindgen_ty_1;
 type DuckDBV2BytesPointer = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_1;
 type DuckDBV2BytesInlined = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_2;

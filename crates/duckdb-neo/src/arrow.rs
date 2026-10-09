@@ -18,6 +18,7 @@ use crate::{
 ///
 /// The query keeps running while the stream is read, so the stream borrows the
 /// connection and is released when dropped.
+#[derive(Debug)]
 pub struct ArrowStream<'conn> {
     stream: ffi::ArrowArrayStream,
     _conn: std::marker::PhantomData<&'conn mut Connection>,
@@ -47,6 +48,7 @@ impl Drop for ArrowStream<'_> {
 }
 
 /// An owned Arrow C schema, released when dropped.
+#[derive(Debug)]
 pub struct ArrowSchema {
     raw: ffi::ArrowSchema,
 }
@@ -74,6 +76,7 @@ impl Drop for ArrowSchema {
 }
 
 /// An owned Arrow C array, released when dropped.
+#[derive(Debug)]
 pub struct ArrowArray {
     raw: ffi::ArrowArray,
 }
@@ -117,6 +120,7 @@ impl Drop for ArrowArray {
 /// The context's Arrow settings are copied at creation, but the copy keeps a
 /// raw pointer to the client context, so the exporter borrows the context for
 /// `'ctx` and must not outlive it.
+#[derive(Debug)]
 pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -198,6 +202,7 @@ impl Drop for ArrowExporter<'_> {
 ///
 /// The importer runs every conversion under the context it was created with,
 /// so it borrows that context and cannot outlive it.
+#[derive(Debug)]
 pub struct ArrowImporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_importer_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -379,14 +384,12 @@ mod tests {
         )
         .register(&conn)?;
 
-        let result = conn.query(
+        let mut result = conn.query(
             "SELECT to_arrow(a, b, c) FROM (VALUES (2, true, 'hello'), (1, false, 'world')) AS t(a, b, c)",
             Parameters::None,
         )?;
 
-        for chunk in result {
-            let chunk = chunk?;
-
+        while let Some(chunk) = result.next_chunk()? {
             let res = chunk.get_vector_at::<i64>(0)?;
 
             assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 2 + 5);

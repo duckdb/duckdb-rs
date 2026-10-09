@@ -16,6 +16,7 @@ use crate::{
 };
 
 /// The bind-time `ANY` logical type used in function signatures.
+#[derive(Debug)]
 pub struct Any;
 
 impl DuckDBType for Any {

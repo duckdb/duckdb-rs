@@ -7,7 +7,7 @@ use crate::{
     Result,
     connection::FFILink,
     data_chunk::VectorCollection,
-    error::{DuckDBError, Error},
+    error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     parameter::{Parameters, QueryParameter},
     value::{Value, ValueInput},
@@ -15,6 +15,7 @@ use crate::{
 };
 
 /// Reads a `STRUCT` vector as named fields.
+#[derive(Debug)]
 pub struct Struct;
 
 /// Defines the named fields of a [`StructValue`].
@@ -43,6 +44,14 @@ impl<T: ToValue + DuckDBType> StructFieldValue for T {
 pub struct StructValue<'a, S> {
     fields: Vec<Box<dyn StructFieldValue + 'a>>,
     _schema: PhantomData<S>,
+}
+
+impl<S> std::fmt::Debug for StructValue<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StructValue")
+            .field("fields", &self.fields.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a, S> StructValue<'a, S> {
@@ -86,28 +95,22 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         let fields = S::fields(link)?;
         if self.fields.len() != fields.len() {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "StructValue has {} fields, its schema has {}",
-                    self.fields.len(),
-                    fields.len()
-                ),
-            });
+            return Err(Error::invalid_input(format!(
+                "StructValue has {} fields, its schema has {}",
+                self.fields.len(),
+                fields.len()
+            )));
         }
 
         for (field, (name, expected)) in self.fields.iter().zip(&fields) {
             let actual = field.logical_type(&link)?;
             if actual != *expected {
-                return Err(Error {
-                    code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                    message: format!(
-                        "StructValue field '{}' has type {}, its schema has {}",
-                        name,
-                        actual.to_string()?,
-                        expected.to_string()?,
-                    ),
-                });
+                return Err(Error::invalid_input(format!(
+                    "StructValue field '{}' has type {}, its schema has {}",
+                    name,
+                    actual.to_string()?,
+                    expected.to_string()?,
+                )));
             }
         }
 
@@ -146,6 +149,7 @@ trait StructFieldWrite {
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
 }
 
+#[derive(Debug)]
 struct TypedStructField<'a, T: WritableVectorElement + 'a> {
     value: Option<T::Write<'a>>,
 }
@@ -164,6 +168,14 @@ where
 #[derive(Default)]
 pub struct StructWrite<'a> {
     fields: Vec<Box<dyn StructFieldWrite + 'a>>,
+}
+
+impl std::fmt::Debug for StructWrite<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StructWrite")
+            .field("fields", &self.fields.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> StructWrite<'a> {
@@ -187,14 +199,11 @@ impl WritableVectorElement for Struct {
             return vector.set_null_slow(index);
         };
         if value.fields.len() != vector.children().map_or(0, VectorCollection::col_count) {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "Struct row has {} fields, expected {}",
-                    value.fields.len(),
-                    vector.children().map_or(0, VectorCollection::col_count)
-                ),
-            });
+            return Err(Error::invalid_input(format!(
+                "Struct row has {} fields, expected {}",
+                value.fields.len(),
+                vector.children().map_or(0, VectorCollection::col_count)
+            )));
         }
 
         vector.set_row_validity(index, true)?;
@@ -215,6 +224,7 @@ impl WritableVectorElement for Struct {
 }
 
 /// A borrowed struct row that resolves named fields to child vectors.
+#[derive(Debug)]
 pub struct StructRow<'a> {
     children: &'a VectorCollection,
     logical_type: &'a LogicalType,
@@ -230,27 +240,18 @@ impl<'a> StructRow<'a> {
         let index = fields
             .iter()
             .position(|(field_name, _)| field_name == name)
-            .ok_or_else(|| Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("Field '{}' not found in struct", name),
-            })?;
+            .ok_or_else(|| Error::invalid_parameter(format!("Field '{}' not found in struct", name)))?;
         let child = (index < self.children.col_count())
             .then(|| self.children.cached_unchecked(index))
-            .ok_or_else(|| Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!("Struct field '{}' is missing its child vector", name),
-            })?;
+            .ok_or_else(|| Error::invalid_input(format!("Struct field '{}' is missing its child vector", name)))?;
 
         if child.logical_type().type_id() != T::TYPE_ID {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "Field '{}' has type {:?}, expected {:?}",
-                    name,
-                    child.logical_type().type_id(),
-                    T::TYPE_ID
-                ),
-            });
+            return Err(Error::invalid_input(format!(
+                "Field '{}' has type {:?}, expected {:?}",
+                name,
+                child.logical_type().type_id(),
+                T::TYPE_ID
+            )));
         }
 
         child.get_as_checked::<T>(self.logical)

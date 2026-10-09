@@ -34,6 +34,7 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct CustomType {
     base_type: LogicalType,
     name: String,

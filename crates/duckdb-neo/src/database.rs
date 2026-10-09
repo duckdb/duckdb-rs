@@ -12,6 +12,7 @@ use crate::{
 };
 
 /// A shared handle to an open DuckDB database.
+#[derive(Debug)]
 pub struct DatabaseHandle {
     /// The DuckDB database handle.
     pub(crate) handle: ffi::duckdb_v2_instance_handle,
@@ -35,7 +36,7 @@ unsafe impl Sync for DatabaseHandle {}
 ///
 /// Each `set_option` call adds one `(KEY value)` entry, mirroring the options of
 /// SQL `ATTACH`. Nothing is validated until the attach itself.
-#[derive(AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct AttachOptionsBuilder {
     /// The owned attach-options handle.
     pub(crate) handle: ffi::duckdb_v2_attach_options_handle,
@@ -84,6 +85,7 @@ impl Drop for AttachOptionsBuilder {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Instance {
     pub(crate) handle: Arc<Mutex<DatabaseHandle>>,
 }

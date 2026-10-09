@@ -300,10 +300,9 @@ mod chrono {
             let db = env.open(StorageLocation::InMemory)?;
             let conn = db.connect()?;
 
-            let result = conn.query("SELECT DATE '1992-09-20';", Parameters::None)?;
+            let mut result = conn.query("SELECT DATE '1992-09-20';", Parameters::None)?;
 
-            for chunk in result {
-                let chunk = chunk?;
+            while let Some(chunk) = result.next_chunk()? {
                 let vec = chunk.get_vector_at::<DateValue>(0)?;
 
                 assert_eq!(vec.len(), 1);
@@ -323,14 +322,14 @@ mod chrono {
             {
                 let mut result =
                     conn.query("SELECT TIMESTAMP_NS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampNsValue>(0)?;
                 let timestamp = Option::<chrono::NaiveDateTime>::from(*vec.get(0)?.unwrap()).unwrap();
                 assert_eq!(timestamp, naive("1992-09-20 11:30:00.123456789"));
             }
             {
                 let mut result = conn.query("SELECT TIMESTAMP '1992-09-20 11:30:00.123456789';", Parameters::None)?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let timestamp = Option::<chrono::NaiveDateTime>::from(val).unwrap();
@@ -339,7 +338,7 @@ mod chrono {
             {
                 let mut result =
                     conn.query("SELECT TIMESTAMP_MS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampMsValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let timestamp = Option::<chrono::NaiveDateTime>::from(val).unwrap();
@@ -347,7 +346,7 @@ mod chrono {
             }
             {
                 let mut result = conn.query("SELECT TIMESTAMP_S '1992-09-20 11:30:00.123456789';", Parameters::None)?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampSecValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let timestamp = Option::<chrono::NaiveDateTime>::from(val).unwrap();
@@ -358,7 +357,7 @@ mod chrono {
                     "SELECT TIMESTAMPTZ '1992-09-20 11:30:00.123456789+00:00';",
                     Parameters::None,
                 )?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampTzValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
@@ -374,7 +373,7 @@ mod chrono {
                     "SELECT TIMESTAMPTZ '1992-09-20 12:30:00.123456789+01:00';",
                     Parameters::None,
                 )?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampTzValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let timestamp = Option::<chrono::DateTime<chrono::Utc>>::from(val).unwrap();
@@ -401,7 +400,7 @@ mod chrono {
                 '-infinity'::TIMESTAMPTZ_NS;",
                 Parameters::None,
             )?;
-            let chunk = result.next().unwrap()?;
+            let chunk = result.next_chunk()?.unwrap();
 
             for index in 0..2 {
                 let vector = chunk.get_vector_at::<TimestampNsValue>(index)?;
@@ -434,7 +433,7 @@ mod chrono {
 
             {
                 let mut result = conn.query("SELECT TIME '1992-09-20 11:30:00.123456';", Parameters::None)?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimeValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let time = Option::<chrono::NaiveTime>::from(val).unwrap();
@@ -445,7 +444,7 @@ mod chrono {
             }
             {
                 let mut result = conn.query("SELECT '15:30:00.123456789'::TIME_NS;", Parameters::None)?;
-                let chunk = result.next().unwrap()?;
+                let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimeNsValue>(0)?;
                 let val = *(vec.get(0)?.unwrap());
                 let time = Option::<chrono::NaiveTime>::from(val).unwrap();
@@ -477,7 +476,7 @@ mod tests {
             "SELECT INTERVAL '1 year 2 months 3 days 4 hours 5 minutes 6 seconds';",
             Parameters::None,
         )?;
-        let chunk = result.next().unwrap()?;
+        let chunk = result.next_chunk()?.unwrap();
         let vec = chunk.get_vector_at::<super::IntervalValue>(0)?;
         let val = *(vec.get(0)?.unwrap());
 

@@ -25,6 +25,7 @@ default = ["buildtime-download", "buildtime-pkg-config", "buildtime-pregenerated
 chrono = ["dep:chrono"]
 r2d2 = ["dep:r2d2"]
 uuid = ["dep:uuid"]
+rust_decimal = ["dep:rust_decimal"]
 
 # Buildtime features
 # Where to find a prebuilt libduckdb. Not needed with `bundled`; opt out with `default-features = false`.
@@ -58,13 +59,14 @@ libc = { workspace = true }
 libduckdb-sys = { version = "=1.20000.0", path = "../libduckdb-sys", default-features = false, features = ["capi-v2"] }
 paste = { workspace = true }
 r2d2 = { workspace = true, optional = true }
+rust_decimal = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
-features = []
+features = ["r2d2", "rust_decimal", "uuid"]
 all-features = false
 no-default-features = true
 default-target = "x86_64-unknown-linux-gnu"

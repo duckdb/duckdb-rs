@@ -40,14 +40,37 @@ use crate::{
     bytes::DuckDBBytes,
     check_api_call,
     data_chunk::{ChildrenMut, RowCount, VectorCollection},
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
+    types::DecimalSignature,
     value::Value,
 };
 
 mod element;
 pub use element::*;
+
+/// Logical-type parameters read once per vector, so row access skips the FFI lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeParams {
+    None,
+    Array { size: usize },
+    Decimal(DecimalSignature),
+}
+
+impl TypeParams {
+    fn read(logical_type: &LogicalType) -> Result<Self> {
+        Ok(match logical_type.type_id() {
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
+                size: crate::types::array::array_size(logical_type)?,
+            },
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL => {
+                Self::Decimal(DecimalSignature::from_logical_type(logical_type)?)
+            }
+            _ => Self::None,
+        })
+    }
+}
 
 /// Runtime view of a vector's storage kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +104,7 @@ impl StorageKind {
 /// dictionary, and selection-vector layouts.
 // `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
 #[repr(C)]
+#[derive(Debug)]
 pub struct VectorView<T> {
     view: ffi::duckdb_v2_vector_view,
     kind: StorageKind,
@@ -261,6 +285,7 @@ pub(crate) enum Access {
 /// changes the logical element type and preserves the chunk lifetime.
 // `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
 #[repr(C)]
+#[derive(Debug)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
     pub(crate) logical_type: LogicalType,
@@ -271,8 +296,7 @@ pub struct Vector<'a, T: VectorElement> {
     heap: Option<ffi::duckdb_v2_arena_handle>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
-    /// Elements per row of an `ARRAY` vector, read once from its type; 0 otherwise.
-    pub(crate) array_size: usize,
+    pub(crate) params: TypeParams,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -293,11 +317,7 @@ impl<'a> Vector<'a, Unknown> {
         let logical_type = LogicalType {
             handle: logical_type_handle,
         };
-        let array_size = if logical_type.type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
-            crate::types::array::array_size(&logical_type)?
-        } else {
-            0
-        };
+        let params = TypeParams::read(&logical_type)?;
 
         let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);
@@ -316,7 +336,7 @@ impl<'a> Vector<'a, Unknown> {
             access,
             heap: None,
             children,
-            array_size,
+            params,
             _chunk: PhantomData,
             _type: PhantomData,
         })
@@ -381,32 +401,42 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             access: self.access,
             heap: self.heap,
             children: self.children,
-            array_size: self.array_size,
+            params: self.params,
             _chunk: self._chunk,
             _type: PhantomData,
+        }
+    }
+
+    /// Elements per row of an `ARRAY` vector; 0 otherwise.
+    pub(crate) fn array_size(&self) -> usize {
+        match self.params {
+            TypeParams::Array { size } => size,
+            _ => 0,
+        }
+    }
+
+    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
+    pub fn decimal_signature(&self) -> Option<DecimalSignature> {
+        match self.params {
+            TypeParams::Decimal(signature) => Some(signature),
+            _ => None,
         }
     }
 
     pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<bool> {
         match U::validate(self.logical_type(), self.children.as_ref()) {
             Ok(true) => Ok(true),
-            Ok(false) => Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "Vector logical type mismatch: expected {:?}, got {:?}",
-                    U::TYPE_ID,
-                    self.logical_type.type_id()
-                ),
-            }),
-            Err(e) => Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "Vector logical type validation failed: expected {:?}, got {:?}: {}",
-                    U::TYPE_ID,
-                    self.logical_type.type_id(),
-                    e.message
-                ),
-            }),
+            Ok(false) => Err(Error::invalid_input(format!(
+                "Vector logical type mismatch: expected {:?}, got {:?}",
+                U::TYPE_ID,
+                self.logical_type.type_id()
+            ))),
+            Err(e) => Err(Error::invalid_input(format!(
+                "Vector logical type validation failed: expected {:?}, got {:?}: {}",
+                U::TYPE_ID,
+                self.logical_type.type_id(),
+                e.message
+            ))),
         }
     }
 
@@ -416,10 +446,10 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(out_of_bounds(index, self.len));
         }
 
-        let view = self.view.as_ref().ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "vector has no readable view".to_string(),
-        })?;
+        let view = self
+            .view
+            .as_ref()
+            .ok_or_else(|| Error::invalid_input("vector has no readable view"))?;
 
         Ok(view.is_null(index))
     }
@@ -798,6 +828,7 @@ impl<T: WritableVectorElement> Vector<'_, T> {
 }
 
 /// Iterates over the logical rows of a vector.
+#[derive(Debug)]
 pub struct VectorIter<'vector, 'a, T: VectorElement> {
     vector: &'vector Vector<'a, T>,
     index: usize,
@@ -817,32 +848,21 @@ impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T
 }
 
 fn not_writable() -> Error {
-    Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: "vector is not writable: it was not supplied as writable output, was borrowed with get_vector_at, or was made constant or a sequence"
-            .to_string(),
-    }
+    Error::invalid_input(
+        "vector is not writable: it was not supplied as writable output, was borrowed with get_vector_at, or was made constant or a sequence",
+    )
 }
 
 fn not_exclusive() -> Error {
-    Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: "vector is borrowed shared: use get_vector_at_mut to change its storage".to_string(),
-    }
+    Error::invalid_input("vector is borrowed shared: use get_vector_at_mut to change its storage")
 }
 
 fn other_not_readable() -> Error {
-    Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: "OTHER vectors must be flattened before reading".to_string(),
-    }
+    Error::invalid_input("OTHER vectors must be flattened before reading")
 }
 
 fn out_of_bounds(index: usize, len: usize) -> Error {
-    Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-        message: format!("Vector index {} is out of bounds for length {}", index, len),
-    }
+    Error::invalid_parameter(format!("Vector index {} is out of bounds for length {}", index, len))
 }
 
 #[cfg(test)]

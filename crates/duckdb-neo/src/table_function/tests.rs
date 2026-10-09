@@ -9,7 +9,7 @@ use crate::{
     connection::{Context, SettingScope},
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
-    error::{DuckDBError, Error},
+    error::Error,
     expression::ExpressionType,
     logical_type::LogicalTypeID,
     signature::{Parameter, SignatureBuilder},
@@ -112,10 +112,7 @@ fn test_table_function() -> crate::Result<()> {
                 .count
                 .lock()
                 .map(|count| Some(*count as f64 / global_state.max_rounds as f64))
-                .map_err(|e| Error {
-                    code: DuckDBError::DUCKDB_V2_ERROR_API,
-                    message: format!("Failed to acquire lock on global state: {}", e),
-                })?;
+                .map_err(|e| Error::api_error(format!("Failed to acquire lock on global state: {}", e)))?;
 
             Ok(prog)
         }
@@ -230,13 +227,11 @@ fn test_table_function() -> crate::Result<()> {
     // Every batch produces values in `142..152`; pushing `out > 145` down
     // into the table function should drop `142..=145` from every batch
     // instead of DuckDB filtering them out after the fact.
-    let result = conn.query("SELECT * FROM my_table_function(10) WHERE out > 145", Parameters::None)?;
+    let mut result = conn.query("SELECT * FROM my_table_function(10) WHERE out > 145", Parameters::None)?;
 
     let mut row_count = 0;
 
-    for chunk in result {
-        let chunk = chunk?;
-
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
 
         row_count += vector.len();
@@ -436,16 +431,14 @@ fn test_table_function_partitioning() -> crate::Result<()> {
     // Grouping on `part` lets the optimizer ask whether our partitions carry a
     // single distinct value for it, which turns the hash aggregate into a
     // partitioned one and makes DuckDB request our partition data.
-    let result = conn.query(
+    let mut result = conn.query(
         "SELECT part, sum(val) FROM partitioned_range() GROUP BY part ORDER BY part",
         Parameters::None,
     )?;
 
     let mut rows = Vec::new();
 
-    for chunk in result {
-        let chunk = chunk?;
-
+    while let Some(chunk) = result.next_chunk()? {
         let parts = chunk.get_vector_at::<i32>(0)?;
         let sums = chunk.get_vector_at::<i128>(1)?;
 

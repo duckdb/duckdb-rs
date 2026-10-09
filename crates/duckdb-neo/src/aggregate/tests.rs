@@ -125,14 +125,12 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query(
+    let mut result = conn.query(
         "SELECT to_concatenated(i) AS result FROM (VALUES (1), (2), (NULL), (3), (4), (5)) AS t(i)",
         Parameters::None,
     )?;
 
-    for chunk in result {
-        let chunk = chunk?;
-
+    while let Some(chunk) = result.next_chunk()? {
         let vec = chunk.get_vector_at::<String>(0)?;
 
         let res = vec.get(0)?;
@@ -201,7 +199,7 @@ fn aggregate_test_groups() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query(
+    let mut result = conn.query(
         "SELECT
              (i - 1) // 5 AS group_id,
              to_concatenated(i::INTEGER) AS result
@@ -212,9 +210,7 @@ fn aggregate_test_groups() -> crate::Result<()> {
     )?;
 
     let mut groups = 0;
-    for chunk in result {
-        let chunk = chunk?;
-
+    while let Some(chunk) = result.next_chunk()? {
         let vec = chunk.get_vector_at::<String>(1)?;
 
         for value in vec.iter()? {
@@ -300,7 +296,10 @@ fn aggregate_test_undersized_state() -> crate::Result<()> {
 
     let result = conn
         .query("SELECT undersized(i::INTEGER) FROM range(10) AS t(i)", Parameters::None)
-        .and_then(|result| result.collect::<crate::Result<Vec<_>>>());
+        .and_then(|mut result| {
+            while result.next_chunk()?.is_some() {}
+            Ok(())
+        });
 
     let err = result.expect_err("an undersized state must fail the query");
     assert!(err.to_string().contains("smaller than size_of"), "{err}");

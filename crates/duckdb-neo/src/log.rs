@@ -16,6 +16,7 @@ ffi_enum_redeclaration! {
 }
 
 /// Emits records through DuckDB's configured logging system.
+#[derive(Debug)]
 pub struct Log;
 
 impl Log {
@@ -83,11 +84,9 @@ mod tests {
             Parameters::None,
         )?;
 
-        let query = conn.query("SELECT * FROM duckdb_logs;", Parameters::None)?;
+        let mut query = conn.query("SELECT * FROM duckdb_logs;", Parameters::None)?;
 
-        for chunk in query {
-            let chunk = chunk?;
-
+        while let Some(chunk) = query.next_chunk()? {
             assert_eq!(chunk.row_count()?, 2)
         }
 

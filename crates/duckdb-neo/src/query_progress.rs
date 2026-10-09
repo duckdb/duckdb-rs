@@ -14,6 +14,7 @@ use crate::{
 /// terminal progress output. These settings remain active after the tracker is
 /// dropped. The tracker can be moved to another thread to take snapshots while
 /// the connection runs a query. It does not keep the connection open.
+#[derive(Debug)]
 pub struct QueryProgressTracker {
     connection: Weak<InnerConnection>,
 }
@@ -106,7 +107,7 @@ mod tests {
 
         let mut result = conn.query(statement, Parameters::None)?;
 
-        let _chunk = result.next().unwrap()?;
+        let _chunk = result.next_chunk()?.unwrap();
         let progress = tracker.snapshot()?.expect("expected query progress");
 
         assert_eq!(progress.rows_processed, 12_048);
@@ -127,7 +128,7 @@ mod tests {
         let statement = statements.next().expect("expected a statement")?;
         let mut result = conn.query(statement, Parameters::None)?;
 
-        assert!(result.next().transpose()?.is_some());
+        assert!(result.next_chunk()?.is_some());
         assert!(tracker.snapshot()?.is_none());
 
         Ok(())

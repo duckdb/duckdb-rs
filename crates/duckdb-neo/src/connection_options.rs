@@ -50,7 +50,7 @@ ffi_enum_redeclaration! {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct ConfigOption {
     /// The owned DuckDB option handle.
     pub(crate) handle: ffi::duckdb_v2_option_handle,

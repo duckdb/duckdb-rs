@@ -12,6 +12,7 @@ use crate::{
 ///
 /// Obtained from [`TableDescription::column`] or [`TableDescription::columns`]
 /// and independent of the table description's lifetime.
+#[derive(Debug)]
 pub struct ColumnDescription {
     handle: ffi::duckdb_v2_column_description_handle,
 }
@@ -78,6 +79,7 @@ impl ColumnDescription {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct TableDescription {
     handle: ffi::duckdb_v2_table_description_handle,
 }

@@ -81,6 +81,7 @@ pub use crate::{
     ffi::ErrorCode,
     inner_connection::InterruptHandle,
     params::{Params, ParamsFromIter, params_from_iter},
+    progress::{ProgressHandle, QueryProgress},
     row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows},
     statement::Statement,
     transaction::{DropBehavior, Transaction},
@@ -136,6 +137,7 @@ mod transaction;
 mod extension;
 
 pub mod profiling;
+pub mod progress;
 pub mod types;
 /// The duckdb table function interface
 #[cfg(feature = "vtab")]

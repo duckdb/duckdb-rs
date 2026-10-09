@@ -4,7 +4,7 @@ use crate::ffi_str::DuckDBStr;
 use crate::{
     AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err,
     connection::Connection,
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     query_result::{QueryResult, StatementType},
     raw::RawExt,
@@ -12,6 +12,7 @@ use crate::{
 };
 
 /// Schemas resolved while binding a statement.
+#[derive(Debug)]
 pub struct SchemaBind {
     /// The statement's result columns.
     pub schema: Schema,
@@ -39,7 +40,7 @@ pub struct SchemaBind {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct Statements {
     pub(crate) handle: ffi::duckdb_v2_statement_iterator_handle,
 }
@@ -47,10 +48,8 @@ pub struct Statements {
 impl Statements {
     /// Parse SQL using a connection's parser configuration.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
-        let query_str = std::ffi::CString::new(sql.as_ref()).map_err(|_| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "SQL string contains a NUL byte".to_string(),
-        })?;
+        let query_str =
+            std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
         let handle: ffi::duckdb_v2_statement_iterator_handle =
             check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)?;
@@ -88,7 +87,7 @@ impl Iterator for Statements {
 /// A statement can be bound to inspect its input and output schemas,
 /// prepared for repeated execution, or passed to
 /// [`Connection::query`].
-#[derive(AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct Statement {
     /// The owned DuckDB statement handle.
     pub(crate) handle: ffi::duckdb_v2_sql_statement_handle,
@@ -178,7 +177,7 @@ impl Drop for Statement {
 /// Execution accepts named or positional [`Parameters`] and is
 /// lazy: work begins when the returned [`QueryResult`] is consumed. The
 /// prepared statement remains associated with the connection used to create it.
-#[derive(AsRaw)]
+#[derive(Debug, AsRaw)]
 pub struct PreparedStatement<'a> {
     connection: &'a Connection,
     /// The owned DuckDB prepared-statement handle.
@@ -204,10 +203,7 @@ impl<'a> PreparedStatement<'a> {
             RET
         )?;
 
-        Ok(QueryResult {
-            phantom: std::marker::PhantomData,
-            handle: result,
-        })
+        Ok(QueryResult::new(result))
     }
 
     /// Return whether executions reuse the compiled plan.
@@ -240,11 +236,9 @@ mod tests {
         let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?")?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
 
-        let query = statement.execute(crate::Parameters::Positional(&[&10]))?;
+        let mut query = statement.execute(crate::Parameters::Positional(&[&10]))?;
 
-        for chunk in query {
-            let chunk = chunk?;
-
+        while let Some(chunk) = query.next_chunk()? {
             let vec = chunk.get_vector_at::<i64>(0)?;
 
             assert_eq!(vec.len(), 10);
@@ -267,11 +261,10 @@ mod tests {
 
         // Bind in a different order than they appear in the SQL, so binding
         // only succeeds if the names reach DuckDB intact.
-        let query = statement.execute(crate::Parameters::named(&[("hi", &15), ("lo", &10)]))?;
+        let mut query = statement.execute(crate::Parameters::named(&[("hi", &15), ("lo", &10)]))?;
 
         let mut values = Vec::new();
-        for chunk in query {
-            let chunk = chunk?;
+        while let Some(chunk) = query.next_chunk()? {
             values.extend(chunk.get_vector_at::<i64>(0)?.iter()?.flatten().copied());
         }
         assert_eq!(values, (10..15).collect::<Vec<i64>>());

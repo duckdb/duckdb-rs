@@ -85,7 +85,7 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-#[derive(AsRaw)]
+#[derive(Debug, AsRaw)]
 pub struct ColumnDataCollection<'conn> {
     /// The owned DuckDB collection handle.
     pub(crate) handle: ffi::duckdb_v2_column_data_collection_handle,
@@ -160,6 +160,7 @@ unsafe impl Sync for ColumnDataCollection<'_> {}
 /// Chunks are read with [`next_chunk`](Self::next_chunk) rather than through
 /// [`Iterator`]: DuckDB does not copy the scanned data, so each chunk points
 /// into buffers that stay valid only until the next scan call.
+#[derive(Debug)]
 pub struct ColumnDataCollectionScan<'conn> {
     worker_scan_state: ColumnDataCollectionWorkerScanStateHandle,
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
@@ -241,6 +242,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
 /// Chunks appended through this state must exactly match the collection's
 /// column count and types. The state can be consumed to recover, scan, or
 /// reset the collection.
+#[derive(Debug)]
 pub struct ColumnDataCollectionAppender<'conn> {
     appender: ColumnDataCollectionAppendStateHandle,
     collection: ColumnDataCollection<'conn>,
@@ -360,7 +362,7 @@ mod test {
         .register(&conn)?;
 
         let mut result = conn.query("SELECT collection_is_empty()", Parameters::None)?;
-        let chunk = result.next().expect("expected a result chunk")?;
+        let chunk = result.next_chunk()?.expect("expected a result chunk");
         assert_eq!(chunk.get_vector_at::<bool>(0)?.get(0)?, Some(&true));
         Ok(())
     }
@@ -471,11 +473,9 @@ mod test {
         assert_eq!(rows_changed, 3);
 
         let statement = statements.next().unwrap()?;
-        let result = conn.query(statement, Parameters::None)?;
+        let mut result = conn.query(statement, Parameters::None)?;
 
-        if let Some(chunk) = result.into_iter().next() {
-            let chunk = chunk?;
-
+        if let Some(chunk) = result.next_chunk()? {
             let id = chunk.get_vector_at::<i32>(0)?;
             let is_active = chunk.get_vector_at::<bool>(1)?;
 

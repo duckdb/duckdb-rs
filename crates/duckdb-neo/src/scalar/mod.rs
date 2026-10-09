@@ -122,12 +122,14 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
     );
 }
 
+#[derive(Debug)]
 pub(crate) enum FunctionBindHandles<'a> {
     Scalar(&'a ffi::duckdb_v2_scalar_function_bind_info_handle),
     Aggregate(&'a ffi::duckdb_v2_aggregate_function_bind_info_handle),
 }
 
 /// Callback-scoped control over a scalar function's resolved result type.
+#[derive(Debug)]
 pub struct ReturnTypeHandle<'a> {
     pub(crate) handle: FunctionBindHandles<'a>,
 }
@@ -155,6 +157,7 @@ impl<'a> ReturnTypeHandle<'a> {
 }
 
 /// Builds and registers a user-defined scalar function.
+#[derive(Debug)]
 pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     name: String,
     signature: SignatureBuilder,

@@ -75,6 +75,30 @@ impl Error {
             message: message.into(),
         }
     }
+
+    /// Create an error for invalid caller-supplied input.
+    pub fn invalid_input(message: impl Into<String>) -> Self {
+        Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+            message: message.into(),
+        }
+    }
+
+    /// Create an error for an invalid caller-supplied parameter, such as an out-of-range index.
+    pub fn invalid_parameter(message: impl Into<String>) -> Self {
+        Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
+            message: message.into(),
+        }
+    }
+
+    /// Create an internal runtime error.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
+            message: message.into(),
+        }
+    }
 }
 
 impl std::error::Error for Error {}
@@ -233,17 +257,17 @@ macro_rules! check_api_call_string {
                 .ok()
                 .and_then(|length| length.checked_add(1))
                 .filter(|&capacity| capacity <= isize::MAX as usize)
-                .ok_or_else(|| $crate::error::Error::api_error("String too large".to_string()))?;
+                .ok_or_else(|| $crate::error::Error::api_error("String too large"))?;
             let mut text = vec![0u8; capacity];
             let written = $crate::check_api_call!(
                 $call, $($args,)* text.as_mut_ptr().cast(), capacity as $crate::ffi::idx_t, RET
             )?;
             if written >= capacity as $crate::ffi::idx_t {
-                return Err($crate::error::Error::api_error("Invalid string length".to_string()));
+                return Err($crate::error::Error::api_error("Invalid string length"));
             }
             text.truncate(written as usize);
             String::from_utf8(text)
-                .map_err(|_| $crate::error::Error::api_error("Invalid UTF-8".to_string()))
+                .map_err(|_| $crate::error::Error::api_error("Invalid UTF-8"))
         })()
     }};
 }

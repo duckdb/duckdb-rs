@@ -28,6 +28,7 @@ ffi_enum_redeclaration! {
 
 #[repr(u32)]
 /// How consistently a function maps the same inputs to the same result.
+#[derive(Debug)]
 pub enum FunctionPropertyStability {
     /// The same inputs always produce the same result.
     Consistent = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT as u32,
@@ -56,6 +57,7 @@ impl From<FunctionPropertyStability> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE 
 
 #[repr(u32)]
 /// How a function handles collations on its arguments.
+#[derive(Debug)]
 pub enum FunctionPropertyCollation {
     /// Combine input collations and propagate them to the result.
     Propagate = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PROPAGATE as u32,
@@ -83,6 +85,7 @@ impl From<FunctionPropertyCollation> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE 
 }
 
 /// An optimizer property to apply when registering a function.
+#[derive(Debug)]
 pub enum FunctionProperty {
     /// Set how stable the function's result is across rows and queries.
     Stability(FunctionPropertyStability),
@@ -98,6 +101,7 @@ pub enum FunctionProperty {
 ///
 /// Wraps the shared [`FunctionProperty`] values and adds the aggregate-only ones,
 /// which DuckDB rejects on other function types.
+#[derive(Debug)]
 pub enum AggregateFunctionProperty {
     /// A property shared by every function type.
     Shared(FunctionProperty),

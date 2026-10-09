@@ -1,6 +1,7 @@
 use crate::{Parameters, Result, connection::Connection, database::Instance, error::Error};
 
 /// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
+#[derive(Debug)]
 pub struct ConnectionManager {
     database: Instance,
 }
@@ -28,7 +29,7 @@ impl r2d2::ManageConnection for ConnectionManager {
         let res = conn.execute("SELECT 1", Parameters::None);
 
         if !res.is_ok() {
-            return Err(Error::api_error("Connection is not valid".to_string()));
+            return Err(Error::api_error("Connection is not valid"));
         }
 
         Ok(())
@@ -108,7 +109,7 @@ mod tests {
             {
                 let mut result = conn.query("SELECT * FROM test", Parameters::None).unwrap();
 
-                let chunk = result.next().unwrap().unwrap();
+                let chunk = result.next_chunk().unwrap().unwrap();
 
                 let vec = chunk.get_vector_at::<i32>(0).unwrap();
 

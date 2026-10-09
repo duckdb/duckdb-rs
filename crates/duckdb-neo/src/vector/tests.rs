@@ -13,10 +13,11 @@ use crate::{
     query_result::QueryResultStep,
     signature::Parameter,
     types::{
-        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, Decimal, DecimalValue, DuckDBType, IntervalValue,
-        List, Map, MapValue, Struct, StructSchema, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue,
-        TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue, Union, UnionSchema,
-        UnionValue, UuidValueRaw, Variant, structs::StructWrite, union::UnionWriter,
+        Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
+        IntervalValue, List, LongDecimal, Map, MapValue, ShortDecimal, Struct, StructSchema, TimeNsValue, TimeTzValue,
+        TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue,
+        TimestampValue, Union, UnionSchema, UnionValue, UuidValueRaw, Variant, WordDecimal, structs::StructWrite,
+        union::UnionWriter,
     },
     value::Value,
     vector::StorageKind,
@@ -294,15 +295,14 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
     // table function's chunks in their native storage kind: FLAT, CONSTANT,
     // DICTIONARY, then OTHER (SEQUENCE) - in that fixed order. The
     // DICTIONARY chunk is the one asserted on inside `DictionaryProbeScalar`.
-    let result = conn.query(
+    let mut result = conn.query(
         "SELECT dict_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
         Parameters::None,
     )?;
 
     let mut values = vec![];
 
-    for chunk in result {
-        let chunk = chunk?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
         values.extend(vector.iter()?.map(|v| v.copied()));
     }
@@ -382,15 +382,14 @@ pub fn test_vector_constant() -> crate::Result<()> {
     // the call for that chunk, so `const_probe` itself only observes a
     // single logical row before DuckDB broadcasts the result back to the
     // full batch size shown in `values` below.
-    let result = conn.query(
+    let mut result = conn.query(
         "SELECT const_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
         Parameters::None,
     )?;
 
     let mut values = vec![];
 
-    for chunk in result {
-        let chunk = chunk?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
         values.extend(vector.iter()?.map(|v| v.copied()));
     }
@@ -465,7 +464,7 @@ fn test_logical_type_cast() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let res = conn.query("SELECT 1", Parameters::None)?.next().unwrap()?;
+    let res = conn.query("SELECT 1", Parameters::None)?.next_chunk()?.unwrap();
 
     let vector = res.get_vector_at::<i32>(0)?;
 
@@ -496,8 +495,8 @@ fn test_vector_string() -> crate::Result<()> {
             "SELECT to_upper(unnest(['hello', 'world', '123456789012', 'longerthaninline']))",
             Parameters::None,
         )?
-        .next()
-        .unwrap()?;
+        .next_chunk()?
+        .unwrap();
 
     let vector = res.get_vector_at::<String>(0)?;
     let data: Vec<_> = vector.iter()?.collect();
@@ -552,8 +551,8 @@ fn test_vector_list() -> crate::Result<()> {
             "SELECT list_mult(unnest([[1, 2], [3, NULL, 5], [], NULL]))",
             Parameters::None,
         )?
-        .next()
-        .unwrap()?;
+        .next_chunk()?
+        .unwrap();
 
     let vector = res.get_vector_at::<List<i32>>(0)?;
 
@@ -589,8 +588,8 @@ fn test_vector_struct() -> crate::Result<()> {
             "SELECT unnest([{'key1': 'value1', 'key2': 42}, {'key1': NULL, 'key2': NULL}])",
             Parameters::None,
         )?
-        .next()
-        .unwrap()?;
+        .next_chunk()?
+        .unwrap();
 
     let vector = res.get_vector_at::<Struct>(0)?;
 
@@ -628,8 +627,8 @@ pub fn test_vector_array() -> crate::Result<()> {
             "SELECT unnest([array_value(1, NULL, 3), array_value(3, 4, 5), NULL])",
             Parameters::None,
         )?
-        .next()
-        .unwrap()?;
+        .next_chunk()?
+        .unwrap();
 
     let vector = res.get_vector_at::<Array<i32>>(0)?;
     let mut reader = vector.iter()?;
@@ -668,8 +667,8 @@ pub fn test_vector_union() -> crate::Result<()> {
 
     let res = conn
         .query(statements.next().unwrap()?, Parameters::None)?
-        .next()
-        .unwrap()?;
+        .next_chunk()?
+        .unwrap();
 
     let vector = res.get_vector_at::<Union>(0)?;
     assert_eq!(vector.len(), 5);
@@ -700,17 +699,15 @@ pub fn test_vector_map() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let res = conn
-        .query(
-            "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: NULL, 2: 41.2}]);",
-            Parameters::None,
-        )?
-        .next()
-        .unwrap()?;
+    let mut result = conn.query(
+        "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: NULL, 2: 41.2}]);",
+        Parameters::None,
+    )?;
+    let res = result.next_chunk()?.unwrap();
 
     assert_eq!(res.col_count()?, 1);
 
-    let vector = res.get_vector_at::<Map<i32, Decimal<i16>>>(0)?;
+    let vector = res.get_vector_at::<Map<i32, ShortDecimal>>(0)?;
     let mut reader = vector.iter()?;
 
     assert_eq!(vector.len(), 3);
@@ -719,30 +716,30 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     let hmap = row.to_hash_map()?;
 
-    assert_eq!(hmap.get(&1).unwrap(), &Some(&121i16));
-    assert_eq!(hmap.get(&2).unwrap(), &Some(&412i16));
+    assert_eq!(hmap.get(&1).unwrap(), &Some(&ShortDecimal(121)));
+    assert_eq!(hmap.get(&2).unwrap(), &Some(&ShortDecimal(412)));
 
     assert_eq!(row.keys()?, vec![&1, &2]);
-    assert_eq!(row.values()?, vec![Some(&121), Some(&412)]);
+    assert_eq!(row.values()?, vec![Some(&ShortDecimal(121)), Some(&ShortDecimal(412))]);
 
-    assert_eq!(row.get(&1)?, Some(&121));
-    assert_eq!(row.get(&2)?, Some(&412));
+    assert_eq!(row.get(&1)?, Some(&ShortDecimal(121)));
+    assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get(&1)?, Some(&1121));
-    assert_eq!(row.get(&2)?, Some(&1412));
+    assert_eq!(row.get(&1)?, Some(&ShortDecimal(1121)));
+    assert_eq!(row.get(&2)?, Some(&ShortDecimal(1412)));
 
     let row = reader.next().unwrap().unwrap();
 
     let hmap = row.to_hash_map()?;
 
     assert_eq!(hmap.get(&1), Some(&None));
-    assert_eq!(hmap.get(&2), Some(&Some(&412i16)));
+    assert_eq!(hmap.get(&2), Some(&Some(&ShortDecimal(412))));
 
     assert_eq!(row.get(&1)?, None);
-    assert_eq!(row.get(&2)?, Some(&412));
-    assert_eq!(row.values()?, vec![None, Some(&412)]);
+    assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
+    assert_eq!(row.values()?, vec![None, Some(&ShortDecimal(412))]);
 
     assert!(reader.next().is_none());
 
@@ -776,11 +773,9 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
     let statement = statements.next().unwrap()?;
 
-    let result = conn.query(statement, Parameters::None)?;
+    let mut result = conn.query(statement, Parameters::None)?;
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         let res = item.get_vector_at::<Map<i32, String>>(0)?;
 
         assert!(res.len() == 2);
@@ -799,9 +794,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
     let mut result = conn.query(statement, Parameters::None)?;
 
-    if let Some(item) = result.next() {
-        let item = item?;
-
+    if let Some(item) = result.next_chunk()? {
         let res = item.get_vector_at::<Map<i32, String>>(0)?;
 
         assert_eq!(res.len(), 3);
@@ -813,10 +806,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
         return Ok(());
     }
-    Err(Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_API,
-        message: "Not found".to_string(),
-    })
+    Err(Error::api_error("Not found"))
 }
 
 #[test]
@@ -844,8 +834,8 @@ pub fn vector_union_write() -> crate::Result<()> {
         .parse("SELECT to_union(unnest([1, 2, 2]), unnest(['WWWADWWWAample', 'OPAOPDAOADWADtablesss', NULL]))")?
         .next()
         .unwrap()?;
-    for chunk in conn.query(statement, Parameters::None)? {
-        let mut chunk = chunk?;
+    let mut result = conn.query(statement, Parameters::None)?;
+    while let Some(mut chunk) = result.next_chunk()? {
         let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
         vector.flatten()?;
         let rows: Vec<_> = vector.iter()?.collect();
@@ -890,8 +880,8 @@ pub fn vector_struct_write() -> crate::Result<()> {
         .parse("SELECT to_struct(unnest([1, 2]), unnest(['A', 'B']))")?
         .next()
         .unwrap()?;
-    for chunk in conn.query(statement, Parameters::None)? {
-        let chunk = chunk?;
+    let mut result = conn.query(statement, Parameters::None)?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<Struct>(0)?;
         let rows: Vec<_> = vector.iter()?.collect();
         assert_eq!(rows[0].as_ref().unwrap().get::<i32>("key")?, Some(&1));
@@ -926,7 +916,7 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
          FROM (SELECT to_struct_or_null(k) AS s, to_union_or_null(k) AS u FROM (VALUES (1), (NULL), (3)) t(k))",
         Parameters::None,
     )?;
-    let chunk = result.next().unwrap()?;
+    let chunk = result.next_chunk()?.unwrap();
     let keys: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
     assert_eq!(keys, vec![Some(1), None, Some(3)]);
     let values: Vec<_> = chunk.get_vector_at::<String>(1)?.iter()?.collect();
@@ -959,7 +949,7 @@ pub fn vector_struct_unreadable_child() -> crate::Result<()> {
 
     // struct_pack keeps range()'s SEQUENCE child, which must not read as NULL.
     let mut result = conn.query("SELECT struct_key({'key': i}) FROM range(3) t(i)", Parameters::None)?;
-    assert!(result.next().unwrap().is_err());
+    assert!(result.next_chunk().is_err());
     Ok(())
 }
 
@@ -969,14 +959,12 @@ pub fn vector_test_bignum() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let result = conn.query(
+    let mut result = conn.query(
         "select unnest([1090812098190281092901::BIGNUM, 1090812098190281092902::BIGNUM, -1090812098190281092903::BIGNUM])",
         Parameters::None,
     )?;
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         let res = item.get_vector_at::<BigNum>(0)?;
 
         assert!(res.len() == 3);
@@ -1010,7 +998,7 @@ pub fn vector_value_types() -> crate::Result<()> {
         ($value:expr, $type:ty) => {{
             let input = $value;
             let mut result = conn.query("SELECT $1", Parameters::positional(&[&input]))?;
-            let chunk = result.next().unwrap()?;
+            let chunk = result.next_chunk()?.unwrap();
             let vector = chunk.get_vector_at::<$type>(0)?;
             assert_eq!(vector.get(0)?, Some(&input));
             drop(chunk);
@@ -1040,17 +1028,17 @@ pub fn vector_value_types() -> crate::Result<()> {
 
     let mut result = conn.query(
         "SELECT $1",
-        Parameters::positional(&[&DecimalValue::<i64, 18, 3>(-123_456)]),
+        Parameters::positional(&[&DecimalValue::new(-123_456i64, 18, 3)]),
     )?;
-    let chunk = result.next().unwrap()?;
-    let vector = chunk.get_vector_at::<Decimal<i64>>(0)?;
-    assert_eq!(vector.get(0)?, Some(&-123_456));
+    let chunk = result.next_chunk()?.unwrap();
+    let vector = chunk.get_vector_at::<LongDecimal>(0)?;
+    assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     drop(chunk);
     drop(result);
 
     let blob = BlobValue(vec![0_u8, 1, 255]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&blob]))?;
-    let chunk = result.next().unwrap()?;
+    let chunk = result.next_chunk()?.unwrap();
     let vector = chunk.get_vector_at::<BlobValue>(0)?;
     assert_eq!(vector.get(0)?, Some(blob.0.as_slice()));
     drop(chunk);
@@ -1058,7 +1046,7 @@ pub fn vector_value_types() -> crate::Result<()> {
 
     let bit = BitValue(vec![3_u8, 0b0001_0101]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
-    let chunk = result.next().unwrap()?;
+    let chunk = result.next_chunk()?.unwrap();
     let vector = chunk.get_vector_at::<BitValue>(0)?;
     assert_eq!(vector.get(0)?, Some(bit.0.as_slice()));
     drop(chunk);
@@ -1069,7 +1057,7 @@ pub fn vector_value_types() -> crate::Result<()> {
         magnitude: vec![1, 2, 3, 4, 5],
     };
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bignum]))?;
-    let chunk = result.next().unwrap()?;
+    let chunk = result.next_chunk()?.unwrap();
     let vector = chunk.get_vector_at::<BigNumValue>(0)?;
     let decoded = vector.get(0)?.unwrap().decode()?;
     assert_eq!(decoded.is_negative, bignum.is_negative);
@@ -1117,13 +1105,14 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
         }
     );
 
-    let mut chunk = DataChunk::create(&[DecimalValue::<i64, 18, 3>::logical_type(&conn)?], true)?;
-    assert!(chunk.get_vector_at::<Decimal<i32>>(0).is_err());
-    let mut vector = chunk.get_vector_at_mut::<Decimal<i64>>(0)?;
+    let mut chunk = DataChunk::create(&[DecimalSignature { width: 18, scale: 3 }.logical_type(&conn)?], true)?;
+    assert!(chunk.get_vector_at::<WordDecimal>(0).is_err());
+    assert!(chunk.get_vector_at::<i64>(0).is_err());
+    let mut vector = chunk.get_vector_at_mut::<LongDecimal>(0)?;
     vector.set_size(2)?;
-    vector.write(0, Some(-123_456))?;
+    vector.write(0, Some(LongDecimal(-123_456)))?;
     vector.write(1, None)?;
-    assert_eq!(vector.get(0)?, Some(&-123_456));
+    assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     assert_eq!(vector.get(1)?, None);
 
     let mut chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
@@ -1156,7 +1145,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert!(vector.get(1)?.is_none());
 
     let mut source = conn.query("SELECT 12345678901234567890::BIGNUM", Parameters::None)?;
-    let source_chunk = source.next().unwrap()?;
+    let source_chunk = source.next_chunk()?.unwrap();
     let source_vector = source_chunk.get_vector_at::<BigNum>(0)?;
     let borrowed = source_vector.get(0)?.unwrap();
     let mut chunk = DataChunk::create(&[BigNum::logical_type(&conn)?], true)?;
@@ -1208,11 +1197,9 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
 
     assert!(statements.next().is_none());
 
-    let result = conn.query(statement, Parameters::None)?;
+    let mut result = conn.query(statement, Parameters::None)?;
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         let res = item.get_vector_at::<i32>(0)?;
 
         assert!(res.len() == 3);
@@ -1249,11 +1236,9 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
 
     assert!(statements.next().is_none());
 
-    let result = conn.query(statement, Parameters::None)?;
+    let mut result = conn.query(statement, Parameters::None)?;
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         let res = item.get_vector_at::<i32>(0)?;
 
         assert!(res.len() == 3);
@@ -1284,16 +1269,14 @@ pub fn test_vector_types() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query(
+    let mut result = conn.query(
         r#"SELECT test(x) from test_vector_types(null::VARCHAR) as t(x);"#,
         Parameters::None,
     )?;
 
     let mut concatenated = vec![];
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         let vector = item.get_vector_at::<String>(0)?;
 
         concatenated.extend(vector.iter()?.map(|x| x.map(str::to_string)));
@@ -1384,7 +1367,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query(
+    let mut result = conn.query(
         r#"SELECT to_variant(bool, "int") from test_all_types();"#, // r#"SELECT to_variant(x) from test_vector_types("TESTER") as t(x);"#
         Parameters::None,
     )?;
@@ -1392,9 +1375,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     let expected = ["false", "true", "NULL"];
     let mut results: Vec<String> = Vec::new();
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         for index in 0..item.col_count()? {
             let vector = item.get_vector_at::<Variant>(index)?;
             for row in vector.iter()? {
@@ -1444,16 +1425,14 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query(
+    let mut result = conn.query(
         r#"SELECT reference(x) from test_vector_types(null::VARCHAR) as t(x);"#,
         Parameters::None,
     )?;
 
     let mut results: Vec<String> = Vec::new();
 
-    for item in result {
-        let item = item?;
-
+    while let Some(item) = result.next_chunk()? {
         for index in 0..item.col_count()? {
             let vector = item.get_vector_at::<String>(index)?;
             for row in vector.iter()? {
@@ -1495,7 +1474,7 @@ fn test_vector_tstring() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
+    let mut result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
 
     let expected = [
         Some("thisisalongblob\x00withnullbytes".to_string()),
@@ -1513,8 +1492,7 @@ fn test_vector_tstring() -> crate::Result<()> {
 
     let mut results: Vec<Option<String>> = vec![];
 
-    for chunk in result {
-        let chunk = chunk?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         for item in vector.iter()? {
@@ -1538,12 +1516,11 @@ fn test_raw_string_access() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
+    let mut result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
 
     let mut results = vec![];
 
-    for chunk in result {
-        let chunk = chunk?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<BlobValue>(0)?;
 
         let view = vector.get_view().unwrap();
@@ -1588,12 +1565,11 @@ fn test_raw_integer_access() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let result = conn.query("SELECT * FROM test_vector_types(NULL::INTEGER)", Parameters::None)?;
+    let mut result = conn.query("SELECT * FROM test_vector_types(NULL::INTEGER)", Parameters::None)?;
 
     let mut results = vec![];
 
-    for chunk in result {
-        let chunk = chunk?;
+    while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
 
         let view = vector.get_view().unwrap();
@@ -1756,10 +1732,9 @@ fn test_flatten_rebuilds_children() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let result = conn.query("SELECT flat_list(range, [1, 2, 3]) FROM range(5)", Parameters::None)?;
+    let mut result = conn.query("SELECT flat_list(range, [1, 2, 3]) FROM range(5)", Parameters::None)?;
     let mut values = vec![];
-    for chunk in result {
-        let chunk = chunk?;
+    while let Some(chunk) = result.next_chunk()? {
         values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
     }
     assert_eq!(values, vec![Some(6); 5]);
@@ -1806,8 +1781,8 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
 
     let chunk = conn
         .query("SELECT x FROM t ORDER BY x", Parameters::None)?
-        .next()
-        .unwrap()?;
+        .next_chunk()?
+        .unwrap();
     let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
     assert_eq!(values, [Some(0), Some(1), Some(2)]);
 
@@ -1846,11 +1821,12 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
 
     // A constant array argument next to a flat one.
     let mut values = vec![];
-    for chunk in conn.query(
+    let mut result = conn.query(
         "SELECT arr_sum(range, [1, 2, 3]::INTEGER[3]) FROM range(5)",
         Parameters::None,
-    )? {
-        values.extend(chunk?.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
+    )?;
+    while let Some(chunk) = result.next_chunk()? {
+        values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
     }
     assert_eq!(values, vec![Some(6); 5]);
 
@@ -1860,9 +1836,7 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
             "SELECT count(*) FILTER (arr_sum(0, v) IS DISTINCT FROM list_sum(list_transform(v::INTEGER[], lambda x: coalesce(x, 0)))::INTEGER), count(*)
              FROM test_vector_types(NULL::INTEGER[3]) AS t(v)",
             Parameters::None,
-        )?
-        .next()
-        .unwrap()?;
+        )?.next_chunk()?.unwrap();
     assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
     assert!(chunk.get_vector_at::<i64>(1)?.get(0)?.copied().unwrap() > 0);
 
