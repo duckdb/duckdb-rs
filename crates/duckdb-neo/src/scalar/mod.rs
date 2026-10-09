@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::ffi;
 
-use crate::bind_arguments::{BindArgument, BindMetadata, BindType};
+use crate::bind_arguments::{BindArguments, BindType};
 use crate::builder_helpers::{
     OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque, into_opaque_eq,
 };
@@ -20,7 +20,7 @@ use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
 use crate::signature::SignatureBuilder;
 use crate::vector::{Access, Unknown, Vector};
-use crate::{Result, check_api_call, connection::Context};
+use crate::{Result, check_api_call, connection::Context, raw::RawExt};
 
 unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
     info: ffi::duckdb_v2_scalar_function_bind_info_handle,
@@ -31,10 +31,9 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_bind_get_user_data, info);
 
-            let arguments = BindMetadata {
+            let arguments = BindArguments {
                 bind_type: BindType::Scalar(&info),
-            }
-            .get_arguments()?;
+            };
 
             let result = T::bind(
                 user_data,
@@ -146,12 +145,12 @@ impl<'a> ReturnTypeHandle<'a> {
             FunctionBindHandles::Scalar(handle) => check_api_call!(
                 ffi::duckdb_v2_scalar_function_bind_set_return_type,
                 *handle,
-                *return_type
+                return_type.raw()
             ),
             FunctionBindHandles::Aggregate(handle) => check_api_call!(
                 ffi::duckdb_v2_aggregate_function_bind_set_return_type,
                 *handle,
-                *return_type
+                return_type.raw()
             ),
         }
     }
@@ -185,40 +184,40 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
     }
 
     fn build(&self, handle: &ScalarFunctionBuilderHandle) -> Result<()> {
-        let signature = check_api_call!(ffi::duckdb_v2_scalar_function_get_signature, **handle, RET)?;
+        let signature = check_api_call!(ffi::duckdb_v2_scalar_function_get_signature, handle.raw(), RET)?;
 
         self.signature.build(&signature)?;
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_name,
-            **handle,
+            handle.raw(),
             &mut (&self.name).into()
         )?;
 
         for (key, value) in &self.properties {
-            check_api_call!(ffi::duckdb_v2_scalar_function_set_property, **handle, *key, *value)?;
+            check_api_call!(ffi::duckdb_v2_scalar_function_set_property, handle.raw(), *key, *value)?;
         }
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_user_data,
-            **handle,
+            handle.raw(),
             &mut self.user_data.to_handle()
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_callback::<T>)
         )?;
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_init_callback,
-            **handle,
+            handle.raw(),
             Some(init_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_exec_callback,
-            **handle,
+            handle.raw(),
             Some(exec_callback::<T>)
         )?;
 
@@ -235,7 +234,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
         let handle = link.create_scalar_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_scalar_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_scalar_function_register, handle.raw())
     }
 }
 
@@ -253,7 +252,7 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         _context: &Context,
-        _metadata: Vec<BindArgument>,
+        _arguments: BindArguments<'_>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
         Ok(Self::BindData::default())

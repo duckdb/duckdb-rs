@@ -24,6 +24,7 @@ use crate::{
     ffi,
     handles::{CopyFunctionBuilderHandle, CopyFunctionBuilderLink},
     logical_type::LogicalType,
+    raw::RawExt,
     value::Value,
 };
 
@@ -219,13 +220,13 @@ impl<T> CopyFunctionBuilder<T> {
     fn build_common(&self, handle: &CopyFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_copy_function_set_name,
-            **handle,
+            handle.raw(),
             &mut (&self.name).into()
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_function_set_user_data,
-            **handle,
+            handle.raw(),
             &mut self.user_data.to_handle()
         )?;
 
@@ -239,37 +240,37 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_init_callback,
-            **handle,
+            handle.raw(),
             Some(init_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_batch_callback,
-            **handle,
+            handle.raw(),
             Some(batch_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_flush_callback,
-            **handle,
+            handle.raw(),
             Some(flush_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_batch_size_callback,
-            **handle,
+            handle.raw(),
             Some(batch_size_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_finalize_callback,
-            **handle,
+            handle.raw(),
             Some(finalize_to_callback::<T>)
         )?;
 
@@ -282,7 +283,7 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
         let handle = link.create_copy_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
     }
 }
 
@@ -298,25 +299,25 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
     fn set_from_callbacks(&self, handle: &CopyFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_from_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_init_global_callback,
-            **handle,
+            handle.raw(),
             Some(init_global_from_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_init_local_callback,
-            **handle,
+            handle.raw(),
             Some(init_local_from_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_exec_callback,
-            **handle,
+            handle.raw(),
             Some(exec_from_callback::<T>)
         )?;
 
@@ -325,7 +326,7 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
         if self.progress {
             check_api_call!(
                 ffi::duckdb_v2_copy_from_set_progress_callback,
-                **handle,
+                handle.raw(),
                 Some(progress_from_callback::<T>)
             )?;
         }
@@ -344,7 +345,7 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
         let handle = link.create_copy_function_handle()?;
         self.build_from(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
     }
 }
 
@@ -356,7 +357,7 @@ impl<T: CopyToFunctionCallbacks + CopyFromFunctionCallbacks> CopyFunctionBuilder
         self.build(&handle)?;
         self.set_from_callbacks(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
     }
 }
 

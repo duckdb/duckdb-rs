@@ -88,7 +88,7 @@ macro_rules! define_link {
     ) => {
         impl $name for $type {
             fn $method(&self, $($arg: $arg_ty),*) -> $crate::Result<$ret> {
-                $crate::check_api_call!($func, **self, $($args)*)
+                $crate::check_api_call!($func, $crate::raw::RawExt::raw(self), $($args)*)
             }
         }
     };

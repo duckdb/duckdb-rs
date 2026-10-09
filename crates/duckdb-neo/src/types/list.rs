@@ -79,7 +79,7 @@ impl<L: VectorElement> VectorElement for List<L> {
         children.get_untyped_vector_at(0)?.validate_as::<L>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -101,7 +101,7 @@ impl<T: WritableVectorElement> WritableVectorElement for List<T> {
     where
         T: 'a;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(values) = value else {
             return vector.write_raw::<List<T>>(index, None);
         };

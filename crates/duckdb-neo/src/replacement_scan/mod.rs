@@ -13,6 +13,7 @@ use crate::{
     handles::ReplacementScanBuilderLink,
     links::ConnectionOrigin,
     qualified_name::QualifiedName,
+    raw::RawExt,
     value::Value,
 };
 
@@ -77,7 +78,11 @@ impl ReplacementHandle<'_> {
     pub fn set_reference(&self, replacement_type: ReplacementType<'_>) -> Result<()> {
         match replacement_type {
             ReplacementType::Table(name) => {
-                check_api_call!(ffi::duckdb_v2_replacement_scan_set_function_name, *self.info, *name)
+                check_api_call!(
+                    ffi::duckdb_v2_replacement_scan_set_function_name,
+                    *self.info,
+                    name.raw()
+                )
             }
             ReplacementType::Subquery(query) => {
                 check_api_call!(
@@ -89,14 +94,14 @@ impl ReplacementHandle<'_> {
             ReplacementType::ColumnDataCollection(name) => check_api_call!(
                 ffi::duckdb_v2_replacement_scan_set_collection,
                 *self.info,
-                **self.registered_collection(name)?,
+                self.registered_collection(name)?.raw(),
                 std::ptr::null(),
                 0
             ),
             ReplacementType::NamedColumnDataCollection((name, names)) => check_api_call!(
                 ffi::duckdb_v2_replacement_scan_set_collection,
                 *self.info,
-                **self.registered_collection(name)?,
+                self.registered_collection(name)?.raw(),
                 names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
                 names.len() as u64
             ),
@@ -218,17 +223,17 @@ where
 
         check_api_call!(
             ffi::duckdb_v2_replacement_scan_set_callback,
-            *handle,
+            handle.raw(),
             Some(replacement_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_replacement_scan_set_user_data,
-            *handle,
+            handle.raw(),
             &mut data.to_handle()
         )?;
 
-        check_api_call!(ffi::duckdb_v2_replacement_scan_register, *handle)
+        check_api_call!(ffi::duckdb_v2_replacement_scan_register, handle.raw())
     }
 }
 

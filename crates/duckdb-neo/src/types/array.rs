@@ -94,7 +94,7 @@ impl<T: VectorElement> VectorElement for Array<T> {
         children.get_untyped_vector_at(0)?.validate_as::<T>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -118,7 +118,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
     where
         T: 'a;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let array_size = vector.array_size();
 
         if let Some(values) = &value

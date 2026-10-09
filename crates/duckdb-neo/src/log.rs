@@ -1,6 +1,6 @@
 //! Emit DuckDB log records.
 
-use crate::{Result, builder_helpers::ffi_enum_redeclaration, check_api_call, connection::Context, ffi};
+use crate::{Result, builder_helpers::ffi_enum_redeclaration, check_api_call, connection::Context, ffi, raw::RawExt};
 
 ffi_enum_redeclaration! {
     /// The severity of a DuckDB log record.
@@ -24,7 +24,7 @@ impl Log {
     pub fn log_on_context(ctx: &Context, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_context_log,
-            **ctx,
+            ctx.raw(),
             level.into(),
             &log_type.into(),
             &message.into()

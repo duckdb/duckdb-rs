@@ -20,6 +20,7 @@ use crate::{
     connection::FFILink,
     error::check_api_call,
     logical_type::{LogicalType, LogicalTypeID},
+    raw::RawExt,
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
@@ -73,7 +74,7 @@ macro_rules! decimal_storage {
                     Ok(matches!(DecimalSignature::from_logical_type(other)?.width, $min..=$max))
                 }
 
-                fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+                unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
                 where
                     Self: 'a,
                 {
@@ -85,7 +86,7 @@ macro_rules! decimal_storage {
             impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
-                fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                     vector.write_raw(index, value)
                 }
             }
@@ -250,7 +251,7 @@ where
             })
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: 'a,
     {
@@ -265,7 +266,7 @@ where
 {
     type Write<'a> = Self;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_raw(index, value)
     }
 }
@@ -384,7 +385,13 @@ impl FromValue for DecimalValue {
         let mut width: u8 = 0;
         let mut scale: u8 = 0;
 
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_decimal, **value, RET, &mut width, &mut scale)?;
+        let raw = check_api_call!(
+            ffi::duckdb_v2_value_get_decimal,
+            value.raw(),
+            RET,
+            &mut width,
+            &mut scale
+        )?;
 
         Ok(Self {
             value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),

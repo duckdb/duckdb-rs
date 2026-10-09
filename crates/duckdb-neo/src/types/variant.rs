@@ -6,7 +6,7 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// Reads a `VARIANT` row as an owned [`Value`].
@@ -21,21 +21,21 @@ impl VectorElement for Variant {
 
     type Ref<'a> = Value;
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        vector.get_value_slow(physical).unwrap()
+        vector.get_value_slow(logical).unwrap()
     }
 }
 
 impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         match value {
             Some(value) => vector.write_value_slow(index, value),
-            None => vector.write_raw::<Unknown>(index, None),
+            None => vector.set_null_slow(index),
         }
     }
 }

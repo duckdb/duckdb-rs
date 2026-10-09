@@ -1,10 +1,17 @@
-use crate::{Result, check_api_call, ffi};
+use crate::{Result, check_api_call, error::DuckDBError, error::Error, ffi};
 
 /// DuckDB's internal representation of `VARCHAR`-like data, such as bytes and strings.
 ///
 /// Short values are stored inline. Longer values refer to memory owned by the
-/// DuckDB arena supplied to [`DuckDBBytes::new`], so that arena must remain
+/// DuckDB arena they were written into, so that arena must remain
 /// alive while the bytes are accessed.
+///
+/// Only crate code can construct one: outside code sees it as the storage type of
+/// string vectors, but cannot name it or point it at an arbitrary arena.
+///
+/// ```compile_fail,E0603
+/// let _ = duckdb_neo::bytes::DuckDBBytes::new(&[0; 13], || Ok(std::ptr::dangling_mut()));
+/// ```
 pub struct DuckDBBytes {
     data: ffi::duckdb_v2_bytes,
 }
@@ -22,10 +29,19 @@ type DuckDBV2BytesPointer = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_1;
 type DuckDBV2BytesInlined = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_2;
 impl DuckDBBytes {
     /// Encode a string in DuckDB's internal byte representation.
-    pub fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(value: &[u8], mut heap: F) -> Result<Self> {
+    pub(crate) fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(value: &[u8], mut heap: F) -> Result<Self> {
+        let length = u32::try_from(value.len()).map_err(|_| Error {
+            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE,
+            message: format!(
+                "value of {} bytes exceeds the maximum of {} bytes",
+                value.len(),
+                u32::MAX
+            ),
+        })?;
+
         let encoded = if value.len() <= ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize {
             let mut inlined = DuckDBV2BytesInlined {
-                length: value.len() as u32,
+                length,
                 inlined: [0; ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize],
             };
             unsafe {
@@ -34,7 +50,7 @@ impl DuckDBBytes {
             DuckDBV2BytesUnion { inlined }
         } else {
             let mut pointer = DuckDBV2BytesPointer {
-                length: value.len() as u32,
+                length,
                 prefix: Default::default(),
                 ptr: std::ptr::null_mut(),
             };

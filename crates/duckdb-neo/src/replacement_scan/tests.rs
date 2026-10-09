@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
     column_data_collection::ColumnDataCollection,
@@ -7,6 +12,7 @@ use crate::{
     logical_type::LogicalTypeID,
     qualified_name::QualifiedName,
     replacement_scan::{ReplacementHandle, ReplacementScanBuilder, ReplacementScanCallbacks, ReplacementType},
+    types::BigNum,
 };
 
 struct CustomReplacementScan {
@@ -97,15 +103,20 @@ fn test_replacement_scan() -> crate::Result<()> {
 
     assert!(query.next_chunk()?.is_none());
 
-    let mut query = conn.query("SELECT * FROM alltypes", Parameters::None)?;
-
+    // Both named values must arrive under the right names: a large BIGNUM, but the small ENUM.
+    let mut query = conn.query(
+        "SELECT bignum, len(enum_range(large_enum)) FROM alltypes",
+        Parameters::None,
+    )?;
     let chunk = query.next_chunk()?.unwrap();
-
-    assert!(
-        chunk.get_vector_at::<bool>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
+    let bignum = chunk.get_vector_at::<BigNum>(0)?;
+    let max = bignum.get(1)?.expect("max BIGNUM row").decode()?;
+    assert!(max.magnitude.len() > 1_000_000, "use_large_bignum was not applied");
+    assert_eq!(
+        chunk.get_vector_at::<i64>(1)?.get(0)?,
+        Some(&2),
+        "use_large_enum was not applied"
     );
-
-    assert_eq!(chunk.col_count()?, 59);
 
     Ok(())
 }
@@ -140,7 +151,8 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
         .collection("cdc", collection)
         .register(&conn)?;
 
-    let mut query = conn.query("SELECT * FROM cdc_scan", Parameters::None)?;
+    // Select by the custom names, which fails if the default col1..colN names are used.
+    let mut query = conn.query("SELECT id, is_active FROM cdc_scan", Parameters::None)?;
 
     let chunk = query.next_chunk()?.unwrap();
 
@@ -211,10 +223,11 @@ fn test_replacement_scan_cdc_rejects_other_connection() -> crate::Result<()> {
 
 #[test]
 fn test_replacement_scan_cdc_unknown_name() -> crate::Result<()> {
-    struct UnknownName;
+    struct UnknownName(Arc<AtomicUsize>);
 
     impl ReplacementScanCallbacks for UnknownName {
         fn scan(&self, _context: &Context, _name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
             assert!(replacement.collection("missing").is_none());
             replacement.set_reference(ReplacementType::ColumnDataCollection("missing"))
         }
@@ -224,9 +237,49 @@ fn test_replacement_scan_cdc_unknown_name() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    ReplacementScanBuilder::new(UnknownName).register(&conn)?;
+    let calls = Arc::new(AtomicUsize::new(0));
+    ReplacementScanBuilder::new(UnknownName(calls.clone())).register(&conn)?;
 
-    assert!(conn.query("SELECT * FROM anything", Parameters::None).is_err());
+    // A plain catalog error or a panic in the callback would also fail the query, so check the cause.
+    let error = conn.query("SELECT * FROM anything", Parameters::None).err().unwrap();
+    assert!(
+        error.message.contains(r#"No collection named "missing""#),
+        "unexpected error: {}",
+        error.message
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    Ok(())
+}
+
+#[test]
+fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
+    struct OneName;
+
+    impl ReplacementScanCallbacks for OneName {
+        fn scan(&self, _context: &Context, _name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+            replacement.set_reference(ReplacementType::NamedColumnDataCollection((
+                "cdc",
+                vec!["id".to_string()],
+            )))
+        }
+    }
+
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ReplacementScanBuilder::new(OneName)
+        .collection("cdc", single_row_collection(&conn)?)
+        .register(&conn)?;
+
+    // The collection has two columns but only one name is given.
+    let error = conn.query("SELECT * FROM cdc", Parameters::None).err().unwrap();
+    assert!(
+        error.message.contains("number of column names (1) does not match"),
+        "unexpected error: {}",
+        error.message
+    );
 
     Ok(())
 }

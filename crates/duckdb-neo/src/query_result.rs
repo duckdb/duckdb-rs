@@ -104,12 +104,26 @@ pub enum QueryResultStep {
 /// # Ok(())
 /// # }
 /// ```
+///
+/// A result is not `Send`: stepping it runs the query on the connection, which
+/// must not race with the connection's `&self` methods on another thread.
+///
+/// ```compile_fail,E0277
+/// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
+/// # fn main() -> duckdb_neo::Result<()> {
+/// # let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+/// let mut result = conn.query("SET threads = 1", Parameters::None)?;
+/// std::thread::scope(|scope| {
+///     scope.spawn(move || result.next_chunk());
+///     conn.get_option("threads").unwrap();
+/// });
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct QueryResult<'a> {
-    /// Ties the result lifetime to its connection.
-    pub phantom: std::marker::PhantomData<&'a mut Connection>,
-    /// The owned DuckDB result handle.
-    pub handle: ffi::duckdb_v2_result_handle,
+    pub(crate) handle: ffi::duckdb_v2_result_handle,
+    pub(crate) phantom: std::marker::PhantomData<&'a mut Connection>,
 }
 
 impl<'a> QueryResult<'a> {
@@ -269,9 +283,6 @@ impl Drop for QueryResult<'_> {
         check_api_call_no_err!(ffi::duckdb_v2_result_destroy, &mut self.handle).unwrap();
     }
 }
-
-// SAFETY: the C result holds a `shared_ptr<ClientContext>`, and fetching takes the context lock.
-unsafe impl Send for QueryResult<'_> {}
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

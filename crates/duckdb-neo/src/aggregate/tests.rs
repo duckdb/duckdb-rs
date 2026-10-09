@@ -5,7 +5,7 @@ use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROP
 use crate::{
     DuckDBType, Parameters,
     aggregate::{AggregateCallbacks, AggregateFunctionBuilder, States},
-    bind_arguments::BindArgument,
+    bind_arguments::BindArguments,
     connection::Context,
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
@@ -28,19 +28,16 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> crate::Result<Self::BindData> {
         let mut bind_data: Vec<f32> = Vec::new();
 
         result_type_handle.override_return(LogicalType::from_text(context, "VARCHAR")?)?;
 
-        for argument in arguments {
-            let name = argument.value;
-            let arg_type = argument.logical_type;
-
-            assert_eq!(arg_type, i32::logical_type(context)?);
-            assert!(name.is_none());
+        for index in 0..arguments.len()? {
+            assert_eq!(arguments.logical_type(index)?, i32::logical_type(context)?);
+            assert!(arguments.value(index)?.is_none());
         }
 
         bind_data.push(1.2);
@@ -238,7 +235,7 @@ impl AggregateCallbacks for UndersizedState {
     fn bind(
         &self,
         _context: &Context,
-        _arguments: Vec<BindArgument>,
+        _arguments: BindArguments<'_>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> crate::Result<Self::BindData> {
         Ok(())

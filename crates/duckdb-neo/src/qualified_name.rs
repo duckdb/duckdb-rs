@@ -1,10 +1,8 @@
 //! Qualified names for catalog objects.
 
-use std::ops::Deref;
-
 use crate::ffi;
 use crate::ffi_str::DuckDBStr;
-use crate::{Result, check_api_call, check_api_call_no_err, check_api_call_string, error::Error};
+use crate::{AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err, check_api_call_string, error::Error};
 
 /// Owned identifier parts extracted from a [`QualifiedName`].
 #[derive(Default, Debug)]
@@ -32,10 +30,9 @@ pub struct QualifiedNameView {
 /// assert_eq!(name.parts().unwrap(), ["main", "events"]);
 /// assert_eq!(name.render().unwrap(), "main.events");
 /// ```
-#[derive(Debug)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct QualifiedName {
-    /// The owned DuckDB qualified-name handle.
-    pub handle: ffi::duckdb_v2_qname_handle,
+    pub(crate) handle: ffi::duckdb_v2_qname_handle,
 }
 
 // SAFETY: an owned, self-contained copy of the name; `&self` methods only read it.
@@ -126,14 +123,6 @@ impl QualifiedName {
         }
 
         Ok(parts)
-    }
-}
-
-impl Deref for QualifiedName {
-    type Target = ffi::duckdb_v2_qname_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
     }
 }
 

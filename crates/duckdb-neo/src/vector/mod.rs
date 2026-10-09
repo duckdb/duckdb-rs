@@ -493,12 +493,17 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         if view.is_null_physical(physical) {
             None
         } else {
-            Some(U::get(self, physical, index))
+            // SAFETY: callers validated this vector as `U` and cached its children; the row is in bounds and valid.
+            Some(unsafe { U::get(self, physical, index) })
         }
     }
 
     pub(crate) fn get_as_checked<U: VectorElement>(&self, index: usize) -> Result<Option<U::Ref<'_>>> {
         self.validate_as::<U>()?;
+        // Otherwise an unreadable child, e.g. a SEQUENCE packed into a struct, would read as NULL.
+        if self.view.is_none() {
+            return Err(other_not_readable());
+        }
         self.cache_children()?;
         Ok(self.get_as_unchecked::<U>(index))
     }
@@ -615,10 +620,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         index: usize,
         value: Option<U::Write<'_>>,
     ) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
         self.validate_as::<U>()?;
         // The element type is represented only by PhantomData.
         let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
-        U::write(typed, index, value)
+        // SAFETY: checked writable above.
+        unsafe { U::write(typed, index, value) }
     }
 
     /// Read the current size from DuckDB, which may have changed through another wrapper.
@@ -730,12 +739,12 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// Turn writable output into a constant vector.
     ///
-    /// `value` must have the vector's logical type. When `is_valid` is false,
-    /// every logical row is `NULL`; otherwise each row contains `value`.
+    /// `value` must have the vector's logical type. Every logical row contains
+    /// `value`, or is `NULL` when `value` is `NULL`.
     ///
     /// The vector is no longer writable afterwards: a constant holds a single
     /// slot, so per-row writes would go past its buffer.
-    pub fn make_constant(&mut self, value: Value, is_valid: bool, count: usize) -> Result<()> {
+    pub fn make_constant(&mut self, value: Value, count: usize) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -745,7 +754,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             value.handle,
             count as u64
         )?;
-        check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, is_valid)?;
+
+        check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, !value.is_null()?)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
         *self = Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked();
@@ -812,7 +822,8 @@ impl<T: WritableVectorElement> Vector<'_, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        T::write(self, index, value)
+        // SAFETY: checked writable above.
+        unsafe { T::write(self, index, value) }
     }
 }
 

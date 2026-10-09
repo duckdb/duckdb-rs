@@ -68,7 +68,7 @@ impl VectorElement for rust_decimal::Decimal {
         Ok(DecimalSignature::from_logical_type(other)?.width <= MAX_RUST_DECIMAL_WIDTH)
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: 'a,
     {
@@ -90,7 +90,7 @@ impl VectorElement for rust_decimal::Decimal {
 impl WritableVectorElement for rust_decimal::Decimal {
     type Write<'a> = rust_decimal::Decimal;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.write_raw::<()>(index, None);
         };

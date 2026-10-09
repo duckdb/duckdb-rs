@@ -95,10 +95,55 @@ pub enum FunctionProperty {
     IsFallible(bool),
     /// Set how the function handles argument collations.
     CollationHandling(FunctionPropertyCollation),
+}
+
+/// An optimizer property to apply when registering an aggregate function.
+///
+/// Wraps the shared [`FunctionProperty`] values and adds the aggregate-only ones,
+/// which DuckDB rejects on other function types.
+#[derive(Debug)]
+pub enum AggregateFunctionProperty {
+    /// A property shared by every function type.
+    Shared(FunctionProperty),
     /// Whether an aggregate's result depends on input order.
     AggregateOrderDependent(bool),
     /// Whether `DISTINCT` can affect an aggregate's result.
     AggregateDistinctDependent(bool),
+}
+
+impl From<FunctionProperty> for AggregateFunctionProperty {
+    fn from(property: FunctionProperty) -> Self {
+        AggregateFunctionProperty::Shared(property)
+    }
+}
+
+impl From<AggregateFunctionProperty>
+    for (
+        ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY,
+        ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE,
+    )
+{
+    fn from(property: AggregateFunctionProperty) -> Self {
+        match property {
+            AggregateFunctionProperty::Shared(property) => property.into(),
+            AggregateFunctionProperty::AggregateOrderDependent(is_order_dependent) => (
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY::DUCKDB_V2_FUNCTION_PROPERTY_AGG_ORDER_DEPENDENT,
+                if is_order_dependent {
+                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_ORDER_DEPENDENT_YES
+                } else {
+                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_ORDER_DEPENDENT_NO
+                },
+            ),
+            AggregateFunctionProperty::AggregateDistinctDependent(is_distinct_dependent) => (
+                ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY::DUCKDB_V2_FUNCTION_PROPERTY_AGG_DISTINCT_DEPENDENT,
+                if is_distinct_dependent {
+                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_DISTINCT_DEPENDENT_YES
+                } else {
+                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_DISTINCT_DEPENDENT_NO
+                },
+            ),
+        }
+    }
 }
 
 impl From<FunctionProperty>
@@ -132,22 +177,6 @@ impl From<FunctionProperty>
             FunctionProperty::CollationHandling(collation_handling) => (
                 ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING,
                 collation_handling.into(),
-            ),
-            FunctionProperty::AggregateOrderDependent(is_order_dependent) => (
-                ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY::DUCKDB_V2_FUNCTION_PROPERTY_AGG_ORDER_DEPENDENT,
-                if is_order_dependent {
-                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_ORDER_DEPENDENT_YES
-                } else {
-                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_ORDER_DEPENDENT_NO
-                },
-            ),
-            FunctionProperty::AggregateDistinctDependent(is_distinct_dependent) => (
-                ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY::DUCKDB_V2_FUNCTION_PROPERTY_AGG_DISTINCT_DEPENDENT,
-                if is_distinct_dependent {
-                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_DISTINCT_DEPENDENT_YES
-                } else {
-                    ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_AGG_DISTINCT_DEPENDENT_NO
-                },
             ),
         }
     }

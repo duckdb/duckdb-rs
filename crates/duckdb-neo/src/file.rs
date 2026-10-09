@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use crate::{
     Result, check_api_call, check_api_call_no_err, ffi,
     links::{DatabaseKeepAlive, FileSystemLink, KeepAlive},
+    raw::RawExt,
     value::Value,
 };
 
@@ -139,7 +140,7 @@ impl<'link> FileBuilder<'link> {
             ffi::duckdb_v2_file_open_options_set_value,
             self.handle,
             &name.into(),
-            **value
+            value.raw()
         )?;
         Ok(self)
     }

@@ -19,6 +19,7 @@ use crate::{
         TimestampValue, Union, UnionSchema, UnionValue, UuidValueRaw, Variant, WordDecimal, structs::StructWrite,
         union::UnionWriter,
     },
+    value::Value,
     vector::StorageKind,
 };
 
@@ -118,10 +119,6 @@ scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
 
     let mut output = output;
     output.set_size(rows.len())?;
-    let mut children = output.children_mut().unwrap();
-    for i in 0..children.col_count() {
-        children.get_untyped_vector_at_mut(i)?.set_size(rows.len())?;
-    }
 
     for (index, (key, value)) in rows.iter().enumerate() {
         match *key {
@@ -167,10 +164,57 @@ scalar_callback!(StructScalar, Struct, |input, output, _ctx, _user_data| {
     Ok(())
 });
 
+struct SequenceStruct;
+
+impl StructSchema for SequenceStruct {
+    fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
+        Ok(vec![("key", i64::logical_type(link)?)])
+    }
+}
+
+scalar_callback!(StructKeyScalar, i64, |input, output, _ctx, _user_data| {
+    let structs = input.get_vector_at::<Struct>(0)?;
+    let mut output = output;
+    output.set_size(structs.len())?;
+    for (index, row) in structs.iter()?.enumerate() {
+        let key = row.map(|row| row.get::<i64>("key")).transpose()?.flatten();
+        output.write(index, key.copied())?;
+    }
+    Ok(())
+});
+
+// Writes a NULL row whenever the key is NULL.
+scalar_callback!(NullableStructScalar, Struct, |input, output, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(keys.len())?;
+    for (index, key) in keys.iter()?.enumerate() {
+        let row = key.map(|key| {
+            StructWrite::default()
+                .field::<i32>(Some(*key))
+                .field::<String>(Some("x"))
+        });
+        output.write(index, row)?;
+    }
+    Ok(())
+});
+
+// Writes a NULL row whenever the key is NULL.
+scalar_callback!(NullableUnionScalar, Union, |input, output, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(keys.len())?;
+    for (index, key) in keys.iter()?.enumerate() {
+        let row = key.map(|key| UnionWriter::set_value::<i32>(0, Some(*key)));
+        output.write(index, row)?;
+    }
+    Ok(())
+});
+
 scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
     let mut result = result;
     let val = 42_i32.value(&ctx)?;
-    result.make_constant(val, true, 10)?;
+    result.make_constant(val, 10)?;
     assert_eq!(unsafe { result.get_view().unwrap().as_slice() }.unwrap(), &[42]);
     Ok(())
 });
@@ -676,7 +720,7 @@ pub fn test_vector_map() -> crate::Result<()> {
     assert_eq!(hmap.get(&2).unwrap(), &Some(&ShortDecimal(412)));
 
     assert_eq!(row.keys()?, vec![&1, &2]);
-    assert_eq!(row.values()?, vec![&ShortDecimal(121), &ShortDecimal(412)]);
+    assert_eq!(row.values()?, vec![Some(&ShortDecimal(121)), Some(&ShortDecimal(412))]);
 
     assert_eq!(row.get(&1)?, Some(&ShortDecimal(121)));
     assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
@@ -695,6 +739,7 @@ pub fn test_vector_map() -> crate::Result<()> {
 
     assert_eq!(row.get(&1)?, None);
     assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
+    assert_eq!(row.values()?, vec![None, Some(&ShortDecimal(412))]);
 
     assert!(reader.next().is_none());
 
@@ -842,6 +887,69 @@ pub fn vector_struct_write() -> crate::Result<()> {
         assert_eq!(rows[0].as_ref().unwrap().get::<i32>("key")?, Some(&1));
         assert_eq!(rows[1].as_ref().unwrap().get::<String>("value")?, Some("B"));
     }
+    Ok(())
+}
+
+#[test]
+pub fn vector_nested_null_write() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let key = || Ok::<_, Error>([Parameter::normal("key", i32::logical_type(&conn)?)]);
+    ScalarFunctionBuilder::new(
+        "to_struct_or_null",
+        SignatureBuilder::new(key()?, StructValue::<TestStruct>::logical_type(&conn)?),
+        NullableStructScalar,
+    )
+    .register(&conn)?;
+    ScalarFunctionBuilder::new(
+        "to_union_or_null",
+        SignatureBuilder::new(key()?, UnionValue::<TestUnion, i32>::logical_type(&conn)?),
+        NullableUnionScalar,
+    )
+    .register(&conn)?;
+
+    // A NULL row's children must read as NULL too, including through field extraction.
+    let mut result = conn.query(
+        "SELECT s.key, s.value, union_tag(u)::VARCHAR, union_extract(u, 'key')
+         FROM (SELECT to_struct_or_null(k) AS s, to_union_or_null(k) AS u FROM (VALUES (1), (NULL), (3)) t(k))",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.unwrap();
+    let keys: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
+    assert_eq!(keys, vec![Some(1), None, Some(3)]);
+    let values: Vec<_> = chunk.get_vector_at::<String>(1)?.iter()?.collect();
+    assert_eq!(values, vec![Some("x"), None, Some("x")]);
+    let tags: Vec<_> = chunk.get_vector_at::<String>(2)?.iter()?.collect();
+    assert_eq!(tags, vec![Some("key"), None, Some("key")]);
+    let members: Vec<_> = chunk.get_vector_at::<i32>(3)?.iter()?.map(|v| v.copied()).collect();
+    assert_eq!(members, vec![Some(1), None, Some(3)]);
+    Ok(())
+}
+
+#[test]
+pub fn vector_struct_unreadable_child() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "struct_key",
+        SignatureBuilder::new(
+            [Parameter::normal(
+                "s",
+                StructValue::<SequenceStruct>::logical_type(&conn)?,
+            )],
+            i64::logical_type(&conn)?,
+        ),
+        StructKeyScalar,
+    )
+    .register(&conn)?;
+
+    // struct_pack keeps range()'s SEQUENCE child, which must not read as NULL.
+    let mut result = conn.query("SELECT struct_key({'key': i}) FROM range(3) t(i)", Parameters::None)?;
+    assert!(result.next_chunk().is_err());
     Ok(())
 }
 
@@ -1538,7 +1646,7 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     vector.set_size(1)?;
     vector.write(0, Some(vec![Some(9)]))?;
 
-    vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, true, 3)?;
+    vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, 3)?;
 
     let items: Vec<_> = vector
         .iter()?
@@ -1554,6 +1662,21 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
 }
 
 #[test]
+fn test_make_constant_null_value() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+    let types = [String::logical_type(&conn)?];
+
+    let mut chunk = DataChunk::create(&types, true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    vector.make_constant(Value::null(&types[0])?, 3)?;
+
+    assert_eq!(vector.iter()?.collect::<Vec<_>>(), vec![None; 3]);
+    Ok(())
+}
+
+#[test]
 fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -1563,7 +1686,7 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     let mut chunk = DataChunk::create(&types, true)?;
 
     let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
-    constant.make_constant(42_i32.value(&conn)?, true, 2048)?;
+    constant.make_constant(42_i32.value(&conn)?, 2048)?;
     assert!(!constant.is_writable());
     assert!(constant.write(5, Some(1)).is_err());
     assert!(constant.write(0, None).is_err());
@@ -1897,7 +2020,7 @@ fn test_collection_append() -> crate::Result<()> {
     let mut chunk = DataChunk::create(&types, true)?;
     chunk
         .get_vector_at_mut::<List<i32>>(0)?
-        .make_constant(vec![Some(1), Some(2)].value(&conn)?, true, 3)?;
+        .make_constant(vec![Some(1), Some(2)].value(&conn)?, 3)?;
     assert_eq!(
         chunk.get_vector_at::<List<i32>>(0)?.storage_kind(),
         StorageKind::Constant

@@ -49,7 +49,7 @@ ffi_enum_redeclaration! {
 #[derive(Debug)]
 pub struct Expression<'a> {
     /// The borrowed DuckDB expression handle.
-    pub handle: ffi::duckdb_v2_expression_handle,
+    pub(crate) handle: ffi::duckdb_v2_expression_handle,
     pub(crate) _marker: std::marker::PhantomData<&'a ()>,
 }
 

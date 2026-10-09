@@ -449,6 +449,10 @@ fn test_complex_values() -> crate::Result<()> {
     assert!(too_many.value(&conn).is_err());
     assert!(StructValue::<TestStruct>::new().value(&conn).is_err());
 
+    // Field types must match the schema, not just the count.
+    let wrong_type = StructValue::<TestStruct>::new().field(1_i32).field(2_i32);
+    assert!(wrong_type.value(&conn).is_err());
+
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(
         union.fetch_logical_type()?.type_id(),

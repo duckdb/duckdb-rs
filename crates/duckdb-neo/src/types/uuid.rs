@@ -15,6 +15,7 @@ use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
+    raw::RawExt,
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
@@ -41,7 +42,7 @@ impl ToValue for UuidValueRaw {
 
 impl FromValue for UuidValueRaw {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_uuid, **value, RET)?;
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_uuid, value.raw(), RET)?;
         Ok(Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
     }
 }
@@ -51,7 +52,7 @@ DeclareVectorElement!(UuidValueRaw, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
 impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_raw(index, value)
     }
 }
@@ -108,18 +109,19 @@ mod external {
 
         type Ref<'a> = Uuid;
 
-        fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+        unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
         where
             Self: 'a,
         {
-            Self::from(*UuidValueRaw::get(vector, physical, logical))
+            // SAFETY: same storage as `UuidValueRaw`; the caller upholds the contract.
+            Self::from(*unsafe { UuidValueRaw::get(vector, physical, logical) })
         }
     }
 
     impl WritableVectorElement for Uuid {
         type Write<'a> = Uuid;
 
-        fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
             vector.write_raw(index, value.map(UuidValueRaw::from))
         }
     }

@@ -14,12 +14,11 @@
 use std::{
     cell::Cell,
     marker::PhantomData,
-    ops::Deref,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use crate::{
-    Parameters, Result,
+    AsRaw, FromRaw, Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
     connection_options::ConfigOption,
     database::{DatabaseHandle, Instance},
@@ -112,13 +111,24 @@ fn execute_statement<'conn>(
 /// A handle that allows interrupting long-running queries. Can be used from other threads.
 #[derive(Debug)]
 pub struct InterruptHandle {
-    conn: Arc<InnerConnection>,
+    conn: Weak<InnerConnection>,
 }
 
 impl InterruptHandle {
     /// Request cancellation of the active query, or do nothing if idle.
+    ///
+    /// Does nothing once the connection is closed.
     pub fn interrupt(&self) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_connection_interrupt, self.conn.handle)
+        // Upgrade once: the connection may close between a liveness check and the call.
+        match self.conn.upgrade() {
+            Some(conn) => check_api_call!(ffi::duckdb_v2_connection_interrupt, conn.handle),
+            None => Ok(()),
+        }
+    }
+
+    /// Return whether the connection is still open.
+    pub fn is_alive(&self) -> bool {
+        self.conn.strong_count() > 0
     }
 }
 
@@ -225,7 +235,7 @@ impl Connection {
 
     /// Return the number of options visible to this connection.
     pub fn get_options_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_get_option_count, **self, RET)?;
+        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_get_option_count, self.inner.handle, RET)?;
 
         Ok(count as usize)
     }
@@ -235,7 +245,12 @@ impl Connection {
     /// The setting resolves from this connection's local override, then the
     /// database's global value, then the static default.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_name, **self, &name.into(), RET)?;
+        let handle = check_api_call!(
+            ffi::duckdb_v2_connection_get_option_by_name,
+            self.inner.handle,
+            &name.into(),
+            RET
+        )?;
 
         Ok(ConfigOption { handle })
     }
@@ -244,7 +259,12 @@ impl Connection {
     ///
     /// An out-of-range index returns an error.
     pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
-        let handle = check_api_call!(ffi::duckdb_v2_connection_get_option_by_index, **self, index as u64, RET)?;
+        let handle = check_api_call!(
+            ffi::duckdb_v2_connection_get_option_by_index,
+            self.inner.handle,
+            index as u64,
+            RET
+        )?;
 
         Ok(ConfigOption { handle })
     }
@@ -271,7 +291,7 @@ impl Connection {
 
         check_api_call!(
             ffi::duckdb_v2_connection_set_option,
-            **self,
+            self.inner.handle,
             &name.into(),
             &value.into(),
             scope.into()
@@ -282,13 +302,13 @@ impl Connection {
 
     /// Request cancellation of the active query, or do nothing if idle.
     pub fn interrupt_query(&self) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_connection_interrupt, **self)
+        check_api_call!(ffi::duckdb_v2_connection_interrupt, self.inner.handle)
     }
 
     /// Return an [`InterruptHandle`] that can cancel this connection's active query from another thread.
     pub fn interrupt_handle(&self) -> InterruptHandle {
         InterruptHandle {
-            conn: self.inner.clone(),
+            conn: Arc::downgrade(&self.inner),
         }
     }
 }
@@ -296,10 +316,11 @@ impl Connection {
 // SAFETY: a `ClientContext` has no thread affinity; it is used by one thread at a time.
 unsafe impl Send for Connection {}
 
-impl Deref for Connection {
-    type Target = ffi::duckdb_v2_connection_handle;
-    fn deref(&self) -> &Self::Target {
-        &self.inner.handle
+impl AsRaw for Connection {
+    type Raw = ffi::duckdb_v2_connection_handle;
+
+    unsafe fn get_raw(&self) -> Self::Raw {
+        self.inner.handle
     }
 }
 
@@ -347,74 +368,42 @@ impl FFILink for Connection {
 /// A non-owning handle to the extension being loaded, available during an
 /// extension load callback. Registering through it makes the item visible to
 /// every connection on that database.
+///
+/// Wrapping a handle with [`FromRaw::from_raw`] requires the handle of the
+/// extension currently being loaded. The `Extension`, and anything registered
+/// through it, must not be used after the extension's entry point returns.
+#[derive(AsRaw, FromRaw)]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 
-impl Extension {
-    /// Wrap a borrowed extension handle.
-    /// # Safety
-    ///
-    /// `handle` must be a valid [`ffi::duckdb_v2_extension_handle`] for the
-    /// extension currently being loaded, and the returned `Extension` (and
-    /// anything registered through it) must not be used after the extension's
-    /// entry point returns.
-    pub unsafe fn from_raw(handle: ffi::duckdb_v2_extension_handle) -> Self {
-        Extension(handle)
-    }
-}
-
-impl Deref for Extension {
-    type Target = ffi::duckdb_v2_extension_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 /// A non-owning DuckDB context supplied for the duration of a callback.
 ///
-/// This wrapper does not own the underlying handle and must not outlive the callback invocation.
+/// This wrapper does not own the underlying handle and must not outlive the
+/// callback invocation, including when wrapped with [`FromRaw::from_raw`].
+#[derive(AsRaw, FromRaw)]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
 
 impl Context {
-    /// Wrap a borrowed context handle.
-    /// # Safety
-    ///
-    /// `handle` must be a valid [`ffi::duckdb_v2_context_handle`], and the
-    /// returned `Context` must not be used after the callback that supplied the
-    /// handle returns.
-    pub unsafe fn from_raw(handle: ffi::duckdb_v2_context_handle) -> Self {
-        Context(handle)
-    }
-
     /// Return an effective option by canonical name or alias.
     pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
         Ok(ConfigOption {
-            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, **self, &name.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, self.0, &name.into(), RET)?,
         })
     }
 
     /// Return the option visible at `index`.
     pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
         Ok(ConfigOption {
-            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_index, **self, index as u64, RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_index, self.0, index as u64, RET)?,
         })
     }
 
     /// Return the number of options visible to this context.
     pub fn get_option_count(&self) -> Result<usize> {
-        check_api_call!(ffi::duckdb_v2_context_get_option_count, **self, RET).map(|count| count as usize)
-    }
-}
-
-impl Deref for Context {
-    type Target = ffi::duckdb_v2_context_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+        check_api_call!(ffi::duckdb_v2_context_get_option_count, self.0, RET).map(|count| count as usize)
     }
 }
 
@@ -544,6 +533,36 @@ mod tests {
         let chunk = result.next_chunk()?.unwrap();
 
         assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_interrupt_after_connection_close() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let interrupt = conn.interrupt_handle();
+
+        let statements = conn.parse("SELECT * FROM RANGE(0, 10_000)")?;
+
+        let mut result = conn.query(statements, Parameters::None)?;
+
+        let _ = result.next_chunk()?.unwrap();
+
+        assert!(interrupt.is_alive());
+
+        interrupt.interrupt()?;
+
+        assert!(result.next_chunk().is_err());
+
+        drop(result);
+        drop(conn);
+
+        assert!(!interrupt.is_alive());
+
+        interrupt.interrupt()?;
 
         Ok(())
     }

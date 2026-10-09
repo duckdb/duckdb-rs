@@ -112,7 +112,7 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         children.get_untyped_vector_at(1)?.validate_as::<V>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -135,7 +135,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         K: 'a,
         V: 'a;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
         };
@@ -255,15 +255,15 @@ where
     }
 
     /// Return the map's values.
-    pub fn values(&self) -> Result<Vec<V::Ref<'a>>> {
+    pub fn values(&self) -> Result<Vec<Option<V::Ref<'a>>>> {
         let mut values: Vec<_> = Vec::new();
 
         self.children.cached_unchecked(1).validate_as::<V>()?;
 
         for logical in self.offset..self.offset + self.length {
-            if let Some(value) = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical) {
-                values.push(value);
-            }
+            let value = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical);
+
+            values.push(value);
         }
 
         Ok(values)

@@ -81,7 +81,7 @@ impl VectorElement for Union {
         children.get_untyped_vector_at(0)?.validate_as::<u8>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -175,17 +175,10 @@ impl<'a> UnionWriter<'a> {
 impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
-            vector.set_row_validity(index, false)?;
-            let children = vector
-                .children_collection_mut()
-                .expect("validated nested vector has children");
-            children.cached_mut::<u8>(0)?.set_row_validity(index, false)?;
-            for i in 1..children.col_count() {
-                children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
-            }
-            return Ok(());
+            // A union is a struct of tag and members; this nulls all of them.
+            return vector.set_null_slow(index);
         };
 
         let member_count = vector
@@ -199,16 +192,25 @@ impl WritableVectorElement for Union {
             )));
         }
 
+        let vector_len = vector.len();
         vector.set_row_validity(index, true)?;
         let children = vector
             .children_collection_mut()
             .expect("validated nested vector has children");
-        children.cached_mut::<u8>(0)?.write(index, Some(value.tag))?;
-        for i in 1..children.col_count() {
-            children.cached_mut::<Unknown>(i)?.set_row_validity(index, false)?;
+
+        let member = 1 + value.tag as usize;
+        for i in 0..children.col_count() {
+            let child = children.cached_mut::<Unknown>(i)?;
+            if child.len() != vector_len {
+                child.set_size(vector_len)?;
+            }
+            if i == 0 {
+                child.write_as::<u8>(index, Some(value.tag))?;
+            } else if i != member {
+                child.set_row_validity(index, false)?;
+            }
         }
-        value
-            .value
-            .write(children.cached_mut::<Unknown>(1 + value.tag as usize)?, index)
+        // The member's own write sets its validity.
+        value.value.write(children.cached_mut::<Unknown>(member)?, index)
     }
 }

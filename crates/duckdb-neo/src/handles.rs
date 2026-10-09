@@ -35,7 +35,7 @@ macro_rules! define_handle {
         $(
             impl $link for $type {
                 fn $create(&self) -> $crate::Result<$name> {
-                    Ok($name($crate::check_api_call!($func, **self, RET)?))
+                    Ok($name($crate::check_api_call!($func, $crate::raw::RawExt::raw(self), RET)?))
                 }
             }
         )*
@@ -45,21 +45,13 @@ macro_rules! define_handle {
         handle: $handle:ty,
         destroy: $destroy:expr $(,)?
     ) => {
-        #[derive(Debug)]
+        #[derive(Debug, $crate::AsRaw)]
         pub(crate) struct $name($handle);
 
         impl ::std::ops::Drop for $name {
             fn drop(&mut self) {
                 $crate::check_api_call_no_err!($destroy, &mut self.0)
                     .expect(concat!("Failed to destroy ", stringify!($name)));
-            }
-        }
-
-        impl ::std::ops::Deref for $name {
-            type Target = $handle;
-
-            fn deref(&self) -> &Self::Target {
-                &self.0
             }
         }
     };

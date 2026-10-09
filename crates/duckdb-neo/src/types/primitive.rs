@@ -10,6 +10,7 @@ use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
+    raw::RawExt,
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
@@ -28,7 +29,7 @@ macro_rules! declare_primitive_from_value {
     ($type:ty, $getter:path) => {
         impl FromValue for $type {
             fn _get_inner(value: &Value) -> Result<Self> {
-                check_api_call!($getter, **value, RET)
+                check_api_call!($getter, value.raw(), RET)
             }
         }
     };
@@ -48,14 +49,14 @@ declare_primitive_from_value!(f64, ffi::duckdb_v2_value_get_double);
 
 impl FromValue for i128 {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_hugeint, **value, RET)?;
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_hugeint, value.raw(), RET)?;
         Ok((i128::from(raw.upper) << 64) | i128::from(raw.lower))
     }
 }
 
 impl FromValue for u128 {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_uhugeint, **value, RET)?;
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_uhugeint, value.raw(), RET)?;
         Ok((u128::from(raw.upper) << 64) | u128::from(raw.lower))
     }
 }
@@ -103,7 +104,7 @@ macro_rules! DeclareVectorElement {
 
             type Ref<'a> = &'a $type;
 
-            fn get<'a, U: $crate::vector::VectorElement>(
+            unsafe fn get<'a, U: $crate::vector::VectorElement>(
                 vector: &'a $crate::vector::Vector<'_, U>,
                 physical: usize,
                 _logical: usize,
@@ -138,7 +139,7 @@ macro_rules! DeclareWritableVectorElement {
         impl WritableVectorElement for $type {
             type Write<'a> = $type;
 
-            fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+            unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                 vector.write_raw(index, value)
             }
         }

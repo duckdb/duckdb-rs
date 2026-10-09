@@ -32,6 +32,9 @@
 
 use libduckdb_sys::v2::{self as ffi};
 
+// Lets the raw handle derives name `::duckdb_neo` inside this crate.
+extern crate self as duckdb_neo;
+
 mod builder_helpers;
 pub mod connection_options;
 mod handles;
@@ -47,14 +50,16 @@ pub(crate) mod ffi_str;
 pub mod logical_type;
 pub(crate) mod parameter;
 pub mod query_result;
+pub mod raw;
 pub mod schema;
 pub mod statement;
 pub mod types;
 pub mod value;
 pub mod vector;
 use crate::error::{Error, check_api_call, check_api_call_no_err, check_api_call_string};
-pub use bytes::DuckDBBytes;
+pub use duckdb_loadable_macros::{AsRaw, FromRaw};
 pub use parameter::{Parameters, QueryParameter};
+pub use raw::{AsRaw, FromRaw};
 pub use types::{DuckDBType, FromValue, ToValue};
 
 #[cfg(feature = "r2d2")]
