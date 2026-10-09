@@ -9,7 +9,7 @@ use crate::{
     connection::{Context, SettingScope},
     data_chunk::DataChunkRef,
     environment::{Environment, StorageLocation},
-    error::{DuckDBError, Error},
+    error::Error,
     expression::ExpressionType,
     logical_type::LogicalTypeID,
     signature::{Parameter, SignatureBuilder},
@@ -112,10 +112,7 @@ fn test_table_function() -> crate::Result<()> {
                 .count
                 .lock()
                 .map(|count| Some(*count as f64 / global_state.max_rounds as f64))
-                .map_err(|e| Error {
-                    code: DuckDBError::DUCKDB_V2_ERROR_API,
-                    message: format!("Failed to acquire lock on global state: {}", e),
-                })?;
+                .map_err(|e| Error::api_error(format!("Failed to acquire lock on global state: {}", e)))?;
 
             Ok(prog)
         }

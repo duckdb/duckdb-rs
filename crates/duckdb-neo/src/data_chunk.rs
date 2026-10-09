@@ -17,10 +17,9 @@ use crate::{
 fn check_distinct(indices: &[usize]) -> Result<()> {
     for (i, index) in indices.iter().enumerate() {
         if indices[..i].contains(index) {
-            return Err(crate::error::Error {
-                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("vector index {index} was requested more than once"),
-            });
+            return Err(crate::error::Error::invalid_parameter(format!(
+                "vector index {index} was requested more than once"
+            )));
         }
     }
     Ok(())
@@ -91,6 +90,7 @@ impl DataChunkLink for Context {
 /// Vectors follow argument (or child) order and borrow DuckDB's data for the
 /// duration of the callback. Shared views are cached, so repeated
 /// [`Self::get_vector_at`] calls are cheap; mutable access drops the cached view.
+#[derive(Debug)]
 pub struct VectorCollection {
     pub(crate) handles: Vec<ffi::duckdb_v2_vector_handle>,
     pub(crate) access: Access,
@@ -102,6 +102,7 @@ pub struct VectorCollection {
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
+#[derive(Debug)]
 pub(crate) enum RowCount {
     /// A callback batch size; inputs are not writable, so it cannot change.
     Fixed(usize),
@@ -308,6 +309,7 @@ impl VectorCollection {
 /// Readers trust the children validated when the parent was cast, so this
 /// never hands out `&mut VectorCollection`, which could be swapped with another
 /// vector's children. Read-only access goes through [`Deref`].
+#[derive(Debug)]
 pub struct ChildrenMut<'a>(pub(crate) &'a mut VectorCollection);
 
 impl Deref for ChildrenMut<'_> {
@@ -535,6 +537,7 @@ impl<'a> DataChunkRef<'a> {
 }
 
 /// Selects where a chunk's vectors are allocated.
+#[derive(Debug)]
 pub enum Allocator<'a> {
     /// Allocate from the DuckDB default allocator.
     Default,

@@ -46,6 +46,7 @@ ffi_enum_redeclaration! {
 ///
 /// The lifetime ties the node and its children to the callback data that
 /// exposes them.
+#[derive(Debug)]
 pub struct Expression<'a> {
     /// The borrowed DuckDB expression handle.
     pub handle: ffi::duckdb_v2_expression_handle,

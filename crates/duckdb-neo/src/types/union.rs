@@ -7,7 +7,7 @@ use crate::{
     Result,
     connection::FFILink,
     data_chunk::VectorCollection,
-    error::{DuckDBError, Error},
+    error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     parameter::{Parameters, QueryParameter},
     value::Value,
@@ -15,6 +15,7 @@ use crate::{
 };
 
 /// Reads a `UNION` vector through its tag and member child vectors.
+#[derive(Debug)]
 pub struct Union;
 
 /// Defines the named members of a [`UnionValue`].
@@ -24,6 +25,7 @@ pub trait UnionSchema {
 }
 
 /// An active member represented as a DuckDB `UNION` with schema `S`.
+#[derive(Debug)]
 pub struct UnionValue<S, T> {
     /// The active member value.
     pub value: T,
@@ -74,10 +76,7 @@ impl VectorElement for Union {
         }
 
         let Some(children) = children.filter(|children| children.col_count() > 0) else {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: "Union vector is missing its tag child".to_string(),
-            });
+            return Err(Error::invalid_input("Union vector is missing its tag child"));
         };
         children.get_untyped_vector_at(0)?.validate_as::<u8>()
     }
@@ -94,6 +93,7 @@ impl VectorElement for Union {
 }
 
 /// A borrowed union row with access to its tag and member child vectors.
+#[derive(Debug)]
 pub struct UnionRow<'a> {
     children: &'a VectorCollection,
     logical: usize,
@@ -114,14 +114,11 @@ impl<'a> UnionRow<'a> {
         let index = index + 1;
 
         if index >= self.children.col_count() {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!(
-                    "Union member index {} is out of bounds ({} members)",
-                    index - 1,
-                    self.children.col_count() - 1
-                ),
-            });
+            return Err(Error::invalid_parameter(format!(
+                "Union member index {} is out of bounds ({} members)",
+                index - 1,
+                self.children.col_count() - 1
+            )));
         }
 
         self.children.cached_unchecked(index).get_as_checked::<T>(self.logical)
@@ -132,6 +129,7 @@ trait UnionFieldWrite {
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
 }
 
+#[derive(Debug)]
 struct TypedUnionField<'a, T: WritableVectorElement + 'a> {
     member: Option<T::Write<'a>>,
 }
@@ -150,6 +148,14 @@ where
 pub struct UnionWriter<'a> {
     tag: u8,
     value: Box<dyn UnionFieldWrite + 'a>,
+}
+
+impl std::fmt::Debug for UnionWriter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnionWriter")
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> UnionWriter<'a> {
@@ -187,13 +193,10 @@ impl WritableVectorElement for Union {
             .map_or(0, VectorCollection::col_count)
             .saturating_sub(1);
         if value.tag as usize >= member_count {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!(
-                    "Union member index {} is out of bounds ({} members)",
-                    value.tag, member_count
-                ),
-            });
+            return Err(Error::invalid_parameter(format!(
+                "Union member index {} is out of bounds ({} members)",
+                value.tag, member_count
+            )));
         }
 
         vector.set_row_validity(index, true)?;

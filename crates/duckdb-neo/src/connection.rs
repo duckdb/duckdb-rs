@@ -23,7 +23,7 @@ use crate::{
     builder_helpers::ffi_enum_redeclaration,
     connection_options::ConfigOption,
     database::{DatabaseHandle, Instance},
-    error::{DuckDBError, Error, check_api_call, check_api_call_no_err},
+    error::{Error, check_api_call, check_api_call_no_err},
     ffi,
     links::LogicalTypeFromTextLink,
     logical_type::{LogicalType, LogicalTypeID},
@@ -98,22 +98,19 @@ fn execute_statement<'conn>(
     names: Option<&[&str]>,
     values: &[&Value],
 ) -> Result<QueryResult<'conn>> {
-    let statement = statements.next().ok_or(Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_API,
-        message: "No statements found in SQL string".to_string(),
-    })??;
+    let statement = statements
+        .next()
+        .ok_or(Error::api_error("No statements found in SQL string"))??;
 
     if statements.next().is_some() {
-        return Err(Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "Multiple statements found in SQL string".to_string(),
-        });
+        return Err(Error::invalid_input("Multiple statements found in SQL string"));
     }
 
     conn.execute_statement(statement, names, values)
 }
 
 /// A handle that allows interrupting long-running queries. Can be used from other threads.
+#[derive(Debug)]
 pub struct InterruptHandle {
     conn: Arc<InnerConnection>,
 }
@@ -125,6 +122,7 @@ impl InterruptHandle {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct InnerConnection {
     pub handle: ffi::duckdb_v2_connection_handle,
 }
@@ -148,6 +146,7 @@ unsafe impl Sync for InnerConnection {}
 /// A connection can be moved to another thread but not shared between threads;
 /// use [`InterruptHandle`] or [`QueryProgressTracker`](crate::query_progress::QueryProgressTracker)
 /// from other threads.
+#[derive(Debug)]
 pub struct Connection {
     pub(crate) _db: Arc<Mutex<DatabaseHandle>>,
     pub(crate) inner: Arc<InnerConnection>,
@@ -349,6 +348,7 @@ impl FFILink for Connection {
 /// extension load callback. Registering through it makes the item visible to
 /// every connection on that database.
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 
 impl Extension {
@@ -376,6 +376,7 @@ impl Deref for Extension {
 ///
 /// This wrapper does not own the underlying handle and must not outlive the callback invocation.
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
 
 impl Context {

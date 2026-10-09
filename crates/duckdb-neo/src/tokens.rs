@@ -26,6 +26,7 @@ pub struct TokenData {
 /// iterator is created with [`SqlTokenIterator::new`]; tokenizing copies every
 /// token up front, so the iterator borrows neither the SQL text nor the
 /// connection.
+#[derive(Debug)]
 pub struct SqlTokenIterator {
     handle: ffi::duckdb_v2_token_iterator_handle,
 }

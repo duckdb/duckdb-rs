@@ -9,6 +9,7 @@ use crate::{
 };
 
 /// A borrowed handle to DuckDB's file system.
+#[derive(Debug)]
 pub struct FileSystem<'link> {
     handle: ffi::duckdb_v2_file_system_handle,
     database: Option<KeepAlive>,
@@ -38,6 +39,7 @@ impl<'link> FileSystem<'link> {
 ///
 /// Access and creation flags are disabled by default and can be composed with
 /// the builder methods before calling [`FileBuilder::open`].
+#[derive(Debug)]
 pub struct FileBuilder<'link> {
     fs: &'link FileSystem<'link>,
     handle: ffi::duckdb_v2_file_open_options_handle,
@@ -183,6 +185,7 @@ impl Drop for FileBuilder<'_> {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct File {
     /// The owned DuckDB file handle.
     handle: ffi::duckdb_v2_file_handle,

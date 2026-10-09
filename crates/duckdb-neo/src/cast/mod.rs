@@ -55,6 +55,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
 /// A negative `implicit_cast_cost` makes the cast explicit-only. Non-negative
 /// costs allow implicit selection, with lower costs preferred when DuckDB
 /// resolves alternatives.
+#[derive(Debug)]
 pub struct CastFunctionBuilder<T: CastFunctionCallbacks> {
     source_type: LogicalType,
     target_type: LogicalType,

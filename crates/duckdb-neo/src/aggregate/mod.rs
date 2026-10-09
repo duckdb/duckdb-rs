@@ -32,6 +32,7 @@ use crate::{
 ///
 /// The same state is shared by every row of a group, so the underlying pointers may repeat.
 /// Mutable access is therefore only offered one element at a time through [`IndexMut`].
+#[derive(Debug)]
 pub struct States<'a, T> {
     states: &'a [*mut T],
 }
@@ -83,6 +84,7 @@ impl<'a, T> IndexMut<usize> for States<'a, T> {
 }
 
 /// Iterates over aggregate state references.
+#[derive(Debug)]
 pub struct StatesIter<'a, T> {
     states: &'a [*mut T],
     index: usize,
@@ -351,6 +353,7 @@ unsafe extern "C" fn destroy_callback<T: AggregateCallbacks>(
 }
 
 /// Builds and registers a user-defined aggregate function.
+#[derive(Debug)]
 pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
     name: String,
     signature: SignatureBuilder,

@@ -4,13 +4,14 @@ use crate::ffi_str::DuckDBStr;
 use crate::{
     Parameters, Result, check_api_call, check_api_call_no_err,
     connection::Connection,
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     query_result::{QueryResult, StatementType},
     schema::Schema,
 };
 
 /// Schemas resolved while binding a statement.
+#[derive(Debug)]
 pub struct SchemaBind {
     /// The statement's result columns.
     pub schema: Schema,
@@ -38,6 +39,7 @@ pub struct SchemaBind {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Statements {
     /// The owned DuckDB statement-iterator handle.
     pub handle: ffi::duckdb_v2_statement_iterator_handle,
@@ -46,10 +48,8 @@ pub struct Statements {
 impl Statements {
     /// Parse SQL using a connection's parser configuration.
     pub fn parse(conn: &Connection, sql: impl AsRef<str>) -> Result<Statements> {
-        let query_str = std::ffi::CString::new(sql.as_ref()).map_err(|_| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: "SQL string contains a NUL byte".to_string(),
-        })?;
+        let query_str =
+            std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
         let handle: ffi::duckdb_v2_statement_iterator_handle =
             check_api_call!(ffi::duckdb_v2_parse_sql, **conn, query_str.as_ptr(), RET)?;
@@ -87,6 +87,7 @@ impl Iterator for Statements {
 /// A statement can be bound to inspect its input and output schemas,
 /// prepared for repeated execution, or passed to
 /// [`Connection::query`].
+#[derive(Debug)]
 pub struct Statement {
     /// The owned DuckDB statement handle.
     pub handle: ffi::duckdb_v2_sql_statement_handle,
@@ -176,6 +177,7 @@ impl Drop for Statement {
 /// Execution accepts named or positional [`Parameters`] and is
 /// lazy: work begins when the returned [`QueryResult`] is consumed. The
 /// prepared statement remains associated with the connection used to create it.
+#[derive(Debug)]
 pub struct PreparedStatement<'a> {
     connection: &'a Connection,
     /// The owned DuckDB prepared-statement handle.

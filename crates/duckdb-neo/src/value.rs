@@ -7,7 +7,7 @@ use crate::ffi;
 use crate::{
     Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::{Connection, Context, FFILink},
-    error::{DuckDBError, Error},
+    error::Error,
     links::ValueCastLink,
     logical_type::LogicalType,
     types::FromValue,
@@ -47,6 +47,7 @@ unsafe impl Send for Value {}
 unsafe impl Sync for Value {}
 
 #[doc(hidden)]
+#[derive(Debug)]
 pub enum ValueInput<'a> {
     Null(&'a LogicalType),
     Bool(bool),
@@ -114,10 +115,9 @@ fn check_same_len(what: &str, left: usize, right: usize) -> Result<()> {
     if left == right {
         return Ok(());
     }
-    Err(Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: format!("{what}: lengths differ ({left} vs {right})"),
-    })
+    Err(Error::invalid_input(format!(
+        "{what}: lengths differ ({left} vs {right})"
+    )))
 }
 
 fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {

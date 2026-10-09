@@ -38,6 +38,7 @@ use crate::{Result, check_api_call, check_api_call_no_err, logical_type::Logical
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Schema {
     /// The owned DuckDB schema handle.
     pub handle: ffi::duckdb_v2_schema_handle,

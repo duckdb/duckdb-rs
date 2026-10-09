@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use crate::{Result, check_api_call, check_api_call_no_err, database::Instance, ffi};
 
 /// A shared handle to a DuckDB environment.
+#[derive(Debug)]
 pub struct EnvironmentHandle {
     pub(crate) handle: ffi::duckdb_v2_environment_handle,
 }
@@ -97,6 +98,7 @@ impl From<&StorageLocation> for String {
 ///     println!("Fetched {} row(s)", chunk.row_count().expect("Failed to read size"));
 /// }
 /// ```
+#[derive(Debug)]
 pub struct Environment {
     pub(crate) handle: Arc<Mutex<EnvironmentHandle>>,
 }

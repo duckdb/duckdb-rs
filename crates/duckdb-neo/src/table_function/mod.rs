@@ -32,6 +32,7 @@ use crate::{
 };
 
 /// Callback-scoped output-schema builder.
+#[derive(Debug)]
 pub struct BindFunctionHandle<'a>(&'a ffi::duckdb_v2_table_function_bind_info_handle);
 
 impl<'a> BindFunctionHandle<'a> {
@@ -93,6 +94,7 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
 ///
 /// With projection pushdown enabled, the columns here are the subset of
 /// declared columns the query actually uses.
+#[derive(Debug)]
 pub struct ExecColumnInfo<'a> {
     handle: &'a ffi::duckdb_v2_table_function_exec_info_handle,
 }
@@ -151,12 +153,14 @@ unsafe extern "C" fn exec_callback<T: TableFunctionCallbacks>(
     );
 }
 
+#[derive(Debug)]
 enum InitColumnHandle<'a> {
     Local(&'a ffi::duckdb_v2_table_function_init_local_info_handle),
     Global(&'a ffi::duckdb_v2_table_function_init_global_info_handle),
 }
 
 /// Projected-column metadata supplied during table-function initialization.
+#[derive(Debug)]
 pub struct InitColumnData<'a> {
     handle: InitColumnHandle<'a>,
 }
@@ -194,6 +198,7 @@ impl<'a> InitColumnData<'a> {
 }
 
 /// Candidate filters and column mappings offered for pushdown.
+#[derive(Debug)]
 pub struct PushdownData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_filter_pushdown_info_handle,
 }
@@ -389,6 +394,7 @@ ffi_enum_redeclaration! {
 }
 
 /// What a downstream operator wants to know about the batch just produced.
+#[derive(Debug)]
 pub struct PartitionData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_partition_data_info_handle,
 }
@@ -458,6 +464,7 @@ impl<'a> PartitionData<'a> {
 }
 
 /// The candidate `GROUP BY` column set the optimizer is asking about.
+#[derive(Debug)]
 pub struct PartitioningData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_partitioning_info_handle,
 }
@@ -548,6 +555,7 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
 }
 
 /// Builds and registers a user-defined table function.
+#[derive(Debug)]
 pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     name: String,
     signature: SignatureBuilder,
@@ -720,6 +728,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 }
 
 /// A table function's estimated or exact output row count.
+#[derive(Debug)]
 pub struct TableFunctionCardinality {
     /// The reported output row count.
     pub cardinality: usize,
