@@ -1,6 +1,6 @@
 //! Point-in-time progress for an executing query.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use crate::{
     Result, check_api_call,
@@ -13,9 +13,9 @@ use crate::{
 /// Creating a tracker enables connection-local progress tracking and disables
 /// terminal progress output. These settings remain active after the tracker is
 /// dropped. The tracker can be moved to another thread to take snapshots while
-/// the connection runs a query.
+/// the connection runs a query. It does not keep the connection open.
 pub struct QueryProgressTracker {
-    connection: Arc<InnerConnection>,
+    connection: Weak<InnerConnection>,
 }
 
 impl QueryProgressTracker {
@@ -24,13 +24,17 @@ impl QueryProgressTracker {
         connection.set_option("enable_progress_bar_print", "false", Some(SettingScope::Local))?;
         connection.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
         Ok(Self {
-            connection: connection.inner.clone(),
+            connection: Arc::downgrade(&connection.inner),
         })
     }
 
-    /// Capture the active query's progress, or return `None` when unavailable.
+    /// Capture the active query's progress, or return `None` when unavailable
+    /// or the connection is closed.
     pub fn snapshot(&self) -> Result<Option<QueryProgress>> {
-        QueryProgress::from_handle(self.connection.handle)
+        match self.connection.upgrade() {
+            Some(connection) => QueryProgress::from_handle(connection.handle),
+            None => Ok(None),
+        }
     }
 }
 

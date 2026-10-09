@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::ffi;
 
-use crate::bind_arguments::{BindArgument, BindMetadata, BindType};
+use crate::bind_arguments::{BindArguments, BindType};
 use crate::builder_helpers::{
     OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque, into_opaque_eq,
 };
@@ -31,10 +31,9 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_bind_get_user_data, info);
 
-            let arguments = BindMetadata {
+            let arguments = BindArguments {
                 bind_type: BindType::Scalar(&info),
-            }
-            .get_arguments()?;
+            };
 
             let result = T::bind(
                 user_data,
@@ -250,7 +249,7 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         _context: &Context,
-        _metadata: Vec<BindArgument>,
+        _arguments: BindArguments<'_>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
         Ok(Self::BindData::default())

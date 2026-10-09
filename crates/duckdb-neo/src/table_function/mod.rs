@@ -15,7 +15,7 @@ use crate::ffi;
 
 use crate::{
     Result,
-    bind_arguments::{BindArgument, BindMetadata, BindType},
+    bind_arguments::{BindArgument, BindArguments, BindType},
     builder_helpers::{
         OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state, get_user_data,
         handle_unwind, into_opaque,
@@ -58,14 +58,14 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_table_function_bind_get_user_data, info);
 
-            let metadata = BindMetadata {
+            let arguments = BindArguments {
                 bind_type: BindType::Table(&info),
             };
 
             let (bind_data, cardinality) = T::bind(
                 user_data,
                 &Context(context),
-                metadata.get_arguments()?,
+                arguments.collect()?,
                 BindFunctionHandle(&info),
             )?;
 

@@ -18,15 +18,14 @@ impl ScalarCallbacks for ScalarWithData {
     fn bind(
         &self,
         context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
-        assert_eq!(arguments[0].logical_type, LogicalType::from_text(context, "INTEGER")?);
+        assert_eq!(arguments.logical_type(0)?, LogicalType::from_text(context, "INTEGER")?);
         assert!(
-            arguments[0]
-                .value
-                .as_ref()
-                .is_some_and(|v| i32::from_value(v).unwrap() == Some(2))
+            arguments
+                .value(0)?
+                .is_some_and(|v| i32::from_value(&v).unwrap() == Some(2))
         );
 
         Ok(vec![1, 2, 3])
@@ -304,7 +303,7 @@ impl ScalarCallbacks for OverrideAbleScalar {
     fn bind(
         &self,
         context: &Context,
-        _arguments: Vec<BindArgument>,
+        _arguments: BindArguments<'_>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
         result_type_handle.override_return(i8::logical_type(context)?)?;
@@ -373,10 +372,10 @@ impl ScalarCallbacks for FoldProbe {
     fn bind(
         &self,
         _context: &Context,
-        arguments: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         _result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData> {
-        self.folded.lock().unwrap().push(arguments[0].value.is_some());
+        self.folded.lock().unwrap().push(arguments.value(0)?.is_some());
         Ok(())
     }
 
@@ -431,5 +430,57 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     conn.query("SELECT fold_probe(3)", Parameters::None)?.next().unwrap()?;
     assert_eq!(folded.lock().unwrap().first(), Some(&true));
 
+    Ok(())
+}
+
+// Uses the default bind, which must not evaluate its arguments.
+struct Identity;
+
+impl ScalarCallbacks for Identity {
+    type BindData = ();
+    type InitData = ();
+
+    fn exec(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
+        input: &mut VectorCollection,
+        output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        let input = input.get_vector_at::<i32>(0)?;
+        let mut output = output.cast::<i32>()?;
+        output.set_size(input.len())?;
+        for (i, value) in input.iter()?.enumerate() {
+            output.write(i, value.copied())?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "identity",
+        SignatureBuilder::new(
+            [Parameter::normal("x", i32::logical_type(&conn)?)],
+            i32::logical_type(&conn)?,
+        ),
+        Identity,
+    )
+    .register(&conn)?;
+
+    // The failing cast is never executed, so the query succeeds, as with a native function.
+    let mut result = conn.query(
+        "SELECT CASE WHEN i > 10 THEN identity('abc'::INTEGER) ELSE i::INTEGER END FROM range(3) t(i)",
+        Parameters::None,
+    )?;
+    let chunk = result.next().expect("expected a result chunk")?;
+    let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
+    assert_eq!(values, vec![Some(0), Some(1), Some(2)]);
     Ok(())
 }

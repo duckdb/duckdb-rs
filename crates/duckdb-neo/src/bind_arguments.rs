@@ -3,21 +3,23 @@
 use crate::ffi;
 use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
 
+#[derive(Clone, Copy)]
 pub(crate) enum BindType<'a> {
     Scalar(&'a ffi::duckdb_v2_scalar_function_bind_info_handle),
     Table(&'a ffi::duckdb_v2_table_function_bind_info_handle),
     Aggregate(&'a ffi::duckdb_v2_aggregate_function_bind_info_handle),
 }
 
-/// Metadata available while binding a scalar or aggregate function.
+/// The arguments of a scalar or aggregate call site being bound.
 ///
-/// The argument list follows signature-slot order: fixed parameters first,
-/// followed by expanded variadic arguments.
-pub struct BindMetadata<'a> {
+/// Arguments follow signature-slot order: fixed parameters first, followed by
+/// expanded variadic arguments. Constant values are folded only when requested
+/// through [`Self::value`], since folding evaluates the argument and can fail.
+pub struct BindArguments<'a> {
     pub(crate) bind_type: BindType<'a>,
 }
 
-/// An owned argument type and optional constant value supplied to a bind callback.
+/// An owned argument type and constant value supplied to a table function's bind callback.
 pub struct BindArgument {
     /// The argument's resolved logical type.
     pub logical_type: LogicalType,
@@ -27,99 +29,90 @@ pub struct BindArgument {
     pub value: Option<Value>,
 }
 
-impl<'a> BindMetadata<'a> {
-    pub(crate) fn get_arguments(&self) -> Result<Vec<BindArgument>> {
-        match self.bind_type {
-            BindType::Aggregate(handle) => self.aggregate(handle),
-            BindType::Scalar(handle) => self.scalar(handle),
-            BindType::Table(handle) => self.table(handle),
+impl<'a> BindArguments<'a> {
+    /// Return the number of arguments.
+    pub fn len(&self) -> Result<usize> {
+        let count = match self.bind_type {
+            BindType::Scalar(handle) => {
+                check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_count, *handle, RET)
+            }
+            BindType::Aggregate(handle) => {
+                check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_count, *handle, RET)
+            }
+            BindType::Table(handle) => check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_count, *handle, RET),
+        }?;
+        Ok(count as usize)
+    }
+
+    /// Return whether the call site has no arguments.
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
+    }
+
+    /// Return the resolved logical type of argument `index`.
+    pub fn logical_type(&self, index: usize) -> Result<LogicalType> {
+        let index = index as u64;
+        let handle = match self.bind_type {
+            BindType::Scalar(handle) => {
+                check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_type, *handle, index, RET)
+            }
+            BindType::Aggregate(handle) => {
+                check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_type, *handle, index, RET)
+            }
+            BindType::Table(handle) => {
+                check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_type, *handle, index, RET)
+            }
+        }?;
+        Ok(LogicalType { handle })
+    }
+
+    /// Fold argument `index` to a constant, or return `None` when it is not constant.
+    ///
+    /// SQL NULL is represented by `Some` containing a null [`Value`]. Errors raised
+    /// while evaluating a constant argument, such as a failing cast, are returned.
+    pub fn value(&self, index: usize) -> Result<Option<Value>> {
+        let index = index as u64;
+        let handle = match self.bind_type {
+            BindType::Scalar(handle) => {
+                check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_value, *handle, index, RET)
+            }
+            BindType::Aggregate(handle) => {
+                check_api_call!(
+                    ffi::duckdb_v2_aggregate_function_bind_get_arg_value,
+                    *handle,
+                    index,
+                    RET
+                )
+            }
+            BindType::Table(handle) => {
+                check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_value, *handle, index, RET)
+            }
+        };
+        match handle {
+            Ok(handle) => Ok(Some(Value { handle })),
+            // Not foldable: a non-constant argument, or an unbound prepared parameter.
+            Err(e)
+                if matches!(
+                    e.code,
+                    DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER
+                        | DuckDBError::DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e),
         }
     }
 
-    fn scalar(&self, handle: &ffi::duckdb_v2_scalar_function_bind_info_handle) -> Result<Vec<BindArgument>> {
-        let count = check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_count, *handle, RET)?;
-
-        let mut bind_views = vec![];
-
-        for i in 0..count {
-            let logical_type = LogicalType {
-                handle: check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_type, *handle, i, RET)?,
-            };
-
-            let value_handle = check_api_call!(ffi::duckdb_v2_scalar_function_bind_get_arg_value, *handle, i, RET);
-            let value = match value_handle {
-                Ok(v) => Some(Value { handle: v }),
-                Err(e) => {
-                    // Not foldable: a non-constant argument, or an unbound prepared parameter.
-                    if matches!(
-                        e.code,
-                        DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER
-                            | DuckDBError::DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED
-                    ) {
-                        None
-                    } else {
-                        return Err(e);
-                    }
-                }
-            };
-
-            bind_views.push(BindArgument { logical_type, value });
-        }
-
-        Ok(bind_views)
-    }
-
-    fn aggregate(&self, handle: &ffi::duckdb_v2_aggregate_function_bind_info_handle) -> Result<Vec<BindArgument>> {
-        let count = check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_count, *handle, RET)?;
-
-        let mut bind_views = vec![];
-
-        for i in 0..count {
-            let logical_type = LogicalType {
-                handle: check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_type, *handle, i, RET)?,
-            };
-            let value_handle = check_api_call!(ffi::duckdb_v2_aggregate_function_bind_get_arg_value, *handle, i, RET);
-            let value = match value_handle {
-                Ok(v) => Some(Value { handle: v }),
-                Err(e) => {
-                    // Not foldable: a non-constant argument, or an unbound prepared parameter.
-                    if matches!(
-                        e.code,
-                        DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER
-                            | DuckDBError::DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED
-                    ) {
-                        None
-                    } else {
-                        return Err(e);
-                    }
-                }
-            };
-
-            bind_views.push(BindArgument { logical_type, value });
-        }
-
-        Ok(bind_views)
-    }
-
-    fn table(&self, handle: &ffi::duckdb_v2_table_function_bind_info_handle) -> Result<Vec<BindArgument>> {
-        let count = check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_count, *handle, RET)?;
-
-        let mut bind_views = vec![];
-
-        for i in 0..count {
-            let logical_type = LogicalType {
-                handle: check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_type, *handle, i, RET)?,
-            };
-            let value = Value {
-                handle: check_api_call!(ffi::duckdb_v2_table_function_bind_get_arg_value, *handle, i, RET)?,
-            };
-
-            bind_views.push(BindArgument {
-                logical_type,
-                value: Some(value),
-            });
-        }
-
-        Ok(bind_views)
+    /// Collect every argument with its folded value.
+    pub(crate) fn collect(&self) -> Result<Vec<BindArgument>> {
+        (0..self.len()?)
+            .map(|index| {
+                Ok(BindArgument {
+                    logical_type: self.logical_type(index)?,
+                    value: self.value(index)?,
+                })
+            })
+            .collect()
     }
 }

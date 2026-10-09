@@ -56,7 +56,6 @@ pub mod types;
 pub mod value;
 pub mod vector;
 use crate::error::{Error, check_api_call, check_api_call_no_err, check_api_call_string};
-pub use bytes::DuckDBBytes;
 pub use duckdb_loadable_macros::{AsRaw, FromRaw};
 pub use parameter::{Parameters, QueryParameter};
 pub use raw::{AsRaw, FromRaw};

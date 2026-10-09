@@ -260,15 +260,15 @@ where
     }
 
     /// Return the map's values.
-    pub fn values(&self) -> Result<Vec<V::Ref<'a>>> {
+    pub fn values(&self) -> Result<Vec<Option<V::Ref<'a>>>> {
         let mut values: Vec<_> = Vec::new();
 
         self.children.cached_unchecked(1).validate_as::<V>()?;
 
         for logical in self.offset..self.offset + self.length {
-            if let Some(value) = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical) {
-                values.push(value);
-            }
+            let value = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical);
+
+            values.push(value);
         }
 
         Ok(values)

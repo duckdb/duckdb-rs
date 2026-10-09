@@ -16,12 +16,12 @@ use crate::ffi;
 
 use crate::{
     Error, Result,
-    bind_arguments::{BindArgument, BindMetadata, BindType},
+    bind_arguments::{BindArguments, BindType},
     builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque_eq},
     check_api_call,
     connection::Context,
     data_chunk::{RowCount, VectorCollection},
-    enums::FunctionProperty,
+    enums::AggregateFunctionProperty,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     raw::RawExt,
     scalar::{FunctionBindHandles, ReturnTypeHandle},
@@ -110,7 +110,7 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
 ) {
     handle_unwind(
         || {
-            let metadata = BindMetadata {
+            let arguments = BindArguments {
                 bind_type: BindType::Aggregate(&info),
             };
 
@@ -119,7 +119,7 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
             let result = T::bind(
                 user_data,
                 &Context(context),
-                metadata.get_arguments()?,
+                arguments,
                 ReturnTypeHandle {
                     handle: FunctionBindHandles::Aggregate(&info),
                 },
@@ -371,8 +371,8 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
     }
 
     /// Set a DuckDB function property.
-    pub fn set_property(mut self, item: FunctionProperty) -> Self {
-        let (key, value) = item.into();
+    pub fn set_property(mut self, item: impl Into<AggregateFunctionProperty>) -> Self {
+        let (key, value) = item.into().into();
         self.properties.insert(key, value);
         self
     }
@@ -473,7 +473,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     fn bind(
         &self,
         context: &Context,
-        metadata: Vec<BindArgument>,
+        arguments: BindArguments<'_>,
         result_type_handle: ReturnTypeHandle<'_>,
     ) -> Result<Self::BindData>;
 

@@ -14,7 +14,7 @@
 use std::{
     cell::Cell,
     marker::PhantomData,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use crate::{
@@ -114,13 +114,24 @@ fn execute_statement<'conn>(
 
 /// A handle that allows interrupting long-running queries. Can be used from other threads.
 pub struct InterruptHandle {
-    conn: Arc<InnerConnection>,
+    conn: Weak<InnerConnection>,
 }
 
 impl InterruptHandle {
     /// Request cancellation of the active query, or do nothing if idle.
+    ///
+    /// Does nothing once the connection is closed.
     pub fn interrupt(&self) -> Result<()> {
-        check_api_call!(ffi::duckdb_v2_connection_interrupt, self.conn.handle)
+        // Upgrade once: the connection may close between a liveness check and the call.
+        match self.conn.upgrade() {
+            Some(conn) => check_api_call!(ffi::duckdb_v2_connection_interrupt, conn.handle),
+            None => Ok(()),
+        }
+    }
+
+    /// Return whether the connection is still open.
+    pub fn is_alive(&self) -> bool {
+        self.conn.strong_count() > 0
     }
 }
 
@@ -301,7 +312,7 @@ impl Connection {
     /// Return an [`InterruptHandle`] that can cancel this connection's active query from another thread.
     pub fn interrupt_handle(&self) -> InterruptHandle {
         InterruptHandle {
-            conn: self.inner.clone(),
+            conn: Arc::downgrade(&self.inner),
         }
     }
 }
@@ -524,6 +535,36 @@ mod tests {
         let chunk = result.into_iter().next().unwrap()?;
 
         assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_interrupt_after_connection_close() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let interrupt = conn.interrupt_handle();
+
+        let statements = conn.parse("SELECT * FROM RANGE(0, 10_000)")?;
+
+        let mut result = conn.query(statements, Parameters::None)?;
+
+        let _ = result.next().unwrap().unwrap();
+
+        assert!(interrupt.is_alive());
+
+        interrupt.interrupt()?;
+
+        assert!(result.next().unwrap().is_err());
+
+        drop(result);
+        drop(conn);
+
+        assert!(!interrupt.is_alive());
+
+        interrupt.interrupt()?;
 
         Ok(())
     }

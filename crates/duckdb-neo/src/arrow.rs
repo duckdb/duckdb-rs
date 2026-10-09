@@ -180,7 +180,9 @@ impl<'ctx> ArrowExporter<'ctx> {
 
     /// Take the next completed array, or `None` when none is ready.
     pub fn next_array(&self) -> Result<Option<ArrowArray>> {
-        let raw: ffi::ArrowArray = check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, RET)?;
+        // DuckDB only clears `release` when nothing is ready, so start from a fully initialized array.
+        let mut raw = ffi::ArrowArray::empty();
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, &mut raw)?;
         // DuckDB signals "nothing ready" with a released array.
         Ok(raw.release.is_some().then_some(ArrowArray { raw }))
     }

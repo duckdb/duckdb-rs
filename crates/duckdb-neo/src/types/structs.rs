@@ -25,11 +25,17 @@ pub trait StructSchema {
 
 trait StructFieldValue {
     fn create_value(&self, link: &dyn FFILink) -> Result<Value>;
+
+    fn logical_type(&self, link: &dyn FFILink) -> Result<LogicalType>;
 }
 
-impl<T: ToValue> StructFieldValue for T {
+impl<T: ToValue + DuckDBType> StructFieldValue for T {
     fn create_value(&self, link: &dyn FFILink) -> Result<Value> {
         ToValue::value(self, link)
+    }
+
+    fn logical_type(&self, link: &dyn FFILink) -> Result<LogicalType> {
+        T::logical_type(link)
     }
 }
 
@@ -49,7 +55,7 @@ impl<'a, S> StructValue<'a, S> {
     }
 
     /// Append a field value in schema order.
-    pub fn field<T: ToValue + 'a>(mut self, value: T) -> Self {
+    pub fn field<T: ToValue + DuckDBType + 'a>(mut self, value: T) -> Self {
         self.fields.push(Box::new(value));
         self
     }
@@ -89,6 +95,22 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
                 ),
             });
         }
+
+        for (field, (name, expected)) in self.fields.iter().zip(&fields) {
+            let actual = field.logical_type(&link)?;
+            if actual != *expected {
+                return Err(Error {
+                    code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+                    message: format!(
+                        "StructValue field '{}' has type {}, its schema has {}",
+                        name,
+                        actual.to_string()?,
+                        expected.to_string()?,
+                    ),
+                });
+            }
+        }
+
         let children = self
             .fields
             .iter()
@@ -161,7 +183,8 @@ impl WritableVectorElement for Struct {
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
-            return vector.set_row_validity(index, false);
+            // DuckDB requires every descendant of a NULL struct row to be NULL; this recurses.
+            return vector.set_null_slow(index);
         };
         if value.fields.len() != vector.children().map_or(0, VectorCollection::col_count) {
             return Err(Error {
@@ -179,6 +202,7 @@ impl WritableVectorElement for Struct {
         let children = vector
             .children_collection_mut()
             .expect("validated nested vector has children");
+
         for (i, field) in value.fields.into_iter().enumerate() {
             let child = children.cached_mut::<Unknown>(i)?;
             if child.len() != vector_len {
