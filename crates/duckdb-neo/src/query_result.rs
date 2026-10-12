@@ -287,7 +287,7 @@ impl Drop for QueryResult<'_> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use libduckdb_sys::v2::ArrowArray;
+    use arrow_array::ffi_stream::ArrowArrayStreamReader;
 
     use crate::{
         Parameters,
@@ -418,31 +418,11 @@ mod tests {
         let result = conn.query(stmt, Parameters::None)?;
         let arrow_stream = result.to_arrow_stream(1024)?;
 
-        let mut array = ArrowArray {
-            length: 0,
-            null_count: 0,
-            offset: 0,
-            n_buffers: 0,
-            n_children: 0,
-            buffers: std::ptr::null_mut(),
-            children: std::ptr::null_mut(),
-            dictionary: std::ptr::null_mut(),
-            release: None,
-            private_data: std::ptr::null_mut(),
-        };
-
-        // Released below, before the connection is used again.
-        let mut stream = arrow_stream.into_raw();
-        let res = unsafe { stream.get_next.unwrap()(&mut stream, &mut array as *mut ArrowArray) };
-
-        assert_eq!(res, 0);
-
-        assert_eq!(array.length, 3);
-
-        unsafe {
-            stream.release.unwrap()(&mut stream);
-            array.release.unwrap()(&mut array);
-        }
+        // Dropped below, before the connection is used again.
+        let mut reader = ArrowArrayStreamReader::try_new(arrow_stream.into_raw()).expect("valid Arrow stream");
+        let batch = reader.next().expect("one batch").expect("no stream error");
+        assert_eq!(batch.num_rows(), 3);
+        drop(reader);
 
         // Dropping an unread stream releases it and frees the connection.
         let unread = conn.query("SELECT 1", Parameters::None)?.to_arrow_stream(0)?;
