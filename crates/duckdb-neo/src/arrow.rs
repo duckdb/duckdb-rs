@@ -18,7 +18,7 @@ use crate::{
     schema::Schema,
 };
 
-/// An Arrow C stream over a query result, from [`QueryResult::to_arrow_stream`](crate::query_result::QueryResult::to_arrow_stream).
+/// An Arrow C stream over a query result, from [`ArrowQueryResult::to_arrow_stream`](crate::query_result::ArrowQueryResult::to_arrow_stream).
 ///
 /// The query keeps running while the stream is read, so the stream borrows the
 /// connection and is released when dropped.
@@ -216,7 +216,7 @@ mod tests {
         builder_helpers::scalar_callback,
         environment::{Environment, StorageLocation},
         scalar::ScalarFunctionBuilder,
-        signature::{Parameter, SignatureBuilder},
+        signature::{FunctionParameter, SignatureBuilder},
         types::DuckDBType,
     };
 
@@ -305,12 +305,13 @@ mod tests {
             "to_arrow",
             SignatureBuilder::new(
                 [
-                    Parameter::normal("val1", i64::logical_type(&conn)?),
-                    Parameter::normal("val2", bool::logical_type(&conn)?),
-                    Parameter::normal("val3", String::logical_type(&conn)?),
+                    FunctionParameter::new::<i64>("val1"),
+                    FunctionParameter::new::<bool>("val2"),
+                    FunctionParameter::new::<String>("val3"),
                 ],
                 i64::logical_type(&conn)?,
-            ),
+            )
+            .atomize(&conn)?,
             ToArrowTest,
         )
         .register(&conn)?;

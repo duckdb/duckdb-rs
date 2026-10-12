@@ -356,7 +356,7 @@ mod test {
 
         ScalarFunctionBuilder::new(
             "collection_is_empty",
-            SignatureBuilder::new([], bool::logical_type(&conn)?),
+            SignatureBuilder::new([], bool::logical_type(&conn)?).atomize(&conn)?,
             CollectionIsEmpty,
         )
         .register(&conn)?;

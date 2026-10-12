@@ -644,7 +644,7 @@ mod tests {
     use crate::builder_helpers::scalar_callback;
     use crate::data_chunk::Allocator;
     use crate::scalar::ScalarFunctionBuilder;
-    use crate::signature::{Parameter, SignatureBuilder};
+    use crate::signature::{FunctionParameter, SignatureBuilder};
     use crate::types::DuckDBType;
     use crate::{
         data_chunk::DataChunk,
@@ -695,10 +695,7 @@ mod tests {
 
         ScalarFunctionBuilder::new(
             "chunk_copy",
-            SignatureBuilder::new(
-                [Parameter::normal("in", i32::logical_type(&conn)?)],
-                i32::logical_type(&conn)?,
-            ),
+            SignatureBuilder::new([FunctionParameter::new::<i32>("in")], i32::logical_type(&conn)?).atomize(&conn)?,
             ChunkCopy,
         )
         .register(&conn)?;

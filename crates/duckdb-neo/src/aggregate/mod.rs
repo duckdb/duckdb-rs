@@ -12,11 +12,11 @@ use std::{
     panic::AssertUnwindSafe,
 };
 
-use crate::ffi;
+use crate::{builder_helpers::ArgCount, ffi};
 
 use crate::{
     Error, Result,
-    bind_arguments::{BindArguments, BindType},
+    bind_arguments::BindArguments,
     builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque_eq},
     check_api_call,
     connection::Context,
@@ -25,7 +25,7 @@ use crate::{
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     raw::RawExt,
     scalar::{FunctionBindHandles, ReturnTypeHandle},
-    signature::SignatureBuilder,
+    signature::Signature,
     vector::{Access, Unknown, Vector},
 };
 
@@ -106,29 +106,28 @@ impl<'a, T> Iterator for StatesIter<'a, T> {
 }
 
 unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
-    info: ffi::duckdb_v2_aggregate_function_bind_info_handle,
+    info: ffi::duckdb_v2_function_bind_info_handle,
+    result: ffi::duckdb_v2_aggregate_function_bind_info_handle,
     context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
         || {
-            let arguments = BindArguments {
-                bind_type: BindType::Aggregate(&info),
-            };
+            let arguments = BindArguments { handle: &info };
 
-            let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_bind_get_user_data, info);
+            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
             let result = T::bind(
                 user_data,
                 &Context(context),
                 arguments,
                 ReturnTypeHandle {
-                    handle: FunctionBindHandles::Aggregate(&info),
+                    handle: FunctionBindHandles::Aggregate(&result),
                 },
             )?;
 
             check_api_call!(
-                ffi::duckdb_v2_aggregate_function_bind_set_bind_data,
+                ffi::duckdb_v2_function_bind_set_bind_data,
                 info,
                 &mut into_opaque_eq(result)
             )
@@ -221,17 +220,26 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
 
             let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_update_get_bind_data, info);
 
-            let arg_count =
-                check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_arg_count, info, RET)? as usize;
             let row_count =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_row_count, info, RET)? as usize;
 
-            let mut handles = Vec::with_capacity(arg_count);
-            for i in 0..arg_count {
+            let arg_count = ArgCount::from_func(|pf, pv, nf, nv| {
+                check_api_call!(
+                    ffi::duckdb_v2_aggregate_function_update_get_arg_count,
+                    info,
+                    pf,
+                    pv,
+                    nf,
+                    nv
+                )
+            })?;
+
+            let mut handles = Vec::with_capacity(arg_count.total());
+            for i in 0..arg_count.total() {
                 handles.push(check_api_call!(
                     ffi::duckdb_v2_aggregate_function_update_get_arg,
                     info,
-                    i as u32,
+                    i as u64,
                     RET
                 )?);
             }
@@ -357,14 +365,14 @@ unsafe extern "C" fn destroy_callback<T: AggregateCallbacks>(
 #[derive(Debug)]
 pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
     name: String,
-    signature: SignatureBuilder,
+    signature: Signature,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
 }
 
 impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
-    pub fn new(name: impl Into<String>, signature: SignatureBuilder, implementation: T) -> Self {
+    pub fn new(name: impl Into<String>, signature: Signature, implementation: T) -> Self {
         Self {
             name: name.into(),
             signature,

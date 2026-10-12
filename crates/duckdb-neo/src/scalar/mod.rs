@@ -10,44 +10,70 @@ use std::collections::HashMap;
 
 use crate::ffi;
 
-use crate::bind_arguments::{BindArguments, BindType};
+use crate::bind_arguments::BindArguments;
 use crate::builder_helpers::{
-    OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque, into_opaque_eq,
+    ArgCount, OpaqueHandle, get_bind_data, get_opaque_data_ref_mut, get_user_data, handle_unwind, into_opaque,
+    into_opaque_eq,
 };
 use crate::data_chunk::{RowCount, VectorCollection};
 use crate::enums::FunctionProperty;
 use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
-use crate::signature::SignatureBuilder;
+use crate::signature::Signature;
 use crate::vector::{Access, Unknown, Vector};
 use crate::{Result, check_api_call, connection::Context, raw::RawExt};
 
-unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
-    info: ffi::duckdb_v2_scalar_function_bind_info_handle,
+unsafe extern "C" fn resolve_types_callback<T: ScalarCallbacks>(
+    info: ffi::duckdb_v2_function_bind_info_handle,
+    result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
     context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
         || {
-            let user_data = get_user_data!(ffi::duckdb_v2_scalar_function_bind_get_user_data, info);
+            let arguments = BindArguments { handle: &info };
 
-            let arguments = BindArguments {
-                bind_type: BindType::Scalar(&info),
-            };
+            let return_type = T::resolve_types(&Context(context), arguments)?;
 
-            let result = T::bind(
+            if let Some(return_type) = return_type {
+                check_api_call!(
+                    ffi::duckdb_v2_scalar_function_resolve_types_set_return_type,
+                    result,
+                    return_type.handle
+                )?;
+            }
+
+            Ok(())
+        },
+        err,
+    );
+}
+
+unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
+    info: ffi::duckdb_v2_function_bind_info_handle,
+    result: ffi::duckdb_v2_scalar_function_bind_info_handle,
+    context: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
+
+            let arguments = BindArguments { handle: &info };
+
+            let data = T::bind(
                 user_data,
                 &Context(context),
                 arguments,
                 ReturnTypeHandle {
-                    handle: FunctionBindHandles::Scalar(&info),
+                    handle: FunctionBindHandles::Scalar(&result),
                 },
             )?;
 
             check_api_call!(
                 ffi::duckdb_v2_scalar_function_bind_set_bind_data,
-                info,
-                &mut into_opaque_eq(result)
+                result,
+                &mut into_opaque_eq(data)
             )?;
 
             Ok(())
@@ -96,12 +122,14 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
             let result_handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_result, info, RET)?;
             let result_vec = Vector::from_handle(&result_handle, Access::Writable)?;
 
-            let arg_count = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg_count, info, RET)? as usize;
+            let arg_count = ArgCount::from_func(|pf, pv, nf, nv| {
+                check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg_count, info, pf, pv, nf, nv)
+            })?;
             let row_count = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_row_count, info, RET)? as usize;
 
-            let mut handles = Vec::with_capacity(arg_count);
-            for i in 0..arg_count {
-                let handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg, info, i as u32, RET)?;
+            let mut handles = Vec::with_capacity(arg_count.total());
+            for i in 0..arg_count.total() {
+                let handle = check_api_call!(ffi::duckdb_v2_scalar_function_exec_get_arg, info, i as u64, RET)?;
                 handles.push(handle);
             }
 
@@ -142,11 +170,7 @@ impl<'a> ReturnTypeHandle<'a> {
     /// type, and the override is valid only during binding.
     pub fn override_return(&self, return_type: LogicalType) -> Result<()> {
         match self.handle {
-            FunctionBindHandles::Scalar(handle) => check_api_call!(
-                ffi::duckdb_v2_scalar_function_bind_set_return_type,
-                *handle,
-                return_type.raw()
-            ),
+            FunctionBindHandles::Scalar(_handle) => unimplemented!("The CAPI does not support this."),
             FunctionBindHandles::Aggregate(handle) => check_api_call!(
                 ffi::duckdb_v2_aggregate_function_bind_set_return_type,
                 *handle,
@@ -160,14 +184,14 @@ impl<'a> ReturnTypeHandle<'a> {
 #[derive(Debug)]
 pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     name: String,
-    signature: SignatureBuilder,
+    signature: Signature,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
 }
 
 impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
-    pub fn new(name: impl Into<String>, signature: SignatureBuilder, implementation: T) -> Self {
+    pub fn new(name: impl Into<String>, signature: Signature, implementation: T) -> Self {
         Self {
             name: name.into(),
             signature,
@@ -221,6 +245,12 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             Some(exec_callback::<T>)
         )?;
 
+        check_api_call!(
+            ffi::duckdb_v2_scalar_function_set_resolve_types_callback,
+            handle.raw(),
+            Some(resolve_types_callback::<T>)
+        )?;
+
         Ok(())
     }
 
@@ -247,6 +277,10 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     type BindData: Any + Send + Sync + Default + PartialEq;
     /// Worker-local data shared across execution batches.
     type InitData: Any + Send + Default;
+
+    fn resolve_types(_context: &Context, _arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
+        Ok(None)
+    }
 
     /// **Bind:** validate a call site and create data shared by later phases.
     fn bind(

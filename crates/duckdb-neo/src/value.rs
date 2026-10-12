@@ -519,7 +519,7 @@ mod tests {
         connection::FFILink,
         environment::{Environment, StorageLocation},
         scalar::ScalarFunctionBuilder,
-        signature::{Parameter, SignatureBuilder},
+        signature::{FunctionParameter, SignatureBuilder},
         types::{BigNumValue, DuckDBType},
         value::ValueInput,
     };
@@ -560,10 +560,7 @@ mod tests {
         // The same check through a callback context.
         ScalarFunctionBuilder::new(
             "length_check",
-            SignatureBuilder::new(
-                [Parameter::normal("x", i32::logical_type(&conn)?)],
-                i32::logical_type(&conn)?,
-            ),
+            SignatureBuilder::new([FunctionParameter::new::<i32>("x")], i32::logical_type(&conn)?).atomize(&conn)?,
             LengthCheckScalar,
         )
         .register(&conn)?;

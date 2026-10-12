@@ -15,7 +15,7 @@ use crate::ffi;
 
 use crate::{
     Result,
-    bind_arguments::{BindArgument, BindArguments, BindType},
+    bind_arguments::{BindArgument, BindArguments},
     builder_helpers::{
         OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state, get_user_data,
         handle_unwind, into_opaque,
@@ -27,11 +27,18 @@ use crate::{
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
     raw::RawExt,
-    signature::SignatureBuilder,
+    signature::Signature,
     table_function::InitColumnHandle::{Global, Local},
     value::Value,
 };
 
+ffi_enum_redeclaration! {
+    pub enum OrderPreservation <- ffi::DUCKDB_V2_ORDER_PRESERVATION {
+        None = DUCKDB_V2_ORDER_PRESERVATION_NO_ORDER,
+        Insertion = DUCKDB_V2_ORDER_PRESERVATION_INSERTION_ORDER,
+        Fixes = DUCKDB_V2_ORDER_PRESERVATION_FIXED_ORDER
+    }
+}
 /// Callback-scoped output-schema builder.
 #[derive(Debug)]
 pub struct BindFunctionHandle<'a>(&'a ffi::duckdb_v2_table_function_bind_info_handle);
@@ -44,46 +51,51 @@ impl<'a> BindFunctionHandle<'a> {
             *self.0,
             &name.into(),
             logical_type.raw()
-        )?;
+        )
+    }
 
-        Ok(())
+    pub fn set_cardinality(&self, cardinality: usize, is_exact: bool) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_bind_set_cardinality,
+            *self.0,
+            cardinality as u64,
+            is_exact
+        )
+    }
+
+    pub fn set_order(&self, order: OrderPreservation) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_bind_set_order_preservation,
+            *self.0,
+            order.into()
+        )
     }
 }
 
 unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
-    info: ffi::duckdb_v2_table_function_bind_info_handle,
+    info: ffi::duckdb_v2_function_bind_info_handle,
+    result: ffi::duckdb_v2_table_function_bind_info_handle,
     context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
         || {
-            let user_data = get_user_data!(ffi::duckdb_v2_table_function_bind_get_user_data, info);
+            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
-            let arguments = BindArguments {
-                bind_type: BindType::Table(&info),
-            };
+            let arguments = BindArguments { handle: &info };
 
-            let (bind_data, cardinality) = T::bind(
+            let bind_data = T::bind(
                 user_data,
                 &Context(context),
                 arguments.collect()?,
-                BindFunctionHandle(&info),
+                BindFunctionHandle(&result),
             )?;
 
             check_api_call!(
-                ffi::duckdb_v2_table_function_bind_set_bind_data,
+                ffi::duckdb_v2_function_bind_set_bind_data,
                 info,
                 &mut into_opaque(bind_data)
             )?;
-
-            if let Some(cardinality) = cardinality {
-                check_api_call!(
-                    ffi::duckdb_v2_table_function_bind_set_cardinality,
-                    info,
-                    cardinality.cardinality as u64,
-                    cardinality.is_exact
-                )?;
-            }
 
             Ok(())
         },
@@ -559,7 +571,7 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
 #[derive(Debug)]
 pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     name: String,
-    signature: SignatureBuilder,
+    signature: Signature,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
     progress_callback: ffi::duckdb_v2_table_function_progress_callback_fn,
@@ -597,7 +609,7 @@ impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
 
 impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
-    pub fn new(name: &str, signature: SignatureBuilder, implementation: T) -> Self {
+    pub fn new(name: &str, signature: Signature, implementation: T) -> Self {
         TableFunctionBuilder {
             name: name.to_string(),
             signature,
@@ -770,7 +782,7 @@ pub trait TableFunctionCallbacks: Send + Sync + 'static {
         context: &Context,
         arguments: Vec<BindArgument>,
         bind_handle: BindFunctionHandle<'_>,
-    ) -> Result<(Self::BindData, Option<TableFunctionCardinality>)>;
+    ) -> Result<Self::BindData>;
 
     /// **Progress:** report execution progress from `0.0` to `1.0`.
     ///

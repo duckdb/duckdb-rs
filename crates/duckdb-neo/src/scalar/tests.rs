@@ -1,6 +1,9 @@
 use crate::{
-    DuckDBType, Parameters, connection::Context, environment::Environment, environment::StorageLocation,
-    signature::Parameter,
+    DuckDBType, Parameters,
+    connection::Context,
+    environment::{Environment, StorageLocation},
+    logical_type::LogicalTypeID,
+    signature::{FunctionParameter, SignatureBuilder},
 };
 
 use super::*;
@@ -111,10 +114,8 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "custom_scalar",
-        SignatureBuilder::new(
-            [Parameter::normal("multiplier", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new([FunctionParameter::new::<i32>("multiplier")], i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         ScalarWithData {
             base_data: vec![1, 2, 3],
         },
@@ -155,7 +156,7 @@ fn test_scalar_panic() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "panic_func",
-        SignatureBuilder::new(Vec::new(), i32::logical_type(&conn)?),
+        SignatureBuilder::new(Vec::new(), i32::logical_type(&conn)?).atomize(&conn)?,
         BasicScalarPanicFunction,
     )
     .register(&conn)
@@ -205,12 +206,10 @@ fn test_invalid_scalar_function_registration() -> crate::Result<()> {
     let result = ScalarFunctionBuilder::new(
         "basic",
         SignatureBuilder::new(
-            [
-                Parameter::normal("", i32::logical_type(&conn)?),
-                Parameter::normal("", i32::logical_type(&conn)?),
-            ],
+            [FunctionParameter::new::<i32>(""), FunctionParameter::new::<i32>("")],
             i32::logical_type(&conn)?,
-        ),
+        )
+        .atomize(&conn)?,
         BasicScalarFunction,
     )
     .register(&conn);
@@ -233,10 +232,7 @@ fn test_scalar_building() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new(
-            [Parameter::normal("input", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new([FunctionParameter::new::<i32>("input")], i32::logical_type(&conn)?).atomize(&conn)?,
         BasicScalarFunction,
     )
     .register(&conn)
@@ -267,10 +263,7 @@ fn test_scalar_property() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new(
-            [Parameter::normal("input", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new([FunctionParameter::new::<i32>("input")], i32::logical_type(&conn)?).atomize(&conn)?,
         BasicScalarFunction,
     )
     .set_property(FunctionProperty::HasSpecialNullHandling(false))
@@ -331,10 +324,7 @@ fn test_scalar_override_result() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "override",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new([FunctionParameter::new::<i32>("in")], String::logical_type(&conn)?).atomize(&conn)?,
         OverrideAbleScalar {},
     )
     .register(&conn)?;
@@ -400,10 +390,7 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     let folded = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     ScalarFunctionBuilder::new(
         "fold_probe",
-        SignatureBuilder::new(
-            [Parameter::normal("x", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new([FunctionParameter::new::<i32>("x")], i32::logical_type(&conn)?).atomize(&conn)?,
         FoldProbe { folded: folded.clone() },
     )
     .register(&conn)?;
@@ -462,10 +449,7 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "identity",
-        SignatureBuilder::new(
-            [Parameter::normal("x", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new([FunctionParameter::new::<i32>("x")], i32::logical_type(&conn)?).atomize(&conn)?,
         Identity,
     )
     .register(&conn)?;
@@ -478,5 +462,61 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
     let chunk = result.next_chunk()?.expect("expected a result chunk");
     let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
     assert_eq!(values, vec![Some(0), Some(1), Some(2)]);
+    Ok(())
+}
+
+struct DynamicResolve;
+
+impl ScalarCallbacks for DynamicResolve {
+    type BindData = ();
+    type InitData = ();
+
+    fn resolve_types(_context: &Context, arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
+        let lt = arguments.logical_type(0)?;
+
+        return Ok(Some(lt));
+    }
+
+    fn exec(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
+        vectors: &mut VectorCollection,
+        mut output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        output.set_size(vectors.row_count()?)?;
+
+        let vec = vectors.get_untyped_vector_at(0).unwrap();
+
+        unsafe {
+            output.copy_from(vec)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_dynamic_return_type() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "dynamic_resolve",
+        SignatureBuilder::new(
+            [FunctionParameter::new::<i32>("input")],
+            LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?,
+        )
+        .atomize(&conn)?,
+        DynamicResolve,
+    )
+    .register(&conn)?;
+
+    let mut query = conn.query("SELECT dynamic_resolve(10)", Parameters::None)?;
+
+    assert!(query.next_chunk()?.unwrap().row_count()? == 1);
+
     Ok(())
 }

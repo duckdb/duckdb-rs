@@ -170,12 +170,12 @@ mod tests {
             context: &Context,
             _metadata: Vec<BindArgument>,
             bind_handle: crate::table_function::BindFunctionHandle<'_>,
-        ) -> crate::Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
+        ) -> crate::Result<Self::BindData> {
             for i in 0..3 {
                 bind_handle.add_result_column(format!("val{}", i).as_str(), i32::logical_type(context)?)?;
             }
 
-            Ok(((), None))
+            Ok(())
         }
 
         fn exec(
@@ -242,7 +242,7 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let signature = SignatureBuilder::without_return_type(vec![]);
+        let signature = SignatureBuilder::without_return_type(vec![]).atomize(&conn)?;
 
         TableFunctionBuilder::new("test_function", signature, TableFunctionTest {})
             .with_filter_pushdown()

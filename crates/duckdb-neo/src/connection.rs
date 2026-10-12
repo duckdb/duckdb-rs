@@ -26,8 +26,7 @@ use crate::{
     ffi,
     links::LogicalTypeFromTextLink,
     logical_type::{LogicalType, LogicalTypeID},
-    parameter::ParameterValue,
-    query_result::QueryResult,
+    query_result::{ArrowQueryResult, QueryResult},
     statement::{Statement, Statements},
     value::{self, Value, ValueInput},
 };
@@ -49,63 +48,34 @@ ffi_enum_redeclaration! {
 /// Implemented for SQL text, [`Statements`], and [`Statement`]. SQL text and
 /// statement collections must contain exactly one statement.
 pub trait IntoStatement {
-    #[doc(hidden)]
-    fn execute_statement<'conn>(
-        self,
-        conn: &'conn Connection,
-        names: Option<&[&str]>,
-        values: &[&Value],
-    ) -> Result<QueryResult<'conn>>;
+    /// Convert into a single statement, parsing with `conn` if needed.
+    fn into_statement(self, conn: &Connection) -> Result<Statement>;
 }
 
 impl IntoStatement for &str {
-    fn execute_statement<'conn>(
-        self,
-        conn: &'conn Connection,
-        names: Option<&[&str]>,
-        values: &[&Value],
-    ) -> Result<QueryResult<'conn>> {
-        execute_statement(conn, Statements::parse(conn, self)?, names, values)
+    fn into_statement(self, conn: &Connection) -> Result<Statement> {
+        Statements::parse(conn, self)?.into_statement(conn)
     }
 }
 
 impl IntoStatement for Statements {
-    fn execute_statement<'conn>(
-        self,
-        conn: &'conn Connection,
-        names: Option<&[&str]>,
-        values: &[&Value],
-    ) -> Result<QueryResult<'conn>> {
-        execute_statement(conn, self, names, values)
+    fn into_statement(mut self, _conn: &Connection) -> Result<Statement> {
+        let statement = self
+            .next()
+            .ok_or(Error::api_error("No statements found in SQL string"))??;
+
+        if self.next().is_some() {
+            return Err(Error::invalid_input("Multiple statements found in SQL string"));
+        }
+
+        Ok(statement)
     }
 }
 
 impl IntoStatement for Statement {
-    fn execute_statement<'conn>(
-        self,
-        conn: &'conn Connection,
-        names: Option<&[&str]>,
-        values: &[&Value],
-    ) -> Result<QueryResult<'conn>> {
-        conn.execute_statement(self, names, values)
+    fn into_statement(self, _conn: &Connection) -> Result<Statement> {
+        Ok(self)
     }
-}
-
-fn execute_statement<'conn>(
-    conn: &'conn Connection,
-    mut statements: Statements,
-    names: Option<&[&str]>,
-    values: &[&Value],
-) -> Result<QueryResult<'conn>> {
-    let statement = statements
-        .next()
-        .ok_or(Error::api_error("No statements found in SQL string"))??;
-
-    if statements.next().is_some() {
-        return Err(Error::invalid_input("Multiple statements found in SQL string"));
-    }
-
-    conn.execute_statement(statement, names, values)
 }
 
 /// A handle that allows interrupting long-running queries. Can be used from other threads.
@@ -195,42 +165,21 @@ impl Connection {
     /// Execution advances as the result is stepped or iterated. The connection
     /// cannot start another statement while that result remains live.
     pub fn query(&self, stmt: impl IntoStatement, params: Parameters<'_>) -> Result<QueryResult<'_>> {
-        let (names, values) = params.into_values(self)?;
-        let values = values.iter().map(ParameterValue::as_value).collect::<Vec<_>>();
-
-        stmt.execute_statement(self, names.as_deref(), &values)
+        stmt.into_statement(self)?.query(self, params)
     }
 
-    fn execute_statement(&self, stmt: Statement, names: Option<&[&str]>, values: &[&Value]) -> Result<QueryResult<'_>> {
-        let values = values.iter().map(|value| value.handle).collect::<Vec<_>>();
-        let name_strs = names.map(|names| {
-            names
-                .iter()
-                .map(|name| (*name).into())
-                .collect::<Vec<ffi::duckdb_v2_str>>()
-        });
-
-        let names_ptr = name_strs
-            .as_ref()
-            .filter(|names| !names.is_empty())
-            .map_or(std::ptr::null(), |names| names.as_ptr());
-
-        let values_ptr = if values.is_empty() {
-            std::ptr::null()
-        } else {
-            values.as_ptr()
-        };
-        let result: ffi::duckdb_v2_result_handle = check_api_call!(
-            ffi::duckdb_v2_statement_execute,
-            self.inner.handle,
-            stmt.handle,
-            names_ptr,
-            values_ptr,
-            values.len() as u64,
-            RET
-        )?;
-
-        Ok(QueryResult::new(result))
+    /// Start a single statement and return its lazy, streaming Arrow result.
+    ///
+    /// Arrays hold at most `batch_size` rows; `None` or `Some(0)` selects
+    /// DuckDB's default of 131,072. The connection cannot start another
+    /// statement while that result remains live.
+    pub fn arrow_query(
+        &self,
+        stmt: impl IntoStatement,
+        params: Parameters<'_>,
+        batch_size: Option<usize>,
+    ) -> Result<ArrowQueryResult<'_>> {
+        stmt.into_statement(self)?.arrow_query(self, params, batch_size)
     }
 
     /// Return the number of options visible to this connection.

@@ -1,110 +1,147 @@
 //! Function parameter and return-type declarations.
 //!
-//! Use [`crate::signature::SignatureBuilder`] when registering scalar,
-//! aggregate, or table functions.
+//! Declare parameters with [`FunctionParameter`], collect them in a
+//! [`SignatureBuilder`], and resolve it with [`SignatureBuilder::atomize`]
+//! into a [`Signature`] when registering scalar, aggregate, or table functions.
 
-use crate::ffi;
+use std::fmt;
+
+use crate::builder_helpers::ffi_enum_redeclaration;
+use crate::connection::FFILink;
+use crate::{DuckDBType, ToValue, ffi};
 
 use crate::{Result, check_api_call, logical_type::LogicalType, value::Value};
 
+ffi_enum_redeclaration! {
+    /// How callers may supply arguments for a parameter.
+    pub enum FunctionParameterKind <- ffi::DUCKDB_V2_FUNCTION_PARAMETER_KIND {
+        /// Supplied by position only.
+        PositionalOnly = DUCKDB_V2_FUNCTION_PARAMETER_KIND_POSITIONAL_ONLY,
+        /// Supplied by position or by name.
+        Standard = DUCKDB_V2_FUNCTION_PARAMETER_KIND_STANDARD,
+        /// A tail accepting zero or more positional arguments.
+        PositionalVariadic = DUCKDB_V2_FUNCTION_PARAMETER_KIND_POSITIONAL_VARIADIC,
+        /// Supplied by name only.
+        Named = DUCKDB_V2_FUNCTION_PARAMETER_KIND_NAMED_ONLY,
+        /// Accepts any number of additional named arguments.
+        NamedVariadic = DUCKDB_V2_FUNCTION_PARAMETER_KIND_NAMED_VARIADIC,
+    }
+}
+
+type LogicalTypeFn = fn(&dyn FFILink) -> Result<LogicalType>;
+
+enum ParameterType {
+    Rust(LogicalTypeFn),
+    Resolved(LogicalType),
+}
+
+impl ParameterType {
+    fn resolve(self, link: &dyn FFILink) -> Result<LogicalType> {
+        match self {
+            ParameterType::Rust(create) => create(link),
+            ParameterType::Resolved(logical_type) => Ok(logical_type),
+        }
+    }
+}
+
+impl fmt::Debug for ParameterType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParameterType::Rust(_) => f.write_str("Rust"),
+            ParameterType::Resolved(logical_type) => f.debug_tuple("Resolved").field(logical_type).finish(),
+        }
+    }
+}
+
+/// Object-safe form of [`ToValue`], whose method is generic over the link.
+trait ErasedToValue {
+    fn erased_value(&self, link: &dyn FFILink) -> Result<Value>;
+}
+
+impl<T: ToValue> ErasedToValue for T {
+    fn erased_value(&self, link: &dyn FFILink) -> Result<Value> {
+        self.value(link)
+    }
+}
+
 /// A parameter declaration accepted by [`SignatureBuilder`].
-#[derive(Debug)]
-pub enum ParameterType {
-    /// A required fixed parameter.
-    Normal(NormalParameter),
-    /// A fixed parameter that callers may omit.
-    WithDefault(WithDefaultParameter),
-    /// A variadic tail accepting zero or more arguments.
-    TailVararg(TailVarargParameter),
+///
+/// Its logical type and default value are created by
+/// [`SignatureBuilder::atomize`].
+pub struct FunctionParameter {
+    name: String,
+    kind: FunctionParameterKind,
+    logical_type: ParameterType,
+    default_value: Option<Box<dyn ErasedToValue>>,
 }
 
-/// A required fixed parameter.
-#[derive(Debug)]
-pub struct NormalParameter {
-    /// The parameter name.
-    pub name: String,
-    /// The required argument type.
-    pub logical_type: LogicalType,
-}
-
-/// A fixed parameter with a default value.
-#[derive(Debug)]
-pub struct WithDefaultParameter {
-    /// The parameter name.
-    pub name: String,
-    /// The required argument type.
-    pub logical_type: LogicalType,
-    /// The value used when the argument is omitted.
-    pub default_value: Value,
-}
-
-/// A variadic tail parameter.
-#[derive(Debug)]
-pub struct TailVarargParameter {
-    /// The tail label; built signatures retain only its type.
-    pub name: String,
-    /// The type accepted by each trailing argument.
-    pub logical_type: LogicalType,
-}
-
-/// A fixed parameter in a function signature.
-#[derive(Debug)]
-pub struct Parameter {
-    /// The parameter name.
-    pub name: String,
-
-    /// The required argument type.
-    pub logical_type: LogicalType,
-
-    /// The value used when the argument is omitted.
-    pub default_value: Option<Value>,
-}
-
-impl Parameter {
-    /// Declare a required fixed parameter.
-    pub fn normal(name: impl Into<String>, logical_type: LogicalType) -> ParameterType {
-        ParameterType::Normal(NormalParameter {
-            name: name.into(),
-            logical_type,
-        })
+impl FunctionParameter {
+    /// Declare a required parameter whose type is the Rust type `T`.
+    pub fn new<T: DuckDBType>(name: impl Into<String>) -> Self {
+        Self::declare(name.into(), Self::rust_type::<T>(), None)
     }
 
-    /// Declare a fixed parameter with a default value.
-    pub fn normal_with_default(
-        name: impl Into<String>,
-        logical_type: LogicalType,
-        default_value: Value,
-    ) -> ParameterType {
-        ParameterType::WithDefault(WithDefaultParameter {
-            name: name.into(),
+    /// Declare a parameter that callers may omit, using `value` in its place.
+    pub fn with_default<T: DuckDBType + ToValue + 'static>(name: impl Into<String>, value: T) -> Self {
+        Self::declare(name.into(), Self::rust_type::<T>(), Some(Box::new(value)))
+    }
+
+    /// Declare a variadic tail accepting zero or more arguments of type `T`.
+    pub fn vararg<T: DuckDBType>(name: impl Into<String>) -> Self {
+        Self::new::<T>(name).kind(FunctionParameterKind::PositionalVariadic)
+    }
+
+    /// Declare a required parameter with an explicit logical type.
+    pub fn with_type(name: impl Into<String>, logical_type: LogicalType) -> Self {
+        Self::declare(name.into(), ParameterType::Resolved(logical_type), None)
+    }
+
+    /// Set how callers may supply arguments for this parameter.
+    pub fn kind(mut self, kind: FunctionParameterKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    fn rust_type<T: DuckDBType>() -> ParameterType {
+        // A non-capturing closure, since `T::logical_type::<dyn FFILink>` would require `'static`.
+        ParameterType::Rust(|link| T::logical_type(link))
+    }
+
+    fn declare(name: String, logical_type: ParameterType, default_value: Option<Box<dyn ErasedToValue>>) -> Self {
+        FunctionParameter {
+            name,
+            kind: FunctionParameterKind::Standard,
             logical_type,
             default_value,
-        })
-    }
-
-    /// Declare a variadic tail parameter.
-    pub fn tail_vararg(name: impl Into<String>, logical_type: LogicalType) -> ParameterType {
-        ParameterType::TailVararg(TailVarargParameter {
-            name: name.into(),
-            logical_type,
-        })
+        }
     }
 }
 
-/// Builds signatures for user-defined functions.
+impl fmt::Debug for FunctionParameter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FunctionParameter")
+            .field("name", &self.name)
+            .field("kind", &self.kind)
+            .field("logical_type", &self.logical_type)
+            .field("has_default_value", &self.default_value.is_some())
+            .finish()
+    }
+}
+
+/// Declares the signature of a user-defined function.
 ///
 /// Parameters with defaults must follow required parameters, and parameter
 /// names must be unique. DuckDB checks these structural rules when the
 /// function is registered.
 #[derive(Debug)]
 pub struct SignatureBuilder {
-    parameters: Vec<ParameterType>,
+    parameters: Vec<FunctionParameter>,
     return_type: Option<LogicalType>,
 }
 
 impl SignatureBuilder {
     /// Create a signature builder with a return type.
-    pub fn new(parameters: impl Into<Vec<ParameterType>>, return_type: LogicalType) -> Self {
+    pub fn new(parameters: impl Into<Vec<FunctionParameter>>, return_type: LogicalType) -> Self {
         SignatureBuilder {
             parameters: parameters.into(),
             return_type: Some(return_type),
@@ -112,51 +149,73 @@ impl SignatureBuilder {
     }
 
     /// Create a signature builder without a return type.
-    pub fn without_return_type(parameters: impl Into<Vec<ParameterType>>) -> Self {
+    pub fn without_return_type(parameters: impl Into<Vec<FunctionParameter>>) -> Self {
         SignatureBuilder {
             parameters: parameters.into(),
             return_type: None,
         }
     }
 
+    /// Create the declared logical types and default values.
+    ///
+    /// Extensions pass the context supplied to their entry point.
+    pub fn atomize(self, link: &dyn FFILink) -> Result<Signature> {
+        let parameters = self
+            .parameters
+            .into_iter()
+            .map(|param| {
+                Ok(ResolvedParameter {
+                    default_value: param.default_value.map(|value| value.erased_value(link)).transpose()?,
+                    logical_type: param.logical_type.resolve(link)?,
+                    name: param.name,
+                    kind: param.kind,
+                })
+            })
+            .collect::<Result<_>>()?;
+
+        Ok(Signature {
+            parameters,
+            return_type: self.return_type,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct ResolvedParameter {
+    name: String,
+    kind: FunctionParameterKind,
+    logical_type: LogicalType,
+    default_value: Option<Value>,
+}
+
+/// A function signature with resolved types, created by
+/// [`SignatureBuilder::atomize`].
+#[derive(Debug)]
+pub struct Signature {
+    parameters: Vec<ResolvedParameter>,
+    return_type: Option<LogicalType>,
+}
+
+impl Signature {
     /// Append parameters and apply configured types to a borrowed signature.
     pub(crate) fn build(&self, handle: &ffi::duckdb_v2_function_signature_handle) -> Result<()> {
-        if let Some(return_handle) = self.return_type.as_ref() {
+        if let Some(return_type) = self.return_type.as_ref() {
             check_api_call!(
                 ffi::duckdb_v2_function_signature_set_return_type,
                 *handle,
-                return_handle.handle
+                return_type.handle
             )?;
         }
 
         for param in &self.parameters {
-            match param {
-                ParameterType::Normal(param) => {
-                    check_api_call!(
-                        ffi::duckdb_v2_function_signature_add_parameter,
-                        *handle,
-                        &(&param.name).into(),
-                        param.logical_type.handle,
-                        std::ptr::null_mut()
-                    )?;
-                }
-                ParameterType::WithDefault(param) => {
-                    check_api_call!(
-                        ffi::duckdb_v2_function_signature_add_parameter,
-                        *handle,
-                        &(&param.name).into(),
-                        param.logical_type.handle,
-                        param.default_value.handle
-                    )?;
-                }
-                ParameterType::TailVararg(param) => {
-                    check_api_call!(
-                        ffi::duckdb_v2_function_signature_set_varargs,
-                        *handle,
-                        param.logical_type.handle
-                    )?;
-                }
-            }
+            check_api_call!(
+                ffi::duckdb_v2_function_signature_add_parameter,
+                *handle,
+                &(&param.name).into(),
+                param.logical_type.handle,
+                param.default_value.as_ref().map_or(std::ptr::null_mut(), |d| d.handle),
+                param.kind.clone().into(),
+            )?;
         }
 
         Ok(())
@@ -168,11 +227,9 @@ impl SignatureBuilder {
 mod test {
     use crate::Parameters;
     use crate::builder_helpers::scalar_callback;
+    use crate::environment::{Environment, StorageLocation};
     use crate::scalar::ScalarFunctionBuilder;
-    use crate::{
-        DuckDBType, ToValue,
-        environment::{Environment, StorageLocation},
-    };
+    use crate::types::FromValue;
 
     use super::*;
 
@@ -193,34 +250,91 @@ mod test {
         Ok(())
     });
 
+    fn query_u64(conn: &crate::connection::Connection, sql: &str) -> crate::Result<Option<u64>> {
+        let mut result = conn.query(sql, Parameters::None)?;
+        let chunk = result.next_chunk()?.expect("expected a result chunk");
+        Ok(chunk.get_vector_at::<u64>(0)?.get(0)?.copied())
+    }
+
     #[test]
-    fn test_signature_build() -> crate::Result<()> {
+    fn test_signature_atomize() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let default_value = 42_i32.value(&conn)?;
+        let sig = SignatureBuilder::new(
+            [
+                FunctionParameter::new::<i32>("param1"),
+                FunctionParameter::with_type("param2", LogicalType::from_text(&conn, "VARCHAR")?),
+                FunctionParameter::with_default("param3", 42_i32),
+            ],
+            u64::logical_type(&conn)?,
+        )
+        .atomize(&conn)?;
+
+        assert_eq!(sig.parameters.len(), 3);
+        assert_eq!(sig.parameters[0].logical_type, i32::logical_type(&conn)?);
+        assert_eq!(sig.parameters[1].logical_type, String::logical_type(&conn)?);
+        assert!(sig.parameters[0].default_value.is_none());
+        assert_eq!(
+            sig.parameters[2]
+                .default_value
+                .as_ref()
+                .map(i32::from_value)
+                .transpose()?
+                .flatten(),
+            Some(42)
+        );
+        assert_eq!(sig.return_type, Some(u64::logical_type(&conn)?));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_signature_default_value() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
 
         let sig = SignatureBuilder::new(
             [
-                Parameter::normal("param1", i32::logical_type(&conn)?),
-                Parameter::normal("param2", String::logical_type(&conn)?),
-                Parameter::normal_with_default("param3", i32::logical_type(&conn)?, default_value),
+                FunctionParameter::new::<i32>("param1"),
+                FunctionParameter::new::<String>("param2"),
+                FunctionParameter::with_default("param3", 42_i32),
             ],
             u64::logical_type(&conn)?,
-        );
-
-        assert_eq!(sig.parameters.len(), 3);
+        )
+        .atomize(&conn)?;
 
         ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
 
-        let mut statements = conn.query("SELECT test(10, 'AA')", Parameters::None)?;
+        assert_eq!(query_u64(&conn, "SELECT test(10, 'AA')")?, Some(45));
+        assert_eq!(query_u64(&conn, "SELECT test(10, 'AA', 7)")?, Some(10));
 
-        while let Some(chunk) = statements.next_chunk()? {
-            let vector = chunk.get_vector_at::<u64>(0)?;
+        Ok(())
+    }
 
-            assert_eq!(vector.get(0)?, Some(&45u64));
-        }
+    #[test]
+    fn test_signature_named_parameter() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let sig = SignatureBuilder::new(
+            [
+                FunctionParameter::new::<i32>("param1"),
+                FunctionParameter::new::<String>("param2"),
+                FunctionParameter::with_default("param3", 42_i32).kind(FunctionParameterKind::Named),
+            ],
+            u64::logical_type(&conn)?,
+        )
+        .atomize(&conn)?;
+
+        ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
+
+        assert_eq!(query_u64(&conn, "SELECT test(10, 'AA')")?, Some(45));
+        assert_eq!(query_u64(&conn, "SELECT test(10, 'AA', param3 := 7)")?, Some(10));
+        assert!(conn.query("SELECT test(10, 'AA', 7)", Parameters::None).is_err());
 
         Ok(())
     }
@@ -233,24 +347,20 @@ mod test {
 
         let sig = SignatureBuilder::new(
             [
-                Parameter::normal("param1", i32::logical_type(&conn)?),
-                Parameter::normal("param2", String::logical_type(&conn)?),
-                Parameter::tail_vararg("param3", i32::logical_type(&conn)?),
+                FunctionParameter::new::<i32>("param1"),
+                FunctionParameter::new::<String>("param2"),
+                FunctionParameter::vararg::<i32>("param3"),
             ],
             u64::logical_type(&conn)?,
-        );
-
-        assert_eq!(sig.parameters.len(), 3);
+        )
+        .atomize(&conn)?;
 
         ScalarFunctionBuilder::new("test", sig, VarargScalar).register(&conn)?;
 
-        let mut statements = conn.query("SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)", Parameters::None)?;
-
-        while let Some(chunk) = statements.next_chunk()? {
-            let vector = chunk.get_vector_at::<u64>(0)?;
-
-            assert_eq!(vector.get(0)?, Some(&11u64));
-        }
+        assert_eq!(
+            query_u64(&conn, "SELECT test(10, 'AA', 1, 2, 3, 4, 5, 6, 7, 8, 9)")?,
+            Some(11)
+        );
 
         Ok(())
     }

@@ -6,10 +6,41 @@ use crate::{
     connection::Connection,
     error::Error,
     ffi,
-    query_result::{QueryResult, StatementType},
+    parameter::ParameterValue,
+    query_result::{ArrowQueryResult, QueryResult, StatementType},
     raw::RawExt,
     schema::Schema,
 };
+
+/// Parameter buffers passed to an execute call.
+///
+/// Owns the converted values, so their handles stay valid for the call.
+struct ParameterBuffers<'a> {
+    _values: Vec<ParameterValue<'a>>,
+    handles: Vec<ffi::duckdb_v2_value_handle>,
+    names: Option<Vec<ffi::duckdb_v2_str>>,
+}
+
+impl ParameterBuffers<'_> {
+    fn names_ptr(&self) -> *const ffi::duckdb_v2_str {
+        self.names
+            .as_ref()
+            .filter(|names| !names.is_empty())
+            .map_or(std::ptr::null(), |names| names.as_ptr())
+    }
+
+    fn values_ptr(&self) -> *const ffi::duckdb_v2_value_handle {
+        if self.handles.is_empty() {
+            std::ptr::null()
+        } else {
+            self.handles.as_ptr()
+        }
+    }
+
+    fn len(&self) -> u64 {
+        self.handles.len() as u64
+    }
+}
 
 /// Schemas resolved while binding a statement.
 #[derive(Debug)]
@@ -112,6 +143,65 @@ impl Statement {
         })
     }
 
+    fn prepare_params<'a>(conn: &Connection, params: Parameters<'a>) -> Result<ParameterBuffers<'a>> {
+        let (names, values) = params.into_values(conn)?;
+        let handles = values.iter().map(|value| value.as_value().handle).collect();
+        let names = names.map(|names| names.iter().map(|name| (*name).into()).collect());
+
+        Ok(ParameterBuffers {
+            _values: values,
+            handles,
+            names,
+        })
+    }
+
+    /// Start the statement and return its lazy, streaming result.
+    ///
+    /// Execution advances as the result is stepped or iterated. The connection
+    /// cannot start another statement while that result remains live.
+    pub fn query<'conn>(&self, conn: &'conn Connection, params: Parameters<'_>) -> Result<QueryResult<'conn>> {
+        let params = Self::prepare_params(conn, params)?;
+
+        let result: ffi::duckdb_v2_result_handle = check_api_call!(
+            ffi::duckdb_v2_statement_execute,
+            conn.raw(),
+            self.handle,
+            params.names_ptr(),
+            params.values_ptr(),
+            params.len(),
+            RET
+        )?;
+
+        Ok(QueryResult::new(result))
+    }
+
+    /// Start the statement and return its lazy, streaming Arrow result.
+    ///
+    /// Arrays hold at most `batch_size` rows; `None` or `Some(0)` selects
+    /// DuckDB's default of 131,072. The connection cannot start another
+    /// statement while that result remains live.
+    pub fn arrow_query<'conn>(
+        &self,
+        conn: &'conn Connection,
+        params: Parameters<'_>,
+        batch_size: Option<usize>,
+    ) -> Result<ArrowQueryResult<'conn>> {
+        let params = Self::prepare_params(conn, params)?;
+
+        let result: ffi::duckdb_v2_arrow_result_handle = check_api_call!(
+            ffi::duckdb_v2_statement_execute_arrow,
+            conn.raw(),
+            self.handle,
+            params.names_ptr(),
+            params.values_ptr(),
+            params.len(),
+            batch_size.unwrap_or_default() as u64,
+            RET
+        )?;
+
+        Ok(ArrowQueryResult::new(result))
+    }
+
     /// Prepare the statement for repeated execution.
     ///
     /// When `require_cacheable` is true, preparation fails unless the compiled
@@ -206,6 +296,28 @@ impl<'a> PreparedStatement<'a> {
         Ok(QueryResult::new(result))
     }
 
+    /// Execute with optional positional or named parameters.
+    pub fn execute_arrow(&self, parameters: Parameters<'_>, batch_size: Option<usize>) -> Result<ArrowQueryResult<'a>> {
+        let (param_names, param_values) = parameters.into_values(self.connection)?;
+        let param_values = param_values
+            .iter()
+            .map(|value| value.as_value().handle)
+            .collect::<Vec<_>>();
+        let param_names = param_names.map(|x| x.iter().map(|s| (*s).into()).collect::<Vec<ffi::duckdb_v2_str>>());
+
+        let result: ffi::duckdb_v2_arrow_result_handle = check_api_call!(
+            ffi::duckdb_v2_prepared_statement_execute_arrow,
+            self.handle,
+            param_names.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
+            param_values.as_ptr(),
+            param_values.len() as u64,
+            batch_size.unwrap_or_default() as u64,
+            RET
+        )?;
+
+        Ok(ArrowQueryResult::new(result))
+    }
+
     /// Return whether executions reuse the compiled plan.
     pub fn reuses_plan(&self) -> Result<bool> {
         let reuses_plan: bool = check_api_call!(ffi::duckdb_v2_prepared_statement_reuses_plan, self.handle, RET)?;
@@ -268,6 +380,36 @@ mod tests {
             values.extend(chunk.get_vector_at::<i64>(0)?.iter()?.flatten().copied());
         }
         assert_eq!(values, (10..15).collect::<Vec<i64>>());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_prepared_statement_arrow() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let mut statements = Statements::parse(
+            &conn,
+            "SELECT x FROM range(0, 10_000) as t(x) WHERE x >= $lo AND x < $hi ORDER BY x",
+        )?;
+        let statement = statements.next().unwrap()?.prepare(&conn, true)?;
+
+        // Bind in a different order than they appear in the SQL, so binding
+        // only succeeds if the names reach DuckDB intact.
+        let mut query = statement.execute_arrow(crate::Parameters::named(&[("hi", &9000), ("lo", &42)]), Some(10))?;
+
+        let mut total_len = 0;
+        let mut total_batches = 0;
+        while let Some(chunk) = query.next_array()? {
+            assert!(chunk.num_children() == 1);
+            total_len += chunk.len();
+            total_batches += 1;
+        }
+
+        assert_eq!(total_len, 9000 - 42);
+        assert_eq!(total_batches, 896);
 
         Ok(())
     }

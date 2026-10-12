@@ -11,6 +11,44 @@ pub(crate) struct OpaqueHandle<T> {
     success: RefCell<bool>,
 }
 
+#[derive(Debug, Default)]
+pub struct ArgCount {
+    pub positional_fixed: usize,
+    pub positional_variadic: usize,
+    pub named_fixed: usize,
+    pub named_variadic: usize,
+}
+
+impl ArgCount {
+    pub(crate) fn from_func<F>(x: F) -> Result<Self>
+    where
+        F: FnOnce(&mut ffi::idx_t, &mut ffi::idx_t, &mut ffi::idx_t, &mut ffi::idx_t) -> Result<()>,
+    {
+        let mut positional_fixed = 0 as ffi::idx_t;
+        let mut positional_variadic = 0 as ffi::idx_t;
+        let mut named_fixed = 0 as ffi::idx_t;
+        let mut named_variadic = 0 as ffi::idx_t;
+
+        x(
+            &mut positional_fixed,
+            &mut positional_variadic,
+            &mut named_fixed,
+            &mut named_variadic,
+        )?;
+
+        Ok(ArgCount {
+            positional_fixed: positional_fixed as usize,
+            positional_variadic: positional_variadic as usize,
+            named_fixed: named_fixed as usize,
+            named_variadic: named_variadic as usize,
+        })
+    }
+
+    pub fn total(&self) -> usize {
+        self.positional_fixed + self.positional_variadic + self.named_fixed + self.named_variadic
+    }
+}
+
 impl<T> OpaqueHandle<T> {
     pub(crate) fn new(data: T) -> Self {
         let boxed = Box::new(data);

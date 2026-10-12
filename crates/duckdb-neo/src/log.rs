@@ -42,7 +42,7 @@ mod tests {
         environment::{Environment, StorageLocation},
         log::{Log, LogLevel},
         scalar::ScalarFunctionBuilder,
-        signature::{Parameter, SignatureBuilder},
+        signature::{FunctionParameter, SignatureBuilder},
     };
 
     scalar_callback!(LogCallback, i32, |_input, _result, ctx, _ud| {
@@ -64,10 +64,7 @@ mod tests {
 
         ScalarFunctionBuilder::new(
             "log_it",
-            SignatureBuilder::new(
-                [Parameter::normal("A", i32::logical_type(&conn)?)],
-                i32::logical_type(&conn)?,
-            ),
+            SignatureBuilder::new([FunctionParameter::new::<i32>("A")], i32::logical_type(&conn)?).atomize(&conn)?,
             LogCallback,
         )
         .register(&conn)?;

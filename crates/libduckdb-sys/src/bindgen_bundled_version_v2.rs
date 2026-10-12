@@ -995,7 +995,9 @@ pub enum DUCKDB_V2_FILE_FLAG {
     DUCKDB_V2_FILE_FLAG_EXCLUSIVE_CREATE = 6,
     #[doc = " The file will be read and written at explicit offsets from several threads at once. Pass it whenever\n `duckdb_v2_file_read_at()` or `duckdb_v2_file_write_at()` are used concurrently -- a file system that would\n otherwise assume sequential access, by caching, buffering, or keeping a single cursor, needs to know not to."]
     DUCKDB_V2_FILE_FLAG_PARALLEL_ACCESS = 7,
-    #[doc = " The file will be read and written at explicit offsets from several threads at once. Pass it whenever\n `duckdb_v2_file_read_at()` or `duckdb_v2_file_write_at()` are used concurrently -- a file system that would\n otherwise assume sequential access, by caching, buffering, or keeping a single cursor, needs to know not to."]
+    #[doc = " Read the file through DuckDB's external file cache, which keeps the bytes that were read in memory, so that later\n reads of the same file - also by later queries - do not have to read them again. Whether a local file is cached\n is decided by the `cache_local_files` setting. Only meaningful for reading."]
+    DUCKDB_V2_FILE_FLAG_EXTERNAL_FILE_CACHE = 8,
+    #[doc = " Read the file through DuckDB's external file cache, which keeps the bytes that were read in memory, so that later\n reads of the same file - also by later queries - do not have to read them again. Whether a local file is cached\n is decided by the `cache_local_files` setting. Only meaningful for reading."]
     DUCKDB_V2_FILE_FLAG_MAX_ENUM = 2147483647,
 }
 #[doc = " A borrowed opaque handle to a file system. Obtained from `duckdb_v2_file_system_get_from_context()` or\n `duckdb_v2_file_system_get_from_connection()`, and used to open files with `duckdb_v2_file_system_open()`. Borrowed:\n the handle belongs to the context or connection it came from, is valid only for as long as that is, and must not be\n destroyed."]
@@ -1153,29 +1155,112 @@ unsafe extern "C" {
     #[doc = " Destroys the file, closing it if it is still open.\n\n Null-safe: passing a null pointer or null handle is a no-op. The handle is set to null on return to prevent\n double-destruction.\n\n history:\n - stable: v2.0.0\n\n @param file The file to destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_file_destroy(file: *mut duckdb_v2_file_handle) -> DUCKDB_V2_ERROR;
 }
-#[doc = "! An opaque handle to a function signature. Carries the function's argument types and return type."]
+#[doc = " A borrowed opaque handle to the call site a bind callback is binding. Every function family's bind callback receives\n this handle next to its own bind info. It gives access to the arguments of the call, the function's user data, and\n the bind data.\n\n The arguments form one list in four parts, in this order: one argument per positional-only and standard parameter, in\n declaration order; the arguments `*args` received, in call order; one argument per named-only parameter, in\n declaration order; and the arguments `**kwargs` received, in call order. How the caller passed an argument does not\n matter: a standard parameter passed by name is at its declared position. A parameter the call omitted is present with\n its default value. See `duckdb_v2_function_bind_get_arg_count()` for the size of each part."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_function_bind_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the call site a bind callback is binding. Every function family's bind callback receives\n this handle next to its own bind info. It gives access to the arguments of the call, the function's user data, and\n the bind data.\n\n The arguments form one list in four parts, in this order: one argument per positional-only and standard parameter, in\n declaration order; the arguments `*args` received, in call order; one argument per named-only parameter, in\n declaration order; and the arguments `**kwargs` received, in call order. How the caller passed an argument does not\n matter: a standard parameter passed by name is at its declared position. A parameter the call omitted is present with\n its default value. See `duckdb_v2_function_bind_get_arg_count()` for the size of each part."]
+pub type duckdb_v2_function_bind_info_handle = *mut _duckdb_v2_function_bind_info;
+unsafe extern "C" {
+    #[doc = " Retrieves the user data set on the function being bound, e.g. via `duckdb_v2_scalar_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_get_user_data(
+        info: duckdb_v2_function_bind_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets the function's \"bind data\" from the bind callback.\n\n The bind data is stored with the bound call site and retrievable from every later callback. The opaque handle bundles\n the pointer with an optional destructor, invoked when the bind data is no longer needed, and an optional equality\n callback used when comparing two bound call sites; without one, pointer equality is used. Scalar functions set their\n bind data through `duckdb_v2_scalar_function_bind_set_bind_data()` instead.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Opaque handle bundling the bind data pointer plus optional destructor and equality callbacks.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_set_bind_data(
+        info: duckdb_v2_function_bind_info_handle,
+        data: *mut duckdb_v2_opaque,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns the number of arguments of the call site being bound, split into the four parts of the argument list.\n\n The parts follow each other in this order: the positional-only and standard parameters, the arguments `*args`\n received, the named-only parameters, and the arguments `**kwargs` received. The argument at index `i` of the\n named-only part is therefore at index `positional_fixed + positional_variadic + i`. Valid indices for the other\n argument functions are [0, the sum of the four counts). Every out-parameter may be NULL, in which case nothing is\n written to it.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param positional_fixed Optional. Receives the number of positional-only and standard parameters.\n @param positional_variadic Optional. Receives the number of arguments `*args` received, 0 when the signature has\n none.\n @param named_fixed Optional. Receives the number of named-only parameters.\n @param named_variadic Optional. Receives the number of arguments `**kwargs` received, 0 when the signature has none.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_get_arg_count(
+        info: duckdb_v2_function_bind_info_handle,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the type of the argument at the given index.\n\n Fails if the index is out of bounds. The returned type is owned by the caller and must be destroyed via\n `duckdb_v2_logical_type_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument.\n @param type Receives the argument type. Owned by the caller; destroy via `duckdb_v2_logical_type_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_get_arg_type(
+        info: duckdb_v2_function_bind_info_handle,
+        index: idx_t,
+        type_: *mut duckdb_v2_logical_type_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Folds the argument at the given index to a constant value.\n\n Fails if the argument is not constant, e.g. a column reference, or if the index is out of bounds. The arguments of a\n table function are always constant. The resulting value may be NULL. The returned value is owned by the caller and\n must be destroyed via `duckdb_v2_value_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument.\n @param value Receives the constant value. Owned by the caller; destroy via `duckdb_v2_value_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_get_arg_value(
+        info: duckdb_v2_function_bind_info_handle,
+        index: idx_t,
+        value: *mut duckdb_v2_value_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the name of the argument at the given index.\n\n For an argument of a declared parameter, this is the parameter name. For an argument `**kwargs` received, it is the\n name the caller passed, which may be the name of a positional-only parameter. An argument `*args` received has no\n name, and yields an empty name. Fails if the index is out of bounds. The name is borrowed and valid only for the\n duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument.\n @param name Receives a borrowed view of the argument name. Valid only for the duration of the callback.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_get_arg_name(
+        info: duckdb_v2_function_bind_info_handle,
+        index: idx_t,
+        name: *mut duckdb_v2_identifier_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Looks up the index of an argument by name.\n\n Names are matched case-insensitively, against the names a caller can pass an argument by: those of the standard and\n named-only parameters, and those `**kwargs` received. Positional-only parameters are skipped, so `f(1, x := 2)` with\n a positional-only `x` finds the argument `**kwargs` received. A name the call did not pass is not an error: `found`\n receives false and `index` is left untouched. A standard or named-only parameter is always found, as the call either\n passed it or it carries its default value.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param name The name to look up. Borrowed for the call only.\n @param index Receives the index of the argument, if found.\n @param found Receives whether the call has an argument of that name.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_function_bind_get_arg_index(
+        info: duckdb_v2_function_bind_info_handle,
+        name: *const duckdb_v2_identifier_t,
+        index: *mut idx_t,
+        found: *mut bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+#[repr(u32)]
+#[non_exhaustive]
+#[doc = " How a caller passes the argument for a parameter, following Python's parameter kinds. A signature orders its\n parameters by kind, in the order the values are listed here. Pass one of these to\n `duckdb_v2_function_signature_add_parameter()`."]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum DUCKDB_V2_FUNCTION_PARAMETER_KIND {
+    #[doc = " Passed by position only. The name is invisible to a caller: a named argument with the same name is received by\n `**kwargs`, or rejected when the signature has none."]
+    DUCKDB_V2_FUNCTION_PARAMETER_KIND_POSITIONAL_ONLY = 0,
+    #[doc = "! Passed by position or by name."]
+    DUCKDB_V2_FUNCTION_PARAMETER_KIND_STANDARD = 1,
+    #[doc = " `*args`: receives the positional arguments left over after the positional-only and standard parameters, each cast\n to the parameter type. ANY leaves them un-cast."]
+    DUCKDB_V2_FUNCTION_PARAMETER_KIND_POSITIONAL_VARIADIC = 2,
+    #[doc = "! Passed by name only."]
+    DUCKDB_V2_FUNCTION_PARAMETER_KIND_NAMED_ONLY = 3,
+    #[doc = " `**kwargs`: receives the named arguments that match no other parameter, each cast to the parameter type. ANY\n leaves them un-cast."]
+    DUCKDB_V2_FUNCTION_PARAMETER_KIND_NAMED_VARIADIC = 4,
+    #[doc = " `**kwargs`: receives the named arguments that match no other parameter, each cast to the parameter type. ANY\n leaves them un-cast."]
+    DUCKDB_V2_FUNCTION_PARAMETER_KIND_MAX_ENUM = 2147483647,
+}
+#[doc = "! An opaque handle to a function signature. Carries the function's parameters and return type."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_v2_function_signature {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[doc = "! An opaque handle to a function signature. Carries the function's argument types and return type."]
+#[doc = "! An opaque handle to a function signature. Carries the function's parameters and return type."]
 pub type duckdb_v2_function_signature_handle = *mut _duckdb_v2_function_signature;
 unsafe extern "C" {
-    #[doc = " history:\n - stable: v2.0.0\n\n @param sig The signature to configure.\n @param name The parameter name. Borrowed and copied.\n @param type The parameter type. Borrowed and copied.\n @param value Optional default value, borrowed and copied. Will be cast to the parameter type.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Adds a parameter to a signature.\n\n The kind decides how a caller passes the argument; see `DUCKDB_V2_FUNCTION_PARAMETER_KIND`. The signature keeps its\n parameters ordered by kind, and parameters of the same kind in the order they were added, so parameters of different\n kinds can be added in any order. A default value makes the parameter optional; `*args` and `**kwargs` cannot have\n one.\n\n Registration fails when two parameters share a name, when the signature has more than one `*args` or `**kwargs`\n parameter, or when a standard parameter without a default value follows one with a default value.\n\n history:\n - stable: v2.0.0\n\n @param sig The signature to configure.\n @param name The parameter name. Borrowed and copied.\n @param type The parameter type. ANY accepts an argument of any type without casting it. Borrowed and copied.\n @param value Optional default value, borrowed and copied. Will be cast to the parameter type.\n @param kind How a caller passes the argument for the parameter.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_function_signature_add_parameter(
         sig: duckdb_v2_function_signature_handle,
         name: *const duckdb_v2_identifier_t,
         type_: duckdb_v2_logical_type_handle,
         value: duckdb_v2_value_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Sets the variadic tail type of a signature.\n\n Makes the signature variadic: after its fixed parameters it accepts any number of extra trailing arguments, each\n implicitly cast to type. Pass ANY for a heterogeneous tail whose arguments keep their own types. A NULL or INVALID\n type is rejected with INVALID_INPUT; ANY is accepted. Calling this again overwrites the previous variadic tail type.\n The type is borrowed and copied.\n\n history:\n - stable: v2.0.0\n\n @param sig The signature to configure.\n @param type The type extra trailing arguments are cast to. ANY leaves them un-cast.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_function_signature_set_varargs(
-        sig: duckdb_v2_function_signature_handle,
-        type_: duckdb_v2_logical_type_handle,
+        kind: DUCKDB_V2_FUNCTION_PARAMETER_KIND,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -1654,7 +1739,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Returns the number of child vectors a nested vector exposes.\n\n 1 for LIST and ARRAY; 2 for MAP, the keys and the values; the field count for STRUCT; member_count + 1 for UNION, the\n tag plus the members; and 0 for any non-nested kind. vector_get_child documents what each index addresses.\n\n history:\n - stable: v2.0.0\n\n @param vector The vector.\n @param out_count Receives the number of child vectors.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Returns the number of child vectors a nested vector exposes.\n\n 1 for LIST, MAP and ARRAY; the field count for STRUCT; member_count + 1 for UNION, the tag plus the members; and 0\n for any non-nested kind. vector_get_child documents what each index addresses.\n\n history:\n - stable: v2.0.0\n\n @param vector The vector.\n @param out_count Receives the number of child vectors.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_vector_get_child_count(
         vector: duckdb_v2_vector_handle,
         out_count: *mut idx_t,
@@ -1662,7 +1747,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Borrows a child vector by index.\n\n What each index addresses, by kind: LIST and ARRAY expose [0] = the elements; MAP [0] = keys and [1] = values, hiding\n its internal LIST<STRUCT(K, V)>; STRUCT and TUPLE [i] = field i; and UNION [0] = the tag with [1..N] = the members.\n Note that value_get_child diverges on UNION, exposing only the active member.\n\n The returned child is borrowed and lives as long as the owning chunk. Returns ERROR_INPUT_INVALID if the vector has\n no children, or if the index is out of range.\n\n history:\n - stable: v2.0.0\n\n @param vector The nested vector to descend into.\n @param index The child index, in [0, vector_get_child_count).\n @param out_child Receives the borrowed child vector.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Borrows a child vector by index.\n\n What each index addresses, by kind: LIST and ARRAY expose [0] = the elements; MAP [0] = the entries, a STRUCT(key,\n value) whose children are the keys and the values; STRUCT and TUPLE [i] = field i; and UNION [0] = the tag with\n [1..N] = the members. Note that value_get_child diverges on UNION, exposing only the active member.\n\n The returned child is borrowed and lives as long as the owning chunk. Returns ERROR_INPUT_INVALID if the vector has\n no children, or if the index is out of range.\n\n history:\n - stable: v2.0.0\n\n @param vector The nested vector to descend into.\n @param index The child index, in [0, vector_get_child_count).\n @param out_child Receives the borrowed child vector.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_vector_get_child(
         vector: duckdb_v2_vector_handle,
         index: idx_t,
@@ -1742,13 +1827,13 @@ pub struct _duckdb_v2_aggregate_function {
 }
 #[doc = " An owned opaque handle to a custom aggregate function being built. Created with\n `duckdb_v2_aggregate_function_create_with_connection()` or `duckdb_v2_aggregate_function_create_with_extension()`,\n configured with the setter functions (e.g. `duckdb_v2_aggregate_function_set_name()`,\n `duckdb_v2_aggregate_function_set_update_callback()`, etc.) and the signature obtained via\n `duckdb_v2_aggregate_function_get_signature()`, made available with `duckdb_v2_aggregate_function_register()`, and\n destroyed with `duckdb_v2_aggregate_function_destroy()`."]
 pub type duckdb_v2_aggregate_function_handle = *mut _duckdb_v2_aggregate_function;
-#[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the query preparation \"bind\"\n phase. The \"bind\" callback receives this handle and can use it to e.g. inspect the arguments given to the function,\n initialize some constant state and set the return type."]
+#[doc = " A borrowed opaque handle to the result of an aggregate function's \"bind\" phase. The \"bind\" callback receives this\n handle next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments, the user data and the\n bind data, and can use it to set the return type of the call site being bound."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_v2_aggregate_function_bind_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the query preparation \"bind\"\n phase. The \"bind\" callback receives this handle and can use it to e.g. inspect the arguments given to the function,\n initialize some constant state and set the return type."]
+#[doc = " A borrowed opaque handle to the result of an aggregate function's \"bind\" phase. The \"bind\" callback receives this\n handle next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments, the user data and the\n bind data, and can use it to set the return type of the call site being bound."]
 pub type duckdb_v2_aggregate_function_bind_info_handle = *mut _duckdb_v2_aggregate_function_bind_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the state sizing \"size\" phase. The\n \"size\" callback receives this handle and must use it to report the size of a single aggregate state in bytes."]
 #[repr(C)]
@@ -1800,7 +1885,8 @@ pub struct _duckdb_v2_aggregate_function_destroy_info {
 pub type duckdb_v2_aggregate_function_destroy_info_handle = *mut _duckdb_v2_aggregate_function_destroy_info;
 pub type duckdb_v2_aggregate_function_bind_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
-        info: duckdb_v2_aggregate_function_bind_info_handle,
+        info: duckdb_v2_function_bind_info_handle,
+        result: duckdb_v2_aggregate_function_bind_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -1851,7 +1937,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Returns the function's signature so it can be configured.\n\n Add parameters with `duckdb_v2_function_signature_add_parameter()`, set a variadic tail with\n `duckdb_v2_function_signature_set_varargs()` and set the return type with\n `duckdb_v2_function_signature_set_return_type()`. The signature is modified in place; the function must be given a\n signature with a return type before registration.\n\n history:\n - stable: v2.0.0\n\n @param function The function to get the signature of.\n @param sig The returned signature. Borrowed and valid for the lifetime of the function handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Returns the function's signature so it can be configured.\n\n Add parameters with `duckdb_v2_function_signature_add_parameter()` and set the return type with\n `duckdb_v2_function_signature_set_return_type()`. The signature is modified in place; the function must be given a\n signature with a return type before registration.\n\n history:\n - stable: v2.0.0\n\n @param function The function to get the signature of.\n @param sig The returned signature. Borrowed and valid for the lifetime of the function handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_aggregate_function_get_signature(
         function: duckdb_v2_aggregate_function_handle,
         sig: *mut duckdb_v2_function_signature_handle,
@@ -1859,7 +1945,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets arbitrary user data on the aggregate function.\n\n Associates an opaque pointer with the function, retrievable from each callback via its user data accessor (e.g.\n `duckdb_v2_aggregate_function_bind_get_user_data()`, `duckdb_v2_aggregate_function_update_get_user_data()`, etc.).\n The opaque handle bundles the pointer with an optional destructor, invoked when the data is no longer needed.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the user data of.\n @param data Opaque handle bundling the user data pointer plus an optional destructor.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets arbitrary user data on the aggregate function.\n\n Associates an opaque pointer with the function, retrievable from each callback via its user data accessor (e.g.\n `duckdb_v2_function_bind_get_user_data()`, `duckdb_v2_aggregate_function_update_get_user_data()`, etc.). The opaque\n handle bundles the pointer with an optional destructor, invoked when the data is no longer needed.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the user data of.\n @param data Opaque handle bundling the user data pointer plus an optional destructor.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_aggregate_function_set_user_data(
         function: duckdb_v2_aggregate_function_handle,
         data: *mut duckdb_v2_opaque,
@@ -1876,7 +1962,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets the optional bind callback of the aggregate function.\n\n The bind callback is invoked during query planning for each call site of the function. It can inspect the argument\n types and constant argument values, set a concrete return type, and set \"bind data\" that is shared with the other\n callbacks.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the bind callback of.\n @param callback The bind callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets the optional bind callback of the aggregate function.\n\n The bind callback is invoked during query planning for each call site of the function. Through its\n `duckdb_v2_function_bind_info_handle` it can inspect the argument types and constant argument values and set \"bind\n data\" that is shared with the other callbacks. Through its `duckdb_v2_aggregate_function_bind_info_handle` it can set\n a concrete return type.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the bind callback of.\n @param callback The bind callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_aggregate_function_set_bind_callback(
         function: duckdb_v2_aggregate_function_handle,
         callback: duckdb_v2_aggregate_function_bind_callback_fn,
@@ -1928,48 +2014,6 @@ unsafe extern "C" {
     pub fn duckdb_v2_aggregate_function_set_destroy_callback(
         function: duckdb_v2_aggregate_function_handle,
         callback: duckdb_v2_aggregate_function_destroy_callback_fn,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Retrieves the user data set via `duckdb_v2_aggregate_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_aggregate_function_bind_get_user_data(
-        info: duckdb_v2_aggregate_function_bind_info_handle,
-        data: *mut *mut ::std::os::raw::c_void,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Sets the function's \"bind data\" from the bind callback.\n\n The bind data is stored with the bound call site and retrievable from the other callbacks. The opaque handle bundles\n the pointer with an optional destructor, invoked when the bind data is no longer needed, and an optional equality\n callback used when comparing two bound call sites; without one, pointer equality is used.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Opaque handle bundling the bind data pointer plus optional destructor and equality callbacks.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_aggregate_function_bind_set_bind_data(
-        info: duckdb_v2_aggregate_function_bind_info_handle,
-        data: *mut duckdb_v2_opaque,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the number of arguments of the call site being bound.\n\n Variadic tail arguments are included. Valid indices for `duckdb_v2_aggregate_function_bind_get_arg_type()` and\n `duckdb_v2_aggregate_function_bind_get_arg_value()` are [0, count).\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param count Receives the number of arguments.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_aggregate_function_bind_get_arg_count(
-        info: duckdb_v2_aggregate_function_bind_info_handle,
-        count: *mut idx_t,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Retrieves the type of the argument at the given index.\n\n Fails if the index is out of bounds. The returned type is owned by the caller and must be destroyed via\n `duckdb_v2_logical_type_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument to get the type of.\n @param type Receives the argument type. Owned by the caller; destroy via `duckdb_v2_logical_type_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_aggregate_function_bind_get_arg_type(
-        info: duckdb_v2_aggregate_function_bind_info_handle,
-        index: idx_t,
-        type_: *mut duckdb_v2_logical_type_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Folds the argument at the given index to a constant value.\n\n The argument must be foldable to a constant (e.g. a literal or a constant expression); otherwise the call fails with\n an error, as it does when the index is out of bounds. The resulting value may be NULL. The returned value is owned by\n the caller and must be destroyed via `duckdb_v2_value_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument to extract a constant value from.\n @param value Receives the constant value. Owned by the caller; destroy via `duckdb_v2_value_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_aggregate_function_bind_get_arg_value(
-        info: duckdb_v2_aggregate_function_bind_info_handle,
-        index: idx_t,
-        value: *mut duckdb_v2_value_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -2062,18 +2106,21 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Returns how many argument vectors this invocation carries: one per argument of the call, variadic tail arguments\n included. Valid indices for `duckdb_v2_aggregate_function_update_get_arg()` are [0, count).\n\n history:\n - stable: v2.0.0\n\n @param info The update info handle.\n @param count Receives the number of argument vectors.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Returns how many argument vectors this invocation carries, split into the four parts of the argument list.\n\n The parts and their order are those the bind callback saw through `duckdb_v2_function_bind_get_arg_count()`, and the\n vectors are at the same indices. Valid indices for `duckdb_v2_aggregate_function_update_get_arg()` are [0, the sum of\n the four counts). Every out-parameter may be NULL, in which case nothing is written to it.\n\n history:\n - stable: v2.0.0\n\n @param info The update info handle.\n @param positional_fixed Optional. Receives the number of positional-only and standard parameters.\n @param positional_variadic Optional. Receives the number of arguments `*args` received, 0 when the signature has\n none.\n @param named_fixed Optional. Receives the number of named-only parameters.\n @param named_variadic Optional. Receives the number of arguments `**kwargs` received, 0 when the signature has none.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_aggregate_function_update_get_arg_count(
         info: duckdb_v2_aggregate_function_update_info_handle,
-        count: *mut u32,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Retrieves the argument vector at the given index.\n\n The vector holds the argument's values for the current batch; use\n `duckdb_v2_aggregate_function_update_get_row_count()` for the number of rows. Fails if the index is out of bounds.\n Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The update info handle.\n @param index The index of the argument vector to get.\n @param vector Receives the borrowed argument vector.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Retrieves the argument vector at the given index.\n\n The index is the one the bind callback used for the argument, e.g. the index\n `duckdb_v2_function_bind_get_arg_index()` found for a name. The vector holds the argument's values for the current\n batch; use `duckdb_v2_aggregate_function_update_get_row_count()` for the number of rows. Fails if the index is out of\n bounds. Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The update info handle.\n @param index The index of the argument.\n @param vector Receives the borrowed argument vector.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_aggregate_function_update_get_arg(
         info: duckdb_v2_aggregate_function_update_info_handle,
-        index: u32,
+        index: idx_t,
         vector: *mut duckdb_v2_vector_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
@@ -2216,113 +2263,6 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " Destroys the aggregate function, releasing its resources.\n\n Null-safe: passing a null pointer or null handle is a no-op. The handle is set to null on return to prevent\n double-destruction. Destroying the handle after registration does not affect the registered function.\n\n history:\n - stable: v2.0.0\n\n @param function The function to destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_aggregate_function_destroy(function: *mut duckdb_v2_aggregate_function_handle) -> DUCKDB_V2_ERROR;
-}
-#[doc = " Converts Arrow arrays into DuckDB data chunks, against one resolved ArrowSchema. Create it with\n `duckdb_v2_arrow_importer_create()`, which resolves every column's DuckDB type once, so the same importer serves any\n number of arrays of that shape. `duckdb_v2_arrow_importer_get_schema()` reports the resolved DuckDB schema.\n `duckdb_v2_arrow_importer_append()` takes an array, `duckdb_v2_arrow_importer_next_chunk()` produces chunks from it,\n and `duckdb_v2_arrow_importer_destroy()` frees the importer.\n\n The importer borrows the context it was created with and must not outlive it. One array is in flight at a time, and\n an importer must not be used from two threads at once."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _duckdb_v2_arrow_importer {
-    pub internal_ptr: *mut ::std::os::raw::c_void,
-}
-#[doc = " Converts Arrow arrays into DuckDB data chunks, against one resolved ArrowSchema. Create it with\n `duckdb_v2_arrow_importer_create()`, which resolves every column's DuckDB type once, so the same importer serves any\n number of arrays of that shape. `duckdb_v2_arrow_importer_get_schema()` reports the resolved DuckDB schema.\n `duckdb_v2_arrow_importer_append()` takes an array, `duckdb_v2_arrow_importer_next_chunk()` produces chunks from it,\n and `duckdb_v2_arrow_importer_destroy()` frees the importer.\n\n The importer borrows the context it was created with and must not outlive it. One array is in flight at a time, and\n an importer must not be used from two threads at once."]
-pub type duckdb_v2_arrow_importer_handle = *mut _duckdb_v2_arrow_importer;
-#[doc = " Converts DuckDB data chunks into Arrow arrays, for one fixed list of columns. Create it with\n `duckdb_v2_arrow_exporter_create()`, which captures the session's Arrow settings and resolves the extension types\n once. `duckdb_v2_arrow_exporter_get_schema()` reports the Arrow schema. `duckdb_v2_arrow_exporter_append()` takes a\n chunk, `duckdb_v2_arrow_exporter_next_array()` produces arrays from it, and `duckdb_v2_arrow_exporter_destroy()`\n frees the exporter.\n\n An exporter must not be used from two threads at once."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _duckdb_v2_arrow_exporter {
-    pub internal_ptr: *mut ::std::os::raw::c_void,
-}
-#[doc = " Converts DuckDB data chunks into Arrow arrays, for one fixed list of columns. Create it with\n `duckdb_v2_arrow_exporter_create()`, which captures the session's Arrow settings and resolves the extension types\n once. `duckdb_v2_arrow_exporter_get_schema()` reports the Arrow schema. `duckdb_v2_arrow_exporter_append()` takes a\n chunk, `duckdb_v2_arrow_exporter_next_array()` produces arrays from it, and `duckdb_v2_arrow_exporter_destroy()`\n frees the exporter.\n\n An exporter must not be used from two threads at once."]
-pub type duckdb_v2_arrow_exporter_handle = *mut _duckdb_v2_arrow_exporter;
-unsafe extern "C" {
-    #[doc = " Exports a result as a lazy ArrowArrayStream. Consuming.\n\n Takes ownership of the result, sets the slot to NULL, and fills the caller-allocated `out_stream`. The stream owns\n the result from then on. Releasing the stream, with `out_stream->release(out_stream)`, does not drain the result, but\n closes the query and frees the connection's live-result slot as `duckdb_v2_result_destroy()` would, so the connection\n can run its next query.\n\n The stream's `get_next` drives the result, waiting internally until a batch is ready, and gathers DuckDB chunks into\n one Arrow array of up to `batch_size` rows. The Arrow schema and the extension type map are built and cached here,\n while the query's transaction is still active, because building them can run extension populate-schema callbacks and\n read ENUM dictionaries. `get_schema` returns a copy of the cached schema and never touches the catalog.\n\n A result that has already yielded some chunks is allowed and produces a stream over the remaining rows.\n\n If the statement expanded into a group whose row-producing fragment has not started yet, this call steps the result\n far enough to cache the schema, which may block briefly. No rows are lost, since none are produced before that\n fragment is prepared. For an ordinary statement nothing executes here.\n\n The result is consumed on every path that reaches the engine, including failures. Only a null-argument rejection\n leaves it intact. `out_stream` is untouched unless the call succeeds.\n\n history:\n - stable: v2.0.0\n\n @param result The result to export. Consumed and set to NULL, except when the call rejects a null argument.\n @param batch_size Maximum rows per Arrow array. Pass 0 for the default of 131072, which is 64 vectors in a default\n build.\n @param out_stream Caller-allocated stream the library fills. Release it with `out_stream->release(out_stream)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_result_to_arrow_stream(
-        result: *mut duckdb_v2_result_handle,
-        batch_size: idx_t,
-        out_stream: *mut ArrowArrayStream,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Resolves an Arrow schema into a reusable importer.\n\n Works out every column's DuckDB logical type and the Arrow type information the conversion needs, once, so any number\n of arrays of that shape can be imported without re-reading the schema. `schema` is read, not consumed: the caller\n keeps ownership and still releases it.\n\n `batch_size` caps the rows per produced chunk. A long array is split across several chunks. Rows left over that do\n not fill a batch are held back and joined with the next array, unless the append asked to flush. Pass 0 for no\n maximum: each array becomes one chunk, however long it is.\n\n Resolving reads the catalog for extension types, so `context` must have an active transaction. The importer keeps\n using that context for every conversion and must not outlive it. Within one connection the context is the same\n throughout, so an importer created in a bind callback is usable from the matching exec callback. `*out_importer` is\n set to NULL on failure.\n\n history:\n - stable: v2.0.0\n\n @param context The context used to resolve the Arrow types, extension types included.\n @param schema The schema to resolve. Read, not consumed; the caller keeps ownership.\n @param batch_size Maximum rows per produced chunk, or 0 for no maximum.\n @param out_importer On success, receives the new importer. Owned by the caller; destroy via\n `duckdb_v2_arrow_importer_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_importer_create(
-        context: duckdb_v2_context_handle,
-        schema: *mut ArrowSchema,
-        batch_size: idx_t,
-        out_importer: *mut duckdb_v2_arrow_importer_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the resolved DuckDB schema.\n\n Writes an owned schema handle with the DuckDB name and logical type of every column the importer resolved. This is\n how a caller learns the DuckDB shape of an ArrowSchema, to declare a table function's result columns for instance,\n without reimplementing the mapping from Arrow format strings to logical types.\n\n The fields were resolved at creation, so this reads no catalog and needs no transaction. `*out_schema` is set to NULL\n on failure.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to read.\n @param out_schema On success, receives an owned schema. Destroy via `duckdb_v2_schema_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_importer_get_schema(
-        importer: duckdb_v2_arrow_importer_handle,
-        out_schema: *mut duckdb_v2_schema_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Gives the importer one array to convert.\n\n Take the chunks with `duckdb_v2_arrow_importer_next_chunk()` until that returns NULL. Appending while the previous\n array still has rows left is rejected with `ERROR_INPUT_INVALID`. An array whose shape does not match the resolved\n schema -- a different child count, a child whose length differs from the array's, a null or already-released child --\n is rejected the same way, before anything is read.\n\n `flush` marks the end of the input: rows that do not fill a batch then come out as a final short chunk instead of\n being held back for the next array. Pass NULL for `array` with `flush` set to release the held rows without supplying\n more input.\n\n `consume` decides what happens to the caller's array.\n\n When true, the importer takes over the array and sets its `release` to NULL; the caller must not release it\n afterwards. The produced chunks reference the Arrow buffers directly, without copying, and keep them alive, so the\n chunks stay valid after the importer is destroyed. Prefer this path.\n\n When false, the caller keeps the array and must keep it valid until the drain finishes. The produced chunks are\n copies, so they do not depend on the array, at the cost of one copy per chunk.\n\n Either way, a chunk that joins rows held back from the previous array is a copy, since it cannot reference two\n arrays.\n\n Only the default, dictionary-encoded and run-end-encoded Arrow layouts are supported. Any other layout reports\n `ERROR_QUERY_NOT_IMPLEMENTED` when the column is converted.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to feed.\n @param array The array to convert. Its `release` is set to NULL when `consume` is true.\n @param consume True to hand the array over for a zero-copy import; false to keep it, in which case every produced\n chunk is a copy.\n @param flush True to mark the end of the input, releasing held rows as a final short chunk. Pass NULL for `array`\n with this set to flush without supplying more input.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_importer_append(
-        importer: duckdb_v2_arrow_importer_handle,
-        array: *mut ArrowArray,
-        consume: bool,
-        flush: bool,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Produces the next chunk of the appended array, or NULL once the array is drained.\n\n Call it in a loop until `*out_chunk` is NULL. An importer with no array appended also returns NULL. Each chunk holds\n at most the importer's `batch_size` rows, or the whole array when that is 0. A chunk may start with rows held back\n from the previous array, and rows that do not fill a batch are held back in turn unless the append asked to flush. So\n NULL means the array has been read, not that all of its rows have come out.\n\n The conversion runs under the context the importer was created with, which must still be alive. `*out_chunk` is set\n to NULL on failure.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to drain.\n @param out_chunk On success, receives the next chunk, or NULL once the array is drained. Destroy via\n `duckdb_v2_data_chunk_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_importer_next_chunk(
-        importer: duckdb_v2_arrow_importer_handle,
-        out_chunk: *mut duckdb_v2_data_chunk_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Destroys an importer.\n\n Null-safe: passing NULL, or a slot already set to NULL, is a no-op. Chunks already produced stay valid, including the\n zero-copy ones, which keep the Arrow buffers alive themselves. An array appended with `consume` true and not fully\n drained is released here. Rows held back for a next array are dropped. On success the slot is set to NULL.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to destroy.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_importer_destroy(importer: *mut duckdb_v2_arrow_importer_handle) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Creates an exporter for one fixed list of columns.\n\n Resolves the extension types and captures the session's Arrow settings, so every array this exporter produces matches\n the schema `duckdb_v2_arrow_exporter_get_schema()` reports, even if a setting changes afterwards.\n\n `batch_size` caps the rows per produced array. A long chunk is split across several arrays. Rows left over that do\n not fill a batch are held back and joined with the next chunk, unless the append asked to flush. Pass 0 for no\n maximum: each chunk becomes one array, however long it is.\n\n `types` and `names` are parallel arrays of `count` entries, borrowed and copied; they may be NULL only when `count`\n is 0. Resolving reads the catalog, so `context` must have an active transaction. `*out_exporter` is set to NULL on\n failure.\n\n history:\n - stable: v2.0.0\n\n @param context The context whose Arrow settings are captured and whose transaction resolves the types.\n @param types An array of `count` column types. May be NULL only when `count` is 0.\n @param names An array of `count` column names, parallel to `types`. Each name must be valid UTF-8. May be NULL only\n when `count` is 0.\n @param count The number of columns, being the length of both `types` and `names`.\n @param batch_size Maximum rows per produced array, or 0 for no maximum.\n @param out_exporter On success, receives the new exporter. Owned by the caller; destroy via\n `duckdb_v2_arrow_exporter_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_exporter_create(
-        context: duckdb_v2_context_handle,
-        types: *const duckdb_v2_logical_type_handle,
-        names: *const duckdb_v2_str,
-        count: idx_t,
-        batch_size: idx_t,
-        out_exporter: *mut duckdb_v2_arrow_exporter_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the Arrow schema of the arrays this exporter produces.\n\n Fills the caller-allocated `out_schema`. The caller owns the result and releases it with\n `out_schema->release(out_schema)`. Callable at any point, and always returns the same schema, since it is built from\n the settings captured at creation.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to read.\n @param out_schema Caller-allocated schema the library fills. Release it with `out_schema->release(out_schema)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_exporter_get_schema(
-        exporter: duckdb_v2_arrow_exporter_handle,
-        out_schema: *mut ArrowSchema,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Gives the exporter one chunk to convert.\n\n The chunk is converted in full before this returns. The conversion copies into freshly allocated Arrow buffers, so\n nothing of the caller's is retained. Every array completed by this chunk becomes available from\n `duckdb_v2_arrow_exporter_next_array()`; rows that do not complete a batch are held back and finished by the next\n chunk. Completed arrays queue up, so appending again before they are taken is allowed.\n\n `flush` marks the end of the input: the held rows are then finished as a final short array. Pass NULL for `chunk`\n with `flush` set to release the held rows without supplying more input.\n\n The chunk's types must match the ones the exporter was created with, or the call is rejected with\n `ERROR_INPUT_INVALID` before anything is read.\n\n `consume` decides only what happens to the caller's handle, since the data is copied either way. When true the chunk\n is destroyed and the slot set to NULL, saving a `duckdb_v2_data_chunk_destroy()` for a chunk the caller owns. When\n false the chunk is left untouched, which is what a chunk borrowed from a callback needs, such as the output chunk of\n a table function's exec callback, which the caller does not own and must not destroy.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to feed.\n @param chunk The chunk to convert. Destroyed and set to NULL only when `consume` is true.\n @param consume True to hand the chunk over, destroying it; false to leave the caller's handle untouched.\n @param flush True to mark the end of the input, releasing the held rows as a final short array. Pass NULL for `chunk`\n with this set to flush without supplying more input.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_exporter_append(
-        exporter: duckdb_v2_arrow_exporter_handle,
-        chunk: *mut duckdb_v2_data_chunk_handle,
-        consume: bool,
-        flush: bool,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Takes the next completed array, or reports that none is ready.\n\n Call it in a loop after every `duckdb_v2_arrow_exporter_append()` until `out_array->release` is NULL, which is how\n the Arrow C Data Interface signals \"no array\" and what a stream's `get_next` does at end of input. Rows held back\n towards an unfinished batch are not an array yet; they come out after a further append or a flush.\n\n Each array is owned by the caller and released with `out_array->release(out_array)`, independently of the exporter\n and of every other array.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to drain.\n @param out_array Caller-allocated array the library fills. Left released -- `release` NULL -- when none is ready.\n Release a filled one with `out_array->release(out_array)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_exporter_next_array(
-        exporter: duckdb_v2_arrow_exporter_handle,
-        out_array: *mut ArrowArray,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Destroys an exporter.\n\n Null-safe: passing NULL, or a slot already set to NULL, is a no-op. Arrays already taken stay valid. Arrays still\n queued inside are released here, and rows held back towards an unfinished batch are dropped. On success the slot is\n set to NULL.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to destroy.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_arrow_exporter_destroy(exporter: *mut duckdb_v2_arrow_exporter_handle) -> DUCKDB_V2_ERROR;
 }
 #[doc = " An owned snapshot of one base table taken at creation: where the name resolved, the table's columns, and per-column\n catalog facts. Later DDL does not update it. Create with `duckdb_v2_connection_describe_table()`, read the resolved\n location via `duckdb_v2_table_description_get_qname()`, and the columns via\n `duckdb_v2_table_description_get_column_count()` and `duckdb_v2_table_description_get_column()`. Destroy via\n `duckdb_v2_table_description_destroy()`."]
 #[repr(C)]
@@ -2543,6 +2483,14 @@ pub struct _duckdb_v2_copy_to_finalize_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a copy function during the per-file \"finalize\" phase of a `COPY\n ... TO` statement. The \"finalize\" callback receives this handle and can use it to e.g. close the file after every\n batch has been flushed to it."]
 pub type duckdb_v2_copy_to_finalize_info_handle = *mut _duckdb_v2_copy_to_finalize_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a copy function when a `COPY ... TO` statement reports\n statistics about the files it wrote (e.g. with `RETURN_STATS`). The \"statistics\" callback receives this handle and\n uses it to report the statistics of one written file."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_copy_to_statistics_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a copy function when a `COPY ... TO` statement reports\n statistics about the files it wrote (e.g. with `RETURN_STATS`). The \"statistics\" callback receives this handle and\n uses it to report the statistics of one written file."]
+pub type duckdb_v2_copy_to_statistics_info_handle = *mut _duckdb_v2_copy_to_statistics_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to a copy function during the query preparation \"bind\" phase of a\n `COPY ... FROM` statement. The \"bind\" callback receives this handle and can use it to e.g. read the path of the file\n to read, inspect the names and types of the columns the target table expects, read the statement's options, hint at\n the number of rows the read will produce and initialize some constant state."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2621,6 +2569,13 @@ pub type duckdb_v2_copy_to_flush_callback_fn = ::std::option::Option<
 pub type duckdb_v2_copy_to_finalize_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_copy_to_finalize_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_copy_to_statistics_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_copy_to_statistics_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -3773,13 +3728,21 @@ pub struct _duckdb_v2_scalar_function {
 }
 #[doc = " An owned opaque handle to a custom scalar function being built. Created with\n `duckdb_v2_scalar_function_create_with_connection()` or `duckdb_v2_scalar_function_create_with_extension()`,\n configured with the setter functions (e.g. `duckdb_v2_scalar_function_set_name()`,\n `duckdb_v2_scalar_function_set_exec_callback()`, etc.) and the signature obtained via\n `duckdb_v2_scalar_function_get_signature()`, made available with `duckdb_v2_scalar_function_register()`, and\n destroyed with `duckdb_v2_scalar_function_destroy()`."]
 pub type duckdb_v2_scalar_function_handle = *mut _duckdb_v2_scalar_function;
-#[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the query preparation \"bind\" phase.\n The \"bind\" callback receives this handle and can use it to e.g. inspect the arguments given to the function,\n initialize some constant state and set the return type."]
+#[doc = " A borrowed opaque handle to the result of a scalar function's \"resolve types\" phase. The \"resolve types\" callback\n receives this handle next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments and the\n user data, and can use it to set the return type of the call site being bound."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_scalar_function_resolve_types_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the result of a scalar function's \"resolve types\" phase. The \"resolve types\" callback\n receives this handle next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments and the\n user data, and can use it to set the return type of the call site being bound."]
+pub type duckdb_v2_scalar_function_resolve_types_info_handle = *mut _duckdb_v2_scalar_function_resolve_types_info;
+#[doc = " A borrowed opaque handle to the result of a scalar function's \"bind\" phase. The \"bind\" callback receives this handle\n next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments and the user data, and can use\n it to set the bind data of the call site being bound."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_v2_scalar_function_bind_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the query preparation \"bind\" phase.\n The \"bind\" callback receives this handle and can use it to e.g. inspect the arguments given to the function,\n initialize some constant state and set the return type."]
+#[doc = " A borrowed opaque handle to the result of a scalar function's \"bind\" phase. The \"bind\" callback receives this handle\n next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments and the user data, and can use\n it to set the bind data of the call site being bound."]
 pub type duckdb_v2_scalar_function_bind_info_handle = *mut _duckdb_v2_scalar_function_bind_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the local state initialization \"init\"\n phase. The \"init\" callback receives this handle and can use it to e.g. set up local state reusable across invocations\n of the \"exec\" execution callback."]
 #[repr(C)]
@@ -3797,9 +3760,18 @@ pub struct _duckdb_v2_scalar_function_exec_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the execution \"exec\" phase. The \"exec\"\n callback receives this handle and can use it to e.g. access the input argument vectors, retrieve the number of rows\n to process, and write results to the output vector."]
 pub type duckdb_v2_scalar_function_exec_info_handle = *mut _duckdb_v2_scalar_function_exec_info;
+pub type duckdb_v2_scalar_function_resolve_types_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_function_bind_info_handle,
+        result: duckdb_v2_scalar_function_resolve_types_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
 pub type duckdb_v2_scalar_function_bind_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
-        info: duckdb_v2_scalar_function_bind_info_handle,
+        info: duckdb_v2_function_bind_info_handle,
+        result: duckdb_v2_scalar_function_bind_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -3843,7 +3815,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Returns the function's signature so it can be configured.\n\n Add parameters with `duckdb_v2_function_signature_add_parameter()`, set a variadic tail with\n `duckdb_v2_function_signature_set_varargs()` and set the return type with\n `duckdb_v2_function_signature_set_return_type()`. The signature is modified in place; the function must be given a\n signature with a return type before registration.\n\n history:\n - stable: v2.0.0\n\n @param function The function to get the signature of.\n @param sig The returned signature. Borrowed and valid for the lifetime of the function handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Returns the function's signature so it can be configured.\n\n Add parameters with `duckdb_v2_function_signature_add_parameter()` and set the return type with\n `duckdb_v2_function_signature_set_return_type()`. The signature is modified in place; the function must be given a\n signature with a return type before registration.\n\n history:\n - stable: v2.0.0\n\n @param function The function to get the signature of.\n @param sig The returned signature. Borrowed and valid for the lifetime of the function handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_get_signature(
         function: duckdb_v2_scalar_function_handle,
         sig: *mut duckdb_v2_function_signature_handle,
@@ -3851,7 +3823,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets arbitrary user data on the scalar function.\n\n Associates an opaque pointer with the function, retrievable from the callbacks via\n `duckdb_v2_scalar_function_bind_get_user_data()`, `duckdb_v2_scalar_function_init_get_user_data()` and\n `duckdb_v2_scalar_function_exec_get_user_data()`. The opaque handle bundles the pointer with an optional destructor,\n invoked when the data is no longer needed.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the user data of.\n @param data Opaque handle bundling the user data pointer plus an optional destructor.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets arbitrary user data on the scalar function.\n\n Associates an opaque pointer with the function, retrievable from the callbacks via\n `duckdb_v2_function_bind_get_user_data()`, `duckdb_v2_scalar_function_init_get_user_data()` and\n `duckdb_v2_scalar_function_exec_get_user_data()`. The opaque handle bundles the pointer with an optional destructor,\n invoked when the data is no longer needed.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the user data of.\n @param data Opaque handle bundling the user data pointer plus an optional destructor.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_set_user_data(
         function: duckdb_v2_scalar_function_handle,
         data: *mut duckdb_v2_opaque,
@@ -3868,7 +3840,15 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets the optional bind callback of the scalar function.\n\n The bind callback is invoked during query planning for each call site of the function. It can inspect the argument\n types and constant argument values, set a concrete return type, and set \"bind data\" that is shared with the init and\n exec callbacks.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the bind callback of.\n @param callback The bind callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets the optional resolve types callback of the scalar function.\n\n The resolve types callback is invoked during query planning for each call site of the function, before the arguments\n are cast to the parameter types of the signature. Through its `duckdb_v2_function_bind_info_handle` it can inspect\n the argument types as they were passed and constant argument values. Through its\n `duckdb_v2_scalar_function_resolve_types_info_handle` it can set a concrete return type. It cannot set \"bind data\",\n use the bind callback for that.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the resolve types callback of.\n @param callback The resolve types callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_set_resolve_types_callback(
+        function: duckdb_v2_scalar_function_handle,
+        callback: duckdb_v2_scalar_function_resolve_types_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets the optional bind callback of the scalar function.\n\n The bind callback is invoked during query planning for each call site of the function, after the resolve types\n callback and after the arguments have been cast to the parameter types of the signature. Through its\n `duckdb_v2_function_bind_info_handle` it can inspect the argument types and constant argument values. Through its\n `duckdb_v2_scalar_function_bind_info_handle` it can set \"bind data\" that is shared with the init and exec callbacks.\n It cannot change the types of the call site, use the resolve types callback for that.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the bind callback of.\n @param callback The bind callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_set_bind_callback(
         function: duckdb_v2_scalar_function_handle,
         callback: duckdb_v2_scalar_function_bind_callback_fn,
@@ -3892,52 +3872,18 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Retrieves the user data set via `duckdb_v2_scalar_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_scalar_function_bind_get_user_data(
-        info: duckdb_v2_scalar_function_bind_info_handle,
-        data: *mut *mut ::std::os::raw::c_void,
+    #[doc = " Sets the concrete return type of the call site being bound.\n\n Overrides the return type declared in the signature. Register the function with an ANY return type and set the\n concrete type here, derived from the argument types, to build a function whose result type depends on its input. The\n type is borrowed and copied.\n\n history:\n - stable: v2.0.0\n\n @param info The resolve types info handle.\n @param return_type The return type to set. Borrowed for the call only.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_resolve_types_set_return_type(
+        info: duckdb_v2_scalar_function_resolve_types_info_handle,
+        return_type: duckdb_v2_logical_type_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets the function's \"bind data\" from the bind callback.\n\n The bind data is stored with the bound call site and retrievable from the init and exec callbacks. The opaque handle\n bundles the pointer with an optional destructor, invoked when the bind data is no longer needed, and an optional\n equality callback used when comparing two bound call sites; without one, pointer equality is used.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Opaque handle bundling the bind data pointer plus optional destructor and equality callbacks.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets the function's \"bind data\" from the bind callback.\n\n The bind data is stored with the bound call site and retrievable from the init and exec callbacks. The opaque handle\n bundles the pointer with an optional destructor, invoked when the bind data is no longer needed, and an optional\n equality callback used when comparing two bound call sites; without one, pointer equality is used. Scalar functions\n set their bind data through this function, `duckdb_v2_function_bind_set_bind_data()` is not available to them.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Opaque handle bundling the bind data pointer plus optional destructor and equality callbacks.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_bind_set_bind_data(
         info: duckdb_v2_scalar_function_bind_info_handle,
         data: *mut duckdb_v2_opaque,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the number of arguments of the call site being bound.\n\n Variadic tail arguments are included. Valid indices for `duckdb_v2_scalar_function_bind_get_arg_type()` and\n `duckdb_v2_scalar_function_bind_get_arg_value()` are [0, count).\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param count Receives the number of arguments.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_scalar_function_bind_get_arg_count(
-        info: duckdb_v2_scalar_function_bind_info_handle,
-        count: *mut idx_t,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Retrieves the type of the argument at the given index.\n\n Fails if the index is out of bounds. The returned type is owned by the caller and must be destroyed via\n `duckdb_v2_logical_type_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument to get the type of.\n @param type Receives the argument type. Owned by the caller; destroy via `duckdb_v2_logical_type_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_scalar_function_bind_get_arg_type(
-        info: duckdb_v2_scalar_function_bind_info_handle,
-        index: idx_t,
-        type_: *mut duckdb_v2_logical_type_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Folds the argument at the given index to a constant value.\n\n The argument must be foldable to a constant (e.g. a literal or a constant expression); otherwise the call fails with\n an error, as it does when the index is out of bounds. The resulting value may be NULL. The returned value is owned by\n the caller and must be destroyed via `duckdb_v2_value_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument to extract a constant value from.\n @param value Receives the constant value. Owned by the caller; destroy via `duckdb_v2_value_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_scalar_function_bind_get_arg_value(
-        info: duckdb_v2_scalar_function_bind_info_handle,
-        index: idx_t,
-        value: *mut duckdb_v2_value_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Sets the concrete return type of the call site being bound.\n\n Overrides the return type declared in the signature. Register the function with an ANY return type and set the\n concrete type here, derived from the argument types, to build a function whose result type depends on its input. The\n type is borrowed and copied.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param return_type The return type to set. Borrowed for the call only.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_scalar_function_bind_set_return_type(
-        info: duckdb_v2_scalar_function_bind_info_handle,
-        return_type: duckdb_v2_logical_type_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -3998,18 +3944,21 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Returns how many argument vectors this execution carries: one per argument of the call, variadic tail arguments\n included. Valid indices for `duckdb_v2_scalar_function_exec_get_arg()` are [0, count).\n\n history:\n - stable: v2.0.0\n\n @param info The exec info handle.\n @param count Receives the number of argument vectors.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Returns how many argument vectors this invocation carries, split into the four parts of the argument list.\n\n The parts and their order are those the bind callback saw through `duckdb_v2_function_bind_get_arg_count()`, and the\n vectors are at the same indices. Valid indices for `duckdb_v2_scalar_function_exec_get_arg()` are [0, the sum of the\n four counts). Every out-parameter may be NULL, in which case nothing is written to it.\n\n history:\n - stable: v2.0.0\n\n @param info The exec info handle.\n @param positional_fixed Optional. Receives the number of positional-only and standard parameters.\n @param positional_variadic Optional. Receives the number of arguments `*args` received, 0 when the signature has\n none.\n @param named_fixed Optional. Receives the number of named-only parameters.\n @param named_variadic Optional. Receives the number of arguments `**kwargs` received, 0 when the signature has none.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_exec_get_arg_count(
         info: duckdb_v2_scalar_function_exec_info_handle,
-        count: *mut u32,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Retrieves the argument vector at the given index.\n\n The vector holds the argument's values for the current batch; use `duckdb_v2_scalar_function_exec_get_row_count()`\n for the number of rows. Fails if the index is out of bounds. Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The exec info handle.\n @param index The index of the argument vector to get.\n @param vector Receives the borrowed argument vector.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Retrieves the argument vector at the given index.\n\n The index is the one the bind callback used for the argument, e.g. the index\n `duckdb_v2_function_bind_get_arg_index()` found for a name. The vector holds the argument's values for the current\n batch; use `duckdb_v2_scalar_function_exec_get_row_count()` for the number of rows. Fails if the index is out of\n bounds. Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The exec info handle.\n @param index The index of the argument.\n @param vector Receives the borrowed argument vector.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_exec_get_arg(
         info: duckdb_v2_scalar_function_exec_info_handle,
-        index: u32,
+        index: idx_t,
         vector: *mut duckdb_v2_vector_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
@@ -4023,7 +3972,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Registers the scalar function, making it available for use in SQL queries.\n\n The function is registered on the target given at creation: the connection's database or the loading extension.\n Registration requires a name, an exec callback, and a signature with a complete return type; an ANY return type is\n accepted only together with a bind callback that sets the concrete type per call site. The caller still owns the\n handle after registration and must destroy it with `duckdb_v2_scalar_function_destroy()`, which does not affect the\n registered function.\n\n history:\n - stable: v2.0.0\n\n @param function The function to register.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Registers the scalar function, making it available for use in SQL queries.\n\n The function is registered on the target given at creation: the connection's database or the loading extension.\n Registration requires a name, an exec callback, and a signature with a complete return type; an ANY return type is\n accepted only together with a resolve types callback that sets the concrete type per call site. The caller still owns\n the handle after registration and must destroy it with `duckdb_v2_scalar_function_destroy()`, which does not affect\n the registered function.\n\n history:\n - stable: v2.0.0\n\n @param function The function to register.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_scalar_function_register(
         function: duckdb_v2_scalar_function_handle,
         err: *mut duckdb_v2_error_info_handle,
@@ -4072,6 +4021,7 @@ pub enum DUCKDB_V2_STATEMENT_TYPE {
     DUCKDB_V2_STATEMENT_TYPE_CONNECT = 31,
     DUCKDB_V2_STATEMENT_TYPE_DISCONNECT = 32,
     DUCKDB_V2_STATEMENT_TYPE_EXTERNAL_RESOURCE = 33,
+    DUCKDB_V2_STATEMENT_TYPE_PASSTHROUGH = 34,
     DUCKDB_V2_STATEMENT_TYPE_MAX_ENUM = 2147483647,
 }
 #[doc = " An opaque, owned handle to a single parsed SQL statement, produced by statement_iterator_next. statement_execute runs\n it without consuming it; the caller always destroys it via sql_statement_destroy."]
@@ -5217,7 +5167,7 @@ pub enum DUCKDB_V2_RESULT_TYPE {
 pub enum DUCKDB_V2_RESULT_STEP_STATUS {
     #[doc = "! No chunk yet; step again, or block in result_wait."]
     DUCKDB_V2_RESULT_STEP_STATUS_WAITING = 0,
-    #[doc = "! A caller-owned chunk was written to *out_chunk."]
+    #[doc = "! A caller-owned chunk was written to *out_chunk, or an array to *out_array."]
     DUCKDB_V2_RESULT_STEP_STATUS_CHUNK = 1,
     #[doc = "! Stream exhausted. Sticky."]
     DUCKDB_V2_RESULT_STEP_STATUS_FINISHED = 2,
@@ -5239,7 +5189,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Destroys a result handle.\n\n Null-safe: passing nullptr or a slot already set to nullptr is a no-op. Frees the memory the result owns and releases\n the connection for its next query. Safe at any point in the stream's life, though destroying a partially consumed\n result abandons the remaining execution, including side effects not yet applied. Chunks already fetched are\n caller-owned and stay valid. On success the slot is set to nullptr.\n\n history:\n - stable: v2.0.0\n\n @param result The result to destroy.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Destroys a result handle.\n\n Null-safe: passing nullptr or a slot already set to nullptr is a no-op. Frees the memory the result owns and releases\n the connection for its next query. Safe at any point in the stream's life. Destroying a result before its statement\n ended (drained, or stepped to FINISHED) aborts the statement. On autocommit, its writes are rolled back. Inside a\n transaction, a statement that may write invalidates the transaction, and a read-only statement just stops. Chunks\n already fetched are caller-owned and stay valid. On success the slot is set to nullptr.\n\n history:\n - stable: v2.0.0\n\n @param result The result to destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_result_destroy(result: *mut duckdb_v2_result_handle) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
@@ -5267,7 +5217,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Renders the result as a box table, consuming it.\n\n Drains the result into a column data collection and renders it with the same renderer the DuckDB CLI uses, so every\n client displays results identically without reimplementing table formatting. The result is consumed by transfer: the\n slot is set to NULL on success and on failure alike, as with result_to_arrow_stream. A partially consumed result is\n accepted, and the remainder is what gets rendered.\n\n The whole remaining result materializes in memory before rendering. max_rows bounds what is DISPLAYED, not what is\n read, so with limit 0 the footer's row count is exact. A caller who cannot afford full materialization should bound\n the query itself (e.g. LIMIT n) and pass n as limit; the footer then renders \"? rows\" whenever the result fills that\n bound, since the true total is unknown at that point.\n\n Zero selects the renderer default for each sizing knob: max_rows 20, max_width the probed terminal width or 80 when\n that is unavailable, max_col_width 20. An empty null_value renders NULL cells as the default \"NULL\" text.\n\n The rendered text goes to sink rather than being returned: a box can be large, and this way nothing allocates a\n buffer the caller has to free. The sink is called exactly once with the whole box, so its view carries the full\n length — write it straight to a stream, or copy it into your own string. sink must not be NULL.\n\n history:\n - stable: v2.0.0\n\n @param result The result to render; consumed and set to NULL. Left intact only when the call rejects null arguments.\n @param max_rows Maximum rows displayed; 0 selects the renderer default (20).\n @param max_width Maximum total width in characters; 0 selects the renderer default.\n @param max_col_width Maximum width of one column; 0 selects the renderer default (20).\n @param null_value Text rendered for NULL cells; empty selects \"NULL\".\n @param render_mode 0 renders rows (records down the page); 1 renders columns; other values are rejected with\n INVALID_INPUT.\n @param limit The row limit the caller applied to the query before rendering; 0 means none. When the materialized\n result holds exactly this many rows the true total is unknown, so the footer renders \"? rows\" instead of an exact\n count.\n @param sink Receives the whole rendered box in a single call. Borrowed for the duration of that call; see text_sink\n for the full contract.\n @param user_data Opaque pointer passed through to sink untouched. May be NULL.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Renders the result as a box table, consuming it.\n\n Drains the result into a column data collection and renders it with the same renderer the DuckDB CLI uses, so every\n client displays results identically without reimplementing table formatting. The result is consumed by transfer: the\n slot is set to NULL on success and on failure alike. A partially consumed result is accepted, and the remainder is\n what gets rendered.\n\n The whole remaining result materializes in memory before rendering. max_rows bounds what is DISPLAYED, not what is\n read, so with limit 0 the footer's row count is exact. A caller who cannot afford full materialization should bound\n the query itself (e.g. LIMIT n) and pass n as limit; the footer then renders \"? rows\" whenever the result fills that\n bound, since the true total is unknown at that point.\n\n Zero selects the renderer default for each sizing knob: max_rows 20, max_width the probed terminal width or 80 when\n that is unavailable, max_col_width 20. An empty null_value renders NULL cells as the default \"NULL\" text.\n\n The rendered text goes to sink rather than being returned: a box can be large, and this way nothing allocates a\n buffer the caller has to free. The sink is called exactly once with the whole box, so its view carries the full\n length — write it straight to a stream, or copy it into your own string. sink must not be NULL.\n\n history:\n - stable: v2.0.0\n\n @param result The result to render; consumed and set to NULL. Left intact only when the call rejects null arguments.\n @param max_rows Maximum rows displayed; 0 selects the renderer default (20).\n @param max_width Maximum total width in characters; 0 selects the renderer default.\n @param max_col_width Maximum width of one column; 0 selects the renderer default (20).\n @param null_value Text rendered for NULL cells; empty selects \"NULL\".\n @param render_mode 0 renders rows (records down the page); 1 renders columns; other values are rejected with\n INVALID_INPUT.\n @param limit The row limit the caller applied to the query before rendering; 0 means none. When the materialized\n result holds exactly this many rows the true total is unknown, so the footer renders \"? rows\" instead of an exact\n count.\n @param sink Receives the whole rendered box in a single call. Borrowed for the duration of that call; see text_sink\n for the full contract.\n @param user_data Opaque pointer passed through to sink untouched. May be NULL.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_result_render_box(
         result: *mut duckdb_v2_result_handle,
         max_rows: idx_t,
@@ -5337,13 +5287,13 @@ pub struct _duckdb_v2_table_function {
 }
 #[doc = " An owned opaque handle to a custom table function being built. Created with\n `duckdb_v2_table_function_create_with_connection()` or `duckdb_v2_table_function_create_with_extension()`, configured\n with the setter functions (e.g. `duckdb_v2_table_function_set_name()`,\n `duckdb_v2_table_function_set_exec_callback()`, etc.) and the signature obtained via\n `duckdb_v2_table_function_get_signature()`, made available with `duckdb_v2_table_function_register()`, and destroyed\n with `duckdb_v2_table_function_destroy()`."]
 pub type duckdb_v2_table_function_handle = *mut _duckdb_v2_table_function;
-#[doc = " A borrowed opaque handle to the arguments supplied to a table function during the query preparation \"bind\" phase. The\n \"bind\" callback receives this handle and must use it to declare the columns the function returns; it can also inspect\n the arguments given to the function, initialize some constant state and hint at the number of rows the scan will\n produce."]
+#[doc = " A borrowed opaque handle to the result of a table function's \"bind\" phase. The \"bind\" callback receives this handle\n next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments, the user data and the bind\n data. It must use this handle to declare the columns the function returns, and can use it to hint at the number of\n rows the scan will produce."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _duckdb_v2_table_function_bind_info {
     pub internal_ptr: *mut ::std::os::raw::c_void,
 }
-#[doc = " A borrowed opaque handle to the arguments supplied to a table function during the query preparation \"bind\" phase. The\n \"bind\" callback receives this handle and must use it to declare the columns the function returns; it can also inspect\n the arguments given to the function, initialize some constant state and hint at the number of rows the scan will\n produce."]
+#[doc = " A borrowed opaque handle to the result of a table function's \"bind\" phase. The \"bind\" callback receives this handle\n next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments, the user data and the bind\n data. It must use this handle to declare the columns the function returns, and can use it to hint at the number of\n rows the scan will produce."]
 pub type duckdb_v2_table_function_bind_info_handle = *mut _duckdb_v2_table_function_bind_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to a table function during the global state initialization \"init\n global\" phase. The \"init global\" callback receives this handle and can use it to e.g. set up the state shared by\n every thread scanning the function, and to declare how many threads may scan it."]
 #[repr(C)]
@@ -5401,9 +5351,34 @@ pub struct _duckdb_v2_table_function_partitioning_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"partitioning\" phase of query\n optimization. The engine invokes the callback once per candidate `GROUP BY` column set, before execution starts, to\n decide whether the scan can feed a partitioned aggregate directly instead of hashing."]
 pub type duckdb_v2_table_function_partitioning_info_handle = *mut _duckdb_v2_table_function_partitioning_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function when a scanning thread claims its next batch\n of work. The \"claim batch\" callback receives this handle and can use it to claim the next part of the scan from the\n shared global state for the thread's local state, and to report whether it claimed one."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_table_function_claim_batch_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function when a scanning thread claims its next batch\n of work. The \"claim batch\" callback receives this handle and can use it to claim the next part of the scan from the\n shared global state for the thread's local state, and to report whether it claimed one."]
+pub type duckdb_v2_table_function_claim_batch_info_handle = *mut _duckdb_v2_table_function_claim_batch_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function when the engine asks it to describe a bound\n call. The \"get bind info\" callback receives this handle, and can use it to describe the call in more detail than its\n columns: with identifiers of its columns (e.g. field ids), and with options - key-value facts about what the call\n reads."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_table_function_get_bind_info_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function when the engine asks it to describe a bound\n call. The \"get bind info\" callback receives this handle, and can use it to describe the call in more detail than its\n columns: with identifiers of its columns (e.g. field ids), and with options - key-value facts about what the call\n reads."]
+pub type duckdb_v2_table_function_get_bind_info_info_handle = *mut _duckdb_v2_table_function_get_bind_info_info;
+#[doc = " An owned opaque handle to a multi-file table function being built. A multi-file function wraps an already registered\n table function that reads a single file, and adds everything that is needed to read many files at once on top of it:\n globbing, lists of files, hive partitioning, the `filename` column, `union_by_name` and the like. Created with\n `duckdb_v2_multi_file_function_create_with_connection()` or `duckdb_v2_multi_file_function_create_with_extension()`,\n configured with the setter functions (e.g. `duckdb_v2_multi_file_function_set_name()`,\n `duckdb_v2_multi_file_function_set_single_file_function()`), made available with\n `duckdb_v2_multi_file_function_register()`, and destroyed with `duckdb_v2_multi_file_function_destroy()`."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_multi_file_function {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " An owned opaque handle to a multi-file table function being built. A multi-file function wraps an already registered\n table function that reads a single file, and adds everything that is needed to read many files at once on top of it:\n globbing, lists of files, hive partitioning, the `filename` column, `union_by_name` and the like. Created with\n `duckdb_v2_multi_file_function_create_with_connection()` or `duckdb_v2_multi_file_function_create_with_extension()`,\n configured with the setter functions (e.g. `duckdb_v2_multi_file_function_set_name()`,\n `duckdb_v2_multi_file_function_set_single_file_function()`), made available with\n `duckdb_v2_multi_file_function_register()`, and destroyed with `duckdb_v2_multi_file_function_destroy()`."]
+pub type duckdb_v2_multi_file_function_handle = *mut _duckdb_v2_multi_file_function;
 pub type duckdb_v2_table_function_bind_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
-        info: duckdb_v2_table_function_bind_info_handle,
+        info: duckdb_v2_function_bind_info_handle,
+        result: duckdb_v2_table_function_bind_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -5457,6 +5432,20 @@ pub type duckdb_v2_table_function_partitioning_callback_fn = ::std::option::Opti
         err: *mut duckdb_v2_error_info_handle,
     ),
 >;
+pub type duckdb_v2_table_function_claim_batch_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_table_function_claim_batch_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_table_function_get_bind_info_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_table_function_get_bind_info_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
 unsafe extern "C" {
     #[doc = " Creates a new table function that will be registered on the connection's database.\n\n The function starts out empty: configure it with the setter functions (e.g. `duckdb_v2_table_function_set_name()`,\n `duckdb_v2_table_function_set_exec_callback()`, etc.) and the signature obtained via\n `duckdb_v2_table_function_get_signature()`, then make it available with `duckdb_v2_table_function_register()`. The\n caller owns the returned handle and must destroy it with `duckdb_v2_table_function_destroy()`, also after\n registration.\n\n history:\n - stable: v2.0.0\n\n @param connection The connection to create the function in.\n @param function On success, receives the newly created table function. Owned by the caller.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_table_function_create_with_connection(
@@ -5482,7 +5471,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Returns the function's signature so it can be configured.\n\n Add parameters with `duckdb_v2_function_signature_add_parameter()` and set a variadic tail with\n `duckdb_v2_function_signature_set_varargs()`. The signature is modified in place. A table function maps the signature\n onto the two ways SQL passes arguments to a table function: a parameter without a default value becomes a required\n positional argument, a parameter with a default value becomes a named argument the caller may omit. The variadic tail\n extends the positional arguments. A table function declares the columns it returns from its bind callback instead of\n through a return type, so registration rejects a signature whose return type was set with\n `duckdb_v2_function_signature_set_return_type()`.\n\n history:\n - stable: v2.0.0\n\n @param function The function to get the signature of.\n @param sig The returned signature. Borrowed and valid for the lifetime of the function handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Returns the function's signature so it can be configured.\n\n Add parameters with `duckdb_v2_function_signature_add_parameter()`. The signature is modified in place. A table\n function declares the columns it returns from its bind callback instead of through a return type, so registration\n rejects a signature whose return type was set with `duckdb_v2_function_signature_set_return_type()`.\n\n history:\n - stable: v2.0.0\n\n @param function The function to get the signature of.\n @param sig The returned signature. Borrowed and valid for the lifetime of the function handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_table_function_get_signature(
         function: duckdb_v2_table_function_handle,
         sig: *mut duckdb_v2_function_signature_handle,
@@ -5490,7 +5479,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets arbitrary user data on the table function.\n\n Associates an opaque pointer with the function, retrievable from the callbacks via\n `duckdb_v2_table_function_bind_get_user_data()`, `duckdb_v2_table_function_init_global_get_user_data()`,\n `duckdb_v2_table_function_exec_get_user_data()` and their counterparts on the other phases. The opaque handle bundles\n the pointer with an optional destructor, invoked when the data is no longer needed.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the user data of.\n @param data Opaque handle bundling the user data pointer plus an optional destructor.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets arbitrary user data on the table function.\n\n Associates an opaque pointer with the function, retrievable from the callbacks via\n `duckdb_v2_function_bind_get_user_data()`, `duckdb_v2_table_function_init_global_get_user_data()`,\n `duckdb_v2_table_function_exec_get_user_data()` and their counterparts on the other phases. The opaque handle bundles\n the pointer with an optional destructor, invoked when the data is no longer needed.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the user data of.\n @param data Opaque handle bundling the user data pointer plus an optional destructor.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_table_function_set_user_data(
         function: duckdb_v2_table_function_handle,
         data: *mut duckdb_v2_opaque,
@@ -5498,7 +5487,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Sets the bind callback of the table function.\n\n The bind callback is invoked during query planning for each call site of the function. It must declare the columns\n the function returns via `duckdb_v2_table_function_bind_add_result_column()`. It can also inspect the constant\n argument values and set \"bind data\" that is shared with all later callbacks. A bind callback must be set before\n registration.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the bind callback of.\n @param callback The bind callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Sets the bind callback of the table function.\n\n The bind callback is invoked during query planning for each call site of the function. It must declare the columns\n the function returns via `duckdb_v2_table_function_bind_add_result_column()`. Through its\n `duckdb_v2_function_bind_info_handle` it can also inspect the constant argument values and set \"bind data\" that is\n shared with all later callbacks. A bind callback must be set before registration.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the bind callback of.\n @param callback The bind callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_table_function_set_bind_callback(
         function: duckdb_v2_table_function_handle,
         callback: duckdb_v2_table_function_bind_callback_fn,
@@ -5566,48 +5555,6 @@ unsafe extern "C" {
     pub fn duckdb_v2_table_function_set_partitioning_callback(
         function: duckdb_v2_table_function_handle,
         callback: duckdb_v2_table_function_partitioning_callback_fn,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Retrieves the user data set via `duckdb_v2_table_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_table_function_bind_get_user_data(
-        info: duckdb_v2_table_function_bind_info_handle,
-        data: *mut *mut ::std::os::raw::c_void,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Sets the function's \"bind data\" from the bind callback.\n\n The bind data is stored with the bound call site and retrievable from every later callback. The opaque handle bundles\n the pointer with an optional destructor, invoked when the bind data is no longer needed, and an optional equality\n callback used when comparing two bound call sites; without one, pointer equality is used.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param data Opaque handle bundling the bind data pointer plus optional destructor and equality callbacks.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_table_function_bind_set_bind_data(
-        info: duckdb_v2_table_function_bind_info_handle,
-        data: *mut duckdb_v2_opaque,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Returns the number of arguments of the call site being bound.\n\n The arguments are presented in signature order: one for every parameter declared with\n `duckdb_v2_function_signature_add_parameter()`, followed by any variadic tail arguments. A parameter the call site\n omitted is still present, carrying the default value declared for it, so the count only varies with the length of the\n variadic tail. Valid indices for `duckdb_v2_table_function_bind_get_arg_type()` and\n `duckdb_v2_table_function_bind_get_arg_value()` are [0, count).\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param count Receives the number of arguments.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_table_function_bind_get_arg_count(
-        info: duckdb_v2_table_function_bind_info_handle,
-        count: *mut idx_t,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Retrieves the type of the argument at the given index.\n\n Fails if the index is out of bounds. The returned type is owned by the caller and must be destroyed via\n `duckdb_v2_logical_type_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument to get the type of.\n @param type Receives the argument type. Owned by the caller; destroy via `duckdb_v2_logical_type_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_table_function_bind_get_arg_type(
-        info: duckdb_v2_table_function_bind_info_handle,
-        index: idx_t,
-        type_: *mut duckdb_v2_logical_type_handle,
-        err: *mut duckdb_v2_error_info_handle,
-    ) -> DUCKDB_V2_ERROR;
-}
-unsafe extern "C" {
-    #[doc = " Retrieves the constant value of the argument at the given index.\n\n The arguments of a table function are always constants, folded before the bind callback runs, so this never fails for\n an index in bounds; it does fail when the index is out of bounds. The value may be NULL. The returned value is owned\n by the caller and must be destroyed via `duckdb_v2_value_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param info The bind info handle.\n @param index The index of the argument to get the value of.\n @param value Receives the constant value. Owned by the caller; destroy via `duckdb_v2_value_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
-    pub fn duckdb_v2_table_function_bind_get_arg_value(
-        info: duckdb_v2_table_function_bind_info_handle,
-        index: idx_t,
-        value: *mut duckdb_v2_value_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -5833,7 +5780,7 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
-    #[doc = " Retrieves the bind data set via `duckdb_v2_table_function_bind_set_bind_data()`, or null if none was set.\n\n This is the same object the init and exec callbacks later receive, so a predicate the callback accepts can be\n recorded in it for the scan to apply.\n\n history:\n - stable: v2.0.0\n\n @param info The filter pushdown info handle.\n @param data Receives the bind data pointer.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Retrieves the bind data set via `duckdb_v2_function_bind_set_bind_data()`, or null if none was set.\n\n This is the same object the init and exec callbacks later receive, so a predicate the callback accepts can be\n recorded in it for the scan to apply.\n\n history:\n - stable: v2.0.0\n\n @param info The filter pushdown info handle.\n @param data Receives the bind data pointer.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_table_function_filter_pushdown_get_bind_data(
         info: duckdb_v2_table_function_filter_pushdown_info_handle,
         data: *mut *mut ::std::os::raw::c_void,
@@ -6015,4 +5962,203 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " Destroys the table function, releasing its resources.\n\n Null-safe: passing a null pointer or null handle is a no-op. The handle is set to null on return to prevent\n double-destruction. Destroying the handle after registration does not affect the registered function.\n\n history:\n - stable: v2.0.0\n\n @param function The function to destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_table_function_destroy(function: *mut duckdb_v2_table_function_handle) -> DUCKDB_V2_ERROR;
+}
+#[doc = " Converts Arrow arrays into DuckDB data chunks, against one resolved ArrowSchema. Create it with\n `duckdb_v2_arrow_importer_create()`, which resolves every column's DuckDB type once, so the same importer serves any\n number of arrays of that shape. `duckdb_v2_arrow_importer_get_schema()` reports the resolved DuckDB schema.\n `duckdb_v2_arrow_importer_append()` takes an array, `duckdb_v2_arrow_importer_next_chunk()` produces chunks from it,\n and `duckdb_v2_arrow_importer_destroy()` frees the importer.\n\n The importer borrows the context it was created with and must not outlive it. One array is in flight at a time, and\n an importer must not be used from two threads at once."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_arrow_importer {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " Converts Arrow arrays into DuckDB data chunks, against one resolved ArrowSchema. Create it with\n `duckdb_v2_arrow_importer_create()`, which resolves every column's DuckDB type once, so the same importer serves any\n number of arrays of that shape. `duckdb_v2_arrow_importer_get_schema()` reports the resolved DuckDB schema.\n `duckdb_v2_arrow_importer_append()` takes an array, `duckdb_v2_arrow_importer_next_chunk()` produces chunks from it,\n and `duckdb_v2_arrow_importer_destroy()` frees the importer.\n\n The importer borrows the context it was created with and must not outlive it. One array is in flight at a time, and\n an importer must not be used from two threads at once."]
+pub type duckdb_v2_arrow_importer_handle = *mut _duckdb_v2_arrow_importer;
+#[doc = " Converts DuckDB data chunks into Arrow arrays, for one fixed list of columns. Create it with\n `duckdb_v2_arrow_exporter_create()`, which captures the session's Arrow settings and resolves the extension types\n once. `duckdb_v2_arrow_exporter_get_schema()` reports the Arrow schema. `duckdb_v2_arrow_exporter_append()` takes a\n chunk, `duckdb_v2_arrow_exporter_next_array()` produces arrays from it, and `duckdb_v2_arrow_exporter_destroy()`\n frees the exporter.\n\n An exporter must not be used from two threads at once."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_arrow_exporter {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " Converts DuckDB data chunks into Arrow arrays, for one fixed list of columns. Create it with\n `duckdb_v2_arrow_exporter_create()`, which captures the session's Arrow settings and resolves the extension types\n once. `duckdb_v2_arrow_exporter_get_schema()` reports the Arrow schema. `duckdb_v2_arrow_exporter_append()` takes a\n chunk, `duckdb_v2_arrow_exporter_next_array()` produces arrays from it, and `duckdb_v2_arrow_exporter_destroy()`\n frees the exporter.\n\n An exporter must not be used from two threads at once."]
+pub type duckdb_v2_arrow_exporter_handle = *mut _duckdb_v2_arrow_exporter;
+#[doc = " A query result that produces Arrow arrays. Works like a result, which produces data chunks. Create it with\n `duckdb_v2_statement_execute_arrow()` or `duckdb_v2_prepared_statement_execute_arrow()`.\n\n - Use it from one thread at a time.\n - `duckdb_v2_connection_interrupt()` cancels it: `duckdb_v2_arrow_result_step()` reports `CANCELLED`, and\n `duckdb_v2_arrow_result_fetch_array()` and a stream's `get_next` fail.\n - Arrays and schemas it hands out belong to the caller and stay valid after the result is destroyed."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_arrow_result {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A query result that produces Arrow arrays. Works like a result, which produces data chunks. Create it with\n `duckdb_v2_statement_execute_arrow()` or `duckdb_v2_prepared_statement_execute_arrow()`.\n\n - Use it from one thread at a time.\n - `duckdb_v2_connection_interrupt()` cancels it: `duckdb_v2_arrow_result_step()` reports `CANCELLED`, and\n `duckdb_v2_arrow_result_fetch_array()` and a stream's `get_next` fail.\n - Arrays and schemas it hands out belong to the caller and stay valid after the result is destroyed."]
+pub type duckdb_v2_arrow_result_handle = *mut _duckdb_v2_arrow_result;
+unsafe extern "C" {
+    #[doc = " Resolves an Arrow schema into a reusable importer.\n\n Works out every column's DuckDB logical type and the Arrow type information the conversion needs, once, so any number\n of arrays of that shape can be imported without re-reading the schema. `schema` is read, not consumed: the caller\n keeps ownership and still releases it.\n\n `batch_size` caps the rows per produced chunk. A long array is split across several chunks. Rows left over that do\n not fill a batch are held back and joined with the next array, unless the append asked to flush. Pass 0 for no\n maximum: each array becomes one chunk, however long it is.\n\n Resolving reads the catalog for extension types, so `context` must have an active transaction. The importer keeps\n using that context for every conversion and must not outlive it. Within one connection the context is the same\n throughout, so an importer created in a bind callback is usable from the matching exec callback. `*out_importer` is\n set to NULL on failure.\n\n history:\n - stable: v2.0.0\n\n @param context The context used to resolve the Arrow types, extension types included.\n @param schema The schema to resolve. Read, not consumed; the caller keeps ownership.\n @param batch_size Maximum rows per produced chunk, or 0 for no maximum.\n @param out_importer On success, receives the new importer. Owned by the caller; destroy via\n `duckdb_v2_arrow_importer_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_importer_create(
+        context: duckdb_v2_context_handle,
+        schema: *mut ArrowSchema,
+        batch_size: idx_t,
+        out_importer: *mut duckdb_v2_arrow_importer_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns the resolved DuckDB schema.\n\n Writes an owned schema handle with the DuckDB name and logical type of every column the importer resolved. This is\n how a caller learns the DuckDB shape of an ArrowSchema, to declare a table function's result columns for instance,\n without reimplementing the mapping from Arrow format strings to logical types.\n\n The fields were resolved at creation, so this reads no catalog and needs no transaction. `*out_schema` is set to NULL\n on failure.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to read.\n @param out_schema On success, receives an owned schema. Destroy via `duckdb_v2_schema_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_importer_get_schema(
+        importer: duckdb_v2_arrow_importer_handle,
+        out_schema: *mut duckdb_v2_schema_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Gives the importer one array to convert.\n\n Take the chunks with `duckdb_v2_arrow_importer_next_chunk()` until that returns NULL. Appending while the previous\n array still has rows left is rejected with `ERROR_INPUT_INVALID`. An array whose shape does not match the resolved\n schema -- a different child count, a child whose length differs from the array's, a null or already-released child --\n is rejected the same way, before anything is read.\n\n `flush` marks the end of the input: rows that do not fill a batch then come out as a final short chunk instead of\n being held back for the next array. Pass NULL for `array` with `flush` set to release the held rows without supplying\n more input.\n\n `consume` decides what happens to the caller's array.\n\n When true, the importer takes over the array and sets its `release` to NULL; the caller must not release it\n afterwards. The produced chunks reference the Arrow buffers directly, without copying, and keep them alive, so the\n chunks stay valid after the importer is destroyed. Prefer this path.\n\n When false, the caller keeps the array and must keep it valid until the drain finishes. The produced chunks are\n copies, so they do not depend on the array, at the cost of one copy per chunk.\n\n Either way, a chunk that joins rows held back from the previous array is a copy, since it cannot reference two\n arrays.\n\n Only the default, dictionary-encoded and run-end-encoded Arrow layouts are supported. Any other layout reports\n `ERROR_QUERY_NOT_IMPLEMENTED` when the column is converted.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to feed.\n @param array The array to convert. Its `release` is set to NULL when `consume` is true.\n @param consume True to hand the array over for a zero-copy import; false to keep it, in which case every produced\n chunk is a copy.\n @param flush True to mark the end of the input, releasing held rows as a final short chunk. Pass NULL for `array`\n with this set to flush without supplying more input.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_importer_append(
+        importer: duckdb_v2_arrow_importer_handle,
+        array: *mut ArrowArray,
+        consume: bool,
+        flush: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Produces the next chunk of the appended array, or NULL once the array is drained.\n\n Call it in a loop until `*out_chunk` is NULL. An importer with no array appended also returns NULL. Each chunk holds\n at most the importer's `batch_size` rows, or the whole array when that is 0. A chunk may start with rows held back\n from the previous array, and rows that do not fill a batch are held back in turn unless the append asked to flush. So\n NULL means the array has been read, not that all of its rows have come out.\n\n The conversion runs under the context the importer was created with, which must still be alive. `*out_chunk` is set\n to NULL on failure.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to drain.\n @param out_chunk On success, receives the next chunk, or NULL once the array is drained. Destroy via\n `duckdb_v2_data_chunk_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_importer_next_chunk(
+        importer: duckdb_v2_arrow_importer_handle,
+        out_chunk: *mut duckdb_v2_data_chunk_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Destroys an importer.\n\n Null-safe: passing NULL, or a slot already set to NULL, is a no-op. Chunks already produced stay valid, including the\n zero-copy ones, which keep the Arrow buffers alive themselves. An array appended with `consume` true and not fully\n drained is released here. Rows held back for a next array are dropped. On success the slot is set to NULL.\n\n history:\n - stable: v2.0.0\n\n @param importer The importer to destroy.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_importer_destroy(importer: *mut duckdb_v2_arrow_importer_handle) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Creates an exporter for one fixed list of columns.\n\n Resolves the extension types and captures the session's Arrow settings, so every array this exporter produces matches\n the schema `duckdb_v2_arrow_exporter_get_schema()` reports, even if a setting changes afterwards.\n\n `batch_size` caps the rows per produced array. A long chunk is split across several arrays. Rows left over that do\n not fill a batch are held back and joined with the next chunk, unless the append asked to flush. Pass 0 for no\n maximum: each chunk becomes one array, however long it is.\n\n `types` and `names` are parallel arrays of `count` entries, borrowed and copied; they may be NULL only when `count`\n is 0. Resolving reads the catalog, so `context` must have an active transaction. `*out_exporter` is set to NULL on\n failure.\n\n history:\n - stable: v2.0.0\n\n @param context The context whose Arrow settings are captured and whose transaction resolves the types.\n @param types An array of `count` column types. May be NULL only when `count` is 0.\n @param names An array of `count` column names, parallel to `types`. Each name must be valid UTF-8. May be NULL only\n when `count` is 0.\n @param count The number of columns, being the length of both `types` and `names`.\n @param batch_size Maximum rows per produced array, or 0 for no maximum.\n @param out_exporter On success, receives the new exporter. Owned by the caller; destroy via\n `duckdb_v2_arrow_exporter_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_exporter_create(
+        context: duckdb_v2_context_handle,
+        types: *const duckdb_v2_logical_type_handle,
+        names: *const duckdb_v2_str,
+        count: idx_t,
+        batch_size: idx_t,
+        out_exporter: *mut duckdb_v2_arrow_exporter_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns the Arrow schema of the arrays this exporter produces.\n\n Fills the caller-allocated `out_schema`. The caller owns the result and releases it with\n `out_schema->release(out_schema)`. Callable at any point, and always returns the same schema, since it is built from\n the settings captured at creation.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to read.\n @param out_schema Caller-allocated schema the library fills. Release it with `out_schema->release(out_schema)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_exporter_get_schema(
+        exporter: duckdb_v2_arrow_exporter_handle,
+        out_schema: *mut ArrowSchema,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Gives the exporter one chunk to convert.\n\n The chunk is converted in full before this returns. The conversion copies into freshly allocated Arrow buffers, so\n nothing of the caller's is retained. Every array completed by this chunk becomes available from\n `duckdb_v2_arrow_exporter_next_array()`; rows that do not complete a batch are held back and finished by the next\n chunk. Completed arrays queue up, so appending again before they are taken is allowed.\n\n `flush` marks the end of the input: the held rows are then finished as a final short array. Pass NULL for `chunk`\n with `flush` set to release the held rows without supplying more input.\n\n The chunk's types must match the ones the exporter was created with, or the call is rejected with\n `ERROR_INPUT_INVALID` before anything is read.\n\n `consume` decides only what happens to the caller's handle, since the data is copied either way. When true the chunk\n is destroyed and the slot set to NULL, saving a `duckdb_v2_data_chunk_destroy()` for a chunk the caller owns. When\n false the chunk is left untouched, which is what a chunk borrowed from a callback needs, such as the output chunk of\n a table function's exec callback, which the caller does not own and must not destroy.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to feed.\n @param chunk The chunk to convert. Destroyed and set to NULL only when `consume` is true.\n @param consume True to hand the chunk over, destroying it; false to leave the caller's handle untouched.\n @param flush True to mark the end of the input, releasing the held rows as a final short array. Pass NULL for `chunk`\n with this set to flush without supplying more input.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_exporter_append(
+        exporter: duckdb_v2_arrow_exporter_handle,
+        chunk: *mut duckdb_v2_data_chunk_handle,
+        consume: bool,
+        flush: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Takes the next completed array, or reports that none is ready.\n\n Call it in a loop after every `duckdb_v2_arrow_exporter_append()` until `out_array->release` is NULL, which is how\n the Arrow C Data Interface signals \"no array\" and what a stream's `get_next` does at end of input. Rows held back\n towards an unfinished batch are not an array yet; they come out after a further append or a flush.\n\n Each array is owned by the caller and released with `out_array->release(out_array)`, independently of the exporter\n and of every other array.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to drain.\n @param out_array Caller-allocated array the library fills. Left released -- `release` NULL -- when none is ready.\n Release a filled one with `out_array->release(out_array)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_exporter_next_array(
+        exporter: duckdb_v2_arrow_exporter_handle,
+        out_array: *mut ArrowArray,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Destroys an exporter.\n\n Null-safe: passing NULL, or a slot already set to NULL, is a no-op. Arrays already taken stay valid. Arrays still\n queued inside are released here, and rows held back towards an unfinished batch are dropped. On success the slot is\n set to NULL.\n\n history:\n - stable: v2.0.0\n\n @param exporter The exporter to destroy.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_exporter_destroy(exporter: *mut duckdb_v2_arrow_exporter_handle) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Executes a parsed statement. The result produces Arrow arrays.\n\n Works like `duckdb_v2_statement_execute()`. `*out_result` is set to NULL on failure.\n\n history:\n - stable: v2.0.0\n\n @param conn The connection to run the statement on.\n @param statement The statement to execute. Not consumed.\n @param parameter_names Optional. As in `duckdb_v2_statement_execute()`.\n @param parameter_values Optional. As in `duckdb_v2_statement_execute()`.\n @param parameter_count The number of parameters. 0 for none.\n @param batch_size Maximum rows per array. Arrays can be shorter. 0 means 131072.\n @param out_result Receives the new result. Destroy via `duckdb_v2_arrow_result_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_statement_execute_arrow(
+        conn: duckdb_v2_connection_handle,
+        statement: duckdb_v2_sql_statement_handle,
+        parameter_names: *const duckdb_v2_identifier_t,
+        parameter_values: *const duckdb_v2_value_handle,
+        parameter_count: idx_t,
+        batch_size: idx_t,
+        out_result: *mut duckdb_v2_arrow_result_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Executes a prepared statement. The result produces Arrow arrays.\n\n Works like `duckdb_v2_prepared_statement_execute()`. `*out_result` is set to NULL on failure.\n\n history:\n - stable: v2.0.0\n\n @param prepared The prepared statement to execute. Not consumed.\n @param parameter_names Optional. As in `duckdb_v2_prepared_statement_execute()`.\n @param parameter_values Optional. As in `duckdb_v2_prepared_statement_execute()`.\n @param parameter_count The number of parameters. 0 for none.\n @param batch_size Maximum rows per array. Arrays can be shorter. 0 means 131072.\n @param out_result Receives the new result. Destroy via `duckdb_v2_arrow_result_destroy()`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_prepared_statement_execute_arrow(
+        prepared: duckdb_v2_prepared_statement_handle,
+        parameter_names: *const duckdb_v2_identifier_t,
+        parameter_values: *const duckdb_v2_value_handle,
+        parameter_count: idx_t,
+        batch_size: idx_t,
+        out_result: *mut duckdb_v2_arrow_result_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Destroys the result. Works like `duckdb_v2_result_destroy()`.\n\n history:\n - stable: v2.0.0\n\n @param result The result to destroy.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_destroy(result: *mut duckdb_v2_arrow_result_handle) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Runs a bounded amount of the query and returns without blocking.\n\n Works like `duckdb_v2_result_step()`. On status `CHUNK`, `out_array` holds the next array. Otherwise its `release` is\n NULL.\n\n history:\n - stable: v2.0.0\n\n @param result The result to step.\n @param out_array Caller-allocated array the library fills. Release it with `out_array->release(out_array)`.\n @param out_status Receives the step status.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_step(
+        result: duckdb_v2_arrow_result_handle,
+        out_array: *mut ArrowArray,
+        out_status: *mut DUCKDB_V2_RESULT_STEP_STATUS,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Blocks until the next array is ready.\n\n Works like `duckdb_v2_result_fetch_chunk()`. At the end of the result, `out_array->release` is NULL.\n\n history:\n - stable: v2.0.0\n\n @param result The result to fetch from.\n @param out_array Caller-allocated array the library fills. Release it with `out_array->release(out_array)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_fetch_array(
+        result: duckdb_v2_arrow_result_handle,
+        out_array: *mut ArrowArray,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Blocks until `duckdb_v2_arrow_result_step()` can make progress. Works like `duckdb_v2_result_wait()`.\n\n history:\n - stable: v2.0.0\n\n @param result The result to wait on.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_wait(
+        result: duckdb_v2_arrow_result_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Runs the query to the end and reports the changed-row count. Works like `duckdb_v2_result_drain()`.\n\n history:\n - stable: v2.0.0\n\n @param result The result to drain.\n @param out_rows_changed Receives the changed-row count for an INSERT, UPDATE or DELETE, 0 otherwise.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_drain(
+        result: duckdb_v2_arrow_result_handle,
+        out_rows_changed: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns the shape of the result. Works like `duckdb_v2_result_get_result_type()`.\n\n history:\n - stable: v2.0.0\n\n @param result The result.\n @param out_type Receives the result shape.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_get_result_type(
+        result: duckdb_v2_arrow_result_handle,
+        out_type: *mut DUCKDB_V2_RESULT_TYPE,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns the type of statement that produced the result. Works like `duckdb_v2_result_get_statement_type()`.\n\n history:\n - stable: v2.0.0\n\n @param result The result.\n @param out_type Receives the statement type.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_get_statement_type(
+        result: duckdb_v2_arrow_result_handle,
+        out_type: *mut DUCKDB_V2_STATEMENT_TYPE,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns the Arrow schema of the result's arrays.\n\n Available whenever `duckdb_v2_result_get_schema()` would be.\n\n history:\n - stable: v2.0.0\n\n @param result The result.\n @param out_schema Caller-allocated schema the library fills. Release it with `out_schema->release(out_schema)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_get_schema(
+        result: duckdb_v2_arrow_result_handle,
+        out_schema: *mut ArrowSchema,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Turns the result into an ArrowArrayStream.\n\n On success the stream takes over the result and `*result` is set to NULL. Each `get_next` returns the next array.\n Arrays already fetched are not repeated. Releasing the stream destroys the result.\n\n Converting runs no part of the query. The stream's `get_schema` can: for a statement that expands into several\n statements, such as PIVOT, it runs the ones before the statement that returns rows. A failing `get_next` or\n `get_schema` returns `EIO`; `get_last_error` has the message.\n\n history:\n - stable: v2.0.0\n\n @param result The result to take over. Set to NULL on success.\n @param out_stream Caller-allocated stream the library fills. Release it with `out_stream->release(out_stream)`.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_arrow_result_to_arrow_c_stream(
+        result: *mut duckdb_v2_arrow_result_handle,
+        out_stream: *mut ArrowArrayStream,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
 }
