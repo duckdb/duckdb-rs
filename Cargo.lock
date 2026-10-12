@@ -857,6 +857,7 @@ dependencies = [
 name = "duckdb-neo"
 version = "1.20000.0"
 dependencies = [
+ "arrow-array",
  "chrono",
  "libc",
  "libduckdb-sys",
@@ -1638,6 +1639,7 @@ name = "libduckdb-sys"
 version = "1.20000.0"
 dependencies = [
  "arrow",
+ "arrow-array",
  "bindgen",
  "cc",
  "cmake",

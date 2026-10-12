@@ -27,6 +27,7 @@ duckdb-neo = { version = "=1.20000.0", path = "crates/duckdb-neo" }
 libduckdb-sys = { version = "=1.20000.0", path = "crates/libduckdb-sys", default-features = false }
 
 arrow = { version = "60", default-features = false }
+arrow-array = { version = "60", default-features = false }
 bindgen = { version = "0.72.1", default-features = false }
 cast = "0.3"
 cc = "1.0"
