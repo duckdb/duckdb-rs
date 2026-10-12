@@ -1,25 +1,24 @@
 //! Open DuckDB databases and their global configuration.
 
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
-    Result, check_api_call, check_api_call_no_err,
+    AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err,
     connection::Connection,
     connection_options::ConfigOption,
     environment::{Environment, EnvironmentHandle, StorageLocation},
     ffi,
+    raw::RawExt,
 };
 
 /// A shared handle to an open DuckDB database.
+#[derive(Debug)]
 pub struct DatabaseHandle {
     /// The DuckDB database handle.
-    pub handle: ffi::duckdb_v2_instance_handle,
+    pub(crate) handle: ffi::duckdb_v2_instance_handle,
 
     /// The environment kept alive by this database.
-    pub env: Arc<Mutex<EnvironmentHandle>>,
+    pub(crate) _env: Arc<Mutex<EnvironmentHandle>>,
 }
 
 impl Drop for DatabaseHandle {
@@ -37,9 +36,10 @@ unsafe impl Sync for DatabaseHandle {}
 ///
 /// Each `set_option` call adds one `(KEY value)` entry, mirroring the options of
 /// SQL `ATTACH`. Nothing is validated until the attach itself.
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct AttachOptionsBuilder {
     /// The owned attach-options handle.
-    pub handle: ffi::duckdb_v2_attach_options_handle,
+    pub(crate) handle: ffi::duckdb_v2_attach_options_handle,
 }
 
 impl AttachOptionsBuilder {
@@ -64,14 +64,6 @@ impl Drop for AttachOptionsBuilder {
     }
 }
 
-impl Deref for AttachOptionsBuilder {
-    type Target = ffi::duckdb_v2_attach_options_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
-}
-
 /// An open DuckDB instance.
 ///
 /// Connections share the database's catalog, buffer pool, and transaction
@@ -93,6 +85,7 @@ impl Deref for AttachOptionsBuilder {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Instance {
     pub(crate) handle: Arc<Mutex<DatabaseHandle>>,
 }
@@ -107,7 +100,7 @@ impl Instance {
                     environment.handle.lock().unwrap().handle,
                     RET
                 )?,
-                env: environment.handle.clone(),
+                _env: environment.handle.clone(),
             })),
         })
     }
@@ -145,7 +138,7 @@ impl Instance {
         default: bool,
     ) -> Result<()> {
         let location: String = location.into();
-        let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| **o);
+        let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| o.raw());
         let alias_str: Option<ffi::duckdb_v2_str> = alias.as_ref().map(|a| (a).into());
 
         check_api_call!(

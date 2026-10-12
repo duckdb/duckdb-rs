@@ -14,6 +14,7 @@ use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
+    raw::RawExt,
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
@@ -46,7 +47,7 @@ macro_rules! declare_storage_value {
 
         impl FromValue for $name {
             fn _get_inner(value: &Value) -> Result<Self> {
-                Ok(Self(check_api_call!($getter, **value, RET)?))
+                Ok(Self(check_api_call!($getter, value.raw(), RET)?))
             }
         }
 
@@ -55,7 +56,7 @@ macro_rules! declare_storage_value {
         impl WritableVectorElement for $name {
             type Write<'a> = Self;
 
-            fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+            unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                 vector.write_raw(index, value)
             }
         }
@@ -173,7 +174,7 @@ impl ToValue for IntervalValue {
 
 impl FromValue for IntervalValue {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_interval, **value, RET)?;
+        let raw = check_api_call!(ffi::duckdb_v2_value_get_interval, value.raw(), RET)?;
         Ok(Self {
             months: raw.months,
             days: raw.days,
@@ -187,7 +188,7 @@ DeclareVectorElement!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
 impl WritableVectorElement for IntervalValue {
     type Write<'a> = Self;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_raw(index, value)
     }
 }

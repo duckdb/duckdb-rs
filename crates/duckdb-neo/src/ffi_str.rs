@@ -7,7 +7,7 @@ use crate::ffi;
 /// A string returned by DuckDB, borrowed from whatever owns its bytes for `'a`.
 ///
 /// Callers pick `'a` in [`Self::from_raw`]: tie it to the owning handle, or `'static` for static strings.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct DuckDBStr<'a> {
     raw: ffi::duckdb_v2_str,
     _owner: PhantomData<&'a [u8]>,

@@ -9,6 +9,7 @@ use crate::{
     connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::LogicalType,
+    raw::RawExt,
     vector::{Access, Vector, VectorElement},
 };
 
@@ -55,6 +56,7 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
 /// A negative `implicit_cast_cost` makes the cast explicit-only. Non-negative
 /// costs allow implicit selection, with lower costs preferred when DuckDB
 /// resolves alternatives.
+#[derive(Debug)]
 pub struct CastFunctionBuilder<T: CastFunctionCallbacks> {
     source_type: LogicalType,
     target_type: LogicalType,
@@ -76,31 +78,31 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
     fn build(&self, handle: CastFunctionHandle) -> Result<CastFunctionHandle> {
         check_api_call!(
             ffi::duckdb_v2_cast_function_set_source_type,
-            *handle,
+            handle.raw(),
             self.source_type.handle
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_cast_function_set_target_type,
-            *handle,
+            handle.raw(),
             self.target_type.handle
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_cast_function_set_implicit_cast_cost,
-            *handle,
+            handle.raw(),
             self.implicit_cast_cost
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_cast_function_set_user_data,
-            *handle,
+            handle.raw(),
             &mut self.user_data.to_handle()
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_cast_function_set_exec_callback,
-            *handle,
+            handle.raw(),
             Some(exec_callback::<T>)
         )?;
 
@@ -113,7 +115,7 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
         let handle = link.create_cast_function_handle()?;
         let handle = self.build(handle)?;
 
-        check_api_call!(ffi::duckdb_v2_cast_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_cast_function_register, handle.raw())
     }
 }
 

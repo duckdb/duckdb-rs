@@ -15,7 +15,7 @@ use crate::ffi;
 
 use crate::{
     Result,
-    bind_arguments::{BindArgument, BindMetadata, BindType},
+    bind_arguments::{BindArgument, BindArguments, BindType},
     builder_helpers::{
         OpaqueHandle, ffi_enum_redeclaration, get_bind_data, get_global_state, get_local_state, get_user_data,
         handle_unwind, into_opaque,
@@ -26,12 +26,14 @@ use crate::{
     expression::Expression,
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
+    raw::RawExt,
     signature::SignatureBuilder,
     table_function::InitColumnHandle::{Global, Local},
     value::Value,
 };
 
 /// Callback-scoped output-schema builder.
+#[derive(Debug)]
 pub struct BindFunctionHandle<'a>(&'a ffi::duckdb_v2_table_function_bind_info_handle);
 
 impl<'a> BindFunctionHandle<'a> {
@@ -41,7 +43,7 @@ impl<'a> BindFunctionHandle<'a> {
             ffi::duckdb_v2_table_function_bind_add_result_column,
             *self.0,
             &name.into(),
-            *logical_type
+            logical_type.raw()
         )?;
 
         Ok(())
@@ -57,14 +59,14 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_table_function_bind_get_user_data, info);
 
-            let metadata = BindMetadata {
+            let arguments = BindArguments {
                 bind_type: BindType::Table(&info),
             };
 
             let (bind_data, cardinality) = T::bind(
                 user_data,
                 &Context(context),
-                metadata.get_arguments()?,
+                arguments.collect()?,
                 BindFunctionHandle(&info),
             )?;
 
@@ -93,6 +95,7 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
 ///
 /// With projection pushdown enabled, the columns here are the subset of
 /// declared columns the query actually uses.
+#[derive(Debug)]
 pub struct ExecColumnInfo<'a> {
     handle: &'a ffi::duckdb_v2_table_function_exec_info_handle,
 }
@@ -151,12 +154,14 @@ unsafe extern "C" fn exec_callback<T: TableFunctionCallbacks>(
     );
 }
 
+#[derive(Debug)]
 enum InitColumnHandle<'a> {
     Local(&'a ffi::duckdb_v2_table_function_init_local_info_handle),
     Global(&'a ffi::duckdb_v2_table_function_init_global_info_handle),
 }
 
 /// Projected-column metadata supplied during table-function initialization.
+#[derive(Debug)]
 pub struct InitColumnData<'a> {
     handle: InitColumnHandle<'a>,
 }
@@ -194,6 +199,7 @@ impl<'a> InitColumnData<'a> {
 }
 
 /// Candidate filters and column mappings offered for pushdown.
+#[derive(Debug)]
 pub struct PushdownData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_filter_pushdown_info_handle,
 }
@@ -389,6 +395,7 @@ ffi_enum_redeclaration! {
 }
 
 /// What a downstream operator wants to know about the batch just produced.
+#[derive(Debug)]
 pub struct PartitionData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_partition_data_info_handle,
 }
@@ -458,6 +465,7 @@ impl<'a> PartitionData<'a> {
 }
 
 /// The candidate `GROUP BY` column set the optimizer is asking about.
+#[derive(Debug)]
 pub struct PartitioningData<'a> {
     handle: &'a ffi::duckdb_v2_table_function_partitioning_info_handle,
 }
@@ -548,6 +556,7 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
 }
 
 /// Builds and registers a user-defined table function.
+#[derive(Debug)]
 pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     name: String,
     signature: SignatureBuilder,
@@ -623,35 +632,35 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     fn build(&self, handle: &TableFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_table_function_set_name,
-            **handle,
+            handle.raw(),
             &mut (&self.name).into()
         )?;
 
-        let signature = check_api_call!(ffi::duckdb_v2_table_function_get_signature, **handle, RET)?;
+        let signature = check_api_call!(ffi::duckdb_v2_table_function_get_signature, handle.raw(), RET)?;
 
         self.signature.build(&signature)?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_projection_pushdown,
-            **handle,
+            handle.raw(),
             self.projection_pushdown
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_user_data,
-            **handle,
+            handle.raw(),
             &mut self.user_data.to_handle()
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_init_local_callback,
-            **handle,
+            handle.raw(),
             Some(init_local_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_init_global_callback,
-            **handle,
+            handle.raw(),
             Some(init_global_callback::<T>)
         )?;
 
@@ -660,7 +669,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
         if self.progress_callback.is_some() {
             check_api_call!(
                 ffi::duckdb_v2_table_function_set_progress_callback,
-                **handle,
+                handle.raw(),
                 self.progress_callback
             )?;
         }
@@ -670,7 +679,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
         if self.filter_pushdown_callback.is_some() {
             check_api_call!(
                 ffi::duckdb_v2_table_function_set_filter_pushdown_callback,
-                **handle,
+                handle.raw(),
                 self.filter_pushdown_callback
             )?;
         }
@@ -682,13 +691,13 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
         if self.partition_data_callback.is_some() {
             check_api_call!(
                 ffi::duckdb_v2_table_function_set_partition_data_callback,
-                **handle,
+                handle.raw(),
                 self.partition_data_callback
             )?;
 
             check_api_call!(
                 ffi::duckdb_v2_table_function_set_partitioning_callback,
-                **handle,
+                handle.raw(),
                 self.partitioning_callback
             )?;
         }
@@ -696,13 +705,13 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
         // required
         check_api_call!(
             ffi::duckdb_v2_table_function_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_exec_callback,
-            **handle,
+            handle.raw(),
             Some(exec_callback::<T>)
         )?;
 
@@ -715,11 +724,12 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
         let handle = link.create_table_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_table_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_table_function_register, handle.raw())
     }
 }
 
 /// A table function's estimated or exact output row count.
+#[derive(Debug)]
 pub struct TableFunctionCardinality {
     /// The reported output row count.
     pub cardinality: usize,

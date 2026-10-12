@@ -24,9 +24,11 @@ use crate::{
     ffi,
     handles::{CopyFunctionBuilderHandle, CopyFunctionBuilderLink},
     logical_type::LogicalType,
+    raw::RawExt,
     value::Value,
 };
 
+#[derive(Debug)]
 struct CopyFunctionBindData<T> {
     data: T,
     logical_types: Vec<LogicalType>,
@@ -196,6 +198,7 @@ unsafe extern "C" fn finalize_to_callback<T: CopyToFunctionCallbacks>(
 }
 
 /// Builds and registers a user-defined `COPY TO` format.
+#[derive(Debug)]
 pub struct CopyFunctionBuilder<T> {
     user_data: OpaqueHandle<T>,
     name: String,
@@ -217,13 +220,13 @@ impl<T> CopyFunctionBuilder<T> {
     fn build_common(&self, handle: &CopyFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_copy_function_set_name,
-            **handle,
+            handle.raw(),
             &mut (&self.name).into()
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_function_set_user_data,
-            **handle,
+            handle.raw(),
             &mut self.user_data.to_handle()
         )?;
 
@@ -237,37 +240,37 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_init_callback,
-            **handle,
+            handle.raw(),
             Some(init_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_batch_callback,
-            **handle,
+            handle.raw(),
             Some(batch_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_flush_callback,
-            **handle,
+            handle.raw(),
             Some(flush_to_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_batch_size_callback,
-            **handle,
+            handle.raw(),
             Some(batch_size_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_finalize_callback,
-            **handle,
+            handle.raw(),
             Some(finalize_to_callback::<T>)
         )?;
 
@@ -280,7 +283,7 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
         let handle = link.create_copy_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
     }
 }
 
@@ -296,25 +299,25 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
     fn set_from_callbacks(&self, handle: &CopyFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_bind_callback,
-            **handle,
+            handle.raw(),
             Some(bind_from_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_init_global_callback,
-            **handle,
+            handle.raw(),
             Some(init_global_from_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_init_local_callback,
-            **handle,
+            handle.raw(),
             Some(init_local_from_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_copy_from_set_exec_callback,
-            **handle,
+            handle.raw(),
             Some(exec_from_callback::<T>)
         )?;
 
@@ -323,7 +326,7 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
         if self.progress {
             check_api_call!(
                 ffi::duckdb_v2_copy_from_set_progress_callback,
-                **handle,
+                handle.raw(),
                 Some(progress_from_callback::<T>)
             )?;
         }
@@ -342,7 +345,7 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
         let handle = link.create_copy_function_handle()?;
         self.build_from(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
     }
 }
 
@@ -354,7 +357,7 @@ impl<T: CopyToFunctionCallbacks + CopyFromFunctionCallbacks> CopyFunctionBuilder
         self.build(&handle)?;
         self.set_from_callbacks(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, *handle)
+        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
     }
 }
 
@@ -362,6 +365,7 @@ impl<T: CopyToFunctionCallbacks + CopyFromFunctionCallbacks> CopyFunctionBuilder
 ///
 /// Column order matches the input relation being copied. Returned logical
 /// types are owned copies.
+#[derive(Debug)]
 pub struct CopyToBindInfo {
     handle: ffi::duckdb_v2_copy_to_bind_info_handle,
 }
@@ -606,6 +610,7 @@ unsafe extern "C" fn progress_from_callback<T: CopyFromFunctionCallbacks>(
 ///
 /// Column order and types are fixed by the target table: the exec callback's
 /// output chunk must carry them, in this order.
+#[derive(Debug)]
 pub struct CopyFromBindInfo {
     handle: ffi::duckdb_v2_copy_from_bind_info_handle,
 }
@@ -681,6 +686,7 @@ impl CopyFromBindInfo {
 }
 
 /// A `COPY ... FROM` read's estimated or exact row count.
+#[derive(Debug)]
 pub struct CopyFromCardinality {
     /// The estimated number of rows the read will produce.
     pub cardinality: usize,

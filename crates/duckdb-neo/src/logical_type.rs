@@ -1,16 +1,15 @@
 //! Construct and inspect DuckDB logical types.
 
-use std::ops::Deref;
-
 use libduckdb_sys::v2::DUCKDB_V2_LOGICAL_TYPE_ID;
 
 use crate::ffi_str::DuckDBStr;
 use crate::{
-    Parameters, Result, check_api_call, check_api_call_no_err, check_api_call_string,
+    AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::FFILink,
     ffi,
     links::{LogicalTypeAliasLink, LogicalTypeFromIdLink, LogicalTypeFromNameLink},
     qualified_name::QualifiedName,
+    raw::RawExt,
     value::Value,
 };
 
@@ -42,10 +41,10 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct LogicalType {
     /// The owned DuckDB logical-type handle.
-    pub handle: ffi::duckdb_v2_logical_type_handle,
+    pub(crate) handle: ffi::duckdb_v2_logical_type_handle,
 }
 
 // SAFETY: an owned, self-contained C++ `LogicalType`; `&self` methods only read it, and its
@@ -113,7 +112,7 @@ impl LogicalType {
 
         let qname = QualifiedName::from_sql(name)?;
 
-        let handle = link.create_logical_type_from_name(*qname, names.as_deref(), &values)?;
+        let handle = link.create_logical_type_from_name(qname.raw(), names.as_deref(), &values)?;
 
         Ok(LogicalType { handle })
     }
@@ -204,13 +203,6 @@ impl Clone for LogicalType {
 impl Drop for LogicalType {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_logical_type_destroy, &mut self.handle).unwrap();
-    }
-}
-
-impl Deref for LogicalType {
-    type Target = ffi::duckdb_v2_logical_type_handle;
-    fn deref(&self) -> &Self::Target {
-        &self.handle
     }
 }
 

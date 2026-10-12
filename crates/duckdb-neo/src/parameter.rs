@@ -22,6 +22,7 @@ impl QueryParameter for Value {
 }
 
 #[doc(hidden)]
+#[derive(Debug)]
 pub enum ParameterValue<'a> {
     Borrowed(&'a Value),
     Owned(Value),
@@ -44,6 +45,19 @@ pub enum Parameters<'a> {
     Positional(&'a [&'a dyn QueryParameter]),
     /// Bind parameters by name.
     Named(&'a [(&'a str, &'a dyn QueryParameter)]),
+}
+
+impl std::fmt::Debug for Parameters<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::Positional(params) => f.debug_tuple("Positional").field(&params.len()).finish(),
+            Self::Named(params) => f
+                .debug_tuple("Named")
+                .field(&params.iter().map(|(name, _)| *name).collect::<Vec<_>>())
+                .finish(),
+        }
+    }
 }
 
 impl<'a> Parameters<'a> {

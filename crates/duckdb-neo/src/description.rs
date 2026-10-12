@@ -5,13 +5,14 @@ use crate::ffi;
 use crate::ffi_str::DuckDBStr;
 use crate::{
     Result, check_api_call, check_api_call_no_err, connection::Connection, logical_type::LogicalType,
-    qualified_name::QualifiedName,
+    qualified_name::QualifiedName, raw::RawExt,
 };
 
 /// An owned snapshot of a table column's name, type, and default or generated status.
 ///
 /// Obtained from [`TableDescription::column`] or [`TableDescription::columns`]
 /// and independent of the table description's lifetime.
+#[derive(Debug)]
 pub struct ColumnDescription {
     handle: ffi::duckdb_v2_column_description_handle,
 }
@@ -78,6 +79,7 @@ impl ColumnDescription {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct TableDescription {
     handle: ffi::duckdb_v2_table_description_handle,
 }
@@ -86,7 +88,12 @@ impl TableDescription {
     /// Resolve a base table through the connection's catalog and search path.
     pub fn new(connection: &Connection, name: &QualifiedName) -> Result<Self> {
         Ok(TableDescription {
-            handle: check_api_call!(ffi::duckdb_v2_connection_describe_table, **connection, name.handle, RET)?,
+            handle: check_api_call!(
+                ffi::duckdb_v2_connection_describe_table,
+                connection.raw(),
+                name.handle,
+                RET
+            )?,
         })
     }
 

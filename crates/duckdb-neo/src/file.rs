@@ -5,10 +5,12 @@ use std::marker::PhantomData;
 use crate::{
     Result, check_api_call, check_api_call_no_err, ffi,
     links::{DatabaseKeepAlive, FileSystemLink, KeepAlive},
+    raw::RawExt,
     value::Value,
 };
 
 /// A borrowed handle to DuckDB's file system.
+#[derive(Debug)]
 pub struct FileSystem<'link> {
     handle: ffi::duckdb_v2_file_system_handle,
     database: Option<KeepAlive>,
@@ -38,6 +40,7 @@ impl<'link> FileSystem<'link> {
 ///
 /// Access and creation flags are disabled by default and can be composed with
 /// the builder methods before calling [`FileBuilder::open`].
+#[derive(Debug)]
 pub struct FileBuilder<'link> {
     fs: &'link FileSystem<'link>,
     handle: ffi::duckdb_v2_file_open_options_handle,
@@ -137,7 +140,7 @@ impl<'link> FileBuilder<'link> {
             ffi::duckdb_v2_file_open_options_set_value,
             self.handle,
             &name.into(),
-            **value
+            value.raw()
         )?;
         Ok(self)
     }
@@ -183,6 +186,7 @@ impl Drop for FileBuilder<'_> {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct File {
     /// The owned DuckDB file handle.
     handle: ffi::duckdb_v2_file_handle,

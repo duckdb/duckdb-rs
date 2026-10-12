@@ -6,6 +6,7 @@ use crate::{
     enums::TokenType,
     error::{check_api_call, check_api_call_no_err},
     ffi,
+    raw::RawExt,
 };
 
 /// One lexical token from a tokenized SQL statement.
@@ -26,6 +27,7 @@ pub struct TokenData {
 /// iterator is created with [`SqlTokenIterator::new`]; tokenizing copies every
 /// token up front, so the iterator borrows neither the SQL text nor the
 /// connection.
+#[derive(Debug)]
 pub struct SqlTokenIterator {
     handle: ffi::duckdb_v2_token_iterator_handle,
 }
@@ -43,7 +45,7 @@ impl SqlTokenIterator {
     /// on demand as the iterator is advanced.
     pub fn new(conn: &Connection, sql: &str) -> Result<SqlTokenIterator> {
         Ok(Self {
-            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, **conn, &sql.into(), RET)?,
+            handle: check_api_call!(ffi::duckdb_v2_tokenize_sql, conn.raw(), &sql.into(), RET)?,
         })
     }
 

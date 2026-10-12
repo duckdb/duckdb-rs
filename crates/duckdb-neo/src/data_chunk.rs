@@ -11,16 +11,16 @@ use crate::logical_type::{LogicalType, LogicalTypeID};
 use crate::vector::{Access, VectorElement};
 use crate::{
     Result, check_api_call,
+    raw::RawExt,
     vector::{Unknown, Vector},
 };
 
 fn check_distinct(indices: &[usize]) -> Result<()> {
     for (i, index) in indices.iter().enumerate() {
         if indices[..i].contains(index) {
-            return Err(crate::error::Error {
-                code: crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("vector index {index} was requested more than once"),
-            });
+            return Err(crate::error::Error::invalid_parameter(format!(
+                "vector index {index} was requested more than once"
+            )));
         }
     }
     Ok(())
@@ -71,7 +71,7 @@ trait DataChunkLink {
 
 impl DataChunkLink for Connection {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
-        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, **self, **chunk, RET)?;
+        let handle = check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_connection, self.raw(), **chunk, RET)?;
         Ok(DataChunk::new(handle, true)?.keep_alive(self))
     }
 }
@@ -79,7 +79,7 @@ impl DataChunkLink for Connection {
 impl DataChunkLink for Context {
     fn copy_data_chunk(&self, chunk: &DataChunkRef<'_>) -> crate::Result<DataChunk<'static>> {
         DataChunk::new(
-            check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_context, **self, **chunk, RET)?,
+            check_api_call!(ffi::duckdb_v2_data_chunk_copy_with_context, self.raw(), **chunk, RET)?,
             true,
         )
     }
@@ -91,6 +91,7 @@ impl DataChunkLink for Context {
 /// Vectors follow argument (or child) order and borrow DuckDB's data for the
 /// duration of the callback. Shared views are cached, so repeated
 /// [`Self::get_vector_at`] calls are cheap; mutable access drops the cached view.
+#[derive(Debug)]
 pub struct VectorCollection {
     pub(crate) handles: Vec<ffi::duckdb_v2_vector_handle>,
     pub(crate) access: Access,
@@ -102,6 +103,7 @@ pub struct VectorCollection {
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
+#[derive(Debug)]
 pub(crate) enum RowCount {
     /// A callback batch size; inputs are not writable, so it cannot change.
     Fixed(usize),
@@ -308,6 +310,7 @@ impl VectorCollection {
 /// Readers trust the children validated when the parent was cast, so this
 /// never hands out `&mut VectorCollection`, which could be swapped with another
 /// vector's children. Read-only access goes through [`Deref`].
+#[derive(Debug)]
 pub struct ChildrenMut<'a>(pub(crate) &'a mut VectorCollection);
 
 impl Deref for ChildrenMut<'_> {
@@ -535,6 +538,7 @@ impl<'a> DataChunkRef<'a> {
 }
 
 /// Selects where a chunk's vectors are allocated.
+#[derive(Debug)]
 pub enum Allocator<'a> {
     /// Allocate from the DuckDB default allocator.
     Default,
@@ -587,7 +591,7 @@ impl<'a> DataChunk<'a> {
             Allocator::Connection(conn) => {
                 let handle = check_api_call!(
                     ffi::duckdb_v2_data_chunk_create_with_connection,
-                    **conn,
+                    conn.raw(),
                     type_handles.as_ptr(),
                     len as u64,
                     RET
@@ -596,7 +600,7 @@ impl<'a> DataChunk<'a> {
             }
             Allocator::Context(context) => check_api_call!(
                 ffi::duckdb_v2_data_chunk_create_with_context,
-                **context,
+                context.raw(),
                 type_handles.as_ptr(),
                 len as u64,
                 RET

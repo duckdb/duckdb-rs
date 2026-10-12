@@ -12,6 +12,10 @@ description = "Native bindings to the libduckdb library, C API; build loadable e
 edition = { workspace = true }
 rust-version = { workspace = true }
 
+[features]
+# Derives for duckdb-neo's raw handle traits.
+neo = []
+
 [dependencies]
 darling = "0.20.10"
 proc-macro2 = { workspace = true }

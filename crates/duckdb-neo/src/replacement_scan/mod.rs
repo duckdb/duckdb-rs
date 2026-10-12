@@ -8,11 +8,12 @@ use crate::{
     check_api_call,
     column_data_collection::ColumnDataCollection,
     connection::Context,
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     handles::ReplacementScanBuilderLink,
     links::ConnectionOrigin,
     qualified_name::QualifiedName,
+    raw::RawExt,
     value::Value,
 };
 
@@ -21,6 +22,7 @@ use crate::{
 /// Use [`Self::set_reference`] to replace it with a table function, column data
 /// collection, or subquery. Parameters can be added only after selecting a
 /// table function.
+#[derive(Debug)]
 pub struct ReplacementHandle<'a> {
     info: &'a ffi::duckdb_v2_replacement_scan_info_handle,
     collections: &'a HashMap<String, ColumnDataCollection<'a>>,
@@ -32,6 +34,7 @@ pub struct ReplacementHandle<'a> {
 /// The column-data-collection forms name a collection added with
 /// [`ReplacementScanBuilder::collection`]; the registration keeps it alive for
 /// as long as any result or prepared statement reads it.
+#[derive(Debug)]
 pub enum ReplacementType<'a> {
     /// A table function's name, optionally qualified by schema and catalog.
     Table(QualifiedName),
@@ -75,7 +78,11 @@ impl ReplacementHandle<'_> {
     pub fn set_reference(&self, replacement_type: ReplacementType<'_>) -> Result<()> {
         match replacement_type {
             ReplacementType::Table(name) => {
-                check_api_call!(ffi::duckdb_v2_replacement_scan_set_function_name, *self.info, *name)
+                check_api_call!(
+                    ffi::duckdb_v2_replacement_scan_set_function_name,
+                    *self.info,
+                    name.raw()
+                )
             }
             ReplacementType::Subquery(query) => {
                 check_api_call!(
@@ -87,14 +94,14 @@ impl ReplacementHandle<'_> {
             ReplacementType::ColumnDataCollection(name) => check_api_call!(
                 ffi::duckdb_v2_replacement_scan_set_collection,
                 *self.info,
-                **self.registered_collection(name)?,
+                self.registered_collection(name)?.raw(),
                 std::ptr::null(),
                 0
             ),
             ReplacementType::NamedColumnDataCollection((name, names)) => check_api_call!(
                 ffi::duckdb_v2_replacement_scan_set_collection,
                 *self.info,
-                **self.registered_collection(name)?,
+                self.registered_collection(name)?.raw(),
                 names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
                 names.len() as u64
             ),
@@ -107,14 +114,16 @@ impl ReplacementHandle<'_> {
     }
 
     fn registered_collection(&self, name: &str) -> Result<&ColumnDataCollection<'_>> {
-        self.collection(name).ok_or_else(|| Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("No collection named \"{name}\" is registered on this replacement scan"),
+        self.collection(name).ok_or_else(|| {
+            Error::invalid_input(format!(
+                "No collection named \"{name}\" is registered on this replacement scan"
+            ))
         })
     }
 }
 
 /// What the registration owns: the callback and the collections it can claim references with.
+#[derive(Debug)]
 struct ReplacementScanData<'conn, T> {
     implementation: T,
     collections: HashMap<String, ColumnDataCollection<'conn>>,
@@ -157,6 +166,7 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
 ///
 /// The registration owns the callback and any collections added with
 /// [`Self::collection`] until then.
+#[derive(Debug)]
 pub struct ReplacementScanBuilder<'conn, T> {
     implementation: T,
     collections: HashMap<String, ColumnDataCollection<'conn>>,
@@ -197,12 +207,9 @@ where
             .iter()
             .find(|(_, collection)| origin.is_none() || collection.origin != origin)
         {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!(
-                    "Collection \"{name}\" can only be registered on a replacement scan of the connection it was created from"
-                ),
-            });
+            return Err(Error::invalid_input(format!(
+                "Collection \"{name}\" can only be registered on a replacement scan of the connection it was created from"
+            )));
         }
 
         // Every collection comes from `link`'s connection, which drops this data, and the
@@ -216,17 +223,17 @@ where
 
         check_api_call!(
             ffi::duckdb_v2_replacement_scan_set_callback,
-            *handle,
+            handle.raw(),
             Some(replacement_callback::<T>)
         )?;
 
         check_api_call!(
             ffi::duckdb_v2_replacement_scan_set_user_data,
-            *handle,
+            handle.raw(),
             &mut data.to_handle()
         )?;
 
-        check_api_call!(ffi::duckdb_v2_replacement_scan_register, *handle)
+        check_api_call!(ffi::duckdb_v2_replacement_scan_register, handle.raw())
     }
 }
 

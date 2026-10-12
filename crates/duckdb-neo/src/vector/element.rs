@@ -24,7 +24,22 @@ pub trait VectorElement: Sized {
     }
 
     /// Borrow a value at its physical and logical indexes.
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    ///
+    /// Prefer [`Vector::get`] or [`Vector::iter`], which uphold these requirements.
+    ///
+    /// # Safety
+    ///
+    /// - `vector` must have been validated as `Self`, and its children cached.
+    /// - `vector` must have a readable view.
+    /// - `logical` must be a row of `vector`, `physical` its physical index, and the row must not be `NULL`.
+    ///
+    /// ```compile_fail,E0133
+    /// # use duckdb_neo::vector::{Vector, VectorElement};
+    /// fn read<'a>(vector: &'a Vector<'_, i8>) -> &'a i64 {
+    ///     <i64 as VectorElement>::get(vector, 10_000, 0)
+    /// }
+    /// ```
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a;
 }
@@ -37,7 +52,20 @@ pub trait WritableVectorElement: VectorElement {
         Self: 'a;
 
     /// Write one value into a writable vector.
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()>;
+    ///
+    /// Prefer [`Vector::write`], which upholds this requirement.
+    ///
+    /// # Safety
+    ///
+    /// `vector` must be writable, see [`Vector::is_writable`].
+    ///
+    /// ```compile_fail,E0133
+    /// # use duckdb_neo::vector::{Vector, WritableVectorElement};
+    /// fn write(vector: &mut Vector<'_, i32>) -> duckdb_neo::Result<()> {
+    ///     <i32 as WritableVectorElement>::write(vector, 0, Some(1))
+    /// }
+    /// ```
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()>;
 }
 
 /// The element type has not been checked against the vector's logical type yet.
@@ -51,7 +79,7 @@ impl VectorElement for Unknown {
 
     type Internal = ();
 
-    fn get<'a, U: VectorElement>(_vector: &'a Vector<'_, U>, _physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(_vector: &'a Vector<'_, U>, _physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {

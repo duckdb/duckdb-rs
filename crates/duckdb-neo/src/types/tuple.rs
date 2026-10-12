@@ -4,7 +4,7 @@ use super::{DuckDBType, FromValue, ToValue};
 use crate::{
     Parameters, Result,
     connection::FFILink,
-    error::{DuckDBError, Error},
+    error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
     value::ValueInput,
@@ -13,17 +13,16 @@ use crate::{
 fn validate_tuple(value: &Value, expected_len: usize) -> Result<()> {
     let logical_type = value.fetch_logical_type()?;
     if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE {
-        return Err(Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("Expected TUPLE value, found {}", logical_type.to_string()?),
-        });
+        return Err(Error::invalid_input(format!(
+            "Expected TUPLE value, found {}",
+            logical_type.to_string()?
+        )));
     }
     let actual_len = value.child_count()?;
     if actual_len != expected_len {
-        return Err(Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-            message: format!("TUPLE has {actual_len} fields, expected {expected_len}"),
-        });
+        return Err(Error::invalid_input(format!(
+            "TUPLE has {actual_len} fields, expected {expected_len}"
+        )));
     }
     Ok(())
 }

@@ -1,15 +1,16 @@
 //! Owned DuckDB values and their typed payloads.
 
-use std::{fmt::Debug, ops::Deref};
+use std::fmt::Debug;
 
 use crate::ffi;
 
 use crate::{
-    Result, check_api_call, check_api_call_no_err, check_api_call_string,
+    AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err, check_api_call_string,
     connection::{Connection, Context, FFILink},
-    error::{DuckDBError, Error},
+    error::Error,
     links::ValueCastLink,
     logical_type::LogicalType,
+    raw::RawExt,
     types::FromValue,
 };
 
@@ -37,7 +38,7 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct Value {
     pub(crate) handle: ffi::duckdb_v2_value_handle,
 }
@@ -47,6 +48,7 @@ unsafe impl Send for Value {}
 unsafe impl Sync for Value {}
 
 #[doc(hidden)]
+#[derive(Debug)]
 pub enum ValueInput<'a> {
     Null(&'a LogicalType),
     Bool(bool),
@@ -114,10 +116,9 @@ fn check_same_len(what: &str, left: usize, right: usize) -> Result<()> {
     if left == right {
         return Ok(());
     }
-    Err(Error {
-        code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-        message: format!("{what}: lengths differ ({left} vs {right})"),
-    })
+    Err(Error::invalid_input(format!(
+        "{what}: lengths differ ({left} vs {right})"
+    )))
 }
 
 fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {
@@ -279,7 +280,7 @@ macro_rules! create_value_dispatch {
 
 pub(crate) fn create_with_connection(connection: &Connection, input: ValueInput<'_>) -> Result<Value> {
     create_value_dispatch!(
-        **connection,
+        connection.raw(),
         input,
         bool = ffi::duckdb_v2_value_create_bool_with_connection,
         utinyint = ffi::duckdb_v2_value_create_utinyint_with_connection,
@@ -323,7 +324,7 @@ pub(crate) fn create_with_connection(connection: &Connection, input: ValueInput<
 
 pub(crate) fn create_with_context(context: &Context, input: ValueInput<'_>) -> Result<Value> {
     create_value_dispatch!(
-        **context,
+        context.raw(),
         input,
         bool = ffi::duckdb_v2_value_create_bool_with_context,
         utinyint = ffi::duckdb_v2_value_create_utinyint_with_context,
@@ -368,14 +369,6 @@ pub(crate) fn create_with_context(context: &Context, input: ValueInput<'_>) -> R
 impl Drop for Value {
     fn drop(&mut self) {
         check_api_call_no_err!(ffi::duckdb_v2_value_destroy, &mut self.handle).unwrap();
-    }
-}
-
-impl Deref for Value {
-    type Target = ffi::duckdb_v2_value_handle;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
     }
 }
 

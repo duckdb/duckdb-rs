@@ -9,7 +9,7 @@ use crate::{
     Parameters, Result,
     connection::FFILink,
     data_chunk::VectorCollection,
-    error::{DuckDBError, Error},
+    error::Error,
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
@@ -17,9 +17,11 @@ use crate::{
 };
 
 /// Reads a `MAP` vector with key type `K` and value type `V`.
+#[derive(Debug)]
 pub struct Map<K, V>(pub ffi::duckdb_v2_list_entry, pub PhantomData<(K, V)>);
 
 /// Key-value entries represented as a DuckDB `MAP`.
+#[derive(Debug)]
 pub struct MapValue<K, V> {
     /// Entries in insertion order.
     pub entries: Vec<(K, V)>,
@@ -57,18 +59,18 @@ impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.fetch_logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!("Expected MAP value, found {}", logical_type.to_string()?),
-            });
+            return Err(Error::invalid_input(format!(
+                "Expected MAP value, found {}",
+                logical_type.to_string()?
+            )));
         }
 
         let children = value.children()?;
         if children.len() % 2 != 0 {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: format!("MAP exposed an odd number of children: {}", children.len()),
-            });
+            return Err(Error::invalid_input(format!(
+                "MAP exposed an odd number of children: {}",
+                children.len()
+            )));
         }
 
         let entries = children
@@ -77,10 +79,8 @@ impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
             .iter()
             .enumerate()
             .map(|(index, entry)| {
-                let key = K::from_value(&entry[0])?.ok_or_else(|| Error {
-                    code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                    message: format!("MAP entry {index} has a NULL key"),
-                })?;
+                let key = K::from_value(&entry[0])?
+                    .ok_or_else(|| Error::invalid_input(format!("MAP entry {index} has a NULL key")))?;
                 Ok((key, V::from_value(&entry[1])?))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -105,17 +105,14 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         }
 
         let Some(children) = children.filter(|children| children.col_count() == 2) else {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
-                message: "Map vector must have exactly two children".to_string(),
-            });
+            return Err(Error::invalid_input("Map vector must have exactly two children"));
         };
 
         children.get_untyped_vector_at(0)?.validate_as::<K>()?;
         children.get_untyped_vector_at(1)?.validate_as::<V>()
     }
 
-    fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -138,7 +135,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         K: 'a,
         V: 'a;
 
-    fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
             return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
         };
@@ -180,6 +177,7 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
 }
 
 /// A borrowed map row backed by matching ranges in key and value vectors.
+#[derive(Debug)]
 pub struct MapRow<'a, K, V> {
     pub(crate) children: &'a VectorCollection,
     pub(crate) offset: usize,
@@ -236,10 +234,7 @@ where
         }
 
         if index.is_none() {
-            return Err(Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
-                message: format!("Key '{:?}' not found in map", key),
-            });
+            return Err(Error::invalid_parameter(format!("Key '{:?}' not found in map", key)));
         }
 
         Ok(self.children.cached_unchecked(1).get_as_unchecked::<V>(index.unwrap()))
@@ -260,15 +255,15 @@ where
     }
 
     /// Return the map's values.
-    pub fn values(&self) -> Result<Vec<V::Ref<'a>>> {
+    pub fn values(&self) -> Result<Vec<Option<V::Ref<'a>>>> {
         let mut values: Vec<_> = Vec::new();
 
         self.children.cached_unchecked(1).validate_as::<V>()?;
 
         for logical in self.offset..self.offset + self.length {
-            if let Some(value) = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical) {
-                values.push(value);
-            }
+            let value = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical);
+
+            values.push(value);
         }
 
         Ok(values)

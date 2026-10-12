@@ -13,8 +13,8 @@ use crate::{
     connection::{Connection, Context},
     data_chunk::{DataChunk, DataChunkRef},
     ffi,
-    ffi_str::DuckDBStr,
     logical_type::LogicalType,
+    raw::RawExt,
     schema::Schema,
 };
 
@@ -22,6 +22,7 @@ use crate::{
 ///
 /// The query keeps running while the stream is read, so the stream borrows the
 /// connection and is released when dropped.
+#[derive(Debug)]
 pub struct ArrowStream<'conn> {
     stream: FFI_ArrowArrayStream,
     _conn: std::marker::PhantomData<&'conn mut Connection>,
@@ -48,6 +49,7 @@ impl ArrowStream<'_> {
 /// The context's Arrow settings are copied at creation, but the copy keeps a
 /// raw pointer to the client context, so the exporter borrows the context for
 /// `'ctx` and must not outlive it.
+#[derive(Debug)]
 pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -70,7 +72,7 @@ impl<'ctx> ArrowExporter<'ctx> {
 
         let handle = check_api_call!(
             ffi::duckdb_v2_arrow_exporter_create,
-            **context,
+            context.raw(),
             logical_type_handles.as_ptr(),
             name_ptrs.as_ptr(),
             logical_type_handles.len() as u64,
@@ -123,6 +125,7 @@ impl Drop for ArrowExporter<'_> {
 ///
 /// The importer runs every conversion under the context it was created with,
 /// so it borrows that context and cannot outlive it.
+#[derive(Debug)]
 pub struct ArrowImporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_importer_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -137,7 +140,7 @@ impl<'ctx> ArrowImporter<'ctx> {
         // DuckDB only reads the schema while resolving it, so it is released on return.
         let handle = check_api_call!(
             ffi::duckdb_v2_arrow_importer_create,
-            **context,
+            context.raw(),
             &mut schema,
             batch_size.unwrap_or(0) as u64,
             RET

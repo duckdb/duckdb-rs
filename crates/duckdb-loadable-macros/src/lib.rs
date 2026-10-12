@@ -131,3 +131,24 @@ pub fn duckdb_entrypoint_c_api(attr: TokenStream, item: TokenStream) -> TokenStr
         _ => panic!("Only function items are allowed on duckdb_entrypoint_c_api"),
     }
 }
+
+#[cfg(feature = "neo")]
+mod neo;
+
+/// Derive `duckdb_neo::AsRaw`, exposing the struct's raw DuckDB handle.
+///
+/// The handle field is the one marked `#[raw]`, the only field, or the field named `handle`.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsRaw, attributes(raw))]
+pub fn derive_as_raw(input: TokenStream) -> TokenStream {
+    neo::derive_as_raw(parse_macro_input!(input as syn::DeriveInput))
+}
+
+/// Derive `duckdb_neo::FromRaw`, wrapping a raw DuckDB handle.
+///
+/// Requires `AsRaw`. Every field other than the handle is set to its `Default`.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(FromRaw, attributes(raw))]
+pub fn derive_from_raw(input: TokenStream) -> TokenStream {
+    neo::derive_from_raw(parse_macro_input!(input as syn::DeriveInput))
+}

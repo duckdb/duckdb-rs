@@ -1,10 +1,11 @@
 use crate::{
     Result,
-    error::{DuckDBError, Error, check_api_call_no_err},
+    error::{Error, check_api_call_no_err},
     ffi,
     ffi_str::DuckDBStr,
 };
 
+#[derive(Debug)]
 pub(crate) struct OpaqueHandle<T> {
     data: *mut T,
     success: RefCell<bool>,
@@ -116,10 +117,7 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
         }
         Err(panic) => {
             let text = panic_message(panic.as_ref());
-            let error = Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
-                message: format!("Panic occurred: {text}"),
-            };
+            let error = Error::internal(format!("Panic occurred: {text}"));
             set_error(err, &error);
             None
         }
