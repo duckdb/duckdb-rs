@@ -13,6 +13,7 @@ use crate::{
     connection::{Connection, Context},
     data_chunk::{DataChunk, DataChunkRef},
     ffi,
+    ffi_str::DuckDBStr,
     logical_type::LogicalType,
     schema::Schema,
 };
@@ -59,16 +60,13 @@ impl<'ctx> ArrowExporter<'ctx> {
     /// Panics if `logical_types` and `names` differ in length.
     ///
     /// `None` or `Some(0)` imposes no batch-size limit.
-    pub fn new(
-        context: &'ctx Context,
-        logical_types: &[LogicalType],
-        names: &[String],
-        batch_size: Option<usize>,
-    ) -> Result<Self> {
-        let logical_type_handles = logical_types.iter().map(|x| x.handle).collect::<Vec<_>>();
-        let name_ptrs = names.iter().map(|x| x.into()).collect::<Vec<ffi::duckdb_v2_str>>();
-
-        assert_eq!(logical_types.len(), names.len());
+    pub fn new(context: &'ctx Context, columns: &[(&str, LogicalType)], batch_size: Option<usize>) -> Result<Self> {
+        let converted = columns
+            .iter()
+            .map(|(name, lt)| ((*name).into(), lt.handle))
+            .collect::<Vec<(ffi::duckdb_v2_str, ffi::duckdb_v2_logical_type_handle)>>();
+        let name_ptrs = converted.iter().map(|x| x.0).collect::<Vec<_>>();
+        let logical_type_handles = converted.iter().map(|x| x.1).collect::<Vec<_>>();
 
         let handle = check_api_call!(
             ffi::duckdb_v2_arrow_exporter_create,
@@ -226,18 +224,23 @@ mod tests {
             logical_types.push(input.get_untyped_vector_at(i)?.logical_type().clone());
         }
 
+        let columns = [
+            ("val1", input.get_untyped_vector_at(0)?.logical_type().clone()),
+            ("val2", input.get_untyped_vector_at(1)?.logical_type().clone()),
+            ("val3", input.get_untyped_vector_at(2)?.logical_type().clone()),
+        ];
+
         let mut result = result;
 
         let data_chunk = input.to_data_chunk()?;
 
-        let mut arrow_exporter = ArrowExporter::new(
-            ctx,
-            &logical_types,
-            &["val1".to_string(), "val2".to_string(), "val3".to_string()],
-            None,
-        )?;
+        let mut arrow_exporter = ArrowExporter::new(ctx, &columns, None)?;
 
         let schema = arrow_exporter.schema()?;
+
+        assert_eq!(schema.child(0).name(), Some("val1"));
+        assert_eq!(schema.child(1).name(), Some("val2"));
+        assert_eq!(schema.child(2).name(), Some("val3"));
 
         assert!(arrow_exporter.next_array()?.is_none());
         arrow_exporter.append(&data_chunk, true)?;
