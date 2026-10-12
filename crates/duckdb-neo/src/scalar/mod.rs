@@ -61,14 +61,7 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
 
             let arguments = BindArguments { handle: &info };
 
-            let data = T::bind(
-                user_data,
-                &Context(context),
-                arguments,
-                ReturnTypeHandle {
-                    handle: FunctionBindHandles::Scalar(&result),
-                },
-            )?;
+            let data = T::bind(user_data, &Context(context), arguments)?;
 
             check_api_call!(
                 ffi::duckdb_v2_scalar_function_bind_set_bind_data,
@@ -148,36 +141,6 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
         },
         err,
     );
-}
-
-#[derive(Debug)]
-pub(crate) enum FunctionBindHandles<'a> {
-    Scalar(&'a ffi::duckdb_v2_scalar_function_bind_info_handle),
-    Aggregate(&'a ffi::duckdb_v2_aggregate_function_bind_info_handle),
-}
-
-/// Callback-scoped control over a scalar function's resolved result type.
-#[derive(Debug)]
-pub struct ReturnTypeHandle<'a> {
-    pub(crate) handle: FunctionBindHandles<'a>,
-}
-
-impl<'a> ReturnTypeHandle<'a> {
-    /// Override the result type for the current bound call site.
-    ///
-    /// For example, a function declared to return `ANY` can derive a concrete
-    /// type from its bound arguments. DuckDB copies the returned logical
-    /// type, and the override is valid only during binding.
-    pub fn override_return(&self, return_type: LogicalType) -> Result<()> {
-        match self.handle {
-            FunctionBindHandles::Scalar(_handle) => unimplemented!("The CAPI does not support this."),
-            FunctionBindHandles::Aggregate(handle) => check_api_call!(
-                ffi::duckdb_v2_aggregate_function_bind_set_return_type,
-                *handle,
-                return_type.raw()
-            ),
-        }
-    }
 }
 
 /// Builds and registers a user-defined scalar function.
@@ -283,12 +246,7 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     }
 
     /// **Bind:** validate a call site and create data shared by later phases.
-    fn bind(
-        &self,
-        _context: &Context,
-        _arguments: BindArguments<'_>,
-        _result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
+    fn bind(&self, _context: &Context, _arguments: BindArguments<'_>) -> Result<Self::BindData> {
         Ok(Self::BindData::default())
     }
 

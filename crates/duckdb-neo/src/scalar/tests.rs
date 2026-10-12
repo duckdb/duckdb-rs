@@ -18,12 +18,7 @@ impl ScalarCallbacks for ScalarWithData {
     type BindData = Vec<i32>;
     type InitData = i32;
 
-    fn bind(
-        &self,
-        context: &Context,
-        arguments: BindArguments<'_>,
-        _result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
+    fn bind(&self, context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
         assert_eq!(arguments.logical_type(0)?, LogicalType::from_text(context, "INTEGER")?);
         assert!(
             arguments
@@ -289,14 +284,8 @@ impl ScalarCallbacks for OverrideAbleScalar {
     type BindData = ();
     type InitData = ();
 
-    fn bind(
-        &self,
-        context: &Context,
-        _arguments: BindArguments<'_>,
-        result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
-        result_type_handle.override_return(i8::logical_type(context)?)?;
-        Ok(())
+    fn resolve_types(context: &Context, _arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
+        Ok(Some(i8::logical_type(context)?))
     }
 
     fn exec(
@@ -353,12 +342,7 @@ impl ScalarCallbacks for FoldProbe {
     type BindData = ();
     type InitData = ();
 
-    fn bind(
-        &self,
-        _context: &Context,
-        arguments: BindArguments<'_>,
-        _result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
+    fn bind(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
         self.folded.lock().unwrap().push(arguments.value(0)?.is_some());
         Ok(())
     }

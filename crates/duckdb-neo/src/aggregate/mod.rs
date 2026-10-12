@@ -12,7 +12,7 @@ use std::{
     panic::AssertUnwindSafe,
 };
 
-use crate::{builder_helpers::ArgCount, ffi};
+use crate::{builder_helpers::ArgCount, ffi, logical_type::LogicalType};
 
 use crate::{
     Error, Result,
@@ -24,10 +24,30 @@ use crate::{
     enums::AggregateFunctionProperty,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     raw::RawExt,
-    scalar::{FunctionBindHandles, ReturnTypeHandle},
     signature::Signature,
     vector::{Access, Unknown, Vector},
 };
+
+/// Callback-scoped control over a scalar function's resolved result type.
+#[derive(Debug)]
+pub struct ReturnTypeHandle<'a> {
+    pub(crate) handle: &'a ffi::duckdb_v2_aggregate_function_bind_info_handle,
+}
+
+impl<'a> ReturnTypeHandle<'a> {
+    /// Override the result type for the current bound call site.
+    ///
+    /// For example, a function declared to return `ANY` can derive a concrete
+    /// type from its bound arguments. DuckDB copies the returned logical
+    /// type, and the override is valid only during binding.
+    pub fn override_return(&self, return_type: LogicalType) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_aggregate_function_bind_set_return_type,
+            *self.handle,
+            return_type.raw()
+        )
+    }
+}
 
 /// [`States`] is a view over the aggregate states DuckDB passes to a callback.
 ///
@@ -121,9 +141,7 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
                 user_data,
                 &Context(context),
                 arguments,
-                ReturnTypeHandle {
-                    handle: FunctionBindHandles::Aggregate(&result),
-                },
+                ReturnTypeHandle { handle: &result },
             )?;
 
             check_api_call!(

@@ -4,13 +4,13 @@ use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROP
 
 use crate::{
     DuckDBType, Parameters,
+    aggregate::ReturnTypeHandle,
     aggregate::{AggregateCallbacks, AggregateFunctionBuilder, States},
     bind_arguments::BindArguments,
     connection::Context,
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
     logical_type::LogicalType,
-    scalar::ReturnTypeHandle,
     signature::{FunctionParameter, SignatureBuilder},
     vector::{Unknown, Vector},
 };
