@@ -447,18 +447,17 @@ mod test {
     }
 
     #[test]
-    fn test_append_geometry_value_to_geometry_column_fails() -> Result<()> {
+    fn test_append_geometry_value_to_geometry_column() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(geom GEOMETRY)")?;
 
         let wkb: Vec<u8> = db.query_row("SELECT ST_AsWKB('POINT EMPTY'::GEOMETRY)", [], |row| row.get(0))?;
         let mut app = db.appender("foo")?;
-        let err = app.append_row([Value::Geometry(wkb)]).unwrap_err();
-        let message = err.to_string();
-        assert!(
-            message.contains("BLOB") && message.contains("GEOMETRY"),
-            "expected BLOB/GEOMETRY type mismatch, got: {message}"
-        );
+        app.append_row([Value::Geometry(wkb.clone())])?;
+        app.flush()?;
+
+        let got: Value = db.query_row("SELECT geom FROM foo", [], |row| row.get(0))?;
+        assert_eq!(got, Value::Geometry(wkb));
         Ok(())
     }
 
