@@ -86,7 +86,7 @@ impl<'a> BindArguments<'a> {
             index as u64,
             RET
         )
-        .map(|x| DuckDBStr::from_raw(x))?;
+        .map(DuckDBStr::from_raw)?;
 
         Ok(str.as_str().unwrap().to_string())
     }

@@ -457,8 +457,7 @@ impl ScalarCallbacks for DynamicResolve {
 
     fn resolve_types(_context: &Context, arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
         let lt = arguments.logical_type(0)?;
-
-        return Ok(Some(lt));
+        Ok(Some(lt))
     }
 
     fn exec(
