@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::logical_type::LogicalTypeID;
+use crate::scalar::ScalarFunctionBuilder;
 use crate::types::{Any, StructValue};
 use crate::{
     Parameters, ToValue,
@@ -22,8 +23,6 @@ use crate::{
     value::Value,
     vector::StorageKind,
 };
-
-use crate::scalar::ScalarFunctionBuilder;
 
 struct TestStruct;
 
@@ -1067,7 +1066,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
 
     macro_rules! assert_copy_write {
         ($type:ty, $value:expr) => {{
-            let mut chunk = DataChunk::create(&[<$type>::logical_type(&conn)?], true)?;
+            let mut chunk = DataChunk::create(&conn, &[<$type>::logical_type(&conn)?], true)?;
             let mut vector = chunk.get_vector_at_mut::<$type>(0)?;
             vector.set_size(2)?;
             let value = $value;
@@ -1098,7 +1097,11 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
         }
     );
 
-    let mut chunk = DataChunk::create(&[DecimalSignature { width: 18, scale: 3 }.logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(
+        &conn,
+        &[DecimalSignature { width: 18, scale: 3 }.logical_type(&conn)?],
+        true,
+    )?;
     assert!(chunk.get_vector_at::<WordDecimal>(0).is_err());
     assert!(chunk.get_vector_at::<i64>(0).is_err());
     let mut vector = chunk.get_vector_at_mut::<LongDecimal>(0)?;
@@ -1108,7 +1111,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     assert_eq!(vector.get(1)?, None);
 
-    let mut chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BlobValue::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BlobValue>(0)?;
     vector.set_size(2)?;
     vector.write(0, Some(&[0_u8, 1, 255]))?;
@@ -1116,7 +1119,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert_eq!(vector.get(0)?, Some([0_u8, 1, 255].as_slice()));
     assert_eq!(vector.get(1)?, None);
 
-    let mut chunk = DataChunk::create(&[BitValue::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BitValue::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BitValue>(0)?;
     vector.set_size(2)?;
     assert!(vector.write(0, Some(&[])).is_err());
@@ -1129,7 +1132,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
         is_negative: true,
         magnitude: vec![1, 2, 3, 4, 5],
     };
-    let mut chunk = DataChunk::create(&[BigNumValue::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BigNumValue::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BigNumValue>(0)?;
     vector.set_size(2)?;
     vector.write(0, Some(&bignum))?;
@@ -1141,13 +1144,13 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     let source_chunk = source.next_chunk()?.unwrap();
     let source_vector = source_chunk.get_vector_at::<BigNum>(0)?;
     let borrowed = source_vector.get(0)?.unwrap();
-    let mut chunk = DataChunk::create(&[BigNum::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BigNum::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BigNum>(0)?;
     vector.set_size(1)?;
     vector.write(0, Some(borrowed))?;
     assert_eq!(vector.get(0)?.unwrap().decode()?.to_string(), "12345678901234567890");
 
-    let mut chunk = DataChunk::create(&[<[i32; 3]>::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[<[i32; 3]>::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
     vector.set_size(2)?;
     vector.write(1, None)?;
@@ -1305,12 +1308,12 @@ pub fn test_vector_set_value() -> crate::Result<()> {
                         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
                             let val = vec.get_as_checked::<i32>(i)?.unwrap();
 
-                            Some(val.value(&ctx)?)
+                            Some(val.value(ctx)?)
                         }
                         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
                             let val = vec.get_as_checked::<bool>(i)?.unwrap();
 
-                            Some(val.value(&ctx)?)
+                            Some(val.value(ctx)?)
                         }
                         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY => {
                             todo!()
@@ -1325,7 +1328,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
                 };
 
                 if let Some(value) = value {
-                    let lt = LogicalType::from_text(&ctx, "VARIANT")?;
+                    let lt = LogicalType::from_text(ctx, "VARIANT")?;
                     let result = value.cast(ctx, lt)?;
                     output.write_value_slow(idx, result)?;
                 } else {
@@ -1592,13 +1595,13 @@ fn test_copy_from_rebuilds_children() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
 
-    let mut source = DataChunk::create(&types, true)?;
+    let mut source = DataChunk::create(&conn, &types, true)?;
     let mut src = source.get_vector_at_mut::<List<i32>>(0)?;
     src.set_size(2)?;
     src.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
     src.write(1, Some(vec![Some(4)]))?;
 
-    let mut target = DataChunk::create(&types, true)?;
+    let mut target = DataChunk::create(&conn, &types, true)?;
     let mut dst = target.get_vector_at_mut::<List<i32>>(0)?;
     dst.set_size(1)?;
     dst.write(0, Some(vec![Some(9)]))?;
@@ -1622,7 +1625,7 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
     vector.set_size(1)?;
     vector.write(0, Some(vec![Some(9)]))?;
@@ -1649,9 +1652,9 @@ fn test_make_constant_null_value() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [String::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut vector = chunk.get_vector_at_mut::<String>(0)?;
-    vector.make_constant(Value::null(&types[0])?, 3)?;
+    vector.make_constant(Value::null(&conn, &types[0])?, 3)?;
 
     assert_eq!(vector.iter()?.collect::<Vec<_>>(), vec![None; 3]);
     Ok(())
@@ -1664,7 +1667,7 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [i32::logical_type(&conn)?, i64::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
 
     let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
     constant.make_constant(42_i32.value(&conn)?, 2048)?;
@@ -1829,7 +1832,7 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let mut list_chunk = DataChunk::create(&[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
+    let mut list_chunk = DataChunk::create(&conn, &[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
     {
         let mut first = list_chunk.get_vector_at_mut::<List<i32>>(0)?;
         first.set_size(2)?;
@@ -1846,7 +1849,7 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
         .collect();
     assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(9)])]);
 
-    let mut map_chunk = DataChunk::create(&[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    let mut map_chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
     {
         let mut first = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         first.set_size(2)?;
@@ -1878,7 +1881,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
     let types = [i32::logical_type(&conn)?, Vec::<Option<i32>>::logical_type(&conn)?];
 
     // Children are optional and never get more access than their parent.
-    let mut read_only = DataChunk::create(&types, false)?;
+    let mut read_only = DataChunk::create(&conn, &types, false)?;
     assert!(read_only.get_vector_at::<i32>(0)?.children().is_none());
     let mut parent = read_only.get_vector_at_mut::<List<i32>>(1)?;
     assert!(
@@ -1890,7 +1893,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
             .is_err()
     );
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut list = chunk.get_vector_at_mut::<List<i32>>(1)?;
     // An out-of-range row must not append to the child.
     assert!(list.write(0, Some(vec![Some(1)])).is_err());
@@ -1909,6 +1912,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     // Each step grows the child past its initial capacity, so DuckDB reallocates it.
     let mut chunk = DataChunk::create(
+        &conn,
         &[
             <[i32; 1]>::logical_type(&conn)?,
             StructValue::<TestStruct>::logical_type(&conn)?,
@@ -1957,7 +1961,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
 fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let mut chunk = DataChunk::create(&[Vec::<Option<Vec<Option<i32>>>>::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[Vec::<Option<Vec<Option<i32>>>>::logical_type(&conn)?], true)?;
     let mut lists = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
     lists.set_size(3000)?;
     lists.write(0, Some(vec![Some(vec![Some(0)])]))?;
@@ -1982,10 +1986,10 @@ fn test_write_value_slow_null_is_visible() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let logical_type = i32::logical_type(&conn)?;
-    let mut chunk = DataChunk::create(std::slice::from_ref(&logical_type), true)?;
+    let mut chunk = DataChunk::create(&conn, std::slice::from_ref(&logical_type), true)?;
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(1)?;
-    vector.write_value_slow(0, crate::value::Value::null(&logical_type)?)?;
+    vector.write_value_slow(0, crate::value::Value::null(&conn, &logical_type)?)?;
     assert!(vector.is_null(0)?);
     Ok(())
 }
@@ -1997,7 +2001,7 @@ fn test_collection_append() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     chunk
         .get_vector_at_mut::<List<i32>>(0)?
         .make_constant(vec![Some(1), Some(2)].value(&conn)?, 3)?;

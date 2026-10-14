@@ -139,7 +139,11 @@ impl Environment {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use crate::environment::{Environment, StorageLocation};
+    use crate::{
+        FromValue,
+        connection::SettingScope,
+        environment::{Environment, StorageLocation},
+    };
 
     #[test]
     fn test_open_database_options() -> crate::Result<()> {
@@ -147,9 +151,13 @@ mod tests {
 
         let db = env.open(StorageLocation::InMemory)?;
 
-        db.set_option("memory_limit", "200MB")?;
+        db.config()?.set_text("memory_limit", "200MB", SettingScope::Global)?;
 
-        assert_eq!(db.get_option("memory_limit")?.setting()?, "190.7 MiB".to_string());
+        let (value, scope) = db.config()?.get_value("memory_limit")?;
+
+        let setting = String::from_value(&value)?;
+
+        assert_eq!(setting.unwrap(), "190.7 MiB".to_string());
         Ok(())
     }
 }

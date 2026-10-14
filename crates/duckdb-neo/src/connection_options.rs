@@ -1,32 +1,15 @@
 //! Configuration options shared with databases and connections.
 
-use crate::ffi;
+use crate::connection::SettingScope;
+use crate::{ffi, value};
 
 use crate::ffi_str::DuckDBStr;
+use crate::raw::RawExt;
+use crate::value::Value;
 use crate::{
     AsRaw, FromRaw, Result,
-    builder_helpers::ffi_enum_redeclaration,
     error::{check_api_call, check_api_call_no_err},
 };
-
-ffi_enum_redeclaration! {
-    /// Where DuckDB permits a configuration option's setting to be written.
-    ///
-    /// The target scope is part of the option declaration and is distinct from
-    /// the scope selected for a particular write.
-    pub enum TargetScope <- ffi::DUCKDB_V2_OPTION_TARGET_SCOPE {
-        /// The target scope is not known.
-        Unknown = DUCKDB_V2_OPTION_TARGET_SCOPE_UNKNOWN,
-        /// The option may only be written at global database scope.
-        GlobalOnly = DUCKDB_V2_OPTION_TARGET_SCOPE_GLOBAL_ONLY,
-        /// The option may only be written at local session scope.
-        LocalOnly = DUCKDB_V2_OPTION_TARGET_SCOPE_LOCAL_ONLY,
-        /// The option accepts either scope and defaults to global.
-        GlobalDefault = DUCKDB_V2_OPTION_TARGET_SCOPE_GLOBAL_DEFAULT,
-        /// The option accepts either scope and defaults to local.
-        LocalDefault = DUCKDB_V2_OPTION_TARGET_SCOPE_LOCAL_DEFAULT,
-    }
-}
 
 /// A resolved DuckDB configuration option.
 ///
@@ -42,9 +25,9 @@ ffi_enum_redeclaration! {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
-/// db.set_option("worker_threads", "2")?;
+/// db.config()?.set_text("worker_threads", "2", SettingScope::Session)?;
 ///
-/// let resolved = db.get_option("threads")?;
+/// let resolved = db.config()?.get_value("threads")?;
 /// assert_eq!(resolved.setting()?, "2");
 /// assert_eq!(resolved.canonical_name()?, "threads");
 /// # Ok(())
@@ -59,44 +42,9 @@ pub struct ConfigOption {
 impl ConfigOption {
     /// Return the canonical option name.
     pub fn canonical_name(&self) -> Result<String> {
-        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_name, self.handle, RET)?;
+        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_name, self.raw(), RET)?;
 
         Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
-    }
-
-    /// Return the option's string-encoded setting.
-    pub fn setting(&self) -> Result<String> {
-        let setting: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_setting, self.handle, RET)?;
-
-        Ok(DuckDBStr::from_raw(setting).as_str().unwrap_or_default().to_owned())
-    }
-
-    /// Return the option's static default setting.
-    pub fn default_setting(&self) -> Result<String> {
-        let setting: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_default_setting, self.handle, RET)?;
-
-        Ok(DuckDBStr::from_raw(setting).as_str().unwrap_or_default().to_owned())
-    }
-
-    /// Return the option's human-readable description.
-    pub fn description(&self) -> Result<String> {
-        let description: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_description, self.handle, RET)?;
-
-        Ok(DuckDBStr::from_raw(description).as_str().unwrap_or_default().to_owned())
-    }
-
-    /// Return the scopes where DuckDB permits this option to be set.
-    ///
-    /// The scope is unknown for options without an explicit scope declaration.
-    pub fn target_scope(&self) -> Result<TargetScope> {
-        check_api_call!(ffi::duckdb_v2_option_get_target_scope, self.handle, RET)?.try_into()
-    }
-
-    /// Return the number of registered aliases.
-    pub fn alias_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_option_get_alias_count, self.handle, RET)?;
-
-        Ok(count as usize)
     }
 
     /// Return the alias at `index`.
@@ -104,7 +52,7 @@ impl ConfigOption {
     /// An out-of-range index returns an error.
     pub fn alias(&self, index: usize) -> Result<String> {
         let alias: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_option_get_alias, self.handle, index as u64, RET)?;
+            check_api_call!(ffi::duckdb_v2_option_get_alias, self.raw(), index as u64, RET)?;
 
         Ok(DuckDBStr::from_raw(alias).as_str().unwrap_or_default().to_owned())
     }
@@ -121,17 +69,94 @@ impl ConfigOption {
 
         Ok(aliases)
     }
+
+    pub fn alias_count(&self) -> Result<usize> {
+        check_api_call!(ffi::duckdb_v2_option_get_alias_count, self.raw(), RET).map(|x| x as usize)
+    }
+
+    /// Return the option's human-readable description.
+    pub fn description(&self) -> Result<String> {
+        let description: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_description, self.raw(), RET)?;
+
+        Ok(DuckDBStr::from_raw(description).as_str().unwrap_or_default().to_owned())
+    }
+
+    pub fn default_scope(&self) -> Result<SettingScope> {
+        check_api_call!(ffi::duckdb_v2_option_get_default_scope, self.raw(), RET)?.try_into()
+    }
+
+    pub fn supports_scope(&self, scope: SettingScope) -> Result<bool> {
+        check_api_call!(ffi::duckdb_v2_option_supports_scope, self.raw(), scope.into(), RET)
+    }
 }
 
 impl Drop for ConfigOption {
     fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_option_destroy, &mut self.handle).unwrap();
+        check_api_call_no_err!(ffi::duckdb_v2_option_destroy, &mut self.raw()).unwrap();
+    }
+}
+
+#[derive(Debug, AsRaw, FromRaw)]
+pub struct Config {
+    pub(crate) handle: ffi::duckdb_v2_config_handle,
+}
+
+impl Config {
+    pub fn count(&self) -> Result<usize> {
+        check_api_call!(ffi::duckdb_v2_config_get_option_count, self.raw(), RET).map(|x| x as usize)
+    }
+
+    pub fn get_value(&self, name: &str) -> Result<(Value, SettingScope)> {
+        let mut scope = ffi::DUCKDB_V2_SETTING_SCOPE::DUCKDB_V2_SETTING_SCOPE_MAX_ENUM;
+
+        let handle = check_api_call!(
+            ffi::duckdb_v2_config_get_option_value,
+            self.raw(),
+            &mut name.into(),
+            RET,
+            &mut scope
+        )?;
+
+        Ok((Value { handle }, scope.try_into()?))
+    }
+
+    pub fn set_value(&self, name: &str, value: &Value, scope: SettingScope) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_config_set_option_value,
+            self.raw(),
+            &name.into(),
+            value.raw(),
+            scope.into()
+        )
+    }
+
+    pub fn set_text(&self, name: &str, value: &str, scope: SettingScope) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_config_set_option_text,
+            self.raw(),
+            &name.into(),
+            &value.into(),
+            scope.into()
+        )
+    }
+
+    pub fn get_by_name(&self, name: &str) -> Result<ConfigOption> {
+        check_api_call!(ffi::duckdb_v2_config_get_option_by_name, self.raw(), &name.into(), RET)
+            .map(|handle| ConfigOption { handle })
+    }
+
+    pub fn get_by_index(&self, index: usize) -> Result<ConfigOption> {
+        check_api_call!(ffi::duckdb_v2_config_get_option_by_index, self.raw(), index as u64, RET)
+            .map(|handle| ConfigOption { handle })
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::environment::{Environment, StorageLocation};
+    use crate::{
+        FromValue,
+        environment::{Environment, StorageLocation},
+    };
 
     use super::*;
 
@@ -141,11 +166,17 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let options = conn.get_options()?;
+        let mut options = vec![];
+
+        let config = db.config()?;
+
+        for i in 0..config.count()? {
+            options.push(config.get_by_index(i)?);
+        }
 
         assert_eq!(
             options[0].canonical_name()?,
-            conn.get_option_by_index(0)?.canonical_name()?
+            conn.config()?.get_by_index(0)?.canonical_name()?
         );
 
         Ok(())
@@ -157,18 +188,19 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let mut conn = db.connect()?;
 
-        conn.set_option("worker_threads", &12.to_string(), None)?;
+        conn.config()?
+            .set_text("worker_threads", &12.to_string(), SettingScope::Session)?;
 
-        let option_real = conn.get_option("threads")?;
+        let option_real = conn.config()?.get_value("threads")?;
 
-        assert_eq!(option_real.setting().unwrap(), "12");
-        assert_eq!(option_real.alias_count().unwrap(), 1);
-
-        assert_eq!(option_real.target_scope().unwrap(), TargetScope::Unknown);
+        assert_eq!(String::from_value(&option_real.0)?, Some("12".to_string()));
 
         assert_eq!(
-            conn.get_option("temp_file_encryption")?.default_setting().unwrap(),
-            "false"
+            conn.config()?
+                .get_by_name("temp_file_encryption")?
+                .default_scope()
+                .unwrap(),
+            SettingScope::Default
         );
         Ok(())
     }
@@ -181,20 +213,20 @@ mod test {
             .expect("Failed to open in-memory database");
         let conn = db.connect()?;
 
-        let db_option = db.get_option("profile_output").unwrap();
-        let conn_option = conn.get_option("profile_output")?;
+        let db_option = db.config()?.get_value("profile_output")?;
+        let conn_option = conn.config()?.get_value("profile_output")?;
 
-        assert_eq!(db_option.setting().unwrap(), conn_option.setting().unwrap());
+        assert_eq!(String::from_value(&db_option.0)?, String::from_value(&conn_option.0)?);
 
-        let aliases = db_option.aliases().expect("Failed to get aliases");
+        let db_config_option = db.config()?.get_by_name("profile_output")?;
+
+        let aliases = db_config_option.aliases()?;
         assert_eq!(aliases.len(), 1);
         assert_eq!(aliases[0], "profile_output");
 
-        assert_eq!(db_option.target_scope().unwrap(), TargetScope::Unknown);
-
-        assert_eq!(db_option.canonical_name().unwrap(), "profiling_output");
+        assert_eq!(db_config_option.canonical_name().unwrap(), "profiling_output");
         assert_eq!(
-            db_option.description().unwrap(),
+            db_config_option.description().unwrap(),
             "The file to which profiler output is written. When empty, the output is printed to the terminal."
         );
 

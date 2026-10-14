@@ -57,8 +57,10 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let mut conn = db.connect()?;
 
-        conn.set_option("enable_logging", "true", Some(SettingScope::Global))?;
-        conn.set_option("logging_level", "WARNING", Some(SettingScope::Global))?;
+        conn.config()?
+            .set_text("enable_logging", "true", SettingScope::Global)?;
+        conn.config()?
+            .set_text("logging_level", "WARNING", SettingScope::Global)?;
 
         let conn = db.connect()?;
 

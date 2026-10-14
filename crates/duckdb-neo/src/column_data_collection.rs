@@ -4,19 +4,18 @@
 //! appending or scanning state. Appended chunks are copied into storage owned
 //! by the collection.
 
-use std::marker::PhantomData;
-
+use crate::connection::HasFactory;
 use crate::ffi;
 
 use crate::{
-    AsRaw, Result, check_api_call, check_api_call_no_err,
+    AsRaw, Factory, Result, check_api_call, check_api_call_no_err,
     data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
         ColumnDataCollectionSharedScanStateHandle, ColumnDataCollectionWorkerScanLink,
         ColumnDataCollectionWorkerScanStateHandle,
     },
-    links::{ColumnDataCollectionLink, ConnectionOrigin},
+    links::ConnectionOrigin,
     logical_type::LogicalType,
     raw::RawExt,
 };
@@ -64,7 +63,7 @@ use crate::{
 /// let types = [i32::logical_type(&conn)?];
 ///
 /// let collection = ColumnDataCollection::new(&conn, &types)?;
-/// let mut chunk = DataChunk::create(&types, true)?;
+/// let mut chunk = DataChunk::create(&conn, &types, true)?;
 /// let mut values = chunk.get_vector_at_mut::<i32>(0)?;
 /// values.set_size(2)?;
 /// values.write(0, Some(10))?;
@@ -91,9 +90,10 @@ pub struct ColumnDataCollection<'conn> {
     pub(crate) handle: ffi::duckdb_v2_column_data_collection_handle,
     /// The collection's column types, in storage order.
     pub logical_types: Vec<LogicalType>,
+    /// Factory of the connection or context the collection was created from.
+    pub(crate) factory: &'conn Factory,
     /// The connection whose buffer manager backs every chunk, if known and unique.
     pub(crate) origin: Option<ffi::duckdb_v2_connection_handle>,
-    pub(crate) _conn: PhantomData<&'conn ()>,
 }
 
 impl<'conn> ColumnDataCollection<'conn> {
@@ -102,19 +102,27 @@ impl<'conn> ColumnDataCollection<'conn> {
     ///
     /// The collection borrows `link`; see the [lifetime notes](Self#lifetime).
     #[allow(private_bounds)]
-    pub fn new<C: ColumnDataCollectionLink + ConnectionOrigin>(
+    pub fn new<C: HasFactory + ConnectionOrigin>(
         link: &'conn C,
         logical_types: impl Into<Vec<LogicalType>>,
     ) -> Result<Self> {
+        let factory = link.factory()?;
         let logical_types = logical_types.into();
         let types = logical_types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
-        let handle = link.create_column_data_collection(&types)?;
+
+        let handle = check_api_call!(
+            ffi::duckdb_v2_column_data_collection_create,
+            factory.raw(),
+            types.as_ptr(),
+            types.len() as u64,
+            RET
+        )?;
 
         Ok(ColumnDataCollection {
             handle,
             logical_types,
+            factory,
             origin: link.connection_origin(),
-            _conn: PhantomData,
         })
     }
 
@@ -165,7 +173,7 @@ pub struct ColumnDataCollectionScan<'conn> {
     worker_scan_state: ColumnDataCollectionWorkerScanStateHandle,
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
     /// Reused for every scan call; DuckDB resets it before filling it.
-    chunk: DataChunk<'static>,
+    chunk: DataChunk<'conn>,
     collection: ColumnDataCollection<'conn>,
 }
 
@@ -173,7 +181,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     fn new(collection: ColumnDataCollection<'conn>) -> Result<Self> {
         let worker_scan_state = collection.create_worker_scan_state()?;
         let shared_scan_state = collection.create_shared_scan_state()?;
-        let chunk = DataChunk::create(&collection.logical_types, false)?;
+        let chunk = DataChunk::create(collection.factory, &collection.logical_types, false)?;
 
         Ok(ColumnDataCollectionScan {
             collection,
@@ -261,7 +269,7 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
     /// mutably. A mismatched column count or type returns an error without
     /// copying data.
     #[allow(private_bounds)]
-    pub fn append<C: DataChunkMut>(&mut self, chunk: &mut C) -> Result<()> {
+    pub fn append<D: DataChunkMut>(&mut self, chunk: &mut D) -> Result<()> {
         let result = check_api_call!(
             ffi::duckdb_v2_column_data_collection_append,
             self.collection.handle,
@@ -394,7 +402,7 @@ mod test {
 
         let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-        let mut chunk = DataChunk::create(&logical_types, true)?;
+        let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
 
         let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
         let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
@@ -428,7 +436,7 @@ mod test {
 
         assert_eq!(collection.len()?, 2);
 
-        let mut chunk_2 = DataChunk::create(&logical_types, true)?;
+        let mut chunk_2 = DataChunk::create(&conn, &logical_types, true)?;
         let [id, is_active] = chunk_2.get_vector_array_mut([0, 1])?;
         let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
@@ -504,7 +512,7 @@ mod test {
 
         let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-        let mut chunk = DataChunk::create(&logical_types, true)?;
+        let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
 
         let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
         let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);

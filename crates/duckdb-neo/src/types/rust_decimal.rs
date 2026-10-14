@@ -231,7 +231,7 @@ mod tests {
 
         for width in [4, 9, 18, 28] {
             let logical_type = DecimalSignature { width, scale: 2 }.logical_type(&conn)?;
-            let mut chunk = DataChunk::create(&[logical_type], true)?;
+            let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
             let mut vector = chunk.get_vector_at_mut::<rust_decimal::Decimal>(0)?;
             vector.set_size(4)?;
             vector.write(0, Some(dec("1.5")))?;
@@ -252,7 +252,7 @@ mod tests {
             );
         }
 
-        let chunk = DataChunk::create(&[crate::types::Decimal::<38, 2>::logical_type(&conn)?], true)?;
+        let chunk = DataChunk::create(&conn, &[crate::types::Decimal::<38, 2>::logical_type(&conn)?], true)?;
         assert!(chunk.get_vector_at::<rust_decimal::Decimal>(0).is_err());
 
         Ok(())

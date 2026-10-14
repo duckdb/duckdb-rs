@@ -13,7 +13,7 @@ use crate::{
     handles::ReplacementScanBuilderLink,
     links::ConnectionOrigin,
     qualified_name::QualifiedName,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     value::Value,
 };
 
@@ -148,7 +148,8 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
                 collections: &data.collections,
             };
 
-            data.implementation.scan(&Context(context), &qname, handle)
+            data.implementation
+                .scan(&unsafe { Context::from_raw(context) }, &qname, handle)
         },
         err,
     );
@@ -233,7 +234,7 @@ where
             &mut data.to_handle()
         )?;
 
-        check_api_call!(ffi::duckdb_v2_replacement_scan_register, handle.raw())
+        link.register_replacement_scan_handle(handle)
     }
 }
 

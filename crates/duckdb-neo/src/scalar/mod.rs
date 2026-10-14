@@ -21,7 +21,11 @@ use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
 use crate::signature::Signature;
 use crate::vector::{Access, Unknown, Vector};
-use crate::{Result, check_api_call, connection::Context, raw::RawExt};
+use crate::{
+    Result, check_api_call,
+    connection::Context,
+    raw::{FromRaw, RawExt},
+};
 
 unsafe extern "C" fn resolve_types_callback<T: ScalarCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,
@@ -33,7 +37,7 @@ unsafe extern "C" fn resolve_types_callback<T: ScalarCallbacks>(
         || {
             let arguments = BindArguments { handle: &info };
 
-            let return_type = T::resolve_types(&Context(context), arguments)?;
+            let return_type = T::resolve_types(&unsafe { Context::from_raw(context) }, arguments)?;
 
             if let Some(return_type) = return_type {
                 check_api_call!(
@@ -61,7 +65,7 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
 
             let arguments = BindArguments { handle: &info };
 
-            let data = T::bind(user_data, &Context(context), arguments)?;
+            let data = T::bind(user_data, &unsafe { Context::from_raw(context) }, arguments)?;
 
             check_api_call!(
                 ffi::duckdb_v2_scalar_function_bind_set_bind_data,
@@ -86,7 +90,7 @@ unsafe extern "C" fn init_callback<T: ScalarCallbacks>(
 
             let bind_data = get_bind_data!(ffi::duckdb_v2_scalar_function_init_get_bind_data, info);
 
-            let result = T::init(user_data, bind_data, &Context(context))?;
+            let result = T::init(user_data, bind_data, &unsafe { Context::from_raw(context) })?;
 
             check_api_call!(
                 ffi::duckdb_v2_scalar_function_init_set_init_data,
@@ -132,7 +136,7 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
                 user_data,
                 bind_data,
                 init_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 &mut collection,
                 result_vec,
             )?;
@@ -227,7 +231,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
         let handle = link.create_scalar_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_scalar_function_register, handle.raw())
+        link.register_scalar_function(handle)
     }
 }
 

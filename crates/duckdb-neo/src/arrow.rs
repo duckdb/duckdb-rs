@@ -235,7 +235,7 @@ mod tests {
 
         let mut result = result;
 
-        let data_chunk = input.to_data_chunk()?;
+        let data_chunk = input.to_data_chunk(&ctx)?;
 
         let mut arrow_exporter = ArrowExporter::new(ctx, &columns, None)?;
 

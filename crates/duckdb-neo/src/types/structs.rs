@@ -13,7 +13,6 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
-
 /// Reads a `STRUCT` vector as named fields.
 #[derive(Debug)]
 pub struct Struct;

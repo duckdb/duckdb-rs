@@ -1,8 +1,10 @@
-//! Internal owned handles and their factories.
+//! Internal owned
+//! //! Internal factoryhandles and their regicreate. handles and their registerers.
 //!
 //! Callback-borrowed views and wrappers that retain parent objects stay in
 //! their respective modules.
 
+use crate::connection::HasFactory;
 use crate::{
     Result, check_api_call,
     column_data_collection::ColumnDataCollection,
@@ -16,9 +18,11 @@ macro_rules! define_handle {
         name: $name:ident,
         link: $link:ident,
         create: $create:ident,
+        register: $register:ident,
         handle: $handle:ty,
         destroy: $destroy:expr,
-        factories: {
+        factory: $factory:expr,
+        registerers: {
             $( $type:ty => $func:expr ),* $(,)?
         } $(,)?
     ) => {
@@ -30,12 +34,18 @@ macro_rules! define_handle {
 
         pub(crate) trait $link {
             fn $create(&self) -> $crate::Result<$name>;
+
+            fn $register(&self, handle: $name) -> $crate::Result<()>;
         }
 
         $(
             impl $link for $type {
                 fn $create(&self) -> $crate::Result<$name> {
-                    Ok($name($crate::check_api_call!($func, $crate::raw::RawExt::raw(self), RET)?))
+                    Ok($name($crate::check_api_call!($factory, $crate::raw::RawExt::raw(self.factory()?), RET)?))
+                }
+
+                fn $register(&self, handle: $name) -> $crate::Result<()> {
+                    $crate::check_api_call!($func, $crate::raw::RawExt::raw(self), $crate::raw::RawExt::raw(&handle))
                 }
             }
         )*
@@ -57,15 +67,50 @@ macro_rules! define_handle {
     };
 }
 
+/// Like [`define_handle`], but for states created from a [`ColumnDataCollection`]
+/// rather than a factory; the generic link type rules out the shared `impl` arm.
+macro_rules! define_handle_column_data_collection {
+    (
+        name: $name:ident,
+        link: $link:ident,
+        create: $create:ident,
+        handle: $handle:ty,
+        destroy: $destroy:expr,
+        factory: $factory:expr $(,)?
+    ) => {
+        define_handle! {
+            name: $name,
+            handle: $handle,
+            destroy: $destroy,
+        }
+
+        pub(crate) trait $link {
+            fn $create(&self) -> $crate::Result<$name>;
+        }
+
+        impl $link for ColumnDataCollection<'_> {
+            fn $create(&self) -> $crate::Result<$name> {
+                Ok($name($crate::check_api_call!(
+                    $factory,
+                    $crate::raw::RawExt::raw(self),
+                    RET
+                )?))
+            }
+        }
+    };
+}
+
 define_handle! {
     name: ScalarFunctionBuilderHandle,
     link: ScalarFunctionBuilderLink,
     create: create_scalar_function_handle,
+    register: register_scalar_function,
     handle: ffi::duckdb_v2_scalar_function_handle,
     destroy: ffi::duckdb_v2_scalar_function_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_scalar_function_create_with_connection,
-        Extension => ffi::duckdb_v2_scalar_function_create_with_extension,
+    factory: ffi::duckdb_v2_scalar_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_scalar_function,
+        // Extension => ffi::duckdb_v2_extension_register_scalar_function,
     },
 }
 
@@ -73,23 +118,27 @@ define_handle! {
     name: AggregateFunctionBuilderHandle,
     link: AggregateFunctionBuilderLink,
     create: create_aggregate_function_handle,
+    register: register_aggregate_function,
     handle: ffi::duckdb_v2_aggregate_function_handle,
     destroy: ffi::duckdb_v2_aggregate_function_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_aggregate_function_create_with_connection,
-        Extension => ffi::duckdb_v2_aggregate_function_create_with_extension,
-    },
+    factory: ffi::duckdb_v2_aggregate_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_aggregate_function,
+        // Extension => ffi::duckdb_v2_extension_register_aggregate_function
+    }
 }
 
 define_handle! {
     name: TableFunctionBuilderHandle,
     link: TableFunctionBuilderLink,
     create: create_table_function_handle,
+    register: register_table_function_handle,
     handle: ffi::duckdb_v2_table_function_handle,
     destroy: ffi::duckdb_v2_table_function_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_table_function_create_with_connection,
-        Extension => ffi::duckdb_v2_table_function_create_with_extension,
+    factory: ffi::duckdb_v2_table_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_table_function,
+        // Extension => ffi::duckdb_v2_extension_register_table_function,
     },
 }
 
@@ -97,11 +146,13 @@ define_handle! {
     name: CastFunctionHandle,
     link: CastFunctionLink,
     create: create_cast_function_handle,
+    register: register_cast_function_handle,
     handle: ffi::duckdb_v2_cast_function_handle,
     destroy: ffi::duckdb_v2_cast_function_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_cast_function_create_with_connection,
-        Extension => ffi::duckdb_v2_cast_function_create_with_extension,
+    factory: ffi::duckdb_v2_cast_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_cast_function,
+        // Extension => ffi::duckdb_v2_extension_register_cast_function,
     },
 }
 
@@ -109,11 +160,13 @@ define_handle! {
     name: CopyFunctionBuilderHandle,
     link: CopyFunctionBuilderLink,
     create: create_copy_function_handle,
+    register: register_copy_function_handle,
     handle: ffi::duckdb_v2_copy_function_handle,
     destroy: ffi::duckdb_v2_copy_function_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_copy_function_create_with_connection,
-        Extension => ffi::duckdb_v2_copy_function_create_with_extension,
+    factory: ffi::duckdb_v2_copy_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_copy_function,
+        // Extension => ffi::duckdb_v2_extension_register_copy_function,
     },
 }
 
@@ -121,11 +174,13 @@ define_handle! {
     name: CustomTypeBuilderHandle,
     link: CustomTypeBuilderLink,
     create: create_custom_type_handle,
+    register: register_custom_type_handle,
     handle: ffi::duckdb_v2_custom_type_handle,
     destroy: ffi::duckdb_v2_custom_type_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_custom_type_create_with_connection,
-        Extension => ffi::duckdb_v2_custom_type_create_with_extension,
+    factory: ffi::duckdb_v2_custom_type_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_custom_type,
+        // Extension => ffi::duckdb_v2_extension_register_custom_type,
     },
 }
 
@@ -133,53 +188,40 @@ define_handle! {
     name: ReplacementScanBuilderHandle,
     link: ReplacementScanBuilderLink,
     create: create_replacement_scan_handle,
+    register: register_replacement_scan_handle,
     handle: ffi::duckdb_v2_replacement_scan_handle,
     destroy: ffi::duckdb_v2_replacement_scan_destroy,
-    factories: {
-        Connection => ffi::duckdb_v2_replacement_scan_create_with_connection,
-        Extension => ffi::duckdb_v2_replacement_scan_create_with_extension,
+    factory: ffi::duckdb_v2_replacement_scan_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_replacement_scan,
+        // Extension => ffi::duckdb_v2_extension_register_replacement_scan,
+        Instance => ffi::duckdb_v2_instance_register_replacement_scan,
     },
 }
 
-impl ReplacementScanBuilderLink for Instance {
-    fn create_replacement_scan_handle(&self) -> Result<ReplacementScanBuilderHandle> {
-        Ok(ReplacementScanBuilderHandle(check_api_call!(
-            ffi::duckdb_v2_replacement_scan_create_with_instance,
-            self.handle.lock().unwrap().handle,
-            RET
-        )?))
-    }
-}
-
-define_handle! {
+define_handle_column_data_collection! {
     name: ColumnDataCollectionAppendStateHandle,
     link: ColumnDataCollectionAppendLink,
     create: create_append_state,
     handle: ffi::duckdb_v2_column_data_collection_append_state_handle,
     destroy: ffi::duckdb_v2_column_data_collection_append_state_destroy,
-    factories: {
-        ColumnDataCollection<'_> => ffi::duckdb_v2_column_data_collection_append_state_create,
-    },
+    factory: ffi::duckdb_v2_column_data_collection_append_state_create,
 }
 
-define_handle! {
+define_handle_column_data_collection! {
     name: ColumnDataCollectionWorkerScanStateHandle,
     link: ColumnDataCollectionWorkerScanLink,
     create: create_worker_scan_state,
     handle: ffi::duckdb_v2_column_data_collection_worker_scan_state_handle,
     destroy: ffi::duckdb_v2_column_data_collection_worker_scan_state_destroy,
-    factories: {
-        ColumnDataCollection<'_> => ffi::duckdb_v2_column_data_collection_worker_scan_state_create,
-    },
+    factory: ffi::duckdb_v2_column_data_collection_worker_scan_state_create,
 }
 
-define_handle! {
+define_handle_column_data_collection! {
     name: ColumnDataCollectionSharedScanStateHandle,
     link: ColumnDataCollectionSharedScanLink,
     create: create_shared_scan_state,
     handle: ffi::duckdb_v2_column_data_collection_shared_scan_state_handle,
     destroy: ffi::duckdb_v2_column_data_collection_shared_scan_state_destroy,
-    factories: {
-        ColumnDataCollection<'_> => ffi::duckdb_v2_column_data_collection_shared_scan_state_create,
-    },
+    factory: ffi::duckdb_v2_column_data_collection_shared_scan_state_create,
 }

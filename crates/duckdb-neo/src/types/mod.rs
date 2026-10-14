@@ -77,7 +77,7 @@ pub trait ToValue {
     where
         Self: DuckDBType,
     {
-        Value::null(&Self::logical_type(link)?)
+        Value::null(link, &Self::logical_type(link)?)
     }
 }
 

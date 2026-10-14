@@ -16,7 +16,6 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-
 /// Reads a `MAP` vector with key type `K` and value type `V`.
 #[derive(Debug)]
 pub struct Map<K, V>(pub ffi::duckdb_v2_list_entry, pub PhantomData<(K, V)>);

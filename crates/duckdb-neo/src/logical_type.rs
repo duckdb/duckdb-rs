@@ -2,15 +2,11 @@
 
 use libduckdb_sys::v2::DUCKDB_V2_LOGICAL_TYPE_ID;
 
+use crate::connection::HasFactory;
 use crate::ffi_str::DuckDBStr;
 use crate::{
     AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err, check_api_call_string,
-    connection::FFILink,
-    ffi,
-    links::{LogicalTypeAliasLink, LogicalTypeFromIdLink, LogicalTypeFromNameLink},
-    qualified_name::QualifiedName,
-    raw::RawExt,
-    value::Value,
+    connection::FFILink, ffi, qualified_name::QualifiedName, raw::RawExt, value::Value,
 };
 
 /// DuckDB's logical type identifier.
@@ -55,13 +51,12 @@ unsafe impl Sync for LogicalType {}
 impl LogicalType {
     /// Construct a logical type from a primitive ID and optional parameters
     /// using a connection or callback context.
-    #[allow(private_bounds)]
-    pub fn create_from_id<C: FFILink + LogicalTypeFromIdLink>(
+    pub fn create_from_id<C: FFILink + ?Sized>(
         link: &C,
         type_id: LogicalTypeID,
         parameters: Parameters<'_>,
     ) -> Result<Self> {
-        let (names, parameter_values) = parameters.into_values(link)?;
+        let (names, parameter_values) = parameters.into_values(&link)?;
         let names = names.map(|names| {
             names
                 .iter()
@@ -72,33 +67,48 @@ impl LogicalType {
             .iter()
             .map(|value| value.as_value().handle)
             .collect::<Vec<_>>();
-        let handle = link.create_logical_type_from_id(type_id, names.as_deref(), &values)?;
 
-        Ok(LogicalType { handle })
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_type_from_id,
+            link.factory()?.raw(),
+            type_id,
+            names.map_or(std::ptr::null(), |names| names.as_ptr()),
+            values.as_ptr(),
+            values.len() as u64,
+            RET
+        )
+        .map(|handle| LogicalType { handle })
     }
 
     /// Return an alias with the same representation using a connection or callback context.
-    #[allow(private_bounds)]
-    pub fn to_alias<C: LogicalTypeAliasLink>(&self, link: &C, alias: &str) -> Result<Self> {
-        let handle = link.create_logical_type_with_alias(self.handle, alias)?;
+    pub fn to_alias<C: HasFactory + ?Sized>(&self, link: &C, alias: &str) -> Result<Self> {
+        let handle = check_api_call!(
+            ffi::duckdb_v2_factory_create_type_with_alias,
+            link.factory()?.raw(),
+            self.raw(),
+            &alias.into(),
+            RET
+        )?;
 
         Ok(LogicalType { handle })
     }
 
     /// Parse a SQL type using a connection or callback context.
-    pub fn from_text<C: FFILink>(handle: &C, text: &str) -> Result<Self> {
-        handle.logical_type_from_text(text)
+    pub fn from_text<C: HasFactory + ?Sized>(link: &C, text: &str) -> Result<Self> {
+        Ok(Self {
+            handle: check_api_call!(
+                ffi::duckdb_v2_factory_create_type_from_text,
+                link.factory()?.raw(),
+                &text.into(),
+                RET
+            )?,
+        })
     }
 
     /// Construct a logical type from a name and optional parameters
     /// using a connection or callback context.
-    #[allow(private_bounds)]
-    pub fn create<C: FFILink + LogicalTypeFromNameLink>(
-        link: &C,
-        name: &str,
-        parameters: Parameters<'_>,
-    ) -> Result<Self> {
-        let (names, parameter_values) = parameters.into_values(link)?;
+    pub fn create<C: FFILink + ?Sized>(link: &C, name: &str, parameters: Parameters<'_>) -> Result<Self> {
+        let (names, parameter_values) = parameters.into_values(&link)?;
         let names = names.map(|names| {
             names
                 .iter()
@@ -112,7 +122,15 @@ impl LogicalType {
 
         let qname = QualifiedName::from_sql(name)?;
 
-        let handle = link.create_logical_type_from_name(qname.raw(), names.as_deref(), &values)?;
+        let handle = check_api_call!(
+            ffi::duckdb_v2_factory_create_type_from_name,
+            link.factory()?.raw(),
+            qname.raw(),
+            names.map_or(std::ptr::null(), |names| names.as_ptr()),
+            values.as_ptr(),
+            values.len() as u64,
+            RET
+        )?;
 
         Ok(LogicalType { handle })
     }

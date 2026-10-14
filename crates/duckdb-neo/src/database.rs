@@ -1,13 +1,16 @@
 //! Open DuckDB databases and their global configuration.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::OnceCell,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
-    AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err,
-    connection::Connection,
-    connection_options::ConfigOption,
+    AsRaw, Factory, FromRaw, Result, check_api_call, check_api_call_no_err,
+    connection::{Connection, HasFactory},
+    connection_options::{Config, ConfigOption},
     environment::{Environment, EnvironmentHandle, StorageLocation},
-    ffi,
+    ffi, handles,
     raw::RawExt,
 };
 
@@ -88,6 +91,26 @@ impl Drop for AttachOptionsBuilder {
 #[derive(Debug)]
 pub struct Instance {
     pub(crate) handle: Arc<Mutex<DatabaseHandle>>,
+    pub(crate) factory: OnceCell<Factory>,
+}
+
+impl AsRaw for Instance {
+    type Raw = ffi::duckdb_v2_instance_handle;
+
+    unsafe fn get_raw(&self) -> Self::Raw {
+        self.handle.lock().unwrap().handle
+    }
+}
+
+impl HasFactory for Instance {
+    fn factory(&self) -> Result<&Factory> {
+        if let Some(factory) = self.factory.get() {
+            return Ok(factory);
+        }
+
+        let factory = Factory(check_api_call!(ffi::duckdb_v2_instance_get_factory, self.raw(), RET)?);
+        Ok(self.factory.get_or_init(|| factory))
+    }
 }
 
 impl Instance {
@@ -102,6 +125,7 @@ impl Instance {
                 )?,
                 _env: environment.handle.clone(),
             })),
+            factory: OnceCell::new(),
         })
     }
 
@@ -180,70 +204,14 @@ impl Instance {
         Connection::new(self)
     }
 
-    /// Return the number of registered options, excluding aliases.
-    pub fn get_options_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(
-            ffi::duckdb_v2_instance_get_option_count,
-            self.handle.lock().unwrap().handle,
-            RET
-        )?;
-
-        Ok(count as usize)
-    }
-
-    /// Return a global option by canonical name or alias.
-    pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_instance_get_option_by_name,
-            self.handle.lock().unwrap().handle,
-            &name.into(),
-            RET
-        )?;
-
-        Ok(ConfigOption { handle })
-    }
-
-    /// Return the global option at `index`.
-    ///
-    /// Indices remain stable while no extensions register additional options.
-    /// An out-of-range index returns an error.
-    pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_instance_get_option_by_index,
-            self.handle.lock().unwrap().handle,
-            index as u64,
-            RET
-        )?;
-
-        Ok(ConfigOption { handle })
-    }
-
-    /// Return all options registered on the database.
-    pub fn get_options(&self) -> Result<Vec<ConfigOption>> {
-        let count = self.get_options_count()?;
-        let mut options = Vec::with_capacity(count);
-
-        for i in 0..count {
-            let option = self.get_option_by_index(i)?;
-            options.push(option);
-        }
-
-        Ok(options)
-    }
-
-    /// Set an option globally, equivalent to SQL `SET GLOBAL`.
-    ///
-    /// Local-only options are rejected. Unknown names are retained for an
-    /// extension to consume when it loads.
-    pub fn set_option(&self, key: &str, value: &str) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_instance_set_option,
-            self.handle.lock().unwrap().handle,
-            &key.into(),
-            &value.into()
-        )?;
-
-        Ok(())
+    pub fn config(&self) -> Result<Config> {
+        Ok(unsafe {
+            Config::from_raw(check_api_call!(
+                ffi::duckdb_v2_instance_get_config,
+                self.handle.lock().unwrap().handle,
+                RET
+            )?)
+        })
     }
 }
 
@@ -260,7 +228,14 @@ mod tests {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
 
-        let options = db.get_options()?;
+        let mut options = vec![];
+
+        let config = db.config()?;
+
+        for i in 0..config.count()? {
+            options.push(config.get_by_index(i)?);
+        }
+
         assert!(!options.is_empty());
 
         assert!(

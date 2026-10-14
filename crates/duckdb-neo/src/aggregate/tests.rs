@@ -4,10 +4,9 @@ use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROP
 
 use crate::{
     DuckDBType, Parameters,
-    aggregate::ReturnTypeHandle,
-    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, States},
+    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, ReturnTypeHandle, States},
     bind_arguments::BindArguments,
-    connection::Context,
+    connection::{Context, SettingScope},
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
     logical_type::LogicalType,
@@ -147,7 +146,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
 
-    db.set_option("threads", &1.to_string())?;
+    db.config()?.set_text("threads", &1.to_string(), SettingScope::Global)?;
 
     let conn = db.connect()?;
 

@@ -26,7 +26,7 @@ use crate::{
     expression::Expression,
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     signature::Signature,
     table_function::InitColumnHandle::{Global, Local},
     value::Value,
@@ -86,7 +86,7 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
 
             let bind_data = T::bind(
                 user_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 arguments.collect()?,
                 BindFunctionHandle(&result),
             )?;
@@ -155,7 +155,7 @@ unsafe extern "C" fn exec_callback<T: TableFunctionCallbacks>(
                 bind_data,
                 global_state,
                 local_state,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 output_chunk,
                 ExecColumnInfo { handle: &info },
             )?;
@@ -292,7 +292,7 @@ unsafe extern "C" fn init_global_callback<T: TableFunctionCallbacks>(
             let (global_state, max_threads) = T::init_global_state(
                 user_data,
                 bind_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 InitColumnData { handle: Global(&info) },
             )?;
 
@@ -332,7 +332,7 @@ unsafe extern "C" fn init_local_callback<T: TableFunctionCallbacks>(
             let local_state = T::init_local_state(
                 user_data,
                 bind_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 global_state,
                 InitColumnData { handle: Local(&info) },
             )?;
@@ -353,7 +353,7 @@ unsafe extern "C" fn init_local_callback<T: TableFunctionCallbacks>(
 
 unsafe extern "C" fn progress_callback<T: TableFunctionCallbacks>(
     info: ffi::duckdb_v2_table_function_progress_info_handle,
-    ctx: ffi::duckdb_v2_context_handle,
+    context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -362,7 +362,9 @@ unsafe extern "C" fn progress_callback<T: TableFunctionCallbacks>(
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_progress_get_bind_data, info);
             let global_state = get_global_state!(ffi::duckdb_v2_table_function_progress_get_global_state, info);
 
-            if let Some(progress) = T::progress(user_data, bind_data, global_state, &Context(ctx))? {
+            if let Some(progress) = T::progress(user_data, bind_data, global_state, &unsafe {
+                Context::from_raw(context)
+            })? {
                 check_api_call!(ffi::duckdb_v2_table_function_progress_set_progress, info, progress)?
             }
 
@@ -374,7 +376,7 @@ unsafe extern "C" fn progress_callback<T: TableFunctionCallbacks>(
 
 unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
     info: ffi::duckdb_v2_table_function_filter_pushdown_info_handle,
-    ctx: ffi::duckdb_v2_context_handle,
+    context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -382,7 +384,12 @@ unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
             let user_data = get_user_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_user_data, info);
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_filter_pushdown_get_bind_data, info);
 
-            T::pushdown_filter(user_data, bind_data, &Context(ctx), PushdownData { handle: &info })
+            T::pushdown_filter(
+                user_data,
+                bind_data,
+                &unsafe { Context::from_raw(context) },
+                PushdownData { handle: &info },
+            )
         },
         err,
     );
@@ -509,7 +516,7 @@ impl<'a> PartitioningData<'a> {
 
 unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
     info: ffi::duckdb_v2_table_function_partition_data_info_handle,
-    ctx: ffi::duckdb_v2_context_handle,
+    context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -524,7 +531,7 @@ unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
                 bind_data,
                 global_state,
                 local_state,
-                &Context(ctx),
+                &unsafe { Context::from_raw(context) },
                 PartitionData { handle: &info },
             )?;
 
@@ -544,7 +551,7 @@ unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
 
 unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
     info: ffi::duckdb_v2_table_function_partitioning_info_handle,
-    ctx: ffi::duckdb_v2_context_handle,
+    context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
@@ -552,8 +559,12 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
             let user_data = get_user_data!(ffi::duckdb_v2_table_function_partitioning_get_user_data, info);
             let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_partitioning_get_bind_data, info);
 
-            let partition_info =
-                T::partitioning(user_data, bind_data, &Context(ctx), PartitioningData { handle: &info })?;
+            let partition_info = T::partitioning(
+                user_data,
+                bind_data,
+                &unsafe { Context::from_raw(context) },
+                PartitioningData { handle: &info },
+            )?;
 
             check_api_call!(
                 ffi::duckdb_v2_table_function_partitioning_set_partition_info,
@@ -736,7 +747,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
         let handle = link.create_table_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_table_function_register, handle.raw())
+        link.register_table_function_handle(handle)
     }
 }
 

@@ -54,7 +54,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut result = Vec::new();
         let mut to_append = ColumnDataCollection::new(context, [i64::logical_type(context)?])?.to_append()?;
 
-        let mut data_chunk = DataChunk::create(&[i64::logical_type(context)?], true)?;
+        let mut data_chunk = DataChunk::create(&context, &[i64::logical_type(context)?], true)?;
         let mut vec = data_chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(1)?;
         vec.write(0, Some(10))?;

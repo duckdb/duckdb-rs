@@ -12,7 +12,14 @@ use std::{
     panic::AssertUnwindSafe,
 };
 
-use crate::{builder_helpers::ArgCount, ffi, logical_type::LogicalType};
+use crate::{
+    FromRaw,
+    builder_helpers::ArgCount,
+    connection::HasFactory,
+    ffi,
+    handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
+    logical_type::LogicalType,
+};
 
 use crate::{
     Error, Result,
@@ -22,7 +29,6 @@ use crate::{
     connection::Context,
     data_chunk::{RowCount, VectorCollection},
     enums::AggregateFunctionProperty,
-    handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     raw::RawExt,
     signature::Signature,
     vector::{Access, Unknown, Vector},
@@ -139,7 +145,7 @@ unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
 
             let result = T::bind(
                 user_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 arguments,
                 ReturnTypeHandle { handle: &result },
             )?;
@@ -481,9 +487,10 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
     #[allow(private_bounds)]
     pub fn register<C: AggregateFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_aggregate_function_handle()?;
+
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_aggregate_function_register, handle.raw())
+        link.register_aggregate_function(handle)
     }
 }
 

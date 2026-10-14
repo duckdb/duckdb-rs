@@ -1,6 +1,6 @@
 use crate::{
     DuckDBType, Parameters,
-    connection::Context,
+    connection::{Context, SettingScope},
     environment::{Environment, StorageLocation},
     logical_type::LogicalTypeID,
     signature::{FunctionParameter, SignatureBuilder},
@@ -144,7 +144,7 @@ fn test_scalar_panic() -> crate::Result<()> {
     // client thread; if a worker thread raises it first, only the transaction is
     // invalidated. A single thread makes the panic always run on the client thread.
     let db = env.instance().expect("Failed to create instance");
-    db.set_option("threads", "1").expect("Failed to set threads");
+    db.config()?.set_text("threads", "1", SettingScope::Global)?;
     db.attach(&StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
     let conn = db.connect().expect("Failed to connect to database");

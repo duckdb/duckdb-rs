@@ -12,21 +12,23 @@
 //! to extension callbacks.
 
 use std::{
-    cell::Cell,
+    cell::{Cell, OnceCell},
     marker::PhantomData,
     sync::{Arc, Mutex, Weak},
 };
 
+use libduckdb_sys::v2::DUCKDB_V2_SETTING_SCOPE::{DUCKDB_V2_SETTING_SCOPE_DEFAULT, DUCKDB_V2_SETTING_SCOPE_SESSION};
+
 use crate::{
-    AsRaw, FromRaw, Parameters, Result,
+    AsRaw, Factory, FromRaw, Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
-    connection_options::ConfigOption,
+    connection_options::{Config, ConfigOption},
     database::{DatabaseHandle, Instance},
     error::{Error, check_api_call, check_api_call_no_err},
-    ffi,
-    links::LogicalTypeFromTextLink,
+    ffi, handles,
     logical_type::{LogicalType, LogicalTypeID},
     query_result::{ArrowQueryResult, QueryResult},
+    raw::RawExt,
     statement::{Statement, Statements},
     value::{self, Value, ValueInput},
 };
@@ -35,11 +37,11 @@ ffi_enum_redeclaration! {
     /// Destination scope for a connection-side configuration option write.
     pub enum SettingScope <- ffi::DUCKDB_V2_SETTING_SCOPE {
         /// Resolve the destination from the option's target scope.
-        Automatic = DUCKDB_V2_SETTING_SCOPE_AUTOMATIC,
+        Default = DUCKDB_V2_SETTING_SCOPE_DEFAULT,
         /// Write through to the database, making the setting visible to all connections.
         Global = DUCKDB_V2_SETTING_SCOPE_GLOBAL,
         /// Write to this connection's session only.
-        Local = DUCKDB_V2_SETTING_SCOPE_LOCAL
+        Session = DUCKDB_V2_SETTING_SCOPE_SESSION
     }
 }
 
@@ -118,6 +120,22 @@ impl Drop for InnerConnection {
 unsafe impl Send for InnerConnection {}
 unsafe impl Sync for InnerConnection {}
 
+pub(crate) trait HasFactory {
+    fn factory(&self) -> Result<&Factory>;
+}
+
+impl HasFactory for Factory {
+    fn factory(&self) -> Result<&Factory> {
+        Ok(self)
+    }
+}
+
+impl<T: HasFactory + ?Sized> HasFactory for &T {
+    fn factory(&self) -> Result<&Factory> {
+        (**self).factory()
+    }
+}
+
 /// A session connected to a DuckDB database.
 ///
 /// Connections have independent session settings and transactions while
@@ -132,6 +150,8 @@ pub struct Connection {
     pub(crate) inner: Arc<InnerConnection>,
     // Not `Sync`: settings and connection-level registrations are not locked on the C side.
     pub(crate) _not_sync: PhantomData<Cell<()>>,
+
+    pub(crate) factory: OnceCell<Factory>,
 }
 
 impl Connection {
@@ -143,12 +163,17 @@ impl Connection {
             inner: Arc::new(InnerConnection { handle }),
             _db: db.handle.clone(),
             _not_sync: PhantomData,
+            factory: OnceCell::new(),
         })
     }
 
     /// Parse SQL into an iterator over its statements.
     pub fn parse(&self, query: impl AsRef<str>) -> Result<Statements> {
         Statements::parse(self, query)
+    }
+
+    pub fn config(&self) -> Result<Config> {
+        check_api_call!(ffi::duckdb_v2_connection_get_config, self.raw(), RET).map(|handle| Config { handle })
     }
 
     /// Execute a single statement to completion and return its changed-row count.
@@ -182,73 +207,6 @@ impl Connection {
         stmt.into_statement(self)?.arrow_query(self, params, batch_size)
     }
 
-    /// Return the number of options visible to this connection.
-    pub fn get_options_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_connection_get_option_count, self.inner.handle, RET)?;
-
-        Ok(count as usize)
-    }
-
-    /// Return an effective option by canonical name or alias.
-    ///
-    /// The setting resolves from this connection's local override, then the
-    /// database's global value, then the static default.
-    pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_connection_get_option_by_name,
-            self.inner.handle,
-            &name.into(),
-            RET
-        )?;
-
-        Ok(ConfigOption { handle })
-    }
-
-    /// Return the visible option at `index`.
-    ///
-    /// An out-of-range index returns an error.
-    pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
-        let handle = check_api_call!(
-            ffi::duckdb_v2_connection_get_option_by_index,
-            self.inner.handle,
-            index as u64,
-            RET
-        )?;
-
-        Ok(ConfigOption { handle })
-    }
-
-    /// Return all options visible to this connection.
-    pub fn get_options(&self) -> Result<Vec<ConfigOption>> {
-        let count = self.get_options_count()?;
-        let mut options = Vec::with_capacity(count);
-
-        for i in 0..count {
-            let option = self.get_option_by_index(i)?;
-            options.push(option);
-        }
-
-        Ok(options)
-    }
-
-    /// Set an option at `scope`, using its declared target scope when `None`.
-    ///
-    /// Global writes affect the database; local writes affect only this
-    /// session. Unknown options and scopes disallowed by the option return an error.
-    pub fn set_option(&mut self, name: &str, value: &str, scope: Option<SettingScope>) -> Result<()> {
-        let scope = scope.unwrap_or(SettingScope::Automatic);
-
-        check_api_call!(
-            ffi::duckdb_v2_connection_set_option,
-            self.inner.handle,
-            &name.into(),
-            &value.into(),
-            scope.into()
-        )?;
-
-        Ok(())
-    }
-
     /// Request cancellation of the active query, or do nothing if idle.
     pub fn interrupt_query(&self) -> Result<()> {
         check_api_call!(ffi::duckdb_v2_connection_interrupt, self.inner.handle)
@@ -259,6 +217,17 @@ impl Connection {
         InterruptHandle {
             conn: Arc::downgrade(&self.inner),
         }
+    }
+}
+
+impl HasFactory for Connection {
+    fn factory(&self) -> Result<&Factory> {
+        if let Some(factory) = self.factory.get() {
+            return Ok(factory);
+        }
+
+        let factory = Factory(check_api_call!(ffi::duckdb_v2_connection_get_factory, self.raw(), RET)?);
+        Ok(self.factory.get_or_init(|| factory))
     }
 }
 
@@ -274,15 +243,14 @@ impl AsRaw for Connection {
 }
 
 /// Type and value operations available through a connection or callback context.
-pub trait FFILink {
+// Sealed through the crate-private supertrait; only crate types implement it.
+#[allow(private_bounds)]
+pub trait FFILink: HasFactory {
     /// Create a logical type using this connection or context.
     fn logical_type_create(&self, name: &str, parameters: Parameters<'_>) -> Result<LogicalType>;
 
     /// Create a logical type from its primitive ID using this connection or context.
     fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType>;
-
-    /// Create a logical type from its textual representation using this connection or context.
-    fn logical_type_from_text(&self, text: &str) -> Result<LogicalType>;
 
     /// Cast a value using this connection or context.
     fn value_cast(&self, value: &Value, target_type: LogicalType) -> Result<Value>;
@@ -300,17 +268,12 @@ impl FFILink for Connection {
         LogicalType::create_from_id(self, type_id, parameters)
     }
 
-    fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        self.create_logical_type_from_text(text)
-            .map(|handle| LogicalType { handle })
-    }
-
     fn value_cast(&self, value: &Value, target_type: LogicalType) -> Result<Value> {
         value.cast(self, target_type)
     }
 
     fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
-        value::create_with_connection(self, input)
+        value::create(self.factory()?, input)
     }
 }
 
@@ -330,29 +293,26 @@ pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 ///
 /// This wrapper does not own the underlying handle and must not outlive the
 /// callback invocation, including when wrapped with [`FromRaw::from_raw`].
-#[derive(AsRaw, FromRaw)]
-#[repr(transparent)]
-#[derive(Debug)]
-pub struct Context(pub(crate) ffi::duckdb_v2_context_handle);
+#[derive(AsRaw, FromRaw, Debug)]
+pub struct Context {
+    pub(crate) handle: ffi::duckdb_v2_context_handle,
+    pub(crate) factory: OnceCell<Factory>,
+}
 
 impl Context {
-    /// Return an effective option by canonical name or alias.
-    pub fn get_option(&self, name: &str) -> Result<ConfigOption> {
-        Ok(ConfigOption {
-            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_name, self.0, &name.into(), RET)?,
-        })
+    pub fn config(&self) -> Result<Config> {
+        check_api_call!(ffi::duckdb_v2_context_get_config, self.raw(), RET).map(|handle| Config { handle })
     }
+}
 
-    /// Return the option visible at `index`.
-    pub fn get_option_by_index(&self, index: usize) -> Result<ConfigOption> {
-        Ok(ConfigOption {
-            handle: check_api_call!(ffi::duckdb_v2_context_get_option_by_index, self.0, index as u64, RET)?,
-        })
-    }
+impl HasFactory for Context {
+    fn factory(&self) -> Result<&Factory> {
+        if let Some(factory) = self.factory.get() {
+            return Ok(factory);
+        }
 
-    /// Return the number of options visible to this context.
-    pub fn get_option_count(&self) -> Result<usize> {
-        check_api_call!(ffi::duckdb_v2_context_get_option_count, self.0, RET).map(|count| count as usize)
+        let factory = Factory(check_api_call!(ffi::duckdb_v2_context_get_factory, self.raw(), RET)?);
+        Ok(self.factory.get_or_init(|| factory))
     }
 }
 
@@ -365,17 +325,12 @@ impl FFILink for Context {
         LogicalType::create_from_id(self, type_id, parameters)
     }
 
-    fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        self.create_logical_type_from_text(text)
-            .map(|handle| LogicalType { handle })
-    }
-
     fn value_cast(&self, value: &Value, target_type: LogicalType) -> Result<Value> {
         value.cast(self, target_type)
     }
 
     fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
-        value::create_with_context(self, input)
+        value::create(self.factory()?, input)
     }
 }
 
@@ -387,10 +342,6 @@ impl<T: FFILink + ?Sized> FFILink for &T {
 
     fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
         (*self).logical_type_create_from_id(type_id, parameters)
-    }
-
-    fn logical_type_from_text(&self, text: &str) -> Result<LogicalType> {
-        (*self).logical_type_from_text(text)
     }
 
     fn value_cast(&self, value: &Value, target_type: LogicalType) -> Result<Value> {

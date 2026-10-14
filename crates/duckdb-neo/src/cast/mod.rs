@@ -9,7 +9,7 @@ use crate::{
     connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::LogicalType,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     vector::{Access, Vector, VectorElement},
 };
 
@@ -45,7 +45,13 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             )?;
             let output = output.cast::<T::OutputType>()?;
 
-            T::exec(user_data, &Context(context), mode.try_into()?, input, output)
+            T::exec(
+                user_data,
+                &unsafe { Context::from_raw(context) },
+                mode.try_into()?,
+                input,
+                output,
+            )
         },
         err,
     );
@@ -115,7 +121,7 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
         let handle = link.create_cast_function_handle()?;
         let handle = self.build(handle)?;
 
-        check_api_call!(ffi::duckdb_v2_cast_function_register, handle.raw())
+        link.register_cast_function_handle(handle)
     }
 }
 

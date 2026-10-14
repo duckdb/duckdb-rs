@@ -677,7 +677,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # let env = Environment::new()?;
     /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
     /// let types = [Vec::<Option<String>>::logical_type(&conn)?, Vec::<Option<i64>>::logical_type(&conn)?];
-    /// let mut chunk = DataChunk::create(&types, true)?;
+    /// let mut chunk = DataChunk::create(&conn, &types, true)?;
     /// let [mut a, mut b] = chunk.get_vector_array_mut([0, 1])?;
     /// std::mem::swap(&mut *a.children_mut().unwrap(), &mut *b.children_mut().unwrap());
     /// # Ok(())

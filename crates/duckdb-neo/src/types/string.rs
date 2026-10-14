@@ -18,7 +18,6 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-
 /// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
 pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
     if raw.len == 0 {

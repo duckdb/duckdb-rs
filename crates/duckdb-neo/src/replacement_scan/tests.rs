@@ -6,7 +6,7 @@ use std::sync::{
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
     column_data_collection::ColumnDataCollection,
-    connection::Context,
+    connection::{Context, SettingScope},
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
     logical_type::LogicalTypeID,
@@ -131,7 +131,7 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
     let collection = ColumnDataCollection::new(&conn, &logical_types)?;
 
-    let mut chunk = DataChunk::create(&logical_types, true)?;
+    let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
     let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
@@ -180,7 +180,7 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
 fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnDataCollection<'_>> {
     let logical_types = [i32::logical_type(conn)?, bool::logical_type(conn)?];
-    let mut chunk = DataChunk::create(&logical_types, true)?;
+    let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
     let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
@@ -295,7 +295,7 @@ fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
         .register(&conn)?;
 
     // The collection no longer borrows `conn`, so it can be mutated.
-    conn.set_option("threads", "1", None)?;
+    conn.config()?.set_text("threads", "1", SettingScope::Session)?;
 
     let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
     let chunk = query.next_chunk()?.unwrap();

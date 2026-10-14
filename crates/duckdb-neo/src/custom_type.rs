@@ -67,7 +67,7 @@ impl CustomType {
         let handle = link.create_custom_type_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_custom_type_register, handle.raw())
+        link.register_custom_type_handle(handle)
     }
 }
 

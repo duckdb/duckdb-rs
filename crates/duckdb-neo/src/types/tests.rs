@@ -121,7 +121,7 @@ fn test_remaining_value_creators() -> crate::Result<()> {
     assert_eq!(().value(&conn)?.dbg_string()?, "()");
 
     let logical_type = i32::logical_type(&conn)?;
-    let null = Value::null(&logical_type)?;
+    let null = Value::null(&conn, &logical_type)?;
     assert!(null.is_null()?);
 
     Ok(())
@@ -202,7 +202,7 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     assert_eq!(tuple.get_child(2)?.dbg_string()?, "true");
 
     let logical_type = i32::logical_type(&conn)?;
-    let null = Value::null(&logical_type)?;
+    let null = Value::null(&conn, &logical_type)?;
     drop(logical_type);
     assert!(null.is_null()?);
     assert_eq!(

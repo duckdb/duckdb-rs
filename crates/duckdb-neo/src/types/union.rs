@@ -13,7 +13,6 @@ use crate::{
     value::Value,
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
-
 /// Reads a `UNION` vector through its tag and member child vectors.
 #[derive(Debug)]
 pub struct Union;

@@ -202,7 +202,8 @@ fn test_table_function() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let mut conn = db.connect()?;
 
-    conn.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
+    conn.config()?
+        .set_text("enable_progress_bar", "true", SettingScope::Session)?;
 
     let pushdown_called = Arc::new(AtomicBool::new(false));
 
