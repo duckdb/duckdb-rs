@@ -61,6 +61,7 @@ pub enum ValueInput<'a> {
     UHugeInt(UHugeInt),
     Varchar(&'a str),
     Blob(&'a [u8]),
+    Geometry(&'a [u8]),
     Type(&'a LogicalType),
     Date(i32),
     Time(i64),
@@ -169,6 +170,11 @@ pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> 
         }
         ValueInput::Varchar(value) => create_value!(ffi::duckdb_v2_value_create_varchar, factory.raw(), &value.into()),
         ValueInput::Blob(value) => create_value!(
+            ffi::duckdb_v2_value_create_blob,
+            factory.raw(),
+            &crate::ffi_str::bytes_arg(value)
+        ),
+        ValueInput::Geometry(value) => create_value!(
             ffi::duckdb_v2_value_create_blob,
             factory.raw(),
             &crate::ffi_str::bytes_arg(value)

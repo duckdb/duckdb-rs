@@ -55,11 +55,14 @@ build-extension-static = []
 [dependencies]
 chrono = { workspace = true, optional = true }
 duckdb-loadable-macros = { workspace = true, features = ["neo"] }
+geo = "0.33.1"
+geo-traits = "0.3.0"
 libduckdb-sys = { workspace = true, features = ["capi-v2"] }
 paste = { workspace = true }
 r2d2 = { workspace = true, optional = true }
 rust_decimal = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
+wkb = "0.9.2"
 
 [dev-dependencies]
 arrow-array = { workspace = true, features = ["ffi"] }
