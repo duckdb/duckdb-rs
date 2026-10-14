@@ -7,6 +7,9 @@
 #[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
 compile_error!("libduckdb-sys needs at least one of the `capi-v1` or `capi-v2` features");
 
+/// Dependency-free Arrow C Data Interface structs used by DuckDB Arrow APIs.
+mod arrow_c_data;
+
 // Build-script helper mounted here so cargo test runs its unit tests.
 #[cfg(test)]
 mod build_paths;
@@ -30,16 +33,14 @@ pub mod v1 {
         )]
 
         // Bindgen references these blocklisted forward declarations unqualified.
-        use super::{ArrowArray, ArrowSchema};
+        use crate::arrow_c_data::{ArrowArray, ArrowSchema};
 
         include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
     }
     #[allow(clippy::all)]
     pub use bindings::*;
 
-    /// Dependency-free Arrow C Data Interface structs used by DuckDB's v1 Arrow APIs.
-    mod arrow_c_data;
-    pub use arrow_c_data::{ArrowArray, ArrowSchema};
+    pub use crate::arrow_c_data::{ArrowArray, ArrowSchema};
 
     mod string;
     pub use string::*;
@@ -58,9 +59,9 @@ pub use v1::*;
 
 /// Bindings for DuckDB's v2 C API (`duckdb_v2.h`).
 ///
-/// Enabled by the `capi-v2` feature. Arrow C data arguments use arrow-array's
-/// `FFI_ArrowArray`, `FFI_ArrowSchema` and `FFI_ArrowArrayStream`. Both APIs
-/// define `idx_t` as `u64`; everything else is namespaced `duckdb_v2_*`.
+/// Enabled by the `capi-v2` feature. The v2 API shares the Arrow C data structs
+/// with the v1 bindings (and both define `idx_t` as `u64`); everything else is
+/// namespaced `duckdb_v2_*`.
 #[cfg(feature = "capi-v2")]
 pub mod v2 {
     #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
@@ -72,18 +73,17 @@ pub mod v2 {
             rustdoc::bare_urls
         )]
 
-        // Bindgen references these blocklisted forward declarations by their C names.
+        // Bindgen references these blocklisted forward declarations unqualified.
         // Whether the v2 header references them depends on the DuckDB version.
         #[allow(unused_imports)]
-        use arrow_array::{
-            ffi::{FFI_ArrowArray as ArrowArray, FFI_ArrowSchema as ArrowSchema},
-            ffi_stream::FFI_ArrowArrayStream as ArrowArrayStream,
-        };
+        use crate::arrow_c_data::{ArrowArray, ArrowArrayStream, ArrowSchema};
 
         include!(concat!(env!("OUT_DIR"), "/bindgen_v2.rs"));
     }
     #[allow(clippy::all)]
     pub use bindings::*;
+
+    pub use crate::arrow_c_data::{ArrowArray, ArrowArrayStream, ArrowSchema};
 
     // Trait impls only; nothing to re-export.
     mod string;
