@@ -97,9 +97,9 @@ pub enum LogicalTypeId {
     Geometry = DUCKDB_TYPE_DUCKDB_TYPE_GEOMETRY as RawLogicalTypeId,
     /// VARIANT.
     ///
-    /// This type is exposed for metadata. Decoding VARIANT result columns is
-    /// not supported because DuckDB does not expose C API helpers for decoding
-    /// VARIANT values.
+    /// Arrow reads and appends use the `arrow.parquet.variant` extension, which
+    /// DuckDB converts. Row APIs decode values as
+    /// [`ValueRef::Variant`](crate::types::ValueRef::Variant).
     Variant = DUCKDB_TYPE_DUCKDB_TYPE_VARIANT as RawLogicalTypeId,
     /// DuckDB returned a type that this wrapper does not yet recognize
     Unsupported = RawLogicalTypeId::MAX,
@@ -414,20 +414,6 @@ impl LogicalTypeHandle {
         unsafe { Self::new(c_logical_type) }
     }
 
-    pub(crate) fn contains_type_id(&self, id: LogicalTypeId) -> bool {
-        if self.id() == id {
-            return true;
-        }
-
-        for idx in 0..self.num_children() {
-            if self.child(idx).contains_type_id(id) {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Alias of the logical type.
     pub fn get_alias(&self) -> Option<String> {
         unsafe {
@@ -557,19 +543,15 @@ mod test {
             crate::ffi::DUCKDB_TYPE_DUCKDB_TYPE_VARIANT as RawLogicalTypeId
         );
         assert_eq!(typ.num_children(), 0);
-        assert!(typ.contains_type_id(LogicalTypeId::Variant));
         assert_eq!(format!("{typ:?}"), "Variant");
     }
 
     #[test]
     fn test_nested_variant_type() {
         let typ = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Variant));
-        let list_of_int = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Integer));
 
         assert_eq!(typ.id(), LogicalTypeId::List);
         assert_eq!(typ.child(0).id(), LogicalTypeId::Variant);
-        assert!(typ.contains_type_id(LogicalTypeId::Variant));
-        assert!(!list_of_int.contains_type_id(LogicalTypeId::Variant));
     }
 
     #[test]

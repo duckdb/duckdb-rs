@@ -10,7 +10,7 @@ use crate::{
     Error,
     core::{LogicalTypeHandle, LogicalTypeId},
     error::result_from_duckdb_result,
-    executed_result::{ExecutedResult, logical_type_from_duckdb_column, reject_unsupported_result_logical_type},
+    executed_result::{ExecutedResult, logical_type_from_duckdb_column},
 };
 #[cfg(feature = "polars")]
 use polars_core::utils::arrow as polars_arrow;
@@ -157,7 +157,6 @@ impl RawStatement {
     /// NOTE: if execute failed, we shouldn't call any other methods which depends on result
     pub fn execute(&mut self) -> Result<usize> {
         self.reset_result();
-        self.reject_unsupported_prepared_result_columns_for_dml()?;
         unsafe {
             let mut out: ffi::duckdb_result = std::mem::zeroed();
             let rc = ffi::duckdb_execute_prepared(self.ptr, &mut out);
@@ -171,7 +170,6 @@ impl RawStatement {
 
     pub fn execute_streaming(&mut self) -> Result<()> {
         self.reset_result();
-        self.reject_unsupported_prepared_result_columns_for_dml()?;
         unsafe {
             let mut out: ffi::duckdb_result = std::mem::zeroed();
 
@@ -214,32 +212,6 @@ impl RawStatement {
 
             Ok(name)
         }
-    }
-
-    fn reject_unsupported_prepared_result_columns_for_dml(&self) -> Result<()> {
-        if !self.is_dml_statement() {
-            return Ok(());
-        }
-
-        // This uses prepared metadata only as a pre-execution side-effect
-        // barrier for DML RETURNING. Executed result metadata remains the
-        // authoritative source for decoding after execution.
-        let column_count = unsafe { ffi::duckdb_prepared_statement_column_count(self.ptr) as usize };
-        for idx in 0..column_count {
-            let logical_type = self.try_column_logical_type(idx)?;
-            reject_unsupported_result_logical_type(idx, &logical_type)?;
-        }
-
-        Ok(())
-    }
-
-    fn is_dml_statement(&self) -> bool {
-        matches!(
-            unsafe { ffi::duckdb_prepared_statement_type(self.ptr) },
-            ffi::duckdb_statement_type_DUCKDB_STATEMENT_TYPE_INSERT
-                | ffi::duckdb_statement_type_DUCKDB_STATEMENT_TYPE_UPDATE
-                | ffi::duckdb_statement_type_DUCKDB_STATEMENT_TYPE_DELETE
-        )
     }
 
     #[inline]
