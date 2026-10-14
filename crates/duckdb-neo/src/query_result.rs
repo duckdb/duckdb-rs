@@ -287,7 +287,10 @@ impl Drop for QueryResult<'_> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use arrow_array::ffi_stream::ArrowArrayStreamReader;
+    use std::mem::transmute;
+
+    use arrow_array::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
+    use libduckdb_sys::v2 as ffi;
 
     use crate::{
         Parameters,
@@ -418,8 +421,10 @@ mod tests {
         let result = conn.query(stmt, Parameters::None)?;
         let arrow_stream = result.to_arrow_stream(1024)?;
 
-        // Dropped below, before the connection is used again.
-        let mut reader = ArrowArrayStreamReader::try_new(arrow_stream.into_raw()).expect("valid Arrow stream");
+        // Read through arrow-rs, as a caller using its FFI types would. Dropped
+        // below, before the connection is used again.
+        let stream = unsafe { transmute::<ffi::ArrowArrayStream, FFI_ArrowArrayStream>(arrow_stream.into_raw()) };
+        let mut reader = ArrowArrayStreamReader::try_new(stream).expect("valid Arrow stream");
         let batch = reader.next().expect("one batch").expect("no stream error");
         assert_eq!(batch.num_rows(), 3);
         drop(reader);

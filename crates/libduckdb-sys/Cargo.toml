@@ -46,11 +46,7 @@ loadable-extension = ["prettyplease", "quote", "syn", "capi-v1"]
 # the v2 API is needed.
 capi-v1 = []
 # Also generate bindings for the v2 C API header (`duckdb_v2.h`), exposed as `libduckdb_sys::v2`.
-capi-v2 = ["dep:arrow-array"]
-
-[dependencies]
-# Arrow C Data Interface structs used in the v2 bindings.
-arrow-array = { workspace = true, features = ["ffi"], optional = true }
+capi-v2 = []
 
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"], optional = true }

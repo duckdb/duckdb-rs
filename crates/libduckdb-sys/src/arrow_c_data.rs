@@ -1,12 +1,13 @@
-//! Arrow C Data Interface layouts used by DuckDB's v1 Arrow conversion APIs.
+//! Arrow C Data Interface layouts used by DuckDB's Arrow conversion APIs.
 //!
-//! DuckDB's v1 C header forward-declares these structs. The conversion APIs
-//! need concrete caller-allocated layouts, so `libduckdb-sys` defines the ABI
-//! records directly without taking a dependency on arrow-rs. The v2 bindings
-//! use arrow-rs's FFI structs instead.
+//! DuckDB's public C header forward-declares these structs. The conversion
+//! APIs need concrete caller-allocated layouts, so `libduckdb-sys` defines the
+//! ABI records directly without taking a dependency on arrow-rs.
 //!
 //! Specification: <https://arrow.apache.org/docs/format/CDataInterface.html>
 
+#[cfg(any(test, feature = "capi-v2"))]
+use std::ffi::c_int;
 use std::{
     ffi::{c_char, c_void},
     ptr,
@@ -78,6 +79,32 @@ impl ArrowSchema {
     }
 }
 
+/// Arrow C stream interface. Only the v2 API exposes it; tests keep it for the layout check.
+#[cfg(any(test, feature = "capi-v2"))]
+#[repr(C)]
+#[derive(Debug)]
+pub struct ArrowArrayStream {
+    pub get_schema: Option<unsafe extern "C" fn(*mut ArrowArrayStream, *mut ArrowSchema) -> c_int>,
+    pub get_next: Option<unsafe extern "C" fn(*mut ArrowArrayStream, *mut ArrowArray) -> c_int>,
+    pub get_last_error: Option<unsafe extern "C" fn(*mut ArrowArrayStream) -> *const c_char>,
+    pub release: Option<unsafe extern "C" fn(*mut ArrowArrayStream)>,
+    pub private_data: *mut c_void,
+}
+
+#[cfg(feature = "capi-v2")]
+impl ArrowArrayStream {
+    /// Creates a null-release placeholder for a producer to fill.
+    pub const fn empty() -> Self {
+        Self {
+            get_schema: None,
+            get_next: None,
+            get_last_error: None,
+            release: None,
+            private_data: ptr::null_mut(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,9 +116,11 @@ mod tests {
     };
 
     use arrow::{
-        array::{Array, DictionaryArray, Int32Array, StructArray},
-        datatypes::{DataType, Field, Fields, Int8Type},
+        array::{Array, DictionaryArray, Int32Array, RecordBatch, RecordBatchIterator, StructArray},
+        datatypes::{DataType, Field, Fields, Int8Type, Schema},
+        error::ArrowError,
         ffi::{FFI_ArrowArray, FFI_ArrowSchema},
+        ffi_stream::FFI_ArrowArrayStream,
     };
 
     // arrow-rs keeps the FFI fields private, so compare layouts by reading a
@@ -159,5 +188,41 @@ mod tests {
         assert!(ptr::eq(child.dictionary as *const FFI_ArrowSchema, dictionary));
         assert_eq!(ours.release.map(|f| f as usize), ffi.release().map(|f| f as usize));
         assert_eq!(ours.private_data, ffi.private_data());
+    }
+
+    // Drives an arrow-rs stream through our callback fields, so a misplaced field calls the wrong function.
+    #[test]
+    fn matches_arrow_rs_stream_layout() {
+        assert_eq!(size_of::<ArrowArrayStream>(), size_of::<FFI_ArrowArrayStream>());
+        assert_eq!(align_of::<ArrowArrayStream>(), align_of::<FFI_ArrowArrayStream>());
+
+        let schema = Arc::new(Schema::new(vec![Field::new("i", DataType::Int32, false)]));
+        let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
+        let batches = vec![Ok(batch), Err(ArrowError::ComputeError("boom".into()))];
+        let mut ffi = FFI_ArrowArrayStream::new(Box::new(RecordBatchIterator::new(batches, schema.clone())));
+        let release = ffi.release().map(|f| f as usize);
+        let private_data = ffi.private_data();
+
+        let ours = &mut ffi as *mut FFI_ArrowArrayStream as *mut ArrowArrayStream;
+        unsafe {
+            assert_eq!((*ours).release.map(|f| f as usize), release);
+            assert_eq!((*ours).private_data, private_data);
+
+            let mut out_schema = FFI_ArrowSchema::empty();
+            let rc = (*ours).get_schema.unwrap()(ours, &mut out_schema as *mut FFI_ArrowSchema as *mut ArrowSchema);
+            assert_eq!(rc, 0);
+            assert_eq!(Schema::try_from(&out_schema).unwrap(), *schema);
+
+            let mut out_array = FFI_ArrowArray::empty();
+            let rc = (*ours).get_next.unwrap()(ours, &mut out_array as *mut FFI_ArrowArray as *mut ArrowArray);
+            assert_eq!(rc, 0);
+            assert_eq!(out_array.len(), 3);
+
+            let mut failed = FFI_ArrowArray::empty();
+            let rc = (*ours).get_next.unwrap()(ours, &mut failed as *mut FFI_ArrowArray as *mut ArrowArray);
+            assert_ne!(rc, 0);
+            let err = CStr::from_ptr((*ours).get_last_error.unwrap()(ours));
+            assert!(err.to_str().unwrap().contains("boom"));
+        }
     }
 }
