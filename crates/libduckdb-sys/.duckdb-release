@@ -26,6 +26,6 @@
 # the commit and version of each new build. Edit by hand only for experiments,
 # and run `./upgrade.sh --sync` afterwards to update the `bundled` files.
 
-DUCKDB_RELEASE_COMMIT=b15358c371daf10dad799a43b6167f6ccdce84d8
-DUCKDB_RELEASE_URL=https://duckdb-staging.duckdb.org/b15358c371/v2.0.0-alpha46057/duckdb/duckdb/github_release
-DUCKDB_RELEASE_VERSION=v2.0.0-alpha46057
+DUCKDB_RELEASE_COMMIT=f702a1f801062fc28e5e1570988573012c3af4be
+DUCKDB_RELEASE_URL=https://duckdb-staging.duckdb.org/f702a1f801/v2.0.0-alpha47887/duckdb/duckdb/github_release
+DUCKDB_RELEASE_VERSION=v2.0.0-alpha47887
