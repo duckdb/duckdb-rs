@@ -6,9 +6,7 @@ use arrow::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::{UUID_BYTE_WIDTH, UUID_EXTENSION_NAME};
-
-pub(crate) const ARROW_EXTENSION_NAME_KEY: &str = "ARROW:extension:name";
+use crate::types::extension::{ARROW_EXTENSION_NAME_KEY, UUID_BYTE_WIDTH, UUID_EXTENSION_NAME};
 
 pub(crate) fn uuid_metadata() -> HashMap<String, String> {
     HashMap::from([(ARROW_EXTENSION_NAME_KEY.to_string(), UUID_EXTENSION_NAME.to_string())])
