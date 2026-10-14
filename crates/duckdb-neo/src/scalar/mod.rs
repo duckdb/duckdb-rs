@@ -3,7 +3,7 @@
 //! Implement [`ScalarCallbacks`] to bind each call site, optionally initialize
 //! worker-local state, and evaluate input chunks into an output vector. Register
 //! the implementation with [`ScalarFunctionBuilder`]. Bind callbacks can use
-//! [`ReturnTypeHandle`] when the concrete result type depends on the arguments.
+//! [`ScalarCallbacks::resolve_types`] when the concrete result type depends on the arguments.
 
 use std::any::Any;
 use std::collections::HashMap;
