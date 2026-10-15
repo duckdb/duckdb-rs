@@ -43,6 +43,8 @@ pub(crate) trait DataChunkMut {
 
     /// Drop cached views after DuckDB changed the chunk's vectors.
     fn evict_cached(&mut self);
+
+    fn clear(&mut self) -> Result<()>;
 }
 
 impl DataChunkMut for DataChunkRef<'_> {
@@ -53,6 +55,11 @@ impl DataChunkMut for DataChunkRef<'_> {
     fn evict_cached(&mut self) {
         self.vectors.evict_all();
     }
+
+    fn clear(&mut self) -> Result<()> {
+        self.evict_cached();
+        check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
+    }
 }
 
 impl DataChunkMut for DataChunk<'_> {
@@ -62,6 +69,11 @@ impl DataChunkMut for DataChunk<'_> {
 
     fn evict_cached(&mut self) {
         self.chunk.evict_cached();
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        self.evict_cached();
+        check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
     }
 }
 
@@ -632,6 +644,7 @@ unsafe impl Send for DataChunk<'_> {}
 mod tests {
 
     use crate::builder_helpers::scalar_callback;
+    use crate::data_chunk::DataChunkMut;
     use crate::scalar::ScalarFunctionBuilder;
     use crate::signature::{FunctionParameter, SignatureBuilder};
     use crate::types::DuckDBType;
@@ -682,7 +695,10 @@ mod tests {
 
         ScalarFunctionBuilder::new(
             "chunk_copy",
-            SignatureBuilder::new([FunctionParameter::new::<i32>("in")], i32::logical_type(&conn)?).atomize(&conn)?,
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i32>("in"))
+                .return_type(i32::logical_type(&conn)?)
+                .atomize(&conn)?,
             ChunkCopy,
         )
         .register(&conn)?;
@@ -729,6 +745,27 @@ mod tests {
         assert!(panics(&mut || drop(chunk.get_vector_at::<i64>(1))));
         assert!(panics(&mut || drop(chunk.get_vector_at_mut::<i64>(1))));
         assert!(panics(&mut || drop(chunk.get_vector_array_mut([0, 1]))));
+        Ok(())
+    }
+
+    #[test]
+    fn test_data_chunk_clear() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+        let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+        let mut vec = chunk.get_vector_at_mut::<String>(0)?;
+
+        vec.set_size(10)?;
+
+        drop(vec);
+
+        chunk.clear()?;
+
+        let vec = chunk.get_vector_at_mut::<String>(0)?;
+
+        assert!(vec.is_empty());
+
         Ok(())
     }
 }

@@ -1,17 +1,11 @@
 //! Internal owned
-//! //! Internal factoryhandles and their regicreate. handles and their registerers.
+//! //! Internal factoryhandles and their registerers.
 //!
 //! Callback-borrowed views and wrappers that retain parent objects stay in
 //! their respective modules.
 
 use crate::connection::HasFactory;
-use crate::{
-    Result, check_api_call,
-    column_data_collection::ColumnDataCollection,
-    connection::{Connection, Extension},
-    database::Instance,
-    ffi,
-};
+use crate::{column_data_collection::ColumnDataCollection, connection::Connection, database::Instance, ffi};
 
 macro_rules! define_handle {
     (

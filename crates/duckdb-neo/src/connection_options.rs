@@ -1,7 +1,7 @@
 //! Configuration options shared with databases and connections.
 
 use crate::connection::SettingScope;
-use crate::{ffi, value};
+use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;
 use crate::raw::RawExt;
@@ -83,6 +83,10 @@ impl ConfigOption {
 
     pub fn default_scope(&self) -> Result<SettingScope> {
         check_api_call!(ffi::duckdb_v2_option_get_default_scope, self.raw(), RET)?.try_into()
+    }
+
+    pub fn default_value(&self) -> Result<Value> {
+        check_api_call!(ffi::duckdb_v2_option_get_default_value, self.raw(), RET).map(|handle| Value { handle })
     }
 
     pub fn supports_scope(&self, scope: SettingScope) -> Result<bool> {
@@ -186,7 +190,7 @@ mod test {
     fn test_connection_option() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let mut conn = db.connect()?;
+        let conn = db.connect()?;
 
         conn.config()?
             .set_text("worker_threads", &12.to_string(), SettingScope::Session)?;

@@ -17,15 +17,13 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use libduckdb_sys::v2::DUCKDB_V2_SETTING_SCOPE::{DUCKDB_V2_SETTING_SCOPE_DEFAULT, DUCKDB_V2_SETTING_SCOPE_SESSION};
-
 use crate::{
-    AsRaw, Factory, FromRaw, Parameters, Result,
+    AsRaw, FromRaw, Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
-    connection_options::{Config, ConfigOption},
+    connection_options::Config,
     database::{DatabaseHandle, Instance},
     error::{Error, check_api_call, check_api_call_no_err},
-    ffi, handles,
+    ffi,
     logical_type::{LogicalType, LogicalTypeID},
     query_result::{ArrowQueryResult, QueryResult},
     raw::RawExt,
@@ -120,7 +118,10 @@ impl Drop for InnerConnection {
 unsafe impl Send for InnerConnection {}
 unsafe impl Sync for InnerConnection {}
 
-pub(crate) trait HasFactory {
+#[derive(Debug, AsRaw, FromRaw)]
+pub struct Factory(pub(crate) ffi::duckdb_v2_factory_handle);
+
+pub trait HasFactory {
     fn factory(&self) -> Result<&Factory>;
 }
 

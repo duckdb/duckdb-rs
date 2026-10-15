@@ -200,7 +200,7 @@ fn test_table_function() -> crate::Result<()> {
     }
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
-    let mut conn = db.connect()?;
+    let conn = db.connect()?;
 
     conn.config()?
         .set_text("enable_progress_bar", "true", SettingScope::Session)?;
@@ -209,7 +209,9 @@ fn test_table_function() -> crate::Result<()> {
 
     TableFunctionBuilder::new(
         "my_table_function",
-        SignatureBuilder::without_return_type([FunctionParameter::new::<i32>("offset")]).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("offset"))
+            .atomize(&conn)?,
         MyTableFunction {
             base: 42,
             pushdown_called: pushdown_called.clone(),
@@ -415,7 +417,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
 
     TableFunctionBuilder::new(
         "partitioned_range",
-        SignatureBuilder::without_return_type([]).atomize(&conn)?,
+        SignatureBuilder::new().atomize(&conn)?,
         PartitionedFunction {
             partitioning_calls: partitioning_calls.clone(),
             partition_data_calls: partition_data_calls.clone(),

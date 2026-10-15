@@ -55,7 +55,7 @@ mod tests {
     fn test_log_on_context() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let mut conn = db.connect()?;
+        let conn = db.connect()?;
 
         conn.config()?
             .set_text("enable_logging", "true", SettingScope::Global)?;
@@ -66,7 +66,10 @@ mod tests {
 
         ScalarFunctionBuilder::new(
             "log_it",
-            SignatureBuilder::new([FunctionParameter::new::<i32>("A")], i32::logical_type(&conn)?).atomize(&conn)?,
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i32>("A"))
+                .return_type(i32::logical_type(&conn)?)
+                .atomize(&conn)?,
             LogCallback,
         )
         .register(&conn)?;

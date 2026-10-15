@@ -522,7 +522,10 @@ mod tests {
         // The same check through a callback context.
         ScalarFunctionBuilder::new(
             "length_check",
-            SignatureBuilder::new([FunctionParameter::new::<i32>("x")], i32::logical_type(&conn)?).atomize(&conn)?,
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i32>("x"))
+                .return_type(i32::logical_type(&conn)?)
+                .atomize(&conn)?,
             LengthCheckScalar,
         )
         .register(&conn)?;

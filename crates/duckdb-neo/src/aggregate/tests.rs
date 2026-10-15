@@ -116,11 +116,11 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
-        SignatureBuilder::new(
-            [FunctionParameter::new::<i32>("IN")],
-            u8::logical_type(&conn)?, // Will be overwritten to String
-        )
-        .atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            // Will be overwritten to String
+            .return_type(u8::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicAggregate::<f32> { item: 0.0 },
     )
     .register(&conn)?;
@@ -152,7 +152,10 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
 
     let mut result = AggregateFunctionBuilder::new(
         "to_concatenated",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("IN")], String::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(String::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicAggregate::<f32> { item: 2.5 },
     );
 
@@ -167,7 +170,10 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
 
     let result = AggregateFunctionBuilder::new(
         "",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("IN")], String::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(String::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicAggregate::<i32> { item: 0 },
     )
     .register(&conn);
@@ -185,7 +191,10 @@ fn aggregate_test_groups() -> crate::Result<()> {
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("IN")], String::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(String::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicAggregate::<i32> { item: 0 },
     )
     .register(&conn)?;
@@ -277,7 +286,10 @@ fn aggregate_test_undersized_state() -> crate::Result<()> {
 
     AggregateFunctionBuilder::new(
         "undersized",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("IN")], u64::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(u64::logical_type(&conn)?)
+            .atomize(&conn)?,
         UndersizedState,
     )
     .register(&conn)?;

@@ -109,7 +109,9 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "custom_scalar",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("multiplier")], i32::logical_type(&conn)?)
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("multiplier"))
+            .return_type(i32::logical_type(&conn)?)
             .atomize(&conn)?,
         ScalarWithData {
             base_data: vec![1, 2, 3],
@@ -151,7 +153,9 @@ fn test_scalar_panic() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "panic_func",
-        SignatureBuilder::new(Vec::new(), i32::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .return_type(i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicScalarPanicFunction,
     )
     .register(&conn)
@@ -200,11 +204,11 @@ fn test_invalid_scalar_function_registration() -> crate::Result<()> {
 
     let result = ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new(
-            [FunctionParameter::new::<i32>(""), FunctionParameter::new::<i32>("")],
-            i32::logical_type(&conn)?,
-        )
-        .atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>(""))
+            .param(FunctionParameter::new::<i32>(""))
+            .return_type(i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicScalarFunction,
     )
     .register(&conn);
@@ -227,7 +231,10 @@ fn test_scalar_building() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("input")], i32::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicScalarFunction,
     )
     .register(&conn)
@@ -258,7 +265,10 @@ fn test_scalar_property() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("input")], i32::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         BasicScalarFunction,
     )
     .set_property(FunctionProperty::HasSpecialNullHandling(false))
@@ -313,7 +323,10 @@ fn test_scalar_override_result() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "override",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("in")], String::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(String::logical_type(&conn)?)
+            .atomize(&conn)?,
         OverrideAbleScalar {},
     )
     .register(&conn)?;
@@ -374,7 +387,10 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     let folded = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     ScalarFunctionBuilder::new(
         "fold_probe",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("x")], i32::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         FoldProbe { folded: folded.clone() },
     )
     .register(&conn)?;
@@ -433,7 +449,10 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "identity",
-        SignatureBuilder::new([FunctionParameter::new::<i32>("x")], i32::logical_type(&conn)?).atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(i32::logical_type(&conn)?)
+            .atomize(&conn)?,
         Identity,
     )
     .register(&conn)?;
@@ -488,11 +507,14 @@ fn test_scalar_dynamic_return_type() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "dynamic_resolve",
-        SignatureBuilder::new(
-            [FunctionParameter::new::<i32>("input")],
-            LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?,
-        )
-        .atomize(&conn)?,
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(LogicalType::create_from_id(
+                &conn,
+                LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY,
+                Parameters::None,
+            )?)
+            .atomize(&conn)?,
         DynamicResolve,
     )
     .register(&conn)?;

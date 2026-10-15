@@ -288,7 +288,7 @@ fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
 fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
-    let mut conn = db.connect()?;
+    let conn = db.connect()?;
 
     ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", single_row_collection(&conn)?)

@@ -8,9 +8,9 @@ use std::{
 use crate::{
     AsRaw, Factory, FromRaw, Result, check_api_call, check_api_call_no_err,
     connection::{Connection, HasFactory},
-    connection_options::{Config, ConfigOption},
+    connection_options::Config,
     environment::{Environment, EnvironmentHandle, StorageLocation},
-    ffi, handles,
+    ffi,
     raw::RawExt,
 };
 
@@ -168,8 +168,8 @@ impl Instance {
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
             self.handle.lock().unwrap().handle,
-            &(&location).into(),
             alias_str.as_ref().map_or(std::ptr::null(), |a| a as *const _),
+            &(&location).into(),
             options,
             default
         )?;
@@ -205,13 +205,12 @@ impl Instance {
     }
 
     pub fn config(&self) -> Result<Config> {
-        Ok(unsafe {
-            Config::from_raw(check_api_call!(
-                ffi::duckdb_v2_instance_get_config,
-                self.handle.lock().unwrap().handle,
-                RET
-            )?)
-        })
+        let handle = check_api_call!(
+            ffi::duckdb_v2_instance_get_config,
+            self.handle.lock().unwrap().handle,
+            RET
+        )?;
+        Ok(unsafe { Config::from_raw(handle) })
     }
 }
 

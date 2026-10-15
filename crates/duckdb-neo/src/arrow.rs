@@ -303,15 +303,12 @@ mod tests {
 
         ScalarFunctionBuilder::new(
             "to_arrow",
-            SignatureBuilder::new(
-                [
-                    FunctionParameter::new::<i64>("val1"),
-                    FunctionParameter::new::<bool>("val2"),
-                    FunctionParameter::new::<String>("val3"),
-                ],
-                i64::logical_type(&conn)?,
-            )
-            .atomize(&conn)?,
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i64>("val1"))
+                .param(FunctionParameter::new::<bool>("val2"))
+                .param(FunctionParameter::new::<String>("val3"))
+                .return_type(i64::logical_type(&conn)?)
+                .atomize(&conn)?,
             ToArrowTest,
         )
         .register(&conn)?;

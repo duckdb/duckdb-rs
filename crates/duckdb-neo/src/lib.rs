@@ -85,8 +85,7 @@ pub mod signature;
 pub mod table_function;
 pub mod tokens;
 
-#[derive(Debug, AsRaw, FromRaw)]
-pub(crate) struct Factory(ffi::duckdb_v2_factory_handle);
+use connection::Factory;
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
 pub type Result<T> = std::result::Result<T, Error>;

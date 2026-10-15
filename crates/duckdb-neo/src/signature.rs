@@ -3,6 +3,32 @@
 //! Declare parameters with [`FunctionParameter`], collect them in a
 //! [`SignatureBuilder`], and resolve it with [`SignatureBuilder::atomize`]
 //! into a [`Signature`] when registering scalar, aggregate, or table functions.
+//! A [`FunctionDocumentationBuilder`] optionally describes the overload.
+//!
+//! ```
+//! use duckdb_neo::{
+//!     DuckDBType,
+//!     environment::{Environment, StorageLocation},
+//!     signature::{FunctionDocumentationBuilder, FunctionParameter, SignatureBuilder},
+//! };
+//!
+//! # fn main() -> duckdb_neo::Result<()> {
+//! let env = Environment::new()?;
+//! let conn = env.open(StorageLocation::InMemory)?.connect()?;
+//!
+//! let mut docs = FunctionDocumentationBuilder::new();
+//! docs.description("Scales a value by an optional factor.");
+//! docs.add_example("", "scale(21)");
+//!
+//! let signature = SignatureBuilder::new()
+//!     .param(FunctionParameter::new::<i32>("value"))
+//!     .param(FunctionParameter::with_default("factor", 2_i32))
+//!     .return_type(i32::logical_type(&conn)?)
+//!     .documentation(docs)
+//!     .atomize(&conn)?;
+//! # Ok(())
+//! # }
+//! ```
 
 use std::fmt;
 
@@ -128,32 +154,107 @@ impl fmt::Debug for FunctionParameter {
     }
 }
 
+/// Documentation for one overload of a user-defined function.
+///
+/// Attach it with [`SignatureBuilder::documentation`]. DuckDB reports it in
+/// the `description`, `examples` and `categories` columns of
+/// `duckdb_functions()`.
+#[derive(Debug, Default)]
+pub struct FunctionDocumentationBuilder {
+    description: Option<String>,
+    // (title, example) pairs.
+    examples: Vec<(String, String)>,
+    categories: Vec<String>,
+}
+
+impl FunctionDocumentationBuilder {
+    /// Create empty documentation.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the description, replacing any previous one.
+    pub fn description(&mut self, description: &str) {
+        self.description = Some(description.into());
+    }
+
+    /// Add an example call such as `my_func(42)`, with an optional title (empty for none).
+    ///
+    /// Examples are reported in the order they were added.
+    pub fn add_example(&mut self, title: &str, example: &str) {
+        self.examples.push((title.into(), example.into()));
+    }
+
+    /// Add a category such as `"string"` or `"aggregate"`.
+    ///
+    /// Categories are reported in the order they were added.
+    pub fn add_category(&mut self, category: &str) {
+        self.categories.push(category.into());
+    }
+
+    pub(crate) fn atomize(&mut self, handle: ffi::duckdb_v2_function_docs_handle) -> Result<()> {
+        if let Some(description) = &self.description {
+            check_api_call!(
+                ffi::duckdb_v2_function_docs_set_description,
+                handle,
+                &description.into()
+            )?;
+        }
+
+        for (title, example) in &self.examples {
+            check_api_call!(
+                ffi::duckdb_v2_function_docs_add_example,
+                handle,
+                &(title).into(),
+                &(example).into()
+            )?;
+        }
+
+        for category in &self.categories {
+            check_api_call!(ffi::duckdb_v2_function_docs_add_category, handle, &(category).into(),)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Declares the signature of a user-defined function.
 ///
 /// Parameters with defaults must follow required parameters, and parameter
 /// names must be unique. DuckDB checks these structural rules when the
 /// function is registered.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SignatureBuilder {
     parameters: Vec<FunctionParameter>,
     return_type: Option<LogicalType>,
+    documentation: Option<FunctionDocumentationBuilder>,
 }
 
 impl SignatureBuilder {
-    /// Create a signature builder with a return type.
-    pub fn new(parameters: impl Into<Vec<FunctionParameter>>, return_type: LogicalType) -> Self {
-        SignatureBuilder {
-            parameters: parameters.into(),
-            return_type: Some(return_type),
-        }
+    /// Create an empty signature without parameters or a return type.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Create a signature builder without a return type.
-    pub fn without_return_type(parameters: impl Into<Vec<FunctionParameter>>) -> Self {
-        SignatureBuilder {
-            parameters: parameters.into(),
-            return_type: None,
-        }
+    /// Append a parameter after the ones added so far.
+    pub fn param(mut self, parameter: FunctionParameter) -> Self {
+        self.parameters.push(parameter);
+        self
+    }
+
+    /// Set the return type, replacing any previous one.
+    ///
+    /// Scalar and aggregate functions require one. Table functions leave it
+    /// unset and declare their result columns when binding.
+    pub fn return_type(mut self, logical_type: LogicalType) -> Self {
+        self.return_type = Some(logical_type);
+        self
+    }
+
+    /// Attach documentation for this overload, replacing any previous one.
+    pub fn documentation(mut self, documentation: FunctionDocumentationBuilder) -> Self {
+        self.documentation = Some(documentation);
+        self
     }
 
     /// Create the declared logical types and default values.
@@ -175,6 +276,7 @@ impl SignatureBuilder {
 
         Ok(Signature {
             parameters,
+            documentation: self.documentation,
             return_type: self.return_type,
         })
     }
@@ -194,11 +296,17 @@ struct ResolvedParameter {
 pub struct Signature {
     parameters: Vec<ResolvedParameter>,
     return_type: Option<LogicalType>,
+    documentation: Option<FunctionDocumentationBuilder>,
 }
 
 impl Signature {
-    /// Append parameters and apply configured types to a borrowed signature.
-    pub(crate) fn build(&self, handle: &ffi::duckdb_v2_function_signature_handle) -> Result<()> {
+    /// Append parameters, apply configured types and fill in the documentation
+    /// of a borrowed signature.
+    pub(crate) fn build(
+        &mut self,
+        handle: &ffi::duckdb_v2_function_signature_handle,
+        docs_handle: &ffi::duckdb_v2_function_docs_handle,
+    ) -> Result<()> {
         if let Some(return_type) = self.return_type.as_ref() {
             check_api_call!(
                 ffi::duckdb_v2_function_signature_set_return_type,
@@ -218,7 +326,11 @@ impl Signature {
             )?;
         }
 
-        Ok(())
+        if let Some(docs) = self.documentation.as_mut() {
+            docs.atomize(*docs_handle)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -227,6 +339,7 @@ impl Signature {
 mod test {
     use crate::Parameters;
     use crate::builder_helpers::scalar_callback;
+    use crate::connection::Connection;
     use crate::environment::{Environment, StorageLocation};
     use crate::scalar::ScalarFunctionBuilder;
     use crate::types::FromValue;
@@ -262,15 +375,15 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let sig = SignatureBuilder::new(
-            [
-                FunctionParameter::new::<i32>("param1"),
-                FunctionParameter::with_type("param2", LogicalType::from_text(&conn, "VARCHAR")?),
-                FunctionParameter::with_default("param3", 42_i32),
-            ],
-            u64::logical_type(&conn)?,
-        )
-        .atomize(&conn)?;
+        let sig = SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("param1"))
+            .param(FunctionParameter::with_type(
+                "param2",
+                LogicalType::from_text(&conn, "VARCHAR")?,
+            ))
+            .param(FunctionParameter::with_default("param3", 42_i32))
+            .return_type(u64::logical_type(&conn)?)
+            .atomize(&conn)?;
 
         assert_eq!(sig.parameters.len(), 3);
         assert_eq!(sig.parameters[0].logical_type, i32::logical_type(&conn)?);
@@ -296,15 +409,12 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let sig = SignatureBuilder::new(
-            [
-                FunctionParameter::new::<i32>("param1"),
-                FunctionParameter::new::<String>("param2"),
-                FunctionParameter::with_default("param3", 42_i32),
-            ],
-            u64::logical_type(&conn)?,
-        )
-        .atomize(&conn)?;
+        let sig = SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("param1"))
+            .param(FunctionParameter::new::<String>("param2"))
+            .param(FunctionParameter::with_default("param3", 42_i32))
+            .return_type(u64::logical_type(&conn)?)
+            .atomize(&conn)?;
 
         ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
 
@@ -320,15 +430,12 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let sig = SignatureBuilder::new(
-            [
-                FunctionParameter::new::<i32>("param1"),
-                FunctionParameter::new::<String>("param2"),
-                FunctionParameter::with_default("param3", 42_i32).kind(FunctionParameterKind::Named),
-            ],
-            u64::logical_type(&conn)?,
-        )
-        .atomize(&conn)?;
+        let sig = SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("param1"))
+            .param(FunctionParameter::new::<String>("param2"))
+            .param(FunctionParameter::with_default("param3", 42_i32).kind(FunctionParameterKind::Named))
+            .return_type(u64::logical_type(&conn)?)
+            .atomize(&conn)?;
 
         ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
 
@@ -345,15 +452,12 @@ mod test {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let sig = SignatureBuilder::new(
-            [
-                FunctionParameter::new::<i32>("param1"),
-                FunctionParameter::new::<String>("param2"),
-                FunctionParameter::vararg::<i32>("param3"),
-            ],
-            u64::logical_type(&conn)?,
-        )
-        .atomize(&conn)?;
+        let sig = SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("param1"))
+            .param(FunctionParameter::new::<String>("param2"))
+            .param(FunctionParameter::vararg::<i32>("param3"))
+            .return_type(u64::logical_type(&conn)?)
+            .atomize(&conn)?;
 
         ScalarFunctionBuilder::new("test", sig, VarargScalar).register(&conn)?;
 
@@ -362,6 +466,84 @@ mod test {
             Some(11)
         );
 
+        Ok(())
+    }
+
+    scalar_callback!(IdentityScalar, i32, |input, result, _ctx, _user_data| {
+        let input = input.get_vector_at::<i32>(0)?;
+        let mut result = result;
+        result.set_size(input.len())?;
+        for (i, value) in input.iter()?.enumerate() {
+            result.write(i, value.copied())?;
+        }
+        Ok(())
+    });
+
+    fn register(conn: &Connection, name: &str, docs: Option<FunctionDocumentationBuilder>) -> Result<()> {
+        let mut signature = SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(i32::logical_type(conn)?);
+        if let Some(docs) = docs {
+            signature = signature.documentation(docs);
+        }
+        ScalarFunctionBuilder::new(name, signature.atomize(conn)?, IdentityScalar).register(conn)
+    }
+
+    /// Returns `description`, `examples` and `categories` from `duckdb_functions()` as text.
+    fn query_docs(conn: &Connection, name: &str) -> Result<[Option<String>; 3]> {
+        let sql = format!(
+            "SELECT description, examples::VARCHAR, categories::VARCHAR \
+             FROM duckdb_functions() WHERE function_name = '{name}'"
+        );
+        let mut result = conn.query(sql.as_str(), Parameters::None)?;
+        let chunk = result.next_chunk()?.expect("expected a result chunk");
+        assert_eq!(chunk.row_count()?, 1);
+        let column = |i| -> Result<Option<String>> { Ok(chunk.get_vector_at::<String>(i)?.get(0)?.map(str::to_owned)) };
+        Ok([column(0)?, column(1)?, column(2)?])
+    }
+
+    #[test]
+    fn test_function_documentation() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+        let mut docs = FunctionDocumentationBuilder::new();
+        docs.description("Returns its input.");
+        docs.add_example("Basic", "documented(42)");
+        docs.add_example("", "documented(NULL)");
+        docs.add_category("numeric");
+        docs.add_category("testing");
+        register(&conn, "documented", Some(docs))?;
+
+        assert_eq!(
+            query_docs(&conn, "documented")?,
+            [
+                Some("Returns its input.".to_owned()),
+                Some("['documented(42)', 'documented(NULL)']".to_owned()),
+                Some("[numeric, testing]".to_owned()),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_function_documentation_partial() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+        let mut docs = FunctionDocumentationBuilder::new();
+        docs.add_category("testing");
+        register(&conn, "categorized", Some(docs))?;
+        register(&conn, "undocumented", None)?;
+
+        assert_eq!(
+            query_docs(&conn, "categorized")?,
+            [None, Some("[]".to_owned()), Some("[testing]".to_owned())]
+        );
+        assert_eq!(
+            query_docs(&conn, "undocumented")?,
+            [None, Some("[]".to_owned()), Some("[]".to_owned())]
+        );
         Ok(())
     }
 }

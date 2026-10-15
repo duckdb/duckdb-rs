@@ -153,7 +153,7 @@ mod tests {
 
         db.config()?.set_text("memory_limit", "200MB", SettingScope::Global)?;
 
-        let (value, scope) = db.config()?.get_value("memory_limit")?;
+        let (value, _scope) = db.config()?.get_value("memory_limit")?;
 
         let setting = String::from_value(&value)?;
 

@@ -15,7 +15,6 @@ use std::{
 use crate::{
     FromRaw,
     builder_helpers::ArgCount,
-    connection::HasFactory,
     ffi,
     handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     logical_type::LogicalType,
@@ -412,7 +411,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
         self
     }
 
-    fn build(&self, handle: &AggregateFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &AggregateFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_name,
             handle.raw(),
@@ -421,7 +420,9 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
         let signature = check_api_call!(ffi::duckdb_v2_aggregate_function_get_signature, handle.raw(), RET)?;
 
-        self.signature.build(&signature)?;
+        let docs = check_api_call!(ffi::duckdb_v2_aggregate_function_get_docs, handle.raw(), RET)?;
+
+        self.signature.build(&signature, &docs)?;
 
         for (key, value) in &self.properties {
             check_api_call!(
@@ -485,7 +486,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
     /// Register through a connection or extension, consuming the builder.
     #[allow(private_bounds)]
-    pub fn register<C: AggregateFunctionBuilderLink>(self, link: &C) -> Result<()> {
+    pub fn register<C: AggregateFunctionBuilderLink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_aggregate_function_handle()?;
 
         self.build(&handle)?;

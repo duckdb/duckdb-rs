@@ -652,7 +652,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     }
 
     /// Build an owned table-function builder handle.
-    fn build(&self, handle: &TableFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &TableFunctionBuilderHandle) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_table_function_set_name,
             handle.raw(),
@@ -661,7 +661,9 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 
         let signature = check_api_call!(ffi::duckdb_v2_table_function_get_signature, handle.raw(), RET)?;
 
-        self.signature.build(&signature)?;
+        let docs = check_api_call!(ffi::duckdb_v2_table_function_get_docs, handle.raw(), RET)?;
+
+        self.signature.build(&signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_projection_pushdown,
@@ -743,7 +745,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 
     /// Register through a connection or extension, consuming the builder.
     #[allow(private_bounds)]
-    pub fn register<C: TableFunctionBuilderLink>(self, link: &C) -> Result<()> {
+    pub fn register<C: TableFunctionBuilderLink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_table_function_handle()?;
         self.build(&handle)?;
 

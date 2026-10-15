@@ -174,10 +174,12 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
         self
     }
 
-    fn build(&self, handle: &ScalarFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &ScalarFunctionBuilderHandle) -> Result<()> {
         let signature = check_api_call!(ffi::duckdb_v2_scalar_function_get_signature, handle.raw(), RET)?;
 
-        self.signature.build(&signature)?;
+        let docs = check_api_call!(ffi::duckdb_v2_scalar_function_get_docs, handle.raw(), RET)?;
+
+        self.signature.build(&signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_name,
@@ -227,7 +229,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
     ///
     /// A builder cannot be registered more than once.
     #[allow(private_bounds)] // Keep the handle factory private while accepting both supported link types.
-    pub fn register<C: ScalarFunctionBuilderLink>(self, link: &C) -> Result<()> {
+    pub fn register<C: ScalarFunctionBuilderLink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_scalar_function_handle()?;
         self.build(&handle)?;
 
