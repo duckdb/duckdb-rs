@@ -119,8 +119,7 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("IN"))
             // Will be overwritten to String
-            .return_type(u8::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(u8::logical_type(&conn)?),
         BasicAggregate::<f32> { item: 0.0 },
     )
     .register(&conn)?;
@@ -154,8 +153,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
         "to_concatenated",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("IN"))
-            .return_type(String::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(String::logical_type(&conn)?),
         BasicAggregate::<f32> { item: 2.5 },
     );
 
@@ -172,8 +170,7 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
         "",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("IN"))
-            .return_type(String::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(String::logical_type(&conn)?),
         BasicAggregate::<i32> { item: 0 },
     )
     .register(&conn);
@@ -193,8 +190,7 @@ fn aggregate_test_groups() -> crate::Result<()> {
         "to_concatenated",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("IN"))
-            .return_type(String::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(String::logical_type(&conn)?),
         BasicAggregate::<i32> { item: 0 },
     )
     .register(&conn)?;
@@ -288,8 +284,7 @@ fn aggregate_test_undersized_state() -> crate::Result<()> {
         "undersized",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("IN"))
-            .return_type(u64::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(u64::logical_type(&conn)?),
         UndersizedState,
     )
     .register(&conn)?;

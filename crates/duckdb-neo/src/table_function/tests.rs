@@ -209,9 +209,7 @@ fn test_table_function() -> crate::Result<()> {
 
     TableFunctionBuilder::new(
         "my_table_function",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("offset"))
-            .atomize(&conn)?,
+        SignatureBuilder::new().param(FunctionParameter::new::<i32>("offset")),
         MyTableFunction {
             base: 42,
             pushdown_called: pushdown_called.clone(),
@@ -417,7 +415,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
 
     TableFunctionBuilder::new(
         "partitioned_range",
-        SignatureBuilder::new().atomize(&conn)?,
+        SignatureBuilder::new(),
         PartitionedFunction {
             partitioning_calls: partitioning_calls.clone(),
             partition_data_calls: partition_data_calls.clone(),

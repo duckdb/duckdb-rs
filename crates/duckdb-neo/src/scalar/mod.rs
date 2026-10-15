@@ -19,11 +19,11 @@ use crate::data_chunk::{RowCount, VectorCollection};
 use crate::enums::FunctionProperty;
 use crate::handles::{ScalarFunctionBuilderHandle, ScalarFunctionBuilderLink};
 use crate::logical_type::LogicalType;
-use crate::signature::Signature;
+use crate::signature::SignatureBuilder;
 use crate::vector::{Access, Unknown, Vector};
 use crate::{
     Result, check_api_call,
-    connection::Context,
+    connection::{Context, FFILink},
     raw::{FromRaw, RawExt},
 };
 
@@ -151,14 +151,14 @@ unsafe extern "C" fn exec_callback<T: ScalarCallbacks>(
 #[derive(Debug)]
 pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     name: String,
-    signature: Signature,
+    signature: SignatureBuilder,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
 }
 
 impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
-    pub fn new(name: impl Into<String>, signature: Signature, implementation: T) -> Self {
+    pub fn new(name: impl Into<String>, signature: SignatureBuilder, implementation: T) -> Self {
         Self {
             name: name.into(),
             signature,
@@ -174,12 +174,12 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
         self
     }
 
-    fn build(&mut self, handle: &ScalarFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &ScalarFunctionBuilderHandle, link: &dyn FFILink) -> Result<()> {
         let signature = check_api_call!(ffi::duckdb_v2_scalar_function_get_signature, handle.raw(), RET)?;
 
         let docs = check_api_call!(ffi::duckdb_v2_scalar_function_get_docs, handle.raw(), RET)?;
 
-        self.signature.build(&signature, &docs)?;
+        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_scalar_function_set_name,
@@ -229,9 +229,9 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
     ///
     /// A builder cannot be registered more than once.
     #[allow(private_bounds)] // Keep the handle factory private while accepting both supported link types.
-    pub fn register<C: ScalarFunctionBuilderLink>(mut self, link: &C) -> Result<()> {
+    pub fn register<C: ScalarFunctionBuilderLink + FFILink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_scalar_function_handle()?;
-        self.build(&handle)?;
+        self.build(&handle, link)?;
 
         link.register_scalar_function(handle)
     }

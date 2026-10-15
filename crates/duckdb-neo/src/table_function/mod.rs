@@ -21,13 +21,13 @@ use crate::{
         handle_unwind, into_opaque,
     },
     check_api_call,
-    connection::Context,
+    connection::{Context, FFILink},
     data_chunk::DataChunkRef,
     expression::Expression,
     handles::{TableFunctionBuilderHandle, TableFunctionBuilderLink},
     logical_type::LogicalType,
     raw::{FromRaw, RawExt},
-    signature::Signature,
+    signature::SignatureBuilder,
     table_function::InitColumnHandle::{Global, Local},
     value::Value,
 };
@@ -582,7 +582,7 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
 #[derive(Debug)]
 pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     name: String,
-    signature: Signature,
+    signature: SignatureBuilder,
     user_data: OpaqueHandle<T>,
     projection_pushdown: bool,
     progress_callback: ffi::duckdb_v2_table_function_progress_callback_fn,
@@ -620,7 +620,7 @@ impl<T: TablePartitioningCallbacks> TableFunctionBuilder<T> {
 
 impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
-    pub fn new(name: &str, signature: Signature, implementation: T) -> Self {
+    pub fn new(name: &str, signature: SignatureBuilder, implementation: T) -> Self {
         TableFunctionBuilder {
             name: name.to_string(),
             signature,
@@ -652,7 +652,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
     }
 
     /// Build an owned table-function builder handle.
-    fn build(&mut self, handle: &TableFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &TableFunctionBuilderHandle, link: &dyn FFILink) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_table_function_set_name,
             handle.raw(),
@@ -663,7 +663,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 
         let docs = check_api_call!(ffi::duckdb_v2_table_function_get_docs, handle.raw(), RET)?;
 
-        self.signature.build(&signature, &docs)?;
+        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         check_api_call!(
             ffi::duckdb_v2_table_function_set_projection_pushdown,
@@ -745,9 +745,9 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
 
     /// Register through a connection or extension, consuming the builder.
     #[allow(private_bounds)]
-    pub fn register<C: TableFunctionBuilderLink>(mut self, link: &C) -> Result<()> {
+    pub fn register<C: TableFunctionBuilderLink + FFILink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_table_function_handle()?;
-        self.build(&handle)?;
+        self.build(&handle, link)?;
 
         link.register_table_function_handle(handle)
     }

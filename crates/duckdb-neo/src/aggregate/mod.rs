@@ -25,11 +25,11 @@ use crate::{
     bind_arguments::BindArguments,
     builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque_eq},
     check_api_call,
-    connection::Context,
+    connection::{Context, FFILink},
     data_chunk::{RowCount, VectorCollection},
     enums::AggregateFunctionProperty,
     raw::RawExt,
-    signature::Signature,
+    signature::SignatureBuilder,
     vector::{Access, Unknown, Vector},
 };
 
@@ -388,14 +388,14 @@ unsafe extern "C" fn destroy_callback<T: AggregateCallbacks>(
 #[derive(Debug)]
 pub struct AggregateFunctionBuilder<T: AggregateCallbacks> {
     name: String,
-    signature: Signature,
+    signature: SignatureBuilder,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
 }
 
 impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
     /// Create a builder from a name, signature, and callback implementation.
-    pub fn new(name: impl Into<String>, signature: Signature, implementation: T) -> Self {
+    pub fn new(name: impl Into<String>, signature: SignatureBuilder, implementation: T) -> Self {
         Self {
             name: name.into(),
             signature,
@@ -411,7 +411,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
         self
     }
 
-    fn build(&mut self, handle: &AggregateFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &AggregateFunctionBuilderHandle, link: &dyn FFILink) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_name,
             handle.raw(),
@@ -422,7 +422,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
         let docs = check_api_call!(ffi::duckdb_v2_aggregate_function_get_docs, handle.raw(), RET)?;
 
-        self.signature.build(&signature, &docs)?;
+        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         for (key, value) in &self.properties {
             check_api_call!(
@@ -486,10 +486,10 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
     /// Register through a connection or extension, consuming the builder.
     #[allow(private_bounds)]
-    pub fn register<C: AggregateFunctionBuilderLink>(mut self, link: &C) -> Result<()> {
+    pub fn register<C: AggregateFunctionBuilderLink + FFILink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_aggregate_function_handle()?;
 
-        self.build(&handle)?;
+        self.build(&handle, link)?;
 
         link.register_aggregate_function(handle)
     }

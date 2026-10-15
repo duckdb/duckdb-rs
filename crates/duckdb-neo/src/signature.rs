@@ -1,8 +1,9 @@
 //! Function parameter and return-type declarations.
 //!
-//! Declare parameters with [`FunctionParameter`], collect them in a
-//! [`SignatureBuilder`], and resolve it with [`SignatureBuilder::atomize`]
-//! into a [`Signature`] when registering scalar, aggregate, or table functions.
+//! Declare parameters with [`FunctionParameter`] and collect them in a
+//! [`SignatureBuilder`], which is passed to a function builder such as
+//! [`ScalarFunctionBuilder`](crate::scalar::ScalarFunctionBuilder). Its types
+//! and default values are created when the function is registered.
 //! A [`FunctionDocumentationBuilder`] optionally describes the overload.
 //!
 //! ```
@@ -24,8 +25,7 @@
 //!     .param(FunctionParameter::new::<i32>("value"))
 //!     .param(FunctionParameter::with_default("factor", 2_i32))
 //!     .return_type(i32::logical_type(&conn)?)
-//!     .documentation(docs)
-//!     .atomize(&conn)?;
+//!     .documentation(docs);
 //! # Ok(())
 //! # }
 //! ```
@@ -92,8 +92,8 @@ impl<T: ToValue> ErasedToValue for T {
 
 /// A parameter declaration accepted by [`SignatureBuilder`].
 ///
-/// Its logical type and default value are created by
-/// [`SignatureBuilder::atomize`].
+/// Its logical type and default value are created when the function is
+/// registered.
 pub struct FunctionParameter {
     name: String,
     kind: FunctionParameterKind,
@@ -192,7 +192,8 @@ impl FunctionDocumentationBuilder {
         self.categories.push(category.into());
     }
 
-    pub(crate) fn atomize(&mut self, handle: ffi::duckdb_v2_function_docs_handle) -> Result<()> {
+    /// Fill in borrowed function documentation.
+    fn build(&self, handle: ffi::duckdb_v2_function_docs_handle) -> Result<()> {
         if let Some(description) = &self.description {
             check_api_call!(
                 ffi::duckdb_v2_function_docs_set_description,
@@ -257,53 +258,11 @@ impl SignatureBuilder {
         self
     }
 
-    /// Create the declared logical types and default values.
-    ///
-    /// Extensions pass the context supplied to their entry point.
-    pub fn atomize(self, link: &dyn FFILink) -> Result<Signature> {
-        let parameters = self
-            .parameters
-            .into_iter()
-            .map(|param| {
-                Ok(ResolvedParameter {
-                    default_value: param.default_value.map(|value| value.erased_value(link)).transpose()?,
-                    logical_type: param.logical_type.resolve(link)?,
-                    name: param.name,
-                    kind: param.kind,
-                })
-            })
-            .collect::<Result<_>>()?;
-
-        Ok(Signature {
-            parameters,
-            documentation: self.documentation,
-            return_type: self.return_type,
-        })
-    }
-}
-
-#[derive(Debug)]
-struct ResolvedParameter {
-    name: String,
-    kind: FunctionParameterKind,
-    logical_type: LogicalType,
-    default_value: Option<Value>,
-}
-
-/// A function signature with resolved types, created by
-/// [`SignatureBuilder::atomize`].
-#[derive(Debug)]
-pub struct Signature {
-    parameters: Vec<ResolvedParameter>,
-    return_type: Option<LogicalType>,
-    documentation: Option<FunctionDocumentationBuilder>,
-}
-
-impl Signature {
-    /// Append parameters, apply configured types and fill in the documentation
-    /// of a borrowed signature.
+    /// Create the declared logical types and default values through `link`,
+    /// and apply them and the documentation to a borrowed signature.
     pub(crate) fn build(
-        &mut self,
+        self,
+        link: &dyn FFILink,
         handle: &ffi::duckdb_v2_function_signature_handle,
         docs_handle: &ffi::duckdb_v2_function_docs_handle,
     ) -> Result<()> {
@@ -315,21 +274,22 @@ impl Signature {
             )?;
         }
 
-        for param in &self.parameters {
+        for param in self.parameters {
+            let logical_type = param.logical_type.resolve(link)?;
+            let default_value = param.default_value.map(|value| value.erased_value(link)).transpose()?;
             check_api_call!(
                 ffi::duckdb_v2_function_signature_add_parameter,
                 *handle,
                 &(&param.name).into(),
-                param.logical_type.handle,
-                param.default_value.as_ref().map_or(std::ptr::null_mut(), |d| d.handle),
-                param.kind.clone().into(),
+                logical_type.handle,
+                default_value.as_ref().map_or(std::ptr::null_mut(), |d| d.handle),
+                param.kind.into(),
             )?;
         }
 
-        if let Some(docs) = self.documentation.as_mut() {
-            docs.atomize(*docs_handle)
-        } else {
-            Ok(())
+        match &self.documentation {
+            Some(docs) => docs.build(*docs_handle),
+            None => Ok(()),
         }
     }
 }
@@ -342,7 +302,6 @@ mod test {
     use crate::connection::Connection;
     use crate::environment::{Environment, StorageLocation};
     use crate::scalar::ScalarFunctionBuilder;
-    use crate::types::FromValue;
 
     use super::*;
 
@@ -370,7 +329,7 @@ mod test {
     }
 
     #[test]
-    fn test_signature_atomize() -> crate::Result<()> {
+    fn test_signature_types() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
@@ -382,23 +341,18 @@ mod test {
                 LogicalType::from_text(&conn, "VARCHAR")?,
             ))
             .param(FunctionParameter::with_default("param3", 42_i32))
-            .return_type(u64::logical_type(&conn)?)
-            .atomize(&conn)?;
+            .return_type(u64::logical_type(&conn)?);
+        ScalarFunctionBuilder::new("typed", sig, DefaultParameterScalar).register(&conn)?;
 
-        assert_eq!(sig.parameters.len(), 3);
-        assert_eq!(sig.parameters[0].logical_type, i32::logical_type(&conn)?);
-        assert_eq!(sig.parameters[1].logical_type, String::logical_type(&conn)?);
-        assert!(sig.parameters[0].default_value.is_none());
-        assert_eq!(
-            sig.parameters[2]
-                .default_value
-                .as_ref()
-                .map(i32::from_value)
-                .transpose()?
-                .flatten(),
-            Some(42)
-        );
-        assert_eq!(sig.return_type, Some(u64::logical_type(&conn)?));
+        let mut result = conn.query(
+            "SELECT parameter_types::VARCHAR, return_type FROM duckdb_functions() WHERE function_name = 'typed'",
+            Parameters::None,
+        )?;
+        let chunk = result.next_chunk()?.expect("expected a result chunk");
+        let column =
+            |i| -> crate::Result<Option<String>> { Ok(chunk.get_vector_at::<String>(i)?.get(0)?.map(str::to_owned)) };
+        assert_eq!(column(0)?.as_deref(), Some("[INTEGER, VARCHAR, INTEGER]"));
+        assert_eq!(column(1)?.as_deref(), Some("UBIGINT"));
 
         Ok(())
     }
@@ -413,8 +367,7 @@ mod test {
             .param(FunctionParameter::new::<i32>("param1"))
             .param(FunctionParameter::new::<String>("param2"))
             .param(FunctionParameter::with_default("param3", 42_i32))
-            .return_type(u64::logical_type(&conn)?)
-            .atomize(&conn)?;
+            .return_type(u64::logical_type(&conn)?);
 
         ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
 
@@ -434,8 +387,7 @@ mod test {
             .param(FunctionParameter::new::<i32>("param1"))
             .param(FunctionParameter::new::<String>("param2"))
             .param(FunctionParameter::with_default("param3", 42_i32).kind(FunctionParameterKind::Named))
-            .return_type(u64::logical_type(&conn)?)
-            .atomize(&conn)?;
+            .return_type(u64::logical_type(&conn)?);
 
         ScalarFunctionBuilder::new("test", sig, DefaultParameterScalar).register(&conn)?;
 
@@ -456,8 +408,7 @@ mod test {
             .param(FunctionParameter::new::<i32>("param1"))
             .param(FunctionParameter::new::<String>("param2"))
             .param(FunctionParameter::vararg::<i32>("param3"))
-            .return_type(u64::logical_type(&conn)?)
-            .atomize(&conn)?;
+            .return_type(u64::logical_type(&conn)?);
 
         ScalarFunctionBuilder::new("test", sig, VarargScalar).register(&conn)?;
 
@@ -486,7 +437,7 @@ mod test {
         if let Some(docs) = docs {
             signature = signature.documentation(docs);
         }
-        ScalarFunctionBuilder::new(name, signature.atomize(conn)?, IdentityScalar).register(conn)
+        ScalarFunctionBuilder::new(name, signature, IdentityScalar).register(conn)
     }
 
     /// Returns `description`, `examples` and `categories` from `duckdb_functions()` as text.

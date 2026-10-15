@@ -524,8 +524,7 @@ mod tests {
             "length_check",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("x"))
-                .return_type(i32::logical_type(&conn)?)
-                .atomize(&conn)?,
+                .return_type(i32::logical_type(&conn)?),
             LengthCheckScalar,
         )
         .register(&conn)?;

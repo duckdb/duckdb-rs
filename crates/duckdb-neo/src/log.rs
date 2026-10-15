@@ -1,6 +1,14 @@
 //! Emit DuckDB log records.
 
-use crate::{Result, builder_helpers::ffi_enum_redeclaration, check_api_call, connection::Context, ffi, raw::RawExt};
+use crate::{
+    Result,
+    builder_helpers::ffi_enum_redeclaration,
+    check_api_call,
+    connection::{Connection, Context},
+    database::Instance,
+    ffi,
+    raw::RawExt,
+};
 
 ffi_enum_redeclaration! {
     /// The severity of a DuckDB log record.
@@ -25,6 +33,28 @@ impl Log {
         check_api_call!(
             ffi::duckdb_v2_context_log,
             ctx.raw(),
+            level.into(),
+            &log_type.into(),
+            &message.into()
+        )
+    }
+
+    /// Log a message in the connection scope, subject to DuckDB's logging configuration.
+    pub fn log_on_connection(conn: Connection, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_connection_log,
+            conn.raw(),
+            level.into(),
+            &log_type.into(),
+            &message.into()
+        )
+    }
+
+    /// Log a message in the instance scope, subject to DuckDB's logging configuration.
+    pub fn log_on_instance(instance: Instance, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_instance_log,
+            instance.handle.lock().unwrap().handle,
             level.into(),
             &log_type.into(),
             &message.into()
@@ -68,8 +98,7 @@ mod tests {
             "log_it",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("A"))
-                .return_type(i32::logical_type(&conn)?)
-                .atomize(&conn)?,
+                .return_type(i32::logical_type(&conn)?),
             LogCallback,
         )
         .register(&conn)?;

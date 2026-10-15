@@ -307,8 +307,7 @@ mod tests {
                 .param(FunctionParameter::new::<i64>("val1"))
                 .param(FunctionParameter::new::<bool>("val2"))
                 .param(FunctionParameter::new::<String>("val3"))
-                .return_type(i64::logical_type(&conn)?)
-                .atomize(&conn)?,
+                .return_type(i64::logical_type(&conn)?),
             ToArrowTest,
         )
         .register(&conn)?;

@@ -283,8 +283,7 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
         "dict_probe",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         DictionaryProbeScalar,
     )
     .register(&conn)?;
@@ -369,8 +368,7 @@ pub fn test_vector_constant() -> crate::Result<()> {
         "const_probe",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         ConstantProbeScalar,
     )
     .register(&conn)?;
@@ -425,8 +423,7 @@ fn test_vector_read_write() -> crate::Result<()> {
         "test",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         NegateScalar,
     )
     .register(&conn)
@@ -483,8 +480,7 @@ fn test_vector_string() -> crate::Result<()> {
         "to_upper",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("IN"))
-            .return_type(String::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(String::logical_type(&conn)?),
         UpperScalar,
     )
     .register(&conn)?;
@@ -542,8 +538,7 @@ fn test_vector_list() -> crate::Result<()> {
         "list_mult",
         SignatureBuilder::new()
             .param(FunctionParameter::with_type("IN", list_logical_type.clone()))
-            .return_type(list_logical_type)
-            .atomize(&conn)?,
+            .return_type(list_logical_type),
         ListMultScalar,
     )
     .register(&conn)?;
@@ -761,8 +756,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
             .param(FunctionParameter::new::<String>("value"))
-            .return_type(ltype)
-            .atomize(&conn)?,
+            .return_type(ltype),
         MapScalar,
     )
     .register(&conn)?;
@@ -822,8 +816,7 @@ pub fn vector_union_write() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
             .param(FunctionParameter::new::<String>("value"))
-            .return_type(union_type)
-            .atomize(&conn)?,
+            .return_type(union_type),
         UnionScalar,
     )
     .register(&conn)?;
@@ -866,8 +859,7 @@ pub fn vector_struct_write() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("key"))
             .param(FunctionParameter::new::<String>("value"))
-            .return_type(struct_type)
-            .atomize(&conn)?,
+            .return_type(struct_type),
         StructScalar,
     )
     .register(&conn)?;
@@ -897,8 +889,7 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
         "to_struct_or_null",
         SignatureBuilder::new()
             .param(key())
-            .return_type(StructValue::<TestStruct>::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(StructValue::<TestStruct>::logical_type(&conn)?),
         NullableStructScalar,
     )
     .register(&conn)?;
@@ -906,8 +897,7 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
         "to_union_or_null",
         SignatureBuilder::new()
             .param(key())
-            .return_type(UnionValue::<TestUnion, i32>::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(UnionValue::<TestUnion, i32>::logical_type(&conn)?),
         NullableUnionScalar,
     )
     .register(&conn)?;
@@ -940,8 +930,7 @@ pub fn vector_struct_unreadable_child() -> crate::Result<()> {
         "struct_key",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<StructValue<'_, SequenceStruct>>("s"))
-            .return_type(i64::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i64::logical_type(&conn)?),
         StructKeyScalar,
     )
     .register(&conn)?;
@@ -1188,8 +1177,7 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
         "to_constant",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         ConstantScalar,
     )
     .register(&conn)?;
@@ -1227,8 +1215,7 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
         "to_sequence",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         SequenceScalar,
     )
     .register(&conn)?;
@@ -1266,8 +1253,7 @@ pub fn test_vector_types() -> crate::Result<()> {
         "test",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("in"))
-            .return_type(String::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(String::logical_type(&conn)?),
         CopyStringScalar,
     )
     .register(&conn)?;
@@ -1367,8 +1353,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         "to_variant",
         SignatureBuilder::new()
             .param(FunctionParameter::vararg::<Any>("in"))
-            .return_type(rt)
-            .atomize(&conn)?,
+            .return_type(rt),
         ToVariant,
     )
     .register(&conn)?;
@@ -1425,8 +1410,7 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
         "reference",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<String>("in"))
-            .return_type(String::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(String::logical_type(&conn)?),
         RefScalar,
     )
     .register(&conn)?;
@@ -1730,8 +1714,7 @@ fn test_flatten_rebuilds_children() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i64>("row"))
             .param(FunctionParameter::new::<Vec<Option<i32>>>("list"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         FlatListScalar,
     )
     .register(&conn)?;
@@ -1771,8 +1754,7 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
         "mutate",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("in"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         SlowWriteInputScalar,
     )
     .register(&conn)?;
@@ -1815,8 +1797,7 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i64>("row"))
             .param(FunctionParameter::new::<[i32; 3]>("arr"))
-            .return_type(i32::logical_type(&conn)?)
-            .atomize(&conn)?,
+            .return_type(i32::logical_type(&conn)?),
         ArraySumScalar,
     )
     .register(&conn)?;

@@ -689,8 +689,7 @@ mod tests {
             "chunk_copy",
             SignatureBuilder::new()
                 .param(FunctionParameter::new::<i32>("in"))
-                .return_type(i32::logical_type(&conn)?)
-                .atomize(&conn)?,
+                .return_type(i32::logical_type(&conn)?),
             ChunkCopy,
         )
         .register(&conn)?;

@@ -242,7 +242,7 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let signature = SignatureBuilder::new().atomize(&conn)?;
+        let signature = SignatureBuilder::new();
 
         TableFunctionBuilder::new("test_function", signature, TableFunctionTest {})
             .with_filter_pushdown()
