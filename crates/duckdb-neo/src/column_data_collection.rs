@@ -4,6 +4,7 @@
 //! appending or scanning state. Appended chunks are copied into storage owned
 //! by the collection.
 
+use crate::column_data_collection::ColumnParameter::{Named, Positional};
 use crate::connection::HasFactory;
 use crate::ffi;
 
@@ -19,6 +20,94 @@ use crate::{
     logical_type::LogicalType,
     raw::RawExt,
 };
+
+/// The columns of a [`ColumnDataCollection`], with or without names.
+///
+/// Usually created implicitly: `ColumnDataCollection::new` accepts anything
+/// that converts into it, such as `[LogicalType; N]`, `&[LogicalType]` or
+/// `Vec<LogicalType>` for positional columns, and the same containers of
+/// `(LogicalType, name)` pairs for named ones.
+#[derive(Debug, Clone)]
+pub enum ColumnParameter {
+    /// Unnamed columns of the given types.
+    Positional(Vec<LogicalType>),
+    /// Columns of the given types and names.
+    Named(Vec<(LogicalType, String)>),
+}
+
+impl From<Vec<LogicalType>> for ColumnParameter {
+    fn from(types: Vec<LogicalType>) -> Self {
+        Positional(types)
+    }
+}
+
+impl From<&[LogicalType]> for ColumnParameter {
+    fn from(types: &[LogicalType]) -> Self {
+        Positional(types.to_vec())
+    }
+}
+
+impl From<&Vec<LogicalType>> for ColumnParameter {
+    fn from(types: &Vec<LogicalType>) -> Self {
+        Positional(types.clone())
+    }
+}
+
+impl<const N: usize> From<[LogicalType; N]> for ColumnParameter {
+    fn from(types: [LogicalType; N]) -> Self {
+        Positional(types.into())
+    }
+}
+
+impl<const N: usize> From<&[LogicalType; N]> for ColumnParameter {
+    fn from(types: &[LogicalType; N]) -> Self {
+        Positional(types.to_vec())
+    }
+}
+
+fn named<'a, S: Into<String> + Clone + 'a>(columns: impl IntoIterator<Item = &'a (LogicalType, S)>) -> ColumnParameter {
+    Named(
+        columns
+            .into_iter()
+            .map(|(logical_type, name)| (logical_type.clone(), name.clone().into()))
+            .collect(),
+    )
+}
+
+impl<S: Into<String>> From<Vec<(LogicalType, S)>> for ColumnParameter {
+    fn from(columns: Vec<(LogicalType, S)>) -> Self {
+        Named(
+            columns
+                .into_iter()
+                .map(|(logical_type, name)| (logical_type, name.into()))
+                .collect(),
+        )
+    }
+}
+
+impl<S: Into<String> + Clone> From<&[(LogicalType, S)]> for ColumnParameter {
+    fn from(columns: &[(LogicalType, S)]) -> Self {
+        named(columns)
+    }
+}
+
+impl<S: Into<String> + Clone> From<&Vec<(LogicalType, S)>> for ColumnParameter {
+    fn from(columns: &Vec<(LogicalType, S)>) -> Self {
+        named(columns)
+    }
+}
+
+impl<S: Into<String>, const N: usize> From<[(LogicalType, S); N]> for ColumnParameter {
+    fn from(columns: [(LogicalType, S); N]) -> Self {
+        Vec::from(columns).into()
+    }
+}
+
+impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for ColumnParameter {
+    fn from(columns: &[(LogicalType, S); N]) -> Self {
+        named(columns)
+    }
+}
 
 /// An owned collection of data chunks with a fixed column schema.
 ///
@@ -37,7 +126,7 @@ use crate::{
 /// replacement scan registered on the same connection with
 /// [`ReplacementScanBuilder::collection`](crate::replacement_scan::ReplacementScanBuilder::collection).
 ///
-/// ```compile_fail
+/// ```compile_fail,E0597
 /// # use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
 /// # use duckdb_neo::column_data_collection::ColumnDataCollection;
 /// # fn main() -> duckdb_neo::Result<()> {
@@ -86,13 +175,10 @@ use crate::{
 /// ```
 #[derive(Debug, AsRaw)]
 pub struct ColumnDataCollection<'conn> {
-    /// The owned DuckDB collection handle.
     pub(crate) handle: ffi::duckdb_v2_column_data_collection_handle,
-    /// The collection's column types, in storage order.
-    pub logical_types: Vec<LogicalType>,
-    /// Factory of the connection or context the collection was created from.
+    pub(crate) logical_types: Vec<LogicalType>,
+    pub(crate) column_names: Option<Vec<String>>,
     pub(crate) factory: &'conn Factory,
-    /// The connection whose buffer manager backs every chunk, if known and unique.
     pub(crate) origin: Option<ffi::duckdb_v2_connection_handle>,
 }
 
@@ -101,13 +187,18 @@ impl<'conn> ColumnDataCollection<'conn> {
     /// or callback [`Context`](crate::connection::Context)'s buffer manager.
     ///
     /// The collection borrows `link`; see the [lifetime notes](Self#lifetime).
+    /// `columns` is anything that converts into a [`ColumnParameter`].
     #[allow(private_bounds)]
-    pub fn new<C: HasFactory + ConnectionOrigin>(
-        link: &'conn C,
-        logical_types: impl Into<Vec<LogicalType>>,
-    ) -> Result<Self> {
+    pub fn new<C: HasFactory + ConnectionOrigin>(link: &'conn C, columns: impl Into<ColumnParameter>) -> Result<Self> {
         let factory = link.factory()?;
-        let logical_types = logical_types.into();
+        let (logical_types, names) = match columns.into() {
+            Positional(logical_types) => (logical_types, None),
+            Named(columns) => {
+                let (logical_types, names) = columns.into_iter().unzip();
+                (logical_types, Some(names))
+            }
+        };
+
         let types = logical_types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
 
         let handle = check_api_call!(
@@ -121,6 +212,7 @@ impl<'conn> ColumnDataCollection<'conn> {
         Ok(ColumnDataCollection {
             handle,
             logical_types,
+            column_names: names,
             factory,
             origin: link.connection_origin(),
         })

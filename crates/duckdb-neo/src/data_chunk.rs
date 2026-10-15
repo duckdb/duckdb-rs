@@ -581,10 +581,10 @@ impl<'a> DataChunk<'a> {
     ///
     /// Vectors start as flat storage with zero logical rows. Set `writable` to
     /// allow mutation, then call [`Vector::set_size`] after populating them.
-    pub fn create<C: HasFactory>(link: &'a C, types: &[LogicalType], writable: bool) -> Result<Self> {
+    pub fn create<C: HasFactory>(link: &'a C, types: impl AsRef<[LogicalType]>, writable: bool) -> Result<Self> {
+        let types = types.as_ref();
         let len = types.len();
         let type_handles = types
-            .as_ref()
             .iter()
             .map(|lt| lt.handle)
             .collect::<Vec<ffi::duckdb_v2_logical_type_handle>>();

@@ -1,5 +1,6 @@
 //! Parsing, binding, and preparing SQL statements.
 
+use crate::column_data_collection::ColumnDataCollection;
 use crate::ffi_str::DuckDBStr;
 use crate::{
     AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err,
@@ -82,10 +83,8 @@ impl Statements {
         let query_str =
             std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
-        let handle: ffi::duckdb_v2_statement_iterator_handle =
-            check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)?;
-
-        Ok(Statements { handle })
+        check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)
+            .map(|handle| Statements { handle })
     }
 }
 
@@ -141,6 +140,23 @@ impl Statement {
             schema: Schema { handle: out_schema },
             parameters: Schema { handle: out_parameters },
         })
+    }
+
+    pub fn add_collection(&self, collection: &mut ColumnDataCollection<'_>, name: &str) -> Result<()> {
+        let name: ffi::duckdb_v2_str = name.into();
+        let column_name_ptrs: Option<Vec<ffi::duckdb_v2_str>> = collection
+            .column_names
+            .as_ref()
+            .map(|x| x.iter().map(|x| x.into()).collect::<Vec<_>>());
+
+        check_api_call!(
+            ffi::duckdb_v2_statement_add_collection,
+            self.raw(),
+            &name,
+            collection.raw(),
+            column_name_ptrs.as_ref().map_or(std::ptr::null(), |x| x.as_ptr()),
+            column_name_ptrs.as_ref().map_or(0, |x| x.len() as u64)
+        )
     }
 
     fn prepare_params<'a>(conn: &Connection, params: Parameters<'a>) -> Result<ParameterBuffers<'a>> {
@@ -335,6 +351,9 @@ impl<'a> Drop for PreparedStatement<'a> {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
+        DuckDBType, Parameters,
+        column_data_collection::ColumnDataCollection,
+        data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
         statement::Statements,
     };
@@ -410,6 +429,47 @@ mod tests {
 
         assert_eq!(total_len, 9000 - 42);
         assert_eq!(total_batches, 896);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_column_data_collection() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let cdc = ColumnDataCollection::new(&conn, [(String::logical_type(&conn)?, "title")])?;
+
+        let mut cdc = cdc.to_append()?;
+        let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+
+        let mut vec = chunk.get_vector_at_mut::<String>(0)?;
+        vec.set_size(3)?;
+        vec.write(0, Some("first"))?;
+        vec.write(1, None)?;
+        vec.write(2, Some("third"))?;
+
+        cdc.append(&mut chunk)?;
+
+        let mut cdc = cdc.to_normal();
+
+        let mut statements = Statements::parse(&conn, "SELECT title from cdc")?;
+        let statement = statements.next().unwrap()?;
+
+        statement.add_collection(&mut cdc, "cdc")?;
+
+        let mut query = statement.query(&conn, Parameters::None)?;
+
+        while let Some(chunk) = query.next_chunk()? {
+            let vec = chunk.get_vector_at::<String>(0)?;
+
+            assert_eq!(vec.len(), 3);
+
+            assert_eq!(vec.get(0)?, Some("first"));
+            assert_eq!(vec.get(1)?, None);
+            assert_eq!(vec.get(2)?, Some("third"));
+        }
 
         Ok(())
     }
