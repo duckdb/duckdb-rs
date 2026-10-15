@@ -151,6 +151,20 @@ define_handle! {
 }
 
 define_handle! {
+    name: CustomOptionBuilderHandle,
+    link: CustomOptionBuilderLink,
+    create: create_custom_option_handle,
+    register: register_custom_option_handle,
+    handle: ffi::duckdb_v2_custom_option_handle,
+    destroy: ffi::duckdb_v2_custom_option_destroy,
+    factory: ffi::duckdb_v2_custom_option_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_custom_option,
+        // Extension => ffi::duckdb_v2_extension_register_custom_option,
+    },
+}
+
+define_handle! {
     name: PragmaFunctionBuilderHandle,
     link: PragmaFunctionBuilderLink,
     create: create_pragma_function_handle,

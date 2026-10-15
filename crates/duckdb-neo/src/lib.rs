@@ -42,6 +42,7 @@ mod links;
 
 pub(crate) mod bytes;
 pub mod connection;
+pub mod custom_option;
 pub mod data_chunk;
 pub mod database;
 pub mod environment;
