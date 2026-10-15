@@ -1,9 +1,6 @@
 //! Open DuckDB databases and their global configuration.
 
-use std::{
-    cell::OnceCell,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{
     AsRaw, Factory, FromRaw, Result, check_api_call, check_api_call_no_err,
@@ -74,24 +71,28 @@ impl Drop for AttachOptionsBuilder {
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{environment::Environment, environment::StorageLocation};
+/// use duckdb_neo::{
+///     FromValue,
+///     connection::SettingScope,
+///     environment::{Environment, StorageLocation},
+/// };
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
-/// db.set_option(&"threads", "2")?;
-/// assert_eq!(db.get_option("threads")?.setting()?, "2");
+/// db.config()?.set_text("threads", "2", SettingScope::Global)?;
 ///
 /// let conn = db.connect()?;
-/// assert_eq!(conn.get_option("threads")?.setting()?, "2");
+/// let (threads, _scope) = conn.config()?.get_value("threads")?;
+/// assert_eq!(i64::from_value(&threads)?, Some(2));
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug)]
 pub struct Instance {
     pub(crate) handle: Arc<Mutex<DatabaseHandle>>,
-    pub(crate) factory: OnceCell<Factory>,
+    pub(crate) factory: OnceLock<Factory>,
 }
 
 impl AsRaw for Instance {
@@ -125,7 +126,7 @@ impl Instance {
                 )?,
                 _env: environment.handle.clone(),
             })),
-            factory: OnceCell::new(),
+            factory: OnceLock::new(),
         })
     }
 
@@ -177,24 +178,21 @@ impl Instance {
     }
 
     /// Make the database attached from `location` the default for new connections.
-    pub fn set_default(&self, location: &StorageLocation) -> Result<&Self> {
-        let location: String = location.into();
+    pub fn set_default(&self, name: &str) -> Result<&Self> {
         check_api_call!(
             ffi::duckdb_v2_instance_set_default,
             self.handle.lock().unwrap().handle,
-            &(&location).into()
+            &(name).into()
         )?;
         Ok(self)
     }
 
-    /// Detach the database attached from `location`, checkpointing a file database first.
-    pub fn detach(&self, location: &StorageLocation) -> Result<&Self> {
-        let location: String = location.into();
-
+    /// Detach the database attached as `name`, checkpointing a file database first.
+    pub fn detach(&self, name: &str) -> Result<&Self> {
         check_api_call!(
             ffi::duckdb_v2_instance_detach,
             self.handle.lock().unwrap().handle,
-            &(&location).into()
+            &name.into()
         )?;
         Ok(self)
     }
@@ -261,11 +259,14 @@ mod tests {
         let instance = env.instance()?;
         let mut attach_options = instance.get_attach_options_builder()?;
 
-        let location = StorageLocation::OnDisk("test_instance_attach_options.db".into());
+        instance.attach_with_options(
+            &StorageLocation::OnDisk("test_instance_attach_options.db".into()),
+            Some("ondisk".into()),
+            None,
+            true,
+        )?;
 
-        instance.attach(&location)?;
-
-        instance.detach(&location)?;
+        instance.detach("ondisk")?;
 
         attach_options.set_option("read_only", "true")?;
 
@@ -279,7 +280,7 @@ mod tests {
             false,
         )?;
 
-        instance.set_default(&location)?;
+        instance.set_default("ro")?;
 
         let conn = instance.connect()?;
 
@@ -287,7 +288,7 @@ mod tests {
 
         assert!(res.is_err_and(|e| e.to_string().contains("read-only")));
 
-        instance.detach(&location)?;
+        instance.detach("ro")?;
 
         std::fs::remove_file("test_instance_attach_options.db").expect("Failed to remove on-disk database");
 

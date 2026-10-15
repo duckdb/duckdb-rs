@@ -137,6 +137,20 @@ define_handle! {
 }
 
 define_handle! {
+    name: PragmaFunctionBuilderHandle,
+    link: PragmaFunctionBuilderLink,
+    create: create_pragma_function_handle,
+    register: register_pragma_function_handle,
+    handle: ffi::duckdb_v2_pragma_function_handle,
+    destroy: ffi::duckdb_v2_pragma_function_destroy,
+    factory: ffi::duckdb_v2_pragma_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_pragma_function,
+        // Extension => ffi::duckdb_v2_extension_register_pragma_function,
+    },
+}
+
+define_handle! {
     name: CastFunctionHandle,
     link: CastFunctionLink,
     create: create_cast_function_handle,

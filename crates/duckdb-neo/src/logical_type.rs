@@ -126,7 +126,7 @@ impl LogicalType {
             ffi::duckdb_v2_factory_create_type_from_name,
             link.factory()?.raw(),
             qname.raw(),
-            names.map_or(std::ptr::null(), |names| names.as_ptr()),
+            names.as_ref().map_or(std::ptr::null(), |names| names.as_ptr()),
             values.as_ptr(),
             values.len() as u64,
             RET

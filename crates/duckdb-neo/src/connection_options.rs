@@ -19,17 +19,24 @@ use crate::{
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{environment::Environment, environment::StorageLocation};
+/// use duckdb_neo::{
+///     FromValue,
+///     connection::SettingScope,
+///     environment::{Environment, StorageLocation},
+/// };
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let db = env.open(StorageLocation::InMemory)?;
 ///
-/// db.config()?.set_text("worker_threads", "2", SettingScope::Session)?;
+/// let config = db.config()?;
+/// config.set_text("worker_threads", "2", SettingScope::Global)?;
 ///
-/// let resolved = db.config()?.get_value("threads")?;
-/// assert_eq!(resolved.setting()?, "2");
-/// assert_eq!(resolved.canonical_name()?, "threads");
+/// let (value, _scope) = config.get_value("threads")?;
+/// assert_eq!(i64::from_value(&value)?, Some(2));
+///
+/// let option = config.get_by_name("worker_threads")?;
+/// assert_eq!(option.canonical_name()?, "threads");
 /// # Ok(())
 /// # }
 /// ```
@@ -193,18 +200,18 @@ mod test {
         let conn = db.connect()?;
 
         conn.config()?
-            .set_text("worker_threads", &12.to_string(), SettingScope::Session)?;
+            .set_text("worker_threads", &12.to_string(), SettingScope::Global)?;
 
         let option_real = conn.config()?.get_value("threads")?;
 
-        assert_eq!(String::from_value(&option_real.0)?, Some("12".to_string()));
+        assert_eq!(i64::from_value(&option_real.0)?, Some(12i64));
 
         assert_eq!(
             conn.config()?
                 .get_by_name("temp_file_encryption")?
                 .default_scope()
                 .unwrap(),
-            SettingScope::Default
+            SettingScope::Global
         );
         Ok(())
     }

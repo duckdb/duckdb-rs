@@ -1,11 +1,11 @@
-//! Bind-time metadata for scalar, aggregate, and table functions.
+//! Bind-time metadata for scalar, aggregate, table, and pragma functions.
 
 use crate::builder_helpers::ArgCount;
 use crate::ffi;
 use crate::ffi_str::DuckDBStr;
 use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
 
-/// The arguments of a scalar or aggregate call site being bound.
+/// The arguments of a scalar or aggregate call site or a `PRAGMA` statement being bound.
 ///
 /// Arguments follow signature-slot order: fixed parameters first, followed by
 /// expanded variadic arguments. Constant values are folded only when requested

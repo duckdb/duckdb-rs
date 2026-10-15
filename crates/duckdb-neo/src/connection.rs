@@ -121,6 +121,9 @@ unsafe impl Sync for InnerConnection {}
 #[derive(Debug, AsRaw, FromRaw)]
 pub struct Factory(pub(crate) ffi::duckdb_v2_factory_handle);
 
+unsafe impl Send for Factory {}
+unsafe impl Sync for Factory {}
+
 pub trait HasFactory {
     fn factory(&self) -> Result<&Factory>;
 }

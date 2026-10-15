@@ -77,6 +77,7 @@ pub mod enums;
 pub mod expression;
 pub mod file;
 pub mod log;
+pub mod pragma_function;
 pub mod qualified_name;
 pub mod query_progress;
 pub mod replacement_scan;

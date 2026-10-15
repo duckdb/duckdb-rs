@@ -295,7 +295,7 @@ fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
         .register(&conn)?;
 
     // The collection no longer borrows `conn`, so it can be mutated.
-    conn.config()?.set_text("threads", "1", SettingScope::Session)?;
+    conn.config()?.set_text("threads", "1", SettingScope::Global)?;
 
     let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
     let chunk = query.next_chunk()?.unwrap();

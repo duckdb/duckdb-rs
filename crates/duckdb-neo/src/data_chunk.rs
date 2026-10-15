@@ -43,8 +43,6 @@ pub(crate) trait DataChunkMut {
 
     /// Drop cached views after DuckDB changed the chunk's vectors.
     fn evict_cached(&mut self);
-
-    fn clear(&mut self) -> Result<()>;
 }
 
 impl DataChunkMut for DataChunkRef<'_> {
@@ -55,11 +53,6 @@ impl DataChunkMut for DataChunkRef<'_> {
     fn evict_cached(&mut self) {
         self.vectors.evict_all();
     }
-
-    fn clear(&mut self) -> Result<()> {
-        self.evict_cached();
-        check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
-    }
 }
 
 impl DataChunkMut for DataChunk<'_> {
@@ -69,11 +62,6 @@ impl DataChunkMut for DataChunk<'_> {
 
     fn evict_cached(&mut self) {
         self.chunk.evict_cached();
-    }
-
-    fn clear(&mut self) -> Result<()> {
-        self.evict_cached();
-        check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
     }
 }
 
@@ -620,6 +608,11 @@ impl<'a> DataChunk<'a> {
     pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
         self.chunk.get_vector_array_mut(indices)
     }
+
+    pub fn clear(&mut self) -> Result<()> {
+        self.evict_cached();
+        check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
+    }
 }
 
 impl Drop for DataChunk<'_> {
@@ -644,7 +637,6 @@ unsafe impl Send for DataChunk<'_> {}
 mod tests {
 
     use crate::builder_helpers::scalar_callback;
-    use crate::data_chunk::DataChunkMut;
     use crate::scalar::ScalarFunctionBuilder;
     use crate::signature::{FunctionParameter, SignatureBuilder};
     use crate::types::DuckDBType;
