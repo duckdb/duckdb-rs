@@ -222,6 +222,7 @@ pub struct CopyFunctionBuilder<T> {
     user_data: OpaqueHandle<T>,
     name: String,
     progress: bool,
+    fallback_file_extension: Option<String>,
 }
 
 impl<T> CopyFunctionBuilder<T> {
@@ -231,7 +232,13 @@ impl<T> CopyFunctionBuilder<T> {
             name: name.into(),
             user_data: OpaqueHandle::new(user_data),
             progress: false,
+            fallback_file_extension: None,
         }
+    }
+
+    pub fn with_fallback_extension(mut self, value: impl Into<String>) -> Self {
+        self.fallback_file_extension = Some(value.into());
+        self
     }
 }
 
@@ -249,7 +256,15 @@ impl<T> CopyFunctionBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        Ok(())
+        if let Some(extension) = &self.fallback_file_extension {
+            check_api_call!(
+                ffi::duckdb_v2_copy_function_set_file_extension,
+                handle.raw(),
+                &extension.into()
+            )
+        } else {
+            Ok(())
+        }
     }
 }
 

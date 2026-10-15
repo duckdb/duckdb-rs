@@ -5,9 +5,8 @@ use std::marker::PhantomData;
 use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
 use libduckdb_sys::v2::duckdb_v2_str;
 
-use crate::builder_helpers::handle_unwind;
+use crate::builder_helpers::copy_render_box;
 use crate::error::Error;
-use crate::ffi_str::DuckDBStr;
 use crate::{
     Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err,
     connection::Connection, data_chunk::DataChunk, ffi, schema::Schema,
@@ -298,27 +297,6 @@ impl QueryResult<'_> {
         Ok(Schema { handle })
     }
 
-    unsafe extern "C" fn copy_render_box(
-        text: *const ffi::duckdb_v2_str,
-        user_data: *mut std::os::raw::c_void,
-        err: *mut ffi::duckdb_v2_error_info_handle,
-    ) {
-        handle_unwind(
-            || {
-                if text.is_null() || user_data.is_null() {
-                    return Err(Error::api_error("NULL value in copy_render_box"));
-                }
-
-                let string = unsafe { &mut *(user_data as *mut String) };
-
-                string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
-
-                Ok(())
-            },
-            err,
-        );
-    }
-
     /// Consume the remaining rows and render DuckDB's box table.
     ///
     /// Zero selects sizing defaults; `render_mode` is `0` for rows or `1` for
@@ -344,7 +322,7 @@ impl QueryResult<'_> {
             &null_value,
             render_mode as u64,
             limit as u64,
-            Some(Self::copy_render_box),
+            Some(copy_render_box),
             &mut string as *mut String as *mut std::os::raw::c_void,
         )?;
 

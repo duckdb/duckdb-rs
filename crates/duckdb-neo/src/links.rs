@@ -24,6 +24,12 @@ impl DatabaseKeepAlive for Connection {
     }
 }
 
+impl DatabaseKeepAlive for Instance {
+    fn keep_alive(&self) -> Option<KeepAlive> {
+        Some(Arc::new(self.handle.clone()))
+    }
+}
+
 impl DatabaseKeepAlive for Context {
     fn keep_alive(&self) -> Option<KeepAlive> {
         None
@@ -103,5 +109,6 @@ define_link! {
     implementations: {
         Connection => ffi::duckdb_v2_connection_get_file_system,
         Context => ffi::duckdb_v2_context_get_file_system,
+        Instance => ffi::duckdb_v2_instance_get_file_system,
     },
 }

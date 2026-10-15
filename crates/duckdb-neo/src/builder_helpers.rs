@@ -5,6 +5,27 @@ use crate::{
     ffi_str::DuckDBStr,
 };
 
+pub(crate) unsafe extern "C" fn copy_render_box(
+    text: *const ffi::duckdb_v2_str,
+    user_data: *mut std::os::raw::c_void,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            if text.is_null() || user_data.is_null() {
+                return Err(Error::api_error("NULL value in copy_render_box"));
+            }
+
+            let string = unsafe { &mut *(user_data as *mut String) };
+
+            string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
+
+            Ok(())
+        },
+        err,
+    );
+}
+
 #[derive(Debug)]
 pub(crate) struct OpaqueHandle<T> {
     data: *mut T,

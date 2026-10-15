@@ -130,6 +130,28 @@ impl Instance {
         })
     }
 
+    pub fn new_with_options(environment: &Environment, options: impl Into<Vec<(String, String)>>) -> Result<Self> {
+        let options = options.into();
+
+        let names: Vec<ffi::duckdb_v2_str> = options.iter().map(|v| (&v.0).into()).collect::<Vec<_>>();
+        let values: Vec<ffi::duckdb_v2_str> = options.iter().map(|v| (&v.1).into()).collect::<Vec<_>>();
+
+        Ok(Instance {
+            handle: Arc::new(Mutex::new(DatabaseHandle {
+                handle: check_api_call!(
+                    ffi::duckdb_v2_instance_create_with_options,
+                    environment.handle.lock().unwrap().handle,
+                    names.as_ptr(),
+                    values.as_ptr(),
+                    options.len() as u64,
+                    RET
+                )?,
+                _env: environment.handle.clone(),
+            })),
+            factory: OnceLock::new(),
+        })
+    }
+
     /// Return a new [`AttachOptionsBuilder`] for configuring an attach from this instance.
     pub fn get_attach_options_builder(&self) -> Result<AttachOptionsBuilder> {
         Ok(AttachOptionsBuilder {
@@ -203,12 +225,12 @@ impl Instance {
     }
 
     pub fn config(&self) -> Result<Config> {
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_instance_get_config,
             self.handle.lock().unwrap().handle,
             RET
-        )?;
-        Ok(unsafe { Config::from_raw(handle) })
+        )
+        .map(|handle| Config { handle })
     }
 }
 
