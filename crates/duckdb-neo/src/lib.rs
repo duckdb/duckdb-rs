@@ -47,6 +47,7 @@ pub mod database;
 pub mod environment;
 pub mod error;
 pub(crate) mod ffi_str;
+pub mod log_sink;
 pub mod logical_type;
 pub(crate) mod parameter;
 pub mod query_result;

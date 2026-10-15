@@ -95,6 +95,20 @@ macro_rules! define_handle_column_data_collection {
 }
 
 define_handle! {
+    name: LogSinkBuilderHandle,
+    link: LogSinkBuilderLink,
+    create: create_log_sink_handle,
+    register: register_log_sink,
+    handle: ffi::duckdb_v2_log_sink_handle,
+    destroy: ffi::duckdb_v2_log_sink_destroy,
+    factory: ffi::duckdb_v2_log_sink_create,
+    registerers: {
+        Instance => ffi::duckdb_v2_instance_register_log_sink,
+        // Extension => ffi::duckdb_v2_extension_register_log_sink,
+    },
+}
+
+define_handle! {
     name: ScalarFunctionBuilderHandle,
     link: ScalarFunctionBuilderLink,
     create: create_scalar_function_handle,

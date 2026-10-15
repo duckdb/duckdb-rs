@@ -23,6 +23,14 @@ ffi_enum_redeclaration! {
     }
 }
 
+ffi_enum_redeclaration! {
+    pub enum LogScope <- ffi::DUCKDB_V2_LOG_SCOPE {
+        Database = DUCKDB_V2_LOG_SCOPE_DATABASE,
+        Connection = DUCKDB_V2_LOG_SCOPE_CONNECTION,
+        Thread = DUCKDB_V2_LOG_SCOPE_THREAD
+    }
+}
+
 /// Emits records through DuckDB's configured logging system.
 #[derive(Debug)]
 pub struct Log;
@@ -40,7 +48,7 @@ impl Log {
     }
 
     /// Log a message in the connection scope, subject to DuckDB's logging configuration.
-    pub fn log_on_connection(conn: Connection, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
+    pub fn log_on_connection(conn: &Connection, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_connection_log,
             conn.raw(),
@@ -51,7 +59,7 @@ impl Log {
     }
 
     /// Log a message in the instance scope, subject to DuckDB's logging configuration.
-    pub fn log_on_instance(instance: Instance, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
+    pub fn log_on_instance(instance: &Instance, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_instance_log,
             instance.handle.lock().unwrap().handle,
