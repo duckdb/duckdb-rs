@@ -44,9 +44,6 @@ pub enum ReplacementType<'a> {
 
     /// A registered collection, by name. Has default column names (`col1`, `col2`, ...).
     ColumnDataCollection(&'a str),
-
-    /// A registered collection, by name, with explicitly named columns.
-    NamedColumnDataCollection((&'a str, Vec<String>)),
 }
 
 impl ReplacementHandle<'_> {
@@ -91,20 +88,22 @@ impl ReplacementHandle<'_> {
                     &(&query).into()
                 )
             }
-            ReplacementType::ColumnDataCollection(name) => check_api_call!(
-                ffi::duckdb_v2_replacement_scan_set_collection,
-                *self.info,
-                self.registered_collection(name)?.raw(),
-                std::ptr::null(),
-                0
-            ),
-            ReplacementType::NamedColumnDataCollection((name, names)) => check_api_call!(
-                ffi::duckdb_v2_replacement_scan_set_collection,
-                *self.info,
-                self.registered_collection(name)?.raw(),
-                names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
-                names.len() as u64
-            ),
+            ReplacementType::ColumnDataCollection(name) => {
+                let cdc = self.registered_collection(name)?;
+
+                let names = cdc
+                    .column_names
+                    .as_ref()
+                    .map_or(vec![], |x| x.iter().map(|x| x.into()).collect::<Vec<_>>());
+
+                check_api_call!(
+                    ffi::duckdb_v2_replacement_scan_set_collection,
+                    *self.info,
+                    cdc.raw(),
+                    names.as_ptr(),
+                    names.len() as u64
+                )
+            }
         }
     }
 

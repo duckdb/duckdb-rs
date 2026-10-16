@@ -12,6 +12,23 @@ use crate::{
     connection::Connection, data_chunk::DataChunk, ffi, schema::Schema,
 };
 
+/*
+duckdb_v2_result_destroy
+duckdb_v2_result_drain
+duckdb_v2_result_fetch_chunk
+duckdb_v2_result_get_result_type
+duckdb_v2_result_get_statement_type
+duckdb_v2_result_step
+duckdb_v2_result_wait
+duckdb_v2_arrow_result_destroy
+duckdb_v2_arrow_result_drain
+duckdb_v2_arrow_result_fetch_array
+duckdb_v2_arrow_result_get_result_type
+duckdb_v2_arrow_result_get_statement_type
+duckdb_v2_arrow_result_step
+duckdb_v2_arrow_result_wait
+*/
+
 ffi_enum_redeclaration! {
     #[allow(missing_docs)]
     pub enum StatementType <- ffi::DUCKDB_V2_STATEMENT_TYPE {

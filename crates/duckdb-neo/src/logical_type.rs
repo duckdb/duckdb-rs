@@ -73,7 +73,7 @@ impl LogicalType {
             ffi::duckdb_v2_factory_create_type_from_id,
             link.factory()?.raw(),
             type_id,
-            names.map_or(std::ptr::null(), |names| names.as_ptr()),
+            names.as_ref().map_or(std::ptr::null(), |names| names.as_ptr()),
             values.as_ptr(),
             values.len() as u64,
             RET
@@ -238,6 +238,32 @@ mod test {
         );
         assert_eq!(
             ltype.get_param(1)?.1.type_value_get_inner()?.type_id(),
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_from_id_named() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+
+        let int_type = Value::from_logical_type(&conn, &i32::logical_type(&conn)?)?;
+        let text_type = Value::from_logical_type(&conn, &String::logical_type(&conn)?)?;
+        let ltype = LogicalType::create_from_id(
+            &conn,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT,
+            Parameters::named(&[("id", &int_type), ("label", &text_type)]),
+        )?;
+
+        assert_eq!(ltype.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT);
+        let params = ltype.get_params()?;
+        assert_eq!(
+            params.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
+            ["id", "label"]
+        );
+        assert_eq!(
+            params[1].1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
 

@@ -7,24 +7,6 @@ use crate::{
     connection::{Connection, InnerConnection, SettingScope},
     ffi,
 };
-/*
-duckdb_v2_result_destroy
-duckdb_v2_result_drain
-duckdb_v2_result_fetch_chunk
-duckdb_v2_result_get_result_type
-duckdb_v2_result_get_statement_type
-duckdb_v2_result_step
-duckdb_v2_result_wait
-duckdb_v2_arrow_result_destroy
-duckdb_v2_arrow_result_drain
-duckdb_v2_arrow_result_fetch_array
-duckdb_v2_arrow_result_get_result_type
-duckdb_v2_arrow_result_get_statement_type
-duckdb_v2_arrow_result_step
-duckdb_v2_arrow_result_wait
-
-
-*/
 
 /// Enables and reads query progress for a connection.
 ///

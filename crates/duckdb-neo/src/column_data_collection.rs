@@ -483,8 +483,15 @@ mod test {
         conn.execute(statement, Parameters::None)?;
 
         let logical_types = [i32::logical_type(&conn)?, bool::logical_type(&conn)?];
+        let names = ["id", "is_active"];
 
-        let collection = ColumnDataCollection::new(&conn, &logical_types)?;
+        let collection = ColumnDataCollection::new(
+            &conn,
+            &[
+                (logical_types[0].clone(), names[0].to_string()),
+                (logical_types[1].clone(), names[1].to_string()),
+            ],
+        )?;
 
         let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
 
@@ -545,10 +552,7 @@ mod test {
                 handle: crate::replacement_scan::ReplacementHandle<'_>,
             ) -> Result<()> {
                 if name.get_view()?.table == Some("A".into()) {
-                    handle.set_reference(ReplacementType::NamedColumnDataCollection((
-                        "A",
-                        ["id".to_string(), "is_active".to_string()].into(),
-                    )))?;
+                    handle.set_reference(ReplacementType::ColumnDataCollection("A"))?;
                 }
 
                 Ok(())

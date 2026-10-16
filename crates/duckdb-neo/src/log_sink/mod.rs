@@ -176,7 +176,7 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
     }
 }
 
-pub trait LogSinkCallbacks {
+pub trait LogSinkCallbacks: Send + Sync + 'static {
     fn flush(&self) -> Result<()>;
 
     fn write(&self, data: LogWriteData, metadata: LogMetadata) -> Result<()>;

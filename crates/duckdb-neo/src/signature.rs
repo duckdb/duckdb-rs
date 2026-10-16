@@ -192,7 +192,6 @@ impl FunctionDocumentationBuilder {
         self.categories.push(category.into());
     }
 
-    /// Fill in borrowed function documentation.
     fn build(&self, handle: ffi::duckdb_v2_function_docs_handle) -> Result<()> {
         if let Some(description) = &self.description {
             check_api_call!(
