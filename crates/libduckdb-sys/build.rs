@@ -282,10 +282,10 @@ mod build_linked {
         #[cfg(feature = "vcpkg")]
         if is_compiler("msvc") {
             // See if vcpkg can find it.
-            if let Ok(mut lib) = vcpkg::Config::new().probe("duckdb") {
-                if let Some(header) = lib.include_paths.pop() {
-                    return Some(HeaderLocation::IncludeDir(header));
-                }
+            if let Ok(mut lib) = vcpkg::Config::new().probe("duckdb")
+                && let Some(header) = lib.include_paths.pop()
+            {
+                return Some(HeaderLocation::IncludeDir(header));
             }
         }
         None
