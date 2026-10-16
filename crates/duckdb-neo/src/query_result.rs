@@ -8,7 +8,7 @@ use libduckdb_sys::v2::duckdb_v2_str;
 use crate::builder_helpers::copy_render_box;
 use crate::error::Error;
 use crate::{
-    Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call, check_api_call_no_err,
+    DropHandle, Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call,
     connection::Connection, data_chunk::DataChunk, ffi, schema::Schema,
 };
 
@@ -134,7 +134,8 @@ macro_rules! query_result {
                 "assert_send::<duckdb_neo::query_result::", stringify!($name), "<'static>>();\n",
                 "```",
             )]
-            #[derive(Debug)]
+            #[derive(Debug, DropHandle)]
+            #[drop_handle(ffi::[<$prefix _destroy>])]
             pub struct $name<'a> {
                 pub(crate) handle: ffi::[<$prefix _handle>],
                 phantom: PhantomData<&'a mut Connection>,
@@ -186,9 +187,7 @@ macro_rules! query_result {
                     "not already been consumed. Draining an already finished result succeeds.",
                 )]
                 pub fn drain(&mut self) -> Result<usize> {
-                    let count: u64 = check_api_call!(ffi::[<$prefix _drain>], self.handle, RET)?;
-
-                    Ok(count as usize)
+                    check_api_call!(ffi::[<$prefix _drain>], self.handle, RET).map(|count| count as usize)
                 }
 
                 /// Return the SQL statement type that produced this result.
@@ -199,12 +198,6 @@ macro_rules! query_result {
                 /// Return whether the result contains rows, changed rows, or no output.
                 pub fn result_type(&self) -> Result<ResultType> {
                     check_api_call!(ffi::[<$prefix _get_result_type>], self.handle, RET)?.try_into()
-                }
-            }
-
-            impl Drop for $name<'_> {
-                fn drop(&mut self) {
-                    check_api_call_no_err!(ffi::[<$prefix _destroy>], &mut self.handle).unwrap();
                 }
             }
         }
@@ -292,9 +285,7 @@ query_result! {
 impl QueryResult<'_> {
     /// Return an owned copy of the result schema.
     pub fn schema(&self) -> Result<Schema> {
-        let handle = check_api_call!(ffi::duckdb_v2_result_get_schema, self.handle, RET)?;
-
-        Ok(Schema { handle })
+        check_api_call!(ffi::duckdb_v2_result_get_schema, self.handle, RET).map(|handle| Schema { handle })
     }
 
     /// Consume the remaining rows and render DuckDB's box table.
@@ -356,8 +347,7 @@ impl<'a> ArrowQueryResult<'a> {
     /// ```
     pub fn to_arrow_stream(mut self) -> Result<ArrowStream<'a>> {
         // On success the stream owns the result and the handle is nulled, so `Drop` is a no-op.
-        let stream = check_api_call!(ffi::duckdb_v2_arrow_result_to_arrow_c_stream, &mut self.handle, RET)?;
-        Ok(ArrowStream::new(stream))
+        check_api_call!(ffi::duckdb_v2_arrow_result_to_arrow_c_stream, &mut self.handle, RET).map(ArrowStream::new)
     }
 }
 

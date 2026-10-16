@@ -47,7 +47,7 @@ macro_rules! declare_storage_value {
 
         impl FromValue for $name {
             fn _get_inner(value: &Value) -> Result<Self> {
-                Ok(Self(check_api_call!($getter, value.raw(), RET)?))
+                check_api_call!($getter, value.raw(), RET).map(Self)
             }
         }
 
@@ -174,8 +174,7 @@ impl ToValue for IntervalValue {
 
 impl FromValue for IntervalValue {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_interval, value.raw(), RET)?;
-        Ok(Self {
+        check_api_call!(ffi::duckdb_v2_value_get_interval, value.raw(), RET).map(|raw| Self {
             months: raw.months,
             days: raw.days,
             micros: raw.micros,

@@ -95,9 +95,7 @@ unsafe extern "C" fn bind_callback<T: TableFunctionCallbacks>(
                 ffi::duckdb_v2_function_bind_set_bind_data,
                 info,
                 &mut into_opaque(bind_data)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -219,48 +217,44 @@ pub struct PushdownData<'a> {
 impl<'a> PushdownData<'a> {
     /// Return the number of columns in the pushdown-time column list.
     pub fn get_column_count(&self) -> Result<usize> {
-        let column_count = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_filter_pushdown_get_column_count,
             *self.handle,
             RET
-        )?;
-
-        Ok(column_count as usize)
+        )
+        .map(|column_count| column_count as usize)
     }
 
     /// Map a pushdown-time position to its bind-declared column index.
     pub fn get_column_index(&self, projected_index: usize) -> Result<usize> {
-        let original_index = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_filter_pushdown_get_column_index,
             *self.handle,
             projected_index as u64,
             RET
-        )?;
-
-        Ok(original_index as usize)
+        )
+        .map(|original_index| original_index as usize)
     }
 
     /// Return the number of filter predicates offered for pushdown, combined with `AND`.
     pub fn filter_count(&self) -> Result<usize> {
-        let value = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_filter_pushdown_get_filter_count,
             *self.handle,
             RET
-        )?;
-
-        Ok(value as usize)
+        )
+        .map(|value| value as usize)
     }
 
     /// Borrow the bound boolean filter expression at `index` for the duration of the callback.
     pub fn filter(&self, index: usize) -> Result<Expression<'a>> {
-        let expression_handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_filter_pushdown_get_filter,
             *self.handle,
             index as u64,
             RET
-        )?;
-
-        Ok(Expression {
+        )
+        .map(|expression_handle| Expression {
             handle: expression_handle,
             _marker: std::marker::PhantomData,
         })
@@ -445,25 +439,23 @@ impl<'a> PartitionData<'a> {
     ///
     /// Zero when [`requires_partition_columns`](Self::requires_partition_columns) is false.
     pub fn get_column_count(&self) -> Result<usize> {
-        let column_count = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_partition_data_get_partition_column_count,
             *self.handle,
             RET
-        )?;
-
-        Ok(column_count as usize)
+        )
+        .map(|column_count| column_count as usize)
     }
 
     /// Map a requested partitioning column to its bind-declared column index.
     pub fn get_column_index(&self, partition_index: usize) -> Result<usize> {
-        let original_index = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_partition_data_get_partition_column_index,
             *self.handle,
             partition_index as u64,
             RET
-        )?;
-
-        Ok(original_index as usize)
+        )
+        .map(|original_index| original_index as usize)
     }
 
     /// Report the single value the batch carries for the partitioning column at `partition_index`.
@@ -492,25 +484,23 @@ pub struct PartitioningData<'a> {
 impl<'a> PartitioningData<'a> {
     /// Return the number of columns in the candidate column set.
     pub fn get_column_count(&self) -> Result<usize> {
-        let column_count = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_partitioning_get_partition_column_count,
             *self.handle,
             RET
-        )?;
-
-        Ok(column_count as usize)
+        )
+        .map(|column_count| column_count as usize)
     }
 
     /// Map a candidate column to its bind-declared column index.
     pub fn get_column_index(&self, partition_index: usize) -> Result<usize> {
-        let original_index = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_table_function_partitioning_get_partition_column_index,
             *self.handle,
             partition_index as u64,
             RET
-        )?;
-
-        Ok(original_index as usize)
+        )
+        .map(|original_index| original_index as usize)
     }
 }
 
@@ -541,9 +531,7 @@ unsafe extern "C" fn partition_data_callback<T: TablePartitioningCallbacks>(
                 ffi::duckdb_v2_table_function_partition_data_set_batch_index,
                 info,
                 batch_index as u64
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -570,9 +558,7 @@ unsafe extern "C" fn partitioning_callback<T: TablePartitioningCallbacks>(
                 ffi::duckdb_v2_table_function_partitioning_set_partition_info,
                 info,
                 partition_info.into()
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -738,9 +724,7 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             ffi::duckdb_v2_table_function_set_exec_callback,
             handle.raw(),
             Some(exec_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Register through a connection or extension, consuming the builder.

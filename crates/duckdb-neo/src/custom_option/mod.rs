@@ -148,9 +148,7 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
             ffi::duckdb_v2_custom_option_set_update_callback,
             handle.raw(),
             Some(update_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
     #[allow(private_bounds)]

@@ -3,11 +3,11 @@
 use std::fmt::Debug;
 
 use crate::connection::HasFactory;
-use crate::{Factory, ffi};
+use crate::{DropHandle, Factory, ffi};
 
 use crate::{
-    AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err, check_api_call_string, connection::FFILink,
-    error::Error, logical_type::LogicalType, raw::RawExt, types::FromValue,
+    AsRaw, FromRaw, Result, check_api_call, check_api_call_string, connection::FFILink, error::Error,
+    logical_type::LogicalType, raw::RawExt, types::FromValue,
 };
 
 /// An owned logical type and value payload.
@@ -34,7 +34,8 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_value_destroy)]
 pub struct Value {
     pub(crate) handle: ffi::duckdb_v2_value_handle,
 }
@@ -137,8 +138,8 @@ fn uhugeint(value: u128) -> ffi::duckdb_v2_uhugeint_t {
 
 macro_rules! create_value {
     ($function:path, $link:expr $(, $arg:expr)*) => {{
-        let handle = check_api_call!($function, $link $(, $arg)*, RET)?;
-        Ok(Value { handle })
+        check_api_call!($function, $link $(, $arg)*, RET)
+            .map(|handle| Value { handle })
     }};
 }
 
@@ -318,12 +319,6 @@ pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> 
     )
 }
 
-impl Drop for Value {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_value_destroy, &mut self.handle).unwrap();
-    }
-}
-
 impl Value {
     /// Read this value as a Rust type, returning `None` for SQL `NULL`.
     pub fn get<T: FromValue>(&self) -> Result<Option<T>> {
@@ -332,13 +327,13 @@ impl Value {
 
     /// Create a typed `NULL` without a connection or callback context.
     pub fn null<C: HasFactory + ?Sized>(link: &C, logical_type: &LogicalType) -> Result<Value> {
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_value_create_null,
             link.factory()?.raw(),
             logical_type.handle,
             RET
-        )?;
-        Ok(Value { handle })
+        )
+        .map(|handle| Value { handle })
     }
 
     /// Cast a value using a connection or callback context's registered casts.
@@ -359,25 +354,19 @@ impl Value {
         link.create_value(ValueInput::Type(logical_type))
     }
 
-    /// Return the logical type carried by a `TYPE` value.
+    /// Return this value's logical type.
     pub fn logical_type(&self) -> Result<LogicalType> {
-        let handle = check_api_call!(ffi::duckdb_v2_value_get_type, self.handle, RET)?;
-
-        Ok(LogicalType { handle })
+        check_api_call!(ffi::duckdb_v2_value_get_logical_type, self.handle, RET).map(|handle| LogicalType { handle })
     }
 
-    /// Return this value's logical type.
-    pub fn fetch_logical_type(&self) -> Result<LogicalType> {
-        let handle = check_api_call!(ffi::duckdb_v2_value_get_logical_type, self.handle, RET)?;
-
-        Ok(LogicalType { handle })
+    /// Return the logical type carried by a `TYPE` value.
+    pub fn type_value_get_inner(&self) -> Result<LogicalType> {
+        check_api_call!(ffi::duckdb_v2_value_get_type, self.handle, RET).map(|handle| LogicalType { handle })
     }
 
     /// Return the number of children in a composite value.
     pub fn child_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_value_get_child_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_value_get_child_count, self.handle, RET).map(|count| count as usize)
     }
 
     pub(crate) fn encode_bignum(data: &[u8], is_negative: bool) -> Result<Vec<u8>> {
@@ -438,9 +427,7 @@ impl Value {
     /// This is a per-value slow path; prefer typed vector access for query data.
     /// A non-composite value or out-of-range index returns an error.
     pub fn get_child(&self, index: usize) -> Result<Value> {
-        let child_handle = check_api_call!(ffi::duckdb_v2_value_get_child, self.handle, index as u64, RET)?;
-
-        Ok(Value { handle: child_handle })
+        check_api_call!(ffi::duckdb_v2_value_get_child, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 
     /// Return owned copies of all child values.
@@ -460,9 +447,7 @@ impl Value {
 
     /// Return whether this value is `NULL`.
     pub fn is_null(&self) -> Result<bool> {
-        let is_null: bool = check_api_call!(ffi::duckdb_v2_value_is_null, self.handle, RET)?;
-
-        Ok(is_null)
+        check_api_call!(ffi::duckdb_v2_value_is_null, self.handle, RET)
     }
 
     /// Render the value for diagnostics.

@@ -71,9 +71,7 @@ unsafe extern "C" fn bind_callback<T: ScalarCallbacks>(
                 ffi::duckdb_v2_scalar_function_bind_set_bind_data,
                 result,
                 &mut into_opaque_eq(data)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -96,9 +94,7 @@ unsafe extern "C" fn init_callback<T: ScalarCallbacks>(
                 ffi::duckdb_v2_scalar_function_init_set_init_data,
                 info,
                 &mut into_opaque(result)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -218,9 +214,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             ffi::duckdb_v2_scalar_function_set_resolve_types_callback,
             handle.raw(),
             Some(resolve_types_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Register through a [`Connection`](crate::connection::Connection) or

@@ -3,7 +3,7 @@
 use crate::column_data_collection::ColumnDataCollection;
 use crate::ffi_str::DuckDBStr;
 use crate::{
-    AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err,
+    AsRaw, DropHandle, FromRaw, Parameters, Result, check_api_call,
     connection::Connection,
     error::Error,
     ffi,
@@ -72,7 +72,8 @@ pub struct SchemaBind {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_statement_iterator_destroy)]
 pub struct Statements {
     pub(crate) handle: ffi::duckdb_v2_statement_iterator_handle,
 }
@@ -85,12 +86,6 @@ impl Statements {
 
         check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)
             .map(|handle| Statements { handle })
-    }
-}
-
-impl Drop for Statements {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_statement_iterator_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -117,7 +112,8 @@ impl Iterator for Statements {
 /// A statement can be bound to inspect its input and output schemas,
 /// prepared for repeated execution, or passed to
 /// [`Connection::query`].
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_sql_statement_destroy)]
 pub struct Statement {
     /// The owned DuckDB statement handle.
     pub(crate) handle: ffi::duckdb_v2_sql_statement_handle,
@@ -128,15 +124,14 @@ impl Statement {
     pub fn bind(&self, conn: &Connection) -> Result<SchemaBind> {
         let mut out_parameters = std::ptr::null_mut();
 
-        let out_schema = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_statement_bind,
             conn.raw(),
             self.handle,
             RET,
             &mut out_parameters
-        )?;
-
-        Ok(SchemaBind {
+        )
+        .map(|out_schema| SchemaBind {
             schema: Schema { handle: out_schema },
             parameters: Schema { handle: out_parameters },
         })
@@ -178,7 +173,7 @@ impl Statement {
     pub fn query<'conn>(&self, conn: &'conn Connection, params: Parameters<'_>) -> Result<QueryResult<'conn>> {
         let params = Self::prepare_params(conn, params)?;
 
-        let result: ffi::duckdb_v2_result_handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_statement_execute,
             conn.raw(),
             self.handle,
@@ -186,9 +181,8 @@ impl Statement {
             params.values_ptr(),
             params.len(),
             RET
-        )?;
-
-        Ok(QueryResult::new(result))
+        )
+        .map(QueryResult::new)
     }
 
     /// Start the statement and return its lazy, streaming Arrow result.
@@ -204,7 +198,7 @@ impl Statement {
     ) -> Result<ArrowQueryResult<'conn>> {
         let params = Self::prepare_params(conn, params)?;
 
-        let result: ffi::duckdb_v2_arrow_result_handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_statement_execute_arrow,
             conn.raw(),
             self.handle,
@@ -213,9 +207,8 @@ impl Statement {
             params.len(),
             batch_size.unwrap_or_default() as u64,
             RET
-        )?;
-
-        Ok(ArrowQueryResult::new(result))
+        )
+        .map(ArrowQueryResult::new)
     }
 
     /// Prepare the statement for repeated execution.
@@ -223,15 +216,14 @@ impl Statement {
     /// When `require_cacheable` is true, preparation fails unless the compiled
     /// plan can be reused.
     pub fn prepare<'a>(&self, conn: &'a Connection, require_cacheable: bool) -> Result<PreparedStatement<'a>> {
-        let prepared_handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_prepared_statement_create,
             conn.raw(),
             self.handle,
             require_cacheable,
             RET
-        )?;
-
-        Ok(PreparedStatement {
+        )
+        .map(|prepared_handle| PreparedStatement {
             connection: conn,
             handle: prepared_handle,
         })
@@ -272,18 +264,13 @@ impl Statement {
     }
 }
 
-impl Drop for Statement {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_sql_statement_destroy, &mut self.handle).unwrap();
-    }
-}
-
 /// A statement bound and planned for repeated execution.
 ///
 /// Execution accepts named or positional [`Parameters`] and is
 /// lazy: work begins when the returned [`QueryResult`] is consumed. The
 /// prepared statement remains associated with the connection used to create it.
-#[derive(Debug, AsRaw)]
+#[derive(Debug, AsRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_prepared_statement_destroy)]
 pub struct PreparedStatement<'a> {
     connection: &'a Connection,
     /// The owned DuckDB prepared-statement handle.
@@ -300,16 +287,15 @@ impl<'a> PreparedStatement<'a> {
             .collect::<Vec<_>>();
         let param_names = param_names.map(|x| x.iter().map(|s| (*s).into()).collect::<Vec<ffi::duckdb_v2_str>>());
 
-        let result: ffi::duckdb_v2_result_handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_prepared_statement_execute,
             self.handle,
             param_names.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
             param_values.as_ptr(),
             param_values.len() as u64,
             RET
-        )?;
-
-        Ok(QueryResult::new(result))
+        )
+        .map(QueryResult::new)
     }
 
     /// Execute with optional positional or named parameters.
@@ -321,7 +307,7 @@ impl<'a> PreparedStatement<'a> {
             .collect::<Vec<_>>();
         let param_names = param_names.map(|x| x.iter().map(|s| (*s).into()).collect::<Vec<ffi::duckdb_v2_str>>());
 
-        let result: ffi::duckdb_v2_arrow_result_handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_prepared_statement_execute_arrow,
             self.handle,
             param_names.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
@@ -329,21 +315,13 @@ impl<'a> PreparedStatement<'a> {
             param_values.len() as u64,
             batch_size.unwrap_or_default() as u64,
             RET
-        )?;
-
-        Ok(ArrowQueryResult::new(result))
+        )
+        .map(ArrowQueryResult::new)
     }
 
     /// Return whether executions reuse the compiled plan.
     pub fn reuses_plan(&self) -> Result<bool> {
-        let reuses_plan: bool = check_api_call!(ffi::duckdb_v2_prepared_statement_reuses_plan, self.handle, RET)?;
-        Ok(reuses_plan)
-    }
-}
-
-impl<'a> Drop for PreparedStatement<'a> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_prepared_statement_destroy, &mut self.handle).unwrap();
+        check_api_call!(ffi::duckdb_v2_prepared_statement_reuses_plan, self.handle, RET)
     }
 }
 

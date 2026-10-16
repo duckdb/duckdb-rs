@@ -6,10 +6,7 @@ use crate::ffi;
 use crate::ffi_str::DuckDBStr;
 use crate::raw::RawExt;
 use crate::value::Value;
-use crate::{
-    AsRaw, FromRaw, Result,
-    error::{check_api_call, check_api_call_no_err},
-};
+use crate::{AsRaw, DropHandle, FromRaw, Result, error::check_api_call};
 
 /// A resolved DuckDB configuration option.
 ///
@@ -40,7 +37,8 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_option_destroy)]
 pub struct ConfigOption {
     /// The owned DuckDB option handle.
     pub(crate) handle: ffi::duckdb_v2_option_handle,
@@ -49,19 +47,16 @@ pub struct ConfigOption {
 impl ConfigOption {
     /// Return the canonical option name.
     pub fn canonical_name(&self) -> Result<String> {
-        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_name, self.raw(), RET)?;
-
-        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
+        check_api_call!(ffi::duckdb_v2_option_get_name, self.raw(), RET)
+            .map(|name| DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the alias at `index`.
     ///
     /// An out-of-range index returns an error.
     pub fn alias(&self, index: usize) -> Result<String> {
-        let alias: ffi::duckdb_v2_str =
-            check_api_call!(ffi::duckdb_v2_option_get_alias, self.raw(), index as u64, RET)?;
-
-        Ok(DuckDBStr::from_raw(alias).as_str().unwrap_or_default().to_owned())
+        check_api_call!(ffi::duckdb_v2_option_get_alias, self.raw(), index as u64, RET)
+            .map(|alias| DuckDBStr::from_raw(alias).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return all registered aliases.
@@ -83,9 +78,8 @@ impl ConfigOption {
 
     /// Return the option's human-readable description.
     pub fn description(&self) -> Result<String> {
-        let description: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_option_get_description, self.raw(), RET)?;
-
-        Ok(DuckDBStr::from_raw(description).as_str().unwrap_or_default().to_owned())
+        check_api_call!(ffi::duckdb_v2_option_get_description, self.raw(), RET)
+            .map(|description| DuckDBStr::from_raw(description).as_str().unwrap_or_default().to_owned())
     }
 
     pub fn default_scope(&self) -> Result<SettingScope> {
@@ -98,12 +92,6 @@ impl ConfigOption {
 
     pub fn supports_scope(&self, scope: SettingScope) -> Result<bool> {
         check_api_call!(ffi::duckdb_v2_option_supports_scope, self.raw(), scope.into(), RET)
-    }
-}
-
-impl Drop for ConfigOption {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_option_destroy, &mut self.raw()).unwrap();
     }
 }
 

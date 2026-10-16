@@ -46,7 +46,7 @@ impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
 
 impl<T: FromValue> FromValue for Vec<Option<T>> {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let logical_type = value.fetch_logical_type()?;
+        let logical_type = value.logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
             return Err(Error::invalid_input(format!(
                 "Expected LIST value, found {}",

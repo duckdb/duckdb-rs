@@ -10,25 +10,19 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::{Result, check_api_call, check_api_call_no_err, database::Instance, ffi};
+use crate::{DropHandle, Result, check_api_call, database::Instance, ffi};
 
 /// A shared handle to a DuckDB environment.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_environment_destroy)]
 pub struct EnvironmentHandle {
     pub(crate) handle: ffi::duckdb_v2_environment_handle,
 }
 impl EnvironmentHandle {
     fn new() -> Result<Self> {
-        let handle = check_api_call!(ffi::duckdb_v2_environment_create, RET)?;
-        Ok(EnvironmentHandle { handle })
+        check_api_call!(ffi::duckdb_v2_environment_create, RET).map(|handle| EnvironmentHandle { handle })
     }
-}
-impl Drop for EnvironmentHandle {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_environment_destroy, &mut self.handle).unwrap();
-    }
-}
-// SAFETY: exposes only the raw handle, which is always used behind `Arc<Mutex<_>>`; the
+} // SAFETY: exposes only the raw handle, which is always used behind `Arc<Mutex<_>>`; the
 // environment's instance count is atomic.
 unsafe impl Send for EnvironmentHandle {}
 unsafe impl Sync for EnvironmentHandle {}
@@ -114,12 +108,12 @@ impl Environment {
 
     /// Return the number of open databases.
     pub fn get_database_count(&self) -> Result<usize> {
-        let count: ffi::idx_t = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_environment_get_instance_count,
             self.handle.lock().unwrap().handle,
             RET
-        )?;
-        Ok(count as usize)
+        )
+        .map(|count| count as usize)
     }
 
     /// Create an instance and attach a database located at `path`.

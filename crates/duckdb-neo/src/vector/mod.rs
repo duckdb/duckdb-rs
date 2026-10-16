@@ -292,15 +292,15 @@ pub(crate) enum Access {
 #[derive(Debug)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
-    pub(crate) logical_type: LogicalType,
-    pub(crate) kind: StorageKind,
-    pub(crate) len: usize,
+    logical_type: LogicalType,
+    kind: StorageKind,
+    len: usize,
     pub(crate) view: Option<VectorView<T>>,
     pub(crate) access: Access,
     heap: Option<ffi::duckdb_v2_arena_handle>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
-    pub(crate) params: TypeParams,
+    params: TypeParams,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -377,12 +377,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Ok(None);
         }
 
-        let view: ffi::duckdb_v2_vector_view = check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET)?;
-        Ok(Some(VectorView {
-            view,
-            kind,
-            _marker: PhantomData,
-        }))
+        check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET).map(|view| {
+            Some(VectorView {
+                view,
+                kind,
+                _marker: PhantomData,
+            })
+        })
     }
 
     /// Refresh the vector's view and mutable buffers after a state change, e.g a flatten.
@@ -419,7 +420,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     ) -> Result<Vector<'a, Unknown>> {
         let mut cast_err = std::ptr::null_mut();
 
-        let success = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_vector_cast,
             link.factory()?.raw(),
             source.handle,
@@ -619,9 +620,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// This is the slow path; prefer [`Self::get`] or [`Self::iter`] for typed
     /// vector access.
     pub fn get_value_slow(&self, index: usize) -> Result<Value> {
-        let value_handle = check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET)?;
-
-        Ok(Value { handle: value_handle })
+        check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 
     /// Write one owned [`Value`] through DuckDB's generic value API.
@@ -664,8 +663,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// Read the current size from DuckDB, which may have changed through another wrapper.
     pub(crate) fn current_size(&self) -> Result<usize> {
-        let len: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET)?;
-        Ok(len as usize)
+        check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET).map(|len| len as usize)
     }
 
     /// Return the number of logical rows.

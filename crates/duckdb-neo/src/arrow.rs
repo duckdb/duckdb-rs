@@ -9,7 +9,7 @@ use arrow_array::{
 };
 
 use crate::{
-    Result, check_api_call, check_api_call_no_err,
+    DropHandle, Result, check_api_call,
     connection::{Connection, Context},
     data_chunk::{DataChunk, DataChunkRef},
     ffi,
@@ -49,7 +49,8 @@ impl ArrowStream<'_> {
 /// The context's Arrow settings are copied at creation, but the copy keeps a
 /// raw pointer to the client context, so the exporter borrows the context for
 /// `'ctx` and must not outlive it.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_arrow_exporter_destroy)]
 pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -70,7 +71,7 @@ impl<'ctx> ArrowExporter<'ctx> {
         let name_ptrs = converted.iter().map(|x| x.0).collect::<Vec<_>>();
         let logical_type_handles = converted.iter().map(|x| x.1).collect::<Vec<_>>();
 
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_arrow_exporter_create,
             context.raw(),
             logical_type_handles.as_ptr(),
@@ -78,9 +79,8 @@ impl<'ctx> ArrowExporter<'ctx> {
             logical_type_handles.len() as u64,
             batch_size.unwrap_or(0) as u64,
             RET
-        )?;
-
-        Ok(ArrowExporter {
+        )
+        .map(|handle| ArrowExporter {
             handle,
             _context: std::marker::PhantomData,
         })
@@ -115,17 +115,12 @@ impl<'ctx> ArrowExporter<'ctx> {
     }
 }
 
-impl Drop for ArrowExporter<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_arrow_exporter_destroy, &mut self.handle).unwrap();
-    }
-}
-
 /// Converts Arrow arrays of a fixed schema into DuckDB chunks.
 ///
 /// The importer runs every conversion under the context it was created with,
 /// so it borrows that context and cannot outlive it.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_arrow_importer_destroy)]
 pub struct ArrowImporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_importer_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -138,14 +133,14 @@ impl<'ctx> ArrowImporter<'ctx> {
     /// imposes no chunk-size limit.
     pub fn new(context: &'ctx Context, mut schema: FFI_ArrowSchema, batch_size: Option<usize>) -> Result<Self> {
         // DuckDB only reads the schema while resolving it, so it is released on return.
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_arrow_importer_create,
             context.raw(),
             &mut schema,
             batch_size.unwrap_or(0) as u64,
             RET
-        )?;
-        Ok(ArrowImporter {
+        )
+        .map(|handle| ArrowImporter {
             handle,
             _context: std::marker::PhantomData,
         })
@@ -185,9 +180,7 @@ impl<'ctx> ArrowImporter<'ctx> {
 
     /// Return the owned DuckDB schema resolved from the Arrow schema.
     pub fn schema(&self) -> Result<Schema> {
-        Ok(Schema {
-            handle: check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET)?,
-        })
+        check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET).map(|handle| Schema { handle })
     }
 
     /// Take the next chunk, or return `None` when the current array is drained.
@@ -199,12 +192,6 @@ impl<'ctx> ArrowImporter<'ctx> {
         } else {
             Ok(Some(DataChunk::new(handle, false)?))
         }
-    }
-}
-
-impl Drop for ArrowImporter<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_arrow_importer_destroy, &mut self.handle).unwrap();
     }
 }
 

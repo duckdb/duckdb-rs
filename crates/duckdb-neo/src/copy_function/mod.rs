@@ -55,9 +55,7 @@ unsafe extern "C" fn bind_to_callback<T: CopyToFunctionCallbacks>(
                     data: bind_data,
                     logical_types,
                 })
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -89,9 +87,7 @@ unsafe extern "C" fn init_to_callback<T: CopyToFunctionCallbacks>(
                 ffi::duckdb_v2_copy_to_init_set_init_data,
                 info,
                 &mut into_opaque(init_data)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -126,9 +122,7 @@ unsafe extern "C" fn batch_to_callback<T: CopyToFunctionCallbacks>(
                 ffi::duckdb_v2_copy_to_batch_set_batch_data,
                 info,
                 &mut into_opaque(batch_data)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -306,9 +300,7 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
             ffi::duckdb_v2_copy_to_set_finalize_callback,
             handle.raw(),
             Some(finalize_to_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Register the `COPY TO` side through a connection or extension, consuming the builder.
@@ -413,9 +405,7 @@ impl CopyToBindInfo {
 
     /// Return the number of input columns.
     pub fn len(&self) -> Result<usize> {
-        let res = check_api_call!(ffi::duckdb_v2_copy_to_bind_get_column_count, self.handle, RET)?;
-
-        Ok(res as usize)
+        check_api_call!(ffi::duckdb_v2_copy_to_bind_get_column_count, self.handle, RET).map(|res| res as usize)
     }
 
     /// Return whether there are no input columns.
@@ -660,9 +650,7 @@ pub struct CopyFromBindInfo {
 impl CopyFromBindInfo {
     /// Return the number of columns the target table expects.
     pub fn column_count(&self) -> Result<usize> {
-        let res = check_api_call!(ffi::duckdb_v2_copy_from_bind_get_column_count, self.handle, RET)?;
-
-        Ok(res as usize)
+        check_api_call!(ffi::duckdb_v2_copy_from_bind_get_column_count, self.handle, RET).map(|res| res as usize)
     }
 
     /// Return a target column's borrowed name and owned logical type.
@@ -678,26 +666,25 @@ impl CopyFromBindInfo {
             &mut name
         )?;
 
-        let owned_type = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_copy_from_bind_get_column_type,
             self.handle,
             index as u64,
             RET
-        )?;
-
-        Ok((
-            DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
-            LogicalType { handle: owned_type },
-        ))
+        )
+        .map(|owned_type| {
+            (
+                DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
+                LogicalType { handle: owned_type },
+            )
+        })
     }
 
     /// Return the number of options the `COPY` statement passed to the function.
     ///
     /// Every option other than `FORMAT` is included.
     pub fn option_count(&self) -> Result<usize> {
-        let res = check_api_call!(ffi::duckdb_v2_copy_from_bind_get_option_count, self.handle, RET)?;
-
-        Ok(res as usize)
+        check_api_call!(ffi::duckdb_v2_copy_from_bind_get_option_count, self.handle, RET).map(|res| res as usize)
     }
 
     /// Return an option's borrowed name and owned value.
@@ -713,17 +700,18 @@ impl CopyFromBindInfo {
             &mut name
         )?;
 
-        let value = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_copy_from_bind_get_option_value,
             self.handle,
             index as u64,
             RET
-        )?;
-
-        Ok((
-            DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
-            Value { handle: value },
-        ))
+        )
+        .map(|value| {
+            (
+                DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
+                Value { handle: value },
+            )
+        })
     }
 }
 

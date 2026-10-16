@@ -103,9 +103,7 @@ impl<T> Drop for OpaqueHandle<T> {
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
 
-    let message: DuckDBStr<'_> = (&error.message).into();
-
-    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, message.as_raw_ptr())
+    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, &(&error.message).into())
         .expect("Failed to set error text");
 }
 

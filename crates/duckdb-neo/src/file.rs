@@ -2,12 +2,12 @@
 
 use std::marker::PhantomData;
 
-use duckdb_loadable_macros::{AsRaw, FromRaw};
+use duckdb_loadable_macros::{AsRaw, DropHandle, FromRaw};
 
 use crate::{
     Result,
     builder_helpers::{copy_render_box, handle_unwind},
-    check_api_call, check_api_call_no_err,
+    check_api_call,
     error::Error,
     ffi,
     ffi_str::DuckDBStr,
@@ -120,7 +120,8 @@ impl<'link> FileSystem<'link> {
 ///
 /// Access and creation flags are disabled by default and can be composed with
 /// the builder methods before calling [`FileBuilder::open`].
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_file_open_options_destroy)]
 pub struct FileBuilder<'link> {
     fs: &'link FileSystem<'link>,
     handle: ffi::duckdb_v2_file_open_options_handle,
@@ -130,9 +131,7 @@ pub struct FileBuilder<'link> {
 impl<'link> FileBuilder<'link> {
     /// Create a builder for `path` with no flags enabled.
     pub fn new(fs: &'link FileSystem<'link>, path: &str) -> Result<FileBuilder<'link>> {
-        let handle = check_api_call!(ffi::duckdb_v2_file_open_options_create, fs.handle, RET)?;
-
-        Ok(FileBuilder {
+        check_api_call!(ffi::duckdb_v2_file_open_options_create, fs.handle, RET).map(|handle| FileBuilder {
             fs,
             handle,
             path: path.to_string(),
@@ -231,13 +230,6 @@ impl<'link> FileBuilder<'link> {
     }
 }
 
-impl Drop for FileBuilder<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_file_open_options_destroy, &mut self.handle)
-            .expect("failed to destroy file options handle");
-    }
-}
-
 /// An open file owned by the caller.
 ///
 /// Reads and writes advance one shared byte position.
@@ -266,7 +258,8 @@ impl Drop for FileBuilder<'_> {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_file_destroy)]
 pub struct File {
     /// The owned DuckDB file handle.
     handle: ffi::duckdb_v2_file_handle,
@@ -293,8 +286,8 @@ impl File {
         path: &str,
         flags: ffi::duckdb_v2_file_open_options_handle,
     ) -> crate::Result<Self> {
-        Ok(File {
-            handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, &path.into(), flags, RET)?,
+        check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, &path.into(), flags, RET).map(|handle| File {
+            handle,
             _database: fs.database.clone(),
         })
     }
@@ -374,12 +367,6 @@ impl File {
             buffer.len() as u64,
             position as u64,
         )
-    }
-}
-
-impl Drop for File {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_file_destroy, &mut self.handle).expect("Failed to destroy file handle");
     }
 }
 

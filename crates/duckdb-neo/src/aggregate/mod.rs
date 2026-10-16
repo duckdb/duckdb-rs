@@ -479,9 +479,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
             ffi::duckdb_v2_aggregate_function_set_destroy_callback,
             handle.raw(),
             Some(destroy_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Register through a connection or extension, consuming the builder.

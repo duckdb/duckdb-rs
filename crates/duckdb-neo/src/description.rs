@@ -4,7 +4,7 @@ use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;
 use crate::{
-    Result, check_api_call, check_api_call_no_err, connection::Connection, logical_type::LogicalType,
+    DropHandle, Result, check_api_call, connection::Connection, logical_type::LogicalType,
     qualified_name::QualifiedName, raw::RawExt,
 };
 
@@ -12,24 +12,17 @@ use crate::{
 ///
 /// Obtained from [`TableDescription::column`] or [`TableDescription::columns`]
 /// and independent of the table description's lifetime.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_column_description_destroy)]
 pub struct ColumnDescription {
     handle: ffi::duckdb_v2_column_description_handle,
-}
-
-impl Drop for ColumnDescription {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_column_description_destroy, &mut self.handle)
-            .expect("Failed to destroy column description handle");
-    }
 }
 
 impl ColumnDescription {
     /// Return the column's name with its declared casing.
     pub fn name(&self) -> Result<&str> {
-        let name = check_api_call!(ffi::duckdb_v2_column_description_get_name, self.handle, RET)?;
-
-        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default())
+        check_api_call!(ffi::duckdb_v2_column_description_get_name, self.handle, RET)
+            .map(|name| DuckDBStr::from_raw(name).as_str().unwrap_or_default())
     }
 
     /// Return an owned copy of the column's logical type.
@@ -79,7 +72,8 @@ impl ColumnDescription {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_table_description_destroy)]
 pub struct TableDescription {
     handle: ffi::duckdb_v2_table_description_handle,
 }
@@ -87,40 +81,37 @@ pub struct TableDescription {
 impl TableDescription {
     /// Resolve a base table through the connection's catalog and search path.
     pub fn new(connection: &Connection, name: &QualifiedName) -> Result<Self> {
-        Ok(TableDescription {
-            handle: check_api_call!(
-                ffi::duckdb_v2_connection_describe_table,
-                connection.raw(),
-                name.handle,
-                RET
-            )?,
-        })
+        check_api_call!(
+            ffi::duckdb_v2_connection_describe_table,
+            connection.raw(),
+            name.handle,
+            RET
+        )
+        .map(|handle| TableDescription { handle })
     }
 
     /// Return the table's fully resolved qualified name.
     pub fn qname(&self) -> Result<QualifiedName> {
-        let handle = check_api_call!(ffi::duckdb_v2_table_description_get_qname, self.handle, RET)?;
-
-        Ok(QualifiedName { handle })
+        check_api_call!(ffi::duckdb_v2_table_description_get_qname, self.handle, RET)
+            .map(|handle| QualifiedName { handle })
     }
 
     /// Return the number of columns, including generated columns.
     pub fn column_count(&self) -> Result<usize> {
-        Ok(check_api_call!(ffi::duckdb_v2_table_description_get_column_count, self.handle, RET)? as usize)
+        check_api_call!(ffi::duckdb_v2_table_description_get_column_count, self.handle, RET).map(|count| count as usize)
     }
 
     /// Return an owned description of the column at the zero-based index.
     ///
     /// Columns follow declaration order, including generated columns.
     pub fn column(&self, index: usize) -> Result<ColumnDescription> {
-        Ok(ColumnDescription {
-            handle: check_api_call!(
-                ffi::duckdb_v2_table_description_get_column,
-                self.handle,
-                index as u64,
-                RET
-            )?,
-        })
+        check_api_call!(
+            ffi::duckdb_v2_table_description_get_column,
+            self.handle,
+            index as u64,
+            RET
+        )
+        .map(|handle| ColumnDescription { handle })
     }
 
     /// Return owned descriptions of all columns in declaration order, including generated columns.
@@ -138,12 +129,6 @@ impl TableDescription {
     /// Return whether the table belongs to a read-only catalog.
     pub fn readonly(&self) -> Result<bool> {
         check_api_call!(ffi::duckdb_v2_table_description_is_readonly, self.handle, RET)
-    }
-}
-
-impl Drop for TableDescription {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_table_description_destroy, &mut self.handle).unwrap();
     }
 }
 

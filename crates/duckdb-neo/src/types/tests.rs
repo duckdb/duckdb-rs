@@ -34,7 +34,7 @@ fn test_i32_to_value() -> crate::Result<()> {
     let value = 42_i32.value(&conn)?;
 
     assert_eq!(
-        value.fetch_logical_type()?.type_id(),
+        value.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
     assert_eq!(value.dbg_string()?, "42");
@@ -52,7 +52,7 @@ fn test_primitive_logical_types() -> crate::Result<()> {
         ($type:ty, $value:expr, $type_id:ident) => {
             assert_eq!(<$type>::logical_type(&conn)?.type_id(), LogicalTypeID::$type_id);
             assert_eq!(
-                ($value as $type).value(&conn)?.fetch_logical_type()?.type_id(),
+                ($value as $type).value(&conn)?.logical_type()?.type_id(),
                 LogicalTypeID::$type_id
             );
         };
@@ -84,7 +84,7 @@ fn test_remaining_value_creators() -> crate::Result<()> {
     macro_rules! assert_type {
         ($value:expr, $type_id:ident) => {
             assert_eq!(
-                $value.value(&conn)?.fetch_logical_type()?.type_id(),
+                $value.value(&conn)?.logical_type()?.type_id(),
                 LogicalTypeID::$type_id
             );
         };
@@ -114,7 +114,7 @@ fn test_remaining_value_creators() -> crate::Result<()> {
 
     let tuple = (42_i32, "duck").value(&conn)?;
     assert_eq!(
-        tuple.fetch_logical_type()?.type_id(),
+        tuple.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
     );
     assert_eq!(tuple.dbg_string()?, "(42, duck)");
@@ -135,7 +135,7 @@ fn test_binary_value_creators() -> crate::Result<()> {
 
     let empty_blob = BlobValue(Vec::<u8>::new()).value(&conn)?;
     assert_eq!(
-        empty_blob.fetch_logical_type()?.type_id(),
+        empty_blob.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB
     );
 
@@ -206,7 +206,7 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     drop(logical_type);
     assert!(null.is_null()?);
     assert_eq!(
-        null.fetch_logical_type()?.type_id(),
+        null.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -317,7 +317,7 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     let null = i32::null_value(&conn)?;
     assert_eq!(null.get::<i32>()?, None);
     assert_eq!(
-        null.fetch_logical_type()?.type_id(),
+        null.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -346,7 +346,7 @@ fn test_list_to_value() -> crate::Result<()> {
 
     assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST);
     assert_eq!(
-        logical_type.get_param(0)?.1.logical_type()?.type_id(),
+        logical_type.get_param(0)?.1.type_value_get_inner()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
@@ -455,14 +455,14 @@ fn test_complex_values() -> crate::Result<()> {
 
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(
-        union.fetch_logical_type()?.type_id(),
+        union.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
     );
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;
     assert_eq!(
-        variant.fetch_logical_type()?.type_id(),
+        variant.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT
     );
 

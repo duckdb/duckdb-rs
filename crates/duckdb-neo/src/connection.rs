@@ -18,11 +18,11 @@ use std::{
 };
 
 use crate::{
-    AsRaw, FromRaw, Parameters, Result,
+    AsRaw, DropHandle, FromRaw, Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
     connection_options::Config,
     database::{DatabaseHandle, Instance},
-    error::{Error, check_api_call, check_api_call_no_err},
+    error::{Error, check_api_call},
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
     query_result::{ArrowQueryResult, QueryResult},
@@ -102,15 +102,10 @@ impl InterruptHandle {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_connection_destroy)]
 pub(crate) struct InnerConnection {
     pub handle: ffi::duckdb_v2_connection_handle,
-}
-
-impl Drop for InnerConnection {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_connection_destroy, &mut self.handle).unwrap();
-    }
 }
 
 // SAFETY: `Connection` is `!Sync`, so the only concurrent calls on this handle come from
@@ -160,14 +155,13 @@ pub struct Connection {
 
 impl Connection {
     pub(crate) fn new(db: &Instance) -> Result<Self> {
-        let handle: ffi::duckdb_v2_connection_handle =
-            check_api_call!(ffi::duckdb_v2_connection_create, db.handle.lock().unwrap().handle, RET)?;
-
-        Ok(Connection {
-            inner: Arc::new(InnerConnection { handle }),
-            _db: db.handle.clone(),
-            _not_sync: PhantomData,
-            factory: OnceCell::new(),
+        check_api_call!(ffi::duckdb_v2_connection_create, db.handle.lock().unwrap().handle, RET).map(|handle| {
+            Connection {
+                inner: Arc::new(InnerConnection { handle }),
+                _db: db.handle.clone(),
+                _not_sync: PhantomData,
+                factory: OnceCell::new(),
+            }
         })
     }
 

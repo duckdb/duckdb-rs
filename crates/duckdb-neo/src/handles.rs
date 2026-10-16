@@ -35,7 +35,7 @@ macro_rules! define_handle {
         $(
             impl $link for $type {
                 fn $create(&self) -> $crate::Result<$name> {
-                    Ok($name($crate::check_api_call!($factory, $crate::raw::RawExt::raw(self.factory()?), RET)?))
+                    $crate::check_api_call!($factory, $crate::raw::RawExt::raw(self.factory()?), RET).map($name)
                 }
 
                 fn $register(&self, handle: $name) -> $crate::Result<()> {
@@ -49,15 +49,9 @@ macro_rules! define_handle {
         handle: $handle:ty,
         destroy: $destroy:expr $(,)?
     ) => {
-        #[derive(Debug, $crate::AsRaw)]
+        #[derive(Debug, $crate::AsRaw, $crate::DropHandle)]
+        #[drop_handle($destroy)]
         pub(crate) struct $name($handle);
-
-        impl ::std::ops::Drop for $name {
-            fn drop(&mut self) {
-                $crate::check_api_call_no_err!($destroy, &mut self.0)
-                    .expect(concat!("Failed to destroy ", stringify!($name)));
-            }
-        }
     };
 }
 
@@ -84,11 +78,7 @@ macro_rules! define_handle_column_data_collection {
 
         impl $link for ColumnDataCollection<'_> {
             fn $create(&self) -> $crate::Result<$name> {
-                Ok($name($crate::check_api_call!(
-                    $factory,
-                    $crate::raw::RawExt::raw(self),
-                    RET
-                )?))
+                $crate::check_api_call!($factory, $crate::raw::RawExt::raw(self), RET).map($name)
             }
         }
     };

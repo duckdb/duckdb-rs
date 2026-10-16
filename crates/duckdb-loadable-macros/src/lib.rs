@@ -152,3 +152,13 @@ pub fn derive_as_raw(input: TokenStream) -> TokenStream {
 pub fn derive_from_raw(input: TokenStream) -> TokenStream {
     neo::derive_from_raw(parse_macro_input!(input as syn::DeriveInput))
 }
+
+/// Derive `Drop` for a struct that owns a raw DuckDB handle.
+///
+/// The handle field is picked like `AsRaw`'s. Name the destroy call with
+/// `#[drop_handle(ffi::duckdb_v2_..._destroy)]`; it receives `&mut` to the handle.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(DropHandle, attributes(raw, drop_handle))]
+pub fn derive_drop_handle(input: TokenStream) -> TokenStream {
+    neo::derive_drop_handle(parse_macro_input!(input as syn::DeriveInput))
+}

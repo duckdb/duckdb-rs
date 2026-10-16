@@ -41,8 +41,8 @@ impl ToValue for UuidValueRaw {
 
 impl FromValue for UuidValueRaw {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_uuid, value.raw(), RET)?;
-        Ok(Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
+        check_api_call!(ffi::duckdb_v2_value_get_uuid, value.raw(), RET)
+            .map(|raw| Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
     }
 }
 

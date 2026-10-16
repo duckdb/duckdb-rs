@@ -2027,9 +2027,9 @@ fn test_collection_append() -> crate::Result<()> {
 }
 
 scalar_callback!(CopyOver, i64, |input, result, ctx, ud| {
-    let mut vec = input.get_vector_at_mut::<String>(0)?;
+    let vec = input.get_vector_at_mut::<String>(0)?;
 
-    let result = result.cast_rows(&vec, ctx, CastMode::Try)?;
+    let _ = result.cast_rows(&vec, ctx, CastMode::Try)?;
 
     Ok(())
 });

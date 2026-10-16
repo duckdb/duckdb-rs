@@ -98,7 +98,7 @@ pub trait FromValue: Sized {
 
 impl FromValue for LogicalType {
     fn _get_inner(value: &Value) -> Result<Self> {
-        value.logical_type()
+        value.type_value_get_inner()
     }
 }
 

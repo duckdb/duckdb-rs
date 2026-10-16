@@ -385,15 +385,14 @@ impl FromValue for DecimalValue {
         let mut width: u8 = 0;
         let mut scale: u8 = 0;
 
-        let raw = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_value_get_decimal,
             value.raw(),
             RET,
             &mut width,
             &mut scale
-        )?;
-
-        Ok(Self {
+        )
+        .map(|raw| Self {
             value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
             width,
             scale,

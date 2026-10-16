@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{
-    AsRaw, Factory, FromRaw, Result, check_api_call, check_api_call_no_err,
+    AsRaw, DropHandle, Factory, FromRaw, Result, check_api_call,
     connection::{Connection, HasFactory},
     connection_options::Config,
     environment::{Environment, EnvironmentHandle, StorageLocation},
@@ -12,19 +12,14 @@ use crate::{
 };
 
 /// A shared handle to an open DuckDB database.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_instance_destroy)]
 pub struct DatabaseHandle {
     /// The DuckDB database handle.
     pub(crate) handle: ffi::duckdb_v2_instance_handle,
 
     /// The environment kept alive by this database.
     pub(crate) _env: Arc<Mutex<EnvironmentHandle>>,
-}
-
-impl Drop for DatabaseHandle {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_instance_destroy, &mut self.handle).unwrap();
-    }
 }
 
 // SAFETY: exposes only the raw handle, which is always used behind `Arc<Mutex<_>>`; the
@@ -36,7 +31,8 @@ unsafe impl Sync for DatabaseHandle {}
 ///
 /// Each `set_option` call adds one `(KEY value)` entry, mirroring the options of
 /// SQL `ATTACH`. Nothing is validated until the attach itself.
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_attach_options_destroy)]
 pub struct AttachOptionsBuilder {
     /// The owned attach-options handle.
     pub(crate) handle: ffi::duckdb_v2_attach_options_handle,
@@ -54,13 +50,6 @@ impl AttachOptionsBuilder {
             &key.into(),
             &value.into()
         )
-    }
-}
-
-impl Drop for AttachOptionsBuilder {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_attach_options_destroy, &mut self.handle)
-            .expect("Failed to destroy AttachOptionsBuilder");
     }
 }
 
@@ -117,13 +106,14 @@ impl HasFactory for Instance {
 impl Instance {
     /// Create an empty instance under `environment`, with no database attached yet.
     pub fn new(environment: &Environment) -> Result<Self> {
-        Ok(Instance {
+        check_api_call!(
+            ffi::duckdb_v2_instance_create,
+            environment.handle.lock().unwrap().handle,
+            RET
+        )
+        .map(|handle| Instance {
             handle: Arc::new(Mutex::new(DatabaseHandle {
-                handle: check_api_call!(
-                    ffi::duckdb_v2_instance_create,
-                    environment.handle.lock().unwrap().handle,
-                    RET
-                )?,
+                handle,
                 _env: environment.handle.clone(),
             })),
             factory: OnceLock::new(),
@@ -136,16 +126,17 @@ impl Instance {
         let names: Vec<ffi::duckdb_v2_str> = options.iter().map(|v| (&v.0).into()).collect::<Vec<_>>();
         let values: Vec<ffi::duckdb_v2_str> = options.iter().map(|v| (&v.1).into()).collect::<Vec<_>>();
 
-        Ok(Instance {
+        check_api_call!(
+            ffi::duckdb_v2_instance_create_with_options,
+            environment.handle.lock().unwrap().handle,
+            names.as_ptr(),
+            values.as_ptr(),
+            options.len() as u64,
+            RET
+        )
+        .map(|handle| Instance {
             handle: Arc::new(Mutex::new(DatabaseHandle {
-                handle: check_api_call!(
-                    ffi::duckdb_v2_instance_create_with_options,
-                    environment.handle.lock().unwrap().handle,
-                    names.as_ptr(),
-                    values.as_ptr(),
-                    options.len() as u64,
-                    RET
-                )?,
+                handle,
                 _env: environment.handle.clone(),
             })),
             factory: OnceLock::new(),
@@ -154,13 +145,12 @@ impl Instance {
 
     /// Return a new [`AttachOptionsBuilder`] for configuring an attach from this instance.
     pub fn get_attach_options_builder(&self) -> Result<AttachOptionsBuilder> {
-        Ok(AttachOptionsBuilder {
-            handle: check_api_call!(
-                ffi::duckdb_v2_attach_options_create,
-                self.handle.lock().unwrap().handle,
-                RET
-            )?,
-        })
+        check_api_call!(
+            ffi::duckdb_v2_attach_options_create,
+            self.handle.lock().unwrap().handle,
+            RET
+        )
+        .map(|handle| AttachOptionsBuilder { handle })
     }
 
     /// Attach the database at `location` under its derived name.
@@ -195,8 +185,7 @@ impl Instance {
             &(&location).into(),
             options,
             default
-        )?;
-        Ok(())
+        )
     }
 
     /// Make the database attached from `location` the default for new connections.

@@ -9,7 +9,7 @@ use crate::connection::HasFactory;
 use crate::ffi;
 
 use crate::{
-    AsRaw, Factory, Result, check_api_call, check_api_call_no_err,
+    AsRaw, DropHandle, Factory, Result, check_api_call,
     data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
@@ -173,7 +173,8 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, AsRaw)]
+#[derive(Debug, AsRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_column_data_collection_destroy)]
 pub struct ColumnDataCollection<'conn> {
     pub(crate) handle: ffi::duckdb_v2_column_data_collection_handle,
     pub(crate) logical_types: Vec<LogicalType>,
@@ -201,15 +202,14 @@ impl<'conn> ColumnDataCollection<'conn> {
 
         let types = logical_types.iter().map(|lt| lt.handle).collect::<Vec<_>>();
 
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_column_data_collection_create,
             factory.raw(),
             types.as_ptr(),
             types.len() as u64,
             RET
-        )?;
-
-        Ok(ColumnDataCollection {
+        )
+        .map(|handle| ColumnDataCollection {
             handle,
             logical_types,
             column_names: names,
@@ -225,9 +225,7 @@ impl<'conn> ColumnDataCollection<'conn> {
 
     /// Return the total number of rows across all stored chunks.
     pub fn len(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_column_data_collection_row_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_column_data_collection_row_count, self.handle, RET).map(|count| count as usize)
     }
 
     /// Consume the collection and initialize it for appending.
@@ -238,12 +236,6 @@ impl<'conn> ColumnDataCollection<'conn> {
     /// Consume the collection and initialize an iterator over its chunks.
     pub fn to_scan(self) -> Result<ColumnDataCollectionScan<'conn>> {
         ColumnDataCollectionScan::new(self)
-    }
-}
-
-impl Drop for ColumnDataCollection<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_column_data_collection_destroy, &mut self.handle).unwrap();
     }
 }
 

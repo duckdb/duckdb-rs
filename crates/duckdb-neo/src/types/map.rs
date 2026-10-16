@@ -57,7 +57,7 @@ impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V
 
 impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let logical_type = value.fetch_logical_type()?;
+        let logical_type = value.logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
             return Err(Error::invalid_input(format!(
                 "Expected MAP value, found {}",
