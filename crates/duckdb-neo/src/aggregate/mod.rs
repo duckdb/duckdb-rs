@@ -178,14 +178,17 @@ unsafe extern "C" fn size_callback<T: AggregateCallbacks>(
                 )));
             }
 
-            // DuckDB aligns each state to 8 bytes, so `init` and `States` would
-            // access a more strictly aligned `StateItem` through a misaligned pointer.
+            // States are 8-byte aligned, so `init` and `States` would access a more
+            // strictly aligned `StateItem` through a misaligned pointer.
             let align = align_of::<T::StateItem>();
             if align > 8 {
                 return Err(Error::api_error(format!(
                     "align_of::<StateItem>() ({align}) exceeds the 8-byte alignment of aggregate states"
                 )));
             }
+
+            // Window operators place states `size` bytes apart, so it must keep them aligned.
+            let size = size.next_multiple_of(8);
 
             check_api_call!(ffi::duckdb_v2_aggregate_function_size_set_state_size, info, size as u64)
         },
@@ -515,7 +518,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     /// **Size:** return the allocation size of one aggregate state.
     ///
     /// May be larger than `size_of::<StateItem>()` but never smaller; a smaller
-    /// size fails the query.
+    /// size fails the query. It is rounded up to a multiple of 8.
     fn size(&self, _bind_data: Option<&Self::BindData>) -> Result<usize> {
         Ok(size_of::<Self::StateItem>())
     }

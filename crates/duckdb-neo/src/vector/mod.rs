@@ -230,7 +230,11 @@ impl<T: VectorElement> VectorView<T> {
         if self.view.sel.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.sel, self.view.count as usize) })
+            if self.kind == StorageKind::Constant {
+                Some(unsafe { std::slice::from_raw_parts(self.view.sel, (self.view.count as usize).max(2048)) })
+            } else {
+                Some(unsafe { std::slice::from_raw_parts(self.view.sel, self.view.count as usize) })
+            }
         }
     }
 

@@ -28,7 +28,7 @@ unsafe extern "C" fn update_callback<T: CustomOptionCallbacks>(
 
             let result = T::update(
                 user_data,
-                unsafe { Context::from_raw(context) },
+                &unsafe { Context::from_raw(context) },
                 value,
                 scope.try_into()?,
                 is_reset,
@@ -160,7 +160,7 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
 }
 
 pub trait CustomOptionCallbacks: Send + Sync + 'static {
-    fn update(&self, context: Context, value: Value, scope: SettingScope, is_reset: bool) -> Result<Value>;
+    fn update(&self, context: &Context, value: Value, scope: SettingScope, is_reset: bool) -> Result<Value>;
 }
 
 #[cfg(test)]

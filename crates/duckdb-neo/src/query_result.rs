@@ -9,7 +9,7 @@ use crate::builder_helpers::copy_render_box;
 use crate::error::Error;
 use crate::{
     DropHandle, Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call,
-    connection::Connection, data_chunk::DataChunk, ffi, schema::Schema,
+    connection::Connection, data_chunk::DataChunk, ffi, schema::Schema, statement::BoundCollections,
 };
 
 /*
@@ -86,12 +86,19 @@ trait ResultItem: Sized {
     /// The C API out-parameter.
     type Raw;
 
+    /// The out-parameter's value before the call, which the C API may leave unwritten.
+    fn empty_raw() -> Self::Raw;
+
     /// Take ownership, or return `None` for the C API's "no output" marker.
     fn from_raw(raw: Self::Raw) -> Result<Option<Self>>;
 }
 
 impl ResultItem for DataChunk<'static> {
     type Raw = ffi::duckdb_v2_data_chunk_handle;
+
+    fn empty_raw() -> Self::Raw {
+        std::ptr::null_mut()
+    }
 
     fn from_raw(raw: Self::Raw) -> Result<Option<Self>> {
         if raw.is_null() {
@@ -104,6 +111,10 @@ impl ResultItem for DataChunk<'static> {
 
 impl ResultItem for FFI_ArrowArray {
     type Raw = FFI_ArrowArray;
+
+    fn empty_raw() -> Self::Raw {
+        FFI_ArrowArray::empty()
+    }
 
     fn from_raw(raw: Self::Raw) -> Result<Option<Self>> {
         Ok((!raw.is_released()).then_some(raw))
@@ -155,13 +166,16 @@ macro_rules! query_result {
             #[drop_handle(ffi::[<$prefix _destroy>])]
             pub struct $name<'a> {
                 pub(crate) handle: ffi::[<$prefix _handle>],
+                // DuckDB reads these while the result executes.
+                _collections: BoundCollections<'a>,
                 phantom: PhantomData<&'a mut Connection>,
             }
 
             impl<'a> $name<'a> {
-                pub(crate) fn new(handle: ffi::[<$prefix _handle>]) -> Self {
+                pub(crate) fn new(handle: ffi::[<$prefix _handle>], collections: BoundCollections<'a>) -> Self {
                     Self {
                         handle,
+                        _collections: collections,
                         phantom: PhantomData,
                     }
                 }
@@ -170,8 +184,8 @@ macro_rules! query_result {
                 pub fn step(&mut self) -> Result<$step> {
                     let mut status = ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_WAITING;
 
-                    let raw: <$item as ResultItem>::Raw =
-                        check_api_call!(ffi::[<$prefix _step>], self.handle, RET, &mut status)?;
+                    let mut raw = <$item as ResultItem>::empty_raw();
+                    check_api_call!(ffi::[<$prefix _step>], self.handle, &mut raw, &mut status)?;
 
                     Ok(match status {
                         ffi::DUCKDB_V2_RESULT_STEP_STATUS::DUCKDB_V2_RESULT_STEP_STATUS_WAITING => $step::Waiting,
@@ -192,7 +206,8 @@ macro_rules! query_result {
 
                 #[doc = concat!("Block until the next owned ", $noun, " or the end of the stream.")]
                 pub fn $next(&mut self) -> Result<Option<$item>> {
-                    let raw: <$item as ResultItem>::Raw = check_api_call!(ffi::[<$prefix _ $fetch>], self.handle, RET)?;
+                    let mut raw = <$item as ResultItem>::empty_raw();
+                    check_api_call!(ffi::[<$prefix _ $fetch>], self.handle, &mut raw)?;
 
                     <$item as ResultItem>::from_raw(raw)
                 }
@@ -364,7 +379,8 @@ impl<'a> ArrowQueryResult<'a> {
     /// ```
     pub fn to_arrow_stream(mut self) -> Result<ArrowStream<'a>> {
         // On success the stream owns the result and the handle is nulled, so `Drop` is a no-op.
-        check_api_call!(ffi::duckdb_v2_arrow_result_to_arrow_c_stream, &mut self.handle, RET).map(ArrowStream::new)
+        check_api_call!(ffi::duckdb_v2_arrow_result_to_arrow_c_stream, &mut self.handle, RET)
+            .map(|stream| ArrowStream::new(stream, std::mem::take(&mut self._collections)))
     }
 }
 
@@ -523,8 +539,9 @@ mod tests {
         let result = conn.arrow_query("SELECT * FROM range(3)", Parameters::None, Some(1024))?;
         let arrow_stream = result.to_arrow_stream()?;
 
-        // Dropped below, before the connection is used again.
-        let mut reader = ArrowArrayStreamReader::try_new(arrow_stream.into_raw()).expect("valid Arrow stream");
+        // SAFETY: the reader is dropped below, before the connection is used again.
+        let (stream, _collections) = unsafe { arrow_stream.into_raw() };
+        let mut reader = ArrowArrayStreamReader::try_new(stream).expect("valid Arrow stream");
         let batch = reader.next().expect("one batch").expect("no stream error");
         assert_eq!(batch.num_rows(), 3);
 

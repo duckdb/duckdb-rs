@@ -47,19 +47,19 @@ ffi_enum_redeclaration! {
 ///
 /// Implemented for SQL text, [`Statements`], and [`Statement`]. SQL text and
 /// statement collections must contain exactly one statement.
-pub trait IntoStatement {
+pub trait IntoStatement<'a> {
     /// Convert into a single statement, parsing with `conn` if needed.
-    fn into_statement(self, conn: &Connection) -> Result<Statement>;
+    fn into_statement(self, conn: &Connection) -> Result<Statement<'a>>;
 }
 
-impl IntoStatement for &str {
-    fn into_statement(self, conn: &Connection) -> Result<Statement> {
+impl<'a> IntoStatement<'a> for &str {
+    fn into_statement(self, conn: &Connection) -> Result<Statement<'a>> {
         Statements::parse(conn, self)?.into_statement(conn)
     }
 }
 
-impl IntoStatement for Statements {
-    fn into_statement(mut self, _conn: &Connection) -> Result<Statement> {
+impl<'a> IntoStatement<'a> for Statements {
+    fn into_statement(mut self, _conn: &Connection) -> Result<Statement<'a>> {
         let statement = self
             .next()
             .ok_or(Error::api_error("No statements found in SQL string"))??;
@@ -72,8 +72,8 @@ impl IntoStatement for Statements {
     }
 }
 
-impl IntoStatement for Statement {
-    fn into_statement(self, _conn: &Connection) -> Result<Statement> {
+impl<'a, 'b: 'a> IntoStatement<'a> for Statement<'b> {
+    fn into_statement(self, _conn: &Connection) -> Result<Statement<'a>> {
         Ok(self)
     }
 }
@@ -113,11 +113,31 @@ pub(crate) struct InnerConnection {
 unsafe impl Send for InnerConnection {}
 unsafe impl Sync for InnerConnection {}
 
+/// The scope values, types, data chunks and column data collections are created in.
+///
+/// A connection's or context's factory is thread-bound, since it reads that client's settings:
+///
+/// ```compile_fail,E0277
+/// fn assert_sync<T: Sync>() {}
+/// assert_sync::<duckdb_neo::connection::Factory>();
+/// ```
 #[derive(Debug, AsRaw, FromRaw)]
-pub struct Factory(pub(crate) ffi::duckdb_v2_factory_handle);
+pub struct Factory {
+    pub(crate) handle: ffi::duckdb_v2_factory_handle,
+    // Not `Sync`: casts read the client's settings while `SET` writes them, neither under a lock.
+    _not_sync: PhantomData<Cell<()>>,
+}
 
 unsafe impl Send for Factory {}
-unsafe impl Sync for Factory {}
+
+impl Factory {
+    pub(crate) fn new(handle: ffi::duckdb_v2_factory_handle) -> Self {
+        Factory {
+            handle,
+            _not_sync: PhantomData,
+        }
+    }
+}
 
 pub trait HasFactory {
     fn factory(&self) -> Result<&Factory>;
@@ -170,15 +190,15 @@ impl Connection {
         Statements::parse(self, query)
     }
 
-    pub fn config(&self) -> Result<Config> {
-        check_api_call!(ffi::duckdb_v2_connection_get_config, self.raw(), RET).map(|handle| Config { handle })
+    pub fn config(&self) -> Result<Config<'_>> {
+        check_api_call!(ffi::duckdb_v2_connection_get_config, self.raw(), RET).map(Config::new)
     }
 
     /// Execute a single statement to completion and return its changed-row count.
     ///
     /// Row-producing output is discarded. Results that do not report changed
     /// rows return zero.
-    pub fn execute(&self, stmt: impl IntoStatement, params: Parameters<'_>) -> Result<usize> {
+    pub fn execute<'a>(&'a self, stmt: impl IntoStatement<'a>, params: Parameters<'_>) -> Result<usize> {
         let mut query_result = self.query(stmt, params)?;
         query_result.drain()
     }
@@ -187,7 +207,7 @@ impl Connection {
     ///
     /// Execution advances as the result is stepped or iterated. The connection
     /// cannot start another statement while that result remains live.
-    pub fn query(&self, stmt: impl IntoStatement, params: Parameters<'_>) -> Result<QueryResult<'_>> {
+    pub fn query<'a>(&'a self, stmt: impl IntoStatement<'a>, params: Parameters<'_>) -> Result<QueryResult<'a>> {
         stmt.into_statement(self)?.query(self, params)
     }
 
@@ -196,12 +216,12 @@ impl Connection {
     /// Arrays hold at most `batch_size` rows; `None` or `Some(0)` selects
     /// DuckDB's default of 131,072. The connection cannot start another
     /// statement while that result remains live.
-    pub fn arrow_query(
-        &self,
-        stmt: impl IntoStatement,
+    pub fn arrow_query<'a>(
+        &'a self,
+        stmt: impl IntoStatement<'a>,
         params: Parameters<'_>,
         batch_size: Option<usize>,
-    ) -> Result<ArrowQueryResult<'_>> {
+    ) -> Result<ArrowQueryResult<'a>> {
         stmt.into_statement(self)?.arrow_query(self, params, batch_size)
     }
 
@@ -224,7 +244,7 @@ impl HasFactory for Connection {
             return Ok(factory);
         }
 
-        let factory = Factory(check_api_call!(ffi::duckdb_v2_connection_get_factory, self.raw(), RET)?);
+        let factory = Factory::new(check_api_call!(ffi::duckdb_v2_connection_get_factory, self.raw(), RET)?);
         Ok(self.factory.get_or_init(|| factory))
     }
 }
@@ -298,8 +318,8 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn config(&self) -> Result<Config> {
-        check_api_call!(ffi::duckdb_v2_context_get_config, self.raw(), RET).map(|handle| Config { handle })
+    pub fn config(&self) -> Result<Config<'_>> {
+        check_api_call!(ffi::duckdb_v2_context_get_config, self.raw(), RET).map(Config::new)
     }
 }
 
@@ -309,7 +329,7 @@ impl HasFactory for Context {
             return Ok(factory);
         }
 
-        let factory = Factory(check_api_call!(ffi::duckdb_v2_context_get_factory, self.raw(), RET)?);
+        let factory = Factory::new(check_api_call!(ffi::duckdb_v2_context_get_factory, self.raw(), RET)?);
         Ok(self.factory.get_or_init(|| factory))
     }
 }

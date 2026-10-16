@@ -36,7 +36,7 @@ impl LogSinkCallbacks for GlobalSink {
         Ok(())
     }
 
-    fn write(&self, data: LogWriteData, metadata: LogMetadata) -> Result<()> {
+    fn write(&self, data: LogWriteData, metadata: LogMetadata<'_>) -> Result<()> {
         // DuckDB logs records of its own too.
         if data.log_type.as_deref() != Some(LOG_TYPE) {
             return Ok(());

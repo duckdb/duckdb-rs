@@ -1,5 +1,7 @@
 //! Parsing, binding, and preparing SQL statements.
 
+use std::sync::Arc;
+
 use crate::column_data_collection::ColumnDataCollection;
 use crate::ffi_str::DuckDBStr;
 use crate::{
@@ -90,7 +92,7 @@ impl Statements {
 }
 
 impl Iterator for Statements {
-    type Item = Result<Statement>;
+    type Item = Result<Statement<'static>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let stmt_handle: ffi::duckdb_v2_sql_statement_handle =
@@ -102,10 +104,20 @@ impl Iterator for Statements {
         if stmt_handle.is_null() {
             None
         } else {
-            Some(Ok(Statement { handle: stmt_handle }))
+            Some(Ok(Statement {
+                handle: stmt_handle,
+                collections: BoundCollections::default(),
+            }))
         }
     }
 }
+
+/// The collections bound to a statement with [`Statement::add_collection`].
+///
+/// The statement, its prepared copies and every result executing it share them,
+/// since DuckDB reads them for as long as any of those is live.
+#[derive(Debug, Default, Clone)]
+pub struct BoundCollections<'a>(Vec<Arc<ColumnDataCollection<'a>>>);
 
 /// A single parsed SQL statement.
 ///
@@ -114,12 +126,13 @@ impl Iterator for Statements {
 /// [`Connection::query`].
 #[derive(Debug, AsRaw, FromRaw, DropHandle)]
 #[drop_handle(ffi::duckdb_v2_sql_statement_destroy)]
-pub struct Statement {
+pub struct Statement<'a> {
     /// The owned DuckDB statement handle.
     pub(crate) handle: ffi::duckdb_v2_sql_statement_handle,
+    collections: BoundCollections<'a>,
 }
 
-impl Statement {
+impl<'a> Statement<'a> {
     /// Bind the statement and return its result and parameter schemas.
     pub fn bind(&self, conn: &Connection) -> Result<SchemaBind> {
         let mut out_parameters = std::ptr::null_mut();
@@ -137,7 +150,11 @@ impl Statement {
         })
     }
 
-    pub fn add_collection(&self, collection: &mut ColumnDataCollection<'_>, name: &str) -> Result<()> {
+    /// Bind `collection` under `name`, so the statement can read it like a table.
+    ///
+    /// The statement takes ownership: the collection lives as long as the
+    /// statement, its prepared copies, or any result executing it.
+    pub fn add_collection(mut self, collection: ColumnDataCollection<'a>, name: &str) -> Result<Self> {
         let name: ffi::duckdb_v2_str = name.into();
         let column_name_ptrs: Option<Vec<ffi::duckdb_v2_str>> = collection
             .column_names
@@ -151,10 +168,13 @@ impl Statement {
             collection.raw(),
             column_name_ptrs.as_ref().map_or(std::ptr::null(), |x| x.as_ptr()),
             column_name_ptrs.as_ref().map_or(0, |x| x.len() as u64)
-        )
+        )?;
+
+        self.collections.0.push(Arc::new(collection));
+        Ok(self)
     }
 
-    fn prepare_params<'a>(conn: &Connection, params: Parameters<'a>) -> Result<ParameterBuffers<'a>> {
+    fn prepare_params<'p>(conn: &Connection, params: Parameters<'p>) -> Result<ParameterBuffers<'p>> {
         let (names, values) = params.into_values(conn)?;
         let handles = values.iter().map(|value| value.as_value().handle).collect();
         let names = names.map(|names| names.iter().map(|name| (*name).into()).collect());
@@ -170,7 +190,10 @@ impl Statement {
     ///
     /// Execution advances as the result is stepped or iterated. The connection
     /// cannot start another statement while that result remains live.
-    pub fn query<'conn>(&self, conn: &'conn Connection, params: Parameters<'_>) -> Result<QueryResult<'conn>> {
+    pub fn query<'conn>(&self, conn: &'conn Connection, params: Parameters<'_>) -> Result<QueryResult<'conn>>
+    where
+        'a: 'conn,
+    {
         let params = Self::prepare_params(conn, params)?;
 
         check_api_call!(
@@ -182,7 +205,7 @@ impl Statement {
             params.len(),
             RET
         )
-        .map(QueryResult::new)
+        .map(|handle| QueryResult::new(handle, self.collections.clone()))
     }
 
     /// Start the statement and return its lazy, streaming Arrow result.
@@ -195,7 +218,10 @@ impl Statement {
         conn: &'conn Connection,
         params: Parameters<'_>,
         batch_size: Option<usize>,
-    ) -> Result<ArrowQueryResult<'conn>> {
+    ) -> Result<ArrowQueryResult<'conn>>
+    where
+        'a: 'conn,
+    {
         let params = Self::prepare_params(conn, params)?;
 
         check_api_call!(
@@ -208,14 +234,17 @@ impl Statement {
             batch_size.unwrap_or_default() as u64,
             RET
         )
-        .map(ArrowQueryResult::new)
+        .map(|handle| ArrowQueryResult::new(handle, self.collections.clone()))
     }
 
     /// Prepare the statement for repeated execution.
     ///
     /// When `require_cacheable` is true, preparation fails unless the compiled
     /// plan can be reused.
-    pub fn prepare<'a>(&self, conn: &'a Connection, require_cacheable: bool) -> Result<PreparedStatement<'a>> {
+    pub fn prepare<'conn>(&self, conn: &'conn Connection, require_cacheable: bool) -> Result<PreparedStatement<'conn>>
+    where
+        'a: 'conn,
+    {
         check_api_call!(
             ffi::duckdb_v2_prepared_statement_create,
             conn.raw(),
@@ -226,6 +255,7 @@ impl Statement {
         .map(|prepared_handle| PreparedStatement {
             connection: conn,
             handle: prepared_handle,
+            collections: self.collections.clone(),
         })
     }
 
@@ -275,6 +305,7 @@ pub struct PreparedStatement<'a> {
     connection: &'a Connection,
     /// The owned DuckDB prepared-statement handle.
     pub(crate) handle: ffi::duckdb_v2_prepared_statement_handle,
+    collections: BoundCollections<'a>,
 }
 
 impl<'a> PreparedStatement<'a> {
@@ -295,7 +326,7 @@ impl<'a> PreparedStatement<'a> {
             param_values.len() as u64,
             RET
         )
-        .map(QueryResult::new)
+        .map(|handle| QueryResult::new(handle, self.collections.clone()))
     }
 
     /// Execute with optional positional or named parameters.
@@ -316,7 +347,7 @@ impl<'a> PreparedStatement<'a> {
             batch_size.unwrap_or_default() as u64,
             RET
         )
-        .map(ArrowQueryResult::new)
+        .map(|handle| ArrowQueryResult::new(handle, self.collections.clone()))
     }
 
     /// Return whether executions reuse the compiled plan.
@@ -430,12 +461,10 @@ mod tests {
 
         cdc.append(&mut chunk)?;
 
-        let mut cdc = cdc.to_normal();
+        let cdc = cdc.to_normal();
 
         let mut statements = Statements::parse(&conn, "SELECT title from cdc")?;
-        let statement = statements.next().unwrap()?;
-
-        statement.add_collection(&mut cdc, "cdc")?;
+        let statement = statements.next().unwrap()?.add_collection(cdc, "cdc")?;
 
         let mut query = statement.query(&conn, Parameters::None)?;
 
@@ -448,6 +477,39 @@ mod tests {
             assert_eq!(vec.get(1)?, None);
             assert_eq!(vec.get(2)?, Some("third"));
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collection_outlives_statement() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let mut cdc = ColumnDataCollection::new(&conn, [(i64::logical_type(&conn)?, "x")])?.to_append()?;
+        let mut chunk = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
+        let mut vec = chunk.get_vector_at_mut::<i64>(0)?;
+        vec.set_size(2)?;
+        vec.write(0, Some(1))?;
+        vec.write(1, Some(2))?;
+        cdc.append(&mut chunk)?;
+
+        let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc")?
+            .next()
+            .unwrap()?
+            .add_collection(cdc.to_normal(), "cdc")?;
+        // Both outlive the statement that owns the collection.
+        let prepared = statement.prepare(&conn, false)?;
+        let mut query = statement.query(&conn, Parameters::None)?;
+        drop(statement);
+
+        let chunk = query.next_chunk()?.expect("one chunk");
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?.copied(), Some(3));
+        drop(query);
+
+        let chunk = prepared.execute(Parameters::None)?.next_chunk()?.expect("one chunk");
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?.copied(), Some(3));
 
         Ok(())
     }

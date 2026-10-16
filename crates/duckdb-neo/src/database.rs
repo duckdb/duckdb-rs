@@ -81,8 +81,16 @@ impl AttachOptionsBuilder {
 #[derive(Debug)]
 pub struct Instance {
     pub(crate) handle: Arc<Mutex<DatabaseHandle>>,
-    pub(crate) factory: OnceLock<Factory>,
+    pub(crate) factory: OnceLock<InstanceFactory>,
 }
+
+/// The factory of an instance, which can be shared across threads.
+#[derive(Debug)]
+pub(crate) struct InstanceFactory(Factory);
+
+// SAFETY: an instance's factory has no client context: it knows only the built-in types and
+// casts, with default settings, so there is no client state to race on.
+unsafe impl Sync for InstanceFactory {}
 
 impl AsRaw for Instance {
     type Raw = ffi::duckdb_v2_instance_handle;
@@ -95,11 +103,11 @@ impl AsRaw for Instance {
 impl HasFactory for Instance {
     fn factory(&self) -> Result<&Factory> {
         if let Some(factory) = self.factory.get() {
-            return Ok(factory);
+            return Ok(&factory.0);
         }
 
-        let factory = Factory(check_api_call!(ffi::duckdb_v2_instance_get_factory, self.raw(), RET)?);
-        Ok(self.factory.get_or_init(|| factory))
+        let factory = Factory::new(check_api_call!(ffi::duckdb_v2_instance_get_factory, self.raw(), RET)?);
+        Ok(&self.factory.get_or_init(|| InstanceFactory(factory)).0)
     }
 }
 
@@ -213,13 +221,13 @@ impl Instance {
         Connection::new(self)
     }
 
-    pub fn config(&self) -> Result<Config> {
+    pub fn config(&self) -> Result<Config<'_>> {
         check_api_call!(
             ffi::duckdb_v2_instance_get_config,
             self.handle.lock().unwrap().handle,
             RET
         )
-        .map(|handle| Config { handle })
+        .map(Config::new)
     }
 }
 

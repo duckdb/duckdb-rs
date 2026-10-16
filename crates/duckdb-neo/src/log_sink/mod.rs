@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use duckdb_loadable_macros::AsRaw;
 
 use crate::builder_helpers::{OpaqueHandle, handle_unwind};
@@ -11,58 +13,51 @@ use crate::{
     handles::{LogSinkBuilderHandle, LogSinkBuilderLink},
 };
 
+/// The ids attached to one log record, valid only during [`LogSinkCallbacks::write`].
+///
+/// ```compile_fail
+/// # use duckdb_neo::log_sink::LogMetadata;
+/// fn keep(metadata: LogMetadata<'_>) -> LogMetadata<'static> {
+///     metadata
+/// }
+/// ```
 #[derive(Debug, AsRaw)]
-pub struct LogMetadata {
+pub struct LogMetadata<'a> {
     handle: ffi::duckdb_v2_log_sink_write_info_handle,
+    _callback: PhantomData<&'a ()>,
 }
 
-impl LogMetadata {
-    pub fn connection_id(&self) -> Result<Option<u64>> {
-        let mut is_present = false;
-        let value = check_api_call!(
-            ffi::duckdb_v2_log_sink_write_info_get_connection_id,
-            self.raw(),
-            RET,
-            &mut is_present
-        )?;
+type IdGetter = unsafe extern "C" fn(
+    ffi::duckdb_v2_log_sink_write_info_handle,
+    *mut ffi::idx_t,
+    *mut bool,
+    *mut ffi::duckdb_v2_error_info_handle,
+) -> ffi::DUCKDB_V2_ERROR;
 
-        if is_present { Ok(Some(value)) } else { Ok(None) }
+impl LogMetadata<'_> {
+    pub fn connection_id(&self) -> Result<Option<u64>> {
+        self.optional_id(ffi::duckdb_v2_log_sink_write_info_get_connection_id)
     }
 
     pub fn query_id(&self) -> Result<Option<u64>> {
-        let mut is_present = false;
-        let value = check_api_call!(
-            ffi::duckdb_v2_log_sink_write_info_get_query_id,
-            self.raw(),
-            RET,
-            &mut is_present
-        )?;
-
-        if is_present { Ok(Some(value)) } else { Ok(None) }
+        self.optional_id(ffi::duckdb_v2_log_sink_write_info_get_query_id)
     }
 
     pub fn thread_id(&self) -> Result<Option<u64>> {
-        let mut is_present = false;
-        let value = check_api_call!(
-            ffi::duckdb_v2_log_sink_write_info_get_thread_id,
-            self.raw(),
-            RET,
-            &mut is_present
-        )?;
-
-        if is_present { Ok(Some(value)) } else { Ok(None) }
+        self.optional_id(ffi::duckdb_v2_log_sink_write_info_get_thread_id)
     }
 
     pub fn transaction_id(&self) -> Result<Option<u64>> {
-        let mut is_present = false;
-        let value = check_api_call!(
-            ffi::duckdb_v2_log_sink_write_info_get_transaction_id,
-            self.raw(),
-            RET,
-            &mut is_present
-        )?;
+        self.optional_id(ffi::duckdb_v2_log_sink_write_info_get_transaction_id)
+    }
 
-        if is_present { Ok(Some(value)) } else { Ok(None) }
+    fn optional_id(&self, getter: IdGetter) -> Result<Option<u64>> {
+        // The getter leaves `id` unwritten when the record has none.
+        let mut id: ffi::idx_t = 0;
+        let mut is_present = false;
+        check_api_call!(getter, self.raw(), &mut id, &mut is_present)?;
+
+        Ok(is_present.then_some(id))
     }
 }
 
@@ -125,7 +120,10 @@ unsafe extern "C" fn write_callback<T: LogSinkCallbacks>(
                     log_type,
                     message,
                 },
-                LogMetadata { handle: info },
+                LogMetadata {
+                    handle: info,
+                    _callback: PhantomData,
+                },
             )
         },
         err,
@@ -179,7 +177,7 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
 pub trait LogSinkCallbacks: Send + Sync + 'static {
     fn flush(&self) -> Result<()>;
 
-    fn write(&self, data: LogWriteData, metadata: LogMetadata) -> Result<()>;
+    fn write(&self, data: LogWriteData, metadata: LogMetadata<'_>) -> Result<()>;
 }
 
 #[cfg(test)]

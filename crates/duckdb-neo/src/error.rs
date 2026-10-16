@@ -137,7 +137,8 @@ macro_rules! check_api_call_no_err {
 /// If the return code indicates an error, the macro will convert the error handle into a Rust `Error` type and return it as an `Err` variant of a `Result`.
 ///
 /// Passing the marker `RET` in place of an argument makes the macro allocate an out-parameter at
-/// that position and return its value in the `Ok` variant.
+/// that position and return its value in the `Ok` variant. Use it only when the callee writes the
+/// out-parameter on every successful return; otherwise pass an initialized local.
 ///
 /// # Usage
 /// ```ignore

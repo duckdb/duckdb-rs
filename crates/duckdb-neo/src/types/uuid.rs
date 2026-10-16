@@ -11,6 +11,7 @@
 use super::primitive::DeclareVectorElement;
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
+use crate::vector::VectorElement;
 use crate::{
     Parameters, Result, check_api_call,
     connection::FFILink,
@@ -46,7 +47,24 @@ impl FromValue for UuidValueRaw {
     }
 }
 
-DeclareVectorElement!(UuidValueRaw, DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
+impl VectorElement for UuidValueRaw {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
+
+    type Internal = ffi::duckdb_v2_hugeint_t;
+
+    type Ref<'a>
+        = &'a UuidValueRaw
+    where
+        Self: 'a;
+
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    where
+        Self: Sized + 'a,
+    {
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const UuidValueRaw;
+        unsafe { &*data_ptr.add(physical) }
+    }
+}
 
 impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;

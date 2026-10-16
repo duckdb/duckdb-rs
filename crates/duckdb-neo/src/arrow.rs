@@ -16,6 +16,7 @@ use crate::{
     logical_type::LogicalType,
     raw::RawExt,
     schema::Schema,
+    statement::BoundCollections,
 };
 
 /// An Arrow C stream over a query result, from [`ArrowQueryResult::to_arrow_stream`](crate::query_result::ArrowQueryResult::to_arrow_stream).
@@ -24,21 +25,32 @@ use crate::{
 /// connection and is released when dropped.
 #[derive(Debug)]
 pub struct ArrowStream<'conn> {
+    // Declared first: the stream is released before the collections it reads.
     stream: FFI_ArrowArrayStream,
+    collections: BoundCollections<'conn>,
     _conn: std::marker::PhantomData<&'conn mut Connection>,
 }
 
-impl ArrowStream<'_> {
-    pub(crate) fn new(stream: FFI_ArrowArrayStream) -> Self {
+impl<'conn> ArrowStream<'conn> {
+    pub(crate) fn new(stream: FFI_ArrowArrayStream, collections: BoundCollections<'conn>) -> Self {
         Self {
             stream,
+            collections,
             _conn: std::marker::PhantomData,
         }
     }
 
     /// Hand the stream to an Arrow consumer, which then owns releasing it.
-    pub fn into_raw(mut self) -> FFI_ArrowArrayStream {
-        std::mem::replace(&mut self.stream, FFI_ArrowArrayStream::empty())
+    ///
+    /// The returned [`BoundCollections`] are the collections the query reads.
+    ///
+    /// # Safety
+    ///
+    /// The stream no longer borrows the connection, so the caller must release it
+    /// before the connection is used again or dropped, and must keep the returned
+    /// collections alive until then.
+    pub unsafe fn into_raw(self) -> (FFI_ArrowArrayStream, BoundCollections<'conn>) {
+        (self.stream, self.collections)
     }
 }
 
@@ -109,8 +121,8 @@ impl<'ctx> ArrowExporter<'ctx> {
 
     /// Take the next completed array, or `None` when none is ready.
     pub fn next_array(&self) -> Result<Option<FFI_ArrowArray>> {
-        let array: FFI_ArrowArray = check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, RET)?;
-        // DuckDB signals "nothing ready" with a released array.
+        let mut array = FFI_ArrowArray::empty();
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, &mut array)?;
         Ok((!array.is_released()).then_some(array))
     }
 }

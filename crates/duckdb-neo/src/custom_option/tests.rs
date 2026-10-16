@@ -18,12 +18,12 @@ struct Clamp {
 }
 
 impl CustomOptionCallbacks for Clamp {
-    fn update(&self, context: Context, value: Value, scope: SettingScope, is_reset: bool) -> Result<Value> {
+    fn update(&self, context: &Context, value: Value, scope: SettingScope, is_reset: bool) -> Result<Value> {
         let number = i64::from_value(&value)?;
         self.updates.lock().unwrap().push((number, scope, is_reset));
         match number {
             Some(n) if n < 0 => Err(Error::invalid_input("rs_limit must not be negative")),
-            Some(n) if n > 100 => 100_i64.value(&context),
+            Some(n) if n > 100 => 100_i64.value(context),
             _ => Ok(value),
         }
     }

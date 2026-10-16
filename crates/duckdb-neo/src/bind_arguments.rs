@@ -92,17 +92,16 @@ impl<'a> BindArguments<'a> {
     }
 
     pub fn index(&self, name: &String) -> Result<Option<usize>> {
+        let mut index: ffi::idx_t = 0;
         let mut found = false;
-
-        let index = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_function_bind_get_arg_index,
             *self.handle,
-            &mut (name).into(),
-            RET,
+            &name.into(),
+            &mut index,
             &mut found
         )?;
-
-        if !found { Ok(None) } else { Ok(Some(index as usize)) }
+        Ok(found.then_some(index as usize))
     }
 
     /// Collect every argument with its folded value.

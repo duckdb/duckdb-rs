@@ -6,7 +6,7 @@ use duckdb_loadable_macros::{AsRaw, DropHandle, FromRaw};
 
 use crate::{
     Result,
-    builder_helpers::{copy_render_box, handle_unwind},
+    builder_helpers::handle_unwind,
     check_api_call,
     error::Error,
     ffi,
@@ -31,10 +31,31 @@ pub(crate) unsafe extern "C" fn copy_glob_callback(
 
             items.push(
                 DuckDBStr::from_raw(unsafe { *text })
-                    .as_str()
+                    .to_string_lossy()
                     .unwrap_or_default()
-                    .to_string(),
+                    .into_owned(),
             );
+
+            Ok(())
+        },
+        err,
+    );
+}
+
+/// Append an expanded path, which comes from the OS and may not be valid UTF-8.
+unsafe extern "C" fn copy_path_callback(
+    text: *const ffi::duckdb_v2_str,
+    user_data: *mut std::os::raw::c_void,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            if text.is_null() || user_data.is_null() {
+                return Err(Error::api_error("NULL value in copy_path_callback"));
+            }
+
+            let string = unsafe { &mut *(user_data as *mut String) };
+            string.push_str(&DuckDBStr::from_raw(unsafe { *text }).to_string_lossy().unwrap_or_default());
 
             Ok(())
         },
@@ -95,7 +116,7 @@ impl<'link> FileSystem<'link> {
             ffi::duckdb_v2_file_system_path_expand,
             self.raw(),
             &path.into(),
-            Some(copy_render_box),
+            Some(copy_path_callback),
             &mut string as *mut String as *mut std::os::raw::c_void
         )?;
 

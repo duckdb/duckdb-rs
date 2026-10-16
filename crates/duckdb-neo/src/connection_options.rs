@@ -1,5 +1,7 @@
 //! Configuration options shared with databases and connections.
 
+use std::marker::PhantomData;
+
 use crate::connection::SettingScope;
 use crate::ffi;
 
@@ -95,12 +97,34 @@ impl ConfigOption {
     }
 }
 
+/// The settings of an instance, a connection or a callback context, borrowed from it.
+///
+/// ```compile_fail,E0597
+/// # use duckdb_neo::environment::{Environment, StorageLocation};
+/// # fn main() -> duckdb_neo::Result<()> {
+/// let db = Environment::new()?.open(StorageLocation::InMemory)?;
+/// let config = {
+///     let conn = db.connect()?;
+///     conn.config()?
+/// };
+/// config.count()?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, AsRaw, FromRaw)]
-pub struct Config {
+pub struct Config<'a> {
     pub(crate) handle: ffi::duckdb_v2_config_handle,
+    pub(crate) _source: PhantomData<&'a ()>,
 }
 
-impl Config {
+impl Config<'_> {
+    pub(crate) fn new(handle: ffi::duckdb_v2_config_handle) -> Self {
+        Config {
+            handle,
+            _source: PhantomData,
+        }
+    }
+
     pub fn count(&self) -> Result<usize> {
         check_api_call!(ffi::duckdb_v2_config_get_option_count, self.raw(), RET).map(|x| x as usize)
     }

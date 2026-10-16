@@ -287,7 +287,7 @@ impl VectorCollection {
     /// The chunk's vectors reference the input's storage, so the chunk borrows
     /// this collection and cannot outlive the callback. It is writable only when
     /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
-    pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &C) -> crate::Result<DataChunk<'a>> {
+    pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &'a C) -> crate::Result<DataChunk<'a>> {
         let mut logical_types = Vec::with_capacity(self.col_count());
         for index in 0..self.col_count() {
             logical_types.push(self.cached(index)?.logical_type().clone());
@@ -349,7 +349,7 @@ impl ChildrenMut<'_> {
     }
 
     /// See [`VectorCollection::to_data_chunk`].
-    pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &C) -> Result<DataChunk<'a>> {
+    pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &'a C) -> Result<DataChunk<'a>> {
         self.0.to_data_chunk(link)
     }
 }
