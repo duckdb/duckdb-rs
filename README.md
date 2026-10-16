@@ -184,7 +184,7 @@ Or manually add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-duckdb = { version = "~1.10506.0", features = ["bundled"] }
+duckdb = { version = "~1.10506.1", features = ["bundled"] }
 ```
 
 ### Using the development version from git
@@ -224,7 +224,7 @@ You can adjust this behavior in a number of ways:
 
    ```toml
    [dependencies]
-   duckdb = { version = "~1.10506.0", features = ["bundled"] }
+   duckdb = { version = "~1.10506.1", features = ["bundled"] }
    ```
 
 2. If you use the `bundled-cmake` feature, `libduckdb-sys` will build DuckDB from the local checkout in `crates/libduckdb-sys/duckdb-sources` using upstream CMake. This keeps plain `bundled` unchanged while allowing CMake-only extensions such as `icu`.
