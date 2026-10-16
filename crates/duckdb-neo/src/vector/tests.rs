@@ -24,6 +24,136 @@ use crate::{
     vector::StorageKind,
 };
 
+#[test]
+fn vector_decimal_mismatch_reports_parameters() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut result = conn.query("SELECT 1.234::DECIMAL(18, 3)", Parameters::None)?;
+    let chunk = result.next_chunk()?.expect("one result chunk");
+    let err = chunk
+        .get_vector_at::<crate::types::Decimal<18, 2>>(0)
+        .expect_err("decimal scale mismatch");
+    assert!(err.message.contains("DECIMAL(18,3)"), "{}", err.message);
+    Ok(())
+}
+
+#[test]
+fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(1)?;
+    assert!(vector.get_view().unwrap().validity().is_none());
+    vector.write(0, Some(42))?;
+    assert!(vector.get_view().unwrap().validity().is_none());
+    assert_eq!(vector.get(0)?, Some(&42));
+    vector.write(0, None)?;
+    assert!(vector.get_view().unwrap().validity().is_some());
+    assert_eq!(vector.get(0)?, None);
+    vector.write(0, Some(7))?;
+    assert_eq!(vector.get(0)?, Some(&7));
+    Ok(())
+}
+
+#[test]
+fn vector_cast_rows_preserves_target_type() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut source = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut input = source.get_vector_at_mut::<i32>(0)?;
+    input.set_size(2)?;
+    input.write(0, Some(42))?;
+    input.write(1, None)?;
+
+    let mut strict = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
+    let output: super::Vector<'_, i64> = strict.get_vector_at_mut::<i64>(0)?.cast_rows(&input, &conn)?;
+    assert_eq!(output.iter()?.collect::<Vec<_>>(), [Some(&42), None]);
+
+    let mut relaxed = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
+    let (output, error): (super::Vector<'_, i64>, _) =
+        relaxed.get_vector_at_mut::<i64>(0)?.try_cast_rows(&input, &conn)?;
+    assert!(error.is_none());
+    assert_eq!(output.iter()?.collect::<Vec<_>>(), [Some(&42), None]);
+    Ok(())
+}
+
+#[test]
+fn vector_iterator_reports_remaining_rows() -> crate::Result<()> {
+    fn assert_iterator_traits<I: ExactSizeIterator + std::iter::FusedIterator>(_: &I) {}
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    let mut empty = vector.iter()?;
+    assert_iterator_traits(&empty);
+    assert_eq!(empty.size_hint(), (0, Some(0)));
+    assert_eq!(empty.len(), 0);
+    assert_eq!(empty.next(), None);
+
+    vector.set_size(2)?;
+    vector.write(0, Some(42))?;
+    vector.write(1, None)?;
+    let mut iter = vector.iter()?;
+    assert_iterator_traits(&iter);
+    assert_eq!(iter.size_hint(), (2, Some(2)));
+    assert_eq!(iter.len(), 2);
+    assert_eq!(iter.next(), Some(Some(&42)));
+    assert_eq!(iter.size_hint(), (1, Some(1)));
+    assert_eq!(iter.len(), 1);
+    assert_eq!(iter.next(), Some(None));
+    assert_eq!(iter.size_hint(), (0, Some(0)));
+    assert_eq!(iter.len(), 0);
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next(), None);
+    Ok(())
+}
+
+#[test]
+fn vector_internal_writes_report_non_flat_storage() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.make_constant(42_i32.value(&conn)?, 1)?;
+    assert_eq!(vector.check_row_writable(0).unwrap_err().message, "vector is not flat");
+    assert_eq!(
+        vector.set_row_validity(0, true).unwrap_err().message,
+        "vector is not flat"
+    );
+    Ok(())
+}
+
+#[test]
+fn vector_unknown_reads_nullness() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut result = conn.query("SELECT unnest([42, NULL]::INTEGER[])", Parameters::None)?;
+    let mut chunk = result.next_chunk()?.expect("one result chunk");
+    let [vector] = chunk.get_vector_array_mut([0])?;
+    assert_eq!(vector.get(0)?, Some(()));
+    assert_eq!(vector.get(1)?, None);
+    assert_eq!(vector.iter()?.collect::<Vec<_>>(), [Some(()), None]);
+    Ok(())
+}
+
+#[test]
+fn vector_unknown_cast_accepts_scalar_and_nested_types() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut result = conn.query("SELECT 42::INTEGER, [1, 2]::INTEGER[]", Parameters::None)?;
+    let mut chunk = result.next_chunk()?.expect("one result chunk");
+    let [scalar, nested] = chunk.get_vector_array_mut([0, 1])?;
+    for vector in [scalar, nested] {
+        let borrowed = vector.cast_ref::<super::Unknown>()?;
+        assert_eq!(borrowed.get(0)?, Some(()));
+        let owned = vector.cast::<super::Unknown>()?;
+        assert_eq!(owned.get(0)?, Some(()));
+    }
+    Ok(())
+}
+
 struct TestStruct;
 
 impl StructSchema for TestStruct {
@@ -101,7 +231,7 @@ scalar_callback!(
     }
     let written: Vec<_> = result.iter()?.collect();
     for (row, (key, value)) in written.into_iter().zip(&rows) {
-        assert_eq!(row.as_ref().unwrap().get(key)?, Some(value.as_str()));
+        assert_eq!(row.as_ref().unwrap().get(key), Some(Some(value.as_str())));
     }
     Ok(())
     }
@@ -450,6 +580,7 @@ fn test_vector_read_write() -> crate::Result<()> {
         .parse("SELECT test(unnest([1, 2, 3, 4, 5]))")
         .expect("Failed to parse query");
 
+    let mut chunk_count = 0;
     for stmt in statements {
         let stmt = stmt.expect("Failed to get statement");
         let mut result = conn.query(stmt, Parameters::None).expect("Failed to execute statement");
@@ -457,6 +588,7 @@ fn test_vector_read_write() -> crate::Result<()> {
         loop {
             match result.step().expect("Failed to step result") {
                 QueryResultStep::Chunk(chunk) => {
+                    chunk_count += 1;
                     let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector");
 
                     let out: Vec<Option<i32>> = vector.iter()?.map(|x| x.copied()).collect();
@@ -468,6 +600,7 @@ fn test_vector_read_write() -> crate::Result<()> {
             }
         }
     }
+    assert_eq!(chunk_count, 1);
     Ok(())
 }
 
@@ -648,7 +781,7 @@ pub fn test_vector_array() -> crate::Result<()> {
     let mut reader = vector.iter()?;
 
     let item = reader.next().unwrap().unwrap();
-    assert_eq!(item.size(), 3);
+    assert_eq!(item.len(), 3);
 
     let reader = vector.iter()?;
 
@@ -719,7 +852,7 @@ pub fn test_vector_map() -> crate::Result<()> {
     )?;
     let res = result.next_chunk()?.unwrap();
 
-    assert_eq!(res.col_count()?, 1);
+    assert_eq!(res.col_count(), 1);
 
     let vector = res.get_vector_at::<Map<i32, ShortDecimal>>(0)?;
     let mut reader = vector.iter()?;
@@ -733,16 +866,16 @@ pub fn test_vector_map() -> crate::Result<()> {
     assert_eq!(hmap.get(&1).unwrap(), &Some(&ShortDecimal(121)));
     assert_eq!(hmap.get(&2).unwrap(), &Some(&ShortDecimal(412)));
 
-    assert_eq!(row.keys()?, vec![&1, &2]);
-    assert_eq!(row.values()?, vec![Some(&ShortDecimal(121)), Some(&ShortDecimal(412))]);
+    assert_eq!(row.keys(), vec![Some(&1), Some(&2)]);
+    assert_eq!(row.values(), vec![Some(&ShortDecimal(121)), Some(&ShortDecimal(412))]);
 
-    assert_eq!(row.get(&1)?, Some(&ShortDecimal(121)));
-    assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
+    assert_eq!(row.get(&1), Some(Some(&ShortDecimal(121))));
+    assert_eq!(row.get(&2), Some(Some(&ShortDecimal(412))));
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get(&1)?, Some(&ShortDecimal(1121)));
-    assert_eq!(row.get(&2)?, Some(&ShortDecimal(1412)));
+    assert_eq!(row.get(&1), Some(Some(&ShortDecimal(1121))));
+    assert_eq!(row.get(&2), Some(Some(&ShortDecimal(1412))));
 
     let row = reader.next().unwrap().unwrap();
 
@@ -751,9 +884,9 @@ pub fn test_vector_map() -> crate::Result<()> {
     assert_eq!(hmap.get(&1), Some(&None));
     assert_eq!(hmap.get(&2), Some(&Some(&ShortDecimal(412))));
 
-    assert_eq!(row.get(&1)?, None);
-    assert_eq!(row.get(&2)?, Some(&ShortDecimal(412)));
-    assert_eq!(row.values()?, vec![None, Some(&ShortDecimal(412))]);
+    assert_eq!(row.get(&1), Some(None));
+    assert_eq!(row.get(&2), Some(Some(&ShortDecimal(412))));
+    assert_eq!(row.values(), vec![None, Some(&ShortDecimal(412))]);
 
     assert!(reader.next().is_none());
 
@@ -786,7 +919,9 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
     let mut result = conn.query(statement, Parameters::None)?;
 
+    let mut chunk_count = 0;
     while let Some(item) = result.next_chunk()? {
+        chunk_count += 1;
         let res = item.get_vector_at::<Map<i32, String>>(0)?;
 
         assert!(res.len() == 2);
@@ -794,12 +929,13 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
         let item = reader.next().unwrap().unwrap();
 
-        assert_eq!(item.get(&12)?, Some("AA"));
+        assert_eq!(item.get(&12), Some(Some("AA")));
 
         let item = reader.next().unwrap().unwrap();
 
-        assert_eq!(item.get(&15)?, Some("BB"));
+        assert_eq!(item.get(&15), Some(Some("BB")));
     }
+    assert_eq!(chunk_count, 1);
 
     let statement = statements.next().unwrap()?;
 
@@ -812,7 +948,7 @@ pub fn vector_complex_write() -> crate::Result<()> {
         let expected = [(1, "A"), (2, "B"), (3, "C")];
 
         for (item, (key, value)) in res.iter()?.zip(expected) {
-            assert_eq!(item.unwrap().get(&key)?, Some(value));
+            assert_eq!(item.unwrap().get(&key), Some(Some(value)));
         }
 
         return Ok(());
@@ -843,7 +979,9 @@ pub fn vector_union_write() -> crate::Result<()> {
         .next()
         .unwrap()?;
     let mut result = conn.query(statement, Parameters::None)?;
+    let mut chunk_count = 0;
     while let Some(mut chunk) = result.next_chunk()? {
+        chunk_count += 1;
         let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
         vector.flatten()?;
         let rows: Vec<_> = vector.iter()?.collect();
@@ -860,6 +998,7 @@ pub fn vector_union_write() -> crate::Result<()> {
         assert_eq!(rows[2].as_ref().unwrap().member(), 1);
         assert_eq!(rows[2].as_ref().unwrap().get::<String>(1)?, None);
     }
+    assert_eq!(chunk_count, 1);
     Ok(())
 }
 
@@ -886,12 +1025,15 @@ pub fn vector_struct_write() -> crate::Result<()> {
         .next()
         .unwrap()?;
     let mut result = conn.query(statement, Parameters::None)?;
+    let mut chunk_count = 0;
     while let Some(chunk) = result.next_chunk()? {
+        chunk_count += 1;
         let vector = chunk.get_vector_at::<Struct>(0)?;
         let rows: Vec<_> = vector.iter()?.collect();
         assert_eq!(rows[0].as_ref().unwrap().get::<i32>("key")?, Some(&1));
         assert_eq!(rows[1].as_ref().unwrap().get::<String>("value")?, Some("B"));
     }
+    assert_eq!(chunk_count, 1);
     Ok(())
 }
 
@@ -985,7 +1127,8 @@ pub fn vector_struct_unreadable_child() -> crate::Result<()> {
 
     // struct_pack keeps range()'s SEQUENCE child, which must not read as NULL.
     let mut result = conn.query("SELECT struct_key({'key': i}) FROM range(3) t(i)", Parameters::None)?;
-    assert!(result.next_chunk().is_err());
+    let err = result.next_chunk().expect_err("unflattened child must be rejected");
+    assert!(err.message.contains("OTHER vectors must be flattened before reading"));
     Ok(())
 }
 
@@ -1000,7 +1143,9 @@ pub fn vector_test_bignum() -> crate::Result<()> {
         Parameters::None,
     )?;
 
+    let mut chunk_count = 0;
     while let Some(item) = result.next_chunk()? {
+        chunk_count += 1;
         let res = item.get_vector_at::<BigNum>(0)?;
 
         assert!(res.len() == 3);
@@ -1020,6 +1165,7 @@ pub fn vector_test_bignum() -> crate::Result<()> {
             assert_eq!(Some(result.as_str()), expected[i]);
         }
     }
+    assert_eq!(chunk_count, 1);
 
     Ok(())
 }
@@ -1240,7 +1386,9 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
 
     let mut result = conn.query(statement, Parameters::None)?;
 
+    let mut chunk_count = 0;
     while let Some(item) = result.next_chunk()? {
+        chunk_count += 1;
         let res = item.get_vector_at::<i32>(0)?;
 
         assert!(res.len() == 3);
@@ -1251,6 +1399,7 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
         assert_eq!(reader.next(), Some(Some(&42)));
         assert_eq!(reader.next(), None);
     }
+    assert_eq!(chunk_count, 1);
 
     Ok(())
 }
@@ -1278,7 +1427,9 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
 
     let mut result = conn.query(statement, Parameters::None)?;
 
+    let mut chunk_count = 0;
     while let Some(item) = result.next_chunk()? {
+        chunk_count += 1;
         let res = item.get_vector_at::<i32>(0)?;
 
         assert!(res.len() == 3);
@@ -1289,6 +1440,7 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
         assert_eq!(reader.next(), Some(Some(&62)));
         assert_eq!(reader.next(), None);
     }
+    assert_eq!(chunk_count, 1);
 
     Ok(())
 }
@@ -1381,7 +1533,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
 
                 if let Some(value) = value {
                     let lt = LogicalType::from_text(ctx, "VARIANT")?;
-                    let result = value.cast(ctx, lt)?;
+                    let result = value.cast(ctx, &lt)?;
                     output.write_value_slow(idx, result)?;
                 } else {
                     output.set_null_slow(idx)?
@@ -1417,7 +1569,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     let mut results: Vec<String> = Vec::new();
 
     while let Some(item) = result.next_chunk()? {
-        for index in 0..item.col_count()? {
+        for index in 0..item.col_count() {
             let vector = item.get_vector_at::<Variant>(index)?;
             for row in vector.iter()? {
                 match row {
@@ -1443,7 +1595,7 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
 
     // SAFETY: DuckDB keeps the callback input alive while consuming the
     // referenced output, and neither vector is accessed concurrently here.
-    let referenced = unsafe { output.copy_from(input)? };
+    let referenced = unsafe { output.reference(input)? };
     // Writes would land in DuckDB's read-only input, so the reference is read-only too.
     assert!(!referenced.is_writable());
 
@@ -1473,7 +1625,7 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
     let mut results: Vec<String> = Vec::new();
 
     while let Some(item) = result.next_chunk()? {
-        for index in 0..item.col_count()? {
+        for index in 0..item.col_count() {
             let vector = item.get_vector_at::<String>(index)?;
             for row in vector.iter()? {
                 match row {
@@ -1645,7 +1797,7 @@ fn test_raw_integer_access() -> crate::Result<()> {
 }
 
 #[test]
-fn test_copy_from_rebuilds_children() -> crate::Result<()> {
+fn test_reference_rebuilds_children() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
@@ -1663,7 +1815,7 @@ fn test_copy_from_rebuilds_children() -> crate::Result<()> {
     dst.write(0, Some(vec![Some(9)]))?;
 
     // SAFETY: `source` outlives every read of the referenced vector below.
-    let mut referenced = unsafe { dst.copy_from(&src)? };
+    let mut referenced = unsafe { dst.reference(&src)? };
     // A resize through the reference would reallocate the buffer `src` still reads.
     assert!(!referenced.is_writable());
     assert!(referenced.set_size(4096).is_err());
@@ -1934,10 +2086,10 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
     let mut rows = maps.iter()?;
     let row = rows.next().unwrap().unwrap();
-    assert_eq!((row.get(&1)?, row.get(&2)?), (Some(&10), Some(&20)));
+    assert_eq!((row.get(&1), row.get(&2)), (Some(Some(&10)), Some(Some(&20))));
     let row = rows.next().unwrap().unwrap();
-    assert_eq!(row.keys()?, vec![&3]);
-    assert_eq!(row.get(&3)?, Some(&30));
+    assert_eq!(row.keys(), vec![Some(&3)]);
+    assert_eq!(row.get(&3), Some(Some(&30)));
 
     Ok(())
 }

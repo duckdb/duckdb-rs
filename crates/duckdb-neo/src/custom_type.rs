@@ -29,8 +29,8 @@ use crate::{
 /// let temperature = CustomType::new("TEMPERATURE", i32::logical_type(&conn)?)?;
 /// temperature.register(&conn)?;
 ///
-/// let logical_type = i32::logical_type(&conn)?.to_alias(&conn, "TEMPERATURE")?;
-/// assert_eq!(logical_type.to_string()?, "TEMPERATURE");
+/// let logical_type = i32::logical_type(&conn)?.with_alias(&conn, "TEMPERATURE")?;
+/// assert_eq!(logical_type.to_text()?, "TEMPERATURE");
 /// # Ok(())
 /// # }
 /// ```
@@ -90,9 +90,9 @@ mod tests {
         custom_type.register(&conn)?;
 
         let integer = i32::logical_type(&conn)?;
-        let temperature = integer.to_alias(&conn, "TEMPERATURE")?;
+        let temperature = integer.with_alias(&conn, "TEMPERATURE")?;
 
-        assert_eq!(temperature.to_string()?, "TEMPERATURE");
+        assert_eq!(temperature.to_text()?, "TEMPERATURE");
         assert_eq!(temperature.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
 
         Ok(())

@@ -31,8 +31,9 @@ impl SqlTokenIterator {
     ///
     /// The tokenizer consumes the SQL text immediately; tokens are then yielded
     /// on demand as the iterator is advanced.
-    pub fn new(conn: &Connection, sql: &str) -> Result<SqlTokenIterator> {
-        check_api_call!(ffi::duckdb_v2_tokenize_sql, conn.raw(), &sql.into(), RET).map(|handle| Self { handle })
+    pub fn new(conn: &Connection, sql: impl AsRef<str>) -> Result<SqlTokenIterator> {
+        check_api_call!(ffi::duckdb_v2_tokenize_sql, conn.raw(), &sql.as_ref().into(), RET)
+            .map(|handle| Self { handle })
     }
 
     /// Whether the input ends inside an open string, quoted identifier, block comment or
@@ -117,6 +118,17 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(lexemes, vec!["SELECT", "*", "FROM", "test_data", "(", "10", ")"]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_accepts_owned_string() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let tokens = SqlTokenIterator::new(&conn, String::from("SELECT 1"))?.collect::<crate::Result<Vec<_>>>()?;
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].token_type, TokenType::Keyword);
+        assert_eq!(tokens[1].token_type, TokenType::NumberLiteral);
         Ok(())
     }
 

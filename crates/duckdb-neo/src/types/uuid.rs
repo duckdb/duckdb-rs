@@ -2,13 +2,12 @@
 //!
 //! [`UuidValueRaw`] mirrors DuckDB's internal signed 128-bit UUID representation
 //! exactly, so it is read and written through a direct pointer cast (see
-//! [`super::primitive::DeclareVectorElement`]), the same pattern used by the
+//! [`super::primitive::declare_vector_element`]), the same pattern used by the
 //! calendar/clock types in [`super::temporal`].
 //!
 //! With the `uuid` feature, `uuid::Uuid` can be used anywhere [`UuidValueRaw`]
 //! can, converting to and from the internal representation on the fly.
 
-use super::primitive::DeclareVectorElement;
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
 use crate::vector::VectorElement;
@@ -20,6 +19,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
+
 /// DuckDB's internal signed 128-bit UUID representation.
 ///
 /// DuckDB stores a UUID as a signed integer with its most significant bit flipped, so
@@ -43,7 +43,7 @@ impl ToValue for UuidValueRaw {
 impl FromValue for UuidValueRaw {
     fn _get_inner(value: &Value) -> Result<Self> {
         check_api_call!(ffi::duckdb_v2_value_get_uuid, value.raw(), RET)
-            .map(|raw| Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
+            .map(|raw| Self(crate::value::from_hugeint(raw)))
     }
 }
 

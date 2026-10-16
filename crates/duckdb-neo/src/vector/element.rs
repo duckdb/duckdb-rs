@@ -33,17 +33,17 @@ pub unsafe trait VectorElement: Sized {
     /// The DuckDB logical type represented by this Rust type.
     const TYPE_ID: LogicalTypeID;
 
-    /// The unboxed type stored contiguously in the DuckDB vector's data buffer.
-    ///
-    /// Used by the raw accessors on [`Vector`] such as `as_slice`.
+    /// Physical entries exposed by [`VectorView::as_slice`](crate::vector::VectorView::as_slice).
+    /// Use `()` when the element does not expose a physical representation.
     type Internal;
 
-    /// The borrowed value returned for one vector row.
+    /// The borrowed or owned value returned for one vector row.
     type Ref<'a>
     where
         Self: 'a;
 
-    /// Validate nested children before values are read.
+    /// Check the logical type and nested children before reading values.
+    /// `Ok(false)` means a type mismatch; `Err` means validation failed.
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         let _ = children;
         Ok(other.type_id() == Self::TYPE_ID)
@@ -67,7 +67,7 @@ pub unsafe trait VectorElement: Sized {
     /// ```
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
     where
-        Self: Sized + 'a;
+        Self: 'a;
 }
 
 /// Adds a supported output representation to a readable vector element.
@@ -111,10 +111,13 @@ unsafe impl VectorElement for Unknown {
 
     type Internal = ();
 
+    fn validate(_other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
+        Ok(true)
+    }
+
     unsafe fn get<'a, U: VectorElement>(_vector: &'a Vector<'_, U>, _physical: usize, _logical: usize) -> Self::Ref<'a>
     where
-        Self: Sized + 'a,
+        Self: 'a,
     {
-        panic!("Unknown type: cannot index into data of unknown type");
     }
 }

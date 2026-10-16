@@ -210,7 +210,7 @@ unsafe extern "C" fn finalize_to_callback<T: CopyToFunctionCallbacks>(
     );
 }
 
-/// Builds and registers a user-defined `COPY TO` format.
+/// Builds and registers a user-defined `COPY TO` and/or `COPY FROM` format.
 #[derive(Debug)]
 pub struct CopyFunctionBuilder<T> {
     user_data: OpaqueHandle<T>,
@@ -230,6 +230,7 @@ impl<T> CopyFunctionBuilder<T> {
         }
     }
 
+    /// Set the extension, without a leading dot, for files DuckDB names itself (e.g. `PARTITION_BY`).
     pub fn with_fallback_extension(mut self, value: impl Into<String>) -> Self {
         self.fallback_file_extension = Some(value.into());
         self
@@ -303,7 +304,7 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
         )
     }
 
-    /// Register the `COPY TO` side through a connection or extension, consuming the builder.
+    /// Register the `COPY TO` side through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register<C: CopyFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_copy_function_handle()?;
@@ -365,7 +366,7 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
         self.set_from_callbacks(handle)
     }
 
-    /// Register the `COPY FROM` side through a connection or extension, consuming the builder.
+    /// Register the `COPY FROM` side through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register_from<C: CopyFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_copy_function_handle()?;
@@ -376,7 +377,7 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
 }
 
 impl<T: CopyToFunctionCallbacks + CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
-    /// Register both `COPY TO` and `COPY FROM` through a connection or extension, consuming the builder.
+    /// Register both `COPY TO` and `COPY FROM` through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register_to_and_from<C: CopyFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_copy_function_handle()?;
@@ -794,16 +795,10 @@ pub trait CopyFromFunctionCallbacks: Send + Sync + 'static {
     }
 }
 
-/// Callback lifecycle for a user-defined `COPY TO` format.
-///
-/// DuckDB binds the input columns, initializes one output file, prepares input
-/// batches, flushes each prepared batch, and finalizes the file.
-///
-/// A type may also implement [`CopyFromFunctionCallbacks`] to support `COPY
-/// ... FROM` under the same format name; register both sides at once with
-/// [`CopyFunctionBuilder::register_to_and_from`].
+/// Binds `COPY TO` input columns, then prepares and flushes batches.
+/// Initialization and finalization run once per output file, including partitioned output.
 pub trait CopyToFunctionCallbacks: Send + Sync + 'static {
-    /// State created once for the bound copy operation.
+    /// State for one output file; partitioned output creates one per file.
     type InitData: Any + Send + Sync;
     /// Data resolved while binding the input columns.
     type BindData: Any + Send + Sync;

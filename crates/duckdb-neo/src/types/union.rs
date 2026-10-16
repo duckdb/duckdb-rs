@@ -59,7 +59,7 @@ impl<S: UnionSchema, T> DuckDBType for UnionValue<S, T> {
 impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         let value = self.value.value(link)?;
-        link.value_cast(&value, Self::logical_type(link)?)
+        link.value_cast(&value, &Self::logical_type(link)?)
     }
 }
 
@@ -78,7 +78,7 @@ unsafe impl VectorElement for Union {
         let Some(children) = children.filter(|children| children.col_count() > 0) else {
             return Err(Error::invalid_input("Union vector is missing its tag child"));
         };
-        children.get_untyped_vector_at(0)?.validate_as::<u8>()
+        children.get_untyped_vector_at(0)?.validate_as::<u8>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>

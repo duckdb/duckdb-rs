@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VALUE};
+use crate::ffi::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VALUE};
 
 use crate::{
     DuckDBType, Parameters,
@@ -13,6 +13,18 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     vector::{Unknown, Vector},
 };
+
+#[test]
+fn aggregate_state_slice_handles_empty_arrays() {
+    let items = [std::ptr::null_mut::<u64>()];
+    // SAFETY: null inputs are supported, and items is live for every borrowed slice.
+    unsafe {
+        assert!(super::state_slice::<*mut u64>(std::ptr::null(), 0).is_empty());
+        assert!(super::state_slice::<*mut u64>(std::ptr::null(), 1).is_empty());
+        assert!(super::state_slice(items.as_ptr(), 0).is_empty());
+        assert_eq!(super::state_slice(items.as_ptr(), items.len()), &items);
+    }
+}
 
 struct BasicAggregate<T> {
     item: T,

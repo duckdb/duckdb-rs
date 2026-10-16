@@ -2,8 +2,8 @@
 
 use std::marker::PhantomData;
 
+use crate::ffi::duckdb_v2_str;
 use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
-use libduckdb_sys::v2::duckdb_v2_str;
 
 use crate::builder_helpers::copy_render_box;
 use crate::error::Error;

@@ -30,68 +30,75 @@
 //! # }
 //! ```
 
-use libduckdb_sys::v2::{self as ffi};
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 // Lets the raw handle derives name `::duckdb_neo` inside this crate.
 extern crate self as duckdb_neo;
 
 mod builder_helpers;
-pub mod connection_options;
 mod handles;
 mod links;
 
 pub(crate) mod bytes;
-pub mod connection;
-pub mod custom_option;
-pub mod data_chunk;
-pub mod database;
-pub mod environment;
-pub mod error;
 pub(crate) mod ffi_str;
-pub mod log_sink;
-pub mod logical_type;
 pub(crate) mod parameter;
-pub mod query_result;
-pub mod raw;
-pub mod schema;
-pub mod statement;
-pub mod types;
-pub mod value;
-pub mod vector;
-use crate::error::{Error, check_api_call, check_api_call_string};
-pub(crate) use duckdb_loadable_macros::DropHandle;
-pub use duckdb_loadable_macros::{AsRaw, FromRaw};
-pub use parameter::{Parameters, QueryParameter};
-pub use raw::{AsRaw, FromRaw};
-pub use types::{DuckDBType, FromValue, ToValue};
-
-#[cfg(feature = "r2d2")]
-pub mod r2d2;
 
 pub mod aggregate;
 pub mod arrow;
 pub mod bind_arguments;
 pub mod cast;
 pub mod column_data_collection;
+pub mod connection;
+pub mod connection_options;
 pub mod copy_function;
+pub mod custom_option;
 pub mod custom_type;
+pub mod data_chunk;
+pub mod database;
 pub mod description;
 pub mod enums;
+pub mod environment;
+pub mod error;
 pub mod expression;
 pub mod file;
 pub mod log;
+pub mod log_sink;
+pub mod logical_type;
 pub mod pragma_function;
 pub mod qualified_name;
 pub mod query_progress;
+pub mod query_result;
+#[cfg(feature = "r2d2")]
+pub mod r2d2;
+pub mod raw;
 pub mod replacement_scan;
 pub mod scalar;
+pub mod schema;
 pub mod signature;
+pub mod statement;
 pub mod table_function;
 pub mod tokens;
+pub mod types;
+pub mod value;
+pub mod vector;
 
+use crate::error::{check_api_call, check_api_call_string};
 use connection::Factory;
+use libduckdb_sys::v2 as ffi;
+
+pub(crate) use duckdb_loadable_macros::DropHandle;
+pub use duckdb_loadable_macros::{AsRaw, FromRaw};
+pub use error::Error;
+pub use parameter::{Parameters, QueryParameter};
+pub use raw::{AsRaw, FromRaw};
+pub use types::{DuckDBType, FromValue, ToValue};
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
+///
+///     let result: duckdb_neo::Result<()> = Err(duckdb_neo::Error::invalid_input("invalid"));
+///     assert!(result.is_err());
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Render a name as SQL, quoting and escaping it only when required.
@@ -99,7 +106,7 @@ pub fn render_identifier_quoted(text: &str) -> Result<String> {
     check_api_call_string!(ffi::duckdb_v2_identifier_render_quoted, &text.into())
 }
 
-/// Return the linked DuckDB library version.
+/// Return the linked DuckDB library version as a static string owned by the library.
 pub fn library_version() -> Result<&'static str> {
     // The version string is static in the library.
     check_api_call!(ffi::duckdb_v2_library_version, RET)
@@ -159,13 +166,12 @@ mod tests {
     }
 
     #[test]
-    fn open_in_memory_and_drop() -> crate::Result<()> {
+    fn test_open_in_memory_and_drop() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
         let mut total_row_count = 0;
-        // Drop happens automatically at the end of the scope
 
         let statements = conn.parse("SELECT 42")?;
         for stmt in statements {
@@ -220,15 +226,15 @@ mod tests {
 
         let mut result = prepared.execute(Parameters::None)?;
 
-        while let Some(chunk) = result.next_chunk()? {
-            let vector = chunk.get_vector_at::<i32>(0)?;
+        let chunk = result.next_chunk()?.expect("one chunk");
+        let vector = chunk.get_vector_at::<i32>(0)?;
 
-            assert_eq!(vector.len(), 3);
+        assert_eq!(vector.len(), 3);
 
-            let values: Vec<Option<&i32>> = vector.iter().unwrap().collect();
+        let values: Vec<Option<&i32>> = vector.iter().unwrap().collect();
 
-            assert_eq!(values, vec![Some(&2), Some(&4), Some(&6)]);
-        }
+        assert_eq!(values, vec![Some(&2), Some(&4), Some(&6)]);
+        assert!(result.next_chunk()?.is_none());
 
         Ok(())
     }
@@ -237,7 +243,6 @@ mod tests {
     fn test_library_version() -> crate::Result<()> {
         let version = library_version()?;
         assert!(!version.is_empty(), "Library version should not be empty");
-        println!("DuckDB library version: {}", version);
 
         Ok(())
     }
@@ -289,7 +294,7 @@ mod tests {
 
             let error = query.next_chunk().err().unwrap();
 
-            assert!(error.code == DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERRUPT);
+            assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERRUPT);
         });
 
         receiver.recv().unwrap();
@@ -302,10 +307,13 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_connections() -> crate::Result<()> {
+    fn test_multiple_databases() -> crate::Result<()> {
+        let directory = tempfile::tempdir().unwrap();
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
-        let db_2 = env.open(StorageLocation::OnDisk("test.db".into()))?;
+        let db_2 = env.open(StorageLocation::OnDisk(
+            directory.path().join("test.db").to_str().unwrap().to_owned(),
+        ))?;
 
         assert_eq!(env.get_database_count()?, 2);
 

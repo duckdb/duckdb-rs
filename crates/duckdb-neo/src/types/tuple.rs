@@ -15,7 +15,7 @@ fn validate_tuple(value: &Value, expected_len: usize) -> Result<()> {
     if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE {
         return Err(Error::invalid_input(format!(
             "Expected TUPLE value, found {}",
-            logical_type.to_string()?
+            logical_type.to_text()?
         )));
     }
     let actual_len = value.child_count()?;

@@ -49,8 +49,7 @@ declare_primitive_from_value!(f64, ffi::duckdb_v2_value_get_double);
 
 impl FromValue for i128 {
     fn _get_inner(value: &Value) -> Result<Self> {
-        check_api_call!(ffi::duckdb_v2_value_get_hugeint, value.raw(), RET)
-            .map(|raw| (i128::from(raw.upper) << 64) | i128::from(raw.lower))
+        check_api_call!(ffi::duckdb_v2_value_get_hugeint, value.raw(), RET).map(crate::value::from_hugeint)
     }
 }
 
@@ -61,7 +60,7 @@ impl FromValue for u128 {
     }
 }
 
-macro_rules! declare_primitive_to_value {
+macro_rules! declare_primitive_type {
     ($type:ty, $type_id:ident, $input:ident) => {
         impl DuckDBType for $type {
             fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
@@ -77,25 +76,25 @@ macro_rules! declare_primitive_to_value {
     };
 }
 
-declare_primitive_to_value!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN, Bool);
-declare_primitive_to_value!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT, UTinyInt);
-declare_primitive_to_value!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT, TinyInt);
-declare_primitive_to_value!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT, SmallInt);
-declare_primitive_to_value!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER, Int);
-declare_primitive_to_value!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT, BigInt);
-declare_primitive_to_value!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT, USmallInt);
-declare_primitive_to_value!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER, UInt);
-declare_primitive_to_value!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT, UBigInt);
-declare_primitive_to_value!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT, Float);
-declare_primitive_to_value!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE, Double);
-declare_primitive_to_value!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT, HugeInt);
-declare_primitive_to_value!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT, UHugeInt);
+declare_primitive_type!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN, Bool);
+declare_primitive_type!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT, UTinyInt);
+declare_primitive_type!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT, TinyInt);
+declare_primitive_type!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT, SmallInt);
+declare_primitive_type!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER, Int);
+declare_primitive_type!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT, BigInt);
+declare_primitive_type!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT, USmallInt);
+declare_primitive_type!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER, UInt);
+declare_primitive_type!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT, UBigInt);
+declare_primitive_type!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT, Float);
+declare_primitive_type!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE, Double);
+declare_primitive_type!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT, HugeInt);
+declare_primitive_type!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT, UHugeInt);
 
-/// Implements [`VectorElement`] for a type whose vector storage is itself.
+/// Implements [`crate::vector::VectorElement`] for a type whose vector storage is itself.
 ///
 /// Shared with the temporal family, whose storage-wrapper types follow the
 /// same direct pointer-cast access pattern as the primitives below.
-macro_rules! DeclareVectorElement {
+macro_rules! declare_vector_element {
     ($type:tt , $type_id:ident) => {
         // SAFETY: `$type` is DuckDB's physical storage for `$type_id`.
         unsafe impl $crate::vector::VectorElement for $type {
@@ -119,23 +118,23 @@ macro_rules! DeclareVectorElement {
         }
     };
 }
-pub(crate) use DeclareVectorElement;
+pub(crate) use declare_vector_element;
 
-DeclareVectorElement!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
-DeclareVectorElement!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT);
-DeclareVectorElement!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT);
-DeclareVectorElement!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT);
-DeclareVectorElement!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
-DeclareVectorElement!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
-DeclareVectorElement!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT);
-DeclareVectorElement!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
-DeclareVectorElement!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
-DeclareVectorElement!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
-DeclareVectorElement!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
-DeclareVectorElement!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
-DeclareVectorElement!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
+declare_vector_element!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
+declare_vector_element!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT);
+declare_vector_element!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT);
+declare_vector_element!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT);
+declare_vector_element!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+declare_vector_element!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+declare_vector_element!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT);
+declare_vector_element!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
+declare_vector_element!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
+declare_vector_element!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
+declare_vector_element!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
+declare_vector_element!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
+declare_vector_element!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
 
-macro_rules! DeclareWritableVectorElement {
+macro_rules! declare_writable_vector_element {
     ($type:ty) => {
         // SAFETY: every `$type` value is valid for its logical type.
         unsafe impl WritableVectorElement for $type {
@@ -148,16 +147,16 @@ macro_rules! DeclareWritableVectorElement {
     };
 }
 
-DeclareWritableVectorElement!(bool);
-DeclareWritableVectorElement!(i8);
-DeclareWritableVectorElement!(i16);
-DeclareWritableVectorElement!(i32);
-DeclareWritableVectorElement!(i64);
-DeclareWritableVectorElement!(i128);
-DeclareWritableVectorElement!(u8);
-DeclareWritableVectorElement!(u16);
-DeclareWritableVectorElement!(u32);
-DeclareWritableVectorElement!(u64);
-DeclareWritableVectorElement!(u128);
-DeclareWritableVectorElement!(f32);
-DeclareWritableVectorElement!(f64);
+declare_writable_vector_element!(bool);
+declare_writable_vector_element!(i8);
+declare_writable_vector_element!(i16);
+declare_writable_vector_element!(i32);
+declare_writable_vector_element!(i64);
+declare_writable_vector_element!(i128);
+declare_writable_vector_element!(u8);
+declare_writable_vector_element!(u16);
+declare_writable_vector_element!(u32);
+declare_writable_vector_element!(u64);
+declare_writable_vector_element!(u128);
+declare_writable_vector_element!(f32);
+declare_writable_vector_element!(f64);
