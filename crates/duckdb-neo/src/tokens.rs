@@ -97,7 +97,7 @@ mod tests {
 
         let tokens = token_iterator.map(|x| x.unwrap()).collect::<Vec<_>>();
 
-        let types = tokens.iter().map(|t| t.token_type.clone()).collect::<Vec<_>>();
+        let types = tokens.iter().map(|t| t.token_type).collect::<Vec<_>>();
         assert_eq!(
             types,
             vec![

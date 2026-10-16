@@ -62,7 +62,7 @@ impl Log {
     pub fn log_on_instance(instance: &Instance, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_instance_log,
-            instance.handle.lock().unwrap().handle,
+            instance.raw(),
             level.into(),
             &log_type.into(),
             &message.into()
@@ -88,6 +88,43 @@ mod tests {
     });
 
     use crate::types::DuckDBType;
+
+    #[test]
+    fn test_instance_log_releases_handle_lock() -> crate::Result<()> {
+        use crate::{
+            database::DatabaseHandle,
+            log_sink::{LogMetadata, LogSinkBuilder, LogSinkCallbacks, LogWriteData},
+        };
+        use std::sync::{
+            Arc, Mutex, Weak,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        struct LockProbe(Weak<Mutex<DatabaseHandle>>, Arc<AtomicBool>);
+        impl LogSinkCallbacks for LockProbe {
+            fn flush(&self) -> crate::Result<()> {
+                Ok(())
+            }
+            fn write(&self, data: LogWriteData, _: LogMetadata<'_>) -> crate::Result<()> {
+                if data.log_type.as_deref() == Some("rs_lock_probe") {
+                    let instance = self.0.upgrade().unwrap();
+                    self.1.store(instance.try_lock().is_ok(), Ordering::SeqCst);
+                }
+                Ok(())
+            }
+        }
+
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let unlocked = Arc::new(AtomicBool::new(false));
+        LogSinkBuilder::new("rs_lock_probe", LockProbe(Arc::downgrade(&db.handle), unlocked.clone())).register(&db)?;
+        conn.execute("CALL enable_logging()", Parameters::None)?;
+        conn.execute("SET logging_storage = 'rs_lock_probe'", Parameters::None)?;
+        Log::log_on_instance(&db, LogLevel::Info, "probe", "rs_lock_probe")?;
+        assert!(unlocked.load(Ordering::SeqCst));
+        Ok(())
+    }
 
     #[test]
     fn test_log_on_context() -> crate::Result<()> {

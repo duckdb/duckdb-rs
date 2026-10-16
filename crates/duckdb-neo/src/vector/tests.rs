@@ -478,11 +478,7 @@ scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
     output.set_size(vector.len())?;
 
     if vector.storage_kind() == StorageKind::Constant {
-        // DuckDB constant-folds scalar function calls whose arguments are
-        // all CONSTANT_VECTOR: it runs the callback on a single logical row
-        // and broadcasts the (constant) result back out to the real batch
-        // size afterwards, so the vector we observe here has length 1 and
-        // must not be flattened - flattening would defeat the broadcast.
+        // All-constant inputs run on one row; DuckDB broadcasts the result afterwards.
         assert_eq!(vector.len(), 1);
 
         let view = vector.get_view().unwrap();
@@ -520,12 +516,7 @@ pub fn test_vector_constant() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    // Same chunk sequence as `test_vector_dictionary` (FLAT, CONSTANT,
-    // DICTIONARY, then OTHER/SEQUENCE); this test asserts on the CONSTANT
-    // chunk inside `ConstantProbeScalar`. Note that DuckDB constant-folds
-    // the call for that chunk, so `const_probe` itself only observes a
-    // single logical row before DuckDB broadcasts the result back to the
-    // full batch size shown in `values` below.
+    // All-constant inputs run on one row; DuckDB broadcasts the result afterwards.
     let mut result = conn.query(
         "SELECT const_probe(test_vector) FROM test_vector_types(NULL::INTEGER)",
         Parameters::None,
@@ -719,11 +710,6 @@ fn test_vector_list() -> crate::Result<()> {
     Ok(())
 }
 
-struct MyStruct {
-    key1: Option<String>,
-    key2: Option<i32>,
-}
-
 #[test]
 fn test_vector_struct() -> crate::Result<()> {
     let env = Environment::new()?;
@@ -744,22 +730,13 @@ fn test_vector_struct() -> crate::Result<()> {
 
     let row = reader.next().unwrap().unwrap();
 
-    let item = MyStruct {
-        key1: row.get::<String>("key1")?.map(str::to_string),
-        key2: row.get::<i32>("key2")?.copied(),
-    };
-
-    assert_eq!(item.key1, Some("value1".to_string()));
-    assert_eq!(item.key2, Some(42));
+    assert_eq!(row.get::<String>("key1")?, Some("value1"));
+    assert_eq!(row.get::<i32>("key2")?, Some(&42));
 
     let row = reader.next().unwrap().unwrap();
-
-    let item = MyStruct {
-        key1: row.get::<String>("key1")?.map(str::to_string),
-        key2: row.get::<i32>("key2")?.copied(),
-    };
-
-    assert_eq!(item.key1, None);
+    assert_eq!(row.get::<String>("key1")?, None);
+    assert_eq!(row.get::<i32>("key2")?, None);
+    assert!(reader.next().is_none());
     Ok(())
 }
 
@@ -821,20 +798,20 @@ pub fn test_vector_union() -> crate::Result<()> {
     assert_eq!(vector.len(), 5);
     let mut reader = vector.iter()?;
 
-    assert_eq!(
-        reader.next().unwrap().unwrap().member(),
-        0,
-        "Expected first union member to be 0 (num)"
-    );
+    let first = reader.next().unwrap().unwrap();
+    assert_eq!(first.member(), 0, "Expected first union member to be 0 (num)");
+    assert_eq!(first.get::<i32>(0)?, Some(&1));
 
     assert_eq!(reader.next().unwrap().unwrap().get::<i32>(0)?, Some(&42));
 
     assert!(reader.next().unwrap().is_none());
     assert_eq!(reader.next().unwrap().unwrap().get::<String>(1)?, Some("two"));
 
-    // check if failed cast errors
+    let last = reader.next().unwrap().unwrap();
+    assert_eq!(last.get::<String>(1)?, Some("three"));
+    // The wrong member type must be rejected.
     assert_eq!(
-        reader.next().unwrap().unwrap().get::<i32>(1).unwrap_err().code,
+        last.get::<i32>(1).unwrap_err().code,
         DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID
     );
     Ok(())
@@ -1493,52 +1470,34 @@ pub fn test_vector_types() -> crate::Result<()> {
     Ok(())
 }
 
-// TODO: This should not be a scalar, but an table function.
 #[test]
 pub fn test_vector_set_value() -> crate::Result<()> {
     scalar_callback!(ToVariant, Variant, |input, output, ctx, _user_data| {
         let mut output = output;
 
-        output.set_size(input.row_count()? * input.col_count())?;
-
-        let mut idx = 0;
-
-        for i in 0..input.col_count() {
-            let vec = input.get_untyped_vector_at(i)?;
-
-            for i in 0..vec.len() {
-                let value = if !vec.is_null(i)? {
-                    match vec.logical_type().type_id() {
-                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
-                            let val = vec.get_as_checked::<i32>(i)?.unwrap();
-
-                            Some(val.value(ctx)?)
-                        }
-                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
-                            let val = vec.get_as_checked::<bool>(i)?.unwrap();
-
-                            Some(val.value(ctx)?)
-                        }
-                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY => {
-                            todo!()
-                        }
-                        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR => {
-                            todo!()
-                        }
-                        _ => None,
+        output.set_size(input.row_count()?)?;
+        let vector = input.get_untyped_vector_at(0)?;
+        for index in 0..vector.len() {
+            let value = if !vector.is_null(index)? {
+                match vector.logical_type().type_id() {
+                    LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
+                        Some(vector.get_as_checked::<i32>(index)?.unwrap().value(ctx)?)
                     }
-                } else {
-                    None
-                };
-
-                if let Some(value) = value {
-                    let lt = LogicalType::from_text(ctx, "VARIANT")?;
-                    let result = value.cast(ctx, &lt)?;
-                    output.write_value_slow(idx, result)?;
-                } else {
-                    output.set_null_slow(idx)?
+                    LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
+                        Some(vector.get_as_checked::<bool>(index)?.unwrap().value(ctx)?)
+                    }
+                    _ => None,
                 }
-                idx += 1;
+            } else {
+                None
+            };
+
+            if let Some(value) = value {
+                let lt = LogicalType::from_text(ctx, "VARIANT")?;
+                let result = value.cast(ctx, &lt)?;
+                output.write_value_slow(index, result)?;
+            } else {
+                output.set_null_slow(index)?;
             }
         }
 
@@ -1554,37 +1513,32 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     ScalarFunctionBuilder::new(
         "to_variant",
         SignatureBuilder::new()
-            .param(FunctionParameter::vararg::<Any>("in"))
+            .param(FunctionParameter::new::<Any>("in"))
             .return_type(rt),
         ToVariant,
     )
     .register(&conn)?;
 
-    let mut result = conn.query(
-        r#"SELECT to_variant(bool, "int") from test_all_types();"#, // r#"SELECT to_variant(x) from test_vector_types("TESTER") as t(x);"#
-        Parameters::None,
-    )?;
-
-    let expected = ["false", "true", "NULL"];
-    let mut results: Vec<String> = Vec::new();
-
-    while let Some(item) = result.next_chunk()? {
-        for index in 0..item.col_count() {
-            let vector = item.get_vector_at::<Variant>(index)?;
+    for (column, expected) in [
+        ("bool", ["false", "true", "NULL"]),
+        ("\"int\"", ["-2147483648", "2147483647", "NULL"]),
+    ] {
+        let mut result = conn.query(
+            format!("SELECT to_variant({column}) FROM test_all_types()"),
+            Parameters::None,
+        )?;
+        let mut results = Vec::new();
+        while let Some(chunk) = result.next_chunk()? {
+            let vector = chunk.get_vector_at::<Variant>(0)?;
             for row in vector.iter()? {
-                match row {
-                    None => {
-                        results.push("NULL".into());
-                    }
-                    Some(value) => {
-                        results.push(value.dbg_string()?);
-                    }
-                }
+                results.push(match row {
+                    None => "NULL".to_owned(),
+                    Some(value) => value.dbg_string()?,
+                });
             }
         }
+        assert_eq!(results, expected, "{column}");
     }
-
-    assert_eq!(results, expected);
 
     Ok(())
 }
@@ -1714,19 +1668,16 @@ fn test_raw_string_access() -> crate::Result<()> {
 
     while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<BlobValue>(0)?;
+        assert_eq!(vector.storage_kind(), StorageKind::Flat);
 
         let view = vector.get_view().unwrap();
         let slice = unsafe { view.as_slice() }.unwrap();
-
-        dbg!(slice.len());
 
         for (index, item) in slice.iter().enumerate() {
             if view.is_null(index) {
                 results.push(None);
             } else {
                 let string = String::from_utf8_lossy(item.get_data());
-                println!("{}", string);
-
                 results.push(Some(string.to_string()));
             }
         }
@@ -1763,6 +1714,7 @@ fn test_raw_integer_access() -> crate::Result<()> {
 
     while let Some(chunk) = result.next_chunk()? {
         let vector = chunk.get_vector_at::<i32>(0)?;
+        assert_eq!(vector.storage_kind(), StorageKind::Flat);
 
         let view = vector.get_view().unwrap();
         let slice = unsafe { view.as_slice() }.unwrap();

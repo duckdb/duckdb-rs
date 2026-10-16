@@ -218,6 +218,21 @@ impl<'conn> ColumnDataCollection<'conn> {
         })
     }
 
+    /// Return the column types in schema order.
+    pub fn logical_types(&self) -> &[LogicalType] {
+        &self.logical_types
+    }
+
+    /// Return explicit column names, or `None` for positional columns.
+    pub fn column_names(&self) -> Option<&[String]> {
+        self.column_names.as_deref()
+    }
+
+    /// Return the number of columns in the schema.
+    pub fn column_count(&self) -> usize {
+        self.logical_types.len()
+    }
+
     /// Return whether the collection contains no rows.
     pub fn is_empty(&self) -> Result<bool> {
         Ok(self.len()? == 0)
@@ -318,6 +333,16 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
         }
     }
 
+    /// Return the total number of rows across all stored chunks.
+    pub fn len(&self) -> Result<usize> {
+        self.collection.len()
+    }
+
+    /// Return whether the collection contains no rows.
+    pub fn is_empty(&self) -> Result<bool> {
+        self.collection.is_empty()
+    }
+
     /// Return the collection being scanned.
     pub fn collection(&self) -> &ColumnDataCollection<'conn> {
         &self.collection
@@ -350,6 +375,11 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         let appender = collection.create_append_state()?;
 
         Ok(Self { collection, appender })
+    }
+
+    /// Return the collection being appended to.
+    pub fn collection(&self) -> &ColumnDataCollection<'conn> {
+        &self.collection
     }
 
     /// Append a copy of `chunk`, an owned [`DataChunk`] or a borrowed [`DataChunkRef`], to the collection.

@@ -200,7 +200,7 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?)?;
+        let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?);
         custom_type.register(&conn)?;
         let logical_type = f32::logical_type(&conn)?;
         let temperature_type = logical_type.with_alias(&conn, "TEMPERATURE")?;

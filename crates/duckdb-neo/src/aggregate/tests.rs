@@ -26,6 +26,24 @@ fn aggregate_state_slice_handles_empty_arrays() {
     }
 }
 
+#[test]
+fn aggregate_states_iterator_tracks_remaining_states() {
+    let (mut first, mut second) = (10, 20);
+    let pointers = [&mut first as *mut i32, &mut second as *mut i32];
+    // SAFETY: both aligned values remain live and otherwise unborrowed until states is dropped.
+    let states = unsafe { States::new(&pointers) };
+    let mut iter = states.iter();
+    assert_eq!(iter.size_hint(), (2, Some(2)));
+    assert_eq!(iter.len(), 2);
+    assert_eq!(iter.next_back(), Some(&20));
+    assert_eq!(iter.len(), 1);
+    assert_eq!(iter.next(), Some(&10));
+    assert_eq!(iter.size_hint(), (0, Some(0)));
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
+    assert_eq!((&states).into_iter().copied().collect::<Vec<_>>(), [10, 20]);
+}
+
 struct BasicAggregate<T> {
     item: T,
 }

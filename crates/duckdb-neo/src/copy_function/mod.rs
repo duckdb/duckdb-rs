@@ -104,11 +104,13 @@ unsafe extern "C" fn batch_to_callback<T: CopyToFunctionCallbacks>(
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
             let context = &unsafe { Context::from_raw(context) };
+            let factory = context.factory()?;
+            let logical_types = bind_data.logical_types.clone();
 
             let collection = ColumnDataCollection {
                 handle: check_api_call!(ffi::duckdb_v2_copy_to_batch_take_input, info, RET)?,
-                logical_types: bind_data.logical_types.clone(),
-                factory: context.factory()?,
+                logical_types,
+                factory,
                 column_names: None,
                 origin: None,
             };

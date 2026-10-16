@@ -74,14 +74,7 @@ fn test_log_sink_writes_to_global() -> Result<()> {
     let collected = COLLECTED.lock().unwrap().clone();
     let summary = collected
         .iter()
-        .map(|c| {
-            (
-                c.message.as_deref(),
-                c.level.clone(),
-                c.scope.clone(),
-                c.has_connection_id,
-            )
-        })
+        .map(|c| (c.message.as_deref(), c.level, c.scope, c.has_connection_id))
         .collect::<Vec<_>>();
     assert_eq!(
         summary,

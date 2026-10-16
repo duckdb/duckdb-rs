@@ -165,22 +165,18 @@ impl Instance {
         Ok(self)
     }
 
-    /// Attach the database at `location`, controlling the attach name, options, and default status.
-    ///
-    /// `alias` is the name to attach under, or `None` for the name derived from
-    /// the path. `options` supplies per-database options such as `READ_ONLY`.
-    /// When `default` is true, the attached database becomes the default for
-    /// connections created afterwards.
+    /// Attach at `location` using optional alias and options such as `READ_ONLY`.
+    /// `make_default` chooses the database for future connections only.
     pub fn attach_with_options(
         &self,
         location: &StorageLocation,
-        alias: Option<String>,
+        alias: Option<&str>,
         options: Option<&AttachOptionsBuilder>,
-        default: bool,
-    ) -> Result<()> {
+        make_default: bool,
+    ) -> Result<&Self> {
         let location: String = location.into();
         let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| o.raw());
-        let alias_str: Option<ffi::duckdb_v2_str> = alias.as_ref().map(|a| (a).into());
+        let alias_str: Option<ffi::duckdb_v2_str> = alias.map(Into::into);
 
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
@@ -188,8 +184,9 @@ impl Instance {
             alias_str.as_ref().map_or(std::ptr::null(), |a| a as *const _),
             &(&location).into(),
             options,
-            default
-        )
+            make_default
+        )?;
+        Ok(self)
     }
 
     /// Make the database attached under `name` the default for future connections.
@@ -239,19 +236,12 @@ mod tests {
 
         assert!(!options.is_empty());
 
-        assert!(
-            options
-                .iter()
-                .find(|x| x.canonical_name().unwrap() == "schema")
-                .is_some()
-        );
+        assert!(options.iter().any(|x| x.canonical_name().unwrap() == "schema"));
 
         for option in options {
-            let name = option.aliases()?;
-            if name.is_empty() {
-                continue;
+            for alias in option.aliases()? {
+                assert_eq!(config.get_by_name(&alias)?.canonical_name()?, option.canonical_name()?);
             }
-            println!("Aliases for option '{}': {:?}", option.canonical_name()?, name);
         }
 
         Ok(())
@@ -262,27 +252,19 @@ mod tests {
         let env = Environment::new()?;
         let instance = env.instance()?;
         let mut attach_options = instance.get_attach_options_builder()?;
+        let directory = tempfile::tempdir().expect("create temporary database directory");
+        let location = StorageLocation::OnDisk(directory.path().join("attach.db").to_str().unwrap().to_owned());
 
-        instance.attach_with_options(
-            &StorageLocation::OnDisk("test_instance_attach_options.db".into()),
-            Some("ondisk".into()),
-            None,
-            true,
-        )?;
+        instance.attach_with_options(&location, Some("ondisk"), None, true)?;
 
         instance.detach("ondisk")?;
 
         attach_options.set_option("read_only", "true")?;
 
-        // Attach an in-memory database as well. This one can be read.
+        // Keep a default database available after the on-disk database is detached.
         instance.attach(&StorageLocation::InMemory)?;
 
-        instance.attach_with_options(
-            &StorageLocation::OnDisk("test_instance_attach_options.db".into()),
-            Some("ro".into()),
-            Some(&attach_options),
-            false,
-        )?;
+        instance.attach_with_options(&location, Some("ro"), Some(&attach_options), false)?;
 
         instance.set_default("ro")?;
 
@@ -292,9 +274,8 @@ mod tests {
 
         assert!(res.is_err_and(|e| e.to_string().contains("read-only")));
 
+        drop(conn);
         instance.detach("ro")?;
-
-        std::fs::remove_file("test_instance_attach_options.db").expect("Failed to remove on-disk database");
 
         Ok(())
     }
