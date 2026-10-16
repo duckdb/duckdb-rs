@@ -35,10 +35,14 @@
 
 use std::marker::PhantomData;
 
+use crate::error::{DuckDBError, check_api_call_no_err};
+use crate::raw::RawExt;
 use crate::{
     Result,
     bytes::DuckDBBytes,
+    cast::CastMode,
     check_api_call,
+    connection::HasFactory,
     data_chunk::{ChildrenMut, RowCount, VectorCollection},
     error::Error,
     ffi,
@@ -404,6 +408,34 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             params: self.params,
             _chunk: self._chunk,
             _type: PhantomData,
+        }
+    }
+
+    pub fn cast_rows<T2: VectorElement, C: HasFactory>(
+        self,
+        source: &Vector<'_, T2>,
+        link: &C,
+        cast_mode: CastMode,
+    ) -> Result<Vector<'a, Unknown>> {
+        let mut cast_err = std::ptr::null_mut();
+
+        let success = check_api_call!(
+            ffi::duckdb_v2_vector_cast,
+            link.factory()?.raw(),
+            source.handle,
+            self.handle,
+            cast_mode.into(),
+            RET,
+            &mut cast_err
+        )?;
+
+        if !cast_err.is_null() {
+            let cast = unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, cast_err) };
+
+            check_api_call_no_err!(ffi::duckdb_v2_error_info_destroy, &mut cast_err)?;
+            Err(cast)
+        } else {
+            Ok(Vector::from_handle(&self.handle, self.access)?)
         }
     }
 

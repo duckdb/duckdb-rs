@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::cast::CastMode;
 use crate::logical_type::LogicalTypeID;
 use crate::scalar::ScalarFunctionBuilder;
 use crate::types::{Any, StructValue};
@@ -2022,5 +2023,80 @@ fn test_collection_append() -> crate::Result<()> {
         target.append(&mut scanned)?;
     }
     assert_eq!(target.len()?, 3);
+    Ok(())
+}
+
+scalar_callback!(CopyOver, i64, |input, result, ctx, ud| {
+    let mut vec = input.get_vector_at_mut::<String>(0)?;
+
+    let result = result.cast_rows(&vec, ctx, CastMode::Try)?;
+
+    Ok(())
+});
+
+#[test]
+fn test_vector_cast() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "copy_over",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("in"))
+            .return_type(i64::logical_type(&conn)?),
+        CopyOver,
+    )
+    .register(&conn)?;
+
+    let mut query = conn.query(
+        "SELECT copy_over(unnest($1))",
+        Parameters::Positional(&[&vec![Some("10"), Some("300"), None]]),
+    )?;
+
+    while let Some(chunk) = query.next_chunk()? {
+        let vec = chunk.get_vector_at::<i64>(0)?;
+
+        assert_eq!(vec.get(0)?, Some(&10));
+        assert_eq!(vec.get(1)?, Some(&300));
+        assert_eq!(vec.get(2)?, None);
+    }
+
+    Ok(())
+}
+
+scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
+    let vec = input.get_vector_at::<String>(0)?;
+    result.cast_rows(&vec, ctx, CastMode::Normal)?;
+    Ok(())
+});
+
+#[test]
+fn test_vector_cast_fails() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "copy_over_strict",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("in"))
+            .return_type(i64::logical_type(&conn)?),
+        CopyOverStrict,
+    )
+    .register(&conn)?;
+
+    let error = conn
+        .execute(
+            "SELECT copy_over_strict(unnest($1))",
+            Parameters::Positional(&[&vec![Some("10"), Some("abc"), None]]),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION);
+    assert!(
+        error.message.contains("Could not convert string 'abc' to INT64"),
+        "{error}"
+    );
+
     Ok(())
 }
