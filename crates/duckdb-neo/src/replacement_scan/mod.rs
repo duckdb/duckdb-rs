@@ -31,7 +31,7 @@ pub struct ReplacementHandle<'a> {
 /// A replacement source for an unresolved table reference, selected with
 /// [`ReplacementHandle::set_reference`].
 ///
-/// The column-data-collection forms name a collection added with
+/// The column-data-collection form names a collection added with
 /// [`ReplacementScanBuilder::collection`]; the registration keeps it alive for
 /// as long as any result or prepared statement reads it.
 #[derive(Debug)]
@@ -186,9 +186,8 @@ where
 
     /// Hand `collection` to the scan under `name`, replacing any collection already added under it.
     ///
-    /// The callback claims references with it through [`ReplacementType::ColumnDataCollection`]
-    /// or [`ReplacementType::NamedColumnDataCollection`]. The scan must be registered on the
-    /// connection the collection was created from.
+    /// The callback claims references with it through [`ReplacementType::ColumnDataCollection`].
+    /// The scan must be registered on the connection the collection was created from.
     pub fn collection(mut self, name: impl Into<String>, collection: ColumnDataCollection<'conn>) -> Self {
         self.collections.insert(name.into(), collection);
         self

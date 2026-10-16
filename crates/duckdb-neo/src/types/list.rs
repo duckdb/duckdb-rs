@@ -58,7 +58,8 @@ impl<T: FromValue> FromValue for Vec<Option<T>> {
     }
 }
 
-impl<L: VectorElement> VectorElement for List<L> {
+// SAFETY: `List` matches DuckDB's list entry, and `validate` checks the child as `L`.
+unsafe impl<L: VectorElement> VectorElement for List<L> {
     type Ref<'a>
         = ListRef<'a, L>
     where
@@ -95,7 +96,8 @@ impl<L: VectorElement> VectorElement for List<L> {
     }
 }
 
-impl<T: WritableVectorElement> WritableVectorElement for List<T> {
+// SAFETY: the entry covers child rows appended through the child's own `write`.
+unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
     type Write<'a>
         = Vec<Option<T::Write<'a>>>
     where

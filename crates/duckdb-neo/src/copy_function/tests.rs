@@ -61,8 +61,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
 
         to_append.append(&mut data_chunk)?;
 
-        let mut scanner = scanner.to_append()?;
-        scanner.combine(to_append.to_normal())?;
+        let scanner = scanner.to_append()?.combine(to_append.to_normal())?;
 
         let mut scanner = scanner.to_scan()?;
 

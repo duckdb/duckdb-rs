@@ -35,8 +35,9 @@ impl SqlTokenIterator {
         check_api_call!(ffi::duckdb_v2_tokenize_sql, conn.raw(), &sql.into(), RET).map(|handle| Self { handle })
     }
 
-    /// Whether the statement ends inside an unterminated string or quoted identifier.
-    pub fn ends_undetermined(&self) -> Result<bool> {
+    /// Whether the input ends inside an open string, quoted identifier, block comment or
+    /// dollar-quoted string, or in a line comment with no trailing newline.
+    pub fn ends_unterminated(&self) -> Result<bool> {
         check_api_call!(ffi::duckdb_v2_token_iterator_ends_unterminated, self.handle, RET)
     }
 }
@@ -115,6 +116,42 @@ mod tests {
             .map(|t| &sql[t.start..(t.start + t.length)])
             .collect::<Vec<_>>();
         assert_eq!(lexemes, vec!["SELECT", "*", "FROM", "test_data", "(", "10", ")"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ends_unterminated() -> crate::Result<()> {
+        let env: Environment = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let cases = [
+            ("SELECT 'abc", true),
+            ("SELECT \"abc", true),
+            ("SELECT /* abc", true),
+            ("SELECT $$abc", true),
+            ("SELECT 1 -- abc", true),
+            ("SELECT 'abc'", false),
+            ("SELECT \"abc\"", false),
+            ("SELECT /* abc */", false),
+            ("SELECT $$abc$$", false),
+            ("SELECT 1 -- abc\n", false),
+            ("", false),
+            ("  ", false),
+        ];
+        for (sql, expected) in cases {
+            let mut tokens = SqlTokenIterator::new(&conn, sql)?;
+            assert_eq!(tokens.ends_unterminated()?, expected, "before iterating {sql:?}");
+            if let Some(token) = tokens.next() {
+                token?;
+            }
+            assert_eq!(tokens.ends_unterminated()?, expected, "after one token of {sql:?}");
+            for token in tokens.by_ref() {
+                token?;
+            }
+            assert_eq!(tokens.ends_unterminated()?, expected, "after draining {sql:?}");
+        }
 
         Ok(())
     }

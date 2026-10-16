@@ -53,7 +53,8 @@ macro_rules! declare_storage_value {
 
         DeclareVectorElement!($name, $type_id);
 
-        impl WritableVectorElement for $name {
+        // SAFETY: every `$storage` value is valid for its logical type.
+        unsafe impl WritableVectorElement for $name {
             type Write<'a> = Self;
 
             unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -184,7 +185,8 @@ impl FromValue for IntervalValue {
 
 DeclareVectorElement!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
 
-impl WritableVectorElement for IntervalValue {
+// SAFETY: every field combination is a valid `INTERVAL`.
+unsafe impl WritableVectorElement for IntervalValue {
     type Write<'a> = Self;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {

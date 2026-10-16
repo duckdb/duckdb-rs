@@ -47,7 +47,8 @@ impl FromValue for UuidValueRaw {
     }
 }
 
-impl VectorElement for UuidValueRaw {
+// SAFETY: `UuidValueRaw` has the size and bit layout of DuckDB's UUID storage.
+unsafe impl VectorElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
 
     type Internal = ffi::duckdb_v2_hugeint_t;
@@ -66,7 +67,8 @@ impl VectorElement for UuidValueRaw {
     }
 }
 
-impl WritableVectorElement for UuidValueRaw {
+// SAFETY: every `i128` is a valid UUID.
+unsafe impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -119,7 +121,8 @@ mod external {
         }
     }
 
-    impl VectorElement for Uuid {
+    // SAFETY: same storage as `UuidValueRaw`.
+    unsafe impl VectorElement for Uuid {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
 
         type Internal = UuidValueRaw;
@@ -135,7 +138,8 @@ mod external {
         }
     }
 
-    impl WritableVectorElement for Uuid {
+    // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
+    unsafe impl WritableVectorElement for Uuid {
         type Write<'a> = Uuid;
 
         unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {

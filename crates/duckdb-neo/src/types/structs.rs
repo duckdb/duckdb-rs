@@ -126,7 +126,8 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
     }
 }
 
-impl VectorElement for Struct {
+// SAFETY: fields are read only through the child vectors, with their own checks.
+unsafe impl VectorElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT;
     type Ref<'a> = StructRow<'a>;
 
@@ -137,7 +138,7 @@ impl VectorElement for Struct {
         Self: Sized + 'a,
     {
         StructRow {
-            children: vector.children().expect("validated nested vector has children"),
+            children: vector.children(),
             logical_type: vector.logical_type(),
             logical,
         }
@@ -189,7 +190,8 @@ impl<'a> StructWrite<'a> {
     }
 }
 
-impl WritableVectorElement for Struct {
+// SAFETY: fields are written only through the child vectors' own `write`.
+unsafe impl WritableVectorElement for Struct {
     type Write<'a> = StructWrite<'a>;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -207,9 +209,10 @@ impl WritableVectorElement for Struct {
 
         vector.set_row_validity(index, true)?;
         let vector_len = vector.len();
-        let children = vector
-            .children_collection_mut()
-            .expect("validated nested vector has children");
+        // An empty struct has no children, and the count check above guarantees no fields.
+        let Some(children) = vector.children_collection_mut() else {
+            return Ok(());
+        };
 
         for (i, field) in value.fields.into_iter().enumerate() {
             let child = children.cached_mut::<Unknown>(i)?;
@@ -225,7 +228,7 @@ impl WritableVectorElement for Struct {
 /// A borrowed struct row that resolves named fields to child vectors.
 #[derive(Debug)]
 pub struct StructRow<'a> {
-    children: &'a VectorCollection,
+    children: Option<&'a VectorCollection>,
     logical_type: &'a LogicalType,
     logical: usize,
 }
@@ -240,8 +243,10 @@ impl<'a> StructRow<'a> {
             .iter()
             .position(|(field_name, _)| field_name == name)
             .ok_or_else(|| Error::invalid_parameter(format!("Field '{}' not found in struct", name)))?;
-        let child = (index < self.children.col_count())
-            .then(|| self.children.cached_unchecked(index))
+        let child = self
+            .children
+            .filter(|children| index < children.col_count())
+            .map(|children| children.cached_unchecked(index))
             .ok_or_else(|| Error::invalid_input(format!("Struct field '{}' is missing its child vector", name)))?;
 
         if child.logical_type().type_id() != T::TYPE_ID {

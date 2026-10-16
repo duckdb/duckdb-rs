@@ -40,7 +40,6 @@ use crate::raw::RawExt;
 use crate::{
     Result,
     bytes::DuckDBBytes,
-    cast::CastMode,
     check_api_call,
     connection::HasFactory,
     data_chunk::{ChildrenMut, RowCount, VectorCollection},
@@ -428,12 +427,35 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
     }
 
+    /// Replace this vector with every row of `source` cast to this vector's type, like SQL `CAST`.
+    ///
+    /// Fails if any row does not convert. The cast uses the cast functions and settings of `link`.
     pub fn cast_rows<T2: VectorElement, C: HasFactory>(
         self,
         source: &Vector<'_, T2>,
         link: &C,
-        cast_mode: CastMode,
     ) -> Result<Vector<'a, Unknown>> {
+        check_api_call!(
+            ffi::duckdb_v2_vector_cast,
+            link.factory()?.raw(),
+            source.handle,
+            self.handle,
+            ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_NORMAL,
+            RET,
+            std::ptr::null_mut()
+        )?;
+        Vector::from_handle(&self.handle, self.access)
+    }
+
+    /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
+    ///
+    /// Rows that do not convert become `NULL`. The returned error, if any, is the
+    /// conversion error of one such row.
+    pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(
+        self,
+        source: &Vector<'_, T2>,
+        link: &C,
+    ) -> Result<(Vector<'a, Unknown>, Option<Error>)> {
         let mut cast_err = std::ptr::null_mut();
 
         check_api_call!(
@@ -441,19 +463,19 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             link.factory()?.raw(),
             source.handle,
             self.handle,
-            cast_mode.into(),
+            ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY,
             RET,
             &mut cast_err
         )?;
 
-        if !cast_err.is_null() {
-            let cast = unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, cast_err) };
-
-            check_api_call_no_err!(ffi::duckdb_v2_error_info_destroy, &mut cast_err)?;
-            Err(cast)
+        let row_error = if cast_err.is_null() {
+            None
         } else {
-            Ok(Vector::from_handle(&self.handle, self.access)?)
-        }
+            let error = unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, cast_err) };
+            check_api_call_no_err!(ffi::duckdb_v2_error_info_destroy, &mut cast_err)?;
+            Some(error)
+        };
+        Ok((Vector::from_handle(&self.handle, self.access)?, row_error))
     }
 
     /// Elements per row of an `ARRAY` vector; 0 otherwise.
@@ -506,12 +528,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Make this vector reference another vector's storage without copying.
     ///
     /// The vector must be borrowed mutably, e.g. through
-    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`].
+    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`]. The returned
+    /// vector is not writable, since it shares the source's storage.
     ///
     /// # Safety
     ///
-    /// The source's storage must remain valid and must not be mutated
-    /// concurrently for as long as the destination vector may be read. This
+    /// The source's storage must remain valid and must not be written or
+    /// resized for as long as the destination vector may be read. This
     /// requirement applies to the destination's owning chunk, even after the
     /// returned vector is dropped.
     pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
@@ -521,13 +544,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
 
         // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
-        // Writes would land in the source's storage, so only a writable source stays writable.
-        let access = if self.is_writable() && source.is_writable() {
-            Access::Writable
-        } else {
-            Access::Exclusive
-        };
-        Ok(Vector::from_handle(&self.handle, access)?.cast_unchecked::<T2>())
+        // A write or resize would change storage the source wrapper still reads, so never stay writable.
+        Ok(Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked::<T2>())
     }
 
     pub(crate) fn get_as_unchecked<U: VectorElement>(&self, index: usize) -> Option<U::Ref<'_>> {

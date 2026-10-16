@@ -97,7 +97,8 @@ declare_primitive_to_value!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT, UHugeInt);
 /// same direct pointer-cast access pattern as the primitives below.
 macro_rules! DeclareVectorElement {
     ($type:tt , $type_id:ident) => {
-        impl $crate::vector::VectorElement for $type {
+        // SAFETY: `$type` is DuckDB's physical storage for `$type_id`.
+        unsafe impl $crate::vector::VectorElement for $type {
             const TYPE_ID: $crate::logical_type::LogicalTypeID = $crate::logical_type::LogicalTypeID::$type_id;
 
             type Internal = $type;
@@ -136,7 +137,8 @@ DeclareVectorElement!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
 
 macro_rules! DeclareWritableVectorElement {
     ($type:ty) => {
-        impl WritableVectorElement for $type {
+        // SAFETY: every `$type` value is valid for its logical type.
+        unsafe impl WritableVectorElement for $type {
             type Write<'a> = $type;
 
             unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {

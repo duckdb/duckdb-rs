@@ -2,8 +2,9 @@
 //!
 //! Implement [`ScalarCallbacks`] to bind each call site, optionally initialize
 //! worker-local state, and evaluate input chunks into an output vector. Register
-//! the implementation with [`ScalarFunctionBuilder`]. Bind callbacks can use
-//! [`ScalarCallbacks::resolve_types`] when the concrete result type depends on the arguments.
+//! the implementation with [`ScalarFunctionBuilder`]. Functions whose concrete
+//! result type depends on the arguments implement [`ScalarResolveTypesCallbacks`]
+//! on top.
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -27,7 +28,7 @@ use crate::{
     raw::{FromRaw, RawExt},
 };
 
-unsafe extern "C" fn resolve_types_callback<T: ScalarCallbacks>(
+unsafe extern "C" fn resolve_types_callback<T: ScalarResolveTypesCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_scalar_function_resolve_types_info_handle,
     context: ffi::duckdb_v2_context_handle,
@@ -35,19 +36,17 @@ unsafe extern "C" fn resolve_types_callback<T: ScalarCallbacks>(
 ) {
     handle_unwind(
         || {
+            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
+
             let arguments = BindArguments { handle: &info };
 
-            let return_type = T::resolve_types(&unsafe { Context::from_raw(context) }, arguments)?;
+            let return_type = T::resolve_types(user_data, &unsafe { Context::from_raw(context) }, arguments)?;
 
-            if let Some(return_type) = return_type {
-                check_api_call!(
-                    ffi::duckdb_v2_scalar_function_resolve_types_set_return_type,
-                    result,
-                    return_type.handle
-                )?;
-            }
-
-            Ok(())
+            check_api_call!(
+                ffi::duckdb_v2_scalar_function_resolve_types_set_return_type,
+                result,
+                return_type.handle
+            )
         },
         err,
     );
@@ -150,6 +149,18 @@ pub struct ScalarFunctionBuilder<T: ScalarCallbacks> {
     signature: SignatureBuilder,
     properties: HashMap<ffi::DUCKDB_V2_FUNCTION_PROPERTY_KEY, ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE>,
     user_data: OpaqueHandle<T>,
+    resolve_types_callback: ffi::duckdb_v2_scalar_function_resolve_types_callback_fn,
+}
+
+impl<T: ScalarResolveTypesCallbacks> ScalarFunctionBuilder<T> {
+    /// Resolve the return type per call site, enabling [`ScalarResolveTypesCallbacks`].
+    ///
+    /// Required when the signature declares an ANY return type: DuckDB rejects
+    /// the registration without it.
+    pub fn with_resolve_types(mut self) -> Self {
+        self.resolve_types_callback = Some(resolve_types_callback::<T>);
+        self
+    }
 }
 
 impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
@@ -160,6 +171,7 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             signature,
             properties: HashMap::new(),
             user_data: OpaqueHandle::new(implementation),
+            resolve_types_callback: None,
         }
     }
 
@@ -210,11 +222,17 @@ impl<T: ScalarCallbacks> ScalarFunctionBuilder<T> {
             Some(exec_callback::<T>)
         )?;
 
-        check_api_call!(
-            ffi::duckdb_v2_scalar_function_set_resolve_types_callback,
-            handle.raw(),
-            Some(resolve_types_callback::<T>)
-        )
+        // Only registered through `with_resolve_types`, so that DuckDB rejects
+        // an ANY return type no callback resolves.
+        if self.resolve_types_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_scalar_function_set_resolve_types_callback,
+                handle.raw(),
+                self.resolve_types_callback
+            )?;
+        }
+
+        Ok(())
     }
 
     /// Register through a [`Connection`](crate::connection::Connection) or
@@ -241,10 +259,6 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
     /// Worker-local data shared across execution batches.
     type InitData: Any + Send + Default;
 
-    fn resolve_types(_context: &Context, _arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
-        Ok(None)
-    }
-
     /// **Bind:** validate a call site and create data shared by later phases.
     fn bind(&self, _context: &Context, _arguments: BindArguments<'_>) -> Result<Self::BindData> {
         Ok(Self::BindData::default())
@@ -264,6 +278,22 @@ pub trait ScalarCallbacks: Send + Sync + 'static {
         vectors: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> Result<()>;
+}
+
+/// Chooses the return type of each call site of a scalar function.
+///
+/// Implement this for functions whose result type depends on their arguments,
+/// typically declared with an ANY return type in the signature. Enable the
+/// callback with [`ScalarFunctionBuilder::with_resolve_types`]; it is ignored,
+/// and never registered, without it.
+pub trait ScalarResolveTypesCallbacks: ScalarCallbacks {
+    /// **Resolve types:** return the concrete return type of a call site.
+    ///
+    /// Runs during query planning, before [`ScalarCallbacks::bind`] and before
+    /// the arguments are cast to the parameter types, so
+    /// [`BindArguments::logical_type`] reports the types the caller passed.
+    /// The returned type replaces the one declared in the signature.
+    fn resolve_types(&self, context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType>;
 }
 
 #[cfg(test)]
