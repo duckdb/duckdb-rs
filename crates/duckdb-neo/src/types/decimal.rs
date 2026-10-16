@@ -60,7 +60,8 @@ macro_rules! decimal_storage {
                 }
             }
 
-            impl VectorElement for $name {
+            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
+            unsafe impl VectorElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
                 type Internal = $type;
@@ -83,7 +84,8 @@ macro_rules! decimal_storage {
                 }
             }
 
-            impl WritableVectorElement for $name {
+            // SAFETY: the vector stores `$type`, the value's own storage type.
+            unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
                 unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -144,7 +146,7 @@ decimal_widths! {
 /// assert_eq!(price.0, 12_345i32);
 /// ```
 ///
-/// A scale above the width does not compile:
+/// `Decimal::new` with a scale above the width does not compile:
 ///
 /// ```compile_fail
 /// let _ = duckdb_neo::types::Decimal::<2, 3>::new(1);
@@ -230,7 +232,8 @@ where
     }
 }
 
-impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Internal`.
+unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
@@ -260,7 +263,8 @@ where
     }
 }
 
-impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: the vector stores `Internal`, the value's own storage type.
+unsafe impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
@@ -364,7 +368,7 @@ impl DecimalSignature {
     }
 
     /// Pair a scaled integer with this width and scale.
-    pub fn to_value<T: DecimalContainer>(&self, value: T) -> DecimalValue {
+    pub fn with_payload<T: DecimalContainer>(&self, value: T) -> DecimalValue {
         DecimalValue::new(value, self.width, self.scale)
     }
 }
@@ -385,16 +389,15 @@ impl FromValue for DecimalValue {
         let mut width: u8 = 0;
         let mut scale: u8 = 0;
 
-        let raw = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_value_get_decimal,
             value.raw(),
             RET,
             &mut width,
             &mut scale
-        )?;
-
-        Ok(Self {
-            value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
+        )
+        .map(|raw| Self {
+            value: crate::value::from_hugeint(raw),
             width,
             scale,
         })
@@ -484,7 +487,7 @@ mod tests {
         assert!(chunk.get_vector_at::<Decimal<18, 2>>(0).is_err());
         assert!(chunk.get_vector_at::<Decimal<17, 3>>(0).is_err());
 
-        let mut chunk = DataChunk::create(&[Decimal::<9, 2>::logical_type(&conn)?], true)?;
+        let mut chunk = DataChunk::create(&conn, &[Decimal::<9, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
         vector.write(0, Some(Decimal::new(-1)))?;

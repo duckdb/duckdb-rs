@@ -12,6 +12,7 @@ use crate::{Result, check_api_call, error::DuckDBError, error::Error, ffi};
 /// ```compile_fail,E0603
 /// let _ = duckdb_neo::bytes::DuckDBBytes::new(&[0; 13], || Ok(std::ptr::dangling_mut()));
 /// ```
+#[repr(transparent)]
 pub struct DuckDBBytes {
     data: ffi::duckdb_v2_bytes,
 }
@@ -60,7 +61,7 @@ impl DuckDBBytes {
                 ffi::duckdb_v2_arena_allocate,
                 heap,
                 value.len() as u64,
-                (&mut pointer.ptr as *mut *mut i8).cast(),
+                (&raw mut pointer.ptr).cast(),
             )?;
 
             unsafe {

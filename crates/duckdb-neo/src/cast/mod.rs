@@ -9,7 +9,7 @@ use crate::{
     connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
     logical_type::LogicalType,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     vector::{Access, Vector, VectorElement},
 };
 
@@ -45,7 +45,13 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
             )?;
             let output = output.cast::<T::OutputType>()?;
 
-            T::exec(user_data, &Context(context), mode.try_into()?, input, output)
+            T::exec(
+                user_data,
+                &unsafe { Context::from_raw(context) },
+                mode.try_into()?,
+                input,
+                output,
+            )
         },
         err,
     );
@@ -115,7 +121,7 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
         let handle = link.create_cast_function_handle()?;
         let handle = self.build(handle)?;
 
-        check_api_call!(ffi::duckdb_v2_cast_function_register, handle.raw())
+        link.register_cast_function_handle(handle)
     }
 }
 
@@ -194,10 +200,10 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?)?;
+        let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?);
         custom_type.register(&conn)?;
         let logical_type = f32::logical_type(&conn)?;
-        let temperature_type = logical_type.to_alias(&conn, "TEMPERATURE")?;
+        let temperature_type = logical_type.with_alias(&conn, "TEMPERATURE")?;
 
         CastFunctionBuilder::new(
             String::logical_type(&conn)?,

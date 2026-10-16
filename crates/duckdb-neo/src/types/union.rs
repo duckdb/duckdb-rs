@@ -13,7 +13,6 @@ use crate::{
     value::Value,
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
-
 /// Reads a `UNION` vector through its tag and member child vectors.
 #[derive(Debug)]
 pub struct Union;
@@ -60,11 +59,12 @@ impl<S: UnionSchema, T> DuckDBType for UnionValue<S, T> {
 impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         let value = self.value.value(link)?;
-        link.value_cast(&value, Self::logical_type(link)?)
+        link.value_cast(&value, &Self::logical_type(link)?)
     }
 }
 
-impl VectorElement for Union {
+// SAFETY: members are read only through the child vectors, and `validate` checks the tag.
+unsafe impl VectorElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION;
     type Ref<'a> = UnionRow<'a>;
 
@@ -78,7 +78,7 @@ impl VectorElement for Union {
         let Some(children) = children.filter(|children| children.col_count() > 0) else {
             return Err(Error::invalid_input("Union vector is missing its tag child"));
         };
-        children.get_untyped_vector_at(0)?.validate_as::<u8>()
+        children.get_untyped_vector_at(0)?.validate_as::<u8>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -172,7 +172,8 @@ impl<'a> UnionWriter<'a> {
     }
 }
 
-impl WritableVectorElement for Union {
+// SAFETY: the tag is range-checked, and members are written through the children's own `write`.
+unsafe impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -207,7 +208,18 @@ impl WritableVectorElement for Union {
             if i == 0 {
                 child.write_as::<u8>(index, Some(value.tag))?;
             } else if i != member {
-                child.set_row_validity(index, false)?;
+                // A NULL STRUCT, UNION or ARRAY row needs NULL descendants, which only the slow path sets.
+                let nested = matches!(
+                    child.logical_type().type_id(),
+                    LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT
+                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
+                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
+                );
+                if nested {
+                    child.set_null_slow(index)?;
+                } else {
+                    child.set_row_validity(index, false)?;
+                }
             }
         }
         // The member's own write sets its validity.

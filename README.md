@@ -96,14 +96,14 @@ fn main() -> duckdb_neo::Result<()> {
     let connection = database.connect()?;
 
     let mut result = connection.query("SELECT $1::INTEGER", Parameters::positional(&[&42]))?;
-    let chunk = result.next().transpose()?.expect("query returned no rows");
+    let chunk = result.next_chunk()?.expect("query returned no rows");
     let values = chunk.get_vector_at::<i32>(0)?;
     assert_eq!(values.get(0)?, Some(&42));
     Ok(())
 }
 ```
 
-`libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature and, behind its `capi-v2` feature, the v2 bindings as `libduckdb_sys::v2`. `duckdb-neo` disables the default features so only the v2 bindings are generated. `duckdb-neo` enables that feature itself. Its own `capi-v2-p2` feature targets API surface that the bundled DuckDB does not provide yet and does not compile.
+`libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature, and the v2 bindings as `libduckdb_sys::v2` behind its `capi-v2` feature. `duckdb-neo` disables the default features and enables `capi-v2`, so only the v2 bindings are generated.
 
 ## Examples
 

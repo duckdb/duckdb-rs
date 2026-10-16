@@ -1,5 +1,6 @@
 //! Reading strings and bytes that DuckDB hands back through the C API.
 
+use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use crate::ffi;
@@ -23,10 +24,17 @@ impl<'a> DuckDBStr<'a> {
     }
 
     /// Return the string, or `None` when DuckDB returned a null pointer.
+    ///
+    /// Only for text DuckDB produces; use [`Self::to_string_lossy`] for paths from the OS.
     pub(crate) fn as_str(&self) -> Option<&'a str> {
         let bytes = self.as_bytes()?;
         // SAFETY: the C API returns UTF-8 text.
         Some(unsafe { std::str::from_utf8_unchecked(bytes) })
+    }
+
+    /// Return the text with invalid UTF-8 replaced, or `None` when DuckDB returned a null pointer.
+    pub(crate) fn to_string_lossy(self) -> Option<Cow<'a, str>> {
+        self.as_bytes().map(String::from_utf8_lossy)
     }
 
     /// Return the raw bytes, or `None` when DuckDB returned a null pointer.
@@ -36,10 +44,6 @@ impl<'a> DuckDBStr<'a> {
         }
         // SAFETY: `from_raw` requires `len` bytes valid for `'a`.
         Some(unsafe { std::slice::from_raw_parts(self.raw.ptr.cast(), self.raw.len as usize) })
-    }
-
-    pub(crate) fn as_raw_ptr(&self) -> *const ffi::duckdb_v2_str {
-        &self.raw as *const ffi::duckdb_v2_str
     }
 }
 

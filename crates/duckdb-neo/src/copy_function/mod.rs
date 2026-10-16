@@ -10,6 +10,7 @@
 
 use std::{any::Any, collections::HashMap};
 
+use crate::connection::HasFactory;
 use crate::ffi_str::DuckDBStr;
 use crate::{
     Result,
@@ -24,7 +25,7 @@ use crate::{
     ffi,
     handles::{CopyFunctionBuilderHandle, CopyFunctionBuilderLink},
     logical_type::LogicalType,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     value::Value,
 };
 
@@ -45,7 +46,7 @@ unsafe extern "C" fn bind_to_callback<T: CopyToFunctionCallbacks>(
             let user_data = get_user_data!(ffi::duckdb_v2_copy_to_bind_get_user_data, info);
             let logical_types = bind_info.logical_types()?;
 
-            let bind_data = T::bind(user_data, &Context(context), &bind_info)?;
+            let bind_data = T::bind(user_data, &unsafe { Context::from_raw(context) }, &bind_info)?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_to_bind_set_bind_data,
@@ -54,9 +55,7 @@ unsafe extern "C" fn bind_to_callback<T: CopyToFunctionCallbacks>(
                     data: bind_data,
                     logical_types,
                 })
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -77,15 +76,18 @@ unsafe extern "C" fn init_to_callback<T: CopyToFunctionCallbacks>(
             let file_path = check_api_call!(ffi::duckdb_v2_copy_to_init_get_file_path, info, RET)
                 .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default())?;
 
-            let init_data = T::init(user_data, &Context(context), &bind_data.data, file_path)?;
+            let init_data = T::init(
+                user_data,
+                &unsafe { Context::from_raw(context) },
+                &bind_data.data,
+                file_path,
+            )?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_to_init_set_init_data,
                 info,
                 &mut into_opaque(init_data)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -101,26 +103,28 @@ unsafe extern "C" fn batch_to_callback<T: CopyToFunctionCallbacks>(
             let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_batch_get_bind_data, info, RET)?;
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let context = Context(context);
+            let context = &unsafe { Context::from_raw(context) };
+            let factory = context.factory()?;
+            let logical_types = bind_data.logical_types.clone();
+
             let collection = ColumnDataCollection {
                 handle: check_api_call!(ffi::duckdb_v2_copy_to_batch_take_input, info, RET)?,
-                logical_types: bind_data.logical_types.clone(),
+                logical_types,
+                factory,
+                column_names: None,
                 origin: None,
-                _conn: std::marker::PhantomData,
             };
 
             let user_data = get_user_data!(ffi::duckdb_v2_copy_to_batch_get_user_data, info);
             let init_data = get_init_data!(ffi::duckdb_v2_copy_to_batch_get_init_data, info).unwrap();
 
-            let batch_data = T::batch(user_data, &context, &bind_data.data, init_data, collection)?;
+            let batch_data = T::batch(user_data, context, &bind_data.data, init_data, collection)?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_to_batch_set_batch_data,
                 info,
                 &mut into_opaque(batch_data)
-            )?;
-
-            Ok(())
+            )
         },
         err,
     );
@@ -137,7 +141,7 @@ unsafe extern "C" fn batch_size_callback<T: CopyToFunctionCallbacks>(
             let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_batch_size_get_bind_data, info, RET)?;
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
-            let target = T::batch_size(user_data, &Context(context), &bind_data.data);
+            let target = T::batch_size(user_data, &unsafe { Context::from_raw(context) }, &bind_data.data);
 
             if let Some(target) = target {
                 check_api_call!(ffi::duckdb_v2_copy_to_batch_size_set_target, info, target as u64)
@@ -167,7 +171,13 @@ unsafe extern "C" fn flush_to_callback<T: CopyToFunctionCallbacks>(
 
             let batch_data = unsafe { get_opaque_data_ref(batch_data) }.unwrap();
 
-            T::flush(user_data, &Context(context), &bind_data.data, init_data, batch_data)?;
+            T::flush(
+                user_data,
+                &unsafe { Context::from_raw(context) },
+                &bind_data.data,
+                init_data,
+                batch_data,
+            )?;
 
             Ok(())
         },
@@ -189,7 +199,12 @@ unsafe extern "C" fn finalize_to_callback<T: CopyToFunctionCallbacks>(
 
             let init_data = get_init_data!(ffi::duckdb_v2_copy_to_finalize_get_init_data, info).unwrap();
 
-            T::finalize(user_data, &Context(context), &bind_data.data, init_data)?;
+            T::finalize(
+                user_data,
+                &unsafe { Context::from_raw(context) },
+                &bind_data.data,
+                init_data,
+            )?;
 
             Ok(())
         },
@@ -197,12 +212,13 @@ unsafe extern "C" fn finalize_to_callback<T: CopyToFunctionCallbacks>(
     );
 }
 
-/// Builds and registers a user-defined `COPY TO` format.
+/// Builds and registers a user-defined `COPY TO` and/or `COPY FROM` format.
 #[derive(Debug)]
 pub struct CopyFunctionBuilder<T> {
     user_data: OpaqueHandle<T>,
     name: String,
     progress: bool,
+    fallback_file_extension: Option<String>,
 }
 
 impl<T> CopyFunctionBuilder<T> {
@@ -212,7 +228,14 @@ impl<T> CopyFunctionBuilder<T> {
             name: name.into(),
             user_data: OpaqueHandle::new(user_data),
             progress: false,
+            fallback_file_extension: None,
         }
+    }
+
+    /// Set the extension, without a leading dot, for files DuckDB names itself (e.g. `PARTITION_BY`).
+    pub fn with_fallback_extension(mut self, value: impl Into<String>) -> Self {
+        self.fallback_file_extension = Some(value.into());
+        self
     }
 }
 
@@ -230,7 +253,15 @@ impl<T> CopyFunctionBuilder<T> {
             &mut self.user_data.to_handle()
         )?;
 
-        Ok(())
+        if let Some(extension) = &self.fallback_file_extension {
+            check_api_call!(
+                ffi::duckdb_v2_copy_function_set_file_extension,
+                handle.raw(),
+                &extension.into()
+            )
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -272,18 +303,16 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
             ffi::duckdb_v2_copy_to_set_finalize_callback,
             handle.raw(),
             Some(finalize_to_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
-    /// Register the `COPY TO` side through a connection or extension, consuming the builder.
+    /// Register the `COPY TO` side through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register<C: CopyFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_copy_function_handle()?;
         self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
+        link.register_copy_function_handle(handle)
     }
 }
 
@@ -339,25 +368,25 @@ impl<T: CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
         self.set_from_callbacks(handle)
     }
 
-    /// Register the `COPY FROM` side through a connection or extension, consuming the builder.
+    /// Register the `COPY FROM` side through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register_from<C: CopyFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_copy_function_handle()?;
         self.build_from(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
+        link.register_copy_function_handle(handle)
     }
 }
 
 impl<T: CopyToFunctionCallbacks + CopyFromFunctionCallbacks> CopyFunctionBuilder<T> {
-    /// Register both `COPY TO` and `COPY FROM` through a connection or extension, consuming the builder.
+    /// Register both `COPY TO` and `COPY FROM` through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register_to_and_from<C: CopyFunctionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_copy_function_handle()?;
         self.build(&handle)?;
         self.set_from_callbacks(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_copy_function_register, handle.raw())
+        link.register_copy_function_handle(handle)
     }
 }
 
@@ -379,9 +408,7 @@ impl CopyToBindInfo {
 
     /// Return the number of input columns.
     pub fn len(&self) -> Result<usize> {
-        let res = check_api_call!(ffi::duckdb_v2_copy_to_bind_get_column_count, self.handle, RET)?;
-
-        Ok(res as usize)
+        check_api_call!(ffi::duckdb_v2_copy_to_bind_get_column_count, self.handle, RET).map(|res| res as usize)
     }
 
     /// Return whether there are no input columns.
@@ -465,7 +492,7 @@ unsafe extern "C" fn bind_from_callback<T: CopyFromFunctionCallbacks>(
 
             let (bind_data, cardinality) = T::bind(
                 user_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 DuckDBStr::from_raw(file_path).as_str().unwrap_or_default(),
                 &bind_info,
             )?;
@@ -501,7 +528,8 @@ unsafe extern "C" fn init_global_from_callback<T: CopyFromFunctionCallbacks>(
             let user_data = get_user_data!(ffi::duckdb_v2_copy_from_init_global_get_user_data, info);
             let bind_data = get_bind_data!(ffi::duckdb_v2_copy_from_init_global_get_bind_data, info);
 
-            let (global_state, max_threads) = T::init_global_state(user_data, bind_data, &Context(context))?;
+            let (global_state, max_threads) =
+                T::init_global_state(user_data, bind_data, &unsafe { Context::from_raw(context) })?;
 
             if let Some(global_state) = global_state {
                 check_api_call!(
@@ -536,7 +564,12 @@ unsafe extern "C" fn init_local_from_callback<T: CopyFromFunctionCallbacks>(
             let bind_data = get_bind_data!(ffi::duckdb_v2_copy_from_init_local_get_bind_data, info);
             let global_state = get_global_state!(ffi::duckdb_v2_copy_from_init_local_get_global_state, info);
 
-            let local_state = T::init_local_state(user_data, bind_data, &Context(context), global_state)?;
+            let local_state = T::init_local_state(
+                user_data,
+                bind_data,
+                &unsafe { Context::from_raw(context) },
+                global_state,
+            )?;
 
             if let Some(local_state) = local_state {
                 check_api_call!(
@@ -574,7 +607,7 @@ unsafe extern "C" fn exec_from_callback<T: CopyFromFunctionCallbacks>(
                 bind_data,
                 global_state,
                 local_state,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 output_chunk,
             )?;
 
@@ -595,7 +628,9 @@ unsafe extern "C" fn progress_from_callback<T: CopyFromFunctionCallbacks>(
             let bind_data = get_bind_data!(ffi::duckdb_v2_copy_from_progress_get_bind_data, info);
             let global_state = get_global_state!(ffi::duckdb_v2_copy_from_progress_get_global_state, info);
 
-            if let Some(progress) = T::progress(user_data, bind_data, global_state, &Context(context))? {
+            if let Some(progress) = T::progress(user_data, bind_data, global_state, &unsafe {
+                Context::from_raw(context)
+            })? {
                 check_api_call!(ffi::duckdb_v2_copy_from_progress_set_progress, info, progress)?;
             }
 
@@ -618,9 +653,7 @@ pub struct CopyFromBindInfo {
 impl CopyFromBindInfo {
     /// Return the number of columns the target table expects.
     pub fn column_count(&self) -> Result<usize> {
-        let res = check_api_call!(ffi::duckdb_v2_copy_from_bind_get_column_count, self.handle, RET)?;
-
-        Ok(res as usize)
+        check_api_call!(ffi::duckdb_v2_copy_from_bind_get_column_count, self.handle, RET).map(|res| res as usize)
     }
 
     /// Return a target column's borrowed name and owned logical type.
@@ -636,26 +669,25 @@ impl CopyFromBindInfo {
             &mut name
         )?;
 
-        let owned_type = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_copy_from_bind_get_column_type,
             self.handle,
             index as u64,
             RET
-        )?;
-
-        Ok((
-            DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
-            LogicalType { handle: owned_type },
-        ))
+        )
+        .map(|owned_type| {
+            (
+                DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
+                LogicalType { handle: owned_type },
+            )
+        })
     }
 
     /// Return the number of options the `COPY` statement passed to the function.
     ///
     /// Every option other than `FORMAT` is included.
     pub fn option_count(&self) -> Result<usize> {
-        let res = check_api_call!(ffi::duckdb_v2_copy_from_bind_get_option_count, self.handle, RET)?;
-
-        Ok(res as usize)
+        check_api_call!(ffi::duckdb_v2_copy_from_bind_get_option_count, self.handle, RET).map(|res| res as usize)
     }
 
     /// Return an option's borrowed name and owned value.
@@ -671,17 +703,18 @@ impl CopyFromBindInfo {
             &mut name
         )?;
 
-        let value = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_copy_from_bind_get_option_value,
             self.handle,
             index as u64,
             RET
-        )?;
-
-        Ok((
-            DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
-            Value { handle: value },
-        ))
+        )
+        .map(|value| {
+            (
+                DuckDBStr::from_raw(name).as_str().unwrap_or_default(),
+                Value { handle: value },
+            )
+        })
     }
 }
 
@@ -764,16 +797,10 @@ pub trait CopyFromFunctionCallbacks: Send + Sync + 'static {
     }
 }
 
-/// Callback lifecycle for a user-defined `COPY TO` format.
-///
-/// DuckDB binds the input columns, initializes one output file, prepares input
-/// batches, flushes each prepared batch, and finalizes the file.
-///
-/// A type may also implement [`CopyFromFunctionCallbacks`] to support `COPY
-/// ... FROM` under the same format name; register both sides at once with
-/// [`CopyFunctionBuilder::register_to_and_from`].
+/// Binds `COPY TO` input columns, then prepares and flushes batches.
+/// Initialization and finalization run once per output file, including partitioned output.
 pub trait CopyToFunctionCallbacks: Send + Sync + 'static {
-    /// State created once for the bound copy operation.
+    /// State for one output file; partitioned output creates one per file.
     type InitData: Any + Send + Sync;
     /// Data resolved while binding the input columns.
     type BindData: Any + Send + Sync;

@@ -34,7 +34,7 @@ fn test_i32_to_value() -> crate::Result<()> {
     let value = 42_i32.value(&conn)?;
 
     assert_eq!(
-        value.fetch_logical_type()?.type_id(),
+        value.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
     assert_eq!(value.dbg_string()?, "42");
@@ -52,7 +52,7 @@ fn test_primitive_logical_types() -> crate::Result<()> {
         ($type:ty, $value:expr, $type_id:ident) => {
             assert_eq!(<$type>::logical_type(&conn)?.type_id(), LogicalTypeID::$type_id);
             assert_eq!(
-                ($value as $type).value(&conn)?.fetch_logical_type()?.type_id(),
+                ($value as $type).value(&conn)?.logical_type()?.type_id(),
                 LogicalTypeID::$type_id
             );
         };
@@ -84,7 +84,7 @@ fn test_remaining_value_creators() -> crate::Result<()> {
     macro_rules! assert_type {
         ($value:expr, $type_id:ident) => {
             assert_eq!(
-                $value.value(&conn)?.fetch_logical_type()?.type_id(),
+                $value.value(&conn)?.logical_type()?.type_id(),
                 LogicalTypeID::$type_id
             );
         };
@@ -114,14 +114,14 @@ fn test_remaining_value_creators() -> crate::Result<()> {
 
     let tuple = (42_i32, "duck").value(&conn)?;
     assert_eq!(
-        tuple.fetch_logical_type()?.type_id(),
+        tuple.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
     );
     assert_eq!(tuple.dbg_string()?, "(42, duck)");
     assert_eq!(().value(&conn)?.dbg_string()?, "()");
 
     let logical_type = i32::logical_type(&conn)?;
-    let null = Value::null(&logical_type)?;
+    let null = Value::null(&conn, &logical_type)?;
     assert!(null.is_null()?);
 
     Ok(())
@@ -135,7 +135,7 @@ fn test_binary_value_creators() -> crate::Result<()> {
 
     let empty_blob = BlobValue(Vec::<u8>::new()).value(&conn)?;
     assert_eq!(
-        empty_blob.fetch_logical_type()?.type_id(),
+        empty_blob.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB
     );
 
@@ -146,6 +146,10 @@ fn test_binary_value_creators() -> crate::Result<()> {
     assert_eq!(bit.dbg_string()?, "10101010");
 
     assert!(BitValue(Vec::<u8>::new()).value(&conn).is_err());
+    // A padding count of 8 or more would make DuckDB render past its buffer.
+    assert!(BitValue(vec![16, 0, 0, 0]).value(&conn).is_err());
+    assert!(BitValue(vec![0]).value(&conn).is_err());
+    assert!(BitValue(vec![3, 0b0001_0101]).value(&conn).is_err());
 
     Ok(())
 }
@@ -202,11 +206,11 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     assert_eq!(tuple.get_child(2)?.dbg_string()?, "true");
 
     let logical_type = i32::logical_type(&conn)?;
-    let null = Value::null(&logical_type)?;
+    let null = Value::null(&conn, &logical_type)?;
     drop(logical_type);
     assert!(null.is_null()?);
     assert_eq!(
-        null.fetch_logical_type()?.type_id(),
+        null.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -259,7 +263,7 @@ fn test_raw_value_getters() -> crate::Result<()> {
         Some(BlobValue(Vec::new()))
     );
 
-    let bit = BitValue(vec![3_u8, 0b0001_0101]);
+    let bit = BitValue(vec![3_u8, 0b1111_0101]);
     assert_eq!(bit.value(&conn)?.get::<BitValue>()?, Some(bit));
 
     macro_rules! assert_storage_round_trip {
@@ -307,6 +311,26 @@ fn test_raw_value_getters() -> crate::Result<()> {
 }
 
 #[test]
+fn test_bignum_value_getter_rejects_blob_and_bit() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let blob = BlobValue(vec![1_u8, 2, 3, 4]).value(&conn)?;
+    assert!(blob.get::<BigNumValue>().is_err());
+    let bit = BitValue(vec![3_u8, 0b1111_0101, 0, 0]).value(&conn)?;
+    assert!(bit.get::<BigNumValue>().is_err());
+
+    let bignum = BigNumValue {
+        is_negative: false,
+        magnitude: vec![1, 2, 3, 4],
+    };
+    assert_eq!(bignum.value(&conn)?.get::<BigNumValue>()?, Some(bignum));
+
+    Ok(())
+}
+
+#[test]
 fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -317,7 +341,7 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     let null = i32::null_value(&conn)?;
     assert_eq!(null.get::<i32>()?, None);
     assert_eq!(
-        null.fetch_logical_type()?.type_id(),
+        null.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -346,7 +370,7 @@ fn test_list_to_value() -> crate::Result<()> {
 
     assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST);
     assert_eq!(
-        logical_type.get_param(0)?.1.logical_type()?.type_id(),
+        logical_type.get_param(0)?.1.type_value_get_inner()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
@@ -365,7 +389,7 @@ fn test_array_to_value() -> crate::Result<()> {
     let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
 
     assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
-    assert_eq!(logical_type.to_string()?, "INTEGER[3]");
+    assert_eq!(logical_type.to_text()?, "INTEGER[3]");
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
 
     Ok(())
@@ -455,16 +479,53 @@ fn test_complex_values() -> crate::Result<()> {
 
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(
-        union.fetch_logical_type()?.type_id(),
+        union.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
     );
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;
     assert_eq!(
-        variant.fetch_logical_type()?.type_id(),
+        variant.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT
     );
+
+    Ok(())
+}
+
+struct EmptyStruct;
+
+impl StructSchema for EmptyStruct {
+    fn fields<C: FFILink + ?Sized>(_link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
+        Ok(Vec::new())
+    }
+}
+
+#[test]
+fn test_empty_struct_read_and_write() -> crate::Result<()> {
+    use crate::{data_chunk::DataChunk, parameter::Parameters};
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+    let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
+    let vector = chunk.get_vector_at::<Struct>(0)?;
+    assert!(vector.children().is_none());
+    let row = vector.get(0)?.unwrap();
+    assert!(row.get::<i32>("x").unwrap_err().message.contains("not found"));
+
+    let mut chunk = DataChunk::create(&conn, &[StructValue::<EmptyStruct>::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+        vector.set_size(2)?;
+        vector.write(0, Some(structs::StructWrite::default()))?;
+        vector.write(1, None)?;
+        let extra = structs::StructWrite::default().field::<i32>(Some(1));
+        assert!(vector.write(0, Some(extra)).is_err());
+    }
+    let vector = chunk.get_vector_at::<Struct>(0)?;
+    assert!(vector.get(0)?.is_some());
+    assert!(vector.get(1)?.is_none());
 
     Ok(())
 }

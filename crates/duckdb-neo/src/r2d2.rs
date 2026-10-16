@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::{Parameters, Result, connection::Connection, database::Instance, error::Error};
 
 /// An [`r2d2::ManageConnection`] that opens connections to a shared [`Instance`].
@@ -12,6 +14,7 @@ impl ConnectionManager {
         Self {
             database: Instance {
                 handle: database.handle.clone(),
+                factory: OnceLock::new(),
             },
         }
     }

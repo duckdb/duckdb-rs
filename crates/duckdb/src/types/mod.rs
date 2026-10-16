@@ -354,6 +354,20 @@ mod test {
     }
 
     #[test]
+    fn test_geometry_value_binds_through_geometry_cast() -> Result<()> {
+        let db = checked_memory_handle()?;
+        let wkb = vec![
+            0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F, 0, 0, 0, 0, 0, 0, 0xF8, 0x7F,
+        ];
+
+        let value = Value::Geometry(wkb.clone());
+        let bound: Value = db.query_row("SELECT ?::GEOMETRY", [value], |r| r.get(0))?;
+
+        assert_eq!(bound, Value::Geometry(wkb));
+        Ok(())
+    }
+
+    #[test]
     fn test_str() -> Result<()> {
         let db = checked_memory_handle()?;
 

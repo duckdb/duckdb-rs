@@ -206,6 +206,7 @@ pub const duckdb_error_type_DUCKDB_ERROR_AUTOLOAD: duckdb_error_type = 40;
 pub const duckdb_error_type_DUCKDB_ERROR_SEQUENCE: duckdb_error_type = 41;
 pub const duckdb_error_type_DUCKDB_ERROR_DATA_CORRUPTION: duckdb_error_type = 43;
 pub const duckdb_error_type_DUCKDB_INVALID_CONFIGURATION: duckdb_error_type = 42;
+pub const duckdb_error_type_DUCKDB_ERROR_RESOURCE_IN_USE: duckdb_error_type = 44;
 #[doc = " An enum over DuckDB's different error types.\n\n history:\n - stable: v1.1.0"]
 pub type duckdb_error_type = ::std::os::raw::c_uint;
 pub const duckdb_cast_mode_DUCKDB_CAST_NORMAL: duckdb_cast_mode = 0;

@@ -59,12 +59,11 @@ pub enum Value {
     /// The value is a `GEOMETRY`, represented as WKB bytes.
     ///
     /// As of the bundled DuckDB version, DuckDB does not expose a dedicated
-    /// geometry bind or appender helper. Binding this variant routes its WKB
-    /// bytes through the BLOB APIs. Use spatial SQL such as `ST_GeomFromWKB(?)`
-    /// when binding WKB bytes into a `GEOMETRY` SQL context. Appender writes
-    /// can stage these bytes in BLOB columns; appending directly to GEOMETRY
-    /// columns is not supported. See [`ValueRef::Geometry`](super::ValueRef::Geometry)
-    /// for borrowed geometry values.
+    /// geometry bind or appender helper. Binding or appending this variant
+    /// routes its WKB bytes through the BLOB APIs, and DuckDB casts them to
+    /// `GEOMETRY` where the target is a `GEOMETRY` column or parameter. See
+    /// [`ValueRef::Geometry`](super::ValueRef::Geometry) for borrowed geometry
+    /// values.
     Geometry(Vec<u8>),
     /// The value is a date32
     ///

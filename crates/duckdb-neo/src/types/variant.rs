@@ -13,7 +13,8 @@ use crate::{
 #[derive(Debug)]
 pub struct Variant;
 
-impl VectorElement for Variant {
+// SAFETY: rows are read only through DuckDB's value API.
+unsafe impl VectorElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT;
 
     /// Variant does not have an Raw representation in the V2 API. Use [`VectorElement::get`] instead.
@@ -29,7 +30,8 @@ impl VectorElement for Variant {
     }
 }
 
-impl WritableVectorElement for Variant {
+// SAFETY: rows are written only through DuckDB's value API.
+unsafe impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -53,6 +55,6 @@ impl<T> DuckDBType for VariantValue<T> {
 impl<T: ToValue> ToValue for VariantValue<T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         let value = self.0.value(link)?;
-        link.value_cast(&value, Self::logical_type(link)?)
+        link.value_cast(&value, &Self::logical_type(link)?)
     }
 }
