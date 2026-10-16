@@ -215,7 +215,7 @@ impl<'ctx> ArrowExporter<'ctx> {
     }
 
     /// Take the next completed array, or `None` when none is ready.
-    pub fn next_array(&self) -> Result<Option<ArrowArray>> {
+    pub fn next_array(&mut self) -> Result<Option<ArrowArray>> {
         // DuckDB only clears `release` when nothing is ready, so start from a fully initialized array.
         let mut raw = ffi::ArrowArray::empty();
         check_api_call!(ffi::duckdb_v2_arrow_exporter_next_array, self.handle, &mut raw)?;
@@ -265,10 +265,10 @@ impl<'ctx> ArrowImporter<'ctx> {
     /// # Safety
     ///
     /// The importer keeps a pointer to `array` until it is drained, meaning
-    /// [`Self::chunk`] has returned `Ok(None)`. Until then the array must not be
+    /// [`Self::next_chunk`] has returned `Ok(None)`. Until then the array must not be
     /// released, mutated, or moved. If draining fails, those requirements hold
     /// until the importer is dropped.
-    pub unsafe fn append_referenced(&self, array: &mut ArrowArray, flush: bool) -> Result<()> {
+    pub unsafe fn append_referenced(&mut self, array: &mut ArrowArray, flush: bool) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_arrow_importer_append,
             self.handle,
@@ -283,7 +283,7 @@ impl<'ctx> ArrowImporter<'ctx> {
     /// Produced chunks reference the array's buffers and keep them alive, so
     /// they stay valid after the importer is dropped. On error the array is
     /// released.
-    pub fn append_consumed(&self, array: impl Into<ArrowArray>, flush: bool) -> Result<()> {
+    pub fn append_consumed(&mut self, array: impl Into<ArrowArray>, flush: bool) -> Result<()> {
         // DuckDB takes the array on success; on error `array` still owns it and releases it on drop.
         let mut array = array.into();
         check_api_call!(
@@ -295,8 +295,8 @@ impl<'ctx> ArrowImporter<'ctx> {
         )
     }
 
-    /// Flush any partial batch after draining the current array with [`Self::chunk`].
-    pub fn flush(&self) -> Result<()> {
+    /// Flush any partial batch after draining the current array with [`Self::next_chunk`].
+    pub fn flush(&mut self) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_arrow_importer_append,
             self.handle,
@@ -312,7 +312,7 @@ impl<'ctx> ArrowImporter<'ctx> {
     }
 
     /// Take the next chunk, or return `None` when the current array is drained.
-    pub fn chunk(&self) -> Result<Option<DataChunk<'static>>> {
+    pub fn next_chunk(&mut self) -> Result<Option<DataChunk<'static>>> {
         let handle = check_api_call!(ffi::duckdb_v2_arrow_importer_next_chunk, self.handle, RET)?;
 
         if handle.is_null() {
@@ -367,7 +367,7 @@ mod tests {
         assert!(arrow_exporter.next_array()?.is_none());
         arrow_exporter.flush()?;
 
-        let importer = ArrowImporter::new(ctx, schema, Some(3))?;
+        let mut importer = ArrowImporter::new(ctx, schema, Some(3))?;
 
         let import_schema = importer.schema()?;
 
@@ -378,10 +378,10 @@ mod tests {
         let array = arrow_exporter.next_array()?.expect("the flushed chunk is ready");
         assert_eq!(array.len(), 2);
         importer.append_consumed(array, false)?;
-        assert!(importer.chunk()?.is_none());
+        assert!(importer.next_chunk()?.is_none());
         importer.flush()?;
 
-        let chunk = importer.chunk()?;
+        let chunk = importer.next_chunk()?;
 
         assert!(chunk.is_some());
         let mut chunk = chunk.unwrap();

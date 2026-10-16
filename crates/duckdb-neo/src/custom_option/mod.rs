@@ -119,7 +119,7 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
             check_api_call!(
                 ffi::duckdb_v2_custom_option_set_default_scope,
                 handle.raw(),
-                default_scope.clone().into()
+                (*default_scope).into()
             )?;
         }
         if let Some(default_value) = self.default_value.as_ref() {

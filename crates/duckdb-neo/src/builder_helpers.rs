@@ -313,7 +313,10 @@ mod tests {
         assert_copy_hash::<crate::cast::CastMode>();
         let mode = crate::cast::CastMode::try_from(crate::ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY)?;
         assert_eq!(mode, crate::cast::CastMode::Try);
-        assert_eq!(crate::ffi::DUCKDB_V2_CAST_MODE::from(mode), crate::ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY);
+        assert_eq!(
+            crate::ffi::DUCKDB_V2_CAST_MODE::from(mode),
+            crate::ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY
+        );
         Ok(())
     }
 

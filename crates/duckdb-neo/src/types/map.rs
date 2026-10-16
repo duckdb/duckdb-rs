@@ -23,10 +23,24 @@ use crate::{
 pub struct Map<K, V>(PhantomData<(K, V)>);
 
 /// Key-value entries represented as a DuckDB `MAP`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct MapValue<K, V> {
     /// Entries in insertion order.
     pub entries: Vec<(K, V)>,
+}
+
+impl<K, V> From<Vec<(K, V)>> for MapValue<K, V> {
+    fn from(entries: Vec<(K, V)>) -> Self {
+        Self { entries }
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for MapValue<K, V> {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self {
+            entries: iter.into_iter().collect(),
+        }
+    }
 }
 
 impl<K: DuckDBType, V: DuckDBType> DuckDBType for MapValue<K, V> {
@@ -288,6 +302,15 @@ mod tests {
         environment::{Environment, StorageLocation},
         types::List,
     };
+
+    #[test]
+    fn map_value_conversions_preserve_order() {
+        let value = MapValue::from(vec![(2, "b"), (1, "a")]);
+        let collected = [(2, "b"), (1, "a")].into_iter().collect::<MapValue<_, _>>();
+        assert_eq!(value, collected);
+        assert_eq!(value.entries, [(2, "b"), (1, "a")]);
+        assert_eq!(MapValue::<i32, &str>::default(), MapValue::from(vec![]));
+    }
 
     #[test]
     fn map_write_null_value_empty_map_and_null_row() -> Result<()> {

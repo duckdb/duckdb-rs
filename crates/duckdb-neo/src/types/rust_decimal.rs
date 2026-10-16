@@ -1,4 +1,4 @@
-use super::{DecimalSignature, DecimalValue, MAX_DECIMAL_WIDTH};
+use super::{DecimalSignature, DecimalValue};
 use crate::{
     Result,
     connection::FFILink,
@@ -13,13 +13,17 @@ use crate::{
 /// Widest `DECIMAL` whose values all fit `rust_decimal`'s 96-bit mantissa.
 const MAX_RUST_DECIMAL_WIDTH: u8 = 28;
 
-/// Uses the widest `DECIMAL`, which holds any `rust_decimal::Decimal`.
+/// Uses the smallest fitting `DECIMAL` width.
+/// Values needing 29 digits exceed the vector reader's width limit; read them through [`Value`].
 impl From<rust_decimal::Decimal> for DecimalValue {
     fn from(value: rust_decimal::Decimal) -> Self {
+        let mantissa = value.mantissa();
+        let digits = mantissa.unsigned_abs().checked_ilog10().map_or(1, |digits| digits + 1) as u8;
+        let scale = value.scale() as u8;
         Self {
-            value: value.mantissa(),
-            width: MAX_DECIMAL_WIDTH,
-            scale: value.scale() as u8,
+            value: mantissa,
+            width: digits.max(scale),
+            scale,
         }
     }
 }
@@ -52,7 +56,8 @@ fn signature<U: VectorElement>(vector: &Vector<'_, U>) -> DecimalSignature {
         .expect("validated DECIMAL vector has a signature")
 }
 
-/// Reads and writes `DECIMAL` columns of width up to 28, which always fit.
+/// # Panics
+/// Panics if a stored value exceeds `rust_decimal`'s 96-bit mantissa.
 // SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
 unsafe impl VectorElement for rust_decimal::Decimal {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
@@ -145,25 +150,29 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        for text in [
-            "123.45",
-            "-0.001",
-            "0",
-            "79228162514264337593543950335",
-            "0.0000000000000000000000000001",
+        for (text, width) in [
+            ("123.45", 5),
+            ("-0.001", 3),
+            ("0", 1),
+            ("79228162514264337593543950335", 29),
+            ("0.0000000000000000000000000001", 28),
         ] {
             let decimal = dec(text);
             let raw = DecimalValue::from(decimal);
-            assert_eq!(raw.width, 38);
+            assert_eq!(raw.width, width);
             assert_eq!(rust_decimal::Decimal::try_from(raw), Ok(decimal));
 
             let value = decimal.value(&conn)?;
             assert_eq!(value.get::<rust_decimal::Decimal>()?, Some(decimal));
 
-            let mut result = conn.query("SELECT $1::VARCHAR", Parameters::positional(&[&decimal]))?;
+            let mut result = conn.query("SELECT $1", Parameters::positional(&[&decimal]))?;
             let chunk = result.next_chunk()?.expect("query returned no rows");
-            let text_vector = chunk.get_vector_at::<String>(0)?;
-            assert_eq!(text_vector.get(0)?.map(|s| s.to_string()), Some(text.to_string()));
+            if width <= MAX_RUST_DECIMAL_WIDTH {
+                let vector = chunk.get_vector_at::<rust_decimal::Decimal>(0)?;
+                assert_eq!(vector.get(0)?, Some(decimal));
+            } else {
+                assert!(chunk.get_vector_at::<rust_decimal::Decimal>(0).is_err());
+            }
         }
 
         Ok(())
