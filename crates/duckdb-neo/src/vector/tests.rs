@@ -211,6 +211,23 @@ scalar_callback!(NullableUnionScalar, Union, |input, output, _ctx, _user_data| {
     Ok(())
 });
 
+// Odd keys pick the INTEGER member, even keys the STRUCT member.
+scalar_callback!(StructMemberUnionScalar, Union, |input, output, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(keys.len())?;
+    for (index, key) in keys.iter()?.enumerate() {
+        let key = *key.unwrap();
+        let row = if key % 2 == 1 {
+            UnionWriter::set_value::<i32>(0, Some(key))
+        } else {
+            UnionWriter::set_value::<Struct>(1, Some(StructWrite::default().field::<String>(Some("even"))))
+        };
+        output.write(index, Some(row))?;
+    }
+    Ok(())
+});
+
 scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
     let mut result = result;
     let val = 42_i32.value(&ctx)?;
@@ -922,6 +939,37 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
 }
 
 #[test]
+pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "to_union_struct",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("key"))
+            .return_type(LogicalType::from_text(
+                &conn,
+                "UNION(num INTEGER, s STRUCT(x VARCHAR))",
+            )?),
+        StructMemberUnionScalar,
+    )
+    .register(&conn)?;
+
+    // Field extraction reads the struct's children directly, so an inactive member needs NULL descendants.
+    let mut result = conn.query(
+        "SELECT count(*) FILTER (WHERE k % 2 = 1 AND union_extract(u, 's').x IS NOT NULL),
+                count(*) FILTER (WHERE k % 2 = 0 AND union_extract(u, 's').x = 'even')
+         FROM (SELECT k, to_union_struct(k::INTEGER) AS u FROM range(5000) t(k))",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
+    assert_eq!(chunk.get_vector_at::<i64>(1)?.get(0)?, Some(&2500));
+    Ok(())
+}
+
+#[test]
 pub fn vector_struct_unreadable_child() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -1033,7 +1081,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     drop(chunk);
     drop(result);
 
-    let bit = BitValue(vec![3_u8, 0b0001_0101]);
+    let bit = BitValue(vec![3_u8, 0b1111_0101]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
     let chunk = result.next_chunk()?.unwrap();
     let vector = chunk.get_vector_at::<BitValue>(0)?;
@@ -1120,9 +1168,11 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     let mut vector = chunk.get_vector_at_mut::<BitValue>(0)?;
     vector.set_size(2)?;
     assert!(vector.write(0, Some(&[])).is_err());
-    vector.write(0, Some(&[3_u8, 0b0001_0101]))?;
+    assert!(vector.write(0, Some(&[16, 0, 0, 0])).is_err());
+    assert!(vector.write(0, Some(&[3, 0b0001_0101])).is_err());
+    vector.write(0, Some(&[3_u8, 0b1111_0101]))?;
     vector.write(1, None)?;
-    assert_eq!(vector.get(0)?, Some([3_u8, 0b0001_0101].as_slice()));
+    assert_eq!(vector.get(0)?, Some([3_u8, 0b1111_0101].as_slice()));
     assert_eq!(vector.get(1)?, None);
 
     let bignum = BigNumValue {
@@ -1688,6 +1738,23 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     assert!(!sequence.is_writable());
     sequence.flatten()?;
     assert!(sequence.write(3, Some(1)).is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_large_constant_selection_stays_in_bounds() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
+    constant.make_constant(42_i32.value(&conn)?, 2 * crate::vector::CONSTANT_SELECTION_LEN + 1)?;
+
+    let selection = constant.get_view().unwrap().selection().unwrap();
+    assert_eq!(selection.len(), crate::vector::CONSTANT_SELECTION_LEN);
+    assert!(selection.iter().all(|&slot| slot == 0));
 
     Ok(())
 }

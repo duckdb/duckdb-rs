@@ -33,7 +33,7 @@ impl<'a> DuckDBStr<'a> {
     }
 
     /// Return the text with invalid UTF-8 replaced, or `None` when DuckDB returned a null pointer.
-    pub(crate) fn to_string_lossy(&self) -> Option<Cow<'a, str>> {
+    pub(crate) fn to_string_lossy(self) -> Option<Cow<'a, str>> {
         self.as_bytes().map(String::from_utf8_lossy)
     }
 

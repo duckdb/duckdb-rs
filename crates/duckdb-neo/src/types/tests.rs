@@ -146,6 +146,10 @@ fn test_binary_value_creators() -> crate::Result<()> {
     assert_eq!(bit.dbg_string()?, "10101010");
 
     assert!(BitValue(Vec::<u8>::new()).value(&conn).is_err());
+    // A padding count of 8 or more would make DuckDB render past its buffer.
+    assert!(BitValue(vec![16, 0, 0, 0]).value(&conn).is_err());
+    assert!(BitValue(vec![0]).value(&conn).is_err());
+    assert!(BitValue(vec![3, 0b0001_0101]).value(&conn).is_err());
 
     Ok(())
 }
@@ -259,7 +263,7 @@ fn test_raw_value_getters() -> crate::Result<()> {
         Some(BlobValue(Vec::new()))
     );
 
-    let bit = BitValue(vec![3_u8, 0b0001_0101]);
+    let bit = BitValue(vec![3_u8, 0b1111_0101]);
     assert_eq!(bit.value(&conn)?.get::<BitValue>()?, Some(bit));
 
     macro_rules! assert_storage_round_trip {

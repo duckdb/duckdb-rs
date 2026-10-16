@@ -102,6 +102,9 @@ impl StorageKind {
     }
 }
 
+/// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
+pub const CONSTANT_SELECTION_LEN: usize = 2048;
+
 /// A typed, borrowed view over a vector's physical storage.
 ///
 /// Maps logical row indices to physical positions, accounting for constant,
@@ -199,7 +202,13 @@ impl<T: VectorElement> VectorView<T> {
     /// Flat vectors contain one entry per logical row, constant vectors
     /// contain one entry, and dictionary vectors use [`Self::selection`] to
     /// map logical rows into this slice.
-    pub fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
+    ///
+    /// # Safety
+    ///
+    /// As for [`Self::as_slice`], the caller must read only initialized and valid entries.
+    /// Every entry written must be a valid value of the vector's type whose out-of-line data,
+    /// such as a string's bytes, outlives the vector; do not copy such entries from another vector.
+    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
         if self.view.data.is_null() {
             None
         } else {
@@ -226,15 +235,18 @@ impl<T: VectorElement> VectorView<T> {
     }
 
     /// Return the logical-to-physical row mapping, if DuckDB supplied one.
+    ///
+    /// A constant vector maps every row to slot 0, but its selection is DuckDB's
+    /// shared array of [`CONSTANT_SELECTION_LEN`] zeros, so it is cut to that length.
     pub fn selection(&self) -> Option<&[u32]> {
         if self.view.sel.is_null() {
             None
         } else {
+            let mut len = self.view.count as usize;
             if self.kind == StorageKind::Constant {
-                Some(unsafe { std::slice::from_raw_parts(self.view.sel, (self.view.count as usize).max(2048)) })
-            } else {
-                Some(unsafe { std::slice::from_raw_parts(self.view.sel, self.view.count as usize) })
+                len = len.min(CONSTANT_SELECTION_LEN);
             }
+            Some(unsafe { std::slice::from_raw_parts(self.view.sel, len) })
         }
     }
 

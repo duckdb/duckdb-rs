@@ -55,7 +55,11 @@ unsafe extern "C" fn copy_path_callback(
             }
 
             let string = unsafe { &mut *(user_data as *mut String) };
-            string.push_str(&DuckDBStr::from_raw(unsafe { *text }).to_string_lossy().unwrap_or_default());
+            string.push_str(
+                &DuckDBStr::from_raw(unsafe { *text })
+                    .to_string_lossy()
+                    .unwrap_or_default(),
+            );
 
             Ok(())
         },
@@ -518,6 +522,24 @@ mod tests {
 
         assert_eq!(fs.expand("~/data.csv")?, "/duck/home/data.csv");
         assert_eq!(fs.expand("/plain/data.csv")?, "/plain/data.csv");
+        Ok(())
+    }
+
+    // macOS file systems reject names that are not valid UTF-8.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_glob_non_utf8_name() -> crate::Result<()> {
+        use std::os::unix::ffi::OsStrExt;
+
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&db)?;
+
+        let dir = tempfile::tempdir().expect("failed to create test dir");
+        std::fs::write(dir.path().join(std::ffi::OsStr::from_bytes(b"\xff.txt")), b"").expect("failed to write file");
+        let dir = dir.path().to_str().unwrap();
+
+        assert_eq!(fs.glob(&format!("{dir}/*.txt"))?, [format!("{dir}/\u{fffd}.txt")]);
         Ok(())
     }
 }
