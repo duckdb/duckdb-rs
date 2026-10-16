@@ -52,6 +52,7 @@ capi-v2 = ["dep:arrow-array"]
 # Arrow C Data Interface structs used in the v2 bindings.
 arrow-array = { workspace = true, features = ["ffi"], optional = true }
 
+
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"], optional = true }
 cc = { workspace = true, features = ["parallel"], optional = true }
@@ -67,6 +68,7 @@ tar = { workspace = true }
 ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
 vcpkg = { workspace = true, optional = true }
 which = { version = "8", optional = true }
+zip = { version = "^9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["ffi"] }
