@@ -33,7 +33,7 @@ use crate::{
     vector::{Access, Unknown, Vector},
 };
 
-/// Callback-scoped control over a scalar function's resolved result type.
+/// Callback-scoped control over an aggregate function's resolved result type.
 #[derive(Debug)]
 pub struct ReturnTypeHandle<'a> {
     pub(crate) handle: &'a ffi::duckdb_v2_aggregate_function_bind_info_handle,
@@ -130,6 +130,15 @@ impl<'a, T> Iterator for StatesIter<'a, T> {
     }
 }
 
+unsafe fn state_slice<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
+    if count == 0 || ptr.is_null() {
+        &[]
+    } else {
+        // SAFETY: callers provide a valid state array for the callback's duration.
+        unsafe { std::slice::from_raw_parts(ptr, count) }
+    }
+}
+
 unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
     info: ffi::duckdb_v2_function_bind_info_handle,
     result: ffi::duckdb_v2_aggregate_function_bind_info_handle,
@@ -212,7 +221,7 @@ unsafe extern "C" fn init_callback<T: AggregateCallbacks>(
         let states_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_init_get_states, info, RET)?;
 
         let states: &[*mut T::StateItem] =
-            unsafe { std::slice::from_raw_parts(states_ptr as *mut *mut T::StateItem, state_count as usize) };
+            unsafe { state_slice(states_ptr as *const *mut T::StateItem, state_count as usize) };
 
         for &state_ptr in states {
             unsafe {
@@ -276,7 +285,7 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
             let row_count = check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_row_count, info, RET)?;
 
             let states_slice: &[*mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts(states_ptr as *const *mut T::StateItem, row_count as usize) };
+                unsafe { state_slice(states_ptr as *const *mut T::StateItem, row_count as usize) };
 
             let states: States<'_, T::StateItem> = unsafe { States::new(states_slice) };
 
@@ -303,12 +312,12 @@ unsafe extern "C" fn combine_callback<T: AggregateCallbacks>(
             let target_ptr = check_api_call!(ffi::duckdb_v2_aggregate_function_combine_get_targets, info, RET)?;
 
             let source_slice: &[*mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts(source_ptr as *const *mut T::StateItem, count as usize) };
+                unsafe { state_slice(source_ptr as *const *mut T::StateItem, count as usize) };
 
             let source: States<'_, T::StateItem> = unsafe { States::new(source_slice) };
 
             let target_slice: &[*mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts(target_ptr as *const *mut T::StateItem, count as usize) };
+                unsafe { state_slice(target_ptr as *const *mut T::StateItem, count as usize) };
 
             let target: States<'_, T::StateItem> = unsafe { States::new(target_slice) };
 
@@ -333,8 +342,7 @@ unsafe extern "C" fn finalize_callback<T: AggregateCallbacks>(
             let states_ptr: *mut *mut std::ffi::c_void =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_states, info, RET)?;
 
-            let states: &[&T::StateItem] =
-                unsafe { std::slice::from_raw_parts(states_ptr as *const &T::StateItem, count as usize) };
+            let states: &[&T::StateItem] = unsafe { state_slice(states_ptr as *const &T::StateItem, count as usize) };
 
             let result_vector_handle =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result, info, RET)?;
@@ -374,7 +382,7 @@ unsafe extern "C" fn destroy_callback<T: AggregateCallbacks>(
                 check_api_call!(ffi::duckdb_v2_aggregate_function_destroy_get_states, info, RET)?;
 
             let states: &[*mut T::StateItem] =
-                unsafe { std::slice::from_raw_parts(states_ptr as *mut *mut T::StateItem, states_count as usize) };
+                unsafe { state_slice(states_ptr as *const *mut T::StateItem, states_count as usize) };
 
             let states: States<'_, <T as AggregateCallbacks>::StateItem> = unsafe { States::new(states) };
 
@@ -571,10 +579,8 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
         result_offset: usize,
     ) -> Result<()>;
 
-    /// **Destroy:** optionally clean up states manually.
-    ///
-    /// Return `true` only after destroying every state to skip automatic Rust
-    /// cleanup.
+    /// Return `Ok(true)` only after destroying every state to skip automatic cleanup.
+    /// An `Err` is ignored but still cleans up; a panic skips cleanup and leaks the states.
     fn destroy(&self, _bind_data: Option<&Self::BindData>, _states: &States<'_, Self::StateItem>) -> Result<bool> {
         Ok(false)
     }

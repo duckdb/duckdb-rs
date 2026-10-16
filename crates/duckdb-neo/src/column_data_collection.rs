@@ -239,8 +239,8 @@ impl<'conn> ColumnDataCollection<'conn> {
     }
 }
 
-// SAFETY: `&self` methods only read the row count; appending and scanning consume the
-// collection.
+// SAFETY: shared methods only read; creating state requires unique access.
+// Appending and scanning consume the collection, whose buffers have no thread affinity.
 unsafe impl Send for ColumnDataCollection<'_> {}
 unsafe impl Sync for ColumnDataCollection<'_> {}
 
@@ -262,7 +262,7 @@ pub struct ColumnDataCollectionScan<'conn> {
 }
 
 impl<'conn> ColumnDataCollectionScan<'conn> {
-    fn new(collection: ColumnDataCollection<'conn>) -> Result<Self> {
+    fn new(mut collection: ColumnDataCollection<'conn>) -> Result<Self> {
         let worker_scan_state = collection.create_worker_scan_state()?;
         let shared_scan_state = collection.create_shared_scan_state()?;
         let chunk = DataChunk::create(collection.factory, &collection.logical_types, false)?;
@@ -299,18 +299,23 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     /// # }
     /// ```
     pub fn next_chunk(&mut self) -> Result<Option<DataChunkRef<'_>>> {
-        let did_produce_chunk: bool = check_api_call!(
-            ffi::duckdb_v2_column_data_collection_scan,
-            self.collection.handle,
-            self.shared_scan_state.raw(),
-            self.worker_scan_state.raw(),
-            **self.chunk,
-            RET
-        )?;
-
-        did_produce_chunk
-            .then(|| DataChunkRef::new(**self.chunk, false))
-            .transpose()
+        loop {
+            let did_produce_chunk: bool = check_api_call!(
+                ffi::duckdb_v2_column_data_collection_scan,
+                self.collection.handle,
+                self.shared_scan_state.raw(),
+                self.worker_scan_state.raw(),
+                self.chunk.handle,
+                RET
+            )?;
+            if !did_produce_chunk {
+                return Ok(None);
+            }
+            let chunk = DataChunkRef::new(self.chunk.handle, false)?;
+            if chunk.row_count()? > 0 {
+                return Ok(Some(chunk));
+            }
+        }
     }
 
     /// Return the collection being scanned.
@@ -341,7 +346,7 @@ pub struct ColumnDataCollectionAppender<'conn> {
 }
 
 impl<'conn> ColumnDataCollectionAppender<'conn> {
-    fn new(collection: ColumnDataCollection<'conn>) -> Result<Self> {
+    fn new(mut collection: ColumnDataCollection<'conn>) -> Result<Self> {
         let appender = collection.create_append_state()?;
 
         Ok(Self { collection, appender })
@@ -367,9 +372,8 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
 
     /// Move all chunks from `other` into this collection and return the appender.
     ///
-    /// The source collection is consumed. Its chunks keep using the buffer
-    /// manager of `other`'s connection, so a collection combined from two
-    /// connections can no longer be handed to a replacement scan.
+    /// `other` must come from the same database. Combining across connections prevents
+    /// handing the combined collection to a replacement scan.
     ///
     /// The append state is re-created to append after the combined chunks. If
     /// that fails, the error is returned and the collection is dropped.
@@ -425,6 +429,16 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
+    #[test]
+    fn test_empty_appender_scan() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let collection = ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?;
+        let mut scan = collection.to_append()?.to_scan()?;
+        assert!(scan.next_chunk()?.is_none());
+        Ok(())
+    }
+
     use crate::{
         DuckDBType, Parameters,
         builder_helpers::scalar_callback,

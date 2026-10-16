@@ -117,7 +117,7 @@ impl FromValue for BigNumValue {
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM {
             return Err(Error::invalid_input(format!(
                 "Expected BIGNUM value, found {}",
-                logical_type.to_string()?
+                logical_type.to_text()?
             )));
         }
 

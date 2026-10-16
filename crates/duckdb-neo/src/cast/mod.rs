@@ -203,7 +203,7 @@ mod tests {
         let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?)?;
         custom_type.register(&conn)?;
         let logical_type = f32::logical_type(&conn)?;
-        let temperature_type = logical_type.to_alias(&conn, "TEMPERATURE")?;
+        let temperature_type = logical_type.with_alias(&conn, "TEMPERATURE")?;
 
         CastFunctionBuilder::new(
             String::logical_type(&conn)?,

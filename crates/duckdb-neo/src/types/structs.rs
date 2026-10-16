@@ -107,8 +107,8 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
                 return Err(Error::invalid_input(format!(
                     "StructValue field '{}' has type {}, its schema has {}",
                     name,
-                    actual.to_string()?,
-                    expected.to_string()?,
+                    actual.to_text()?,
+                    expected.to_text()?,
                 )));
             }
         }

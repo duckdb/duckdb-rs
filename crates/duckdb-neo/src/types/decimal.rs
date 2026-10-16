@@ -146,7 +146,7 @@ decimal_widths! {
 /// assert_eq!(price.0, 12_345i32);
 /// ```
 ///
-/// A scale above the width does not compile:
+/// `Decimal::new` with a scale above the width does not compile:
 ///
 /// ```compile_fail
 /// let _ = duckdb_neo::types::Decimal::<2, 3>::new(1);
@@ -368,7 +368,7 @@ impl DecimalSignature {
     }
 
     /// Pair a scaled integer with this width and scale.
-    pub fn to_value<T: DecimalContainer>(&self, value: T) -> DecimalValue {
+    pub fn with_payload<T: DecimalContainer>(&self, value: T) -> DecimalValue {
         DecimalValue::new(value, self.width, self.scale)
     }
 }
@@ -397,7 +397,7 @@ impl FromValue for DecimalValue {
             &mut scale
         )
         .map(|raw| Self {
-            value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
+            value: crate::value::from_hugeint(raw),
             width,
             scale,
         })

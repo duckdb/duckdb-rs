@@ -22,11 +22,19 @@
 //! A column returned by [`crate::data_chunk::DataChunkRef::get_vector_at`] is
 //! narrowed to its logical type before reading:
 //!
-//! ```ignore
+//! ```
+//! # use duckdb_neo::{environment::{Environment, StorageLocation}, Parameters};
+//! # fn main() -> duckdb_neo::Result<()> {
+//! # let env = Environment::new()?;
+//! # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+//! # let mut result = conn.query("SELECT 1::INTEGER", Parameters::None)?;
+//! # let chunk = result.next_chunk()?.expect("one result chunk");
 //! let vector = chunk.get_vector_at::<i32>(0)?;
 //! for value in vector.iter()? {
-//!     ...
+//!     assert_eq!(value, Some(&1));
 //! }
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! Element types plug in through the [`VectorElement`] trait. Each type defines its
@@ -35,7 +43,7 @@
 
 use std::marker::PhantomData;
 
-use crate::error::{DuckDBError, check_api_call_no_err};
+use crate::error::DuckDBError;
 use crate::raw::RawExt;
 use crate::{
     Result,
@@ -108,7 +116,7 @@ pub const CONSTANT_SELECTION_LEN: usize = 2048;
 ///
 /// Maps logical row indices to physical positions, accounting for constant,
 /// dictionary, and selection-vector layouts.
-// `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
+// `repr(C)` fixes the view's field layout; `T` only appears in its marker.
 #[repr(C)]
 #[derive(Debug)]
 pub struct VectorView<T> {
@@ -269,16 +277,8 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
-    pub(crate) unsafe fn cast<U: VectorElement>(&self) -> &VectorView<U> {
-        unsafe { &*(self as *const VectorView<T> as *const VectorView<U>) }
-    }
-
-    /// Reinterpret this view as a view over a different logical element type.
-    ///
-    /// This only changes the `PhantomData` marker; the underlying FFI view
-    /// (and thus any previously-flattened/dictionary state) is left untouched,
-    /// unlike re-acquiring the view via `duckdb_v2_vector_get_view`.
-    pub(crate) unsafe fn cast_owned<U: VectorElement>(self) -> VectorView<U> {
+    /// Change only the element marker, preserving the existing storage view.
+    pub(crate) fn cast_owned<U: VectorElement>(self) -> VectorView<U> {
         VectorView {
             view: self.view,
             kind: self.kind,
@@ -302,7 +302,7 @@ pub(crate) enum Access {
 ///
 /// Storage representation and writability are runtime properties. Casting only
 /// changes the logical element type and preserves the chunk lifetime.
-// `repr(C)` keeps the layout independent of `T`, which `Vector::cast_ref` relies on.
+// `repr(C)` fixes field order; the nested `VectorView<T>` is also `repr(C)`.
 #[repr(C)]
 #[derive(Debug)]
 pub struct Vector<'a, T: VectorElement> {
@@ -321,10 +321,10 @@ pub struct Vector<'a, T: VectorElement> {
 }
 
 impl<'a> Vector<'a, Unknown> {
-    /// # Safety
-    /// The caller must ensure that the handle is valid and that the vector's lifetime is tied to the lifetime of the chunk.
+    /// The handle must remain valid for the lifetime of the owning chunk.
     pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
-        let logical_type_handle = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)?;
+        let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)
+            .map(|handle| LogicalType { handle })?;
 
         let vector_type: ffi::DUCKDB_V2_VECTOR_TYPE =
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET)?;
@@ -333,9 +333,6 @@ impl<'a> Vector<'a, Unknown> {
 
         let kind = StorageKind::from_ffi(vector_type);
         let view = Self::acquire_view(*handle, kind)?;
-        let logical_type = LogicalType {
-            handle: logical_type_handle,
-        };
         let params = TypeParams::read(&logical_type)?;
 
         let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
@@ -370,7 +367,7 @@ impl<'a> Vector<'a, Unknown> {
     /// Validate and attach a logical element type to a borrowed vector.
     pub fn cast_ref<T: VectorElement>(&self) -> Result<&Vector<'a, T>> {
         self.validate_as::<T>()?;
-        // SAFETY: `Vector` is `repr(C)` and `T` only appears in `PhantomData`.
+        // SAFETY: Both repr(C) wrappers differ only in markers, including inside Option<VectorView<T>>.
         Ok(unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) })
     }
 }
@@ -401,7 +398,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         })
     }
 
-    /// Refresh the vector's view and mutable buffers after a state change, e.g a flatten.
+    /// Refresh the vector's view and mutable buffers after a state change, e.g. set_size.
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
         self.heap = None;
@@ -417,7 +414,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             logical_type: self.logical_type,
             kind: self.kind,
             len: self.len,
-            view: self.view.map(|view| unsafe { view.cast_owned::<U>() }),
+            view: self.view.map(|view| view.cast_owned::<U>()),
             access: self.access,
             heap: self.heap,
             children: self.children,
@@ -434,7 +431,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self,
         source: &Vector<'_, T2>,
         link: &C,
-    ) -> Result<Vector<'a, Unknown>> {
+    ) -> Result<Vector<'a, T>> {
         check_api_call!(
             ffi::duckdb_v2_vector_cast,
             link.factory()?.raw(),
@@ -444,7 +441,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             RET,
             std::ptr::null_mut()
         )?;
-        Vector::from_handle(&self.handle, self.access)
+        Ok(Vector::from_handle(&self.handle, self.access)?.cast_unchecked())
     }
 
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
@@ -455,7 +452,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self,
         source: &Vector<'_, T2>,
         link: &C,
-    ) -> Result<(Vector<'a, Unknown>, Option<Error>)> {
+    ) -> Result<(Vector<'a, T>, Option<Error>)> {
         let mut cast_err = std::ptr::null_mut();
 
         check_api_call!(
@@ -471,11 +468,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         let row_error = if cast_err.is_null() {
             None
         } else {
-            let error = unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, cast_err) };
-            check_api_call_no_err!(ffi::duckdb_v2_error_info_destroy, &mut cast_err)?;
+            let error =
+                unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, &mut cast_err) };
             Some(error)
         };
-        Ok((Vector::from_handle(&self.handle, self.access)?, row_error))
+        Ok((
+            Vector::from_handle(&self.handle, self.access)?.cast_unchecked(),
+            row_error,
+        ))
     }
 
     /// Elements per row of an `ARRAY` vector; 0 otherwise.
@@ -494,18 +494,18 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
     }
 
-    pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<bool> {
+    pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
         match U::validate(self.logical_type(), self.children.as_ref()) {
-            Ok(true) => Ok(true),
+            Ok(true) => Ok(()),
             Ok(false) => Err(Error::invalid_input(format!(
                 "Vector logical type mismatch: expected {:?}, got {:?}",
                 U::TYPE_ID,
-                self.logical_type.type_id()
+                self.logical_type.to_text()?
             ))),
             Err(e) => Err(Error::invalid_input(format!(
                 "Vector logical type validation failed: expected {:?}, got {:?}: {}",
                 U::TYPE_ID,
-                self.logical_type.type_id(),
+                self.logical_type.to_text()?,
                 e.message
             ))),
         }
@@ -525,19 +525,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(view.is_null(index))
     }
 
-    /// Make this vector reference another vector's storage without copying.
-    ///
-    /// The vector must be borrowed mutably, e.g. through
-    /// [`crate::data_chunk::DataChunkRef::get_vector_at_mut`]. The returned
-    /// vector is not writable, since it shares the source's storage.
-    ///
     /// # Safety
-    ///
-    /// The source's storage must remain valid and must not be written or
-    /// resized for as long as the destination vector may be read. This
-    /// requirement applies to the destination's owning chunk, even after the
-    /// returned vector is dropped.
-    pub unsafe fn copy_from<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
+    /// Reference without copying; source storage must outlive destination reads and remain unchanged.
+    pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
         if self.access == Access::Shared {
             return Err(not_exclusive());
         }
@@ -581,7 +571,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(out_of_bounds(index, self.len));
         }
         if self.kind != StorageKind::Flat {
-            return Err(not_writable());
+            return Err(not_flat());
         }
         Ok(())
     }
@@ -605,10 +595,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(out_of_bounds(index, self.len));
         }
         if self.kind != StorageKind::Flat {
-            return Err(not_writable());
+            return Err(not_flat());
         }
         let handle = self.handle;
         let view = self.view.as_mut().ok_or_else(not_writable)?;
+        if is_valid && view.view.validity.is_null() {
+            return Ok(());
+        }
         let validity = if view.view.validity.is_null() {
             let validity: *mut u64 = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
             view.view.validity = validity;
@@ -689,7 +682,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(not_writable());
         }
         self.validate_as::<U>()?;
-        // The element type is represented only by PhantomData.
+        // SAFETY: Validation checked U; the repr(C) wrappers differ only in their direct and nested markers.
         let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
         // SAFETY: checked writable above.
         unsafe { U::write(typed, index, value) }
@@ -909,7 +902,16 @@ impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T
         self.index += 1;
         Some(value)
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.vector.len - self.index;
+        (remaining, Some(remaining))
+    }
 }
+
+impl<T: VectorElement> ExactSizeIterator for VectorIter<'_, '_, T> {}
+
+impl<T: VectorElement> std::iter::FusedIterator for VectorIter<'_, '_, T> {}
 
 fn not_writable() -> Error {
     Error::invalid_input(
@@ -917,11 +919,15 @@ fn not_writable() -> Error {
     )
 }
 
+fn not_flat() -> Error {
+    Error::invalid_input("vector is not flat")
+}
+
 fn not_exclusive() -> Error {
     Error::invalid_input("vector is borrowed shared: use get_vector_at_mut to change its storage")
 }
 
-fn other_not_readable() -> Error {
+pub(crate) fn other_not_readable() -> Error {
     Error::invalid_input("OTHER vectors must be flattened before reading")
 }
 

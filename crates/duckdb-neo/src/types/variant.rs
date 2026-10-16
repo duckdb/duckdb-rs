@@ -55,6 +55,6 @@ impl<T> DuckDBType for VariantValue<T> {
 impl<T: ToValue> ToValue for VariantValue<T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         let value = self.0.value(link)?;
-        link.value_cast(&value, Self::logical_type(link)?)
+        link.value_cast(&value, &Self::logical_type(link)?)
     }
 }

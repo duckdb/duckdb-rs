@@ -389,7 +389,7 @@ fn test_array_to_value() -> crate::Result<()> {
     let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
 
     assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
-    assert_eq!(logical_type.to_string()?, "INTEGER[3]");
+    assert_eq!(logical_type.to_text()?, "INTEGER[3]");
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
 
     Ok(())

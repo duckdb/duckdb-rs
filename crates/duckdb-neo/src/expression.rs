@@ -161,7 +161,7 @@ mod tests {
             bind_handle: crate::table_function::BindFunctionHandle<'_>,
         ) -> crate::Result<Self::BindData> {
             for i in 0..3 {
-                bind_handle.add_result_column(format!("val{}", i).as_str(), i32::logical_type(context)?)?;
+                bind_handle.add_result_column(format!("val{}", i).as_str(), &i32::logical_type(context)?)?;
             }
 
             Ok(())
@@ -169,7 +169,7 @@ mod tests {
 
         fn exec(
             &self,
-            _bind_data: Option<&Self::BindData>,
+            _bind_data: &Self::BindData,
             _global_state: Option<&Self::GlobalState>,
             _local_state: Option<&mut Self::LocalState>,
             _context: &Context,
@@ -187,13 +187,13 @@ mod tests {
     impl crate::table_function::TableFilterPushdownCallbacks for TableFunctionTest {
         fn pushdown_filter(
             &self,
-            _bind_data: Option<&Self::BindData>,
+            _bind_data: &Self::BindData,
             context: &Context,
-            column_data: crate::table_function::PushdownData<'_>,
+            pushdown_data: crate::table_function::PushdownData<'_>,
         ) -> crate::Result<()> {
-            assert_eq!(column_data.get_column_count()?, 3);
+            assert_eq!(pushdown_data.count()?, 3);
 
-            let expression_api = column_data.filter(0)?;
+            let expression_api = pushdown_data.filter(0)?;
 
             dbg!(expression_api.child_count()?);
 

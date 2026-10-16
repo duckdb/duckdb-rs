@@ -20,7 +20,7 @@ pub(crate) trait DatabaseKeepAlive {
 
 impl DatabaseKeepAlive for Connection {
     fn keep_alive(&self) -> Option<KeepAlive> {
-        Some(Arc::new((self.inner.clone(), self._db.clone())))
+        Some(Arc::new((self.inner.clone(), self.db.clone())))
     }
 }
 

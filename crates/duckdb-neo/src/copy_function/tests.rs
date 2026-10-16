@@ -38,7 +38,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
     fn init(&self, context: &Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
         let fs = FileSystem::new(context)?;
 
-        let file = FileBuilder::new(&fs, file_path)?.write()?.create()?.open()?;
+        let file = FileBuilder::new(&fs, file_path)?.write().create().open()?;
 
         Ok(Mutex::new(file))
     }
@@ -260,7 +260,7 @@ impl CopyToFunctionCallbacks for EchoFormat {
 
     fn init(&self, context: &Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
         let fs = FileSystem::new(context)?;
-        Ok(Mutex::new(FileBuilder::new(&fs, file_path)?.write()?.create()?.open()?))
+        Ok(Mutex::new(FileBuilder::new(&fs, file_path)?.write().create().open()?))
     }
 
     fn batch<'ctx>(

@@ -197,6 +197,17 @@ impl<'ctx> ArrowExporter<'ctx> {
         )
     }
 
+    /// Flush any partial batch without appending another chunk.
+    pub fn flush(&mut self) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_arrow_exporter_append,
+            self.handle,
+            std::ptr::null_mut(),
+            false,
+            true
+        )
+    }
+
     /// Return the Arrow schema.
     pub fn schema(&self) -> Result<ArrowSchema> {
         let raw = check_api_call!(ffi::duckdb_v2_arrow_exporter_get_schema, self.handle, RET)?;
@@ -284,6 +295,17 @@ impl<'ctx> ArrowImporter<'ctx> {
         )
     }
 
+    /// Flush any partial batch after draining the current array with [`Self::chunk`].
+    pub fn flush(&self) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_arrow_importer_append,
+            self.handle,
+            std::ptr::null_mut(),
+            false,
+            true
+        )
+    }
+
     /// Return the owned DuckDB schema resolved from the Arrow schema.
     pub fn schema(&self) -> Result<Schema> {
         check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET).map(|handle| Schema { handle })
@@ -319,12 +341,6 @@ mod tests {
     };
 
     scalar_callback!(ToArrowTest, i64, |input, result, ctx, user_data| {
-        let mut logical_types = Vec::with_capacity(input.col_count());
-
-        for i in 0..input.col_count() {
-            logical_types.push(input.get_untyped_vector_at(i)?.logical_type().clone());
-        }
-
         let columns = [
             ("val1", input.get_untyped_vector_at(0)?.logical_type().clone()),
             ("val2", input.get_untyped_vector_at(1)?.logical_type().clone()),
@@ -335,7 +351,7 @@ mod tests {
 
         let data_chunk = input.to_data_chunk(&ctx)?;
 
-        let mut arrow_exporter = ArrowExporter::new(ctx, &columns, None)?;
+        let mut arrow_exporter = ArrowExporter::new(ctx, &columns, Some(3))?;
 
         let schema = arrow_exporter.schema()?;
 
@@ -347,9 +363,11 @@ mod tests {
         let schema = unsafe { ArrowSchema::from_raw(transmute::<FFI_ArrowSchema, ffi::ArrowSchema>(schema)) };
 
         assert!(arrow_exporter.next_array()?.is_none());
-        arrow_exporter.append(&data_chunk, true)?;
+        arrow_exporter.append(&data_chunk, false)?;
+        assert!(arrow_exporter.next_array()?.is_none());
+        arrow_exporter.flush()?;
 
-        let importer = ArrowImporter::new(ctx, schema, None)?;
+        let importer = ArrowImporter::new(ctx, schema, Some(3))?;
 
         let import_schema = importer.schema()?;
 
@@ -359,7 +377,9 @@ mod tests {
 
         let array = arrow_exporter.next_array()?.expect("the flushed chunk is ready");
         assert_eq!(array.len(), 2);
-        importer.append_consumed(array, true)?;
+        importer.append_consumed(array, false)?;
+        assert!(importer.chunk()?.is_none());
+        importer.flush()?;
 
         let chunk = importer.chunk()?;
 
@@ -383,8 +403,6 @@ mod tests {
             let v1 = val1.get(row)?;
             let v2 = val2.get(row)?;
             let v3 = val3.get(row)?;
-
-            println!("Row {}: val1={:?}, val2={:?}, val3={:?}", row, v1, v2, v3);
 
             let sum = *v1.unwrap_or(&0)
                 + v2.map_or(0, |x| if *x { 2 } else { 1 }) as i64
@@ -418,12 +436,13 @@ mod tests {
             Parameters::None,
         )?;
 
-        while let Some(chunk) = result.next_chunk()? {
-            let res = chunk.get_vector_at::<i64>(0)?;
-
-            assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 2 + 5);
-            assert_eq!(*res.get(1)?.unwrap_or(&0), 1 + 1 + 5);
-        }
+        let chunk = result.next_chunk()?.expect("conversion must produce a result chunk");
+        assert_eq!(chunk.row_count()?, 2);
+        let res = chunk.get_vector_at::<i64>(0)?;
+        assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 2 + 5);
+        assert_eq!(*res.get(1)?.unwrap_or(&0), 1 + 1 + 5);
+        drop(chunk);
+        assert!(result.next_chunk()?.is_none());
 
         Ok(())
     }
