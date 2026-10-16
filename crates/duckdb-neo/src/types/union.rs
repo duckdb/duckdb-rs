@@ -63,7 +63,8 @@ impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
     }
 }
 
-impl VectorElement for Union {
+// SAFETY: members are read only through the child vectors, and `validate` checks the tag.
+unsafe impl VectorElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION;
     type Ref<'a> = UnionRow<'a>;
 
@@ -171,7 +172,8 @@ impl<'a> UnionWriter<'a> {
     }
 }
 
-impl WritableVectorElement for Union {
+// SAFETY: the tag is range-checked, and members are written through the children's own `write`.
+unsafe impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {

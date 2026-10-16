@@ -311,6 +311,26 @@ fn test_raw_value_getters() -> crate::Result<()> {
 }
 
 #[test]
+fn test_bignum_value_getter_rejects_blob_and_bit() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let blob = BlobValue(vec![1_u8, 2, 3, 4]).value(&conn)?;
+    assert!(blob.get::<BigNumValue>().is_err());
+    let bit = BitValue(vec![3_u8, 0b1111_0101, 0, 0]).value(&conn)?;
+    assert!(bit.get::<BigNumValue>().is_err());
+
+    let bignum = BigNumValue {
+        is_negative: false,
+        magnitude: vec![1, 2, 3, 4],
+    };
+    assert_eq!(bignum.value(&conn)?.get::<BigNumValue>()?, Some(bignum));
+
+    Ok(())
+}
+
+#[test]
 fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -469,6 +489,43 @@ fn test_complex_values() -> crate::Result<()> {
         variant.logical_type()?.type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT
     );
+
+    Ok(())
+}
+
+struct EmptyStruct;
+
+impl StructSchema for EmptyStruct {
+    fn fields<C: FFILink + ?Sized>(_link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
+        Ok(Vec::new())
+    }
+}
+
+#[test]
+fn test_empty_struct_read_and_write() -> crate::Result<()> {
+    use crate::{data_chunk::DataChunk, parameter::Parameters};
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+    let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
+    let vector = chunk.get_vector_at::<Struct>(0)?;
+    assert!(vector.children().is_none());
+    let row = vector.get(0)?.unwrap();
+    assert!(row.get::<i32>("x").unwrap_err().message.contains("not found"));
+
+    let mut chunk = DataChunk::create(&conn, &[StructValue::<EmptyStruct>::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+        vector.set_size(2)?;
+        vector.write(0, Some(structs::StructWrite::default()))?;
+        vector.write(1, None)?;
+        let extra = structs::StructWrite::default().field::<i32>(Some(1));
+        assert!(vector.write(0, Some(extra)).is_err());
+    }
+    let vector = chunk.get_vector_at::<Struct>(0)?;
+    assert!(vector.get(0)?.is_some());
+    assert!(vector.get(1)?.is_none());
 
     Ok(())
 }

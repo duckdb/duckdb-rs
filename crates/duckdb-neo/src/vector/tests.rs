@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::cast::CastMode;
 use crate::logical_type::LogicalTypeID;
 use crate::scalar::ScalarFunctionBuilder;
 use crate::types::{Any, StructValue};
@@ -16,10 +15,10 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
-        IntervalValue, List, LongDecimal, Map, MapValue, ShortDecimal, Struct, StructSchema, TimeNsValue, TimeTzValue,
-        TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue,
-        TimestampValue, Union, UnionSchema, UnionValue, UuidValueRaw, Variant, WordDecimal, structs::StructWrite,
-        union::UnionWriter,
+        IntervalValue, List, ListRef, LongDecimal, Map, MapValue, ShortDecimal, Struct, StructSchema, StructWrite,
+        TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue,
+        TimestampTzValue, TimestampValue, Union, UnionSchema, UnionValue, UnionWriter, UuidValueRaw, Variant,
+        WordDecimal,
     },
     value::Value,
     vector::StorageKind,
@@ -97,7 +96,7 @@ scalar_callback!(
     for (index, (key, value)) in rows.iter().enumerate() {
         result.write(
             index,
-            Some(HashMap::from([(*key, value.as_str())])),
+            Some(HashMap::from([(*key, Some(value.as_str()))])),
         )?;
     }
     let written: Vec<_> = result.iter()?.collect();
@@ -1664,7 +1663,12 @@ fn test_copy_from_rebuilds_children() -> crate::Result<()> {
     dst.write(0, Some(vec![Some(9)]))?;
 
     // SAFETY: `source` outlives every read of the referenced vector below.
-    let referenced = unsafe { dst.copy_from(&src)? };
+    let mut referenced = unsafe { dst.copy_from(&src)? };
+    // A resize through the reference would reallocate the buffer `src` still reads.
+    assert!(!referenced.is_writable());
+    assert!(referenced.set_size(4096).is_err());
+    assert!(referenced.write(0, None).is_err());
+    assert_eq!(src.get(1)?.map(|v| v.len()), Some(1));
 
     let items: Vec<_> = referenced
         .iter()?
@@ -1921,11 +1925,11 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     {
         let mut first = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         first.set_size(2)?;
-        first.write(0, Some(HashMap::from([(1, 10), (2, 20)])))?;
+        first.write(0, Some(HashMap::from([(1, Some(10)), (2, Some(20))])))?;
     }
     map_chunk
         .get_vector_at_mut::<Map<i32, i32>>(0)?
-        .write(1, Some(HashMap::from([(3, 30)])))?;
+        .write(1, Some(HashMap::from([(3, Some(30))])))?;
 
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
     let mut rows = maps.iter()?;
@@ -1938,7 +1942,7 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     Ok(())
 }
 
-fn list_values(row: Option<crate::types::list::ListRef<'_, i32>>) -> Option<Vec<Option<i32>>> {
+fn list_values(row: Option<ListRef<'_, i32>>) -> Option<Vec<Option<i32>>> {
     row.map(|row| row.iter().map(|v| v.copied()).collect())
 }
 
@@ -2093,10 +2097,16 @@ fn test_collection_append() -> crate::Result<()> {
     Ok(())
 }
 
-scalar_callback!(CopyOver, i64, |input, result, ctx, ud| {
-    let vec = input.get_vector_at_mut::<String>(0)?;
+scalar_callback!(CopyOver, i64, |input, result, ctx, _ud| {
+    let vec = input.get_vector_at::<String>(0)?;
+    let has_bad_row = vec.iter()?.any(|row| row == Some("abc"));
 
-    let _ = result.cast_rows(&vec, ctx, CastMode::Try)?;
+    let (_, row_error) = result.try_cast_rows(vec, ctx)?;
+    match row_error {
+        Some(error) if has_bad_row => assert!(error.message.contains("'abc'"), "{error}"),
+        None if !has_bad_row => {}
+        other => panic!("unexpected TRY cast diagnostic: {other:?}"),
+    }
 
     Ok(())
 });
@@ -2116,17 +2126,17 @@ fn test_vector_cast() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    let mut query = conn.query(
-        "SELECT copy_over(unnest($1))",
-        Parameters::Positional(&[&vec![Some("10"), Some("300"), None]]),
-    )?;
-
-    while let Some(chunk) = query.next_chunk()? {
-        let vec = chunk.get_vector_at::<i64>(0)?;
-
-        assert_eq!(vec.get(0)?, Some(&10));
-        assert_eq!(vec.get(1)?, Some(&300));
-        assert_eq!(vec.get(2)?, None);
+    for (input, expected) in [
+        (vec![Some("10"), Some("300"), None], [Some(10), Some(300), None]),
+        // A row that does not convert becomes NULL instead of failing the query.
+        (vec![Some("10"), Some("abc"), None], [Some(10), None, None]),
+    ] {
+        let mut query = conn.query("SELECT copy_over(unnest($1))", Parameters::Positional(&[&input]))?;
+        let mut results = Vec::new();
+        while let Some(chunk) = query.next_chunk()? {
+            results.extend(chunk.get_vector_at::<i64>(0)?.iter()?.map(|row| row.copied()));
+        }
+        assert_eq!(results, expected);
     }
 
     Ok(())
@@ -2134,7 +2144,7 @@ fn test_vector_cast() -> crate::Result<()> {
 
 scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
     let vec = input.get_vector_at::<String>(0)?;
-    result.cast_rows(vec, ctx, CastMode::Normal)?;
+    result.cast_rows(vec, ctx)?;
     Ok(())
 });
 

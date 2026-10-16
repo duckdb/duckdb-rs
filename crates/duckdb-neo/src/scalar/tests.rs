@@ -284,13 +284,15 @@ fn test_scalar_property() -> crate::Result<()> {
 
 struct OverrideAbleScalar;
 
+impl ScalarResolveTypesCallbacks for OverrideAbleScalar {
+    fn resolve_types(&self, context: &Context, _arguments: BindArguments<'_>) -> Result<LogicalType> {
+        i8::logical_type(context)
+    }
+}
+
 impl ScalarCallbacks for OverrideAbleScalar {
     type BindData = ();
     type InitData = ();
-
-    fn resolve_types(context: &Context, _arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
-        Ok(Some(i8::logical_type(context)?))
-    }
 
     fn exec(
         &self,
@@ -322,6 +324,7 @@ fn test_scalar_override_result() -> crate::Result<()> {
             .return_type(String::logical_type(&conn)?),
         OverrideAbleScalar {},
     )
+    .with_resolve_types()
     .register(&conn)?;
 
     let mut result = conn.query("SELECT override(42)", Parameters::None)?;
@@ -461,14 +464,15 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
 
 struct DynamicResolve;
 
+impl ScalarResolveTypesCallbacks for DynamicResolve {
+    fn resolve_types(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType> {
+        arguments.logical_type(0)
+    }
+}
+
 impl ScalarCallbacks for DynamicResolve {
     type BindData = ();
     type InitData = ();
-
-    fn resolve_types(_context: &Context, arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
-        let lt = arguments.logical_type(0)?;
-        Ok(Some(lt))
-    }
 
     fn exec(
         &self,
@@ -507,6 +511,7 @@ fn test_scalar_dynamic_return_type() -> crate::Result<()> {
             )?),
         DynamicResolve,
     )
+    .with_resolve_types()
     .register(&conn)?;
 
     let mut query = conn.query("SELECT dynamic_resolve(10)", Parameters::None)?;

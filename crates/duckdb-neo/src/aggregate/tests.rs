@@ -359,10 +359,6 @@ impl AggregateCallbacks for PaddedSum {
         result_offset: usize,
     ) -> crate::Result<()> {
         let mut result = result.cast::<i64>()?;
-        // A window passes its result vector unsized.
-        if result.len() < result_offset + states.len() {
-            result.set_size(result_offset + states.len())?;
-        }
         for (index, state) in states.iter().enumerate() {
             result.write(result_offset + index, Some(**state))?;
         }
@@ -385,7 +381,7 @@ fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    // Window operators lay states out back to back, by the reported size.
+    // Windows lay states out by the reported size and finalize into unsized results.
     let mut result = conn.query(
         "SELECT padded_sum(i::INTEGER) OVER () AS total,
                 padded_sum(i::INTEGER) OVER (ORDER BY i) AS running

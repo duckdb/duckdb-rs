@@ -331,8 +331,22 @@ impl QueryResult<'_> {
     ///
     /// Zero selects sizing defaults; `render_mode` is `0` for rows or `1` for
     /// columns, and `limit` describes a limit already applied by the caller.
+    ///
+    /// The result is consumed, also when rendering fails:
+    ///
+    /// ```compile_fail,E0382
+    /// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// # let conn = db.connect()?;
+    /// let mut result = conn.query("SELECT 42", Parameters::None)?;
+    /// let _ = result.to_text(0, 0, 0, 2, 0);
+    /// result.schema()?; // error: `result` was moved by `to_text`
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn to_text(
-        &mut self,
+        mut self,
         max_rows: usize,
         max_width: usize,
         max_col_width: usize,
@@ -343,6 +357,7 @@ impl QueryResult<'_> {
 
         let mut string = String::new();
 
+        // DuckDB nulls the handle once it adopts the result, so `Drop` is then a no-op.
         check_api_call!(
             ffi::duckdb_v2_result_render_box,
             &mut self.handle,
@@ -407,6 +422,7 @@ mod tests {
     use crate::{
         Parameters,
         environment::{Environment, StorageLocation},
+        error::DuckDBError,
         query_result::{ArrowResultStep, ResultType, StatementType},
     };
 
@@ -487,7 +503,7 @@ mod tests {
         assert_eq!(result, 3);
 
         let stmt = statements.next().unwrap()?;
-        let mut result = conn.query(stmt, Parameters::None)?;
+        let result = conn.query(stmt, Parameters::None)?;
 
         let text = result.to_text(10, 80, 20, 0, 0)?;
         println!("{}", text);
@@ -505,6 +521,21 @@ mod tests {
 "
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_to_text_error_releases_connection() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let result = conn.query("SELECT * FROM range(3)", Parameters::None)?;
+        let error = result.to_text(0, 0, 0, 2, 0).unwrap_err();
+        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+
+        let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
         Ok(())
     }
 

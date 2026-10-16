@@ -61,6 +61,7 @@ impl LogMetadata<'_> {
     }
 }
 
+/// One log entry passed to [`LogSinkCallbacks::write`]; `timestamp` is microseconds since the epoch.
 #[derive(Debug)]
 pub struct LogWriteData {
     pub timestamp: i64,
@@ -130,6 +131,7 @@ unsafe extern "C" fn write_callback<T: LogSinkCallbacks>(
     );
 }
 
+/// Builds a log sink; `SET logging_storage = '<name>'` routes entries to it once registered.
 #[derive(Debug)]
 pub struct LogSinkBuilder<T: LogSinkCallbacks> {
     name: String,
@@ -137,6 +139,8 @@ pub struct LogSinkBuilder<T: LogSinkCallbacks> {
 }
 
 impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
+    /// Names are case-insensitive; registration fails for a built-in name (`memory`, `stdout`, `file`)
+    /// or one already registered.
     pub fn new(name: impl Into<String>, implementation: T) -> Self {
         LogSinkBuilder {
             name: name.into(),
@@ -166,6 +170,7 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
         )
     }
 
+    /// Registers the sink on the instance for the instance's lifetime; this alone routes no entries to it.
     #[allow(private_bounds)] // Keep the handle factory private.
     pub fn register<C: LogSinkBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_log_sink_handle()?;
@@ -174,9 +179,14 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
     }
 }
 
+/// Callbacks may run concurrently on any DuckDB thread and must return quickly.
+/// They must not log or change the logging configuration: DuckDB holds its log lock, so that deadlocks.
 pub trait LogSinkCallbacks: Send + Sync + 'static {
+    /// Called when DuckDB flushes its log, e.g. after each query. Errors and panics are dropped.
     fn flush(&self) -> Result<()>;
 
+    /// Called for each entry the logging configuration routes to the sink.
+    /// Errors and panics are dropped along with the entry.
     fn write(&self, data: LogWriteData, metadata: LogMetadata<'_>) -> Result<()>;
 }
 

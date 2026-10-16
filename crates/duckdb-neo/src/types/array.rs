@@ -73,7 +73,8 @@ pub(crate) fn array_size(logical_type: &LogicalType) -> Result<usize> {
         .ok_or(Error::api_error("Failed to get array_size from logical type"))? as usize)
 }
 
-impl<T: VectorElement> VectorElement for Array<T> {
+// SAFETY: rows are read from the child, which `validate` checks as `T`.
+unsafe impl<T: VectorElement> VectorElement for Array<T> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY;
 
     type Ref<'a>
@@ -112,7 +113,8 @@ impl<T: VectorElement> VectorElement for Array<T> {
     }
 }
 
-impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
+// SAFETY: rows are written through the child's own `write`.
+unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
     type Write<'a>
         = Vec<Option<T::Write<'a>>>
     where

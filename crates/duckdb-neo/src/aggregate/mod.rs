@@ -339,12 +339,19 @@ unsafe extern "C" fn finalize_callback<T: AggregateCallbacks>(
             let result_vector_handle =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result, info, RET)?;
 
-            let result_vector = Vector::from_handle(&result_vector_handle, Access::Writable)?;
+            let mut result_vector = Vector::from_handle(&result_vector_handle, Access::Writable)?;
 
-            let result_offset: u64 =
-                check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result_offset, info, RET)?;
+            let result_offset =
+                check_api_call!(ffi::duckdb_v2_aggregate_function_finalize_get_result_offset, info, RET)? as usize;
 
-            T::finalize(user_data, bind_data, states, result_vector, result_offset as usize)
+            // Window operators finalize into a result vector whose size they set
+            // only afterwards, so grow it to cover the rows written here.
+            let required_len = result_offset + states.len();
+            if result_vector.len() < required_len {
+                result_vector.set_size(required_len)?;
+            }
+
+            T::finalize(user_data, bind_data, states, result_vector, result_offset)
         },
         err,
     );
@@ -553,6 +560,9 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
         target: States<'_, Self::StateItem>,
     ) -> Result<()>;
     /// **Finalize:** write aggregate states to the result vector.
+    ///
+    /// State `i` belongs in row `result_offset + i`; the result vector always
+    /// covers `result_offset + states.len()` rows.
     fn finalize(
         &self,
         bind_data: Option<&Self::BindData>,

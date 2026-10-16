@@ -365,12 +365,15 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         result
     }
 
-    /// Move all chunks from `other` into this collection.
+    /// Move all chunks from `other` into this collection and return the appender.
     ///
     /// The source collection is consumed. Its chunks keep using the buffer
     /// manager of `other`'s connection, so a collection combined from two
     /// connections can no longer be handed to a replacement scan.
-    pub fn combine(&mut self, mut other: ColumnDataCollection<'conn>) -> Result<()> {
+    ///
+    /// The append state is re-created to append after the combined chunks. If
+    /// that fails, the error is returned and the collection is dropped.
+    pub fn combine(mut self, mut other: ColumnDataCollection<'conn>) -> Result<Self> {
         check_api_call!(
             ffi::duckdb_v2_column_data_collection_combine,
             self.collection.handle,
@@ -383,7 +386,7 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
 
         self.appender = self.collection.create_append_state()?;
 
-        Ok(())
+        Ok(self)
     }
 
     /// Consume the appender and return an empty collection with its schema unchanged.
@@ -540,7 +543,7 @@ mod test {
         let mut collection_2 = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
         collection_2.append(&mut chunk_2)?;
 
-        collection.combine(collection_2.to_normal())?;
+        let collection = collection.combine(collection_2.to_normal())?;
 
         struct A;
 
@@ -630,6 +633,43 @@ mod test {
             assert_eq!(id.get(1)?, None);
             assert_eq!(is_active.get(1)?, None);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collection_append_after_combine() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+
+        let logical_types = [i32::logical_type(&conn)?];
+        let chunk_of = |values: &[i32]| -> crate::Result<DataChunk<'_>> {
+            let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
+            let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+            vector.set_size(values.len())?;
+            for (row, value) in values.iter().enumerate() {
+                vector.write(row, Some(*value))?;
+            }
+            Ok(chunk)
+        };
+
+        let mut appender = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
+        appender.append(&mut chunk_of(&[1, 2])?)?;
+
+        let mut other = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
+        other.append(&mut chunk_of(&[3])?)?;
+
+        let mut appender = appender.combine(other.to_normal())?;
+        appender.append(&mut chunk_of(&[4, 5])?)?;
+        assert_eq!(appender.len()?, 5);
+
+        let mut scan = appender.to_scan()?;
+        let mut values = Vec::new();
+        while let Some(chunk) = scan.next_chunk()? {
+            values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|value| *value.unwrap()));
+        }
+        assert_eq!(values, [1, 2, 3, 4, 5]);
 
         Ok(())
     }

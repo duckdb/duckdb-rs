@@ -53,7 +53,8 @@ fn signature<U: VectorElement>(vector: &Vector<'_, U>) -> DecimalSignature {
 }
 
 /// Reads and writes `DECIMAL` columns of width up to 28, which always fit.
-impl VectorElement for rust_decimal::Decimal {
+// SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
+unsafe impl VectorElement for rust_decimal::Decimal {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
     // The storage integer depends on the column's width.
@@ -87,7 +88,8 @@ impl VectorElement for rust_decimal::Decimal {
 }
 
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
-impl WritableVectorElement for rust_decimal::Decimal {
+// SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
+unsafe impl WritableVectorElement for rust_decimal::Decimal {
     type Write<'a> = rust_decimal::Decimal;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {

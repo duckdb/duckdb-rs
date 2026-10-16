@@ -128,7 +128,8 @@ impl FromValue for BitValue {
     }
 }
 
-impl VectorElement for BlobValue {
+// SAFETY: `DuckDBBytes` matches DuckDB's string storage.
+unsafe impl VectorElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
 
     type Internal = DuckDBBytes;
@@ -144,7 +145,8 @@ impl VectorElement for BlobValue {
     }
 }
 
-impl VectorElement for BitValue {
+// SAFETY: `DuckDBBytes` matches DuckDB's string storage.
+unsafe impl VectorElement for BitValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT;
 
     type Internal = DuckDBBytes;
@@ -160,7 +162,8 @@ impl VectorElement for BitValue {
     }
 }
 
-impl VectorElement for String {
+// SAFETY: `DuckDBBytes` matches DuckDB's string storage.
+unsafe impl VectorElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
 
     type Internal = DuckDBBytes;
@@ -179,7 +182,8 @@ impl VectorElement for String {
     }
 }
 
-impl WritableVectorElement for String {
+// SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
+unsafe impl WritableVectorElement for String {
     type Write<'a> = &'a str;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -187,7 +191,8 @@ impl WritableVectorElement for String {
     }
 }
 
-impl WritableVectorElement for BlobValue {
+// SAFETY: `write_bytes` stores the bytes in the vector's arena.
+unsafe impl WritableVectorElement for BlobValue {
     type Write<'a> = &'a [u8];
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -195,7 +200,8 @@ impl WritableVectorElement for BlobValue {
     }
 }
 
-impl WritableVectorElement for BitValue {
+// SAFETY: `check_bit` rejects invalid BIT bytes before `write_bytes` stores them.
+unsafe impl WritableVectorElement for BitValue {
     type Write<'a> = &'a [u8];
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<&[u8]>) -> Result<()> {

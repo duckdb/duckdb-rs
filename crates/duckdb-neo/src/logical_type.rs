@@ -18,6 +18,9 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 /// value parameters. Parameter inspection exposes the information needed to
 /// reconstruct parameterized types such as `DECIMAL`, `MAP`, and `STRUCT`.
 ///
+/// A type resolved from the catalog, such as an ENUM made with `CREATE TYPE`,
+/// shares database-owned storage and holds no reference to its database.
+///
 /// # Example
 /// ```
 /// use duckdb_neo::{environment::Environment, environment::StorageLocation};
@@ -44,14 +47,17 @@ pub struct LogicalType {
     pub(crate) handle: ffi::duckdb_v2_logical_type_handle,
 }
 
-// SAFETY: an owned, self-contained C++ `LogicalType`; `&self` methods only read it, and its
-// `ExtraTypeInfo` is shared through an atomically reference-counted `shared_ptr`.
+// SAFETY: an owned C++ `LogicalType` that `&self` methods only read; shared parts are atomically
+// refcounted. A catalog-resolved type shares database storage, so it must not outlive the database.
 unsafe impl Send for LogicalType {}
 unsafe impl Sync for LogicalType {}
 
 impl LogicalType {
     /// Construct a logical type from a primitive ID and optional parameters
     /// using a connection or callback context.
+    ///
+    /// A parameter type resolved from the catalog, such as an ENUM made with `CREATE TYPE`,
+    /// makes the result share database-owned storage, so drop it before the database closes.
     pub fn create_from_id<C: FFILink + ?Sized>(
         link: &C,
         type_id: LogicalTypeID,

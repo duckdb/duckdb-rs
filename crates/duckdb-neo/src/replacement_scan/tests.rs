@@ -231,8 +231,9 @@ fn test_replacement_scan_cdc_rejects_other_connection() -> crate::Result<()> {
     assert!(result.is_err());
 
     // Combining collections of two connections leaves one that neither can register.
-    let mut combined = single_row_collection(&conn)?.to_append()?;
-    combined.combine(single_row_collection(&other)?)?;
+    let combined = single_row_collection(&conn)?
+        .to_append()?
+        .combine(single_row_collection(&other)?)?;
     let result = ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", combined.to_normal())
         .register(&conn);

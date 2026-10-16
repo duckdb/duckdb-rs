@@ -60,7 +60,8 @@ macro_rules! decimal_storage {
                 }
             }
 
-            impl VectorElement for $name {
+            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
+            unsafe impl VectorElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
                 type Internal = $type;
@@ -83,7 +84,8 @@ macro_rules! decimal_storage {
                 }
             }
 
-            impl WritableVectorElement for $name {
+            // SAFETY: the vector stores `$type`, the value's own storage type.
+            unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
                 unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -230,7 +232,8 @@ where
     }
 }
 
-impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Internal`.
+unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
@@ -260,7 +263,8 @@ where
     }
 }
 
-impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: the vector stores `Internal`, the value's own storage type.
+unsafe impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {

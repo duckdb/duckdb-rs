@@ -31,7 +31,7 @@ pub struct ReplacementHandle<'a> {
 /// A replacement source for an unresolved table reference, selected with
 /// [`ReplacementHandle::set_reference`].
 ///
-/// The column-data-collection forms name a collection added with
+/// The column-data-collection form names a collection added with
 /// [`ReplacementScanBuilder::collection`]; the registration keeps it alive for
 /// as long as any result or prepared statement reads it.
 #[derive(Debug)]
