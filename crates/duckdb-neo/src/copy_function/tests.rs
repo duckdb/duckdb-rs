@@ -469,9 +469,10 @@ pub fn test_copy_file_extension() -> crate::Result<()> {
     )?;
     assert_eq!(dir.files("overridden"), ["data_0.other"]);
 
-    // Without one, DuckDB names the files with a bare dot.
+    // Without one, DuckDB names the files with a bare dot, which Windows strips.
     copy("FORMAT echo_no_ext, PER_THREAD_OUTPUT", "no_extension")?;
-    assert_eq!(dir.files("no_extension"), ["data_0."]);
+    let expected = if cfg!(windows) { "data_0" } else { "data_0." };
+    assert_eq!(dir.files("no_extension"), [expected]);
 
     conn.execute(
         format!(

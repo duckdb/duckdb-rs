@@ -67,8 +67,8 @@ pub fn main(out_dir: &str) {
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
-        .define("CMAKE_C_FLAGS_INIT", warning_suppression_flag())
-        .define("CMAKE_CXX_FLAGS_INIT", warning_suppression_flag());
+        .define("CMAKE_C_FLAGS_INIT", init_flags())
+        .define("CMAKE_CXX_FLAGS_INIT", init_flags());
 
     // Re-enable C++ exceptions on MSVC. The cmake crate makes its `cxxflag`s the
     // source of -DCMAKE_CXX_FLAGS, replacing CMake's default (which includes /EHsc),
@@ -107,13 +107,18 @@ pub fn main(out_dir: &str) {
     if !enabled_extensions.is_empty() {
         config.define("BUILD_EXTENSIONS", enabled_extensions.join(";"));
     }
+    // DuckDB's base extension config always builds json and icu; skip them unless requested.
+    let skipped_extensions: Vec<&str> = ["json", "icu"]
+        .into_iter()
+        .filter(|ext| !enabled_extensions.contains(ext))
+        .collect();
+    config.define("SKIP_EXTENSIONS", skipped_extensions.join(";"));
 
     // Always set explicitly so old CMake caches do not keep stale allocator
     // state. By default this enables jemalloc on DuckDB's supported 64-bit,
     // non-musl Linux targets and remains a no-op elsewhere. The env var is an
     // escape hatch back to DuckDB's standard allocator.
     let disable_jemalloc = env_flag("DUCKDB_DISABLE_JEMALLOC");
-    config.define("SKIP_EXTENSIONS", "");
     config.define("ENABLE_JEMALLOC", if disable_jemalloc { "OFF" } else { "ON" });
 
     // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
@@ -255,9 +260,11 @@ fn select_generator(out_dir: &str) -> Generator {
     }
 }
 
-fn warning_suppression_flag() -> &'static str {
+// Suppress warnings. On MSVC also keep CMake's default `/DWIN32 /D_WINDOWS`,
+// which overriding the init flags would drop and DuckDB sources rely on.
+fn init_flags() -> &'static str {
     if win_target() && is_compiler("msvc") {
-        "/w"
+        "/DWIN32 /D_WINDOWS /w"
     } else {
         "-w"
     }
