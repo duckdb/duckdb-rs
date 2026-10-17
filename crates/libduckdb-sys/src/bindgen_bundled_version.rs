@@ -206,6 +206,7 @@ pub const duckdb_error_type_DUCKDB_ERROR_AUTOLOAD: duckdb_error_type = 40;
 pub const duckdb_error_type_DUCKDB_ERROR_SEQUENCE: duckdb_error_type = 41;
 pub const duckdb_error_type_DUCKDB_ERROR_DATA_CORRUPTION: duckdb_error_type = 43;
 pub const duckdb_error_type_DUCKDB_INVALID_CONFIGURATION: duckdb_error_type = 42;
+pub const duckdb_error_type_DUCKDB_ERROR_RESOURCE_IN_USE: duckdb_error_type = 44;
 #[doc = " An enum over DuckDB's different error types.\n\n history:\n - stable: v1.1.0"]
 pub type duckdb_error_type = ::std::os::raw::c_uint;
 pub const duckdb_cast_mode_DUCKDB_CAST_NORMAL: duckdb_cast_mode = 0;
@@ -1118,7 +1119,7 @@ unsafe extern "C" {
     pub fn duckdb_appender_error_data(appender: duckdb_appender) -> duckdb_error_data;
 }
 unsafe extern "C" {
-    #[doc = " Flush the appender to the table, forcing the cache of the appender to be cleared. If flushing the data triggers a\n constraint violation or any other error, then all data is invalidated, and this function returns DuckDBError. It is\n not possible to append more values. Call duckdb_appender_error_data to obtain the error data followed by\n duckdb_appender_destroy to destroy the invalidated appender.\n\n history:\n - stable: v0.2.5\n\n @param appender The appender to flush.\n @return duckdb_state"]
+    #[doc = " Flush the appender to the table, forcing the cache of the appender to be cleared. Requires a connection with no open\n result. If flushing the data triggers a constraint violation or any other error, then all data is invalidated, and\n this function returns DuckDBError. It is not possible to append more values. Call duckdb_appender_error_data to\n obtain the error data followed by duckdb_appender_destroy to destroy the invalidated appender.\n\n history:\n - stable: v0.2.5\n\n @param appender The appender to flush.\n @return duckdb_state"]
     pub fn duckdb_appender_flush(appender: duckdb_appender) -> duckdb_state;
 }
 unsafe extern "C" {
@@ -2166,7 +2167,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = " Closes the pending result and de-allocates all memory allocated for the result.\n\n history:\n - stable: v0.5.0\n\n @param pending_result The pending result to destroy.\n @return void"]
+    #[doc = " Closes the pending result and de-allocates all memory allocated for the result.\n\n Destroying a pending result whose statement has not completed aborts the statement. On autocommit, its writes are\n rolled back. Inside a transaction, a statement that may write invalidates the transaction, and a read-only statement\n just stops. Until the statement has completed, preparing or running another statement on the connection fails with\n `DUCKDB_ERROR_RESOURCE_IN_USE` and leaves it untouched. `duckdb_pending_execution_is_finished` reporting true does\n not mean that the statement completed. To make sure a statement takes effect, complete it before destroying the\n pending result: call `duckdb_execute_pending`, and fetch a streaming result until `duckdb_fetch_chunk` returns NULL.\n A NULL chunk is also returned on an error, so check `duckdb_result_error` afterwards.\n\n history:\n - stable: v0.5.0\n\n @param pending_result The pending result to destroy.\n @return void"]
     pub fn duckdb_destroy_pending(pending_result: *mut duckdb_pending_result);
 }
 unsafe extern "C" {
@@ -2498,7 +2499,7 @@ unsafe extern "C" {
     ) -> duckdb_state;
 }
 unsafe extern "C" {
-    #[doc = " Closes the result and de-allocates all memory allocated for that result.\n\n history:\n - stable: v0.1.0\n\n @param result The result to destroy.\n @return void"]
+    #[doc = " Closes the result and de-allocates all memory allocated for that result.\n\n Destroying a streaming result whose statement has not completed aborts the statement. On autocommit, its writes are\n rolled back. Inside a transaction, a statement that may write invalidates the transaction, and a read-only statement\n just stops. Until the statement has completed, preparing or running another statement on the connection fails with\n `DUCKDB_ERROR_RESOURCE_IN_USE` and leaves it untouched. To make sure the statement takes effect, complete it by\n fetching until `duckdb_fetch_chunk` returns NULL before destroying the result. A NULL chunk is also returned on an\n error, so check `duckdb_result_error` afterwards.\n\n history:\n - stable: v0.1.0\n\n @param result The result to destroy.\n @return void"]
     pub fn duckdb_destroy_result(result: *mut duckdb_result);
 }
 unsafe extern "C" {
