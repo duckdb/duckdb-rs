@@ -8,7 +8,7 @@ use duckdb_loadable_macros::AsRaw;
 use crate::connection::{Connection, Context, HasFactory};
 use crate::error::check_api_call_no_err;
 use crate::ffi;
-use crate::links::{DatabaseKeepAlive, KeepAlive};
+use crate::links::{InstanceKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
 use crate::vector::{Access, VectorElement};
 use crate::{
@@ -391,8 +391,8 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let mut statements = conn.parse("SELECT * FROM (VALUES (10), (20))")?;
 /// let statement = statements.next().expect("expected a statement")?;
 /// let mut result = conn.query(statement, Parameters::None)?;
@@ -432,8 +432,8 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 #[derive(Debug)]
 pub struct DataChunk<'a> {
     pub(crate) chunk: DataChunkRef<'a>,
-    /// Keeps the database behind a connection allocator alive; dropped after the chunk is destroyed.
-    database: Option<KeepAlive>,
+    /// Keeps the instance behind a connection allocator alive; dropped after the chunk is destroyed.
+    instance: Option<KeepAlive>,
 }
 
 impl<'a> DataChunkRef<'a> {
@@ -542,8 +542,8 @@ impl<'a> DataChunkRef<'a> {
 
     /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
     ///
-    /// A copy made through a [`Connection`] keeps its database alive. A copy made through a [`Context`]
-    /// may be kept in callback state but must not outlive the database, for example in a `static`.
+    /// A copy made through a [`Connection`] keeps its instance alive. A copy made through a [`Context`]
+    /// may be kept in callback state but must not outlive the instance, for example in a `static`.
     #[allow(private_bounds)]
     pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk<'static>> {
         link.copy_data_chunk(self)
@@ -560,11 +560,11 @@ impl<'a> DataChunk<'a> {
                 return Err(err);
             }
         };
-        Ok(Self { chunk, database: None })
+        Ok(Self { chunk, instance: None })
     }
 
-    fn keep_alive(mut self, link: &impl DatabaseKeepAlive) -> Self {
-        self.database = link.keep_alive();
+    fn keep_alive(mut self, link: &impl InstanceKeepAlive) -> Self {
+        self.instance = link.keep_alive();
         self
     }
 
@@ -640,8 +640,8 @@ mod tests {
     #[test]
     fn test_data_chunk_create_with_connection() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let data_chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
 
@@ -701,8 +701,8 @@ mod tests {
         });
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         ScalarFunctionBuilder::new(
             "chunk_copy",

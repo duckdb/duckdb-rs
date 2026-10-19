@@ -158,10 +158,10 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
 ///
 /// Callbacks are consulted when binding cannot resolve a table name, in
 /// registration order within each scope. Connection-local scans run before
-/// database-wide scans; the first to claim the reference wins.
+/// instance-wide scans; the first to claim the reference wins.
 ///
-/// A connection-local scan lives until that connection closes; a database-wide scan
-/// is visible to all connections until the database closes.
+/// A connection-local scan lives until that connection closes; an instance-wide scan
+/// is visible to all connections until the instance closes.
 ///
 /// The registration owns the callback and any collections added with
 /// [`Self::collection`] until then.
@@ -192,12 +192,12 @@ where
         self
     }
 
-    /// Register through a connection or database, consuming the builder.
+    /// Register through a connection or instance, consuming the builder.
     ///
     /// Returns an error if a collection was not created from `link`: only a
     /// connection can register collections, and only its own.
     ///
-    /// Register database-wide scans before issuing queries: registering while
+    /// Register instance-wide scans before issuing queries: registering while
     /// other connections bind is not thread-safe.
     #[allow(private_bounds)]
     pub fn register<C: ReplacementScanBuilderLink + ConnectionOrigin>(self, link: &C) -> Result<()> {
@@ -213,7 +213,7 @@ where
             )));
         }
 
-        // Registration erases 'conn; its connection keeps the C handles and database alive until it closes.
+        // Registration erases 'conn; its connection keeps the C handles and instance alive until it closes.
         // The stored collections must never access their factory borrow after registration.
         let data = OpaqueHandle::new(ReplacementScanData {
             implementation: self.implementation,

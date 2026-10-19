@@ -74,7 +74,7 @@ impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V
 impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
             return Err(Error::invalid_input(format!(
                 "Expected MAP value, found {}",
                 logical_type.to_text()?
@@ -117,7 +117,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     type Internal = super::List<()>;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 
@@ -315,8 +315,8 @@ mod tests {
     #[test]
     fn map_write_null_value_empty_map_and_null_row() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
         {
@@ -344,8 +344,8 @@ mod tests {
     #[test]
     fn map_row_len_is_empty_and_iter() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
         {
@@ -377,8 +377,8 @@ mod tests {
     #[test]
     fn map_row_with_list_keys() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query("SELECT MAP {[1, 2]: 10, [3]: NULL}", Parameters::None)?;
         let chunk = result.next_chunk()?.expect("query returns one chunk");

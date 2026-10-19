@@ -65,8 +65,8 @@ pub struct SchemaBind {
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 ///
 /// let statements = conn.parse("SELECT 1; SELECT 2; ; SELECT 42")?;
 ///
@@ -389,8 +389,8 @@ mod tests {
     #[test]
     fn test_statement_borrowed_text_and_parameter_names() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let statement = conn.parse("SELECT $lo, $hi, $lo; ")?.next().unwrap()?;
 
         let text: &str = statement.get_text()?;
@@ -405,8 +405,8 @@ mod tests {
     #[test]
     fn test_prepared_statement() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = Statements::parse(&conn, "SELECT * FROM range(0, 100) as t(x) where x < ?")?;
         let statement = statements.next().unwrap()?.prepare(&conn, true)?;
@@ -425,8 +425,8 @@ mod tests {
     #[test]
     fn test_prepared_statement_named_parameters() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = Statements::parse(
             &conn,
@@ -450,8 +450,8 @@ mod tests {
     #[test]
     fn test_prepared_statement_arrow() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = Statements::parse(
             &conn,
@@ -482,8 +482,8 @@ mod tests {
     #[test]
     fn test_append_column_data_collection() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let cdc = ColumnDataCollection::new(&conn, [(String::logical_type(&conn)?, "title")])?;
 
@@ -521,8 +521,8 @@ mod tests {
     #[test]
     fn test_collection_outlives_statement() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut cdc = ColumnDataCollection::new(&conn, [(i64::logical_type(&conn)?, "x")])?.to_append()?;
         let mut chunk = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;

@@ -39,7 +39,7 @@ impl<T: ToValue + DuckDBType, const N: usize> ToValue for [T; N] {
 impl<T: FromValue, const N: usize> FromValue for [Option<T>; N] {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
             return Err(Error::invalid_input(format!(
                 "Expected ARRAY value, found {}",
                 logical_type.to_text()?
@@ -80,7 +80,7 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
     type Internal = ();
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 
@@ -249,7 +249,7 @@ mod tests {
         let logical_type = <[i32; 3]>::logical_type(&conn)?;
         let (_, size) = logical_type.get_param(1)?;
         assert_eq!(
-            size.logical_type()?.type_id(),
+            size.logical_type()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
         );
         assert_eq!(array_size(&logical_type)?, 3);

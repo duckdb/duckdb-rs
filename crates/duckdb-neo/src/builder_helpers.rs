@@ -179,7 +179,7 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
         }
         Err(panic) => {
             let text = panic_message(panic.as_ref());
-            // INTERNAL intentionally invalidates the database and is reported as an internal DuckDB failure.
+            // INTERNAL intentionally invalidates the instance and is reported as an internal DuckDB failure.
             let error = Error::internal(format!("Panic occurred: {text}"));
             set_error(err, &error);
             None

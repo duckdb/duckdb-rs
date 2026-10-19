@@ -5,7 +5,7 @@
 //! their respective modules.
 
 use crate::connection::HasFactory;
-use crate::{column_data_collection::ColumnDataCollection, connection::Connection, database::Instance, ffi};
+use crate::{column_data_collection::ColumnDataCollection, connection::Connection, ffi, instance::Instance};
 
 macro_rules! define_handle {
     (

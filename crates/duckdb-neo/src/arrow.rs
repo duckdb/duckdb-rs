@@ -416,8 +416,8 @@ mod tests {
     #[test]
     fn test_arrow_conversion() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         ScalarFunctionBuilder::new(
             "to_arrow",

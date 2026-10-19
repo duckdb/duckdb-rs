@@ -22,8 +22,8 @@ fn main() -> Result<()> {
     std::fs::remove_file(&db_path).ok();
 
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::OnDisk(db_path.to_string_lossy().into_owned()));
-    let conn = db?.connect()?;
+    let instance = env.open(StorageLocation::OnDisk(db_path.to_string_lossy().into_owned()));
+    let conn = instance?.connect()?;
 
     conn.execute(
         "CREATE TABLE customers (id INTEGER, first_name VARCHAR, email VARCHAR, birthday DATE);",

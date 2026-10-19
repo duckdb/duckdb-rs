@@ -160,7 +160,7 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
         )
     }
 
-    /// Registers the option instance-wide, transferring its callback state to DuckDB until the database closes.
+    /// Registers the option instance-wide, transferring its callback state to DuckDB until the instance closes.
     /// Fails for duplicate or built-in names, both scopes disabled, or an unsupported default scope.
     #[allow(private_bounds)]
     pub fn register<C: CustomOptionBuilderLink>(self, link: &C) -> Result<()> {

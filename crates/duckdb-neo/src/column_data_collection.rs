@@ -130,9 +130,9 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 /// # use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
 /// # use duckdb_neo::column_data_collection::ColumnDataCollection;
 /// # fn main() -> duckdb_neo::Result<()> {
-/// let db = Environment::new()?.open(StorageLocation::InMemory)?;
+/// let instance = Environment::new()?.open(StorageLocation::InMemory)?;
 /// let collection = {
-///     let conn = db.connect()?;
+///     let conn = instance.connect()?;
 ///     ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?
 /// }; // error: `conn` does not live long enough
 /// # Ok(())
@@ -147,8 +147,8 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let types = [i32::logical_type(&conn)?];
 ///
 /// let collection = ColumnDataCollection::new(&conn, &types)?;
@@ -185,7 +185,7 @@ pub struct ColumnDataCollection<'conn> {
 
 impl<'conn> ColumnDataCollection<'conn> {
     /// Create an empty collection using a [`Connection`](crate::connection::Connection),
-    /// [`Context`](crate::connection::Context), or [`Instance`](crate::database::Instance).
+    /// [`Context`](crate::connection::Context), or [`Instance`](crate::instance::Instance).
     ///
     /// DuckDB rejects an empty schema and types containing `ANY`.
     ///
@@ -305,8 +305,8 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     /// # use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
     /// # use duckdb_neo::column_data_collection::ColumnDataCollection;
     /// # fn main() -> duckdb_neo::Result<()> {
-    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
-    /// # let conn = db.connect()?;
+    /// # let instance = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// # let conn = instance.connect()?;
     /// # let collection = ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?;
     /// let chunk = {
     ///     let mut scan = collection.to_scan()?;
@@ -406,7 +406,7 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
 
     /// Move all chunks from `other` into this collection and return the appender.
     ///
-    /// `other` must come from the same database. Combining across connections prevents
+    /// `other` must come from the same instance. Combining across connections prevents
     /// handing the combined collection to a replacement scan.
     ///
     /// The append state is re-created to append after the combined chunks. If
@@ -494,8 +494,8 @@ mod test {
         });
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         ScalarFunctionBuilder::new(
             "collection_is_empty",
@@ -513,8 +513,8 @@ mod test {
     #[test]
     fn test_collection_add() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = conn.parse(
             r#"
@@ -644,8 +644,8 @@ mod test {
     #[test]
     fn test_collection_scan() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let logical_types = [i32::logical_type(&conn)?, bool::logical_type(&conn)?];
 
@@ -688,8 +688,8 @@ mod test {
     #[test]
     fn test_collection_append_after_combine() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let logical_types = [i32::logical_type(&conn)?];
         let chunk_of = |values: &[i32]| -> crate::Result<DataChunk<'_>> {

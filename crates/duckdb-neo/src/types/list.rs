@@ -56,7 +56,7 @@ impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
 impl<T: FromValue> FromValue for Vec<Option<T>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
             return Err(Error::invalid_input(format!(
                 "Expected LIST value, found {}",
                 logical_type.to_text()?
@@ -79,7 +79,7 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 

@@ -55,10 +55,10 @@ impl LogSinkCallbacks for GlobalSink {
 #[test]
 fn test_log_sink_writes_to_global() -> Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
-    LogSinkBuilder::new("rs_global_store", GlobalSink).register(&db)?;
+    LogSinkBuilder::new("rs_global_store", GlobalSink).register(&instance)?;
 
     conn.execute("CALL enable_logging()", Parameters::None)?;
     // Sink names are case-insensitive.
@@ -68,7 +68,7 @@ fn test_log_sink_writes_to_global() -> Result<()> {
         Parameters::None,
     )?;
     Log::log_on_connection(&conn, LogLevel::Error, "second", LOG_TYPE)?;
-    Log::log_on_instance(&db, LogLevel::Info, "third", LOG_TYPE)?;
+    Log::log_on_instance(&instance, LogLevel::Info, "third", LOG_TYPE)?;
     conn.execute("SET logging_storage = 'memory'", Parameters::None)?;
 
     let collected = COLLECTED.lock().unwrap().clone();

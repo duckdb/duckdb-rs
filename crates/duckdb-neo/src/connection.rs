@@ -1,8 +1,8 @@
-//! Database sessions, SQL execution, and connection-scoped operations.
+//! Instance sessions, SQL execution, and connection-scoped operations.
 //!
-//! Create a [`Connection`] with [`crate::database::Instance::connect`]. Each
+//! Create a [`Connection`] with [`crate::instance::Instance::connect`]. Each
 //! connection has independent settings and transaction state while sharing its
-//! database's catalog and storage. SQL can be parsed into
+//! instance's catalog and storage. SQL can be parsed into
 //! [`crate::statement::Statement`] values, executed for a changed-row count, or
 //! queried as a lazy [`crate::query_result::QueryResult`]. A connection supports
 //! one live query result at a time.
@@ -21,9 +21,9 @@ use crate::{
     AsRaw, DropHandle, FromRaw, Parameters, Result,
     builder_helpers::ffi_enum_redeclaration,
     connection_options::Config,
-    database::{DatabaseHandle, Instance},
     error::{Error, check_api_call},
     ffi,
+    instance::{Instance, InstanceHandle},
     logical_type::{LogicalType, LogicalTypeID},
     query_result::{ArrowQueryResult, QueryResult},
     raw::RawExt,
@@ -36,7 +36,7 @@ ffi_enum_redeclaration! {
     pub enum SettingScope <- ffi::DUCKDB_V2_SETTING_SCOPE {
         /// Write only: resolve from the option's [`default_scope`](crate::connection_options::ConfigOption::default_scope).
         Default = DUCKDB_V2_SETTING_SCOPE_DEFAULT,
-        /// Write through to the database, making the setting visible to all connections.
+        /// Write through to the instance, making the setting visible to all connections.
         Global = DUCKDB_V2_SETTING_SCOPE_GLOBAL,
         /// Write to this connection's session only.
         Session = DUCKDB_V2_SETTING_SCOPE_SESSION
@@ -169,10 +169,10 @@ impl<T: HasFactory + ?Sized> HasFactory for &T {
     }
 }
 
-/// A session connected to a DuckDB database.
+/// A session connected to a DuckDB instance.
 ///
 /// Connections have independent session settings and transactions while
-/// sharing their database's catalog and storage.
+/// sharing their instance's catalog and storage.
 ///
 /// A connection can be moved to another thread but not shared between threads;
 /// use [`InterruptHandle`] or [`QueryProgressTracker`](crate::query_progress::QueryProgressTracker)
@@ -185,7 +185,7 @@ impl<T: HasFactory + ?Sized> HasFactory for &T {
 #[derive(Debug)]
 pub struct Connection {
     pub(crate) inner: Arc<InnerConnection>,
-    pub(crate) db: Arc<Mutex<DatabaseHandle>>,
+    pub(crate) instance: Arc<Mutex<InstanceHandle>>,
     // Not `Sync`: settings and connection-level registrations are not locked on the C side.
     pub(crate) _not_sync: PhantomData<Cell<()>>,
 
@@ -193,10 +193,10 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub(crate) fn new(db: &Instance) -> Result<Self> {
-        check_api_call!(ffi::duckdb_v2_connection_create, db.raw(), RET).map(|handle| Connection {
+    pub(crate) fn new(instance: &Instance) -> Result<Self> {
+        check_api_call!(ffi::duckdb_v2_connection_create, instance.raw(), RET).map(|handle| Connection {
             inner: Arc::new(InnerConnection { handle }),
-            db: db.handle.clone(),
+            instance: instance.handle.clone(),
             _not_sync: PhantomData,
             factory: OnceCell::new(),
         })
@@ -216,7 +216,7 @@ impl Connection {
         stmt.into_statement(self)?.prepare(self, require_cacheable)
     }
 
-    /// Access this connection's session and database configuration.
+    /// Access this connection's session and instance configuration.
     pub fn config(&self) -> Result<Config<'_>> {
         check_api_call!(ffi::duckdb_v2_connection_get_config, self.raw(), RET).map(Config::new)
     }
@@ -327,7 +327,7 @@ pub struct Context {
 }
 
 impl Context {
-    /// Access the callback's session and database configuration.
+    /// Access the callback's session and instance configuration.
     pub fn config(&self) -> Result<Config<'_>> {
         check_api_call!(ffi::duckdb_v2_context_get_config, self.raw(), RET).map(Config::new)
     }
@@ -480,8 +480,8 @@ mod tests {
     #[test]
     fn test_connection_query_parsed_statements() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let statements = conn.parse("SELECT 42")?;
         let mut result = conn.query(statements, Parameters::None)?;
@@ -580,8 +580,8 @@ mod tests {
     #[test]
     fn test_interrupt_after_connection_close() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let interrupt = conn.interrupt_handle();
 

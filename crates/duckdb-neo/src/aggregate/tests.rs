@@ -141,8 +141,8 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
 #[test]
 pub fn basic_aggregate_test() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
@@ -173,11 +173,13 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
 #[test]
 pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
+    let instance = env.open(StorageLocation::InMemory)?;
 
-    db.config()?.set_text("threads", &1.to_string(), SettingScope::Global)?;
+    instance
+        .config()?
+        .set_text("threads", &1.to_string(), SettingScope::Global)?;
 
-    let conn = db.connect()?;
+    let conn = instance.connect()?;
 
     let mut result = AggregateFunctionBuilder::new(
         "to_concatenated",
@@ -213,8 +215,8 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
 #[test]
 fn aggregate_test_groups() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
@@ -307,8 +309,8 @@ impl AggregateCallbacks for UndersizedState {
 #[test]
 fn aggregate_test_undersized_state() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "undersized",
@@ -399,8 +401,8 @@ impl AggregateCallbacks for PaddedSum {
 #[test]
 fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "padded_sum",

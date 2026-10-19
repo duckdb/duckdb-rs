@@ -53,10 +53,7 @@ fn test_table_function() -> Result<()> {
 
             let val = &arg.value;
 
-            assert_eq!(
-                arg.logical_type.type_id(),
-                LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-            );
+            assert_eq!(arg.logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
             assert_eq!(val.as_ref().unwrap().dbg_string()?, "10");
 
             bind_handle.add_result_column("out", &i32::logical_type(context)?)?;
@@ -202,8 +199,8 @@ fn test_table_function() -> Result<()> {
         }
     }
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     conn.config()?
         .set_text("enable_progress_bar_print", "false", SettingScope::Session)?;
@@ -402,8 +399,8 @@ fn test_table_function_partitioning() -> Result<()> {
     }
 
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let partitioning_calls = Arc::new(AtomicUsize::new(0));
     let partition_data_calls = Arc::new(AtomicUsize::new(0));
@@ -618,8 +615,8 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
         let mappings = Arc::new(Mutex::new(Vec::new()));
         {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
             TableFunctionBuilder::new(
                 "projection_scan",
                 SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),
@@ -667,8 +664,8 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
 fn test_table_function_zero_threads() -> Result<()> {
     let counters = std::array::from_fn(|_| Arc::new(TableLifecycleCounter::default()));
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     TableFunctionBuilder::new(
         "zero_threads",
         SignatureBuilder::new().param(FunctionParameter::new::<i32>("rows")),

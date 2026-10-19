@@ -1,4 +1,4 @@
-//! Open DuckDB databases and their global configuration.
+//! DuckDB instances and their global configuration.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -11,19 +11,19 @@ use crate::{
     raw::RawExt,
 };
 
-/// A shared handle to an open DuckDB database.
+/// A shared handle to a DuckDB instance.
 #[derive(Debug, DropHandle)]
 #[drop_handle(ffi::duckdb_v2_instance_destroy)]
-pub struct DatabaseHandle {
-    /// The DuckDB database handle.
+pub struct InstanceHandle {
+    /// The DuckDB instance handle.
     pub(crate) handle: ffi::duckdb_v2_instance_handle,
 
-    /// The environment kept alive by this database.
+    /// The environment kept alive by this instance.
     pub(crate) _env: Arc<EnvironmentHandle>,
 }
 
 // SAFETY: an instance handle may be used and destroyed on any thread.
-unsafe impl Send for DatabaseHandle {}
+unsafe impl Send for InstanceHandle {}
 
 /// A builder for the per-database options of one [`Instance::attach`] call.
 ///
@@ -53,7 +53,7 @@ impl AttachOptionsBuilder {
 
 /// An open DuckDB instance.
 ///
-/// Connections share the database's catalog, buffer pool, and transaction
+/// Connections share the instance's catalog, buffer pool, and transaction
 /// manager while retaining independent session state.
 ///
 /// # Example
@@ -66,11 +66,11 @@ impl AttachOptionsBuilder {
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
+/// let instance = env.open(StorageLocation::InMemory)?;
 ///
-/// db.config()?.set_text("threads", "2", SettingScope::Global)?;
+/// instance.config()?.set_text("threads", "2", SettingScope::Global)?;
 ///
-/// let conn = db.connect()?;
+/// let conn = instance.connect()?;
 /// let (threads, _scope) = conn.config()?.get_value("threads")?;
 /// assert_eq!(i64::from_value(&threads)?, Some(2));
 /// # Ok(())
@@ -79,7 +79,7 @@ impl AttachOptionsBuilder {
 #[derive(Debug)]
 pub struct Instance {
     // Locks only raw-handle access, not engine operations.
-    pub(crate) handle: Arc<Mutex<DatabaseHandle>>,
+    pub(crate) handle: Arc<Mutex<InstanceHandle>>,
     pub(crate) factory: OnceLock<InstanceFactory>,
 }
 
@@ -114,7 +114,7 @@ impl Instance {
     /// Create an empty instance under `environment`, with no database attached yet.
     pub fn new(environment: &Environment) -> Result<Self> {
         check_api_call!(ffi::duckdb_v2_instance_create, environment.handle.handle, RET).map(|handle| Instance {
-            handle: Arc::new(Mutex::new(DatabaseHandle {
+            handle: Arc::new(Mutex::new(InstanceHandle {
                 handle,
                 _env: environment.handle.clone(),
             })),
@@ -138,7 +138,7 @@ impl Instance {
             RET
         )
         .map(|handle| Instance {
-            handle: Arc::new(Mutex::new(DatabaseHandle {
+            handle: Arc::new(Mutex::new(InstanceHandle {
                 handle,
                 _env: environment.handle.clone(),
             })),
@@ -217,13 +217,13 @@ mod tests {
     };
 
     #[test]
-    fn test_database_options() -> crate::Result<()> {
+    fn test_instance_options() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
+        let instance = env.open(StorageLocation::InMemory)?;
 
         let mut options = vec![];
 
-        let config = db.config()?;
+        let config = instance.config()?;
 
         for i in 0..config.count()? {
             options.push(config.get_by_index(i)?);

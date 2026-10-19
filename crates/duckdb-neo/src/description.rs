@@ -60,8 +60,8 @@ impl ColumnDescription {
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let mut statements =
 ///     conn.parse("CREATE TABLE items (id INTEGER, name VARCHAR DEFAULT 'unknown')")?;
 /// conn.execute(
@@ -161,8 +161,8 @@ mod tests {
     #[test]
     fn test_table_description() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements =
             conn.parse("CREATE TABLE test (id INTEGER, name VARCHAR DEFAULT \'DEF\', td AS (2*id));")?;
@@ -183,7 +183,7 @@ mod tests {
         assert!(!id_col.has_default()?);
         assert!(!id_col.has_generated()?);
         assert_eq!(
-            id_col.logical_type()?.type_id(),
+            id_col.logical_type()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(id_col.name()?, "id");
@@ -193,7 +193,7 @@ mod tests {
         assert!(name.has_default()?);
         assert!(!name.has_generated()?);
         assert_eq!(
-            name.logical_type()?.type_id(),
+            name.logical_type()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
         assert_eq!(name.name()?, "name");

@@ -121,7 +121,7 @@ impl ToValue for BigNumValue {
 impl FromValue for BigNumValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM {
             return Err(Error::invalid_input(format!(
                 "Expected BIGNUM value, found {}",
                 logical_type.to_text()?

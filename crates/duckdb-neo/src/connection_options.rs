@@ -23,9 +23,9 @@ use crate::{AsRaw, DropHandle, FromRaw, Result, error::check_api_call};
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
+/// let instance = env.open(StorageLocation::InMemory)?;
 ///
-/// let config = db.config()?;
+/// let config = instance.config()?;
 /// config.set_text("worker_threads", "2", SettingScope::Global)?;
 ///
 /// let (value, _scope) = config.get_value("threads")?;
@@ -108,9 +108,9 @@ impl ConfigOption {
 /// ```compile_fail,E0597
 /// # use duckdb_neo::environment::{Environment, StorageLocation};
 /// # fn main() -> duckdb_neo::Result<()> {
-/// let db = Environment::new()?.open(StorageLocation::InMemory)?;
+/// let instance = Environment::new()?.open(StorageLocation::InMemory)?;
 /// let config = {
-///     let conn = db.connect()?;
+///     let conn = instance.connect()?;
 ///     conn.config()?
 /// };
 /// config.count()?;
@@ -221,8 +221,8 @@ mod test {
     #[test]
     fn test_config_lookup_and_options() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let config = db.config()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let config = instance.config()?;
         config.set_text("threads", "2", SettingScope::Global)?;
         let (value, scope) = config.try_get_value("worker_threads")?.expect("registered alias");
         assert_eq!(i64::from_value(&value)?, Some(2));
@@ -245,8 +245,8 @@ mod test {
 
         let option = {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            db.config()?.get_by_name("threads")?
+            let instance = env.open(StorageLocation::InMemory)?;
+            instance.config()?.get_by_name("threads")?
         };
         assert_eq!(
             std::thread::spawn(move || option.canonical_name()).join().unwrap()?,
@@ -258,12 +258,12 @@ mod test {
     #[test]
     fn test_connection_options_get() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut options = vec![];
 
-        let config = db.config()?;
+        let config = instance.config()?;
 
         for i in 0..config.count()? {
             options.push(config.get_by_index(i)?);
@@ -280,8 +280,8 @@ mod test {
     #[test]
     fn test_connection_option() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         conn.config()?
             .set_text("worker_threads", &12.to_string(), SettingScope::Global)?;
@@ -303,25 +303,28 @@ mod test {
     #[test]
     fn test_connection_option_from_name() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env
+        let instance = env
             .open(StorageLocation::InMemory)
             .expect("Failed to open in-memory database");
-        let conn = db.connect()?;
+        let conn = instance.connect()?;
 
-        let db_option = db.config()?.get_value("profile_output")?;
+        let instance_option = instance.config()?.get_value("profile_output")?;
         let conn_option = conn.config()?.get_value("profile_output")?;
 
-        assert_eq!(String::from_value(&db_option.0)?, String::from_value(&conn_option.0)?);
+        assert_eq!(
+            String::from_value(&instance_option.0)?,
+            String::from_value(&conn_option.0)?
+        );
 
-        let db_config_option = db.config()?.get_by_name("profile_output")?;
+        let instance_config_option = instance.config()?.get_by_name("profile_output")?;
 
-        let aliases = db_config_option.aliases()?;
+        let aliases = instance_config_option.aliases()?;
         assert_eq!(aliases.len(), 1);
         assert_eq!(aliases[0], "profile_output");
 
-        assert_eq!(db_config_option.canonical_name().unwrap(), "profiling_output");
+        assert_eq!(instance_config_option.canonical_name().unwrap(), "profiling_output");
         assert_eq!(
-            db_config_option.description().unwrap(),
+            instance_config_option.description().unwrap(),
             "The file to which profiler output is written. When empty, the output is printed to the terminal."
         );
 

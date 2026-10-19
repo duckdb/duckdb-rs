@@ -539,8 +539,8 @@ mod external {
         #[test]
         fn test_date() -> crate::Result<()> {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
 
             let mut result = conn.query("SELECT DATE '1992-09-20';", Parameters::None)?;
 
@@ -558,8 +558,8 @@ mod external {
         #[test]
         fn test_timestamp_conversion() -> crate::Result<()> {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
             {
                 let mut result =
                     conn.query("SELECT TIMESTAMP_NS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
@@ -641,8 +641,8 @@ mod external {
         #[test]
         fn test_temporal_infinity_conversion() -> crate::Result<()> {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
             let mut result = conn.query(
                 "SELECT
                 'infinity'::TIMESTAMP_NS,
@@ -709,8 +709,8 @@ mod external {
         #[test]
         fn test_time_conversion() -> crate::Result<()> {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
 
             {
                 let mut result = conn.query("SELECT TIME '1992-09-20 11:30:00.123456';", Parameters::None)?;
@@ -795,8 +795,8 @@ mod tests {
     #[test]
     fn test_time_tz_packing() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let mut result = conn.query("SELECT TIMETZ '12:34:56+01:30';", Parameters::None)?;
         let chunk = result.next_chunk()?.unwrap();
         let vector = chunk.get_vector_at::<super::TimeTzValue>(0)?;
@@ -825,8 +825,8 @@ mod tests {
     #[test]
     fn test_interval_conversion() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query(
             "SELECT INTERVAL '1 year 2 months 3 days 4 hours 5 minutes 6 seconds';",

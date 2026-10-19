@@ -68,7 +68,7 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     type Ref<'a> = rust_decimal::Decimal;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
         Ok(DecimalSignature::from_logical_type(other)?.width <= MAX_RUST_DECIMAL_WIDTH)
@@ -149,8 +149,8 @@ mod tests {
     #[test]
     fn rust_decimal_value_round_trips() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         for (text, width) in [
             ("123.45", 5),
@@ -189,8 +189,8 @@ mod tests {
         assert!(rust_decimal::Decimal::try_from(too_precise).is_err());
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let value = too_wide.value(&conn)?;
         assert!(value.get::<rust_decimal::Decimal>().is_err());
 
@@ -200,8 +200,8 @@ mod tests {
     #[test]
     fn rust_decimal_vector_reads_every_storage_width() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query(
             "SELECT -1.5::DECIMAL(4, 1), 123.45::DECIMAL(5, 2), 1.5::DECIMAL(18, 1), \
@@ -239,8 +239,8 @@ mod tests {
     #[test]
     fn rust_decimal_vector_writes_rescale() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         for width in [4, 9, 18, 28] {
             let logical_type = DecimalSignature { width, scale: 2 }.logical_type(&conn)?;

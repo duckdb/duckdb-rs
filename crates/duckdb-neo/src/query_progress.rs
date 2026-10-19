@@ -115,8 +115,8 @@ mod tests {
     #[test]
     fn test_query_progress() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         conn.execute(
             "CREATE TABLE t1 as select * from range(0, 100_00) r(i)",
@@ -147,8 +147,8 @@ mod tests {
     #[test]
     fn test_query_without_progress() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let tracker = QueryProgressTracker::new(&conn)?;
 
         let mut statements = conn.parse("SELECT sum(sin(i)) FROM range(100000) AS t(i);")?;

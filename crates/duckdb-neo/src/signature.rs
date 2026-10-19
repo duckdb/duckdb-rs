@@ -336,8 +336,8 @@ mod test {
     #[test]
     fn test_signature_types() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -365,8 +365,8 @@ mod test {
     #[test]
     fn test_signature_default_value() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -385,8 +385,8 @@ mod test {
     #[test]
     fn test_signature_named_parameter() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -406,8 +406,8 @@ mod test {
     #[test]
     fn test_signature_vararg() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))

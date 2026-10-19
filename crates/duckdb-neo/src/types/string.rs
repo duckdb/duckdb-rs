@@ -79,7 +79,7 @@ impl ToValue for BlobValue {
 impl FromValue for BlobValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB {
             return Err(Error::invalid_input(format!(
                 "Expected BLOB value, found {}",
                 logical_type.to_text()?
@@ -130,7 +130,7 @@ impl ToValue for BitValue {
 impl FromValue for BitValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT {
             return Err(Error::invalid_input(format!(
                 "Expected BIT value, found {}",
                 logical_type.to_text()?

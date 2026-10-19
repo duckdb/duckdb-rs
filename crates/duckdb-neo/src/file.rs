@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     ffi,
     ffi_str::DuckDBStr,
-    links::{DatabaseKeepAlive, FileSystemLink, KeepAlive},
+    links::{FileSystemLink, InstanceKeepAlive, KeepAlive},
     raw::RawExt,
     value::Value,
 };
@@ -73,20 +73,20 @@ unsafe extern "C" fn copy_path_callback(
 #[derive(Debug, AsRaw, FromRaw)]
 pub struct FileSystem<'link> {
     handle: ffi::duckdb_v2_file_system_handle,
-    database: Option<KeepAlive>,
+    instance: Option<KeepAlive>,
     _marker: PhantomData<&'link ()>,
 }
 
 impl<'link> FileSystem<'link> {
-    /// Borrow the file system of a [`Connection`](crate::connection::Connection), [`Instance`](crate::database::Instance), or [`Context`](crate::connection::Context).
+    /// Borrow the file system of a [`Connection`](crate::connection::Connection), [`Instance`](crate::instance::Instance), or [`Context`](crate::connection::Context).
     /// Connection/instance files keep their owner alive; context files may outlive the callback but not its connection.
     #[allow(private_bounds)]
-    pub fn new<C: FileSystemLink + DatabaseKeepAlive>(link: &'link C) -> Result<Self> {
+    pub fn new<C: FileSystemLink + InstanceKeepAlive>(link: &'link C) -> Result<Self> {
         let handle = link.get_file_system()?;
 
         Ok(FileSystem {
             handle,
-            database: link.keep_alive(),
+            instance: link.keep_alive(),
             _marker: PhantomData,
         })
     }
@@ -260,8 +260,8 @@ impl<'link> FileBuilder<'link> {
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let fs = FileSystem::new(&conn)?;
 /// let dir = tempfile::tempdir().expect("failed to create example directory");
 /// let path = dir.path().join("example.txt");
@@ -281,8 +281,8 @@ impl<'link> FileBuilder<'link> {
 #[drop_handle(ffi::duckdb_v2_file_destroy)]
 pub struct File {
     handle: ffi::duckdb_v2_file_handle,
-    // Keep the database alive until the file handle is destroyed.
-    _database: Option<KeepAlive>,
+    // Keep the instance alive until the file handle is destroyed.
+    _instance: Option<KeepAlive>,
 }
 
 // SAFETY: a `FileHandle` has no thread affinity. Not `Sync`: concurrent reads are only safe for
@@ -305,7 +305,7 @@ impl File {
     ) -> crate::Result<Self> {
         check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, &path.into(), options, RET).map(|handle| File {
             handle,
-            _database: fs.database.clone(),
+            _instance: fs.instance.clone(),
         })
     }
 
@@ -410,8 +410,8 @@ mod tests {
     #[test]
     fn test_file_builder_flags() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("flags.txt");
         let path = path.to_str().unwrap();
@@ -430,8 +430,8 @@ mod tests {
     #[test]
     fn test_file_external_cache() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cached.txt");
         std::fs::write(&path, b"cached bytes").unwrap();
@@ -447,8 +447,8 @@ mod tests {
     #[test]
     fn test_file_read_into() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("read-into.txt");
         std::fs::write(&path, b"abcdef").unwrap();
@@ -474,8 +474,8 @@ mod tests {
     #[test]
     fn test_file_read() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let fs = FileSystem::new(&conn)?;
         let dir = tempfile::tempdir().unwrap();
@@ -514,8 +514,8 @@ mod tests {
     #[test]
     fn test_connection_file_keeps_connection_alive() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("keep-alive.txt");
 
@@ -529,7 +529,7 @@ mod tests {
         };
 
         drop(conn);
-        drop(db);
+        drop(instance);
         assert_eq!(env.instance_count()?, 1);
 
         file.write(b"DuckDB")?;
@@ -542,13 +542,13 @@ mod tests {
     }
 
     #[test]
-    fn test_instance_file_keeps_database_alive() -> crate::Result<()> {
+    fn test_instance_file_keeps_instance_alive() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
+        let instance = env.open(StorageLocation::InMemory)?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("instance-keep-alive.txt");
         let file = {
-            let fs = FileSystem::new(&db)?;
+            let fs = FileSystem::new(&instance)?;
             FileBuilder::new(&fs, path.to_str().unwrap())?
                 .read()
                 .write()
@@ -556,7 +556,7 @@ mod tests {
                 .open()?
         };
 
-        drop(db);
+        drop(instance);
         assert_eq!(env.instance_count()?, 1);
         file.write(b"alive")?;
         assert_eq!(file.read_at(0, 5)?, b"alive");
@@ -566,12 +566,12 @@ mod tests {
     }
 
     #[test]
-    fn test_connection_chunk_copy_keeps_database_alive() -> crate::Result<()> {
+    fn test_connection_chunk_copy_keeps_instance_alive() -> crate::Result<()> {
         use crate::{DuckDBType, data_chunk::DataChunk};
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let copy = {
             let mut chunk = DataChunk::create(&conn, [i32::logical_type(&conn)?], true)?;
             let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
@@ -581,7 +581,7 @@ mod tests {
         };
 
         drop(conn);
-        drop(db);
+        drop(instance);
         assert_eq!(env.instance_count()?, 1);
         assert_eq!(copy.row_count()?, 1);
         assert_eq!(copy.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
@@ -593,8 +593,8 @@ mod tests {
     #[test]
     fn test_file_system_paths() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
 
         let dir = tempfile::tempdir().unwrap();
         let path = |name: &str| dir.path().join(name).to_str().unwrap().to_string();
@@ -631,8 +631,8 @@ mod tests {
         use crate::ToValue;
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let fs = FileSystem::new(&conn)?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("modes.txt");
@@ -666,8 +666,8 @@ mod tests {
     #[test]
     fn test_file_operations_after_close() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("closed.txt");
         let file = FileBuilder::new(&fs, path.to_str().unwrap())?
@@ -695,8 +695,8 @@ mod tests {
         };
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
         let builder = FileBuilder::new(&fs, "unused")?;
         let mut error = std::ptr::null_mut();
         // SAFETY: the options are live; an invalid flag creates an owned error handle.
@@ -723,8 +723,8 @@ mod tests {
     #[test]
     fn test_file_system_expand() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         conn.execute("SET home_directory = '/duck/home'", Parameters::None)?;
         let fs = FileSystem::new(&conn)?;
 
@@ -740,8 +740,8 @@ mod tests {
         use std::os::unix::ffi::OsStrExt;
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let fs = FileSystem::new(&db)?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&instance)?;
 
         let dir = tempfile::tempdir().expect("failed to create test dir");
         std::fs::write(dir.path().join(std::ffi::OsStr::from_bytes(b"\xff.txt")), b"").expect("failed to write file");

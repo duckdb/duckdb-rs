@@ -46,7 +46,7 @@ pub unsafe trait VectorElement: Sized {
     /// `Ok(false)` means a type mismatch; `Err` means validation failed.
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         let _ = children;
-        Ok(other.type_id() == Self::TYPE_ID)
+        Ok(other.id()? == Self::TYPE_ID)
     }
 
     /// Borrow a value at its physical and logical indexes.

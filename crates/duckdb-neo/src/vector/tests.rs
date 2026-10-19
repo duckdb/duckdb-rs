@@ -422,8 +422,8 @@ scalar_callback!(DictionaryProbeScalar, i32, |input, output, _ctx, _user_data| {
 #[test]
 pub fn test_vector_dictionary() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "dict_probe",
@@ -503,8 +503,8 @@ scalar_callback!(ConstantProbeScalar, i32, |input, output, _ctx, _user_data| {
 #[test]
 pub fn test_vector_constant() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "const_probe",
@@ -551,10 +551,10 @@ pub fn test_vector_constant() -> crate::Result<()> {
 #[test]
 fn test_vector_read_write() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
-    let db = env
+    let instance = env
         .open(StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let conn = instance.connect().expect("Failed to connect to database");
 
     ScalarFunctionBuilder::new(
         "test",
@@ -597,8 +597,8 @@ fn test_vector_read_write() -> crate::Result<()> {
 #[test]
 fn test_logical_type_cast() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let res = conn.query("SELECT 1", Parameters::None)?.next_chunk()?.unwrap();
 
@@ -613,8 +613,8 @@ fn test_logical_type_cast() -> crate::Result<()> {
 #[test]
 fn test_vector_string() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "to_upper",
@@ -669,8 +669,8 @@ fn test_vector_list() -> crate::Result<()> {
     });
 
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let list_logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
 
@@ -712,8 +712,8 @@ fn test_vector_list() -> crate::Result<()> {
 #[test]
 fn test_vector_struct() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let res = conn
         .query(
@@ -742,8 +742,8 @@ fn test_vector_struct() -> crate::Result<()> {
 #[test]
 pub fn test_vector_array() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let res = conn
         .query(
@@ -776,8 +776,8 @@ pub fn test_vector_array() -> crate::Result<()> {
 #[test]
 pub fn test_vector_union() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut statements = conn.parse(
         "CREATE TABLE tbl1 (u UNION(num INTEGER, str VARCHAR));
@@ -819,8 +819,8 @@ pub fn test_vector_union() -> crate::Result<()> {
 #[test]
 pub fn test_vector_map() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut result = conn.query(
         "SELECT unnest([MAP {1: 12.1, 2: 41.2}, MAP {1: 112.1, 2: 141.2}, MAP {1: NULL, 2: 41.2}]);",
@@ -872,8 +872,8 @@ pub fn test_vector_map() -> crate::Result<()> {
 #[test]
 pub fn vector_complex_write() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let ltype = MapValue::<i32, String>::logical_type(&conn)?;
 
@@ -935,8 +935,8 @@ pub fn vector_complex_write() -> crate::Result<()> {
 #[test]
 pub fn vector_union_write() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let union_type = UnionValue::<TestUnion, i32>::logical_type(&conn)?;
 
@@ -981,8 +981,8 @@ pub fn vector_union_write() -> crate::Result<()> {
 #[test]
 pub fn vector_struct_write() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let struct_type = StructValue::<TestStruct>::logical_type(&conn)?;
 
@@ -1016,8 +1016,8 @@ pub fn vector_struct_write() -> crate::Result<()> {
 #[test]
 pub fn vector_nested_null_write() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let key = || FunctionParameter::new::<i32>("key");
     ScalarFunctionBuilder::new(
@@ -1058,8 +1058,8 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
 #[test]
 pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "to_union_struct",
@@ -1089,8 +1089,8 @@ pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
 #[test]
 pub fn vector_struct_unreadable_child() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "struct_key",
@@ -1111,8 +1111,8 @@ pub fn vector_struct_unreadable_child() -> crate::Result<()> {
 #[test]
 pub fn vector_test_bignum() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut result = conn.query(
         "select unnest([1090812098190281092901::BIGNUM, 1090812098190281092902::BIGNUM, -1090812098190281092903::BIGNUM])",
@@ -1149,8 +1149,8 @@ pub fn vector_test_bignum() -> crate::Result<()> {
 #[test]
 pub fn vector_value_types() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     macro_rules! assert_round_trip {
         ($value:expr, $type:ty) => {{
@@ -1227,8 +1227,8 @@ pub fn vector_value_types() -> crate::Result<()> {
 #[test]
 pub fn vector_writable_value_types() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     macro_rules! assert_copy_write {
         ($type:ty, $value:expr) => {{
@@ -1342,8 +1342,8 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
 #[test]
 pub fn test_vector_make_constant() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "to_constant",
@@ -1383,8 +1383,8 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
 #[test]
 pub fn test_vector_make_sequence() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "to_sequence",
@@ -1424,8 +1424,8 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
 #[test]
 pub fn test_vector_types() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "test",
@@ -1478,7 +1478,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         let vector = input.get_untyped_vector_at(0)?;
         for index in 0..vector.len() {
             let value = if !vector.is_null(index)? {
-                match vector.logical_type().type_id() {
+                match vector.logical_type().id()? {
                     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
                         Some(vector.get_as_checked::<i32>(index)?.unwrap().value(ctx)?)
                     }
@@ -1504,8 +1504,8 @@ pub fn test_vector_set_value() -> crate::Result<()> {
     });
 
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let rt = LogicalType::from_text(&conn, "VARIANT")?;
 
@@ -1558,8 +1558,8 @@ scalar_callback!(RefScalar, String, |input, output, _ctx, _user_data| {
 #[test]
 pub fn test_vector_reference_input() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "reference",
@@ -1616,8 +1616,8 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
 #[test]
 fn test_vector_tstring() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
 
@@ -1658,8 +1658,8 @@ fn test_vector_tstring() -> crate::Result<()> {
 #[test]
 fn test_raw_string_access() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut result = conn.query("SELECT * FROM test_vector_types(NULL::BLOB)", Parameters::None)?;
 
@@ -1704,8 +1704,8 @@ fn test_raw_string_access() -> crate::Result<()> {
 #[test]
 fn test_raw_integer_access() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut result = conn.query("SELECT * FROM test_vector_types(NULL::INTEGER)", Parameters::None)?;
 
@@ -1750,8 +1750,8 @@ fn test_raw_integer_access() -> crate::Result<()> {
 #[test]
 fn test_reference_rebuilds_children() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
 
     let mut source = DataChunk::create(&conn, &types, true)?;
@@ -1799,8 +1799,8 @@ fn test_make_sequence_drops_children() -> crate::Result<()> {
 #[test]
 fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
 
     let mut chunk = DataChunk::create(&conn, &types, true)?;
@@ -1826,8 +1826,8 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
 #[test]
 fn test_make_constant_null_value() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     let types = [String::logical_type(&conn)?];
 
     let mut chunk = DataChunk::create(&conn, &types, true)?;
@@ -1842,8 +1842,8 @@ fn test_make_constant_null_value() -> crate::Result<()> {
 #[test]
 fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     let types = [i32::logical_type(&conn)?, i64::logical_type(&conn)?];
 
     let mut chunk = DataChunk::create(&conn, &types, true)?;
@@ -1867,8 +1867,8 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
 #[test]
 fn test_large_constant_selection_stays_in_bounds() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
     let constant = chunk
@@ -1897,8 +1897,8 @@ scalar_callback!(FlatListScalar, i32, |input, output, _ctx, _user_data| {
 #[test]
 fn test_flatten_rebuilds_children() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "flat_list",
@@ -1938,8 +1938,8 @@ scalar_callback!(SlowWriteInputScalar, i32, |input, output, ctx, _user_data| {
 #[test]
 fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "mutate",
@@ -1980,8 +1980,8 @@ scalar_callback!(ArraySumScalar, i32, |input, output, _ctx, _user_data| {
 #[test]
 fn test_array_reads_use_type_size() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "arr_sum",
@@ -2020,8 +2020,8 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
 #[test]
 fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let mut list_chunk = DataChunk::create(&conn, &[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
     {
@@ -2189,8 +2189,8 @@ fn test_write_value_slow_null_is_visible() -> crate::Result<()> {
 fn test_collection_append() -> crate::Result<()> {
     use crate::column_data_collection::ColumnDataCollection;
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
     let mut chunk = DataChunk::create(&conn, &types, true)?;
     chunk
@@ -2233,8 +2233,8 @@ scalar_callback!(CopyOver, i64, |input, result, ctx, _ud| {
 #[test]
 fn test_vector_cast() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "copy_over",
@@ -2270,8 +2270,8 @@ scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
 #[test]
 fn test_vector_cast_fails() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "copy_over_strict",

@@ -26,7 +26,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         assert_eq!(column_info.len()?, 1);
         assert_eq!(column_info.get_column(0)?.0, "i");
         assert_eq!(
-            column_info.get_column(0)?.1.type_id(),
+            column_info.get_column(0)?.1.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
         );
 
@@ -118,10 +118,10 @@ impl CopyToFunctionCallbacks for RapidCopy {
 #[test]
 pub fn test_copy_function() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
-    let db = env
+    let instance = env
         .open(StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let conn = instance.connect().expect("Failed to connect to database");
 
     CopyFunctionBuilder::new(
         "rapidcopy",
@@ -192,7 +192,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
         assert_eq!(
-            bind_info.get_column(0)?.1.type_id(),
+            bind_info.get_column(0)?.1.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
         );
 
@@ -249,10 +249,10 @@ impl CopyFromFunctionCallbacks for RangeSource {
 #[test]
 pub fn test_copy_from_function() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
-    let db = env
+    let instance = env
         .open(StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let conn = instance.connect().expect("Failed to connect to database");
 
     CopyFunctionBuilder::new("rangesource", RangeSource { total_rows: 7 })
         .register_from(&conn)
@@ -413,10 +413,10 @@ impl CopyFromFunctionCallbacks for EchoFormat {
 #[test]
 pub fn test_copy_to_and_from_function() -> crate::Result<()> {
     let env = Environment::new().expect("Failed to create environment");
-    let db = env
+    let instance = env
         .open(StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let conn = instance.connect().expect("Failed to connect to database");
 
     CopyFunctionBuilder::new("echoformat", EchoFormat)
         .register_to_and_from(&conn)

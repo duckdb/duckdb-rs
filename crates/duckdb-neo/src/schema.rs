@@ -21,8 +21,8 @@ use crate::{AsRaw, DropHandle, FromRaw, Result, check_api_call, logical_type::Lo
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let mut statements = conn.parse("SELECT 42 AS answer")?;
 /// let statement = statements.next().expect("expected a statement")?;
 /// let schema = conn
@@ -32,7 +32,7 @@ use crate::{AsRaw, DropHandle, FromRaw, Result, check_api_call, logical_type::Lo
 ///
 /// assert_eq!(name, "answer");
 /// assert_eq!(
-///     logical_type.type_id(),
+///     logical_type.id()?,
 ///     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
 /// );
 /// # Ok(())
@@ -124,8 +124,8 @@ mod tests {
     #[test]
     fn test_schema_accessors() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let schema = conn.query("SELECT 42 AS answer", Parameters::None)?.schema()?;
 
         assert_eq!(schema.name(0)?, "answer");
@@ -144,8 +144,8 @@ mod tests {
         use crate::{AsRaw, FromRaw};
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let schema = conn.query("SELECT 42 AS answer", Parameters::None)?.schema()?;
         // SAFETY: ownership is transferred from schema to the replacement wrapper.
         let raw = unsafe { schema.get_raw() };
@@ -160,8 +160,8 @@ mod tests {
     #[test]
     fn test_schema_statement_bind() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = conn.parse(
             r#"

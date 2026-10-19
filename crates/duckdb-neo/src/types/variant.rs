@@ -76,7 +76,7 @@ mod tests {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let logical_type = Variant::logical_type(&conn)?;
-        assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT);
+        assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT);
         assert_eq!(
             logical_type.to_text()?,
             VariantValue::<i32>::logical_type(&conn)?.to_text()?

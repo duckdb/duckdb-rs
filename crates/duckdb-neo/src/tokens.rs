@@ -123,8 +123,8 @@ mod tests {
     #[test]
     fn test_tokenizer() -> crate::Result<()> {
         let env: Environment = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sql = "SELECT * FROM test_data(10)";
         let token_iterator = SqlTokenIterator::new(&conn, sql)?;
@@ -169,8 +169,8 @@ mod tests {
     #[test]
     fn test_ends_unterminated() -> crate::Result<()> {
         let env: Environment = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let cases = [
             ("SELECT 'abc", true),

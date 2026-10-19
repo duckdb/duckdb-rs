@@ -5,8 +5,8 @@ use crate::{
     builder_helpers::ffi_enum_redeclaration,
     check_api_call,
     connection::{Connection, Context},
-    database::Instance,
     ffi,
+    instance::Instance,
     raw::RawExt,
 };
 
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn test_instance_log_releases_handle_lock() -> crate::Result<()> {
         use crate::{
-            database::DatabaseHandle,
+            instance::InstanceHandle,
             log_sink::{LogMetadata, LogSinkBuilder, LogSinkCallbacks, LogWriteData},
         };
         use std::sync::{
@@ -102,7 +102,7 @@ mod tests {
             atomic::{AtomicBool, Ordering},
         };
 
-        struct LockProbe(Weak<Mutex<DatabaseHandle>>, Arc<AtomicBool>);
+        struct LockProbe(Weak<Mutex<InstanceHandle>>, Arc<AtomicBool>);
         impl LogSinkCallbacks for LockProbe {
             fn write(&self, data: LogWriteData<'_>, _: LogMetadata<'_>) -> crate::Result<()> {
                 if data.log_type == "rs_lock_probe" {
@@ -114,13 +114,17 @@ mod tests {
         }
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let unlocked = Arc::new(AtomicBool::new(false));
-        LogSinkBuilder::new("rs_lock_probe", LockProbe(Arc::downgrade(&db.handle), unlocked.clone())).register(&db)?;
+        LogSinkBuilder::new(
+            "rs_lock_probe",
+            LockProbe(Arc::downgrade(&instance.handle), unlocked.clone()),
+        )
+        .register(&instance)?;
         conn.execute("CALL enable_logging()", Parameters::None)?;
         conn.execute("SET logging_storage = 'rs_lock_probe'", Parameters::None)?;
-        Log::log_on_instance(&db, LogLevel::Info, "probe", "rs_lock_probe")?;
+        Log::log_on_instance(&instance, LogLevel::Info, "probe", "rs_lock_probe")?;
         assert!(unlocked.load(Ordering::SeqCst));
         Ok(())
     }
@@ -128,15 +132,15 @@ mod tests {
     #[test]
     fn test_log_on_context() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         conn.config()?
             .set_text("enable_logging", "true", SettingScope::Global)?;
         conn.config()?
             .set_text("logging_level", "WARNING", SettingScope::Global)?;
 
-        let conn = db.connect()?;
+        let conn = instance.connect()?;
 
         ScalarFunctionBuilder::new(
             "log_it",

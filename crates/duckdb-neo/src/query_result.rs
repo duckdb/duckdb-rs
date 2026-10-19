@@ -284,8 +284,8 @@ query_result! {
     ///
     /// # fn main() -> duckdb_neo::Result<()> {
     /// let env = Environment::new()?;
-    /// let db = env.open(StorageLocation::InMemory)?;
-    /// let conn = db.connect()?;
+    /// let instance = env.open(StorageLocation::InMemory)?;
+    /// let conn = instance.connect()?;
     /// let mut statements = conn.parse("SELECT * FROM range(3)")?;
     /// let statement = statements.next().expect("expected a statement")?;
     ///
@@ -325,8 +325,8 @@ query_result! {
     ///
     /// # fn main() -> duckdb_neo::Result<()> {
     /// let env = Environment::new()?;
-    /// let db = env.open(StorageLocation::InMemory)?;
-    /// let conn = db.connect()?;
+    /// let instance = env.open(StorageLocation::InMemory)?;
+    /// let conn = instance.connect()?;
     ///
     /// let mut result = conn.arrow_query("SELECT * FROM range(3)", Parameters::None, None)?;
     /// while let Some(array) = result.next_array()? {
@@ -363,8 +363,8 @@ impl QueryResult<'_> {
     /// ```compile_fail,E0382
     /// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
     /// # fn main() -> duckdb_neo::Result<()> {
-    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
-    /// # let conn = db.connect()?;
+    /// # let instance = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// # let conn = instance.connect()?;
     /// let mut result = conn.query("SELECT 42", Parameters::None)?;
     /// let _ = result.to_text(0, 0, 0, 2, 0);
     /// result.schema()?; // error: `result` was moved by `to_text`
@@ -422,8 +422,8 @@ impl<'a> ArrowQueryResult<'a> {
     /// ```compile_fail
     /// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
     /// # fn main() -> duckdb_neo::Result<()> {
-    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
-    /// let mut conn = db.connect()?;
+    /// # let instance = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// let mut conn = instance.connect()?;
     /// let stream = conn.arrow_query("SELECT 42", Parameters::None, None)?.to_arrow_stream()?;
     /// conn.set_option("threads", "1", None)?; // error: `conn` is still borrowed by `stream`
     /// drop(stream);
@@ -467,8 +467,8 @@ mod tests {
     #[test]
     fn test_query_result_helpers() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = conn.parse(
             "
@@ -500,8 +500,8 @@ mod tests {
     #[test]
     fn test_query_result_drop_during_unwind() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let result = conn.query("SELECT * FROM range(5000)", Parameters::None)?;
 
         let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
@@ -516,8 +516,8 @@ mod tests {
     #[test]
     fn test_chunks_outlive_result() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query("SELECT * FROM range(5000)", Parameters::None)?;
         let first = result.next_chunk()?.unwrap();
@@ -538,8 +538,8 @@ mod tests {
     #[test]
     fn test_query_to_textbox() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = conn.parse(
             "
@@ -581,8 +581,8 @@ mod tests {
     #[test]
     fn test_query_to_text_error_releases_connection() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let result = conn.query("SELECT * FROM range(3)", Parameters::None)?;
         let error = result.to_text(0, 0, 0, 2, 0).unwrap_err();
@@ -596,8 +596,8 @@ mod tests {
     #[test]
     fn test_arrow_query_result() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         conn.execute("CREATE TABLE test (id INTEGER)", Parameters::None)?;
         let mut result = conn.arrow_query("INSERT INTO test FROM range(3)", Parameters::None, None)?;
@@ -634,8 +634,8 @@ mod tests {
     #[test]
     fn test_arrow_query_to_arrow_stream() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let result = conn.arrow_query("SELECT * FROM range(3)", Parameters::None, Some(1024))?;
         let arrow_stream = result.to_arrow_stream()?;

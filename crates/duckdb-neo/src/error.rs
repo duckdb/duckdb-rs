@@ -86,7 +86,7 @@ impl Error {
         }
     }
 
-    /// Create an INTERNAL error that intentionally invalidates the database.
+    /// Create an INTERNAL error that intentionally invalidates the instance.
     /// DuckDB describes this as an internal failure, including for callback panics.
     pub fn internal(message: impl Into<String>) -> Self {
         Error {
@@ -283,8 +283,8 @@ mod tests {
     #[test]
     fn test_string_renderers() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let logical_type = LogicalType::from_text(&conn, "MAP(VARCHAR, INTEGER)")?;
         assert_eq!(logical_type.to_text()?, "MAP(VARCHAR, INTEGER)");
         for text in ["", "hello", "\u{e9}", &"long text".repeat(1024)] {

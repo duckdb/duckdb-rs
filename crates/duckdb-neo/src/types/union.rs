@@ -77,7 +77,7 @@ unsafe impl VectorElement for Union {
     type Internal = Union;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 
@@ -232,7 +232,7 @@ unsafe impl WritableVectorElement for Union {
             } else if i != member {
                 // Nested fixed-width rows need NULL descendants, which only the slow path sets.
                 let nested = matches!(
-                    child.logical_type().type_id(),
+                    child.logical_type().id()?,
                     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT
                         | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
                         | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION

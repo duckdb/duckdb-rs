@@ -19,7 +19,7 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 /// reconstruct parameterized types such as `DECIMAL`, `MAP`, and `STRUCT`.
 ///
 /// A type resolved from the catalog, such as an ENUM made with `CREATE TYPE`,
-/// shares database-owned storage and holds no reference to its database.
+/// shares instance-owned storage and holds no reference to its instance.
 ///
 /// # Example
 /// ```
@@ -28,12 +28,12 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let logical_type = LogicalType::from_text(&conn, "MAP(VARCHAR, INTEGER)")?;
 ///
 /// assert_eq!(
-///     logical_type.type_id(),
+///     logical_type.id()?,
 ///     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP
 /// );
 /// assert_eq!(logical_type.param_count()?, 2);
@@ -47,7 +47,7 @@ pub struct LogicalType {
 }
 
 // SAFETY: an owned C++ `LogicalType` that `&self` methods only read; shared parts are atomically
-// refcounted. A catalog-resolved type shares database storage, so it must not outlive the database.
+// refcounted. A catalog-resolved type shares instance storage, so it must not outlive the instance.
 unsafe impl Send for LogicalType {}
 unsafe impl Sync for LogicalType {}
 
@@ -76,7 +76,7 @@ fn with_type_parameters<C: FFILink + ?Sized, T>(
 
 impl LogicalType {
     /// Construct a primitive or parameterized type by ID; empty parameter names mean positional arguments.
-    /// Child types must be TYPE values from [`Value::from_logical_type`]; catalog types borrow database storage.
+    /// Child types must be TYPE values from [`Value::from_logical_type`]; catalog types borrow instance storage.
     pub fn create_from_id<C: FFILink + ?Sized>(
         link: &C,
         type_id: LogicalTypeID,
@@ -120,7 +120,7 @@ impl LogicalType {
     }
 
     /// Resolve a SQL-qualified or quoted type `name`; empty parameter names mean positional arguments.
-    /// Child types must be TYPE values from [`Value::from_logical_type`]; catalog types borrow database storage.
+    /// Child types must be TYPE values from [`Value::from_logical_type`]; catalog types borrow instance storage.
     pub fn create<C: FFILink + ?Sized>(link: &C, name: &str, parameters: Parameters<'_>) -> Result<Self> {
         with_type_parameters(link, parameters, |names, values, count| {
             let qname = QualifiedName::from_sql(name)?;
@@ -138,8 +138,8 @@ impl LogicalType {
     }
 
     /// Return the logical type ID.
-    pub fn type_id(&self) -> LogicalTypeID {
-        check_api_call!(ffi::duckdb_v2_logical_type_get_id, self.handle, RET).expect("Failed to get logical type id")
+    pub fn id(&self) -> Result<LogicalTypeID> {
+        check_api_call!(ffi::duckdb_v2_logical_type_get_id, self.handle, RET)
     }
 
     /// Return the alias or canonical type name.
@@ -298,8 +298,8 @@ mod test {
     #[test]
     fn test_create_map_type() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let key_type = Value::from_logical_type(&conn, &i32::logical_type(&conn)?)?;
         let value_type = Value::from_logical_type(&conn, &String::logical_type(&conn)?)?;
@@ -308,11 +308,11 @@ mod test {
         assert_eq!(ltype.name()?, "MAP");
         assert_eq!(ltype.param_count()?, 2);
         assert_eq!(
-            ltype.get_param(0)?.1.type_value_get_inner()?.type_id(),
+            ltype.get_param(0)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(
-            ltype.get_param(1)?.1.type_value_get_inner()?.type_id(),
+            ltype.get_param(1)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
 
@@ -331,14 +331,14 @@ mod test {
             Parameters::named(&[("id", &int_type), ("label", &text_type)]),
         )?;
 
-        assert_eq!(ltype.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT);
+        assert_eq!(ltype.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT);
         let params = ltype.get_params()?;
         assert_eq!(
             params.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
             ["id", "label"]
         );
         assert_eq!(
-            params[1].1.type_value_get_inner()?.type_id(),
+            params[1].1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
 
@@ -348,8 +348,8 @@ mod test {
     #[test]
     fn test_logical_type_alias() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let ltype = MapValue::<i32, String>::logical_type(&conn)?;
 
@@ -357,14 +357,14 @@ mod test {
 
         assert_eq!(alias_ltype.name()?, "my_map");
         assert_eq!(alias_ltype.param_count()?, 2);
-        assert_eq!(alias_ltype.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP);
+        assert_eq!(alias_ltype.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP);
 
         assert_eq!(
-            alias_ltype.get_param(0)?.1.type_value_get_inner()?.type_id(),
+            alias_ltype.get_param(0)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(
-            alias_ltype.get_param(1)?.1.type_value_get_inner()?.type_id(),
+            alias_ltype.get_param(1)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
 
@@ -374,23 +374,23 @@ mod test {
     #[test]
     fn test_logical_type_get_from_text() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let lt = LogicalType::from_text(&conn, "UNION(text VARCHAR, num INTEGER, delim TINYINT)")?;
 
         assert_eq!(lt.name()?, "UNION");
         assert_eq!(lt.param_count()?, 3);
         assert_eq!(
-            lt.get_param(0)?.1.type_value_get_inner()?.type_id(),
+            lt.get_param(0)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
         assert_eq!(
-            lt.get_param(1)?.1.type_value_get_inner()?.type_id(),
+            lt.get_param(1)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(
-            lt.get_param(2)?.1.type_value_get_inner()?.type_id(),
+            lt.get_param(2)?.1.type_value_get_inner()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT
         );
 

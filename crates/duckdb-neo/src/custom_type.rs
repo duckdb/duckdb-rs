@@ -21,8 +21,8 @@ use crate::{
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 ///
 /// let temperature = CustomType::new("TEMPERATURE", i32::logical_type(&conn)?);
 /// temperature.register(&conn)?;
@@ -81,8 +81,8 @@ mod tests {
     #[test]
     fn test_custom_type() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let custom_type = CustomType::new("TEMPERATURE", i32::logical_type(&conn)?);
 
@@ -91,7 +91,7 @@ mod tests {
         let temperature = LogicalType::from_text(&conn, "TEMPERATURE")?;
 
         assert_eq!(temperature.to_text()?, "TEMPERATURE");
-        assert_eq!(temperature.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+        assert_eq!(temperature.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
 
         Ok(())
     }

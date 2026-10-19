@@ -114,8 +114,8 @@ impl ScalarCallbacks for BasicScalarPanicFunction {
 #[test]
 fn test_scalar_bind_init_user_data() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "custom_scalar",
@@ -143,11 +143,11 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 #[test]
 fn test_scalar_panic() -> crate::Result<()> {
     let env = Environment::new()?;
-    // A client-thread panic invalidates the database, not just the worker transaction.
-    let db = env.instance()?;
-    db.config()?.set_text("threads", "1", SettingScope::Global)?;
-    db.attach(&StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    // A client-thread panic invalidates the instance, not just the worker transaction.
+    let instance = env.instance()?;
+    instance.config()?.set_text("threads", "1", SettingScope::Global)?;
+    instance.attach(&StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "panic_func",
@@ -174,8 +174,8 @@ fn test_scalar_panic() -> crate::Result<()> {
 #[test]
 fn test_invalid_scalar_function_registration() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let error = ScalarFunctionBuilder::new(
         "basic",
@@ -209,8 +209,8 @@ fn test_invalid_scalar_function_registration() -> crate::Result<()> {
 #[test]
 fn test_scalar_building() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "basic",
@@ -234,8 +234,8 @@ fn test_scalar_building() -> crate::Result<()> {
 #[test]
 fn test_scalar_property() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "basic",
@@ -306,8 +306,8 @@ impl ScalarCallbacks for FoldProbe {
 #[test]
 fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let folded = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     ScalarFunctionBuilder::new(
@@ -369,8 +369,8 @@ impl ScalarCallbacks for Identity {
 #[test]
 fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "identity",
@@ -426,8 +426,8 @@ impl ScalarCallbacks for DynamicResolve {
 #[test]
 fn test_scalar_any_resolves_input_type_and_value() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "dynamic_resolve",
@@ -466,8 +466,8 @@ fn test_scalar_any_resolves_input_type_and_value() -> crate::Result<()> {
 #[test]
 fn test_scalar_any_requires_resolver() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
     let any = LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?;
     let error = ScalarFunctionBuilder::new(
         "missing_resolver",
@@ -536,8 +536,8 @@ impl ScalarCallbacks for OptionalLifecycle {
 #[test]
 fn test_scalar_optional_bind_and_init() -> Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     for (name, bind, init) in [
         ("neither", false, false),

@@ -199,8 +199,8 @@ mod external {
         #[test]
         fn uuid_conversion_matches_duckdb() -> Result<()> {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
             let expected = [uuid!("0bc67299-bf0d-4bf2-b92c-634b1f79c4f8"), Uuid::nil(), Uuid::max()];
 
             assert_eq!(Uuid::from(UuidValueRaw(i128::MIN)), Uuid::nil());

@@ -257,8 +257,8 @@ mod tests {
     #[test]
     pub fn test_expression_with_panic() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let signature = SignatureBuilder::new();
 

@@ -70,7 +70,7 @@ fn validate_cast_type<T: VectorElement>(logical_type: &LogicalType) -> Result<()
         return Err(Error::invalid_input(format!(
             "Cast vector type {:?} does not match {:?}",
             T::TYPE_ID,
-            logical_type.type_id()
+            logical_type.id()?
         )));
     }
     Ok(())
@@ -271,8 +271,8 @@ mod tests {
     #[test]
     fn test_cast_function() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?);
         custom_type.register(&conn)?;

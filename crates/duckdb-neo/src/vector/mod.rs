@@ -71,7 +71,7 @@ pub(crate) enum TypeParams {
 
 impl TypeParams {
     fn read(logical_type: &LogicalType) -> Result<Self> {
-        Ok(match logical_type.type_id() {
+        Ok(match logical_type.id()? {
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
                 size: crate::types::array::array_size(logical_type)?,
             },

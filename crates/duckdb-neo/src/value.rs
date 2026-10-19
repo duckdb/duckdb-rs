@@ -21,8 +21,8 @@ use crate::{
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 ///
 /// let value = vec![Some(1_i32), None].value(&conn)?;
 ///
@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(super::Value::null(&conn, &logical_type)?.to_string(), "NULL");
         let value = super::Value::from_logical_type(&conn, &logical_type)?;
         let payload = value.get::<super::LogicalType>()?.expect("non-NULL TYPE payload");
-        assert_eq!(payload.type_id(), logical_type.type_id());
+        assert_eq!(payload.id()?, logical_type.id()?);
         Ok(())
     }
 
@@ -588,8 +588,8 @@ mod tests {
     #[test]
     fn test_bignum_list_render() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let value = vec![
             None,
             Some(BigNumValue {

@@ -135,7 +135,7 @@ unsafe impl VectorElement for Struct {
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         Ok(matches!(
-            other.type_id(),
+            other.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
         ))
     }

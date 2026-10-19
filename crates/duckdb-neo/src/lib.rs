@@ -18,8 +18,8 @@
 //!
 //! # fn main() -> duckdb_neo::Result<()> {
 //! let environment = Environment::new()?;
-//! let database = environment.open(StorageLocation::InMemory)?;
-//! let connection = database.connect()?;
+//! let instance = environment.open(StorageLocation::InMemory)?;
+//! let connection = instance.connect()?;
 //!
 //! let mut result = connection.query("SELECT $1::INTEGER", Parameters::positional(&[&42]))?;
 //! let chunk = result.next_chunk()?.expect("query returned no rows");
@@ -56,13 +56,13 @@ pub mod copy_function;
 pub mod custom_option;
 pub mod custom_type;
 pub mod data_chunk;
-pub mod database;
 pub mod description;
 pub mod enums;
 pub mod environment;
 pub mod error;
 pub mod expression;
 pub mod file;
+pub mod instance;
 pub mod log;
 pub mod log_sink;
 pub mod logical_type;
@@ -141,8 +141,8 @@ mod tests {
     #[test]
     fn test_query_parameters() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let result = conn
             .query("SELECT $1", Parameters::positional(&[&1]))?
@@ -168,8 +168,8 @@ mod tests {
     #[test]
     fn test_open_in_memory_and_drop() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut total_row_count = 0;
 
@@ -182,7 +182,7 @@ mod tests {
             while let Some(chunk) = result.next_chunk()? {
                 let vector = chunk.get_vector_at::<i32>(0)?;
 
-                let type_id = vector.logical_type().type_id();
+                let type_id = vector.logical_type().id()?;
 
                 assert_eq!(
                     type_id,
@@ -206,8 +206,8 @@ mod tests {
     #[test]
     fn test_prepared_statement() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let statements = conn.parse(
             r#"
@@ -258,8 +258,8 @@ mod tests {
     #[test]
     fn test_connection_interrupt() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query("SELECT * from range(0,10_000)", Parameters::None)?;
 
@@ -276,8 +276,8 @@ mod tests {
     #[test]
     fn test_connection_interrupt_other_thread() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let (sender, receiver) = std::sync::mpsc::channel();
         let (sender_2, receiver_2) = std::sync::mpsc::channel();
@@ -307,17 +307,17 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_databases() -> crate::Result<()> {
+    fn test_multiple_instances() -> crate::Result<()> {
         let directory = tempfile::tempdir().unwrap();
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
+        let instance = env.open(StorageLocation::InMemory)?;
         let db_2 = env.open(StorageLocation::OnDisk(
             directory.path().join("test.db").to_str().unwrap().to_owned(),
         ))?;
 
         assert_eq!(env.instance_count()?, 2);
 
-        let conn1 = db.connect()?;
+        let conn1 = instance.connect()?;
         let conn2 = db_2.connect()?;
 
         let result1 = conn1.query("SELECT 1", Parameters::None)?.next_chunk()?.unwrap();
