@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use duckdb_loadable_macros::AsRaw;
 
+use crate::Error;
 use crate::builder_helpers::{OpaqueHandle, handle_unwind};
 use crate::ffi_str::DuckDBStr;
 use crate::log::{LogLevel, LogScope};
@@ -63,13 +64,13 @@ impl LogMetadata<'_> {
 
 /// One log entry passed to [`LogSinkCallbacks::write`]; `timestamp` is microseconds since the epoch.
 #[derive(Debug)]
-pub struct LogWriteData {
+pub struct LogWriteData<'a> {
     /// Microseconds since the Unix epoch (UTC).
     pub timestamp: i64,
     pub log_level: LogLevel,
     pub log_scope: LogScope,
-    pub log_type: Option<String>,
-    pub message: Option<String>,
+    pub log_type: &'a str,
+    pub message: &'a str,
 }
 
 unsafe extern "C" fn flush_callback<T: LogSinkCallbacks>(
@@ -87,6 +88,15 @@ unsafe extern "C" fn flush_callback<T: LogSinkCallbacks>(
     );
 }
 
+unsafe fn entry_str<'a>(text: *const ffi::duckdb_v2_str, what: &str) -> Result<&'a str> {
+    if text.is_null() {
+        return Ok("");
+    }
+    DuckDBStr::from_raw(unsafe { *text })
+        .as_str()
+        .ok_or_else(|| Error::api_error(format!("{what} is not valid UTF-8")))
+}
+
 unsafe extern "C" fn write_callback<T: LogSinkCallbacks>(
     info: ffi::duckdb_v2_log_sink_write_info_handle,
     user_data: *mut ::std::os::raw::c_void,
@@ -101,17 +111,9 @@ unsafe extern "C" fn write_callback<T: LogSinkCallbacks>(
         || {
             let user_data = unsafe { &*(user_data as *const T) };
 
-            let log_type = if type_.is_null() {
-                None
-            } else {
-                DuckDBStr::from_raw(unsafe { *type_ }).as_str().map(|x| x.to_string())
-            };
-
-            let message = if message.is_null() {
-                None
-            } else {
-                DuckDBStr::from_raw(unsafe { *message }).as_str().map(|x| x.to_string())
-            };
+            // SAFETY: DuckDB keeps both strings alive for the duration of the callback.
+            let log_type = unsafe { entry_str(type_, "log type") }?;
+            let message = unsafe { entry_str(message, "log message") }?;
 
             T::write(
                 user_data,
@@ -190,7 +192,7 @@ pub trait LogSinkCallbacks: Send + Sync + 'static {
 
     /// Called for each entry the logging configuration routes to the sink.
     /// Errors and panics are dropped along with the entry.
-    fn write(&self, data: LogWriteData, metadata: LogMetadata<'_>) -> Result<()>;
+    fn write(&self, data: LogWriteData<'_>, metadata: LogMetadata<'_>) -> Result<()>;
 }
 
 #[cfg(test)]

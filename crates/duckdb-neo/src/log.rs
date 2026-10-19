@@ -104,8 +104,8 @@ mod tests {
 
         struct LockProbe(Weak<Mutex<DatabaseHandle>>, Arc<AtomicBool>);
         impl LogSinkCallbacks for LockProbe {
-            fn write(&self, data: LogWriteData, _: LogMetadata<'_>) -> crate::Result<()> {
-                if data.log_type.as_deref() == Some("rs_lock_probe") {
+            fn write(&self, data: LogWriteData<'_>, _: LogMetadata<'_>) -> crate::Result<()> {
+                if data.log_type == "rs_lock_probe" {
                     let instance = self.0.upgrade().unwrap();
                     self.1.store(instance.try_lock().is_ok(), Ordering::SeqCst);
                 }
