@@ -18,7 +18,6 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-
 /// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
 pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
     if raw.len == 0 {
@@ -86,9 +85,28 @@ impl FromValue for BlobValue {
 }
 
 /// A BIT value in DuckDB's padding-header wire representation.
+///
+/// The first byte counts the padding bits, below 8, which lead the first data byte and must be set.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitValue(pub Vec<u8>);
+
+/// Reject bytes DuckDB would misread as BIT; a padding count of 8 or more makes it write out of bounds.
+fn check_bit(bytes: &[u8]) -> Result<()> {
+    let [padding, first, ..] = bytes else {
+        return Err(Error::invalid_input(
+            "BIT storage needs a padding byte and at least one data byte",
+        ));
+    };
+    if *padding >= 8 {
+        return Err(Error::invalid_input(format!("BIT padding {padding} must be below 8")));
+    }
+    let padding_bits = !(u8::MAX >> padding);
+    if first & padding_bits != padding_bits {
+        return Err(Error::invalid_input("BIT padding bits must be set"));
+    }
+    Ok(())
+}
 
 impl DuckDBType for BitValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
@@ -98,6 +116,7 @@ impl DuckDBType for BitValue {
 
 impl ToValue for BitValue {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
+        check_bit(&self.0)?;
         link.create_value(ValueInput::Bit(self.0.as_ref()))
     }
 }
@@ -180,10 +199,8 @@ impl WritableVectorElement for BitValue {
     type Write<'a> = &'a [u8];
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<&[u8]>) -> Result<()> {
-        if value.is_some_and(<[u8]>::is_empty) {
-            return Err(Error::api_error(
-                "DuckDB BIT storage requires a padding-header byte".to_string(),
-            ));
+        if let Some(value) = value {
+            check_bit(value)?;
         }
         vector.write_bytes(index, value)
     }

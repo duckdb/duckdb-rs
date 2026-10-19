@@ -13,7 +13,6 @@ use crate::{
     value::Value,
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
-
 /// Reads a `UNION` vector through its tag and member child vectors.
 #[derive(Debug)]
 pub struct Union;
@@ -207,7 +206,18 @@ impl WritableVectorElement for Union {
             if i == 0 {
                 child.write_as::<u8>(index, Some(value.tag))?;
             } else if i != member {
-                child.set_row_validity(index, false)?;
+                // A NULL STRUCT, UNION or ARRAY row needs NULL descendants, which only the slow path sets.
+                let nested = matches!(
+                    child.logical_type().type_id(),
+                    LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT
+                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
+                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
+                );
+                if nested {
+                    child.set_null_slow(index)?;
+                } else {
+                    child.set_row_validity(index, false)?;
+                }
             }
         }
         // The member's own write sets its validity.

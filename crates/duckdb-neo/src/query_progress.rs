@@ -22,8 +22,12 @@ pub struct QueryProgressTracker {
 impl QueryProgressTracker {
     /// Enable progress tracking and retain the connection used for snapshots.
     pub fn new(connection: &mut Connection) -> Result<Self> {
-        connection.set_option("enable_progress_bar_print", "false", Some(SettingScope::Local))?;
-        connection.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
+        connection
+            .config()?
+            .set_text("enable_progress_bar_print", "false", SettingScope::Session)?;
+        connection
+            .config()?
+            .set_text("enable_progress_bar", "true", SettingScope::Session)?;
         Ok(Self {
             connection: Arc::downgrade(&connection.inner),
         })

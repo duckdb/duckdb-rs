@@ -43,7 +43,7 @@ impl<T: ToValue + DuckDBType, const N: usize> ToValue for [T; N] {
 
 impl<T: FromValue, const N: usize> FromValue for [Option<T>; N] {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let logical_type = value.fetch_logical_type()?;
+        let logical_type = value.logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
             return Err(Error::invalid_input(format!(
                 "Expected ARRAY value, found {}",
@@ -132,7 +132,7 @@ impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         }
 
         let child_len = vector
-            .len
+            .len()
             .checked_mul(array_size)
             .ok_or_else(|| Error::invalid_input("Array child length overflow"))?;
         let child = vector

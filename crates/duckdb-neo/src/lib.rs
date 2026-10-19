@@ -42,11 +42,13 @@ mod links;
 
 pub(crate) mod bytes;
 pub mod connection;
+pub mod custom_option;
 pub mod data_chunk;
 pub mod database;
 pub mod environment;
 pub mod error;
 pub(crate) mod ffi_str;
+pub mod log_sink;
 pub mod logical_type;
 pub(crate) mod parameter;
 pub mod query_result;
@@ -56,7 +58,8 @@ pub mod statement;
 pub mod types;
 pub mod value;
 pub mod vector;
-use crate::error::{Error, check_api_call, check_api_call_no_err, check_api_call_string};
+use crate::error::{Error, check_api_call, check_api_call_string};
+pub(crate) use duckdb_loadable_macros::DropHandle;
 pub use duckdb_loadable_macros::{AsRaw, FromRaw};
 pub use parameter::{Parameters, QueryParameter};
 pub use raw::{AsRaw, FromRaw};
@@ -77,6 +80,7 @@ pub mod enums;
 pub mod expression;
 pub mod file;
 pub mod log;
+pub mod pragma_function;
 pub mod qualified_name;
 pub mod query_progress;
 pub mod replacement_scan;
@@ -84,6 +88,8 @@ pub mod scalar;
 pub mod signature;
 pub mod table_function;
 pub mod tokens;
+
+use connection::Factory;
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+use crate::cast::CastMode;
 use crate::logical_type::LogicalTypeID;
+use crate::scalar::ScalarFunctionBuilder;
 use crate::types::{Any, StructValue};
 use crate::{
     Parameters, ToValue,
@@ -11,7 +13,7 @@ use crate::{
     error::{DuckDBError, Error},
     logical_type::LogicalType,
     query_result::QueryResultStep,
-    signature::Parameter,
+    signature::{FunctionParameter, SignatureBuilder},
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
         IntervalValue, List, LongDecimal, Map, MapValue, ShortDecimal, Struct, StructSchema, TimeNsValue, TimeTzValue,
@@ -22,8 +24,6 @@ use crate::{
     value::Value,
     vector::StorageKind,
 };
-
-use crate::{scalar::ScalarFunctionBuilder, signature::SignatureBuilder};
 
 struct TestStruct;
 
@@ -211,6 +211,23 @@ scalar_callback!(NullableUnionScalar, Union, |input, output, _ctx, _user_data| {
     Ok(())
 });
 
+// Odd keys pick the INTEGER member, even keys the STRUCT member.
+scalar_callback!(StructMemberUnionScalar, Union, |input, output, _ctx, _user_data| {
+    let keys = input.get_vector_at::<i32>(0)?;
+    let mut output = output;
+    output.set_size(keys.len())?;
+    for (index, key) in keys.iter()?.enumerate() {
+        let key = *key.unwrap();
+        let row = if key % 2 == 1 {
+            UnionWriter::set_value::<i32>(0, Some(key))
+        } else {
+            UnionWriter::set_value::<Struct>(1, Some(StructWrite::default().field::<String>(Some("even"))))
+        };
+        output.write(index, Some(row))?;
+    }
+    Ok(())
+});
+
 scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
     let mut result = result;
     let val = 42_i32.value(&ctx)?;
@@ -282,10 +299,9 @@ pub fn test_vector_dictionary() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "dict_probe",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(i32::logical_type(&conn)?),
         DictionaryProbeScalar,
     )
     .register(&conn)?;
@@ -368,10 +384,9 @@ pub fn test_vector_constant() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "const_probe",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(i32::logical_type(&conn)?),
         ConstantProbeScalar,
     )
     .register(&conn)?;
@@ -424,10 +439,9 @@ fn test_vector_read_write() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "test",
-        SignatureBuilder::new(
-            [Parameter::normal("input", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(i32::logical_type(&conn)?),
         NegateScalar,
     )
     .register(&conn)
@@ -482,10 +496,9 @@ fn test_vector_string() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_upper",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", String::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("IN"))
+            .return_type(String::logical_type(&conn)?),
         UpperScalar,
     )
     .register(&conn)?;
@@ -541,7 +554,9 @@ fn test_vector_list() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "list_mult",
-        SignatureBuilder::new([Parameter::normal("IN", list_logical_type.clone())], list_logical_type),
+        SignatureBuilder::new()
+            .param(FunctionParameter::with_type("IN", list_logical_type.clone()))
+            .return_type(list_logical_type),
         ListMultScalar,
     )
     .register(&conn)?;
@@ -756,13 +771,10 @@ pub fn vector_complex_write() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_map",
-        SignatureBuilder::new(
-            [
-                Parameter::normal("key", i32::logical_type(&conn)?),
-                Parameter::normal("value", String::logical_type(&conn)?),
-            ],
-            ltype,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("key"))
+            .param(FunctionParameter::new::<String>("value"))
+            .return_type(ltype),
         MapScalar,
     )
     .register(&conn)?;
@@ -819,13 +831,10 @@ pub fn vector_union_write() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_union",
-        SignatureBuilder::new(
-            [
-                Parameter::normal("key", i32::logical_type(&conn)?),
-                Parameter::normal("value", String::logical_type(&conn)?),
-            ],
-            union_type,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("key"))
+            .param(FunctionParameter::new::<String>("value"))
+            .return_type(union_type),
         UnionScalar,
     )
     .register(&conn)?;
@@ -865,13 +874,10 @@ pub fn vector_struct_write() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_struct",
-        SignatureBuilder::new(
-            [
-                Parameter::normal("key", i32::logical_type(&conn)?),
-                Parameter::normal("value", String::logical_type(&conn)?),
-            ],
-            struct_type,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("key"))
+            .param(FunctionParameter::new::<String>("value"))
+            .return_type(struct_type),
         StructScalar,
     )
     .register(&conn)?;
@@ -896,16 +902,20 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let key = || Ok::<_, Error>([Parameter::normal("key", i32::logical_type(&conn)?)]);
+    let key = || FunctionParameter::new::<i32>("key");
     ScalarFunctionBuilder::new(
         "to_struct_or_null",
-        SignatureBuilder::new(key()?, StructValue::<TestStruct>::logical_type(&conn)?),
+        SignatureBuilder::new()
+            .param(key())
+            .return_type(StructValue::<TestStruct>::logical_type(&conn)?),
         NullableStructScalar,
     )
     .register(&conn)?;
     ScalarFunctionBuilder::new(
         "to_union_or_null",
-        SignatureBuilder::new(key()?, UnionValue::<TestUnion, i32>::logical_type(&conn)?),
+        SignatureBuilder::new()
+            .param(key())
+            .return_type(UnionValue::<TestUnion, i32>::logical_type(&conn)?),
         NullableUnionScalar,
     )
     .register(&conn)?;
@@ -929,6 +939,37 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
 }
 
 #[test]
+pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "to_union_struct",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("key"))
+            .return_type(LogicalType::from_text(
+                &conn,
+                "UNION(num INTEGER, s STRUCT(x VARCHAR))",
+            )?),
+        StructMemberUnionScalar,
+    )
+    .register(&conn)?;
+
+    // Field extraction reads the struct's children directly, so an inactive member needs NULL descendants.
+    let mut result = conn.query(
+        "SELECT count(*) FILTER (WHERE k % 2 = 1 AND union_extract(u, 's').x IS NOT NULL),
+                count(*) FILTER (WHERE k % 2 = 0 AND union_extract(u, 's').x = 'even')
+         FROM (SELECT k, to_union_struct(k::INTEGER) AS u FROM range(5000) t(k))",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
+    assert_eq!(chunk.get_vector_at::<i64>(1)?.get(0)?, Some(&2500));
+    Ok(())
+}
+
+#[test]
 pub fn vector_struct_unreadable_child() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -936,13 +977,9 @@ pub fn vector_struct_unreadable_child() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "struct_key",
-        SignatureBuilder::new(
-            [Parameter::normal(
-                "s",
-                StructValue::<SequenceStruct>::logical_type(&conn)?,
-            )],
-            i64::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<StructValue<'_, SequenceStruct>>("s"))
+            .return_type(i64::logical_type(&conn)?),
         StructKeyScalar,
     )
     .register(&conn)?;
@@ -1044,7 +1081,7 @@ pub fn vector_value_types() -> crate::Result<()> {
     drop(chunk);
     drop(result);
 
-    let bit = BitValue(vec![3_u8, 0b0001_0101]);
+    let bit = BitValue(vec![3_u8, 0b1111_0101]);
     let mut result = conn.query("SELECT $1", Parameters::positional(&[&bit]))?;
     let chunk = result.next_chunk()?.unwrap();
     let vector = chunk.get_vector_at::<BitValue>(0)?;
@@ -1074,7 +1111,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
 
     macro_rules! assert_copy_write {
         ($type:ty, $value:expr) => {{
-            let mut chunk = DataChunk::create(&[<$type>::logical_type(&conn)?], true)?;
+            let mut chunk = DataChunk::create(&conn, &[<$type>::logical_type(&conn)?], true)?;
             let mut vector = chunk.get_vector_at_mut::<$type>(0)?;
             vector.set_size(2)?;
             let value = $value;
@@ -1105,7 +1142,11 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
         }
     );
 
-    let mut chunk = DataChunk::create(&[DecimalSignature { width: 18, scale: 3 }.logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(
+        &conn,
+        &[DecimalSignature { width: 18, scale: 3 }.logical_type(&conn)?],
+        true,
+    )?;
     assert!(chunk.get_vector_at::<WordDecimal>(0).is_err());
     assert!(chunk.get_vector_at::<i64>(0).is_err());
     let mut vector = chunk.get_vector_at_mut::<LongDecimal>(0)?;
@@ -1115,7 +1156,7 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert_eq!(vector.get(0)?, Some(&LongDecimal(-123_456)));
     assert_eq!(vector.get(1)?, None);
 
-    let mut chunk = DataChunk::create(&[BlobValue::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BlobValue::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BlobValue>(0)?;
     vector.set_size(2)?;
     vector.write(0, Some(&[0_u8, 1, 255]))?;
@@ -1123,20 +1164,22 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     assert_eq!(vector.get(0)?, Some([0_u8, 1, 255].as_slice()));
     assert_eq!(vector.get(1)?, None);
 
-    let mut chunk = DataChunk::create(&[BitValue::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BitValue::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BitValue>(0)?;
     vector.set_size(2)?;
     assert!(vector.write(0, Some(&[])).is_err());
-    vector.write(0, Some(&[3_u8, 0b0001_0101]))?;
+    assert!(vector.write(0, Some(&[16, 0, 0, 0])).is_err());
+    assert!(vector.write(0, Some(&[3, 0b0001_0101])).is_err());
+    vector.write(0, Some(&[3_u8, 0b1111_0101]))?;
     vector.write(1, None)?;
-    assert_eq!(vector.get(0)?, Some([3_u8, 0b0001_0101].as_slice()));
+    assert_eq!(vector.get(0)?, Some([3_u8, 0b1111_0101].as_slice()));
     assert_eq!(vector.get(1)?, None);
 
     let bignum = BigNumValue {
         is_negative: true,
         magnitude: vec![1, 2, 3, 4, 5],
     };
-    let mut chunk = DataChunk::create(&[BigNumValue::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BigNumValue::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BigNumValue>(0)?;
     vector.set_size(2)?;
     vector.write(0, Some(&bignum))?;
@@ -1148,13 +1191,13 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
     let source_chunk = source.next_chunk()?.unwrap();
     let source_vector = source_chunk.get_vector_at::<BigNum>(0)?;
     let borrowed = source_vector.get(0)?.unwrap();
-    let mut chunk = DataChunk::create(&[BigNum::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[BigNum::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<BigNum>(0)?;
     vector.set_size(1)?;
     vector.write(0, Some(borrowed))?;
     assert_eq!(vector.get(0)?.unwrap().decode()?.to_string(), "12345678901234567890");
 
-    let mut chunk = DataChunk::create(&[<[i32; 3]>::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[<[i32; 3]>::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
     vector.set_size(2)?;
     vector.write(1, None)?;
@@ -1183,10 +1226,9 @@ pub fn test_vector_make_constant() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_constant",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(i32::logical_type(&conn)?),
         ConstantScalar,
     )
     .register(&conn)?;
@@ -1222,10 +1264,9 @@ pub fn test_vector_make_sequence() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_sequence",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(i32::logical_type(&conn)?),
         SequenceScalar,
     )
     .register(&conn)?;
@@ -1261,10 +1302,9 @@ pub fn test_vector_types() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "test",
-        SignatureBuilder::new(
-            [Parameter::normal("in", String::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("in"))
+            .return_type(String::logical_type(&conn)?),
         CopyStringScalar,
     )
     .register(&conn)?;
@@ -1321,12 +1361,12 @@ pub fn test_vector_set_value() -> crate::Result<()> {
                         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
                             let val = vec.get_as_checked::<i32>(i)?.unwrap();
 
-                            Some(val.value(&ctx)?)
+                            Some(val.value(ctx)?)
                         }
                         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
                             let val = vec.get_as_checked::<bool>(i)?.unwrap();
 
-                            Some(val.value(&ctx)?)
+                            Some(val.value(ctx)?)
                         }
                         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY => {
                             todo!()
@@ -1341,7 +1381,7 @@ pub fn test_vector_set_value() -> crate::Result<()> {
                 };
 
                 if let Some(value) = value {
-                    let lt = LogicalType::from_text(&ctx, "VARIANT")?;
+                    let lt = LogicalType::from_text(ctx, "VARIANT")?;
                     let result = value.cast(ctx, lt)?;
                     output.write_value_slow(idx, result)?;
                 } else {
@@ -1362,7 +1402,9 @@ pub fn test_vector_set_value() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "to_variant",
-        SignatureBuilder::new([Parameter::tail_vararg("in", Any::logical_type(&conn)?)], rt),
+        SignatureBuilder::new()
+            .param(FunctionParameter::vararg::<Any>("in"))
+            .return_type(rt),
         ToVariant,
     )
     .register(&conn)?;
@@ -1417,10 +1459,9 @@ pub fn test_vector_reference_input() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "reference",
-        SignatureBuilder::new(
-            [Parameter::normal("in", String::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("in"))
+            .return_type(String::logical_type(&conn)?),
         RefScalar,
     )
     .register(&conn)?;
@@ -1611,13 +1652,13 @@ fn test_copy_from_rebuilds_children() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
 
-    let mut source = DataChunk::create(&types, true)?;
+    let mut source = DataChunk::create(&conn, &types, true)?;
     let mut src = source.get_vector_at_mut::<List<i32>>(0)?;
     src.set_size(2)?;
     src.write(0, Some(vec![Some(1), Some(2), Some(3)]))?;
     src.write(1, Some(vec![Some(4)]))?;
 
-    let mut target = DataChunk::create(&types, true)?;
+    let mut target = DataChunk::create(&conn, &types, true)?;
     let mut dst = target.get_vector_at_mut::<List<i32>>(0)?;
     dst.set_size(1)?;
     dst.write(0, Some(vec![Some(9)]))?;
@@ -1641,7 +1682,7 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
     vector.set_size(1)?;
     vector.write(0, Some(vec![Some(9)]))?;
@@ -1668,9 +1709,9 @@ fn test_make_constant_null_value() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [String::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut vector = chunk.get_vector_at_mut::<String>(0)?;
-    vector.make_constant(Value::null(&types[0])?, 3)?;
+    vector.make_constant(Value::null(&conn, &types[0])?, 3)?;
 
     assert_eq!(vector.iter()?.collect::<Vec<_>>(), vec![None; 3]);
     Ok(())
@@ -1683,7 +1724,7 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     let conn = db.connect()?;
     let types = [i32::logical_type(&conn)?, i64::logical_type(&conn)?];
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
 
     let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
     constant.make_constant(42_i32.value(&conn)?, 2048)?;
@@ -1697,6 +1738,23 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
     assert!(!sequence.is_writable());
     sequence.flatten()?;
     assert!(sequence.write(3, Some(1)).is_err());
+
+    Ok(())
+}
+
+#[test]
+fn test_large_constant_selection_stays_in_bounds() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
+    constant.make_constant(42_i32.value(&conn)?, 2 * crate::vector::CONSTANT_SELECTION_LEN + 1)?;
+
+    let selection = constant.get_view().unwrap().selection().unwrap();
+    assert_eq!(selection.len(), crate::vector::CONSTANT_SELECTION_LEN);
+    assert!(selection.iter().all(|&slot| slot == 0));
 
     Ok(())
 }
@@ -1721,13 +1779,10 @@ fn test_flatten_rebuilds_children() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "flat_list",
-        SignatureBuilder::new(
-            [
-                Parameter::normal("row", i64::logical_type(&conn)?),
-                Parameter::normal("list", Vec::<Option<i32>>::logical_type(&conn)?),
-            ],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i64>("row"))
+            .param(FunctionParameter::new::<Vec<Option<i32>>>("list"))
+            .return_type(i32::logical_type(&conn)?),
         FlatListScalar,
     )
     .register(&conn)?;
@@ -1765,10 +1820,9 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "mutate",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(i32::logical_type(&conn)?),
         SlowWriteInputScalar,
     )
     .register(&conn)?;
@@ -1808,13 +1862,10 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "arr_sum",
-        SignatureBuilder::new(
-            [
-                Parameter::normal("row", i64::logical_type(&conn)?),
-                Parameter::normal("arr", <[i32; 3]>::logical_type(&conn)?),
-            ],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i64>("row"))
+            .param(FunctionParameter::new::<[i32; 3]>("arr"))
+            .return_type(i32::logical_type(&conn)?),
         ArraySumScalar,
     )
     .register(&conn)?;
@@ -1849,7 +1900,7 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    let mut list_chunk = DataChunk::create(&[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
+    let mut list_chunk = DataChunk::create(&conn, &[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
     {
         let mut first = list_chunk.get_vector_at_mut::<List<i32>>(0)?;
         first.set_size(2)?;
@@ -1866,7 +1917,7 @@ fn test_list_and_map_writes_append_across_wrappers() -> crate::Result<()> {
         .collect();
     assert_eq!(items, [Some(vec![Some(1), Some(2), Some(3)]), Some(vec![Some(9)])]);
 
-    let mut map_chunk = DataChunk::create(&[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    let mut map_chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
     {
         let mut first = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         first.set_size(2)?;
@@ -1898,7 +1949,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
     let types = [i32::logical_type(&conn)?, Vec::<Option<i32>>::logical_type(&conn)?];
 
     // Children are optional and never get more access than their parent.
-    let mut read_only = DataChunk::create(&types, false)?;
+    let mut read_only = DataChunk::create(&conn, &types, false)?;
     assert!(read_only.get_vector_at::<i32>(0)?.children().is_none());
     let mut parent = read_only.get_vector_at_mut::<List<i32>>(1)?;
     assert!(
@@ -1910,7 +1961,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
             .is_err()
     );
 
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     let mut list = chunk.get_vector_at_mut::<List<i32>>(1)?;
     // An out-of-range row must not append to the child.
     assert!(list.write(0, Some(vec![Some(1)])).is_err());
@@ -1929,6 +1980,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     // Each step grows the child past its initial capacity, so DuckDB reallocates it.
     let mut chunk = DataChunk::create(
+        &conn,
         &[
             <[i32; 1]>::logical_type(&conn)?,
             StructValue::<TestStruct>::logical_type(&conn)?,
@@ -1977,7 +2029,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
 fn test_nested_writes_reuse_child_wrappers() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let mut chunk = DataChunk::create(&[Vec::<Option<Vec<Option<i32>>>>::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[Vec::<Option<Vec<Option<i32>>>>::logical_type(&conn)?], true)?;
     let mut lists = chunk.get_vector_at_mut::<List<List<i32>>>(0)?;
     lists.set_size(3000)?;
     lists.write(0, Some(vec![Some(vec![Some(0)])]))?;
@@ -2002,10 +2054,10 @@ fn test_write_value_slow_null_is_visible() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let logical_type = i32::logical_type(&conn)?;
-    let mut chunk = DataChunk::create(std::slice::from_ref(&logical_type), true)?;
+    let mut chunk = DataChunk::create(&conn, std::slice::from_ref(&logical_type), true)?;
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(1)?;
-    vector.write_value_slow(0, crate::value::Value::null(&logical_type)?)?;
+    vector.write_value_slow(0, crate::value::Value::null(&conn, &logical_type)?)?;
     assert!(vector.is_null(0)?);
     Ok(())
 }
@@ -2017,7 +2069,7 @@ fn test_collection_append() -> crate::Result<()> {
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
     let types = [Vec::<Option<i32>>::logical_type(&conn)?];
-    let mut chunk = DataChunk::create(&types, true)?;
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
     chunk
         .get_vector_at_mut::<List<i32>>(0)?
         .make_constant(vec![Some(1), Some(2)].value(&conn)?, 3)?;
@@ -2038,5 +2090,80 @@ fn test_collection_append() -> crate::Result<()> {
         target.append(&mut scanned)?;
     }
     assert_eq!(target.len()?, 3);
+    Ok(())
+}
+
+scalar_callback!(CopyOver, i64, |input, result, ctx, ud| {
+    let vec = input.get_vector_at_mut::<String>(0)?;
+
+    let _ = result.cast_rows(&vec, ctx, CastMode::Try)?;
+
+    Ok(())
+});
+
+#[test]
+fn test_vector_cast() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "copy_over",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("in"))
+            .return_type(i64::logical_type(&conn)?),
+        CopyOver,
+    )
+    .register(&conn)?;
+
+    let mut query = conn.query(
+        "SELECT copy_over(unnest($1))",
+        Parameters::Positional(&[&vec![Some("10"), Some("300"), None]]),
+    )?;
+
+    while let Some(chunk) = query.next_chunk()? {
+        let vec = chunk.get_vector_at::<i64>(0)?;
+
+        assert_eq!(vec.get(0)?, Some(&10));
+        assert_eq!(vec.get(1)?, Some(&300));
+        assert_eq!(vec.get(2)?, None);
+    }
+
+    Ok(())
+}
+
+scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
+    let vec = input.get_vector_at::<String>(0)?;
+    result.cast_rows(vec, ctx, CastMode::Normal)?;
+    Ok(())
+});
+
+#[test]
+fn test_vector_cast_fails() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "copy_over_strict",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<String>("in"))
+            .return_type(i64::logical_type(&conn)?),
+        CopyOverStrict,
+    )
+    .register(&conn)?;
+
+    let error = conn
+        .execute(
+            "SELECT copy_over_strict(unnest($1))",
+            Parameters::Positional(&[&vec![Some("10"), Some("abc"), None]]),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION);
+    assert!(
+        error.message.contains("Could not convert string 'abc' to INT64"),
+        "{error}"
+    );
+
     Ok(())
 }

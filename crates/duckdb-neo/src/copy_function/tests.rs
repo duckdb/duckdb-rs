@@ -54,7 +54,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut result = Vec::new();
         let mut to_append = ColumnDataCollection::new(context, [i64::logical_type(context)?])?.to_append()?;
 
-        let mut data_chunk = DataChunk::create(&[i64::logical_type(context)?], true)?;
+        let mut data_chunk = DataChunk::create(&context, &[i64::logical_type(context)?], true)?;
         let mut vec = data_chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(1)?;
         vec.write(0, Some(10))?;
@@ -378,6 +378,115 @@ pub fn test_copy_to_and_from_function() -> crate::Result<()> {
     let output = fs::read_to_string("echo_out.txt").expect("Failed to read COPY output");
     assert_eq!(output, "0,1,");
     fs::remove_file("echo_out.txt").expect("Failed to remove COPY output");
+
+    Ok(())
+}
+
+/// A fresh directory under the system temp dir, removed on drop.
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new(name: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("duckdb_neo_{name}_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("Failed to create temp dir");
+        TempDir(path)
+    }
+
+    fn join(&self, path: &str) -> String {
+        self.0.join(path).to_str().unwrap().to_string()
+    }
+
+    /// The files under `dir`, relative to it.
+    fn files(&self, dir: &str) -> Vec<String> {
+        fn walk(root: &std::path::Path, path: &std::path::Path, out: &mut Vec<String>) {
+            for entry in fs::read_dir(path).expect("Failed to read dir").flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(root, &path, out);
+                } else {
+                    let relative = path.strip_prefix(root).unwrap().components();
+                    out.push(
+                        relative
+                            .map(|c| c.as_os_str().to_str().unwrap())
+                            .collect::<Vec<_>>()
+                            .join("/"),
+                    );
+                }
+            }
+        }
+        let root = self.0.join(dir);
+        let mut out = Vec::new();
+        walk(&root, &root, &mut out);
+        out.sort();
+        out
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// DuckDB only uses the file extension when it names the files itself, as with
+/// `PER_THREAD_OUTPUT` or `PARTITION_BY`.
+#[test]
+pub fn test_copy_file_extension() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    // One file per directory or partition.
+    conn.execute("SET threads = 1", Parameters::None)?;
+
+    CopyFunctionBuilder::new("echo_ext", EchoFormat)
+        .with_fallback_extension("echo")
+        .register(&conn)?;
+    CopyFunctionBuilder::new("echo_no_ext", EchoFormat).register(&conn)?;
+
+    let dir = TempDir::new("copy_file_extension");
+    let copy = |options: &str, target: &str| {
+        conn.execute(
+            format!(
+                "COPY (SELECT i FROM range(4) t(i)) TO '{}' ({options})",
+                dir.join(target)
+            )
+            .as_str(),
+            Parameters::None,
+        )
+    };
+
+    copy("FORMAT echo_ext, PER_THREAD_OUTPUT", "per_thread")?;
+    assert_eq!(dir.files("per_thread"), ["data_0.echo"]);
+    assert_eq!(
+        fs::read_to_string(dir.join("per_thread/data_0.echo")).unwrap(),
+        "0,1,2,3,"
+    );
+
+    // The FILE_EXTENSION option overrides it.
+    copy(
+        "FORMAT echo_ext, PER_THREAD_OUTPUT, FILE_EXTENSION 'other'",
+        "overridden",
+    )?;
+    assert_eq!(dir.files("overridden"), ["data_0.other"]);
+
+    // Without one, DuckDB names the files with a bare dot, which Windows strips.
+    copy("FORMAT echo_no_ext, PER_THREAD_OUTPUT", "no_extension")?;
+    let expected = if cfg!(windows) { "data_0" } else { "data_0." };
+    assert_eq!(dir.files("no_extension"), [expected]);
+
+    conn.execute(
+        format!(
+            "COPY (SELECT i % 2 AS p, i FROM range(4) t(i)) TO '{}' (FORMAT echo_ext, PARTITION_BY (p))",
+            dir.join("partitioned")
+        )
+        .as_str(),
+        Parameters::None,
+    )?;
+    assert_eq!(dir.files("partitioned"), ["p=0/data_0.echo", "p=1/data_0.echo"]);
+    assert_eq!(
+        fs::read_to_string(dir.join("partitioned/p=0/data_0.echo")).unwrap(),
+        "0,2,"
+    );
 
     Ok(())
 }

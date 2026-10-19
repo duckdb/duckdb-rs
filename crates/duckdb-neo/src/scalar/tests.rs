@@ -1,6 +1,9 @@
 use crate::{
-    DuckDBType, Parameters, connection::Context, environment::Environment, environment::StorageLocation,
-    signature::Parameter,
+    DuckDBType, Parameters,
+    connection::{Context, SettingScope},
+    environment::{Environment, StorageLocation},
+    logical_type::LogicalTypeID,
+    signature::{FunctionParameter, SignatureBuilder},
 };
 
 use super::*;
@@ -15,12 +18,7 @@ impl ScalarCallbacks for ScalarWithData {
     type BindData = Vec<i32>;
     type InitData = i32;
 
-    fn bind(
-        &self,
-        context: &Context,
-        arguments: BindArguments<'_>,
-        _result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
+    fn bind(&self, context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
         assert_eq!(arguments.logical_type(0)?, LogicalType::from_text(context, "INTEGER")?);
         assert!(
             arguments
@@ -111,10 +109,9 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "custom_scalar",
-        SignatureBuilder::new(
-            [Parameter::normal("multiplier", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("multiplier"))
+            .return_type(i32::logical_type(&conn)?),
         ScalarWithData {
             base_data: vec![1, 2, 3],
         },
@@ -148,14 +145,14 @@ fn test_scalar_panic() -> crate::Result<()> {
     // client thread; if a worker thread raises it first, only the transaction is
     // invalidated. A single thread makes the panic always run on the client thread.
     let db = env.instance().expect("Failed to create instance");
-    db.set_option("threads", "1").expect("Failed to set threads");
+    db.config()?.set_text("threads", "1", SettingScope::Global)?;
     db.attach(&StorageLocation::InMemory)
         .expect("Failed to open in-memory database");
     let conn = db.connect().expect("Failed to connect to database");
 
     ScalarFunctionBuilder::new(
         "panic_func",
-        SignatureBuilder::new(Vec::new(), i32::logical_type(&conn)?),
+        SignatureBuilder::new().return_type(i32::logical_type(&conn)?),
         BasicScalarPanicFunction,
     )
     .register(&conn)
@@ -204,13 +201,10 @@ fn test_invalid_scalar_function_registration() -> crate::Result<()> {
 
     let result = ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new(
-            [
-                Parameter::normal("", i32::logical_type(&conn)?),
-                Parameter::normal("", i32::logical_type(&conn)?),
-            ],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>(""))
+            .param(FunctionParameter::new::<i32>(""))
+            .return_type(i32::logical_type(&conn)?),
         BasicScalarFunction,
     )
     .register(&conn);
@@ -233,10 +227,9 @@ fn test_scalar_building() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new(
-            [Parameter::normal("input", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(i32::logical_type(&conn)?),
         BasicScalarFunction,
     )
     .register(&conn)
@@ -267,10 +260,9 @@ fn test_scalar_property() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "basic",
-        SignatureBuilder::new(
-            [Parameter::normal("input", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(i32::logical_type(&conn)?),
         BasicScalarFunction,
     )
     .set_property(FunctionProperty::HasSpecialNullHandling(false))
@@ -296,14 +288,8 @@ impl ScalarCallbacks for OverrideAbleScalar {
     type BindData = ();
     type InitData = ();
 
-    fn bind(
-        &self,
-        context: &Context,
-        _arguments: BindArguments<'_>,
-        result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
-        result_type_handle.override_return(i8::logical_type(context)?)?;
-        Ok(())
+    fn resolve_types(context: &Context, _arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
+        Ok(Some(i8::logical_type(context)?))
     }
 
     fn exec(
@@ -331,10 +317,9 @@ fn test_scalar_override_result() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "override",
-        SignatureBuilder::new(
-            [Parameter::normal("in", i32::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("in"))
+            .return_type(String::logical_type(&conn)?),
         OverrideAbleScalar {},
     )
     .register(&conn)?;
@@ -363,12 +348,7 @@ impl ScalarCallbacks for FoldProbe {
     type BindData = ();
     type InitData = ();
 
-    fn bind(
-        &self,
-        _context: &Context,
-        arguments: BindArguments<'_>,
-        _result_type_handle: ReturnTypeHandle<'_>,
-    ) -> Result<Self::BindData> {
+    fn bind(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
         self.folded.lock().unwrap().push(arguments.value(0)?.is_some());
         Ok(())
     }
@@ -400,10 +380,9 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     let folded = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     ScalarFunctionBuilder::new(
         "fold_probe",
-        SignatureBuilder::new(
-            [Parameter::normal("x", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(i32::logical_type(&conn)?),
         FoldProbe { folded: folded.clone() },
     )
     .register(&conn)?;
@@ -462,10 +441,9 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
 
     ScalarFunctionBuilder::new(
         "identity",
-        SignatureBuilder::new(
-            [Parameter::normal("x", i32::logical_type(&conn)?)],
-            i32::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(i32::logical_type(&conn)?),
         Identity,
     )
     .register(&conn)?;
@@ -478,5 +456,62 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
     let chunk = result.next_chunk()?.expect("expected a result chunk");
     let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
     assert_eq!(values, vec![Some(0), Some(1), Some(2)]);
+    Ok(())
+}
+
+struct DynamicResolve;
+
+impl ScalarCallbacks for DynamicResolve {
+    type BindData = ();
+    type InitData = ();
+
+    fn resolve_types(_context: &Context, arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
+        let lt = arguments.logical_type(0)?;
+        Ok(Some(lt))
+    }
+
+    fn exec(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &Context,
+        vectors: &mut VectorCollection,
+        mut output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        output.set_size(vectors.row_count()?)?;
+
+        let vec = vectors.get_untyped_vector_at(0).unwrap();
+
+        unsafe {
+            output.copy_from(vec)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_dynamic_return_type() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    ScalarFunctionBuilder::new(
+        "dynamic_resolve",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(LogicalType::create_from_id(
+                &conn,
+                LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY,
+                Parameters::None,
+            )?),
+        DynamicResolve,
+    )
+    .register(&conn)?;
+
+    let mut query = conn.query("SELECT dynamic_resolve(10)", Parameters::None)?;
+
+    assert!(query.next_chunk()?.unwrap().row_count()? == 1);
+
     Ok(())
 }

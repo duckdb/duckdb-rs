@@ -12,22 +12,47 @@ use std::{
     panic::AssertUnwindSafe,
 };
 
-use crate::ffi;
+use crate::{
+    FromRaw,
+    builder_helpers::ArgCount,
+    ffi,
+    handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
+    logical_type::LogicalType,
+};
 
 use crate::{
     Error, Result,
-    bind_arguments::{BindArguments, BindType},
+    bind_arguments::BindArguments,
     builder_helpers::{OpaqueHandle, get_bind_data, get_user_data, handle_unwind, into_opaque_eq},
     check_api_call,
-    connection::Context,
+    connection::{Context, FFILink},
     data_chunk::{RowCount, VectorCollection},
     enums::AggregateFunctionProperty,
-    handles::{AggregateFunctionBuilderHandle, AggregateFunctionBuilderLink},
     raw::RawExt,
-    scalar::{FunctionBindHandles, ReturnTypeHandle},
     signature::SignatureBuilder,
     vector::{Access, Unknown, Vector},
 };
+
+/// Callback-scoped control over a scalar function's resolved result type.
+#[derive(Debug)]
+pub struct ReturnTypeHandle<'a> {
+    pub(crate) handle: &'a ffi::duckdb_v2_aggregate_function_bind_info_handle,
+}
+
+impl<'a> ReturnTypeHandle<'a> {
+    /// Override the result type for the current bound call site.
+    ///
+    /// For example, a function declared to return `ANY` can derive a concrete
+    /// type from its bound arguments. DuckDB copies the returned logical
+    /// type, and the override is valid only during binding.
+    pub fn override_return(&self, return_type: LogicalType) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_aggregate_function_bind_set_return_type,
+            *self.handle,
+            return_type.raw()
+        )
+    }
+}
 
 /// [`States`] is a view over the aggregate states DuckDB passes to a callback.
 ///
@@ -106,29 +131,26 @@ impl<'a, T> Iterator for StatesIter<'a, T> {
 }
 
 unsafe extern "C" fn bind_callback<T: AggregateCallbacks>(
-    info: ffi::duckdb_v2_aggregate_function_bind_info_handle,
+    info: ffi::duckdb_v2_function_bind_info_handle,
+    result: ffi::duckdb_v2_aggregate_function_bind_info_handle,
     context: ffi::duckdb_v2_context_handle,
     err: *mut ffi::duckdb_v2_error_info_handle,
 ) {
     handle_unwind(
         || {
-            let arguments = BindArguments {
-                bind_type: BindType::Aggregate(&info),
-            };
+            let arguments = BindArguments { handle: &info };
 
-            let user_data = get_user_data!(ffi::duckdb_v2_aggregate_function_bind_get_user_data, info);
+            let user_data = get_user_data!(ffi::duckdb_v2_function_bind_get_user_data, info);
 
             let result = T::bind(
                 user_data,
-                &Context(context),
+                &unsafe { Context::from_raw(context) },
                 arguments,
-                ReturnTypeHandle {
-                    handle: FunctionBindHandles::Aggregate(&info),
-                },
+                ReturnTypeHandle { handle: &result },
             )?;
 
             check_api_call!(
-                ffi::duckdb_v2_aggregate_function_bind_set_bind_data,
+                ffi::duckdb_v2_function_bind_set_bind_data,
                 info,
                 &mut into_opaque_eq(result)
             )
@@ -156,14 +178,17 @@ unsafe extern "C" fn size_callback<T: AggregateCallbacks>(
                 )));
             }
 
-            // DuckDB aligns each state to 8 bytes, so `init` and `States` would
-            // access a more strictly aligned `StateItem` through a misaligned pointer.
+            // States are 8-byte aligned, so `init` and `States` would access a more
+            // strictly aligned `StateItem` through a misaligned pointer.
             let align = align_of::<T::StateItem>();
             if align > 8 {
                 return Err(Error::api_error(format!(
                     "align_of::<StateItem>() ({align}) exceeds the 8-byte alignment of aggregate states"
                 )));
             }
+
+            // Window operators place states `size` bytes apart, so it must keep them aligned.
+            let size = size.next_multiple_of(8);
 
             check_api_call!(ffi::duckdb_v2_aggregate_function_size_set_state_size, info, size as u64)
         },
@@ -221,17 +246,26 @@ unsafe extern "C" fn update_callback<T: AggregateCallbacks>(
 
             let bind_data = get_bind_data!(ffi::duckdb_v2_aggregate_function_update_get_bind_data, info);
 
-            let arg_count =
-                check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_arg_count, info, RET)? as usize;
             let row_count =
                 check_api_call!(ffi::duckdb_v2_aggregate_function_update_get_row_count, info, RET)? as usize;
 
-            let mut handles = Vec::with_capacity(arg_count);
-            for i in 0..arg_count {
+            let arg_count = ArgCount::from_func(|pf, pv, nf, nv| {
+                check_api_call!(
+                    ffi::duckdb_v2_aggregate_function_update_get_arg_count,
+                    info,
+                    pf,
+                    pv,
+                    nf,
+                    nv
+                )
+            })?;
+
+            let mut handles = Vec::with_capacity(arg_count.total());
+            for i in 0..arg_count.total() {
                 handles.push(check_api_call!(
                     ffi::duckdb_v2_aggregate_function_update_get_arg,
                     info,
-                    i as u32,
+                    i as u64,
                     RET
                 )?);
             }
@@ -380,7 +414,7 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
         self
     }
 
-    fn build(&self, handle: &AggregateFunctionBuilderHandle) -> Result<()> {
+    fn build(&mut self, handle: &AggregateFunctionBuilderHandle, link: &dyn FFILink) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_aggregate_function_set_name,
             handle.raw(),
@@ -389,7 +423,9 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
 
         let signature = check_api_call!(ffi::duckdb_v2_aggregate_function_get_signature, handle.raw(), RET)?;
 
-        self.signature.build(&signature)?;
+        let docs = check_api_call!(ffi::duckdb_v2_aggregate_function_get_docs, handle.raw(), RET)?;
+
+        std::mem::take(&mut self.signature).build(link, &signature, &docs)?;
 
         for (key, value) in &self.properties {
             check_api_call!(
@@ -446,18 +482,17 @@ impl<T: AggregateCallbacks> AggregateFunctionBuilder<T> {
             ffi::duckdb_v2_aggregate_function_set_destroy_callback,
             handle.raw(),
             Some(destroy_callback::<T>)
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Register through a connection or extension, consuming the builder.
     #[allow(private_bounds)]
-    pub fn register<C: AggregateFunctionBuilderLink>(self, link: &C) -> Result<()> {
+    pub fn register<C: AggregateFunctionBuilderLink + FFILink>(mut self, link: &C) -> Result<()> {
         let handle = link.create_aggregate_function_handle()?;
-        self.build(&handle)?;
 
-        check_api_call!(ffi::duckdb_v2_aggregate_function_register, handle.raw())
+        self.build(&handle, link)?;
+
+        link.register_aggregate_function(handle)
     }
 }
 
@@ -483,7 +518,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     /// **Size:** return the allocation size of one aggregate state.
     ///
     /// May be larger than `size_of::<StateItem>()` but never smaller; a smaller
-    /// size fails the query.
+    /// size fails the query. It is rounded up to a multiple of 8.
     fn size(&self, _bind_data: Option<&Self::BindData>) -> Result<usize> {
         Ok(size_of::<Self::StateItem>())
     }

@@ -2,7 +2,7 @@
 
 use crate::ffi;
 use crate::ffi_str::DuckDBStr;
-use crate::{AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err, check_api_call_string, error::Error};
+use crate::{AsRaw, DropHandle, FromRaw, Result, check_api_call, check_api_call_string, error::Error};
 
 /// Owned identifier parts extracted from a [`QualifiedName`].
 #[derive(Default, Debug)]
@@ -30,7 +30,8 @@ pub struct QualifiedNameView {
 /// assert_eq!(name.parts().unwrap(), ["main", "events"]);
 /// assert_eq!(name.render().unwrap(), "main.events");
 /// ```
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_qname_destroy)]
 pub struct QualifiedName {
     pub(crate) handle: ffi::duckdb_v2_qname_handle,
 }
@@ -50,18 +51,15 @@ impl TryFrom<&str> for QualifiedName {
 impl QualifiedName {
     /// Parse a qualified name using DuckDB's SQL identifier rules.
     pub fn from_sql(sql: &str) -> Result<Self> {
-        Ok(QualifiedName {
-            handle: check_api_call!(ffi::duckdb_v2_qname_parse, &sql.into(), RET)?,
-        })
+        check_api_call!(ffi::duckdb_v2_qname_parse, &sql.into(), RET).map(|handle| QualifiedName { handle })
     }
 
     /// Create a name from one to three non-empty identifier parts.
     pub fn from_parts(parts: &[&str]) -> Result<Self> {
         let parts: Vec<ffi::duckdb_v2_str> = parts.iter().map(|s| (*s).into()).collect();
 
-        Ok(QualifiedName {
-            handle: check_api_call!(ffi::duckdb_v2_qname_create, parts.as_ptr(), parts.len() as u64, RET)?,
-        })
+        check_api_call!(ffi::duckdb_v2_qname_create, parts.as_ptr(), parts.len() as u64, RET)
+            .map(|handle| QualifiedName { handle })
     }
 
     /// Return a hash suitable for in-process lookup.
@@ -79,9 +77,7 @@ impl QualifiedName {
 
     /// Return the number of identifier parts.
     pub fn parts_count(&self) -> Result<usize> {
-        let count = check_api_call!(ffi::duckdb_v2_qname_get_part_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_qname_get_part_count, self.handle, RET).map(|count| count as usize)
     }
 
     /// Copy the identifier parts into named fields, leaving absent qualifiers as `None`.
@@ -108,9 +104,8 @@ impl QualifiedName {
     /// Parts are ordered outermost first. An out-of-range index returns an
     /// error.
     pub fn part(&self, index: usize) -> Result<String> {
-        let data = check_api_call!(ffi::duckdb_v2_qname_get_part, self.handle, index as u64, RET)?;
-
-        Ok(DuckDBStr::from_raw(data).as_str().unwrap_or_default().to_owned())
+        check_api_call!(ffi::duckdb_v2_qname_get_part, self.handle, index as u64, RET)
+            .map(|data| DuckDBStr::from_raw(data).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return all identifier parts, ordered outermost first.
@@ -129,12 +124,6 @@ impl QualifiedName {
 impl PartialEq for QualifiedName {
     fn eq(&self, other: &Self) -> bool {
         check_api_call!(ffi::duckdb_v2_qname_equals, self.handle, other.handle, RET).unwrap()
-    }
-}
-
-impl Drop for QualifiedName {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_qname_destroy, &mut self.handle).unwrap();
     }
 }
 

@@ -2,15 +2,11 @@
 
 use libduckdb_sys::v2::DUCKDB_V2_LOGICAL_TYPE_ID;
 
+use crate::connection::HasFactory;
 use crate::ffi_str::DuckDBStr;
 use crate::{
-    AsRaw, FromRaw, Parameters, Result, check_api_call, check_api_call_no_err, check_api_call_string,
-    connection::FFILink,
-    ffi,
-    links::{LogicalTypeAliasLink, LogicalTypeFromIdLink, LogicalTypeFromNameLink},
-    qualified_name::QualifiedName,
-    raw::RawExt,
-    value::Value,
+    AsRaw, DropHandle, FromRaw, Parameters, Result, check_api_call, check_api_call_string, connection::FFILink, ffi,
+    qualified_name::QualifiedName, raw::RawExt, value::Value,
 };
 
 /// DuckDB's logical type identifier.
@@ -41,7 +37,8 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_logical_type_destroy)]
 pub struct LogicalType {
     /// The owned DuckDB logical-type handle.
     pub(crate) handle: ffi::duckdb_v2_logical_type_handle,
@@ -55,13 +52,12 @@ unsafe impl Sync for LogicalType {}
 impl LogicalType {
     /// Construct a logical type from a primitive ID and optional parameters
     /// using a connection or callback context.
-    #[allow(private_bounds)]
-    pub fn create_from_id<C: FFILink + LogicalTypeFromIdLink>(
+    pub fn create_from_id<C: FFILink + ?Sized>(
         link: &C,
         type_id: LogicalTypeID,
         parameters: Parameters<'_>,
     ) -> Result<Self> {
-        let (names, parameter_values) = parameters.into_values(link)?;
+        let (names, parameter_values) = parameters.into_values(&link)?;
         let names = names.map(|names| {
             names
                 .iter()
@@ -72,33 +68,46 @@ impl LogicalType {
             .iter()
             .map(|value| value.as_value().handle)
             .collect::<Vec<_>>();
-        let handle = link.create_logical_type_from_id(type_id, names.as_deref(), &values)?;
 
-        Ok(LogicalType { handle })
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_type_from_id,
+            link.factory()?.raw(),
+            type_id,
+            names.as_ref().map_or(std::ptr::null(), |names| names.as_ptr()),
+            values.as_ptr(),
+            values.len() as u64,
+            RET
+        )
+        .map(|handle| LogicalType { handle })
     }
 
     /// Return an alias with the same representation using a connection or callback context.
-    #[allow(private_bounds)]
-    pub fn to_alias<C: LogicalTypeAliasLink>(&self, link: &C, alias: &str) -> Result<Self> {
-        let handle = link.create_logical_type_with_alias(self.handle, alias)?;
-
-        Ok(LogicalType { handle })
+    pub fn to_alias<C: HasFactory + ?Sized>(&self, link: &C, alias: &str) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_type_with_alias,
+            link.factory()?.raw(),
+            self.raw(),
+            &alias.into(),
+            RET
+        )
+        .map(|handle| LogicalType { handle })
     }
 
     /// Parse a SQL type using a connection or callback context.
-    pub fn from_text<C: FFILink>(handle: &C, text: &str) -> Result<Self> {
-        handle.logical_type_from_text(text)
+    pub fn from_text<C: HasFactory + ?Sized>(link: &C, text: &str) -> Result<Self> {
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_type_from_text,
+            link.factory()?.raw(),
+            &text.into(),
+            RET
+        )
+        .map(|handle| Self { handle })
     }
 
     /// Construct a logical type from a name and optional parameters
     /// using a connection or callback context.
-    #[allow(private_bounds)]
-    pub fn create<C: FFILink + LogicalTypeFromNameLink>(
-        link: &C,
-        name: &str,
-        parameters: Parameters<'_>,
-    ) -> Result<Self> {
-        let (names, parameter_values) = parameters.into_values(link)?;
+    pub fn create<C: FFILink + ?Sized>(link: &C, name: &str, parameters: Parameters<'_>) -> Result<Self> {
+        let (names, parameter_values) = parameters.into_values(&link)?;
         let names = names.map(|names| {
             names
                 .iter()
@@ -112,9 +121,16 @@ impl LogicalType {
 
         let qname = QualifiedName::from_sql(name)?;
 
-        let handle = link.create_logical_type_from_name(qname.raw(), names.as_deref(), &values)?;
-
-        Ok(LogicalType { handle })
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_type_from_name,
+            link.factory()?.raw(),
+            qname.raw(),
+            names.as_ref().map_or(std::ptr::null(), |names| names.as_ptr()),
+            values.as_ptr(),
+            values.len() as u64,
+            RET
+        )
+        .map(|handle| LogicalType { handle })
     }
 
     /// Return the logical type ID.
@@ -126,9 +142,8 @@ impl LogicalType {
 
     /// Return the alias or canonical type name.
     pub fn name(&self) -> Result<&str> {
-        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_logical_type_get_name, self.handle, RET)?;
-
-        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default())
+        check_api_call!(ffi::duckdb_v2_logical_type_get_name, self.handle, RET)
+            .map(|name| DuckDBStr::from_raw(name).as_str().unwrap_or_default())
     }
 
     /// Render the type as SQL text.
@@ -138,9 +153,7 @@ impl LogicalType {
 
     /// Return the number of value parameters carried by the type.
     pub fn param_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_logical_type_get_param_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_logical_type_get_param_count, self.handle, RET).map(|count| count as usize)
     }
 
     /// Return a parameter's name, empty when positional, and owned value.
@@ -176,9 +189,7 @@ impl LogicalType {
     }
 
     pub(crate) fn copy_handle(handle: &mut ffi::duckdb_v2_logical_type_handle) -> Result<LogicalType> {
-        let handle = check_api_call!(ffi::duckdb_v2_logical_type_copy, *handle, RET)?;
-
-        Ok(LogicalType { handle })
+        check_api_call!(ffi::duckdb_v2_logical_type_copy, *handle, RET).map(|handle| LogicalType { handle })
     }
 }
 
@@ -197,12 +208,6 @@ impl Clone for LogicalType {
             check_api_call!(ffi::duckdb_v2_logical_type_copy, self.handle, RET).expect("Failed to clone logical type");
 
         LogicalType { handle }
-    }
-}
-
-impl Drop for LogicalType {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_logical_type_destroy, &mut self.handle).unwrap();
     }
 }
 
@@ -228,11 +233,37 @@ mod test {
         assert_eq!(ltype.name()?, "MAP");
         assert_eq!(ltype.param_count()?, 2);
         assert_eq!(
-            ltype.get_param(0)?.1.logical_type()?.type_id(),
+            ltype.get_param(0)?.1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(
-            ltype.get_param(1)?.1.logical_type()?.type_id(),
+            ltype.get_param(1)?.1.type_value_get_inner()?.type_id(),
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_from_id_named() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+
+        let int_type = Value::from_logical_type(&conn, &i32::logical_type(&conn)?)?;
+        let text_type = Value::from_logical_type(&conn, &String::logical_type(&conn)?)?;
+        let ltype = LogicalType::create_from_id(
+            &conn,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT,
+            Parameters::named(&[("id", &int_type), ("label", &text_type)]),
+        )?;
+
+        assert_eq!(ltype.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT);
+        let params = ltype.get_params()?;
+        assert_eq!(
+            params.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
+            ["id", "label"]
+        );
+        assert_eq!(
+            params[1].1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
 
@@ -254,11 +285,11 @@ mod test {
         assert_eq!(alias_ltype.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP);
 
         assert_eq!(
-            alias_ltype.get_param(0)?.1.logical_type()?.type_id(),
+            alias_ltype.get_param(0)?.1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(
-            alias_ltype.get_param(1)?.1.logical_type()?.type_id(),
+            alias_ltype.get_param(1)?.1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
 
@@ -276,15 +307,15 @@ mod test {
         assert_eq!(lt.name()?, "UNION");
         assert_eq!(lt.param_count()?, 3);
         assert_eq!(
-            lt.get_param(0)?.1.logical_type()?.type_id(),
+            lt.get_param(0)?.1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
         assert_eq!(
-            lt.get_param(1)?.1.logical_type()?.type_id(),
+            lt.get_param(1)?.1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(
-            lt.get_param(2)?.1.logical_type()?.type_id(),
+            lt.get_param(2)?.1.type_value_get_inner()?.type_id(),
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT
         );
 

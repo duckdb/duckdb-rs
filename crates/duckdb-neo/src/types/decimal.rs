@@ -385,15 +385,14 @@ impl FromValue for DecimalValue {
         let mut width: u8 = 0;
         let mut scale: u8 = 0;
 
-        let raw = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_value_get_decimal,
             value.raw(),
             RET,
             &mut width,
             &mut scale
-        )?;
-
-        Ok(Self {
+        )
+        .map(|raw| Self {
             value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
             width,
             scale,
@@ -484,7 +483,7 @@ mod tests {
         assert!(chunk.get_vector_at::<Decimal<18, 2>>(0).is_err());
         assert!(chunk.get_vector_at::<Decimal<17, 3>>(0).is_err());
 
-        let mut chunk = DataChunk::create(&[Decimal::<9, 2>::logical_type(&conn)?], true)?;
+        let mut chunk = DataChunk::create(&conn, &[Decimal::<9, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
         vector.write(0, Some(Decimal::new(-1)))?;

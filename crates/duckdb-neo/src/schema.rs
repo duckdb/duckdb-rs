@@ -3,7 +3,7 @@
 use crate::ffi;
 
 use crate::ffi_str::DuckDBStr;
-use crate::{Result, check_api_call, check_api_call_no_err, logical_type::LogicalType};
+use crate::{DropHandle, Result, check_api_call, logical_type::LogicalType};
 
 /// An owned, ordered list of field names and logical types.
 ///
@@ -38,7 +38,8 @@ use crate::{Result, check_api_call, check_api_call_no_err, logical_type::Logical
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_schema_destroy)]
 pub struct Schema {
     pub(crate) handle: ffi::duckdb_v2_schema_handle,
 }
@@ -51,9 +52,7 @@ impl Schema {
 
     /// Return the number of fields.
     pub fn len(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_schema_get_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_schema_get_count, self.handle, RET).map(|count| count as usize)
     }
 
     /// Return a field's borrowed name and owned logical type.
@@ -72,12 +71,12 @@ impl Schema {
 
         // out_type is borrowed from the schema; copy it so the returned
         // LogicalType owns a handle it may destroy.
-        let owned_type = check_api_call!(ffi::duckdb_v2_logical_type_copy, out_type, RET)?;
-
-        Ok((
-            DuckDBStr::from_raw(out_name).as_str().unwrap_or_default(),
-            LogicalType { handle: owned_type },
-        ))
+        check_api_call!(ffi::duckdb_v2_logical_type_copy, out_type, RET).map(|owned_type| {
+            (
+                DuckDBStr::from_raw(out_name).as_str().unwrap_or_default(),
+                LogicalType { handle: owned_type },
+            )
+        })
     }
 
     /// Return all fields in declaration order.
@@ -91,12 +90,6 @@ impl Schema {
         }
 
         Ok(result)
-    }
-}
-
-impl Drop for Schema {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_schema_destroy, &mut self.handle).unwrap();
     }
 }
 

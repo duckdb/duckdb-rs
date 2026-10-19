@@ -12,8 +12,8 @@ use crate::{
     error::Error,
     expression::ExpressionType,
     logical_type::LogicalTypeID,
-    signature::{Parameter, SignatureBuilder},
-    table_function::{BindFunctionHandle, ExecColumnInfo, TableFunctionCallbacks, TableFunctionCardinality},
+    signature::{FunctionParameter, SignatureBuilder},
+    table_function::{BindFunctionHandle, ExecColumnInfo, TableFunctionCallbacks},
 };
 
 #[test]
@@ -49,7 +49,7 @@ fn test_table_function() -> crate::Result<()> {
             context: &Context,
             arguments: Vec<BindArgument>,
             bind_handle: BindFunctionHandle<'_>,
-        ) -> Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
+        ) -> Result<Self::BindData> {
             let arg = &arguments[0];
 
             let val = &arg.value;
@@ -62,16 +62,12 @@ fn test_table_function() -> crate::Result<()> {
 
             bind_handle.add_result_column("out", i32::logical_type(context)?)?;
 
-            Ok((
-                BindData {
-                    size: 10,
-                    accepted_threshold: Mutex::new(None),
-                },
-                Some(TableFunctionCardinality {
-                    is_exact: true,
-                    cardinality: 10_000_000,
-                }),
-            ))
+            bind_handle.set_cardinality(10_000_000, true)?;
+
+            Ok(BindData {
+                size: 10,
+                accepted_threshold: Mutex::new(None),
+            })
         }
 
         fn init_global_state(
@@ -204,15 +200,16 @@ fn test_table_function() -> crate::Result<()> {
     }
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
-    let mut conn = db.connect()?;
+    let conn = db.connect()?;
 
-    conn.set_option("enable_progress_bar", "true", Some(SettingScope::Local))?;
+    conn.config()?
+        .set_text("enable_progress_bar", "true", SettingScope::Session)?;
 
     let pushdown_called = Arc::new(AtomicBool::new(false));
 
     TableFunctionBuilder::new(
         "my_table_function",
-        SignatureBuilder::without_return_type([Parameter::normal("offset", i32::logical_type(&conn)?)]),
+        SignatureBuilder::new().param(FunctionParameter::new::<i32>("offset")),
         MyTableFunction {
             base: 42,
             pushdown_called: pushdown_called.clone(),
@@ -291,11 +288,11 @@ fn test_table_function_partitioning() -> crate::Result<()> {
             context: &Context,
             _arguments: Vec<BindArgument>,
             bind_handle: BindFunctionHandle<'_>,
-        ) -> Result<(Self::BindData, Option<TableFunctionCardinality>)> {
+        ) -> Result<Self::BindData> {
             bind_handle.add_result_column("part", i32::logical_type(context)?)?;
             bind_handle.add_result_column("val", i32::logical_type(context)?)?;
 
-            Ok(((), None))
+            Ok(())
         }
 
         fn init_global_state(
@@ -418,7 +415,7 @@ fn test_table_function_partitioning() -> crate::Result<()> {
 
     TableFunctionBuilder::new(
         "partitioned_range",
-        SignatureBuilder::without_return_type([]),
+        SignatureBuilder::new(),
         PartitionedFunction {
             partitioning_calls: partitioning_calls.clone(),
             partition_data_calls: partition_data_calls.clone(),

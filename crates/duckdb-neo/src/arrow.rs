@@ -7,40 +7,53 @@
 //! The raw structs follow the C Data Interface layout, so they can be
 //! transmuted to the FFI types of an Arrow library such as arrow-rs.
 
+use std::mem::ManuallyDrop;
+
 use crate::{
-    Result, check_api_call, check_api_call_no_err,
+    DropHandle, Result, check_api_call,
     connection::{Connection, Context},
     data_chunk::{DataChunk, DataChunkRef},
     ffi,
     logical_type::LogicalType,
     raw::RawExt,
     schema::Schema,
+    statement::BoundCollections,
 };
 
-/// An Arrow C stream over a query result, from [`QueryResult::to_arrow_stream`](crate::query_result::QueryResult::to_arrow_stream).
+/// An Arrow C stream over a query result, from [`ArrowQueryResult::to_arrow_stream`](crate::query_result::ArrowQueryResult::to_arrow_stream).
 ///
 /// The query keeps running while the stream is read, so the stream borrows the
 /// connection and is released when dropped.
 #[derive(Debug)]
 pub struct ArrowStream<'conn> {
     stream: ffi::ArrowArrayStream,
+    // Dropped after `Drop` has released the stream that reads them.
+    collections: BoundCollections<'conn>,
     _conn: std::marker::PhantomData<&'conn mut Connection>,
 }
 
-impl ArrowStream<'_> {
-    pub(crate) fn new(stream: ffi::ArrowArrayStream) -> Self {
+impl<'conn> ArrowStream<'conn> {
+    pub(crate) fn new(stream: ffi::ArrowArrayStream, collections: BoundCollections<'conn>) -> Self {
         Self {
             stream,
+            collections,
             _conn: std::marker::PhantomData,
         }
     }
 
     /// Hand the stream to an Arrow consumer, which then owns releasing it.
     ///
-    /// The raw stream does not borrow the connection, so the consumer must
-    /// release it before the connection is dropped or used for another query.
-    pub fn into_raw(mut self) -> ffi::ArrowArrayStream {
-        std::mem::replace(&mut self.stream, ffi::ArrowArrayStream::empty())
+    /// The returned [`BoundCollections`] are the collections the query reads.
+    ///
+    /// # Safety
+    ///
+    /// The stream no longer borrows the connection, so the caller must release it
+    /// before the connection is used again or dropped, and must keep the returned
+    /// collections alive until then.
+    pub unsafe fn into_raw(self) -> (ffi::ArrowArrayStream, BoundCollections<'conn>) {
+        let this = ManuallyDrop::new(self);
+        // SAFETY: `this` is never dropped, so each field is moved out exactly once.
+        unsafe { (std::ptr::read(&this.stream), std::ptr::read(&this.collections)) }
     }
 }
 
@@ -134,7 +147,8 @@ impl Drop for ArrowArray {
 /// The context's Arrow settings are copied at creation, but the copy keeps a
 /// raw pointer to the client context, so the exporter borrows the context for
 /// `'ctx` and must not outlive it.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_arrow_exporter_destroy)]
 pub struct ArrowExporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_exporter_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -152,7 +166,7 @@ impl<'ctx> ArrowExporter<'ctx> {
         let name_ptrs = converted.iter().map(|x| x.0).collect::<Vec<_>>();
         let logical_type_handles = converted.iter().map(|x| x.1).collect::<Vec<_>>();
 
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_arrow_exporter_create,
             context.raw(),
             logical_type_handles.as_ptr(),
@@ -160,9 +174,8 @@ impl<'ctx> ArrowExporter<'ctx> {
             logical_type_handles.len() as u64,
             batch_size.unwrap_or(0) as u64,
             RET
-        )?;
-
-        Ok(ArrowExporter {
+        )
+        .map(|handle| ArrowExporter {
             handle,
             _context: std::marker::PhantomData,
         })
@@ -200,17 +213,12 @@ impl<'ctx> ArrowExporter<'ctx> {
     }
 }
 
-impl Drop for ArrowExporter<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_arrow_exporter_destroy, &mut self.handle).unwrap();
-    }
-}
-
 /// Converts Arrow arrays of a fixed schema into DuckDB chunks.
 ///
 /// The importer runs every conversion under the context it was created with,
 /// so it borrows that context and cannot outlive it.
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_arrow_importer_destroy)]
 pub struct ArrowImporter<'ctx> {
     handle: ffi::duckdb_v2_arrow_importer_handle,
     _context: std::marker::PhantomData<&'ctx Context>,
@@ -224,14 +232,14 @@ impl<'ctx> ArrowImporter<'ctx> {
     pub fn new(context: &'ctx Context, schema: impl Into<ArrowSchema>, batch_size: Option<usize>) -> Result<Self> {
         // DuckDB only reads the schema while resolving it, so it is released on return.
         let mut schema = schema.into();
-        let handle = check_api_call!(
+        check_api_call!(
             ffi::duckdb_v2_arrow_importer_create,
             context.raw(),
             &mut schema.raw,
             batch_size.unwrap_or(0) as u64,
             RET
-        )?;
-        Ok(ArrowImporter {
+        )
+        .map(|handle| ArrowImporter {
             handle,
             _context: std::marker::PhantomData,
         })
@@ -278,9 +286,7 @@ impl<'ctx> ArrowImporter<'ctx> {
 
     /// Return the owned DuckDB schema resolved from the Arrow schema.
     pub fn schema(&self) -> Result<Schema> {
-        Ok(Schema {
-            handle: check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET)?,
-        })
+        check_api_call!(ffi::duckdb_v2_arrow_importer_get_schema, self.handle, RET).map(|handle| Schema { handle })
     }
 
     /// Take the next chunk, or return `None` when the current array is drained.
@@ -295,11 +301,6 @@ impl<'ctx> ArrowImporter<'ctx> {
     }
 }
 
-impl Drop for ArrowImporter<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_arrow_importer_destroy, &mut self.handle).unwrap();
-    }
-}
 #[cfg(test)]
 mod tests {
     use std::mem::transmute;
@@ -313,7 +314,7 @@ mod tests {
         builder_helpers::scalar_callback,
         environment::{Environment, StorageLocation},
         scalar::ScalarFunctionBuilder,
-        signature::{Parameter, SignatureBuilder},
+        signature::{FunctionParameter, SignatureBuilder},
         types::DuckDBType,
     };
 
@@ -332,7 +333,7 @@ mod tests {
 
         let mut result = result;
 
-        let data_chunk = input.to_data_chunk()?;
+        let data_chunk = input.to_data_chunk(&ctx)?;
 
         let mut arrow_exporter = ArrowExporter::new(ctx, &columns, None)?;
 
@@ -403,14 +404,11 @@ mod tests {
 
         ScalarFunctionBuilder::new(
             "to_arrow",
-            SignatureBuilder::new(
-                [
-                    Parameter::normal("val1", i64::logical_type(&conn)?),
-                    Parameter::normal("val2", bool::logical_type(&conn)?),
-                    Parameter::normal("val3", String::logical_type(&conn)?),
-                ],
-                i64::logical_type(&conn)?,
-            ),
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i64>("val1"))
+                .param(FunctionParameter::new::<bool>("val2"))
+                .param(FunctionParameter::new::<String>("val3"))
+                .return_type(i64::logical_type(&conn)?),
             ToArrowTest,
         )
         .register(&conn)?;

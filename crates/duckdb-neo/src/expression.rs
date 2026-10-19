@@ -56,9 +56,7 @@ pub struct Expression<'a> {
 impl<'a> Expression<'a> {
     /// Return the child at `index` in DuckDB's traversal order.
     pub fn child(&self, index: usize) -> Result<Expression<'a>> {
-        let handle = check_api_call!(ffi::duckdb_v2_expression_get_child, self.handle, index as u64, RET)?;
-
-        Ok(Expression {
+        check_api_call!(ffi::duckdb_v2_expression_get_child, self.handle, index as u64, RET).map(|handle| Expression {
             handle,
             _marker: std::marker::PhantomData,
         })
@@ -66,9 +64,7 @@ impl<'a> Expression<'a> {
 
     /// Return the number of child expressions.
     pub fn child_count(&self) -> Result<usize> {
-        let count = check_api_call!(ffi::duckdb_v2_expression_get_child_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_expression_get_child_count, self.handle, RET).map(|count| count as usize)
     }
 
     /// Return all child expressions in DuckDB's traversal order.
@@ -95,9 +91,7 @@ impl<'a> Expression<'a> {
     ///
     /// Returns an error if the node is not a constant.
     pub fn get_constant_value(&self) -> Result<Value> {
-        Ok(Value {
-            handle: check_api_call!(ffi::duckdb_v2_expression_constant_get_value, self.handle, RET)?,
-        })
+        check_api_call!(ffi::duckdb_v2_expression_constant_get_value, self.handle, RET).map(|handle| Value { handle })
     }
 
     /// Return the registered name of a bound function expression.
@@ -106,9 +100,8 @@ impl<'a> Expression<'a> {
     /// return internal names; use [`Self::expression_type`] to distinguish them.
     /// Returns an error for nodes that do not represent function calls.
     pub fn function_name(&self) -> Result<String> {
-        let name: ffi::duckdb_v2_str = check_api_call!(ffi::duckdb_v2_expression_function_get_name, self.handle, RET)?;
-
-        Ok(DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
+        check_api_call!(ffi::duckdb_v2_expression_function_get_name, self.handle, RET)
+            .map(|name| DuckDBStr::from_raw(name).as_str().unwrap_or_default().to_owned())
     }
 
     /// Return the function's owned name, qualified by catalog and schema where known.
@@ -116,25 +109,21 @@ impl<'a> Expression<'a> {
     /// Accepts the same node types as [`Self::function_name`] and returns an
     /// error for other nodes.
     pub fn qname(&self) -> Result<QualifiedName> {
-        Ok(QualifiedName {
-            handle: check_api_call!(ffi::duckdb_v2_expression_function_get_qname, self.handle, RET)?,
-        })
+        check_api_call!(ffi::duckdb_v2_expression_function_get_qname, self.handle, RET)
+            .map(|handle| QualifiedName { handle })
     }
 
     /// Return the column reference's index in the operator's current column list.
     ///
     /// Returns an error if the node is not a column reference.
     pub fn reference_index(&self) -> Result<usize> {
-        let index = check_api_call!(ffi::duckdb_v2_expression_column_ref_get_index, self.handle, RET)?;
-
-        Ok(index as usize)
+        check_api_call!(ffi::duckdb_v2_expression_column_ref_get_index, self.handle, RET).map(|index| index as usize)
     }
 
     /// Return an owned copy of the expression's result type.
     pub fn return_type(&self) -> Result<LogicalType> {
-        let handle = check_api_call!(ffi::duckdb_v2_expression_get_return_type, self.handle, RET)?;
-
-        Ok(LogicalType { handle })
+        check_api_call!(ffi::duckdb_v2_expression_get_return_type, self.handle, RET)
+            .map(|handle| LogicalType { handle })
     }
 
     /// Return the expression's semantic operation.
@@ -170,12 +159,12 @@ mod tests {
             context: &Context,
             _metadata: Vec<BindArgument>,
             bind_handle: crate::table_function::BindFunctionHandle<'_>,
-        ) -> crate::Result<(Self::BindData, Option<crate::table_function::TableFunctionCardinality>)> {
+        ) -> crate::Result<Self::BindData> {
             for i in 0..3 {
                 bind_handle.add_result_column(format!("val{}", i).as_str(), i32::logical_type(context)?)?;
             }
 
-            Ok(((), None))
+            Ok(())
         }
 
         fn exec(
@@ -242,7 +231,7 @@ mod tests {
         let db = env.open(StorageLocation::InMemory)?;
         let conn = db.connect()?;
 
-        let signature = SignatureBuilder::without_return_type(vec![]);
+        let signature = SignatureBuilder::new();
 
         TableFunctionBuilder::new("test_function", signature, TableFunctionTest {})
             .with_filter_pushdown()

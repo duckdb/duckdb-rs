@@ -88,3 +88,38 @@ pub(crate) fn derive_from_raw(input: syn::DeriveInput) -> TokenStream {
     }
     .into()
 }
+
+pub(crate) fn derive_drop_handle(input: syn::DeriveInput) -> TokenStream {
+    let (member, _, _) = match raw_handle_field(&input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
+    let destroy = match input.attrs.iter().find(|attr| attr.path().is_ident("drop_handle")) {
+        Some(attr) => match attr.parse_args::<syn::Expr>() {
+            Ok(destroy) => destroy,
+            Err(e) => return e.to_compile_error().into(),
+        },
+        None => {
+            return syn::Error::new(input.span(), "name the destroy call with #[drop_handle(...)]")
+                .to_compile_error()
+                .into();
+        }
+    };
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    quote::quote! {
+        impl #impl_generics ::core::ops::Drop for #name #ty_generics #where_clause {
+            fn drop(&mut self) {
+                // SAFETY: the wrapper owns the handle, and nothing uses it after drop.
+                let code = unsafe { #destroy(&mut self.#member) };
+                assert!(
+                    code == ::duckdb_neo::error::DuckDBError::DUCKDB_V2_ERROR_NONE,
+                    "Failed to destroy {}: {:?}",
+                    stringify!(#name),
+                    code,
+                );
+            }
+        }
+    }
+    .into()
+}

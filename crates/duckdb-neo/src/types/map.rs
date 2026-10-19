@@ -12,10 +12,10 @@ use crate::{
     error::Error,
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
+    types::Struct,
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-
 /// Reads a `MAP` vector with key type `K` and value type `V`.
 #[derive(Debug)]
 pub struct Map<K, V>(pub ffi::duckdb_v2_list_entry, pub PhantomData<(K, V)>);
@@ -57,7 +57,7 @@ impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V
 
 impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let logical_type = value.fetch_logical_type()?;
+        let logical_type = value.logical_type()?;
         if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
             return Err(Error::invalid_input(format!(
                 "Expected MAP value, found {}",
@@ -104,12 +104,17 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
             return Ok(false);
         }
 
-        let Some(children) = children.filter(|children| children.col_count() == 2) else {
-            return Err(Error::invalid_input("Map vector must have exactly two children"));
-        };
+        // MAP stores its entries as one STRUCT(key, value) child.
+        let fields = children
+            .filter(|children| children.col_count() == 1)
+            .map(|children| children.get_vector_at::<Struct>(0))
+            .transpose()?
+            .and_then(|entries| entries.children())
+            .filter(|fields| fields.col_count() == 2)
+            .ok_or_else(|| Error::invalid_input("Map vector must have one STRUCT(key, value) child"))?;
 
-        children.get_untyped_vector_at(0)?.validate_as::<K>()?;
-        children.get_untyped_vector_at(1)?.validate_as::<V>()
+        fields.get_untyped_vector_at(0)?.validate_as::<K>()?;
+        fields.get_untyped_vector_at(1)?.validate_as::<V>()
     }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -120,7 +125,12 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         let list = unsafe { &*data_ptr.add(physical) };
 
         MapRow::<K, V> {
-            children: vector.children().expect("validated nested vector has children"),
+            children: vector
+                .children()
+                .expect("validated nested vector has children")
+                .cached_unchecked(0)
+                .children()
+                .expect("validated map entries have key and value children"),
             offset: list.offset as usize,
             length: list.length as usize,
             _marker: PhantomData,
@@ -145,19 +155,25 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
         let len = value.len();
         // Write one child at a time, so only one child wrapper is borrowed.
         let (keys, values): (Vec<_>, Vec<_>) = value.into_iter().unzip();
-        let children = vector
+        let entries = vector
             .children_collection_mut()
-            .expect("validated nested vector has children");
+            .expect("validated nested vector has children")
+            .cached_mut::<Struct>(0)?;
 
         let result = (|| {
-            // Append after the child's elements, including any written through another wrapper.
-            let key_vector = children.cached_mut::<K>(0)?;
-            let offset = key_vector.current_size()?;
+            // Append after the entries, including any written through another wrapper.
+            let offset = entries.current_size()?;
+            entries.set_size(offset + len)?;
+            let fields = entries
+                .children_collection_mut()
+                .expect("validated map entries have key and value children");
+
+            let key_vector = fields.cached_mut::<K>(0)?;
             key_vector.set_size(offset + len)?;
             for (child_index, key) in keys.into_iter().enumerate() {
                 key_vector.write(offset + child_index, Some(key))?;
             }
-            let value_vector = children.cached_mut::<V>(1)?;
+            let value_vector = fields.cached_mut::<V>(1)?;
             value_vector.set_size(offset + len)?;
             for (child_index, value) in values.into_iter().enumerate() {
                 value_vector.write(offset + child_index, Some(value))?;

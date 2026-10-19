@@ -49,15 +49,15 @@ declare_primitive_from_value!(f64, ffi::duckdb_v2_value_get_double);
 
 impl FromValue for i128 {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_hugeint, value.raw(), RET)?;
-        Ok((i128::from(raw.upper) << 64) | i128::from(raw.lower))
+        check_api_call!(ffi::duckdb_v2_value_get_hugeint, value.raw(), RET)
+            .map(|raw| (i128::from(raw.upper) << 64) | i128::from(raw.lower))
     }
 }
 
 impl FromValue for u128 {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let raw = check_api_call!(ffi::duckdb_v2_value_get_uhugeint, value.raw(), RET)?;
-        Ok((u128::from(raw.upper) << 64) | u128::from(raw.lower))
+        check_api_call!(ffi::duckdb_v2_value_get_uhugeint, value.raw(), RET)
+            .map(|raw| (u128::from(raw.upper) << 64) | u128::from(raw.lower))
     }
 }
 

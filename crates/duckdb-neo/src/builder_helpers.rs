@@ -5,10 +5,69 @@ use crate::{
     ffi_str::DuckDBStr,
 };
 
+pub(crate) unsafe extern "C" fn copy_render_box(
+    text: *const ffi::duckdb_v2_str,
+    user_data: *mut std::os::raw::c_void,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            if text.is_null() || user_data.is_null() {
+                return Err(Error::api_error("NULL value in copy_render_box"));
+            }
+
+            let string = unsafe { &mut *(user_data as *mut String) };
+
+            string.push_str(DuckDBStr::from_raw(unsafe { *text }).as_str().unwrap_or_default());
+
+            Ok(())
+        },
+        err,
+    );
+}
+
 #[derive(Debug)]
 pub(crate) struct OpaqueHandle<T> {
     data: *mut T,
     success: RefCell<bool>,
+}
+
+#[derive(Debug, Default)]
+pub struct ArgCount {
+    pub positional_fixed: usize,
+    pub positional_variadic: usize,
+    pub named_fixed: usize,
+    pub named_variadic: usize,
+}
+
+impl ArgCount {
+    pub(crate) fn from_func<F>(x: F) -> Result<Self>
+    where
+        F: FnOnce(&mut ffi::idx_t, &mut ffi::idx_t, &mut ffi::idx_t, &mut ffi::idx_t) -> Result<()>,
+    {
+        let mut positional_fixed = 0 as ffi::idx_t;
+        let mut positional_variadic = 0 as ffi::idx_t;
+        let mut named_fixed = 0 as ffi::idx_t;
+        let mut named_variadic = 0 as ffi::idx_t;
+
+        x(
+            &mut positional_fixed,
+            &mut positional_variadic,
+            &mut named_fixed,
+            &mut named_variadic,
+        )?;
+
+        Ok(ArgCount {
+            positional_fixed: positional_fixed as usize,
+            positional_variadic: positional_variadic as usize,
+            named_fixed: named_fixed as usize,
+            named_variadic: named_variadic as usize,
+        })
+    }
+
+    pub fn total(&self) -> usize {
+        self.positional_fixed + self.positional_variadic + self.named_fixed + self.named_variadic
+    }
 }
 
 impl<T> OpaqueHandle<T> {
@@ -44,9 +103,7 @@ impl<T> Drop for OpaqueHandle<T> {
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
     check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
 
-    let message: DuckDBStr<'_> = (&error.message).into();
-
-    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, message.as_raw_ptr())
+    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, &(&error.message).into())
         .expect("Failed to set error text");
 }
 

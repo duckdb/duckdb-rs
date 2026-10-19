@@ -6,17 +6,17 @@ use crate::{Result, ToValue, connection::FFILink, value::Value};
 /// Existing [`Value`] handles are borrowed directly.
 pub trait QueryParameter {
     #[doc(hidden)]
-    fn to_value<'a>(&'a self, link: &dyn FFILink) -> Result<ParameterValue<'a>>;
+    fn to_parameter<'a>(&'a self, link: &dyn FFILink) -> Result<ParameterValue<'a>>;
 }
 
 impl<T: ToValue> QueryParameter for T {
-    fn to_value<'a>(&'a self, link: &dyn FFILink) -> Result<ParameterValue<'a>> {
+    fn to_parameter<'a>(&'a self, link: &dyn FFILink) -> Result<ParameterValue<'a>> {
         self.value(link).map(ParameterValue::Owned)
     }
 }
 
 impl QueryParameter for Value {
-    fn to_value<'a>(&'a self, _link: &dyn FFILink) -> Result<ParameterValue<'a>> {
+    fn to_parameter<'a>(&'a self, _link: &dyn FFILink) -> Result<ParameterValue<'a>> {
         Ok(ParameterValue::Borrowed(self))
     }
 }
@@ -77,7 +77,7 @@ impl<'a> Parameters<'a> {
             Parameters::Positional(params) => {
                 let values = params
                     .iter()
-                    .map(|param| param.to_value(link))
+                    .map(|param| param.to_parameter(link))
                     .collect::<Result<Vec<_>>>()?;
                 Ok((None, values))
             }
@@ -85,7 +85,7 @@ impl<'a> Parameters<'a> {
                 let names = params.iter().map(|(name, _)| *name).collect();
                 let values = params
                     .iter()
-                    .map(|(_, param)| param.to_value(link))
+                    .map(|(_, param)| param.to_parameter(link))
                     .collect::<Result<Vec<_>>>()?;
                 Ok((Some(names), values))
             }

@@ -77,7 +77,7 @@ pub trait ToValue {
     where
         Self: DuckDBType,
     {
-        Value::null(&Self::logical_type(link)?)
+        Value::null(link, &Self::logical_type(link)?)
     }
 }
 
@@ -98,7 +98,7 @@ pub trait FromValue: Sized {
 
 impl FromValue for LogicalType {
     fn _get_inner(value: &Value) -> Result<Self> {
-        value.logical_type()
+        value.type_value_get_inner()
     }
 }
 

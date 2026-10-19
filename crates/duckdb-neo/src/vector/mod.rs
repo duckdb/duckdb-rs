@@ -35,10 +35,14 @@
 
 use std::marker::PhantomData;
 
+use crate::error::{DuckDBError, check_api_call_no_err};
+use crate::raw::RawExt;
 use crate::{
     Result,
     bytes::DuckDBBytes,
+    cast::CastMode,
     check_api_call,
+    connection::HasFactory,
     data_chunk::{ChildrenMut, RowCount, VectorCollection},
     error::Error,
     ffi,
@@ -97,6 +101,9 @@ impl StorageKind {
         }
     }
 }
+
+/// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
+pub const CONSTANT_SELECTION_LEN: usize = 2048;
 
 /// A typed, borrowed view over a vector's physical storage.
 ///
@@ -195,7 +202,13 @@ impl<T: VectorElement> VectorView<T> {
     /// Flat vectors contain one entry per logical row, constant vectors
     /// contain one entry, and dictionary vectors use [`Self::selection`] to
     /// map logical rows into this slice.
-    pub fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
+    ///
+    /// # Safety
+    ///
+    /// As for [`Self::as_slice`], the caller must read only initialized and valid entries.
+    /// Every entry written must be a valid value of the vector's type whose out-of-line data,
+    /// such as a string's bytes, outlives the vector; do not copy such entries from another vector.
+    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
         if self.view.data.is_null() {
             None
         } else {
@@ -222,11 +235,18 @@ impl<T: VectorElement> VectorView<T> {
     }
 
     /// Return the logical-to-physical row mapping, if DuckDB supplied one.
+    ///
+    /// A constant vector maps every row to slot 0, but its selection is DuckDB's
+    /// shared array of [`CONSTANT_SELECTION_LEN`] zeros, so it is cut to that length.
     pub fn selection(&self) -> Option<&[u32]> {
         if self.view.sel.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.sel, self.view.count as usize) })
+            let mut len = self.view.count as usize;
+            if self.kind == StorageKind::Constant {
+                len = len.min(CONSTANT_SELECTION_LEN);
+            }
+            Some(unsafe { std::slice::from_raw_parts(self.view.sel, len) })
         }
     }
 
@@ -288,15 +308,15 @@ pub(crate) enum Access {
 #[derive(Debug)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
-    pub(crate) logical_type: LogicalType,
-    pub(crate) kind: StorageKind,
-    pub(crate) len: usize,
+    logical_type: LogicalType,
+    kind: StorageKind,
+    len: usize,
     pub(crate) view: Option<VectorView<T>>,
     pub(crate) access: Access,
     heap: Option<ffi::duckdb_v2_arena_handle>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
-    pub(crate) params: TypeParams,
+    params: TypeParams,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -373,12 +393,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Ok(None);
         }
 
-        let view: ffi::duckdb_v2_vector_view = check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET)?;
-        Ok(Some(VectorView {
-            view,
-            kind,
-            _marker: PhantomData,
-        }))
+        check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET).map(|view| {
+            Some(VectorView {
+                view,
+                kind,
+                _marker: PhantomData,
+            })
+        })
     }
 
     /// Refresh the vector's view and mutable buffers after a state change, e.g a flatten.
@@ -404,6 +425,34 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             params: self.params,
             _chunk: self._chunk,
             _type: PhantomData,
+        }
+    }
+
+    pub fn cast_rows<T2: VectorElement, C: HasFactory>(
+        self,
+        source: &Vector<'_, T2>,
+        link: &C,
+        cast_mode: CastMode,
+    ) -> Result<Vector<'a, Unknown>> {
+        let mut cast_err = std::ptr::null_mut();
+
+        check_api_call!(
+            ffi::duckdb_v2_vector_cast,
+            link.factory()?.raw(),
+            source.handle,
+            self.handle,
+            cast_mode.into(),
+            RET,
+            &mut cast_err
+        )?;
+
+        if !cast_err.is_null() {
+            let cast = unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, cast_err) };
+
+            check_api_call_no_err!(ffi::duckdb_v2_error_info_destroy, &mut cast_err)?;
+            Err(cast)
+        } else {
+            Ok(Vector::from_handle(&self.handle, self.access)?)
         }
     }
 
@@ -587,9 +636,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// This is the slow path; prefer [`Self::get`] or [`Self::iter`] for typed
     /// vector access.
     pub fn get_value_slow(&self, index: usize) -> Result<Value> {
-        let value_handle = check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET)?;
-
-        Ok(Value { handle: value_handle })
+        check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 
     /// Write one owned [`Value`] through DuckDB's generic value API.
@@ -632,8 +679,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// Read the current size from DuckDB, which may have changed through another wrapper.
     pub(crate) fn current_size(&self) -> Result<usize> {
-        let len: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET)?;
-        Ok(len as usize)
+        check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET).map(|len| len as usize)
     }
 
     /// Return the number of logical rows.
@@ -677,7 +723,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # let env = Environment::new()?;
     /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
     /// let types = [Vec::<Option<String>>::logical_type(&conn)?, Vec::<Option<i64>>::logical_type(&conn)?];
-    /// let mut chunk = DataChunk::create(&types, true)?;
+    /// let mut chunk = DataChunk::create(&conn, &types, true)?;
     /// let [mut a, mut b] = chunk.get_vector_array_mut([0, 1])?;
     /// std::mem::swap(&mut *a.children_mut().unwrap(), &mut *b.children_mut().unwrap());
     /// # Ok(())

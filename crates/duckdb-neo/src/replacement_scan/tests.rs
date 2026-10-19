@@ -6,9 +6,10 @@ use std::sync::{
 use crate::{
     DuckDBType, Parameters, Result, ToValue,
     column_data_collection::ColumnDataCollection,
-    connection::Context,
+    connection::{Context, SettingScope},
     data_chunk::DataChunk,
     environment::{Environment, StorageLocation},
+    error::DuckDBError,
     logical_type::LogicalTypeID,
     qualified_name::QualifiedName,
     replacement_scan::{ReplacementHandle, ReplacementScanBuilder, ReplacementScanCallbacks, ReplacementType},
@@ -73,10 +74,7 @@ impl ReplacementScanCallbacks for CustomCdcScan {
         let view = name.get_view()?;
 
         if view.table.is_some_and(|t| t.starts_with("cdc")) {
-            replacement.set_reference(ReplacementType::NamedColumnDataCollection((
-                "cdc",
-                vec!["id".to_string(), "is_active".to_string()],
-            )))?;
+            replacement.set_reference(ReplacementType::ColumnDataCollection("cdc"))?;
         }
 
         Ok(())
@@ -128,10 +126,17 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     let conn = db.connect()?;
 
     let logical_types = [i32::logical_type(&conn)?, bool::logical_type(&conn)?];
+    let names = ["id", "is_active"];
 
-    let collection = ColumnDataCollection::new(&conn, &logical_types)?;
+    let collection = ColumnDataCollection::new(
+        &conn,
+        &[
+            (logical_types[0].clone(), names[0].to_string()),
+            (logical_types[1].clone(), names[1].to_string()),
+        ],
+    )?;
 
-    let mut chunk = DataChunk::create(&logical_types, true)?;
+    let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
     let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
 
@@ -180,7 +185,7 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
 fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnDataCollection<'_>> {
     let logical_types = [i32::logical_type(conn)?, bool::logical_type(conn)?];
-    let mut chunk = DataChunk::create(&logical_types, true)?;
+    let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
     let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
@@ -189,6 +194,21 @@ fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnD
     is_active.write(0, Some(true))?;
 
     let mut appender = ColumnDataCollection::new(conn, &logical_types)?.to_append()?;
+    appender.append(&mut chunk)?;
+    Ok(appender.to_normal())
+}
+
+fn invalid_column_count_collection(conn: &crate::connection::Connection) -> Result<ColumnDataCollection<'_>> {
+    let logical_types = [i32::logical_type(conn)?, bool::logical_type(conn)?];
+    let mut chunk = DataChunk::create(&conn, &logical_types, true)?;
+    let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
+    let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
+    id.set_size(1)?;
+    is_active.set_size(1)?;
+    id.write(0, Some(1))?;
+    is_active.write(0, Some(true))?;
+
+    let mut appender = ColumnDataCollection::new(conn, &[(logical_types[0].clone(), "id".to_string())])?.to_append()?;
     appender.append(&mut chunk)?;
     Ok(appender.to_normal())
 }
@@ -254,31 +274,12 @@ fn test_replacement_scan_cdc_unknown_name() -> crate::Result<()> {
 
 #[test]
 fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
-    struct OneName;
-
-    impl ReplacementScanCallbacks for OneName {
-        fn scan(&self, _context: &Context, _name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
-            replacement.set_reference(ReplacementType::NamedColumnDataCollection((
-                "cdc",
-                vec!["id".to_string()],
-            )))
-        }
-    }
-
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
     let conn = db.connect()?;
 
-    ReplacementScanBuilder::new(OneName)
-        .collection("cdc", single_row_collection(&conn)?)
-        .register(&conn)?;
-
-    // The collection has two columns but only one name is given.
-    let error = conn.query("SELECT * FROM cdc", Parameters::None).err().unwrap();
     assert!(
-        error.message.contains("number of column names (1) does not match"),
-        "unexpected error: {}",
-        error.message
+        invalid_column_count_collection(&conn).is_err_and(|e| e.code == DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID)
     );
 
     Ok(())
@@ -288,14 +289,14 @@ fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
 fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
-    let mut conn = db.connect()?;
+    let conn = db.connect()?;
 
     ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", single_row_collection(&conn)?)
         .register(&conn)?;
 
     // The collection no longer borrows `conn`, so it can be mutated.
-    conn.set_option("threads", "1", None)?;
+    conn.config()?.set_text("threads", "1", SettingScope::Global)?;
 
     let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
     let chunk = query.next_chunk()?.unwrap();

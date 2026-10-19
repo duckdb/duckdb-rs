@@ -2,15 +2,72 @@
 
 use std::marker::PhantomData;
 
+use duckdb_loadable_macros::{AsRaw, DropHandle, FromRaw};
+
 use crate::{
-    Result, check_api_call, check_api_call_no_err, ffi,
+    Result,
+    builder_helpers::handle_unwind,
+    check_api_call,
+    error::Error,
+    ffi,
+    ffi_str::DuckDBStr,
     links::{DatabaseKeepAlive, FileSystemLink, KeepAlive},
     raw::RawExt,
     value::Value,
 };
 
+pub(crate) unsafe extern "C" fn copy_glob_callback(
+    text: *const ffi::duckdb_v2_str,
+    user_data: *mut std::os::raw::c_void,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            if text.is_null() || user_data.is_null() {
+                return Err(Error::api_error("NULL value in copy_render_box"));
+            }
+
+            let items = unsafe { &mut *(user_data as *mut Vec<String>) };
+
+            items.push(
+                DuckDBStr::from_raw(unsafe { *text })
+                    .to_string_lossy()
+                    .unwrap_or_default()
+                    .into_owned(),
+            );
+
+            Ok(())
+        },
+        err,
+    );
+}
+
+/// Append an expanded path, which comes from the OS and may not be valid UTF-8.
+unsafe extern "C" fn copy_path_callback(
+    text: *const ffi::duckdb_v2_str,
+    user_data: *mut std::os::raw::c_void,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            if text.is_null() || user_data.is_null() {
+                return Err(Error::api_error("NULL value in copy_path_callback"));
+            }
+
+            let string = unsafe { &mut *(user_data as *mut String) };
+            string.push_str(
+                &DuckDBStr::from_raw(unsafe { *text })
+                    .to_string_lossy()
+                    .unwrap_or_default(),
+            );
+
+            Ok(())
+        },
+        err,
+    );
+}
 /// A borrowed handle to DuckDB's file system.
-#[derive(Debug)]
+#[derive(Debug, AsRaw, FromRaw)]
 pub struct FileSystem<'link> {
     handle: ffi::duckdb_v2_file_system_handle,
     database: Option<KeepAlive>,
@@ -34,13 +91,62 @@ impl<'link> FileSystem<'link> {
             _marker: PhantomData,
         })
     }
-}
 
+    pub fn exists(&self, path: &str) -> Result<bool> {
+        check_api_call!(ffi::duckdb_v2_file_system_path_exists, self.raw(), &path.into(), RET)
+    }
+
+    pub fn is_remote(&self, path: &str) -> Result<bool> {
+        check_api_call!(ffi::duckdb_v2_file_system_path_is_remote, self.raw(), &path.into(), RET)
+    }
+
+    pub fn move_item(&self, from: &str, to: &str) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_file_system_path_move,
+            self.raw(),
+            &from.into(),
+            &to.into(),
+        )
+    }
+
+    pub fn remove(&self, path: &str) -> Result<bool> {
+        check_api_call!(ffi::duckdb_v2_file_system_path_remove, self.raw(), &path.into(), RET)
+    }
+
+    pub fn expand(&self, path: &str) -> Result<String> {
+        let mut string = String::new();
+
+        check_api_call!(
+            ffi::duckdb_v2_file_system_path_expand,
+            self.raw(),
+            &path.into(),
+            Some(copy_path_callback),
+            &mut string as *mut String as *mut std::os::raw::c_void
+        )?;
+
+        Ok(string)
+    }
+
+    pub fn glob(&self, path: &str) -> Result<Vec<String>> {
+        let mut items = Vec::new();
+
+        check_api_call!(
+            ffi::duckdb_v2_file_system_path_glob,
+            self.raw(),
+            &path.into(),
+            Some(copy_glob_callback),
+            &mut items as *mut Vec<String> as *mut std::os::raw::c_void
+        )?;
+
+        Ok(items)
+    }
+}
 /// Configures how a path is opened through a DuckDB [`FileSystem`].
 ///
 /// Access and creation flags are disabled by default and can be composed with
 /// the builder methods before calling [`FileBuilder::open`].
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_file_open_options_destroy)]
 pub struct FileBuilder<'link> {
     fs: &'link FileSystem<'link>,
     handle: ffi::duckdb_v2_file_open_options_handle,
@@ -50,9 +156,7 @@ pub struct FileBuilder<'link> {
 impl<'link> FileBuilder<'link> {
     /// Create a builder for `path` with no flags enabled.
     pub fn new(fs: &'link FileSystem<'link>, path: &str) -> Result<FileBuilder<'link>> {
-        let handle = check_api_call!(ffi::duckdb_v2_file_open_options_create, fs.handle, RET)?;
-
-        Ok(FileBuilder {
+        check_api_call!(ffi::duckdb_v2_file_open_options_create, fs.handle, RET).map(|handle| FileBuilder {
             fs,
             handle,
             path: path.to_string(),
@@ -151,13 +255,6 @@ impl<'link> FileBuilder<'link> {
     }
 }
 
-impl Drop for FileBuilder<'_> {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_file_open_options_destroy, &mut self.handle)
-            .expect("failed to destroy file options handle");
-    }
-}
-
 /// An open file owned by the caller.
 ///
 /// Reads and writes advance one shared byte position.
@@ -186,7 +283,8 @@ impl Drop for FileBuilder<'_> {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_file_destroy)]
 pub struct File {
     /// The owned DuckDB file handle.
     handle: ffi::duckdb_v2_file_handle,
@@ -213,8 +311,8 @@ impl File {
         path: &str,
         flags: ffi::duckdb_v2_file_open_options_handle,
     ) -> crate::Result<Self> {
-        Ok(File {
-            handle: check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, &path.into(), flags, RET)?,
+        check_api_call!(ffi::duckdb_v2_file_system_open, fs.handle, &path.into(), flags, RET).map(|handle| File {
+            handle,
             _database: fs.database.clone(),
         })
     }
@@ -297,16 +395,11 @@ impl File {
     }
 }
 
-impl Drop for File {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_file_destroy, &mut self.handle).expect("Failed to destroy file handle");
-    }
-}
-
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::{
+        Parameters,
         environment::{Environment, StorageLocation},
         file::{FileBuilder, FileSystem},
     };
@@ -378,6 +471,75 @@ mod tests {
         assert_eq!(env.get_database_count()?, 0);
 
         std::fs::remove_file(path).expect("failed to remove test file");
+        Ok(())
+    }
+
+    #[test]
+    fn test_file_system_paths() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&db)?;
+
+        let dir = std::env::temp_dir().join(format!("duckdb-rs-file-system-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("failed to create test dir");
+        let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+
+        for name in ["a.txt", "b.txt", "c.csv"] {
+            FileBuilder::new(&fs, &path(name))?.write()?.create()?.open()?;
+        }
+        assert!(fs.exists(&path("a.txt"))?);
+        assert!(!fs.exists(&path("missing.txt"))?);
+        // A directory is not a file.
+        assert!(!fs.exists(dir.to_str().unwrap())?);
+
+        let mut matched = fs.glob(&path("*.txt"))?;
+        matched.sort();
+        assert_eq!(matched, [path("a.txt"), path("b.txt")]);
+        assert!(fs.glob(&path("*.json"))?.is_empty());
+
+        fs.move_item(&path("a.txt"), &path("moved.txt"))?;
+        assert!(!fs.exists(&path("a.txt"))?);
+        assert!(fs.exists(&path("moved.txt"))?);
+
+        assert!(fs.remove(&path("moved.txt"))?);
+        // Removing a missing file is not an error.
+        assert!(!fs.remove(&path("moved.txt"))?);
+
+        assert!(!fs.is_remote(&path("b.txt"))?);
+        assert!(fs.is_remote("s3://bucket/data.parquet")?);
+
+        std::fs::remove_dir_all(&dir).expect("failed to remove test dir");
+        Ok(())
+    }
+
+    #[test]
+    fn test_file_system_expand() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        conn.execute("SET home_directory = '/duck/home'", Parameters::None)?;
+        let fs = FileSystem::new(&conn)?;
+
+        assert_eq!(fs.expand("~/data.csv")?, "/duck/home/data.csv");
+        assert_eq!(fs.expand("/plain/data.csv")?, "/plain/data.csv");
+        Ok(())
+    }
+
+    // macOS file systems reject names that are not valid UTF-8.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_glob_non_utf8_name() -> crate::Result<()> {
+        use std::os::unix::ffi::OsStrExt;
+
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let fs = FileSystem::new(&db)?;
+
+        let dir = tempfile::tempdir().expect("failed to create test dir");
+        std::fs::write(dir.path().join(std::ffi::OsStr::from_bytes(b"\xff.txt")), b"").expect("failed to write file");
+        let dir = dir.path().to_str().unwrap();
+
+        assert_eq!(fs.glob(&format!("{dir}/*.txt"))?, [format!("{dir}/\u{fffd}.txt")]);
         Ok(())
     }
 }

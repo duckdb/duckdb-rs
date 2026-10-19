@@ -2,16 +2,12 @@
 
 use std::fmt::Debug;
 
-use crate::ffi;
+use crate::connection::HasFactory;
+use crate::{DropHandle, Factory, ffi};
 
 use crate::{
-    AsRaw, FromRaw, Result, check_api_call, check_api_call_no_err, check_api_call_string,
-    connection::{Connection, Context, FFILink},
-    error::Error,
-    links::ValueCastLink,
-    logical_type::LogicalType,
-    raw::RawExt,
-    types::FromValue,
+    AsRaw, FromRaw, Result, check_api_call, check_api_call_string, connection::FFILink, error::Error,
+    logical_type::LogicalType, raw::RawExt, types::FromValue,
 };
 
 /// An owned logical type and value payload.
@@ -38,7 +34,8 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[drop_handle(ffi::duckdb_v2_value_destroy)]
 pub struct Value {
     pub(crate) handle: ffi::duckdb_v2_value_handle,
 }
@@ -141,8 +138,8 @@ fn uhugeint(value: u128) -> ffi::duckdb_v2_uhugeint_t {
 
 macro_rules! create_value {
     ($function:path, $link:expr $(, $arg:expr)*) => {{
-        let handle = check_api_call!($function, $link $(, $arg)*, RET)?;
-        Ok(Value { handle })
+        check_api_call!($function, $link $(, $arg)*, RET)
+            .map(|handle| Value { handle })
     }};
 }
 
@@ -278,98 +275,48 @@ macro_rules! create_value_dispatch {
     };
 }
 
-pub(crate) fn create_with_connection(connection: &Connection, input: ValueInput<'_>) -> Result<Value> {
+pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> {
     create_value_dispatch!(
-        connection.raw(),
+        factory.raw(),
         input,
-        bool = ffi::duckdb_v2_value_create_bool_with_connection,
-        utinyint = ffi::duckdb_v2_value_create_utinyint_with_connection,
-        tinyint = ffi::duckdb_v2_value_create_tinyint_with_connection,
-        smallint = ffi::duckdb_v2_value_create_smallint_with_connection,
-        int = ffi::duckdb_v2_value_create_int_with_connection,
-        bigint = ffi::duckdb_v2_value_create_bigint_with_connection,
-        usmallint = ffi::duckdb_v2_value_create_usmallint_with_connection,
-        uint = ffi::duckdb_v2_value_create_uint_with_connection,
-        ubigint = ffi::duckdb_v2_value_create_ubigint_with_connection,
-        float = ffi::duckdb_v2_value_create_float_with_connection,
-        double = ffi::duckdb_v2_value_create_double_with_connection,
-        hugeint = ffi::duckdb_v2_value_create_hugeint_with_connection,
-        uhugeint = ffi::duckdb_v2_value_create_uhugeint_with_connection,
-        varchar = ffi::duckdb_v2_value_create_varchar_with_connection,
-        blob = ffi::duckdb_v2_value_create_blob_with_connection,
-        null = ffi::duckdb_v2_value_create_null_with_connection,
-        type = ffi::duckdb_v2_value_create_type_with_connection,
-        date = ffi::duckdb_v2_value_create_date_with_connection,
-        time = ffi::duckdb_v2_value_create_time_with_connection,
-        time_ns = ffi::duckdb_v2_value_create_time_ns_with_connection,
-        time_tz = ffi::duckdb_v2_value_create_time_tz_with_connection,
-        timestamp = ffi::duckdb_v2_value_create_timestamp_with_connection,
-        timestamp_sec = ffi::duckdb_v2_value_create_timestamp_sec_with_connection,
-        timestamp_ms = ffi::duckdb_v2_value_create_timestamp_ms_with_connection,
-        timestamp_ns = ffi::duckdb_v2_value_create_timestamp_ns_with_connection,
-        timestamp_tz = ffi::duckdb_v2_value_create_timestamp_tz_with_connection,
-        timestamp_tz_ns = ffi::duckdb_v2_value_create_timestamp_tz_ns_with_connection,
-        interval = ffi::duckdb_v2_value_create_interval_with_connection,
-        decimal = ffi::duckdb_v2_value_create_decimal_with_connection,
-        uuid = ffi::duckdb_v2_value_create_uuid_with_connection,
-        bit = ffi::duckdb_v2_value_create_bit_with_connection,
-        bignum = ffi::duckdb_v2_value_create_bignum_with_connection,
-        list = ffi::duckdb_v2_value_create_list_with_connection,
-        array = ffi::duckdb_v2_value_create_array_with_connection,
-        struct = ffi::duckdb_v2_value_create_struct_with_connection,
-        tuple = ffi::duckdb_v2_value_create_tuple_with_connection,
-        map = ffi::duckdb_v2_value_create_map_with_connection,
+        bool = ffi::duckdb_v2_value_create_bool,
+        utinyint = ffi::duckdb_v2_value_create_utinyint,
+        tinyint = ffi::duckdb_v2_value_create_tinyint,
+        smallint = ffi::duckdb_v2_value_create_smallint,
+        int = ffi::duckdb_v2_value_create_int,
+        bigint = ffi::duckdb_v2_value_create_bigint,
+        usmallint = ffi::duckdb_v2_value_create_usmallint,
+        uint = ffi::duckdb_v2_value_create_uint,
+        ubigint = ffi::duckdb_v2_value_create_ubigint,
+        float = ffi::duckdb_v2_value_create_float,
+        double = ffi::duckdb_v2_value_create_double,
+        hugeint = ffi::duckdb_v2_value_create_hugeint,
+        uhugeint = ffi::duckdb_v2_value_create_uhugeint,
+        varchar = ffi::duckdb_v2_value_create_varchar,
+        blob = ffi::duckdb_v2_value_create_blob,
+        null = ffi::duckdb_v2_value_create_null,
+        type = ffi::duckdb_v2_value_create_type,
+        date = ffi::duckdb_v2_value_create_date,
+        time = ffi::duckdb_v2_value_create_time,
+        time_ns = ffi::duckdb_v2_value_create_time_ns,
+        time_tz = ffi::duckdb_v2_value_create_time_tz,
+        timestamp = ffi::duckdb_v2_value_create_timestamp,
+        timestamp_sec = ffi::duckdb_v2_value_create_timestamp_sec,
+        timestamp_ms = ffi::duckdb_v2_value_create_timestamp_ms,
+        timestamp_ns = ffi::duckdb_v2_value_create_timestamp_ns,
+        timestamp_tz = ffi::duckdb_v2_value_create_timestamp_tz,
+        timestamp_tz_ns = ffi::duckdb_v2_value_create_timestamp_tz_ns,
+        interval = ffi::duckdb_v2_value_create_interval,
+        decimal = ffi::duckdb_v2_value_create_decimal,
+        uuid = ffi::duckdb_v2_value_create_uuid,
+        bit = ffi::duckdb_v2_value_create_bit,
+        bignum = ffi::duckdb_v2_value_create_bignum,
+        list = ffi::duckdb_v2_value_create_list,
+        array = ffi::duckdb_v2_value_create_array,
+        struct = ffi::duckdb_v2_value_create_struct,
+        tuple = ffi::duckdb_v2_value_create_tuple,
+        map = ffi::duckdb_v2_value_create_map,
     )
-}
-
-pub(crate) fn create_with_context(context: &Context, input: ValueInput<'_>) -> Result<Value> {
-    create_value_dispatch!(
-        context.raw(),
-        input,
-        bool = ffi::duckdb_v2_value_create_bool_with_context,
-        utinyint = ffi::duckdb_v2_value_create_utinyint_with_context,
-        tinyint = ffi::duckdb_v2_value_create_tinyint_with_context,
-        smallint = ffi::duckdb_v2_value_create_smallint_with_context,
-        int = ffi::duckdb_v2_value_create_int_with_context,
-        bigint = ffi::duckdb_v2_value_create_bigint_with_context,
-        usmallint = ffi::duckdb_v2_value_create_usmallint_with_context,
-        uint = ffi::duckdb_v2_value_create_uint_with_context,
-        ubigint = ffi::duckdb_v2_value_create_ubigint_with_context,
-        float = ffi::duckdb_v2_value_create_float_with_context,
-        double = ffi::duckdb_v2_value_create_double_with_context,
-        hugeint = ffi::duckdb_v2_value_create_hugeint_with_context,
-        uhugeint = ffi::duckdb_v2_value_create_uhugeint_with_context,
-        varchar = ffi::duckdb_v2_value_create_varchar_with_context,
-        blob = ffi::duckdb_v2_value_create_blob_with_context,
-        null = ffi::duckdb_v2_value_create_null_with_context,
-        type = ffi::duckdb_v2_value_create_type_with_context,
-        date = ffi::duckdb_v2_value_create_date_with_context,
-        time = ffi::duckdb_v2_value_create_time_with_context,
-        time_ns = ffi::duckdb_v2_value_create_time_ns_with_context,
-        time_tz = ffi::duckdb_v2_value_create_time_tz_with_context,
-        timestamp = ffi::duckdb_v2_value_create_timestamp_with_context,
-        timestamp_sec = ffi::duckdb_v2_value_create_timestamp_sec_with_context,
-        timestamp_ms = ffi::duckdb_v2_value_create_timestamp_ms_with_context,
-        timestamp_ns = ffi::duckdb_v2_value_create_timestamp_ns_with_context,
-        timestamp_tz = ffi::duckdb_v2_value_create_timestamp_tz_with_context,
-        timestamp_tz_ns = ffi::duckdb_v2_value_create_timestamp_tz_ns_with_context,
-        interval = ffi::duckdb_v2_value_create_interval_with_context,
-        decimal = ffi::duckdb_v2_value_create_decimal_with_context,
-        uuid = ffi::duckdb_v2_value_create_uuid_with_context,
-        bit = ffi::duckdb_v2_value_create_bit_with_context,
-        bignum = ffi::duckdb_v2_value_create_bignum_with_context,
-        list = ffi::duckdb_v2_value_create_list_with_context,
-        array = ffi::duckdb_v2_value_create_array_with_context,
-        struct = ffi::duckdb_v2_value_create_struct_with_context,
-        tuple = ffi::duckdb_v2_value_create_tuple_with_context,
-        map = ffi::duckdb_v2_value_create_map_with_context,
-    )
-}
-
-impl Drop for Value {
-    fn drop(&mut self) {
-        check_api_call_no_err!(ffi::duckdb_v2_value_destroy, &mut self.handle).unwrap();
-    }
 }
 
 impl Value {
@@ -379,17 +326,27 @@ impl Value {
     }
 
     /// Create a typed `NULL` without a connection or callback context.
-    pub fn null(logical_type: &LogicalType) -> Result<Value> {
-        let handle = check_api_call!(ffi::duckdb_v2_value_create_null, logical_type.handle, RET)?;
-        Ok(Value { handle })
+    pub fn null<C: HasFactory + ?Sized>(link: &C, logical_type: &LogicalType) -> Result<Value> {
+        check_api_call!(
+            ffi::duckdb_v2_value_create_null,
+            link.factory()?.raw(),
+            logical_type.handle,
+            RET
+        )
+        .map(|handle| Value { handle })
     }
 
     /// Cast a value using a connection or callback context's registered casts.
     #[allow(private_bounds)]
-    pub fn cast<C: ValueCastLink>(&self, link: &C, target_type: LogicalType) -> Result<Value> {
-        let handle = link.cast_value(self.handle, target_type.handle)?;
-
-        Ok(Value { handle })
+    pub fn cast<C: HasFactory + ?Sized>(&self, link: &C, target_type: LogicalType) -> Result<Value> {
+        check_api_call!(
+            ffi::duckdb_v2_value_cast,
+            link.factory()?.raw(),
+            self.raw(),
+            target_type.raw(),
+            RET
+        )
+        .map(|handle| Value { handle })
     }
 
     /// Create a `TYPE` value carrying a logical type.
@@ -397,25 +354,19 @@ impl Value {
         link.create_value(ValueInput::Type(logical_type))
     }
 
-    /// Return the logical type carried by a `TYPE` value.
+    /// Return this value's logical type.
     pub fn logical_type(&self) -> Result<LogicalType> {
-        let handle = check_api_call!(ffi::duckdb_v2_value_get_type, self.handle, RET)?;
-
-        Ok(LogicalType { handle })
+        check_api_call!(ffi::duckdb_v2_value_get_logical_type, self.handle, RET).map(|handle| LogicalType { handle })
     }
 
-    /// Return this value's logical type.
-    pub fn fetch_logical_type(&self) -> Result<LogicalType> {
-        let handle = check_api_call!(ffi::duckdb_v2_value_get_logical_type, self.handle, RET)?;
-
-        Ok(LogicalType { handle })
+    /// Return the logical type carried by a `TYPE` value.
+    pub fn type_value_get_inner(&self) -> Result<LogicalType> {
+        check_api_call!(ffi::duckdb_v2_value_get_type, self.handle, RET).map(|handle| LogicalType { handle })
     }
 
     /// Return the number of children in a composite value.
     pub fn child_count(&self) -> Result<usize> {
-        let count: u64 = check_api_call!(ffi::duckdb_v2_value_get_child_count, self.handle, RET)?;
-
-        Ok(count as usize)
+        check_api_call!(ffi::duckdb_v2_value_get_child_count, self.handle, RET).map(|count| count as usize)
     }
 
     pub(crate) fn encode_bignum(data: &[u8], is_negative: bool) -> Result<Vec<u8>> {
@@ -476,9 +427,7 @@ impl Value {
     /// This is a per-value slow path; prefer typed vector access for query data.
     /// A non-composite value or out-of-range index returns an error.
     pub fn get_child(&self, index: usize) -> Result<Value> {
-        let child_handle = check_api_call!(ffi::duckdb_v2_value_get_child, self.handle, index as u64, RET)?;
-
-        Ok(Value { handle: child_handle })
+        check_api_call!(ffi::duckdb_v2_value_get_child, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 
     /// Return owned copies of all child values.
@@ -498,9 +447,7 @@ impl Value {
 
     /// Return whether this value is `NULL`.
     pub fn is_null(&self) -> Result<bool> {
-        let is_null: bool = check_api_call!(ffi::duckdb_v2_value_is_null, self.handle, RET)?;
-
-        Ok(is_null)
+        check_api_call!(ffi::duckdb_v2_value_is_null, self.handle, RET)
     }
 
     /// Render the value for diagnostics.
@@ -519,7 +466,7 @@ mod tests {
         connection::FFILink,
         environment::{Environment, StorageLocation},
         scalar::ScalarFunctionBuilder,
-        signature::{Parameter, SignatureBuilder},
+        signature::{FunctionParameter, SignatureBuilder},
         types::{BigNumValue, DuckDBType},
         value::ValueInput,
     };
@@ -560,10 +507,9 @@ mod tests {
         // The same check through a callback context.
         ScalarFunctionBuilder::new(
             "length_check",
-            SignatureBuilder::new(
-                [Parameter::normal("x", i32::logical_type(&conn)?)],
-                i32::logical_type(&conn)?,
-            ),
+            SignatureBuilder::new()
+                .param(FunctionParameter::new::<i32>("x"))
+                .return_type(i32::logical_type(&conn)?),
             LengthCheckScalar,
         )
         .register(&conn)?;

@@ -13,7 +13,7 @@ use crate::{
     handles::ReplacementScanBuilderLink,
     links::ConnectionOrigin,
     qualified_name::QualifiedName,
-    raw::RawExt,
+    raw::{FromRaw, RawExt},
     value::Value,
 };
 
@@ -44,9 +44,6 @@ pub enum ReplacementType<'a> {
 
     /// A registered collection, by name. Has default column names (`col1`, `col2`, ...).
     ColumnDataCollection(&'a str),
-
-    /// A registered collection, by name, with explicitly named columns.
-    NamedColumnDataCollection((&'a str, Vec<String>)),
 }
 
 impl ReplacementHandle<'_> {
@@ -91,20 +88,22 @@ impl ReplacementHandle<'_> {
                     &(&query).into()
                 )
             }
-            ReplacementType::ColumnDataCollection(name) => check_api_call!(
-                ffi::duckdb_v2_replacement_scan_set_collection,
-                *self.info,
-                self.registered_collection(name)?.raw(),
-                std::ptr::null(),
-                0
-            ),
-            ReplacementType::NamedColumnDataCollection((name, names)) => check_api_call!(
-                ffi::duckdb_v2_replacement_scan_set_collection,
-                *self.info,
-                self.registered_collection(name)?.raw(),
-                names.iter().map(|n| n.into()).collect::<Vec<_>>().as_ptr(),
-                names.len() as u64
-            ),
+            ReplacementType::ColumnDataCollection(name) => {
+                let cdc = self.registered_collection(name)?;
+
+                let names = cdc
+                    .column_names
+                    .as_ref()
+                    .map_or(vec![], |x| x.iter().map(|x| x.into()).collect::<Vec<_>>());
+
+                check_api_call!(
+                    ffi::duckdb_v2_replacement_scan_set_collection,
+                    *self.info,
+                    cdc.raw(),
+                    names.as_ptr(),
+                    names.len() as u64
+                )
+            }
         }
     }
 
@@ -148,7 +147,8 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
                 collections: &data.collections,
             };
 
-            data.implementation.scan(&Context(context), &qname, handle)
+            data.implementation
+                .scan(&unsafe { Context::from_raw(context) }, &qname, handle)
         },
         err,
     );
@@ -186,9 +186,8 @@ where
 
     /// Hand `collection` to the scan under `name`, replacing any collection already added under it.
     ///
-    /// The callback claims references with it through [`ReplacementType::ColumnDataCollection`]
-    /// or [`ReplacementType::NamedColumnDataCollection`]. The scan must be registered on the
-    /// connection the collection was created from.
+    /// The callback claims references with it through [`ReplacementType::ColumnDataCollection`].
+    /// The scan must be registered on the connection the collection was created from.
     pub fn collection(mut self, name: impl Into<String>, collection: ColumnDataCollection<'conn>) -> Self {
         self.collections.insert(name.into(), collection);
         self
@@ -233,7 +232,7 @@ where
             &mut data.to_handle()
         )?;
 
-        check_api_call!(ffi::duckdb_v2_replacement_scan_register, handle.raw())
+        link.register_replacement_scan_handle(handle)
     }
 }
 

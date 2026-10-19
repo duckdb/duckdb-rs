@@ -4,14 +4,13 @@ use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROP
 
 use crate::{
     DuckDBType, Parameters,
-    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, States},
+    aggregate::{AggregateCallbacks, AggregateFunctionBuilder, ReturnTypeHandle, States},
     bind_arguments::BindArguments,
-    connection::Context,
+    connection::{Context, SettingScope},
     data_chunk::VectorCollection,
     environment::{Environment, StorageLocation},
     logical_type::LogicalType,
-    scalar::ReturnTypeHandle,
-    signature::{Parameter, SignatureBuilder},
+    signature::{FunctionParameter, SignatureBuilder},
     vector::{Unknown, Vector},
 };
 
@@ -117,10 +116,10 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", i32::logical_type(&conn)?)],
-            u8::logical_type(&conn)?, // Will be overwritten to String
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            // Will be overwritten to String
+            .return_type(u8::logical_type(&conn)?),
         BasicAggregate::<f32> { item: 0.0 },
     )
     .register(&conn)?;
@@ -146,16 +145,15 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
 
-    db.set_option("threads", &1.to_string())?;
+    db.config()?.set_text("threads", &1.to_string(), SettingScope::Global)?;
 
     let conn = db.connect()?;
 
     let mut result = AggregateFunctionBuilder::new(
         "to_concatenated",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", i32::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(String::logical_type(&conn)?),
         BasicAggregate::<f32> { item: 2.5 },
     );
 
@@ -170,10 +168,9 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
 
     let result = AggregateFunctionBuilder::new(
         "",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", i32::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(String::logical_type(&conn)?),
         BasicAggregate::<i32> { item: 0 },
     )
     .register(&conn);
@@ -191,10 +188,9 @@ fn aggregate_test_groups() -> crate::Result<()> {
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", i32::logical_type(&conn)?)],
-            String::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(String::logical_type(&conn)?),
         BasicAggregate::<i32> { item: 0 },
     )
     .register(&conn)?;
@@ -286,10 +282,9 @@ fn aggregate_test_undersized_state() -> crate::Result<()> {
 
     AggregateFunctionBuilder::new(
         "undersized",
-        SignatureBuilder::new(
-            [Parameter::normal("IN", i32::logical_type(&conn)?)],
-            u64::logical_type(&conn)?,
-        ),
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(u64::logical_type(&conn)?),
         UndersizedState,
     )
     .register(&conn)?;
@@ -303,6 +298,113 @@ fn aggregate_test_undersized_state() -> crate::Result<()> {
 
     let err = result.expect_err("an undersized state must fail the query");
     assert!(err.to_string().contains("smaller than size_of"), "{err}");
+
+    Ok(())
+}
+
+/// Sums with a state size that is not a multiple of the state's alignment.
+struct PaddedSum;
+
+impl AggregateCallbacks for PaddedSum {
+    type BindData = ();
+    type StateItem = i64;
+
+    fn bind(
+        &self,
+        _context: &Context,
+        _arguments: BindArguments<'_>,
+        _result_type_handle: ReturnTypeHandle<'_>,
+    ) -> crate::Result<Self::BindData> {
+        Ok(())
+    }
+
+    fn size(&self, _bind_data: Option<&Self::BindData>) -> crate::Result<usize> {
+        Ok(12)
+    }
+
+    fn init(&self, _bind_data: Option<&Self::BindData>) -> Self::StateItem {
+        0
+    }
+
+    fn update(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        collection: &mut VectorCollection,
+        mut states: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        let vec = collection.get_vector_at::<i32>(0)?;
+        for (i, val) in vec.iter()?.enumerate() {
+            states[i] += i64::from(*val.unwrap_or(&0));
+        }
+        Ok(())
+    }
+
+    fn combine(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        source: &States<'_, Self::StateItem>,
+        mut dest: States<'_, Self::StateItem>,
+    ) -> crate::Result<()> {
+        for i in 0..dest.len() {
+            dest[i] += source[i];
+        }
+        Ok(())
+    }
+
+    fn finalize(
+        &self,
+        _bind_data: Option<&Self::BindData>,
+        states: &[&Self::StateItem],
+        result: Vector<'_, Unknown>,
+        result_offset: usize,
+    ) -> crate::Result<()> {
+        let mut result = result.cast::<i64>()?;
+        // A window passes its result vector unsized.
+        if result.len() < result_offset + states.len() {
+            result.set_size(result_offset + states.len())?;
+        }
+        for (index, state) in states.iter().enumerate() {
+            result.write(result_offset + index, Some(**state))?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let db = env.open(StorageLocation::InMemory)?;
+    let conn = db.connect()?;
+
+    AggregateFunctionBuilder::new(
+        "padded_sum",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("IN"))
+            .return_type(i64::logical_type(&conn)?),
+        PaddedSum,
+    )
+    .register(&conn)?;
+
+    // Window operators lay states out back to back, by the reported size.
+    let mut result = conn.query(
+        "SELECT padded_sum(i::INTEGER) OVER () AS total,
+                padded_sum(i::INTEGER) OVER (ORDER BY i) AS running
+         FROM range(1, 101) AS t(i)
+         ORDER BY i",
+        Parameters::None,
+    )?;
+
+    let mut rows = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        let total = chunk.get_vector_at::<i64>(0)?;
+        let running = chunk.get_vector_at::<i64>(1)?;
+        for row in 0..total.len() {
+            rows.push((*total.get(row)?.unwrap(), *running.get(row)?.unwrap()));
+        }
+    }
+
+    let expected = (1..=100i64).map(|i| (5050, i * (i + 1) / 2)).collect::<Vec<_>>();
+    assert_eq!(rows, expected);
 
     Ok(())
 }
