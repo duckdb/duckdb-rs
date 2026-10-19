@@ -50,7 +50,6 @@ bundled-cmake-tpch = ["bundled-cmake", "libduckdb-sys/tpch"]
 
 
 [dependencies]
-arrow-array = { workspace = true, features = ["ffi"] }
 chrono = { workspace = true, optional = true }
 duckdb-loadable-macros = { workspace = true, features = ["neo"] }
 libc = { workspace = true }
@@ -64,6 +63,7 @@ rust_decimal = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
+arrow-array = { workspace = true, features = ["ffi"] }
 tempfile = { workspace = true }
 
 [package.metadata.docs.rs]
