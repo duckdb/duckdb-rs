@@ -108,6 +108,7 @@ fn copy_pregenerated_bindings(api: CApi, out_path: &Path) {
     let bindings_path = match api {
         CApi::V1 if is_loadable_extension() => "src/bindgen_bundled_version_loadable.rs",
         CApi::V1 => "src/bindgen_bundled_version.rs",
+        CApi::V2 if is_loadable_extension() => "src/bindgen_bundled_version_loadable_v2.rs",
         CApi::V2 => "src/bindgen_bundled_version_v2.rs",
     };
     println!("cargo:rerun-if-changed={bindings_path}");
@@ -121,8 +122,8 @@ pub enum HeaderLocation {
 }
 
 #[allow(dead_code)]
-fn is_loadable_extension() -> bool {
-    cfg!(feature = "loadable-extension")
+pub(crate) fn is_loadable_extension() -> bool {
+    cfg!(feature = "loadable-extension") || cfg!(feature = "loadable-extension-v2")
 }
 
 #[allow(dead_code)]
@@ -130,6 +131,7 @@ fn header_filename(api: CApi) -> &'static str {
     match api {
         CApi::V1 if is_loadable_extension() => "duckdb_extension.h",
         CApi::V1 => "duckdb.h",
+        CApi::V2 if is_loadable_extension() => "duckdb_extension_v2.h",
         CApi::V2 => "duckdb_v2.h",
     }
 }
@@ -156,6 +158,7 @@ impl HeaderLocation {
             HeaderLocation::Wrapper => PathBuf::from(match api {
                 CApi::V1 if is_loadable_extension() => "wrapper_ext.h",
                 CApi::V1 => "wrapper.h",
+                CApi::V2 if is_loadable_extension() => "wrapper_ext_v2.h",
                 CApi::V2 => "wrapper_v2.h",
             }),
         }

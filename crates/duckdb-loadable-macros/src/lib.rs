@@ -23,6 +23,14 @@ struct CEntryPointMacroArgs {
     min_duckdb_version: Option<String>,
 }
 
+#[proc_macro_attribute]
+pub fn duckdb_entrypoint_c_api_v2(meta: TokenStream, item: TokenStream) -> TokenStream {
+    match neo::parse(meta.into(), parse_macro_input!(item)) {
+        Ok(stream) => stream.into(),
+        Err(e) => TokenStream::from(e.write_errors()),
+    }
+}
+
 /// Wraps an entrypoint function to expose an unsafe extern "C" function of the same name.
 /// Warning: experimental!
 #[proc_macro_attribute]

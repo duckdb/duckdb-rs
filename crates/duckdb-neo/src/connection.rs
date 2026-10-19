@@ -311,9 +311,17 @@ impl FFILink for Connection {}
 
 /// A non-owning handle valid only during the extension's load callback.
 /// [`FromRaw::from_raw`] requires the handle of the extension currently being loaded.
-#[derive(AsRaw, FromRaw, Debug)]
-#[repr(transparent)]
-pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
+#[derive(AsRaw, Debug)]
+pub struct Extension {
+    pub(crate) handle: ffi::duckdb_v2_extension_handle,
+    pub(crate) context: Context,
+}
+
+impl HasFactory for Extension {
+    fn factory(&self) -> Result<&Factory> {
+        self.context.factory()
+    }
+}
 
 /// A non-owning DuckDB context supplied for the duration of a callback invocation.
 /// The handle must not outlive the invocation, including when wrapped with [`FromRaw::from_raw`].

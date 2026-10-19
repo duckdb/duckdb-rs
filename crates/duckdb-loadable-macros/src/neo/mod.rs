@@ -3,6 +3,10 @@
 use proc_macro::TokenStream;
 use syn::spanned::Spanned;
 
+mod entrypoint;
+
+pub use entrypoint::parse;
+
 /// Pick the handle field: the one marked `#[raw]`, the only field, or the field named `handle`.
 fn raw_handle_field(input: &syn::DeriveInput) -> syn::Result<(syn::Member, &syn::Type, &syn::Fields)> {
     let syn::Data::Struct(data) = &input.data else {
