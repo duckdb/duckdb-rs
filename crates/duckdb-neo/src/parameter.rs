@@ -38,12 +38,14 @@ impl ParameterValue<'_> {
 }
 
 /// Positional, named, or empty parameters for a DuckDB operation.
+#[derive(Clone, Copy)]
 pub enum Parameters<'a> {
     /// Execute without parameters.
     None,
-    /// Bind parameters by position.
+    /// Bind by position, with element 0 binding `$1`; cannot mix with named parameters.
     Positional(&'a [&'a dyn QueryParameter]),
-    /// Bind parameters by name.
+    /// Bind names without `$`, matched case-insensitively; an empty name binds positionally.
+    /// A statement cannot mix named and positional parameters.
     Named(&'a [(&'a str, &'a dyn QueryParameter)]),
 }
 
@@ -61,12 +63,13 @@ impl std::fmt::Debug for Parameters<'_> {
 }
 
 impl<'a> Parameters<'a> {
-    /// Bind parameters by position.
+    /// Bind by position, with element 0 binding `$1`; cannot mix with named parameters.
     pub fn positional(params: &'a [&'a dyn QueryParameter]) -> Self {
         Self::Positional(params)
     }
 
-    /// Bind parameters by name.
+    /// Bind names without `$`, matched case-insensitively; an empty name binds positionally.
+    /// A statement cannot mix named and positional parameters.
     pub fn named(params: &'a [(&'a str, &'a dyn QueryParameter)]) -> Self {
         Self::Named(params)
     }
@@ -90,5 +93,15 @@ impl<'a> Parameters<'a> {
                 Ok((Some(names), values))
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    #[test]
+    fn test_parameters_copy() {
+        fn assert_copy<T: Clone + Copy>() {}
+        assert_copy::<super::Parameters<'_>>();
     }
 }

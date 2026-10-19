@@ -637,7 +637,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
         let value = match value {
             None => None,
-            Some(value) => Some(DuckDBBytes::new(value, || self.heap())?),
+            // SAFETY: the vector owns the arena and keeps the stored bytes alive.
+            Some(value) => Some(unsafe { DuckDBBytes::new(value, || self.heap())? }),
         };
         self.write_raw(index, value)
     }

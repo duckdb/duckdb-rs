@@ -64,6 +64,7 @@ impl LogMetadata<'_> {
 /// One log entry passed to [`LogSinkCallbacks::write`]; `timestamp` is microseconds since the epoch.
 #[derive(Debug)]
 pub struct LogWriteData {
+    /// Microseconds since the Unix epoch (UTC).
     pub timestamp: i64,
     pub log_level: LogLevel,
     pub log_scope: LogScope,
@@ -182,8 +183,10 @@ impl<T: LogSinkCallbacks> LogSinkBuilder<T> {
 /// Callbacks may run concurrently on any DuckDB thread and must return quickly.
 /// They must not log or change the logging configuration: DuckDB holds its log lock, so that deadlocks.
 pub trait LogSinkCallbacks: Send + Sync + 'static {
-    /// Called when DuckDB flushes its log, e.g. after each query. Errors and panics are dropped.
-    fn flush(&self) -> Result<()>;
+    /// DuckDB decides when to flush, e.g. after a query; the default does nothing. Errors and panics are dropped.
+    fn flush(&self) -> Result<()> {
+        Ok(())
+    }
 
     /// Called for each entry the logging configuration routes to the sink.
     /// Errors and panics are dropped along with the entry.

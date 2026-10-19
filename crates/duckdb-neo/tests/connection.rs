@@ -50,11 +50,11 @@ fn test_handles_do_not_keep_connection_open() -> duckdb_neo::Result<()> {
     other.execute("CREATE TABLE t(i INTEGER)", Parameters::None)?;
     other.execute("INSERT INTO t VALUES (1)", Parameters::None)?;
 
-    let mut first = db.connect()?;
+    let first = db.connect()?;
     first.execute("BEGIN", Parameters::None)?;
     first.execute("UPDATE t SET i = 2", Parameters::None)?;
     let interrupt = first.interrupt_handle();
-    let tracker = QueryProgressTracker::new(&mut first)?;
+    let tracker = QueryProgressTracker::new(&first)?;
     drop(first);
 
     // Closing the connection rolls back its transaction, so the row is no longer locked.

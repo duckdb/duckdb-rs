@@ -529,13 +529,13 @@ mod tests {
 
         drop(conn);
         drop(db);
-        assert_eq!(env.get_database_count()?, 1);
+        assert_eq!(env.instance_count()?, 1);
 
         file.write(b"DuckDB")?;
         file.seek(0)?;
         assert_eq!(file.read(6)?, b"DuckDB");
         drop(file);
-        assert_eq!(env.get_database_count()?, 0);
+        assert_eq!(env.instance_count()?, 0);
 
         Ok(())
     }
@@ -556,11 +556,11 @@ mod tests {
         };
 
         drop(db);
-        assert_eq!(env.get_database_count()?, 1);
+        assert_eq!(env.instance_count()?, 1);
         file.write(b"alive")?;
         assert_eq!(file.read_at(0, 5)?, b"alive");
         drop(file);
-        assert_eq!(env.get_database_count()?, 0);
+        assert_eq!(env.instance_count()?, 0);
         Ok(())
     }
 
@@ -581,11 +581,11 @@ mod tests {
 
         drop(conn);
         drop(db);
-        assert_eq!(env.get_database_count()?, 1);
+        assert_eq!(env.instance_count()?, 1);
         assert_eq!(copy.row_count()?, 1);
         assert_eq!(copy.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
         drop(copy);
-        assert_eq!(env.get_database_count()?, 0);
+        assert_eq!(env.instance_count()?, 0);
         Ok(())
     }
 

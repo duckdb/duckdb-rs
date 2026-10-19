@@ -573,17 +573,15 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
     /// uninitialized cannot be dropped safely.
     fn init(&self, bind_data: Option<&Self::BindData>) -> Self::StateItem;
 
-    /// **Update:** apply an input batch to its corresponding aggregate states.
-    ///
-    /// Rows of the same group share a state, so the view may contain the same
-    /// state more than once. Mutable access is offered one state at a time
-    /// through [`States`]' [`IndexMut`] implementation.
+    /// **Update:** input row `i` belongs to `states[i]`; rows in one group share a state.
+    /// Repeated states allow mutable access only one at a time through [`States`]' [`IndexMut`].
     fn update(
         &self,
         bind_data: Option<&Self::BindData>,
         data: &mut VectorCollection,
         states: States<'_, Self::StateItem>,
     ) -> Result<()>;
+
     /// **Combine:** merge partial source states into target states.
     ///
     /// The source view is read-only; the target view offers mutable access one
@@ -595,6 +593,7 @@ pub trait AggregateCallbacks: Send + Sync + 'static {
         source: &States<'_, Self::StateItem>,
         target: States<'_, Self::StateItem>,
     ) -> Result<()>;
+
     /// **Finalize:** write aggregate states to the result vector.
     ///
     /// State `i` belongs in row `result_offset + i`; the result vector always

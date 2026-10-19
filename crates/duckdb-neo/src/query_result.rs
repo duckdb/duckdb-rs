@@ -7,7 +7,7 @@ use crate::ffi::duckdb_v2_str;
 use crate::builder_helpers::copy_render_box;
 use crate::error::Error;
 use crate::{
-    DropHandle, Result,
+    Result,
     arrow::{ArrowArray, ArrowSchema, ArrowStream},
     builder_helpers::ffi_enum_redeclaration,
     check_api_call,
@@ -36,6 +36,7 @@ duckdb_v2_arrow_result_wait
 */
 
 ffi_enum_redeclaration! {
+    /// SQL statement classification; expanding statements report `Multi` or `Pragma`.
     #[allow(missing_docs)]
     pub enum StatementType <- ffi::DUCKDB_V2_STATEMENT_TYPE {
             Invalid = DUCKDB_V2_STATEMENT_TYPE_INVALID,
@@ -72,6 +73,7 @@ ffi_enum_redeclaration! {
             Connect = DUCKDB_V2_STATEMENT_TYPE_CONNECT,
             Disconnect = DUCKDB_V2_STATEMENT_TYPE_DISCONNECT,
             ExternalResource = DUCKDB_V2_STATEMENT_TYPE_EXTERNAL_RESOURCE,
+            Passthrough = DUCKDB_V2_STATEMENT_TYPE_PASSTHROUGH,
     }
 }
 
@@ -160,6 +162,8 @@ macro_rules! query_result {
 
             $(#[$meta])*
             ///
+            /// Dropping an unfinished result aborts the statement and rolls back autocommit writes.
+            ///
             /// A result is not `Send`: stepping it runs the query on the connection, which
             /// must not race with the connection's `&self` methods on another thread.
             ///
@@ -169,13 +173,29 @@ macro_rules! query_result {
                 "assert_send::<duckdb_neo::query_result::", stringify!($name), "<'static>>();\n",
                 "```",
             )]
-            #[derive(Debug, DropHandle)]
-            #[drop_handle(ffi::[<$prefix _destroy>])]
+            #[doc = concat!(
+                "```compile_fail,unused_must_use\n",
+                "#![deny(unused_must_use)]\n",
+                "fn discard(result: duckdb_neo::Result<duckdb_neo::query_result::", stringify!($name), "<'_>>) -> duckdb_neo::Result<()> {\n",
+                "    result?;\n",
+                "    Ok(())\n",
+                "}\n",
+                "```",
+            )]
+            #[must_use = "a result does nothing until stepped, fetched or drained; dropping it aborts the statement"]
+            #[derive(Debug)]
             pub struct $name<'a> {
                 pub(crate) handle: ffi::[<$prefix _handle>],
                 // DuckDB reads these while the result executes.
                 _collections: BoundCollections<'a>,
                 phantom: PhantomData<&'a mut Connection>,
+            }
+
+            impl Drop for $name<'_> {
+                fn drop(&mut self) {
+                    // SAFETY: the result owns the handle, including during unwinding.
+                    let _ = unsafe { ffi::[<$prefix _destroy>](&mut self.handle) };
+                }
             }
 
             impl<'a> $name<'a> {
@@ -235,6 +255,9 @@ macro_rules! query_result {
                 }
 
                 /// Return whether the result contains rows, changed rows, or no output.
+                ///
+                /// Expanding statements can return `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED`
+                /// until stepping resolves their output metadata.
                 pub fn result_type(&self) -> Result<ResultType> {
                     check_api_call!(ffi::[<$prefix _get_result_type>], self.handle, RET)?.try_into()
                 }
@@ -323,6 +346,9 @@ query_result! {
 
 impl QueryResult<'_> {
     /// Return an owned copy of the result schema.
+    ///
+    /// Expanding statements return `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED`
+    /// until stepping binds their row-producing statement.
     pub fn schema(&self) -> Result<Schema> {
         check_api_call!(ffi::duckdb_v2_result_get_schema, self.handle, RET).map(|handle| Schema { handle })
     }
@@ -377,6 +403,9 @@ impl QueryResult<'_> {
 
 impl<'a> ArrowQueryResult<'a> {
     /// Return the Arrow schema of the result's arrays.
+    ///
+    /// Expanding statements return `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED`
+    /// until stepping binds their row-producing statement.
     pub fn schema(&self) -> Result<ArrowSchema> {
         // SAFETY: DuckDB returns an owned schema.
         check_api_call!(ffi::duckdb_v2_arrow_result_get_schema, self.handle, RET)
@@ -427,6 +456,15 @@ mod tests {
     };
 
     #[test]
+    fn test_passthrough_statement_type() -> crate::Result<()> {
+        assert_eq!(
+            StatementType::try_from(crate::ffi::DUCKDB_V2_STATEMENT_TYPE::DUCKDB_V2_STATEMENT_TYPE_PASSTHROUGH)?,
+            StatementType::Passthrough
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_query_result_helpers() -> crate::Result<()> {
         let env = Environment::new()?;
         let db = env.open(StorageLocation::InMemory)?;
@@ -456,6 +494,22 @@ mod tests {
         let rows_changed = result.drain()?;
         assert_eq!(rows_changed, 3);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_result_drop_during_unwind() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let result = conn.query("SELECT * FROM range(5000)", Parameters::None)?;
+
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _result = result;
+            panic!("unwind with an unfinished result");
+        }));
+        assert!(unwound.is_err());
+        assert_eq!(conn.execute("SELECT 1", Parameters::None)?, 0);
         Ok(())
     }
 

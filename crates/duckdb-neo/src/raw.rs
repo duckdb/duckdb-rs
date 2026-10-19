@@ -52,9 +52,11 @@ pub trait AsRaw {
     ///
     /// # Safety
     ///
-    /// The handle is borrowed from `self`. It must not be used after `self` is
-    /// dropped, must not be destroyed, and must not be used to break invariants
-    /// that `self` relies on.
+    /// Unless ownership is transferred, the handle must not outlive `self` or be destroyed.
+    /// Do not use it to break invariants that `self` relies on.
+    ///
+    /// Forgetting an owning wrapper (for example with `std::mem::forget`) transfers
+    /// ownership to the caller, who must then destroy the handle or wrap it once.
     unsafe fn get_raw(&self) -> Self::Raw;
 }
 

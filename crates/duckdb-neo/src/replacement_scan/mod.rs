@@ -42,7 +42,7 @@ pub enum ReplacementType<'a> {
     /// A `SELECT` statement read instead of the table.
     Subquery(String),
 
-    /// A registered collection, by name. Has default column names (`col1`, `col2`, ...).
+    /// A registered collection, using its explicit column names or `col1`, `col2`, ... if unnamed.
     ColumnDataCollection(&'a str),
 }
 
@@ -160,9 +160,8 @@ unsafe extern "C" fn replacement_callback<T: ReplacementScanCallbacks>(
 /// registration order within each scope. Connection-local scans run before
 /// database-wide scans; the first to claim the reference wins.
 ///
-/// Registering through a connection keeps the scan local to that connection
-/// until it closes. Registering through a database or extension makes the scan
-/// visible to all connections until the database closes.
+/// A connection-local scan lives until that connection closes; a database-wide scan
+/// is visible to all connections until the database closes.
 ///
 /// The registration owns the callback and any collections added with
 /// [`Self::collection`] until then.
@@ -193,7 +192,7 @@ where
         self
     }
 
-    /// Register through a connection, extension, or database, consuming the builder.
+    /// Register through a connection or database, consuming the builder.
     ///
     /// Returns an error if a collection was not created from `link`: only a
     /// connection can register collections, and only its own.
@@ -211,8 +210,8 @@ where
             )));
         }
 
-        // Every collection comes from `link`'s connection, which drops this data, and the
-        // collections with it, when it is destroyed. It keeps the database alive until then.
+        // Registration erases 'conn; its connection keeps the C handles and database alive until it closes.
+        // The stored collections must never access their factory borrow after registration.
         let data = OpaqueHandle::new(ReplacementScanData {
             implementation: self.implementation,
             collections: self.collections,

@@ -1,3 +1,21 @@
+//! Connection pooling through [`r2d2`]; the manager keeps its database and environment alive.
+//!
+//! Connections retain transactions, settings, and temporary tables across checkouts.
+//! Use [`r2d2::CustomizeConnection`] to initialize new connections; clean up before returning them.
+//!
+//! ```
+//! use duckdb_neo::{environment::{Environment, StorageLocation}, r2d2::ConnectionManager, Parameters};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let env = Environment::new()?;
+//! let db = env.open(StorageLocation::InMemory)?;
+//! let pool = r2d2::Pool::builder().build(ConnectionManager::new(&db))?;
+//! let conn = pool.get()?;
+//! conn.execute("SELECT 1", Parameters::None)?;
+//! # Ok(())
+//! # }
+//! ```
+
 use std::sync::OnceLock;
 
 use crate::{Parameters, Result, connection::Connection, database::Instance, error::Error};
@@ -9,7 +27,8 @@ pub struct ConnectionManager {
 }
 
 impl ConnectionManager {
-    /// Create a manager that opens connections to `database`.
+    /// Create a manager that opens connections to `database` and keeps it alive.
+    /// Checked-out connections retain their session state when returned to the pool.
     pub fn new(database: &Instance) -> Self {
         Self {
             database: Instance {
@@ -28,14 +47,8 @@ impl r2d2::ManageConnection for ConnectionManager {
         Connection::new(&self.database)
     }
 
-    fn is_valid(&self, conn: &mut Self::Connection) -> std::result::Result<(), Self::Error> {
-        let res = conn.execute("SELECT 1", Parameters::None);
-
-        if !res.is_ok() {
-            return Err(Error::api_error("Connection is not valid"));
-        }
-
-        Ok(())
+    fn is_valid(&self, conn: &mut Self::Connection) -> Result<()> {
+        conn.execute("SELECT 1", Parameters::None).map(drop)
     }
 
     fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
@@ -51,6 +64,26 @@ mod tests {
         environment::{Environment, StorageLocation},
         r2d2::ConnectionManager,
     };
+
+    #[test]
+    fn test_is_valid_preserves_error() -> crate::Result<()> {
+        use r2d2::ManageConnection;
+
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let manager = ConnectionManager::new(&db);
+        let mut conn = manager.connect()?;
+        conn.execute("BEGIN", Parameters::None)?;
+        assert!(
+            conn.execute("SELECT CAST('invalid' AS INTEGER)", Parameters::None)
+                .is_err()
+        );
+        let expected = conn.execute("SELECT 1", Parameters::None).unwrap_err();
+        let actual = manager.is_valid(&mut conn).unwrap_err();
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.message, expected.message);
+        Ok(())
+    }
 
     #[test]
     fn test_r2d2_valid_connection() -> crate::Result<()> {

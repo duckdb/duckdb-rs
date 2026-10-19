@@ -154,6 +154,12 @@ impl<'a> Statement<'a> {
     ///
     /// The statement takes ownership: the collection lives as long as the
     /// statement, its prepared copies, or any result executing it.
+    ///
+    /// Accepts SELECT, INSERT, UPDATE, DELETE and MERGE INTO statements only.
+    /// Empty names and names already defined as common table expressions are rejected.
+    ///
+    /// Columns use their explicit names from [`ColumnParameter::Named`](crate::column_data_collection::ColumnParameter::Named),
+    /// or `col1` through `colN` for positional columns; empty column names are rejected.
     pub fn add_collection(mut self, collection: ColumnDataCollection<'a>, name: &str) -> Result<Self> {
         let name: ffi::duckdb_v2_str = name.into();
         let column_name_ptrs: Option<Vec<ffi::duckdb_v2_str>> = collection
@@ -259,13 +265,13 @@ impl<'a> Statement<'a> {
         })
     }
 
-    /// Return a copy of this statement's SQL text.
+    /// Borrow this statement's SQL text.
     ///
     /// Includes the trailing terminator and whitespace, but excludes whitespace
     /// and comments before the first token.
-    pub fn get_text(&self) -> Result<String> {
+    pub fn get_text(&self) -> Result<&str> {
         check_api_call!(ffi::duckdb_v2_sql_statement_get_text, self.handle, RET)
-            .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default().to_owned())
+            .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default())
     }
 
     /// Return the statement type as classified by the parser, before execution-time rewrites.
@@ -283,14 +289,21 @@ impl<'a> Statement<'a> {
     ///
     /// Keys omit the `$` prefix: `"1"` for `$1`, or `"name"` for `$name`.
     /// Positional keys may have gaps.
-    pub fn parameter_name(&self, index: usize) -> Result<String> {
+    pub fn parameter_name(&self, index: usize) -> Result<&str> {
         check_api_call!(
             ffi::duckdb_v2_sql_statement_get_parameter_name,
             self.handle,
             index as u64,
             RET
         )
-        .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default().to_owned())
+        .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default())
+    }
+
+    /// Borrow all parameter binding keys in binding order.
+    pub fn parameter_names(&self) -> Result<Vec<&str>> {
+        (0..self.parameter_count()?)
+            .map(|index| self.parameter_name(index))
+            .collect()
     }
 }
 
@@ -329,7 +342,10 @@ impl<'a> PreparedStatement<'a> {
         .map(|handle| QueryResult::new(handle, self.collections.clone()))
     }
 
-    /// Execute with optional positional or named parameters.
+    /// Start execution with positional or named parameters and return a lazy Arrow result.
+    ///
+    /// Arrays hold at most `batch_size` rows; `None` or `Some(0)` selects
+    /// DuckDB's default of 131,072.
     pub fn execute_arrow(&self, parameters: Parameters<'_>, batch_size: Option<usize>) -> Result<ArrowQueryResult<'a>> {
         let (param_names, param_values) = parameters.into_values(self.connection)?;
         let param_values = param_values
@@ -369,6 +385,22 @@ mod tests {
         ffi,
         statement::Statements,
     };
+
+    #[test]
+    fn test_statement_borrowed_text_and_parameter_names() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let db = env.open(StorageLocation::InMemory)?;
+        let conn = db.connect()?;
+        let statement = conn.parse("SELECT $lo, $hi, $lo; ")?.next().unwrap()?;
+
+        let text: &str = statement.get_text()?;
+        assert_eq!(text, "SELECT $lo, $hi, $lo; ");
+        let first: &str = statement.parameter_name(0)?;
+        assert_eq!(first, "lo");
+        assert_eq!(statement.parameter_names()?, ["lo", "hi"]);
+        assert_eq!(statement.parameter_name(0)?.as_ptr(), first.as_ptr());
+        Ok(())
+    }
 
     #[test]
     fn test_prepared_statement() -> crate::Result<()> {

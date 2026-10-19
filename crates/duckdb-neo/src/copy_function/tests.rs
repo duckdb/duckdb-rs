@@ -1,4 +1,4 @@
-use std::{fs, sync::Mutex};
+use std::{fs, num::NonZeroUsize, sync::Mutex};
 
 use crate::{
     DuckDBType, Parameters,
@@ -9,10 +9,12 @@ use crate::{
     environment::{Environment, StorageLocation},
     file::{File, FileBuilder, FileSystem},
     logical_type::LogicalTypeID,
+    types::FromValue,
 };
 
 struct RapidCopy {
     multiplier: f64,
+    batch_size: crate::Result<Option<NonZeroUsize>>,
 }
 
 impl CopyToFunctionCallbacks for RapidCopy {
@@ -31,8 +33,8 @@ impl CopyToFunctionCallbacks for RapidCopy {
         Ok(10)
     }
 
-    fn batch_size(&self, _context: &Context, _bind_data: &Self::BindData) -> Option<usize> {
-        Some(1)
+    fn batch_size(&self, _context: &Context, _bind_data: &Self::BindData) -> crate::Result<Option<NonZeroUsize>> {
+        self.batch_size.clone()
     }
 
     fn init(&self, context: &Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
@@ -84,13 +86,13 @@ impl CopyToFunctionCallbacks for RapidCopy {
         _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
-        batch_data: &Self::BatchData,
+        batch_data: &mut Self::BatchData,
     ) -> crate::Result<()> {
         assert_eq!(batch_data.len(), 10 + 1, "Expected 11 rows in batch data");
 
         let file = init_data.lock().unwrap();
 
-        for &value in batch_data {
+        for value in batch_data.drain(..) {
             let buffer = (value.to_string() + ",").into_bytes();
             let written = file.write(&buffer)?;
 
@@ -121,9 +123,15 @@ pub fn test_copy_function() -> crate::Result<()> {
         .expect("Failed to open in-memory database");
     let conn = db.connect().expect("Failed to connect to database");
 
-    CopyFunctionBuilder::new("rapidcopy", RapidCopy { multiplier: 1.5 })
-        .register(&conn)
-        .expect("Failed to register copy function");
+    CopyFunctionBuilder::new(
+        "rapidcopy",
+        RapidCopy {
+            multiplier: 1.5,
+            batch_size: Ok(NonZeroUsize::new(1)),
+        },
+    )
+    .register(&conn)
+    .expect("Failed to register copy function");
 
     conn.execute(
         "COPY (SELECT i FROM range(0, $1) t(i)) TO 'out.txt' (FORMAT rapidcopy, USE_TMP_FILE FALSE)",
@@ -135,6 +143,34 @@ pub fn test_copy_function() -> crate::Result<()> {
     assert_eq!(output, "0,1,3,4,6,7,9,10,12,13,15,");
     fs::remove_file("out.txt").expect("Failed to remove COPY output");
 
+    Ok(())
+}
+
+#[test]
+fn test_copy_batch_size_error() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    CopyFunctionBuilder::new(
+        "batch_size_error",
+        RapidCopy {
+            multiplier: 1.0,
+            batch_size: Err(crate::Error::invalid_input("batch size unavailable")),
+        },
+    )
+    .register(&conn)?;
+
+    let dir = TempDir::new("copy_batch_size_error");
+    let error = conn
+        .execute(
+            format!(
+                "COPY (SELECT i FROM range(10) t(i)) TO '{}' (FORMAT batch_size_error)",
+                dir.join("out.txt")
+            )
+            .as_str(),
+            Parameters::None,
+        )
+        .unwrap_err();
+    assert!(error.message.contains("batch size unavailable"), "{error}");
     Ok(())
 }
 
@@ -169,9 +205,17 @@ impl CopyFromFunctionCallbacks for RangeSource {
         ))
     }
 
+    fn init_global_state(
+        &self,
+        _bind_data: &Self::BindData,
+        _context: &Context,
+    ) -> crate::Result<(Option<Self::GlobalState>, Option<NonZeroUsize>)> {
+        Ok((None, NonZeroUsize::new(1)))
+    }
+
     fn init_local_state(
         &self,
-        _bind_data: Option<&Self::BindData>,
+        _bind_data: &Self::BindData,
         _context: &Context,
         _global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
@@ -180,7 +224,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
 
     fn exec(
         &self,
-        _bind_data: Option<&Self::BindData>,
+        _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
         _context: &Context,
@@ -250,12 +294,21 @@ impl CopyToFunctionCallbacks for EchoFormat {
     type BindData = ();
     type BatchData = Vec<i64>;
 
-    fn bind(&self, _context: &Context, _column_info: &super::CopyToBindInfo) -> crate::Result<Self::BindData> {
+    fn bind(&self, _context: &Context, column_info: &super::CopyToBindInfo) -> crate::Result<Self::BindData> {
+        assert_eq!(column_info.column_count()?, column_info.len()?);
+        assert_eq!(column_info.get_column(0)?.0, "i");
+        assert!(!column_info.file_path()?.is_empty());
+        assert_eq!(column_info.option_count()?, column_info.options()?.len());
+        if column_info.option_count()? > 0 {
+            let (name, value) = column_info.get_option(0)?;
+            assert_eq!(name, "custom_option");
+            assert_eq!(String::from_value(&value)?, Some("roundtrip".to_string()));
+        }
         Ok(())
     }
 
-    fn batch_size(&self, _context: &Context, _bind_data: &Self::BindData) -> Option<usize> {
-        Some(1)
+    fn batch_size(&self, _context: &Context, _bind_data: &Self::BindData) -> crate::Result<Option<NonZeroUsize>> {
+        Ok(NonZeroUsize::new(1))
     }
 
     fn init(&self, context: &Context, _bind_data: &Self::BindData, file_path: &str) -> crate::Result<Self::InitData> {
@@ -284,7 +337,7 @@ impl CopyToFunctionCallbacks for EchoFormat {
         _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
-        batch_data: &Self::BatchData,
+        batch_data: &mut Self::BatchData,
     ) -> crate::Result<()> {
         let file = init_data.lock().unwrap();
         for value in batch_data {
@@ -312,15 +365,22 @@ impl CopyFromFunctionCallbacks for EchoFormat {
     fn bind(
         &self,
         _context: &Context,
-        _file_path: &str,
-        _bind_info: &super::CopyFromBindInfo,
+        file_path: &str,
+        bind_info: &super::CopyFromBindInfo,
     ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
+        assert_eq!(bind_info.file_path()?, file_path);
+        assert_eq!(bind_info.column_count()?, 1);
+        assert_eq!(bind_info.get_column(0)?.0, "i");
+        assert_eq!(bind_info.option_count()?, 1);
+        let (name, value) = bind_info.get_option(0)?;
+        assert_eq!(name, "custom_option");
+        assert_eq!(String::from_value(&value)?, Some("roundtrip".to_string()));
         Ok(((), None))
     }
 
     fn init_local_state(
         &self,
-        _bind_data: Option<&Self::BindData>,
+        _bind_data: &Self::BindData,
         _context: &Context,
         _global_state: Option<&Self::GlobalState>,
     ) -> crate::Result<Option<Self::LocalState>> {
@@ -329,7 +389,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
 
     fn exec(
         &self,
-        _bind_data: Option<&Self::BindData>,
+        _bind_data: &Self::BindData,
         _global_state: Option<&Self::GlobalState>,
         local_state: Option<&mut Self::LocalState>,
         _context: &Context,
@@ -365,11 +425,14 @@ pub fn test_copy_to_and_from_function() -> crate::Result<()> {
     conn.execute("CREATE TABLE t(i BIGINT)", Parameters::None)
         .expect("Failed to create table");
 
-    conn.execute("COPY t FROM 'echo_in.txt' (FORMAT echoformat)", Parameters::None)
-        .expect("Failed to execute COPY FROM query");
+    conn.execute(
+        "COPY t FROM 'echo_in.txt' (FORMAT echoformat, custom_option 'roundtrip')",
+        Parameters::None,
+    )
+    .expect("Failed to execute COPY FROM query");
 
     conn.execute(
-        "COPY (SELECT i FROM t) TO 'echo_out.txt' (FORMAT echoformat, USE_TMP_FILE FALSE)",
+        "COPY (SELECT i FROM t) TO 'echo_out.txt' (FORMAT echoformat, USE_TMP_FILE FALSE, custom_option 'roundtrip')",
         Parameters::None,
     )
     .expect("Failed to execute COPY TO query");

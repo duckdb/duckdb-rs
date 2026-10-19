@@ -14,7 +14,7 @@
 //! [`crate::vector::VectorElement`]/[`crate::vector::WritableVectorElement`]
 //! implementations live together in family modules grouped by logical type:
 //! `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
-//! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`,
+//! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`, `rust_decimal` (feature-gated),
 //! `list`, `array`, `map`, `structs`, `union`, `variant`, and `tuple`. Each
 //! family module is private; its public types, including the borrowed row,
 //! iterator, and writer types of nested families, are re-exported below.
@@ -78,7 +78,8 @@ pub use union::{Union, UnionRow, UnionSchema, UnionValue, UnionWriter};
 pub use variant::{Variant, VariantValue};
 
 #[cfg(feature = "rust_decimal")]
-pub mod rust_decimal;
+mod rust_decimal;
+
 /// Constructs the DuckDB logical type represented by a Rust type.
 pub trait DuckDBType {
     /// Return the DuckDB logical type represented by this Rust type.

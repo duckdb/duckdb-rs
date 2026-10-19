@@ -1,8 +1,7 @@
 //! `VARCHAR`, `BLOB`, and `BIT` byte-oriented logical types.
 //!
-//! [`String`] and [`BlobValue`] and [`BitValue`] represent `VARCHAR`; [`BlobValue`] and
-//! [`BitValue`] wrap byte payloads for `BLOB` and `BIT` respectively. All four
-//! share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
+//! [`str`] and [`String`] represent `VARCHAR`; [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
+//! All four share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi_str::{DuckDBStr, bytes_view};
@@ -79,6 +78,13 @@ impl ToValue for BlobValue {
 
 impl FromValue for BlobValue {
     fn _get_inner(value: &Value) -> Result<Self> {
+        let logical_type = value.logical_type()?;
+        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB {
+            return Err(Error::invalid_input(format!(
+                "Expected BLOB value, found {}",
+                logical_type.to_text()?
+            )));
+        }
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, value.raw(), RET)?;
         Ok(Self(owned_bytes(raw)?))
     }
@@ -123,6 +129,13 @@ impl ToValue for BitValue {
 
 impl FromValue for BitValue {
     fn _get_inner(value: &Value) -> Result<Self> {
+        let logical_type = value.logical_type()?;
+        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT {
+            return Err(Error::invalid_input(format!(
+                "Expected BIT value, found {}",
+                logical_type.to_text()?
+            )));
+        }
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, value.raw(), RET)?;
         Ok(Self(owned_bytes(raw)?))
     }
@@ -162,6 +175,8 @@ unsafe impl VectorElement for BitValue {
     }
 }
 
+/// # Panics
+/// Panics when a VARCHAR row contains invalid UTF-8.
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
@@ -178,7 +193,7 @@ unsafe impl VectorElement for String {
 
         let string_view = unsafe { &*data_ptr.add(physical) };
 
-        std::str::from_utf8(bytes_view(string_view)).unwrap()
+        std::str::from_utf8(bytes_view(string_view)).expect("DuckDB VARCHAR is not valid UTF-8")
     }
 }
 
@@ -209,5 +224,48 @@ unsafe impl WritableVectorElement for BitValue {
             check_bit(value)?;
         }
         vector.write_bytes(index, value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        data_chunk::DataChunk,
+        environment::{Environment, StorageLocation},
+        types::BigNumValue,
+    };
+
+    #[test]
+    #[should_panic(expected = "DuckDB VARCHAR is not valid UTF-8")]
+    fn varchar_vector_reports_invalid_utf8() {
+        let env = Environment::new().unwrap();
+        let conn = env.open(StorageLocation::InMemory).unwrap().connect().unwrap();
+        let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn).unwrap()], true).unwrap();
+        let mut vector = chunk.get_vector_at_mut::<String>(0).unwrap();
+        vector.set_size(1).unwrap();
+        vector.write_bytes(0, Some(&[0xff])).unwrap();
+        let _ = vector.get(0);
+    }
+
+    #[test]
+    fn blob_and_bit_getters_require_matching_logical_types() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let blob = BlobValue(vec![0, 255]).value(&conn)?;
+        let bit = BitValue(vec![0, 255]).value(&conn)?;
+        let bignum = BigNumValue {
+            is_negative: false,
+            magnitude: vec![1],
+        }
+        .value(&conn)?;
+
+        assert_eq!(blob.get::<BlobValue>()?, Some(BlobValue(vec![0, 255])));
+        assert_eq!(bit.get::<BitValue>()?, Some(BitValue(vec![0, 255])));
+        assert!(blob.get::<BitValue>().is_err());
+        assert!(bit.get::<BlobValue>().is_err());
+        assert!(bignum.get::<BlobValue>().is_err());
+        assert!(bignum.get::<BitValue>().is_err());
+        Ok(())
     }
 }

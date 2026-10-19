@@ -24,20 +24,17 @@ impl ReplacementScanCallbacks for CustomReplacementScan {
     fn scan(&self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
-        if let Some(table) = view.table
-            && table.starts_with("num")
-        {
+        if view.table.starts_with("num") {
             assert!(view.catalog == Some("test".to_string()));
             assert!(view.schema == Some("main".to_string()));
 
-            let split = table
+            let split = view
+                .table
                 .replace("num_", "")
                 .replace('\'', "")
                 .split('_')
                 .map(|x| x.parse::<i32>().unwrap())
                 .collect::<Vec<_>>();
-
-            dbg!(&split);
 
             replacement.set_reference(ReplacementType::Table("range".try_into()?))?;
             replacement.add_parameter(split[0].value(context)?)?;
@@ -54,7 +51,7 @@ impl ReplacementScanCallbacks for CustomNamedParameters {
     fn scan(&self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
-        if view.table.is_some_and(|t| t.starts_with("alltypes")) {
+        if view.table.starts_with("alltypes") {
             assert!(view.catalog.is_none());
             assert!(view.schema.is_none());
 
@@ -73,7 +70,7 @@ impl ReplacementScanCallbacks for CustomCdcScan {
     fn scan(&self, _context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
-        if view.table.is_some_and(|t| t.starts_with("cdc")) {
+        if view.table.starts_with("cdc") {
             replacement.set_reference(ReplacementType::ColumnDataCollection("cdc"))?;
         }
 

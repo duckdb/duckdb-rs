@@ -4,15 +4,16 @@ use crate::ffi;
 use crate::ffi_str::DuckDBStr;
 use crate::{AsRaw, DropHandle, FromRaw, Result, check_api_call, check_api_call_string, error::Error};
 
-/// Owned identifier parts extracted from a [`QualifiedName`].
-#[derive(Default, Debug)]
+/// Owned identifier parts extracted positionally from a [`QualifiedName`].
+#[derive(Debug)]
 pub struct QualifiedNameView {
-    /// The catalog (database) name, absent for unqualified names.
+    /// The first part of a three-part name; absent otherwise.
     pub catalog: Option<String>,
-    /// The schema name, absent when only the table is named.
+    /// The penultimate part; absent for unqualified names.
+    /// In a two-part name, resolution decides whether this is a schema or a catalog.
     pub schema: Option<String>,
     /// The table (or other object) name; always present.
-    pub table: Option<String>,
+    pub table: String,
 }
 
 /// An owned, optionally qualified name for a database object.
@@ -30,7 +31,7 @@ pub struct QualifiedNameView {
 /// assert_eq!(name.parts().unwrap(), ["main", "events"]);
 /// assert_eq!(name.render().unwrap(), "main.events");
 /// ```
-#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[derive(AsRaw, FromRaw, DropHandle)]
 #[drop_handle(ffi::duckdb_v2_qname_destroy)]
 pub struct QualifiedName {
     pub(crate) handle: ffi::duckdb_v2_qname_handle,
@@ -49,12 +50,14 @@ impl TryFrom<&str> for QualifiedName {
 }
 
 impl QualifiedName {
-    /// Parse a qualified name using DuckDB's SQL identifier rules.
+    /// Parse dot-separated parts; double-quoted parts support dots and doubled quotes, unlike unquoted parts.
+    /// Spaces/keywords need no quotes; malformed quoting, zero/empty parts, or over three parts return errors.
     pub fn from_sql(sql: &str) -> Result<Self> {
         check_api_call!(ffi::duckdb_v2_qname_parse, &sql.into(), RET).map(|handle| QualifiedName { handle })
     }
 
-    /// Create a name from one to three non-empty identifier parts.
+    /// Create a name from identifier parts, outermost first, with the object name last.
+    /// Returns an error for zero parts, more than three parts, or any empty part.
     pub fn from_parts(parts: &[&str]) -> Result<Self> {
         let parts: Vec<ffi::duckdb_v2_str> = parts.iter().map(|s| (*s).into()).collect();
 
@@ -80,19 +83,19 @@ impl QualifiedName {
         check_api_call!(ffi::duckdb_v2_qname_get_part_count, self.handle, RET).map(|count| count as usize)
     }
 
-    /// Copy the identifier parts into named fields, leaving absent qualifiers as `None`.
+    /// Copy parts into positional fields, leaving absent qualifiers as `None`.
+    /// Resolution determines whether a two-part qualifier names a schema or a catalog.
     pub fn get_view(&self) -> Result<QualifiedNameView> {
+        let parts = self.parts()?;
         let mut view = QualifiedNameView {
             catalog: None,
             schema: None,
-            table: None,
+            // DuckDB guarantees at least one part, with the object name last.
+            table: parts[parts.len() - 1].clone(),
         };
 
-        let parts = self.parts()?;
+        let mut iter = parts.iter().rev().skip(1);
 
-        let mut iter = parts.iter().rev();
-
-        view.table = iter.next().cloned();
         view.schema = iter.next().cloned();
         view.catalog = iter.next().cloned();
 
@@ -121,6 +124,15 @@ impl QualifiedName {
     }
 }
 
+impl std::fmt::Debug for QualifiedName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.parts() {
+            Ok(parts) => f.debug_tuple("QualifiedName").field(&parts).finish(),
+            Err(_) => f.debug_struct("QualifiedName").field("handle", &self.handle).finish(),
+        }
+    }
+}
+
 impl PartialEq for QualifiedName {
     fn eq(&self, other: &Self) -> bool {
         check_api_call!(ffi::duckdb_v2_qname_equals, self.handle, other.handle, RET).unwrap()
@@ -131,6 +143,24 @@ impl PartialEq for QualifiedName {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use crate::qualified_name::QualifiedName;
+
+    #[test]
+    fn test_qualified_name_view() -> crate::Result<()> {
+        for parts in [&["table"][..], &["schema", "table"], &["catalog", "schema", "table"]] {
+            let view = QualifiedName::from_parts(parts)?.get_view()?;
+            assert_eq!(view.table, "table");
+            assert_eq!(view.schema.as_deref(), (parts.len() >= 2).then_some("schema"));
+            assert_eq!(view.catalog.as_deref(), (parts.len() == 3).then_some("catalog"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_qualified_name_debug() -> crate::Result<()> {
+        let name = QualifiedName::from_parts(&["main", "items"])?;
+        assert_eq!(format!("{name:?}"), r#"QualifiedName(["main", "items"])"#);
+        Ok(())
+    }
 
     #[test]
     fn test_qualified_name() -> crate::Result<()> {

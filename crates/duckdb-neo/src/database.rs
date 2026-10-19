@@ -19,7 +19,7 @@ pub struct DatabaseHandle {
     pub(crate) handle: ffi::duckdb_v2_instance_handle,
 
     /// The environment kept alive by this database.
-    pub(crate) _env: Arc<Mutex<EnvironmentHandle>>,
+    pub(crate) _env: Arc<EnvironmentHandle>,
 }
 
 // SAFETY: an instance handle may be used and destroyed on any thread.
@@ -113,12 +113,7 @@ impl HasFactory for Instance {
 impl Instance {
     /// Create an empty instance under `environment`, with no database attached yet.
     pub fn new(environment: &Environment) -> Result<Self> {
-        check_api_call!(
-            ffi::duckdb_v2_instance_create,
-            environment.handle.lock().unwrap().handle,
-            RET
-        )
-        .map(|handle| Instance {
+        check_api_call!(ffi::duckdb_v2_instance_create, environment.handle.handle, RET).map(|handle| Instance {
             handle: Arc::new(Mutex::new(DatabaseHandle {
                 handle,
                 _env: environment.handle.clone(),
@@ -136,7 +131,7 @@ impl Instance {
 
         check_api_call!(
             ffi::duckdb_v2_instance_create_with_options,
-            environment.handle.lock().unwrap().handle,
+            environment.handle.handle,
             names.as_ptr(),
             values.as_ptr(),
             options.len() as u64,
@@ -174,7 +169,7 @@ impl Instance {
         options: Option<&AttachOptionsBuilder>,
         make_default: bool,
     ) -> Result<&Self> {
-        let location: String = location.into();
+        let location = location.as_str();
         let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| o.raw());
         let alias_str: Option<ffi::duckdb_v2_str> = alias.map(Into::into);
 
@@ -182,7 +177,7 @@ impl Instance {
             ffi::duckdb_v2_instance_attach,
             self.raw(),
             alias_str.as_ref().map_or(std::ptr::null(), |a| a as *const _),
-            &(&location).into(),
+            &location.into(),
             options,
             make_default
         )?;

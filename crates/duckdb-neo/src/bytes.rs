@@ -7,7 +7,7 @@ use crate::{Result, check_api_call, error::DuckDBError, error::Error, ffi};
 /// alive while the bytes are accessed.
 ///
 /// Only crate code can construct one: outside code sees it as the storage type of
-/// string vectors, but cannot name it or point it at an arbitrary arena.
+/// string vectors, but cannot import it by path or point it at an arbitrary arena.
 ///
 /// ```compile_fail,E0603
 /// let _ = duckdb_neo::bytes::DuckDBBytes::new(&[0; 13], || Ok(std::ptr::dangling_mut()));
@@ -30,7 +30,13 @@ type DuckDBV2BytesPointer = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_1;
 type DuckDBV2BytesInlined = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_2;
 impl DuckDBBytes {
     /// Encode a string in DuckDB's internal byte representation.
-    pub(crate) fn new<F: FnMut() -> Result<ffi::duckdb_v2_arena_handle>>(value: &[u8], mut heap: F) -> Result<Self> {
+    ///
+    /// # Safety
+    /// `heap` must return a valid arena that outlives every use of the returned bytes.
+    pub(crate) unsafe fn new<F: FnOnce() -> Result<ffi::duckdb_v2_arena_handle>>(
+        value: &[u8],
+        heap: F,
+    ) -> Result<Self> {
         let length = u32::try_from(value.len()).map_err(|_| Error {
             code: DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE,
             message: format!(

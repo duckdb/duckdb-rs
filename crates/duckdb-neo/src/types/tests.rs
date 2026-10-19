@@ -349,7 +349,7 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     assert_eq!(optional_null.get::<i32>()?, None);
 
     let integer = i32::logical_type(&conn)?;
-    let type_value = Value::from_logical_type(&conn, &integer)?;
+    let type_value = integer.value(&conn)?;
     assert_eq!(
         type_value.get::<LogicalType>()?.unwrap().type_id(),
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER

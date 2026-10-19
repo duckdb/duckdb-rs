@@ -118,7 +118,9 @@ unsafe impl WritableVectorElement for rust_decimal::Decimal {
             width,
             scale,
         };
-        decimal.check()?;
+        decimal
+            .check()
+            .map_err(|_| Error::invalid_input(format!("{value} does not fit DECIMAL({width}, {scale})")))?;
         match width {
             1..=4 => vector.write_raw(index, decimal.to_primitive::<i16>()),
             5..=9 => vector.write_raw(index, decimal.to_primitive::<i32>()),
@@ -256,10 +258,13 @@ mod tests {
 
             assert!(vector.write(0, Some(dec("1.234"))).is_err());
             let too_big = 10i128.pow(u32::from(width) - 2);
+            let error = vector
+                .write(0, Some(rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
+                .unwrap_err();
             assert!(
-                vector
-                    .write(0, Some(rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
-                    .is_err()
+                error
+                    .message
+                    .contains(&format!("{too_big} does not fit DECIMAL({width}, 2)"))
             );
         }
 

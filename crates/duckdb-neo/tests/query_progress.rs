@@ -6,9 +6,9 @@ use duckdb_neo::{
 
 #[test]
 fn test_owned_progress_snapshots() -> duckdb_neo::Result<()> {
-    let mut connection = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let connection = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
     assert!(QueryProgress::new(&connection)?.is_none());
-    let tracker = QueryProgressTracker::new(&mut connection)?;
+    let tracker = QueryProgressTracker::new(&connection)?;
     assert!(tracker.snapshot()?.is_none());
 
     connection.execute("CREATE TABLE data AS SELECT * FROM range(10000)", Parameters::None)?;
@@ -26,8 +26,8 @@ fn test_owned_progress_snapshots() -> duckdb_neo::Result<()> {
 
 #[test]
 fn test_progress_snapshot_from_other_thread() -> duckdb_neo::Result<()> {
-    let mut connection = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-    let tracker = QueryProgressTracker::new(&mut connection)?;
+    let connection = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let tracker = QueryProgressTracker::new(&connection)?;
 
     connection.execute("CREATE TABLE data AS SELECT * FROM range(10000)", Parameters::None)?;
     let mut result = connection.query("SELECT * FROM data AS a, data AS b", Parameters::None)?;

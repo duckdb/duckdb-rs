@@ -184,8 +184,10 @@ pub struct ColumnDataCollection<'conn> {
 }
 
 impl<'conn> ColumnDataCollection<'conn> {
-    /// Create an empty collection using a [`Connection`](crate::connection::Connection)
-    /// or callback [`Context`](crate::connection::Context)'s buffer manager.
+    /// Create an empty collection using a [`Connection`](crate::connection::Connection),
+    /// [`Context`](crate::connection::Context), or [`Instance`](crate::database::Instance).
+    ///
+    /// DuckDB rejects an empty schema and types containing `ANY`.
     ///
     /// The collection borrows `link`; see the [lifetime notes](Self#lifetime).
     /// `columns` is anything that converts into a [`ColumnParameter`].
@@ -273,6 +275,7 @@ pub struct ColumnDataCollectionScan<'conn> {
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
     /// Reused for every scan call; DuckDB resets it before filling it.
     chunk: DataChunk<'conn>,
+    // State fields must precede the collection so they drop before its storage.
     collection: ColumnDataCollection<'conn>,
 }
 
@@ -367,6 +370,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
 #[derive(Debug)]
 pub struct ColumnDataCollectionAppender<'conn> {
     appender: ColumnDataCollectionAppendStateHandle,
+    // The append state must precede the collection so it drops before its storage.
     collection: ColumnDataCollection<'conn>,
 }
 
@@ -598,7 +602,7 @@ mod test {
                 name: &crate::qualified_name::QualifiedName,
                 handle: crate::replacement_scan::ReplacementHandle<'_>,
             ) -> Result<()> {
-                if name.get_view()?.table == Some("A".into()) {
+                if name.get_view()?.table == "A" {
                     handle.set_reference(ReplacementType::ColumnDataCollection("A"))?;
                 }
 

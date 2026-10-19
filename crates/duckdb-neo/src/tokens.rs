@@ -3,7 +3,7 @@
 use crate::{DropHandle, Result, connection::Connection, enums::TokenType, error::check_api_call, ffi, raw::RawExt};
 
 /// One lexical token from a tokenized SQL statement.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenData {
     /// The token's lexical class.
     pub token_type: TokenType,
@@ -13,24 +13,30 @@ pub struct TokenData {
     pub length: usize,
 }
 
-/// A streaming iterator over the tokens of an SQL string.
+impl TokenData {
+    /// Return this token's text, or `None` if its byte range is invalid for `sql`.
+    pub fn lexeme<'a>(&self, sql: &'a str) -> Option<&'a str> {
+        sql.get(self.start..self.start.checked_add(self.length)?)
+    }
+}
+
+/// An iterator over stored SQL tokens in input order.
 ///
-/// Tokens are produced lazily by [`Iterator::next`], each carrying its
-/// [`TokenType`], byte offset, and length back into the source SQL. The
-/// iterator is created with [`SqlTokenIterator::new`]; tokenizing copies every
-/// token up front, so the iterator borrows neither the SQL text nor the
-/// connection.
+/// [`SqlTokenIterator::new`] tokenizes immediately; the iterator then yields stored
+/// tokens without borrowing the SQL text or connection.
 #[derive(Debug, DropHandle)]
 #[drop_handle(ffi::duckdb_v2_token_iterator_destroy)]
 pub struct SqlTokenIterator {
     handle: ffi::duckdb_v2_token_iterator_handle,
 }
 
+// SAFETY: the handle owns only token data and has no connection or thread affinity.
+unsafe impl Send for SqlTokenIterator {}
+// SAFETY: shared access reads only the immutable unterminated flag; advancing requires &mut self.
+unsafe impl Sync for SqlTokenIterator {}
+
 impl SqlTokenIterator {
-    /// Tokenize `sql`, returning a lazy iterator over its lexical tokens.
-    ///
-    /// The tokenizer consumes the SQL text immediately; tokens are then yielded
-    /// on demand as the iterator is advanced.
+    /// Tokenize `sql` immediately, returning an iterator over the stored tokens.
     pub fn new(conn: &Connection, sql: impl AsRef<str>) -> Result<SqlTokenIterator> {
         check_api_call!(ffi::duckdb_v2_tokenize_sql, conn.raw(), &sql.as_ref().into(), RET)
             .map(|handle| Self { handle })
@@ -78,13 +84,41 @@ impl Iterator for SqlTokenIterator {
     }
 }
 
+impl std::iter::FusedIterator for SqlTokenIterator {}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         enums::TokenType,
         environment::{Environment, StorageLocation},
-        tokens::SqlTokenIterator,
+        tokens::{SqlTokenIterator, TokenData},
     };
+
+    #[test]
+    fn token_data_lexeme() {
+        let token = TokenData {
+            token_type: TokenType::Identifier,
+            start: 7,
+            length: 4,
+        };
+        assert_eq!(token.lexeme("SELECT 🦆"), Some("🦆"));
+        assert_eq!(token.lexeme("SELECT"), None);
+        assert_eq!(token.clone(), token);
+    }
+
+    #[test]
+    fn token_iterator_is_thread_safe_and_fused() -> crate::Result<()> {
+        fn assert_traits<T: Send + Sync + std::iter::FusedIterator>() {}
+        assert_traits::<SqlTokenIterator>();
+
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut tokens = SqlTokenIterator::new(&conn, "SELECT")?;
+        assert_eq!(tokens.next().transpose()?.unwrap().token_type, TokenType::Keyword);
+        assert!(tokens.next().is_none());
+        assert!(tokens.next().is_none());
+        Ok(())
+    }
 
     #[test]
     fn test_tokenizer() -> crate::Result<()> {

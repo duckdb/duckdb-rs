@@ -1,15 +1,14 @@
 //! Bind-time metadata for scalar, aggregate, table, and pragma functions.
 
-use crate::builder_helpers::ArgCount;
+/// Counts of positional fixed, `*args`, named-only, and `**kwargs` arguments, in that order.
+pub use crate::builder_helpers::ArgCount as ArgumentCounts;
+
 use crate::ffi;
 use crate::ffi_str::DuckDBStr;
 use crate::{Result, check_api_call, error::DuckDBError, logical_type::LogicalType, value::Value};
 
-/// The arguments of a scalar or aggregate call site or a `PRAGMA` statement being bound.
-///
-/// Arguments follow signature-slot order: fixed parameters first, followed by
-/// expanded variadic arguments. Constant values are folded only when requested
-/// through [`Self::value`], since folding evaluates the argument and can fail.
+/// Arguments are ordered as positional fixed parameters, `*args`, named-only parameters, then `**kwargs`.
+/// [`Self::value`] folds constant arguments on demand and returns any evaluation errors.
 #[derive(Debug)]
 pub struct BindArguments<'a> {
     pub(crate) handle: &'a ffi::duckdb_v2_function_bind_info_handle,
@@ -29,10 +28,14 @@ pub struct BindArgument {
 impl<'a> BindArguments<'a> {
     /// Return the number of arguments.
     pub fn len(&self) -> Result<usize> {
-        ArgCount::from_func(|pf, pv, nf, nv| {
+        self.counts().map(|counts| counts.total())
+    }
+
+    /// Return the sizes of the four consecutive argument-list parts.
+    pub fn counts(&self) -> Result<ArgumentCounts> {
+        ArgumentCounts::from_func(|pf, pv, nf, nv| {
             check_api_call!(ffi::duckdb_v2_function_bind_get_arg_count, *self.handle, pf, pv, nf, nv)
         })
-        .map(|x| x.total())
     }
 
     /// Return whether the call site has no arguments.
@@ -79,6 +82,7 @@ impl<'a> BindArguments<'a> {
         }
     }
 
+    /// Return the declared parameter name, the caller's name for `**kwargs`, or empty for `*args`.
     pub fn name(&self, index: usize) -> Result<String> {
         let str = check_api_call!(
             ffi::duckdb_v2_function_bind_get_arg_name,
@@ -88,10 +92,12 @@ impl<'a> BindArguments<'a> {
         )
         .map(DuckDBStr::from_raw)?;
 
-        Ok(str.as_str().unwrap().to_string())
+        Ok(str.as_str().unwrap_or_default().to_string())
     }
 
-    pub fn index(&self, name: &String) -> Result<Option<usize>> {
+    /// Find an argument case-insensitively, skipping positional-only parameters.
+    /// Return `Ok(None)` if no argument matches the name.
+    pub fn index(&self, name: &str) -> Result<Option<usize>> {
         let mut index: ffi::idx_t = 0;
         let mut found = false;
         check_api_call!(
@@ -114,5 +120,49 @@ impl<'a> BindArguments<'a> {
                 })
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::*;
+    use crate::{
+        Parameters,
+        connection::Context,
+        environment::{Environment, StorageLocation},
+        pragma_function::{PragmaFunctionBuilder, PragmaQueryCallbacks},
+        signature::{FunctionParameter, FunctionParameterKind, SignatureBuilder},
+    };
+
+    struct CheckCounts;
+
+    impl PragmaQueryCallbacks for CheckCounts {
+        fn query(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<String> {
+            let counts: ArgumentCounts = arguments.counts()?;
+            assert_eq!(counts.positional_fixed, 1);
+            assert_eq!(counts.positional_variadic, 2);
+            assert_eq!(counts.named_fixed, 1);
+            assert_eq!(counts.named_variadic, 1);
+            assert_eq!(counts.total(), arguments.len()?);
+            Ok("SELECT 42::INTEGER".into())
+        }
+    }
+
+    #[test]
+    fn bind_arguments_counts_preserve_all_four_parts() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let signature = SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("fixed"))
+            .param(FunctionParameter::vararg::<i32>("args"))
+            .param(FunctionParameter::new::<i32>("named").kind(FunctionParameterKind::Named))
+            .param(FunctionParameter::new::<i32>("kwargs").kind(FunctionParameterKind::NamedVariadic));
+        PragmaFunctionBuilder::query("check_counts", signature, CheckCounts).register(&conn)?;
+
+        let mut result = conn.query("PRAGMA check_counts(1, 2, 3, named = 4, extra = 5)", Parameters::None)?;
+        let chunk = result.next_chunk()?.expect("expected a result chunk");
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        Ok(())
     }
 }

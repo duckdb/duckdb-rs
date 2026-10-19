@@ -13,6 +13,7 @@ use crate::{
 ffi_enum_redeclaration! {
     /// The severity of a DuckDB log record.
     #[allow(missing_docs)]
+    #[derive(PartialOrd, Ord)]
     pub enum LogLevel <- ffi::DUCKDB_V2_LOG_LEVEL {
     Trace = DUCKDB_V2_LOG_LEVEL_TRACE,
     Debug = DUCKDB_V2_LOG_LEVEL_DEBUG,
@@ -24,6 +25,7 @@ ffi_enum_redeclaration! {
 }
 
 ffi_enum_redeclaration! {
+    #[derive(PartialOrd, Ord)]
     pub enum LogScope <- ffi::DUCKDB_V2_LOG_SCOPE {
         Database = DUCKDB_V2_LOG_SCOPE_DATABASE,
         Connection = DUCKDB_V2_LOG_SCOPE_CONNECTION,
@@ -36,7 +38,7 @@ ffi_enum_redeclaration! {
 pub struct Log;
 
 impl Log {
-    /// Log a message in the context's connection scope, subject to DuckDB's logging configuration.
+    /// Logs in the context's connection scope.
     pub fn log_on_context(ctx: &Context, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_context_log,
@@ -47,7 +49,7 @@ impl Log {
         )
     }
 
-    /// Log a message in the connection scope, subject to DuckDB's logging configuration.
+    /// Logs in connection scope.
     pub fn log_on_connection(conn: &Connection, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_connection_log,
@@ -58,7 +60,7 @@ impl Log {
         )
     }
 
-    /// Log a message in the instance scope, subject to DuckDB's logging configuration.
+    /// Logs in database scope (no connection or query ids).
     pub fn log_on_instance(instance: &Instance, level: LogLevel, message: &str, log_type: &str) -> Result<()> {
         check_api_call!(
             ffi::duckdb_v2_instance_log,
@@ -102,9 +104,6 @@ mod tests {
 
         struct LockProbe(Weak<Mutex<DatabaseHandle>>, Arc<AtomicBool>);
         impl LogSinkCallbacks for LockProbe {
-            fn flush(&self) -> crate::Result<()> {
-                Ok(())
-            }
             fn write(&self, data: LogWriteData, _: LogMetadata<'_>) -> crate::Result<()> {
                 if data.log_type.as_deref() == Some("rs_lock_probe") {
                     let instance = self.0.upgrade().unwrap();

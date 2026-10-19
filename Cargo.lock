@@ -860,7 +860,6 @@ dependencies = [
  "arrow-array",
  "chrono",
  "duckdb-loadable-macros",
- "libc",
  "libduckdb-sys",
  "paste",
  "r2d2",

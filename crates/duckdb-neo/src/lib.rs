@@ -315,7 +315,7 @@ mod tests {
             directory.path().join("test.db").to_str().unwrap().to_owned(),
         ))?;
 
-        assert_eq!(env.get_database_count()?, 2);
+        assert_eq!(env.instance_count()?, 2);
 
         let conn1 = db.connect()?;
         let conn2 = db_2.connect()?;
