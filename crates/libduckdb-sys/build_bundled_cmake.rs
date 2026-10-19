@@ -80,6 +80,11 @@ pub fn main(out_dir: &str) {
     // Mirrors build_bundled_cc.rs; gcc/clang enable exceptions by default.
     if win_target() && is_compiler("msvc") {
         config.cxxflag("/EHsc");
+        // CMake's default `/DWIN32 /D_WINDOWS` is dropped the same way; the TPC-H dbgen
+        // sources need `WIN32` to include <process.h> before their own macros.
+        for flag in ["/DWIN32", "/D_WINDOWS"] {
+            config.cflag(flag).cxxflag(flag);
+        }
     }
 
     // Unity builds (DuckDB's default) combine .cpp files into fewer translation
@@ -247,11 +252,9 @@ fn select_generator(out_dir: &str) -> Generator {
     }
 }
 
-// Suppress warnings. On MSVC also keep CMake's default `/DWIN32 /D_WINDOWS`,
-// which overriding the init flags would drop and DuckDB sources rely on.
 fn init_flags() -> &'static str {
     if win_target() && is_compiler("msvc") {
-        "/DWIN32 /D_WINDOWS /w"
+        "/w"
     } else {
         "-w"
     }
