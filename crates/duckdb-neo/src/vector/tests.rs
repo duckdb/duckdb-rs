@@ -2134,7 +2134,7 @@ fn test_vector_cast() -> crate::Result<()> {
 
 scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
     let vec = input.get_vector_at::<String>(0)?;
-    result.cast_rows(&vec, ctx, CastMode::Normal)?;
+    result.cast_rows(vec, ctx, CastMode::Normal)?;
     Ok(())
 });
 

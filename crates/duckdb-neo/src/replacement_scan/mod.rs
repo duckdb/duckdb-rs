@@ -186,9 +186,8 @@ where
 
     /// Hand `collection` to the scan under `name`, replacing any collection already added under it.
     ///
-    /// The callback claims references with it through [`ReplacementType::ColumnDataCollection`]
-    /// or [`ReplacementType::NamedColumnDataCollection`]. The scan must be registered on the
-    /// connection the collection was created from.
+    /// The callback claims references with it through [`ReplacementType::ColumnDataCollection`].
+    /// The scan must be registered on the connection the collection was created from.
     pub fn collection(mut self, name: impl Into<String>, collection: ColumnDataCollection<'conn>) -> Self {
         self.collections.insert(name.into(), collection);
         self

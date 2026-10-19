@@ -8,7 +8,6 @@
 //! With the `uuid` feature, `uuid::Uuid` can be used anywhere [`UuidValueRaw`]
 //! can, converting to and from the internal representation on the fly.
 
-use super::primitive::DeclareVectorElement;
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
 use crate::vector::VectorElement;
@@ -57,7 +56,7 @@ impl VectorElement for UuidValueRaw {
     where
         Self: 'a;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
