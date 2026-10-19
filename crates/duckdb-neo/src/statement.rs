@@ -359,11 +359,14 @@ impl<'a> PreparedStatement<'a> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    use arrow_array::ffi::FFI_ArrowArray;
+
     use crate::{
         DuckDBType, Parameters,
         column_data_collection::ColumnDataCollection,
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        ffi,
         statement::Statements,
     };
 
@@ -430,9 +433,11 @@ mod tests {
 
         let mut total_len = 0;
         let mut total_batches = 0;
-        while let Some(chunk) = query.next_array()? {
-            assert!(chunk.num_children() == 1);
-            total_len += chunk.len();
+        while let Some(array) = query.next_array()? {
+            // Inspect through arrow-rs, as a caller using its FFI types would.
+            let array = unsafe { std::mem::transmute::<ffi::ArrowArray, FFI_ArrowArray>(array.into_raw()) };
+            assert_eq!(array.num_children(), 1);
+            total_len += array.len();
             total_batches += 1;
         }
 

@@ -112,8 +112,8 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
     // ONLY generate bindings for symbols containing "duckdb" in their name
     // and for the type `idx_t` (each pass emits its own `u64` alias; type
     // aliases are interchangeable, and blocklisting it would cost bindgen
-    // the `Copy` derives on structs that embed it). The Arrow structs come
-    // from src/v1/arrow_c_data.rs for v1 and from arrow-array for v2.
+    // the `Copy` derives on structs that embed it). Use the concrete Arrow
+    // ABI layouts from src/arrow_c_data.rs for both headers.
     let mut builder = bindgen::builder()
         .trust_clang_mangling(false)
         .header(header.clone())

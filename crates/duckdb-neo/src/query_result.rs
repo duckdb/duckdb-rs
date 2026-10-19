@@ -2,14 +2,20 @@
 
 use std::marker::PhantomData;
 
-use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
 use libduckdb_sys::v2::duckdb_v2_str;
 
 use crate::builder_helpers::copy_render_box;
 use crate::error::Error;
 use crate::{
-    DropHandle, Result, arrow::ArrowStream, builder_helpers::ffi_enum_redeclaration, check_api_call,
-    connection::Connection, data_chunk::DataChunk, ffi, schema::Schema, statement::BoundCollections,
+    DropHandle, Result,
+    arrow::{ArrowArray, ArrowSchema, ArrowStream},
+    builder_helpers::ffi_enum_redeclaration,
+    check_api_call,
+    connection::Connection,
+    data_chunk::DataChunk,
+    ffi,
+    schema::Schema,
+    statement::BoundCollections,
 };
 
 /*
@@ -109,15 +115,16 @@ impl ResultItem for DataChunk<'static> {
     }
 }
 
-impl ResultItem for FFI_ArrowArray {
-    type Raw = FFI_ArrowArray;
+impl ResultItem for ArrowArray {
+    type Raw = ffi::ArrowArray;
 
     fn empty_raw() -> Self::Raw {
-        FFI_ArrowArray::empty()
+        ffi::ArrowArray::empty()
     }
 
     fn from_raw(raw: Self::Raw) -> Result<Option<Self>> {
-        Ok((!raw.is_released()).then_some(raw))
+        // SAFETY: DuckDB filled `raw`; a released array means none was ready.
+        Ok(raw.release.is_some().then(|| unsafe { ArrowArray::from_raw(raw) }))
     }
 }
 
@@ -307,7 +314,7 @@ query_result! {
     /// ```
     pub struct ArrowQueryResult;
     prefix: duckdb_v2_arrow_result,
-    item: FFI_ArrowArray,
+    item: ArrowArray,
     step: ArrowResultStep::Array,
     next: next_array,
     fetch: fetch_array,
@@ -355,8 +362,10 @@ impl QueryResult<'_> {
 
 impl<'a> ArrowQueryResult<'a> {
     /// Return the Arrow schema of the result's arrays.
-    pub fn schema(&self) -> Result<FFI_ArrowSchema> {
+    pub fn schema(&self) -> Result<ArrowSchema> {
+        // SAFETY: DuckDB returns an owned schema.
         check_api_call!(ffi::duckdb_v2_arrow_result_get_schema, self.handle, RET)
+            .map(|raw| unsafe { ArrowSchema::from_raw(raw) })
     }
 
     /// Consume the result into a lazy Arrow C Data Interface stream.
@@ -387,7 +396,13 @@ impl<'a> ArrowQueryResult<'a> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use arrow_array::ffi_stream::ArrowArrayStreamReader;
+    use std::mem::transmute;
+
+    use arrow_array::{
+        ffi::FFI_ArrowSchema,
+        ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream},
+    };
+    use libduckdb_sys::v2 as ffi;
 
     use crate::{
         Parameters,
@@ -507,7 +522,8 @@ mod tests {
         drop(result);
 
         let mut result = conn.arrow_query("SELECT * FROM range(10)", Parameters::None, Some(4))?;
-        assert_eq!(result.schema()?.children().collect::<Vec<_>>().len(), 1);
+        let schema = unsafe { transmute::<ffi::ArrowSchema, FFI_ArrowSchema>(result.schema()?.into_raw()) };
+        assert_eq!(schema.children().count(), 1);
 
         let mut lengths = Vec::new();
         loop {
@@ -541,6 +557,8 @@ mod tests {
 
         // SAFETY: the reader is dropped below, before the connection is used again.
         let (stream, _collections) = unsafe { arrow_stream.into_raw() };
+        // Read through arrow-rs, as a caller using its FFI types would.
+        let stream = unsafe { transmute::<ffi::ArrowArrayStream, FFI_ArrowArrayStream>(stream) };
         let mut reader = ArrowArrayStreamReader::try_new(stream).expect("valid Arrow stream");
         let batch = reader.next().expect("one batch").expect("no stream error");
         assert_eq!(batch.num_rows(), 3);
