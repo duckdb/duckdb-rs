@@ -293,7 +293,7 @@ impl File {
     /// Close the underlying file without destroying its handle.
     ///
     /// The handle is still destroyed on drop but cannot be read, written,
-    /// sought, or synchronized after this call.
+    /// or synchronized after this call.
     pub fn close(&self) -> crate::Result<()> {
         check_api_call!(ffi::duckdb_v2_file_close, self.handle)
     }
@@ -681,7 +681,11 @@ mod tests {
         assert!(file.read_at(0, 1).is_err());
         assert!(file.write(b"x").is_err());
         assert!(file.write_at(0, b"x").is_err());
+        // Windows only records the seek position, so it succeeds after close.
+        #[cfg(not(windows))]
         assert!(file.seek(0).is_err());
+        #[cfg(windows)]
+        assert!(file.seek(0).is_ok());
         assert!(file.sync().is_err());
         Ok(())
     }
