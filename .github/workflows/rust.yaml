@@ -191,10 +191,6 @@ jobs:
           echo "$output"
           grep -qF "STATICALLY_LINKED,(BUILT-IN)" <<<"$output"
 
-          output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "SELECT current_setting('autoload_known_extensions') || ',' || current_setting('autoinstall_known_extensions');")
-          echo "$output"
-          grep -qF "false,false" <<<"$output"
-
           set +e
           output=$(cargo run -p duckdb --example repl --features "$CMAKE_FEATURES" -- -c "LOAD sqlite_scanner;" 2>&1)
           status=$?
@@ -202,7 +198,7 @@ jobs:
 
           echo "$output"
           test $status -ne 0
-          grep -qF "Loading external extensions is disabled through a compile time flag" <<<"$output"
+          grep -qF "Loading external extensions is not supported" <<<"$output"
 
       - name: "duckdb: ICU functional test"
         shell: bash

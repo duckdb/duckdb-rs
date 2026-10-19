@@ -121,19 +121,6 @@ pub fn main(out_dir: &str) {
     let disable_jemalloc = env_flag("DUCKDB_DISABLE_JEMALLOC");
     config.define("ENABLE_JEMALLOC", if disable_jemalloc { "OFF" } else { "ON" });
 
-    // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
-    // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` unless
-    // extension loading is compiled out entirely.
-    config
-        .define(
-            "ENABLE_EXTENSION_AUTOLOADING",
-            if disable_extension_load { "0" } else { "1" },
-        )
-        .define(
-            "ENABLE_EXTENSION_AUTOINSTALL",
-            if disable_extension_load { "0" } else { "1" },
-        );
-
     // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
     // CMAKE_OBJECT_PATH_MAX), and since DuckDB 2.0 the unity build includes each
     // source by a path relative to the build directory (`#include "../../.../src/x.cpp"`),
