@@ -210,8 +210,7 @@ impl<'ctx> ArrowExporter<'ctx> {
 
     /// Return the Arrow schema.
     pub fn schema(&self) -> Result<ArrowSchema> {
-        let raw = check_api_call!(ffi::duckdb_v2_arrow_exporter_get_schema, self.handle, RET)?;
-        Ok(ArrowSchema { raw })
+        check_api_call!(ffi::duckdb_v2_arrow_exporter_get_schema, self.handle, RET).map(|raw| ArrowSchema { raw })
     }
 
     /// Take the next completed array, or `None` when none is ready.

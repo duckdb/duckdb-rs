@@ -115,8 +115,9 @@ fn vector_internal_writes_report_non_flat_storage() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
-    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
-    vector.make_constant(42_i32.value(&conn)?, 1)?;
+    let mut vector = chunk
+        .get_vector_at_mut::<i32>(0)?
+        .make_constant(42_i32.value(&conn)?, 1)?;
     assert_eq!(vector.check_row_writable(0).unwrap_err().message, "vector is not flat");
     assert_eq!(
         vector.set_row_validity(0, true).unwrap_err().message,
@@ -358,9 +359,8 @@ scalar_callback!(StructMemberUnionScalar, Union, |input, output, _ctx, _user_dat
 });
 
 scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
-    let mut result = result;
     let val = 42_i32.value(&ctx)?;
-    result.make_constant(val, 10)?;
+    let result = result.make_constant(val, 10)?;
     assert_eq!(unsafe { result.get_view().unwrap().as_slice() }.unwrap(), &[42]);
     Ok(())
 });
@@ -368,7 +368,6 @@ scalar_callback!(ConstantScalar, i32, |_input, result, ctx, _user_data| {
 scalar_callback!(SequenceScalar, i32, |input, result, _ctx, _user_data| {
     let input_len = input.row_count()?;
 
-    let mut result = result;
     result.make_sequence(42, 10, input_len)?;
     Ok(())
 });
@@ -1784,6 +1783,20 @@ fn test_reference_rebuilds_children() -> crate::Result<()> {
 }
 
 #[test]
+fn test_make_sequence_drops_children() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let types = [Vec::<Option<i32>>::logical_type(&conn)?];
+
+    let mut chunk = DataChunk::create(&conn, &types, true)?;
+    let vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+    assert!(vector.children().is_some());
+    let sequence = vector.make_sequence(0, 1, 4)?;
+    assert!(sequence.children().is_none());
+    Ok(())
+}
+
+#[test]
 fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     let env = Environment::new()?;
     let db = env.open(StorageLocation::InMemory)?;
@@ -1795,7 +1808,7 @@ fn test_make_constant_rebuilds_children() -> crate::Result<()> {
     vector.set_size(1)?;
     vector.write(0, Some(vec![Some(9)]))?;
 
-    vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, 3)?;
+    let vector = vector.make_constant(vec![Some(7), Some(8)].value(&conn)?, 3)?;
 
     let items: Vec<_> = vector
         .iter()?
@@ -1818,8 +1831,9 @@ fn test_make_constant_null_value() -> crate::Result<()> {
     let types = [String::logical_type(&conn)?];
 
     let mut chunk = DataChunk::create(&conn, &types, true)?;
-    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
-    vector.make_constant(Value::null(&conn, &types[0])?, 3)?;
+    let vector = chunk
+        .get_vector_at_mut::<String>(0)?
+        .make_constant(Value::null(&conn, &types[0])?, 3)?;
 
     assert_eq!(vector.iter()?.collect::<Vec<_>>(), vec![None; 3]);
     Ok(())
@@ -1834,15 +1848,15 @@ fn test_make_constant_and_sequence_are_not_writable() -> crate::Result<()> {
 
     let mut chunk = DataChunk::create(&conn, &types, true)?;
 
-    let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
-    constant.make_constant(42_i32.value(&conn)?, 2048)?;
+    let mut constant = chunk
+        .get_vector_at_mut::<i32>(0)?
+        .make_constant(42_i32.value(&conn)?, 2048)?;
     assert!(!constant.is_writable());
     assert!(constant.write(5, Some(1)).is_err());
     assert!(constant.write(0, None).is_err());
     assert!(constant.set_size(1).is_err());
 
-    let mut sequence = chunk.get_vector_at_mut::<i64>(1)?;
-    sequence.make_sequence(0, 1, 16)?;
+    let mut sequence = chunk.get_vector_at_mut::<i64>(1)?.make_sequence(0, 1, 16)?;
     assert!(!sequence.is_writable());
     sequence.flatten()?;
     assert!(sequence.write(3, Some(1)).is_err());
@@ -1857,8 +1871,9 @@ fn test_large_constant_selection_stays_in_bounds() -> crate::Result<()> {
     let conn = db.connect()?;
 
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
-    let mut constant = chunk.get_vector_at_mut::<i32>(0)?;
-    constant.make_constant(42_i32.value(&conn)?, 2 * crate::vector::CONSTANT_SELECTION_LEN + 1)?;
+    let constant = chunk
+        .get_vector_at_mut::<i32>(0)?
+        .make_constant(42_i32.value(&conn)?, 2 * crate::vector::CONSTANT_SELECTION_LEN + 1)?;
 
     let selection = constant.get_view().unwrap().selection().unwrap();
     assert_eq!(selection.len(), crate::vector::CONSTANT_SELECTION_LEN);

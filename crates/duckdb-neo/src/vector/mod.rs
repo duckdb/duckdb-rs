@@ -795,14 +795,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.refresh_buffers()
     }
 
-    /// Turn writable output into a constant vector.
+    /// Turn writable output into a constant vector, returning the rebuilt vector.
     ///
     /// `value` must have the vector's logical type. Every logical row contains
     /// `value`, or is `NULL` when `value` is `NULL`.
     ///
-    /// The vector is no longer writable afterwards: a constant holds a single
+    /// The returned vector is not writable: a constant holds a single
     /// slot, so per-row writes would go past its buffer.
-    pub fn make_constant(&mut self, value: Value, count: usize) -> Result<()> {
+    pub fn make_constant(self, value: Value, count: usize) -> Result<Self> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -816,17 +816,17 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, !value.is_null()?)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        *self = Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked();
-        self.len = count;
-        Ok(())
+        let mut vector = Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked();
+        vector.len = count;
+        Ok(vector)
     }
 
-    /// Turn writable output into an arithmetic sequence.
+    /// Turn writable output into an arithmetic sequence, returning the rebuilt vector.
     ///
     /// Produces `count` values following `start + index * increment`. The
     /// sequence uses [`StorageKind::Other`] and must be flattened before typed
-    /// reads. The vector is no longer writable afterwards.
-    pub fn make_sequence(&mut self, start: i64, increment: i64, count: usize) -> Result<()> {
+    /// reads. The returned vector is not writable and has no children.
+    pub fn make_sequence(mut self, start: i64, increment: i64, count: usize) -> Result<Self> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -837,10 +837,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             increment,
             count as u64
         )?;
+        // The sequence replaces the buffer that owned any child vectors.
+        self.children = None;
         self.kind = StorageKind::Other;
         self.len = count;
         self.set_not_writable();
-        self.refresh_buffers()
+        self.refresh_buffers()?;
+        Ok(self)
     }
 }
 

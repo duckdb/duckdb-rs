@@ -315,10 +315,11 @@ impl FFILink for Connection {}
 #[repr(transparent)]
 pub struct Extension(pub(crate) ffi::duckdb_v2_extension_handle);
 
-/// A non-owning DuckDB context supplied for the duration of a callback.
+/// A non-owning DuckDB context supplied for the duration of a callback invocation.
+/// The handle must not outlive the invocation, including when wrapped with [`FromRaw::from_raw`].
 ///
-/// This wrapper does not own the underlying handle and must not outlive the
-/// callback invocation, including when wrapped with [`FromRaw::from_raw`].
+/// Files opened and chunks copied through it may be kept in bind or init data for later callbacks,
+/// but must not outlive the connection, for example by being stored in a `static`.
 #[derive(AsRaw, FromRaw, Debug)]
 pub struct Context {
     pub(crate) handle: ffi::duckdb_v2_context_handle,

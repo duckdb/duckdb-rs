@@ -542,9 +542,8 @@ impl<'a> DataChunkRef<'a> {
 
     /// Deep-copy this chunk into a new, writable chunk owned by `link`'s connection or context.
     ///
-    /// A copy made through a [`Connection`] keeps its database alive. A copy made
-    /// through a [`Context`] must not outlive the database, for example by being
-    /// stored in a `static` or sent to code outside DuckDB.
+    /// A copy made through a [`Connection`] keeps its database alive. A copy made through a [`Context`]
+    /// may be kept in callback state but must not outlive the database, for example in a `static`.
     #[allow(private_bounds)]
     pub fn copy<C: DataChunkLink>(&self, link: &C) -> Result<DataChunk<'static>> {
         link.copy_data_chunk(self)

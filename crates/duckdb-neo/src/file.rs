@@ -79,7 +79,7 @@ pub struct FileSystem<'link> {
 
 impl<'link> FileSystem<'link> {
     /// Borrow the file system of a [`Connection`](crate::connection::Connection), [`Instance`](crate::database::Instance), or [`Context`](crate::connection::Context).
-    /// Connection/instance files keep their owner alive; context files must not outlive the callback's connection.
+    /// Connection/instance files keep their owner alive; context files may outlive the callback but not its connection.
     #[allow(private_bounds)]
     pub fn new<C: FileSystemLink + DatabaseKeepAlive>(link: &'link C) -> Result<Self> {
         let handle = link.get_file_system()?;
@@ -250,7 +250,8 @@ impl<'link> FileBuilder<'link> {
 
 /// An open file owned by the caller.
 ///
-/// Reads and writes advance one shared byte position.
+/// Reads and writes advance one shared byte position. A file opened through a
+/// [`Context`](crate::connection::Context) may outlive the callback but not its connection.
 ///
 /// # Example
 /// ```

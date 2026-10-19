@@ -196,6 +196,9 @@ where
     ///
     /// Returns an error if a collection was not created from `link`: only a
     /// connection can register collections, and only its own.
+    ///
+    /// Register database-wide scans before issuing queries: registering while
+    /// other connections bind is not thread-safe.
     #[allow(private_bounds)]
     pub fn register<C: ReplacementScanBuilderLink + ConnectionOrigin>(self, link: &C) -> Result<()> {
         let origin = link.connection_origin();
