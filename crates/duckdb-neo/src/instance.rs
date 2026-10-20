@@ -48,7 +48,7 @@ struct AttachOptions {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 #[must_use]
 pub struct InstanceBuilder {
     options: Vec<(String, String)>,
@@ -63,6 +63,17 @@ impl InstanceBuilder {
     /// Set an instance startup option as text; later values replace earlier ones.
     pub fn option(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.options.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set instance startup options as text; later values replace earlier ones.
+    pub fn options<K, V>(mut self, options: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.options
+            .extend(options.into_iter().map(|(key, value)| (key.into(), value.into())));
         self
     }
 
@@ -89,31 +100,11 @@ impl InstanceBuilder {
     }
 }
 
-/// An owned location and per-database options accepted by [`Instance::attach`].
-/// Construct it from a [`StorageLocation`] or an [`AttachBuilder`].
-#[derive(Debug)]
-pub struct Attachment {
-    location: StorageLocation,
-    options: Vec<(String, String)>,
-    alias: Option<String>,
-    make_default: bool,
-}
-
-impl From<StorageLocation> for Attachment {
-    fn from(location: StorageLocation) -> Self {
-        Self {
-            location,
-            options: Vec::new(),
-            alias: None,
-            make_default: false,
-        }
-    }
-}
-
 /// Configures one database attachment independently of an instance.
 ///
-/// The current default is preserved unless [`Self::default`] is called.
+/// The current default is preserved unless [`Self::make_default`] is called.
 /// Options are validated when the builder is passed to [`Instance::attach`].
+/// A bare [`StorageLocation`] converts into a builder with no options.
 /// Startup options belong to [`InstanceBuilder`].
 ///
 /// ```
@@ -127,7 +118,7 @@ impl From<StorageLocation> for Attachment {
 /// let attachment = AttachBuilder::new(StorageLocation::InMemory)
 ///     .options([("read_only", "false")])
 ///     .alias("analytics")
-///     .default();
+///     .make_default();
 /// let instance = Instance::new(Environment::new()?)?;
 /// instance.attach(attachment)?;
 /// instance.connect()?.execute("CREATE TABLE example (id INTEGER)", Parameters::None)?;
@@ -135,48 +126,59 @@ impl From<StorageLocation> for Attachment {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use]
 pub struct AttachBuilder {
-    attachment: Attachment,
+    location: StorageLocation,
+    options: Vec<(String, String)>,
+    alias: Option<String>,
+    make_default: bool,
 }
 
 impl AttachBuilder {
     /// Configure an attachment at `location` without changing the default database.
     pub fn new(location: StorageLocation) -> Self {
         Self {
-            attachment: location.into(),
+            location,
+            options: Vec::new(),
+            alias: None,
+            make_default: false,
         }
     }
 
-    /// Add per-database options as text; later values replace earlier ones.
+    /// Set a per-database option as text; later values replace earlier ones.
+    pub fn option(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.options.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set per-database options as text; later values replace earlier ones.
     pub fn options<K, V>(mut self, options: impl IntoIterator<Item = (K, V)>) -> Self
     where
         K: Into<String>,
         V: Into<String>,
     {
-        self.attachment
-            .options
+        self.options
             .extend(options.into_iter().map(|(key, value)| (key.into(), value.into())));
         self
     }
 
     /// Make the attached database the default for new connections only.
-    pub fn default(mut self) -> Self {
-        self.attachment.make_default = true;
+    pub fn make_default(mut self) -> Self {
+        self.make_default = true;
         self
     }
 
     /// Set the attachment's name instead of deriving it from the location.
     pub fn alias(mut self, name: impl Into<String>) -> Self {
-        self.attachment.alias = Some(name.into());
+        self.alias = Some(name.into());
         self
     }
 }
 
-impl From<AttachBuilder> for Attachment {
-    fn from(builder: AttachBuilder) -> Self {
-        builder.attachment
+impl From<StorageLocation> for AttachBuilder {
+    fn from(location: StorageLocation) -> Self {
+        Self::new(location)
     }
 }
 
@@ -247,26 +249,31 @@ impl Instance {
     }
 
     /// Attach a location or configured attachment without changing the default unless requested.
-    pub fn attach(&self, attachment: impl Into<Attachment>) -> Result<&Self> {
+    pub fn attach(&self, attachment: impl Into<AttachBuilder>) -> Result<&Self> {
         let attachment = attachment.into();
-        let options = AttachOptions {
-            handle: check_api_call!(ffi::duckdb_v2_attach_options_create, self.raw(), RET)?,
+        let options = if attachment.options.is_empty() {
+            None
+        } else {
+            let options = AttachOptions {
+                handle: check_api_call!(ffi::duckdb_v2_attach_options_create, self.raw(), RET)?,
+            };
+            for (key, value) in &attachment.options {
+                check_api_call!(
+                    ffi::duckdb_v2_attach_options_set,
+                    options.handle,
+                    &key.into(),
+                    &value.into()
+                )?;
+            }
+            Some(options)
         };
-        for (key, value) in &attachment.options {
-            check_api_call!(
-                ffi::duckdb_v2_attach_options_set,
-                options.handle,
-                &key.into(),
-                &value.into()
-            )?;
-        }
         let alias: Option<ffi::duckdb_v2_str> = attachment.alias.as_ref().map(Into::into);
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
             self.raw(),
             alias.as_ref().map_or(std::ptr::null(), |name| name as *const _),
             &attachment.location.as_str().into(),
-            options.handle,
+            options.as_ref().map_or(std::ptr::null_mut(), |options| options.handle),
             attachment.make_default
         )?;
         Ok(self)
@@ -338,7 +345,7 @@ mod tests {
         let directory = tempfile::tempdir().expect("create temporary database directory");
         let location = StorageLocation::OnDisk(directory.path().join("attach.db").to_str().unwrap().to_owned());
         let instance = Instance::new(&env)?;
-        instance.attach(AttachBuilder::new(location.clone()).alias("ondisk").default())?;
+        instance.attach(AttachBuilder::new(location.clone()).alias("ondisk").make_default())?;
         instance.detach("ondisk")?;
         instance.attach(
             AttachBuilder::new(location)

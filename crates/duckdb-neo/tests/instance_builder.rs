@@ -2,7 +2,7 @@ use duckdb_neo::{
     FromValue, Parameters, Result,
     connection::Connection,
     environment::{Environment, StorageLocation},
-    instance::{AttachBuilder, Attachment, Instance, InstanceBuilder},
+    instance::{AttachBuilder, Instance, InstanceBuilder},
 };
 
 fn current_database(connection: &Connection) -> Result<Option<String>> {
@@ -54,16 +54,23 @@ fn instance_builder_applies_startup_options() -> Result<()> {
     let env = Environment::new()?;
     let builder = InstanceBuilder::new()
         .option("threads", "1")
-        .option("THREADS".to_owned(), "2".to_owned())
+        .options([("THREADS".to_owned(), "2".to_owned())])
         .option("allow_unsigned_extensions", "true");
     assert_eq!(env.instance_count()?, 0);
+    let first = builder.clone().build(&env)?;
     let instance = builder.build(&env)?;
-    assert_eq!(env.instance_count()?, 1);
-    let (threads, _) = instance.config()?.get_value("threads")?;
-    assert_eq!(i64::from_value(&threads)?, Some(2));
-    let (unsigned, _) = instance.config()?.get_value("allow_unsigned_extensions")?;
-    assert_eq!(bool::from_value(&unsigned)?, Some(true));
-    instance.attach(AttachBuilder::new(StorageLocation::InMemory).alias("main2").default())?;
+    assert_eq!(env.instance_count()?, 2);
+    for instance in [&first, &instance] {
+        let (threads, _) = instance.config()?.get_value("threads")?;
+        assert_eq!(i64::from_value(&threads)?, Some(2));
+        let (unsigned, _) = instance.config()?.get_value("allow_unsigned_extensions")?;
+        assert_eq!(bool::from_value(&unsigned)?, Some(true));
+    }
+    instance.attach(
+        AttachBuilder::new(StorageLocation::InMemory)
+            .alias("main2")
+            .make_default(),
+    )?;
     assert_eq!(current_database(&instance.connect()?)?.as_deref(), Some("main2"));
     Ok(())
 }
@@ -73,7 +80,7 @@ fn instance_keeps_owned_and_borrowed_environments_alive() -> Result<()> {
     let env = Environment::new()?;
     let instance = Instance::new(&env)?;
     drop(env);
-    instance.attach(AttachBuilder::new(StorageLocation::InMemory).default())?;
+    instance.attach(AttachBuilder::new(StorageLocation::InMemory).make_default())?;
     let connection = instance.connect()?;
     drop(instance);
     connection.execute("CREATE TABLE example (id INTEGER)", Parameters::None)?;
@@ -116,22 +123,25 @@ fn bare_attachment_does_not_select_default() -> Result<()> {
 #[test]
 fn attachment_builder_is_independent_of_instance() -> Result<()> {
     let builder = AttachBuilder::new(StorageLocation::InMemory)
-        .options([("read_only", "true")])
+        .option("read_only", "true")
         .options(vec![("READ_ONLY".to_owned(), "false".to_owned())])
         .alias("unused")
         .alias("main\"2'; --".to_owned())
-        .default();
-    let attachment: Attachment = builder.into();
+        .make_default();
     let env = Environment::new()?;
     assert_eq!(env.instance_count()?, 0);
-    let instance = Instance::new(&env)?;
-    assert!(std::ptr::eq(instance.attach(attachment)?, &instance));
-    let connection = instance.connect()?;
-    assert_eq!(current_database(&connection)?.as_deref(), Some("main\"2'; --"));
-    connection.execute("CREATE TABLE example (id INTEGER)", Parameters::None)?;
-    drop(connection);
-    instance.detach("main\"2'; --")?;
-    assert!(instance.detach("main\"2'; --").is_err());
+    let first = Instance::new(&env)?;
+    let second = Instance::new(&env)?;
+    assert!(std::ptr::eq(first.attach(builder.clone())?, &first));
+    second.attach(builder)?;
+    for instance in [&first, &second] {
+        let connection = instance.connect()?;
+        assert_eq!(current_database(&connection)?.as_deref(), Some("main\"2'; --"));
+        connection.execute("CREATE TABLE example (id INTEGER)", Parameters::None)?;
+        drop(connection);
+        instance.detach("main\"2'; --")?;
+        assert!(instance.detach("main\"2'; --").is_err());
+    }
     Ok(())
 }
 
@@ -139,9 +149,13 @@ fn attachment_builder_is_independent_of_instance() -> Result<()> {
 fn multiple_attachments_share_instance() -> Result<()> {
     let env = Environment::new()?;
     let instance = Instance::new(&env)?;
-    instance.attach(AttachBuilder::new(StorageLocation::InMemory).alias("main2").default())?;
+    instance.attach(
+        AttachBuilder::new(StorageLocation::InMemory)
+            .alias("main2")
+            .make_default(),
+    )?;
     instance.attach(StorageLocation::InMemory)?;
-    let extra: Attachment = StorageLocation::InMemory.into();
+    let extra: AttachBuilder = StorageLocation::InMemory.into();
     assert!(instance.attach(extra).is_err());
     instance.attach(AttachBuilder::new(StorageLocation::InMemory).alias("extra"))?;
     assert_eq!(env.instance_count()?, 1);
@@ -175,7 +189,7 @@ fn default_only_affects_new_connections() -> Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let connection = instance.connect()?;
     let name = "extra\"'; --";
-    instance.attach(AttachBuilder::new(StorageLocation::InMemory).alias(name).default())?;
+    instance.attach(AttachBuilder::new(StorageLocation::InMemory).alias(name).make_default())?;
     assert_eq!(env.instance_count()?, 1);
     assert_eq!(current_database(&connection)?.as_deref(), Some("memory"));
     assert_eq!(current_database(&instance.connect()?)?.as_deref(), Some(name));
@@ -246,8 +260,8 @@ fn failed_attachment_preserves_instance_and_default() -> Result<()> {
     ] {
         let attachment = AttachBuilder::new(StorageLocation::InMemory)
             .alias("extra")
-            .default()
-            .options([(key, value)]);
+            .make_default()
+            .option(key, value);
         assert!(instance.attach(attachment).is_err());
         assert_eq!(env.instance_count()?, 1);
         assert_eq!(current_database(&instance.connect()?)?.as_deref(), Some("memory"));
@@ -266,7 +280,7 @@ fn failed_attachment_preserves_instance_and_default() -> Result<()> {
 }
 
 #[test]
-fn attachment_file_conflicts_are_per_environment() -> Result<()> {
+fn attachment_file_conflicts_within_environment() -> Result<()> {
     let directory = tempfile::tempdir().unwrap();
     let location = StorageLocation::OnDisk(directory.path().join("data.duckdb").to_str().unwrap().to_owned());
     let env = Environment::new()?;

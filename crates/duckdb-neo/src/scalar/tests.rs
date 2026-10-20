@@ -146,7 +146,7 @@ fn test_scalar_panic() -> crate::Result<()> {
     let env = Environment::new()?;
     // A client-thread panic invalidates the instance, not just the worker transaction.
     let instance = InstanceBuilder::new().option("threads", "1").build(&env)?;
-    instance.attach(AttachBuilder::new(StorageLocation::InMemory).default())?;
+    instance.attach(AttachBuilder::new(StorageLocation::InMemory).make_default())?;
     let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(

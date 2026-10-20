@@ -129,7 +129,7 @@ impl Environment {
     /// For separate startup and attachment configuration, use [`crate::instance::InstanceBuilder`] and [`AttachBuilder`].
     pub fn open(&self, location: StorageLocation) -> Result<Instance> {
         let instance = Instance::new(self)?;
-        instance.attach(AttachBuilder::new(location).default())?;
+        instance.attach(AttachBuilder::new(location).make_default())?;
         Ok(instance)
     }
 }

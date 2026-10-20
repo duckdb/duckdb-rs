@@ -15,7 +15,7 @@ fn connect(extension_directory: &std::path::Path) -> duckdb_neo::Result<Connecti
         .option("autoinstall_known_extensions", "false")
         .option("autoload_known_extensions", "false")
         .build(Environment::new()?)?;
-    instance.attach(AttachBuilder::new(StorageLocation::InMemory).default())?;
+    instance.attach(AttachBuilder::new(StorageLocation::InMemory).make_default())?;
     instance.connect()
 }
 
