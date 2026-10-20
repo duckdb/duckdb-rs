@@ -4,7 +4,10 @@ use crate::{
     DuckDBType, Parameters,
     column_data_collection::ColumnDataCollection,
     connection::Context,
-    copy_function::{CopyFromCardinality, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToFunctionCallbacks},
+    copy_function::{
+        CopyFromCardinality, CopyFromFunctionCallbacks, CopyFunctionBuilder, CopyToFunctionCallbacks, CopyToStatistics,
+        CopyToStatisticsCallbacks,
+    },
     data_chunk::{DataChunk, DataChunkRef},
     environment::{Environment, StorageLocation},
     file::{File, FileBuilder, FileSystem},
@@ -17,9 +20,15 @@ struct RapidCopy {
     batch_size: crate::Result<Option<NonZeroUsize>>,
 }
 
+struct RapidCopyFile {
+    file: File,
+    rows_written: usize,
+    bytes_written: usize,
+}
+
 impl CopyToFunctionCallbacks for RapidCopy {
     type BindData = i32;
-    type InitData = Mutex<File>;
+    type InitData = Mutex<RapidCopyFile>;
     type BatchData = Vec<i32>;
 
     fn bind(&self, _context: &Context, column_info: &super::CopyToBindInfo) -> crate::Result<Self::BindData> {
@@ -42,7 +51,11 @@ impl CopyToFunctionCallbacks for RapidCopy {
 
         let file = FileBuilder::new(&fs, file_path)?.write().create().open()?;
 
-        Ok(Mutex::new(file))
+        Ok(Mutex::new(RapidCopyFile {
+            file,
+            rows_written: 0,
+            bytes_written: 0,
+        }))
     }
 
     fn batch<'ctx>(
@@ -90,16 +103,18 @@ impl CopyToFunctionCallbacks for RapidCopy {
     ) -> crate::Result<()> {
         assert_eq!(batch_data.len(), 10 + 1, "Expected 11 rows in batch data");
 
-        let file = init_data.lock().unwrap();
+        let mut state = init_data.lock().unwrap();
 
         for value in batch_data.drain(..) {
             let buffer = (value.to_string() + ",").into_bytes();
-            let written = file.write(&buffer)?;
+            let written = state.file.write(&buffer)?;
 
             assert_eq!(written, buffer.len(), "Failed to write all bytes to file");
+            state.rows_written += 1;
+            state.bytes_written += written;
         }
 
-        file.sync()?;
+        state.file.sync()?;
 
         Ok(())
     }
@@ -110,8 +125,25 @@ impl CopyToFunctionCallbacks for RapidCopy {
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
     ) -> crate::Result<()> {
-        init_data.lock().unwrap().close()?;
+        init_data.lock().unwrap().file.close()?;
         Ok(())
+    }
+}
+
+impl CopyToStatisticsCallbacks for RapidCopy {
+    // Called after finalize has closed the file, so report what flush counted.
+    fn statistics(
+        &self,
+        _context: &Context,
+        _bind_data: &Self::BindData,
+        init_data: &Self::InitData,
+    ) -> crate::Result<CopyToStatistics> {
+        let state = init_data.lock().unwrap();
+
+        Ok(CopyToStatistics {
+            row_count: Some(state.rows_written),
+            file_size: Some(state.bytes_written),
+        })
     }
 }
 
@@ -130,17 +162,36 @@ pub fn test_copy_function() -> crate::Result<()> {
             batch_size: Ok(NonZeroUsize::new(1)),
         },
     )
+    .with_statistics()
     .register(&conn)
     .expect("Failed to register copy function");
 
-    conn.execute(
-        "COPY (SELECT i FROM range(0, $1) t(i)) TO 'out.txt' (FORMAT rapidcopy, USE_TMP_FILE FALSE)",
-        Parameters::positional(&[&10]),
-    )
-    .expect("Failed to execute COPY query");
+    let mut result = conn
+        .query(
+            "COPY (SELECT i FROM range(0, $1) t(i)) TO 'out.txt' (FORMAT rapidcopy, USE_TMP_FILE FALSE, RETURN_STATS)",
+            Parameters::positional(&[&10]),
+        )
+        .expect("Failed to execute COPY query");
+
+    let mut stats = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        let filenames = chunk.get_vector_at::<String>(0)?;
+        let counts = chunk.get_vector_at::<u64>(1)?;
+        let file_sizes = chunk.get_vector_at::<u64>(2)?;
+        for row in 0..chunk.row_count()? {
+            stats.push((
+                filenames.get(row)?.unwrap().to_string(),
+                *counts.get(row)?.unwrap(),
+                *file_sizes.get(row)?.unwrap(),
+            ));
+        }
+    }
+    drop(result);
 
     let output = fs::read_to_string("out.txt").expect("Failed to read COPY output");
     assert_eq!(output, "0,1,3,4,6,7,9,10,12,13,15,");
+    // The batch callback appends one row to the ten it receives.
+    assert_eq!(stats, [("out.txt".to_string(), 11, output.len() as u64)]);
     fs::remove_file("out.txt").expect("Failed to remove COPY output");
 
     Ok(())
@@ -171,6 +222,34 @@ fn test_copy_batch_size_error() -> crate::Result<()> {
         )
         .unwrap_err();
     assert!(error.message.contains("batch size unavailable"), "{error}");
+    Ok(())
+}
+
+#[test]
+fn test_copy_return_stats_requires_statistics() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    CopyFunctionBuilder::new(
+        "no_statistics",
+        RapidCopy {
+            multiplier: 1.0,
+            batch_size: Ok(None),
+        },
+    )
+    .register(&conn)?;
+
+    let dir = TempDir::new("copy_return_stats_requires_statistics");
+    let error = conn
+        .execute(
+            format!(
+                "COPY (SELECT i FROM range(10) t(i)) TO '{}' (FORMAT no_statistics, RETURN_STATS)",
+                dir.join("out.txt")
+            )
+            .as_str(),
+            Parameters::None,
+        )
+        .unwrap_err();
+    assert!(error.message.contains("RETURN_STATS is not supported"), "{error}");
     Ok(())
 }
 
