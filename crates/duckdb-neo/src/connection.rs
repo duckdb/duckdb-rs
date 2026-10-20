@@ -23,7 +23,6 @@ use crate::{
     connection_options::Config,
     error::{Error, check_api_call},
     ffi,
-    ffi_str::DuckDBStr,
     instance::{Instance, InstanceHandle},
     logical_type::{LogicalType, LogicalTypeID},
     metrics::QueryMetrics,
@@ -266,10 +265,16 @@ impl Connection {
         }
     }
 
+    /// Enable or disable profiling for subsequent queries on this connection.
+    ///
+    /// Profiling collects [`QueryMetrics`] and prints each query's profile. Set
+    /// `enable_profiling` to `no_output` to collect metrics without printing.
     pub fn set_profiling(&self, enabled: bool) -> Result<()> {
         check_api_call!(ffi::duckdb_v2_connection_enable_profiling, self.raw(), enabled)
     }
 
+    /// Snapshot the metrics of this connection's last completed query.
+    /// Returns an error while a query result is still live.
     pub fn query_metrics(&self) -> Result<QueryMetrics> {
         check_api_call!(ffi::duckdb_v2_connection_get_query_metrics, self.raw(), RET)
             .map(|handle| QueryMetrics { handle })
@@ -317,6 +322,8 @@ pub trait FFILink: HasFactory {
         value::create(self.factory()?, input)
     }
 
+    /// Find a type that all `logical_types` can implicitly cast to, as in a SQL list literal.
+    /// Returns an error for an empty slice, `ANY`, or types with no common type.
     fn common_type(&self, logical_types: &[LogicalType]) -> Result<LogicalType> {
         let types = logical_types.iter().map(|x| x.handle).collect::<Vec<_>>();
         check_api_call!(
@@ -389,8 +396,8 @@ mod tests {
         Parameters,
         connection::FFILink,
         environment::{Environment, StorageLocation},
-        logical_type::LogicalTypeID,
-        types::List,
+        error::DuckDBError,
+        logical_type::{LogicalType, LogicalTypeID},
     };
 
     #[test]
@@ -652,6 +659,22 @@ mod tests {
                 .id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT
         );
+
+        let common_text = |types: &[&str]| -> crate::Result<String> {
+            let types = types
+                .iter()
+                .map(|text| LogicalType::from_text(&conn, text))
+                .collect::<crate::Result<Vec<_>>>()?;
+            conn.common_type(&types)?.to_text()
+        };
+        assert_eq!(common_text(&["DECIMAL(4,1)", "DECIMAL(5,4)"])?, "DECIMAL(7,4)");
+        assert_eq!(common_text(&["INTEGER[]", "BIGINT[]"])?, "BIGINT[]");
+        assert_eq!(common_text(&["VARCHAR"])?, "VARCHAR");
+
+        let error = conn.common_type(&[]).unwrap_err();
+        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        let error = common_text(&["INTEGER[]", "INTEGER"]).unwrap_err();
+        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_QUERY_NOT_IMPLEMENTED);
 
         Ok(())
     }

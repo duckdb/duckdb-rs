@@ -32,6 +32,7 @@ const ROWS_PER_BATCH: usize = 100;
 struct KvReader {
     bind_info_calls: Arc<AtomicUsize>,
     claimed_batches: Arc<AtomicUsize>,
+    extra_identifier: Option<(usize, &'static [u64])>,
 }
 
 struct KvFile {
@@ -143,6 +144,9 @@ impl TableGetBindInfoCallbacks for KvReader {
         for (index, (_, field_id)) in bind_data.columns.iter().enumerate() {
             api.set_column_identifier(index, &[], &field_id.value(context)?)?;
         }
+        if let Some((index, path)) = self.extra_identifier {
+            api.set_column_identifier(index, path, &"extra".value(context)?)?;
+        }
         api.set_option("row_count", &(bind_data.rows.len() as i64).value(context)?)
     }
 }
@@ -230,7 +234,10 @@ fn register_kv(conn: &Connection, reader: KvReader) -> Result<()> {
     .with_claim_batch()
     .register(conn)?;
 
-    MultiFileFunctionBuilder::new("read_kv", "KV", "kv", "read_kv_file").register(conn)
+    MultiFileFunctionBuilder::new("read_kv", "read_kv_file")
+        .reader_type("KV")
+        .file_extension("kv")
+        .register(conn)
 }
 
 #[test]
@@ -330,5 +337,53 @@ fn test_multi_file_function_by_name() -> Result<()> {
         .unwrap_err();
     assert!(error.message.contains("No files found"), "{error}");
 
+    Ok(())
+}
+
+#[test]
+fn test_multi_file_function_errors() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+    // Wrapping requires a registered function with a supported file parameter.
+    let error = MultiFileFunctionBuilder::new("read_missing", "no_such_function")
+        .register(&conn)
+        .unwrap_err();
+    assert!(error.message.contains("no_such_function"), "{error}");
+    TableFunctionBuilder::new(
+        "read_kv_count",
+        SignatureBuilder::new().param(FunctionParameter::new::<i32>("count")),
+        KvReader::default(),
+    )
+    .register(&conn)?;
+    let error = MultiFileFunctionBuilder::new("read_kv_counts", "read_kv_count")
+        .register(&conn)
+        .unwrap_err();
+    assert!(error.message.contains("read_kv_count"), "{error}");
+
+    let dir = TempDir::new("multi_file_function_errors");
+    let file = dir.write_kv("first.kv", "a:1,b:2", 0..3, 10, false);
+    // Column identifiers must refer to declared columns and valid nested fields.
+    for (name, extra_identifier, message) in [
+        ("read_kv_column", (2, &[][..]), "result column 2 has not been declared"),
+        ("read_kv_path", (0, &[0][..]), "out of range for a field of type BIGINT"),
+    ] {
+        TableFunctionBuilder::new(
+            &format!("{name}_file"),
+            SignatureBuilder::new().param(FunctionParameter::new::<String>("file")),
+            KvReader {
+                extra_identifier: Some(extra_identifier),
+                ..KvReader::default()
+            },
+        )
+        .with_get_bind_info()
+        .register(&conn)?;
+        MultiFileFunctionBuilder::new(name, format!("{name}_file")).register(&conn)?;
+
+        let error = conn
+            .execute(format!("SELECT * FROM {name}('{file}')").as_str(), Parameters::None)
+            .unwrap_err();
+        assert!(error.message.contains(message), "{error}");
+    }
     Ok(())
 }

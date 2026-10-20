@@ -1,3 +1,6 @@
+//! Multi-file table functions built on registered single-file readers.
+//! The wrapper adds globbing, file lists, Hive partitioning, and `union_by_name`.
+
 use crate::{
     Result,
     error::check_api_call,
@@ -6,6 +9,16 @@ use crate::{
     raw::RawExt,
 };
 
+/// Builds and registers a multi-file table function.
+///
+/// The wrapped single-file function must already be registered. Its only positional
+/// parameter must accept a file as `ANY` (a path or file struct) or `VARCHAR` (a path).
+/// Named parameters are forwarded unchanged. The reader can report file metadata
+/// through [`TableGetBindInfoCallbacks`] and preserve per-file row order across
+/// threads through [`TableClaimBatchCallbacks`].
+///
+/// [`TableGetBindInfoCallbacks`]: crate::table_function::TableGetBindInfoCallbacks
+/// [`TableClaimBatchCallbacks`]: crate::table_function::TableClaimBatchCallbacks
 #[derive(Debug)]
 pub struct MultiFileFunctionBuilder {
     name: String,
@@ -15,6 +28,7 @@ pub struct MultiFileFunctionBuilder {
 }
 
 impl MultiFileFunctionBuilder {
+    /// Create a builder for `name` that wraps the registered table function `function_name`.
     pub fn new(name: impl Into<String>, function_name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -24,11 +38,13 @@ impl MultiFileFunctionBuilder {
         }
     }
 
+    /// Set the reader label used in messages, such as `"Avro"`; defaults to the function name.
     pub fn reader_type(mut self, value: impl Into<String>) -> Self {
         self.reader_type = Some(value.into());
         self
     }
 
+    /// Set the file extension to match when reading a directory, without a leading dot.
     pub fn file_extension(mut self, extension: impl Into<String>) -> Self {
         self.file_extension = Some(extension.into());
         self
@@ -64,6 +80,8 @@ impl MultiFileFunctionBuilder {
         )
     }
 
+    /// Register the multi-file function through a connection or extension, consuming the builder.
+    /// Returns an error if the single-file function is missing or has an unsupported signature.
     #[allow(private_bounds)]
     pub fn register<C: MultiFileFunctionLink>(self, link: &C) -> Result<()> {
         let handle = link.create_multi_file_function_handle()?;

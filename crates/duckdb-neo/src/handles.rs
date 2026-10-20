@@ -4,7 +4,6 @@
 //! Callback-borrowed views and wrappers that retain parent objects stay in
 //! their respective modules.
 
-use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::check_api_call;
 use crate::macro_function::MacroFunctionType;
 use crate::raw::RawExt;
@@ -191,7 +190,7 @@ impl MacroFunctionBuilderLink for Extension {
             macro_type.into(),
             RET
         )
-        .map(|handle| MacroFunctionBuilderHandle(handle))
+        .map(MacroFunctionBuilderHandle)
     }
 
     fn register_macro_function_handle(&self, handle: MacroFunctionBuilderHandle) -> crate::Result<()> {
