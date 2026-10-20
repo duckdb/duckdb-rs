@@ -104,7 +104,6 @@ impl QueryMetrics {
 #[cfg(test)]
 mod tests {
     use crate::connection::SettingScope;
-    use crate::types::ToValue;
     use crate::{
         Parameters,
         environment::{Environment, StorageLocation},

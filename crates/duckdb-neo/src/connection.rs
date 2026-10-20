@@ -316,6 +316,18 @@ pub trait FFILink: HasFactory {
     fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
         value::create(self.factory()?, input)
     }
+
+    fn common_type(&self, logical_types: &[LogicalType]) -> Result<LogicalType> {
+        let types = logical_types.iter().map(|x| x.handle).collect::<Vec<_>>();
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_common_type,
+            self.factory()?.raw(),
+            types.as_ptr(),
+            types.len() as u64,
+            RET
+        )
+        .map(|handle| LogicalType { handle })
+    }
 }
 
 impl FFILink for Connection {}
@@ -372,9 +384,13 @@ impl<T: FFILink + ?Sized> FFILink for &T {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+
     use crate::{
         Parameters,
+        connection::FFILink,
         environment::{Environment, StorageLocation},
+        logical_type::LogicalTypeID,
+        types::List,
     };
 
     #[test]
@@ -608,6 +624,34 @@ mod tests {
         assert!(!interrupt.is_alive());
 
         interrupt.interrupt()?;
+
+        Ok(())
+    }
+
+    use crate::types::DuckDBType;
+
+    #[test]
+    fn test_common_type() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+
+        assert_eq!(
+            conn.common_type(&[i16::logical_type(&conn)?, i32::logical_type(&conn)?])?
+                .id()?,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+        );
+
+        assert!(
+            conn.common_type(&[<Vec<i16>>::logical_type(&conn)?, i32::logical_type(&conn)?])
+                .is_err(),
+        );
+
+        assert_eq!(
+            conn.common_type(&[bool::logical_type(&conn)?, u64::logical_type(&conn)?])?
+                .id()?,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT
+        );
 
         Ok(())
     }
