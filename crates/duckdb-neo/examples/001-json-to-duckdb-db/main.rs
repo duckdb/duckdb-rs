@@ -11,22 +11,29 @@ struct Customer {
     birthday: DateValue,
 }
 
+// Absolute paths so the example runs from any directory.
+const CSV_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/001-json-to-duckdb-db/data/001.csv"
+);
+
 fn main() -> Result<()> {
-    std::fs::remove_file("001-example.db").ok();
+    let db_path = std::env::temp_dir().join("duckdb-neo-001-example.db");
+    std::fs::remove_file(&db_path).ok();
 
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::OnDisk("001-example.db".to_string()));
-    let conn = db?.connect()?;
+    let instance = env.open(StorageLocation::OnDisk(db_path.to_string_lossy().into_owned()));
+    let conn = instance?.connect()?;
 
     conn.execute(
         "CREATE TABLE customers (id INTEGER, first_name VARCHAR, email VARCHAR, birthday DATE);",
         Parameters::None,
     )?;
 
-    let mut csv_data = conn.query(
-        "SELECT id, first_name, email, make_date(birth_year, birth_month, birth_day) FROM 'crates/duckdb-neo/examples/001-json-to-duckdb-db/data/001.csv' WHERE country != $1",
-        Parameters::positional(&[&"CHILE"]),
-    )?;
+    let csv_query = format!(
+        "SELECT id, first_name, email, make_date(birth_year, birth_month, birth_day) FROM '{CSV_PATH}' WHERE country != $1"
+    );
+    let mut csv_data = conn.query(csv_query.as_str(), Parameters::positional(&[&"CHILE"]))?;
 
     let mut customers = vec![];
 

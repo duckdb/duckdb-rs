@@ -16,7 +16,7 @@ const LOG_TYPE: &str = "RsLogSinkTest";
 /// One record seen by [`GlobalSink`].
 #[derive(Debug, Clone, PartialEq)]
 struct Collected {
-    message: Option<String>,
+    message: String,
     level: LogLevel,
     scope: LogScope,
     has_connection_id: bool,
@@ -36,13 +36,13 @@ impl LogSinkCallbacks for GlobalSink {
         Ok(())
     }
 
-    fn write(&self, data: LogWriteData, metadata: LogMetadata<'_>) -> Result<()> {
+    fn write(&self, data: LogWriteData<'_>, metadata: LogMetadata<'_>) -> Result<()> {
         // DuckDB logs records of its own too.
-        if data.log_type.as_deref() != Some(LOG_TYPE) {
+        if data.log_type != LOG_TYPE {
             return Ok(());
         }
         COLLECTED.lock().unwrap().push(Collected {
-            message: data.message,
+            message: data.message.into(),
             level: data.log_level,
             scope: data.log_scope,
             has_connection_id: metadata.connection_id()?.is_some(),
@@ -55,10 +55,10 @@ impl LogSinkCallbacks for GlobalSink {
 #[test]
 fn test_log_sink_writes_to_global() -> Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
-    LogSinkBuilder::new("rs_global_store", GlobalSink).register(&db)?;
+    LogSinkBuilder::new("rs_global_store", GlobalSink).register(&instance)?;
 
     conn.execute("CALL enable_logging()", Parameters::None)?;
     // Sink names are case-insensitive.
@@ -68,28 +68,21 @@ fn test_log_sink_writes_to_global() -> Result<()> {
         Parameters::None,
     )?;
     Log::log_on_connection(&conn, LogLevel::Error, "second", LOG_TYPE)?;
-    Log::log_on_instance(&db, LogLevel::Info, "third", LOG_TYPE)?;
+    Log::log_on_instance(&instance, LogLevel::Info, "third", LOG_TYPE)?;
     conn.execute("SET logging_storage = 'memory'", Parameters::None)?;
 
     let collected = COLLECTED.lock().unwrap().clone();
     let summary = collected
         .iter()
-        .map(|c| {
-            (
-                c.message.as_deref(),
-                c.level.clone(),
-                c.scope.clone(),
-                c.has_connection_id,
-            )
-        })
+        .map(|c| (c.message.as_str(), c.level, c.scope, c.has_connection_id))
         .collect::<Vec<_>>();
     assert_eq!(
         summary,
         [
-            (Some("first"), LogLevel::Warn, LogScope::Connection, true),
-            (Some("second"), LogLevel::Error, LogScope::Connection, true),
+            ("first", LogLevel::Warn, LogScope::Connection, true),
+            ("second", LogLevel::Error, LogScope::Connection, true),
             // Instance records belong to no connection.
-            (Some("third"), LogLevel::Info, LogScope::Database, false),
+            ("third", LogLevel::Info, LogScope::Database, false),
         ]
     );
     assert!(collected.iter().all(|c| c.timestamp > 0));

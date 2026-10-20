@@ -3,7 +3,8 @@
 //! Declare parameters with [`FunctionParameter`] and collect them in a
 //! [`SignatureBuilder`], which is passed to a function builder such as
 //! [`ScalarFunctionBuilder`](crate::scalar::ScalarFunctionBuilder). Its types
-//! and default values are created when the function is registered.
+//! and default values are created when the function is registered. Callbacks
+//! receive arguments in the parameter-kind order described by [`SignatureBuilder::param`].
 //! A [`FunctionDocumentationBuilder`] optionally describes the overload.
 //!
 //! ```
@@ -17,9 +18,9 @@
 //! let env = Environment::new()?;
 //! let conn = env.open(StorageLocation::InMemory)?.connect()?;
 //!
-//! let mut docs = FunctionDocumentationBuilder::new();
-//! docs.description("Scales a value by an optional factor.");
-//! docs.add_example("", "scale(21)");
+//! let docs = FunctionDocumentationBuilder::new()
+//!     .description("Scales a value by an optional factor.")
+//!     .add_example("", "scale(21)");
 //!
 //! let signature = SignatureBuilder::new()
 //!     .param(FunctionParameter::new::<i32>("value"))
@@ -122,6 +123,12 @@ impl FunctionParameter {
         Self::declare(name.into(), ParameterType::Resolved(logical_type), None)
     }
 
+    /// Set the default value while preserving the declared logical type.
+    pub fn default_value(mut self, value: impl ToValue + 'static) -> Self {
+        self.default_value = Some(Box::new(value));
+        self
+    }
+
     /// Set how callers may supply arguments for this parameter.
     pub fn kind(mut self, kind: FunctionParameterKind) -> Self {
         self.kind = kind;
@@ -174,22 +181,23 @@ impl FunctionDocumentationBuilder {
     }
 
     /// Set the description, replacing any previous one.
-    pub fn description(&mut self, description: &str) {
+    pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
+        self
     }
 
     /// Add an example call such as `my_func(42)`, with an optional title (empty for none).
-    ///
     /// Examples are reported in the order they were added.
-    pub fn add_example(&mut self, title: &str, example: &str) {
+    pub fn add_example(mut self, title: impl Into<String>, example: impl Into<String>) -> Self {
         self.examples.push((title.into(), example.into()));
+        self
     }
 
     /// Add a category such as `"string"` or `"aggregate"`.
-    ///
     /// Categories are reported in the order they were added.
-    pub fn add_category(&mut self, category: &str) {
+    pub fn add_category(mut self, category: impl Into<String>) -> Self {
         self.categories.push(category.into());
+        self
     }
 
     fn build(&self, handle: ffi::duckdb_v2_function_docs_handle) -> Result<()> {
@@ -218,11 +226,8 @@ impl FunctionDocumentationBuilder {
     }
 }
 
-/// Declares the signature of a user-defined function.
-///
-/// Parameters with defaults must follow required parameters, and parameter
-/// names must be unique. DuckDB checks these structural rules when the
-/// function is registered.
+/// Declares a signature; DuckDB rejects duplicate names, multiple `*args` or `**kwargs`, and variadic defaults.
+/// Registration also rejects a required standard parameter following a defaulted standard parameter.
 #[derive(Debug, Default)]
 pub struct SignatureBuilder {
     parameters: Vec<FunctionParameter>,
@@ -236,7 +241,8 @@ impl SignatureBuilder {
         Self::default()
     }
 
-    /// Append a parameter after the ones added so far.
+    /// Add a parameter; DuckDB orders kinds as positional-only, standard, `*args`, named-only, then `**kwargs`.
+    /// Insertion order is preserved within each kind; callbacks receive arguments in this order.
     pub fn param(mut self, parameter: FunctionParameter) -> Self {
         self.parameters.push(parameter);
         self
@@ -330,8 +336,8 @@ mod test {
     #[test]
     fn test_signature_types() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -359,8 +365,8 @@ mod test {
     #[test]
     fn test_signature_default_value() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -379,8 +385,8 @@ mod test {
     #[test]
     fn test_signature_named_parameter() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -400,8 +406,8 @@ mod test {
     #[test]
     fn test_signature_vararg() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let sig = SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("param1"))
@@ -428,6 +434,20 @@ mod test {
         }
         Ok(())
     });
+
+    #[test]
+    fn test_signature_explicit_type_default_value() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let signature = SignatureBuilder::new()
+            .param(FunctionParameter::with_type("x", LogicalType::from_text(&conn, "INTEGER")?).default_value(42_i64))
+            .return_type(i32::logical_type(&conn)?);
+        ScalarFunctionBuilder::new("typed_default", signature, IdentityScalar).register(&conn)?;
+
+        assert_eq!(query_u64(&conn, "SELECT typed_default()::UBIGINT")?, Some(42));
+        assert_eq!(query_u64(&conn, "SELECT typed_default(7)::UBIGINT")?, Some(7));
+        Ok(())
+    }
 
     fn register(conn: &Connection, name: &str, docs: Option<FunctionDocumentationBuilder>) -> Result<()> {
         let mut signature = SignatureBuilder::new()
@@ -457,12 +477,12 @@ mod test {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
 
-        let mut docs = FunctionDocumentationBuilder::new();
-        docs.description("Returns its input.");
-        docs.add_example("Basic", "documented(42)");
-        docs.add_example("", "documented(NULL)");
-        docs.add_category("numeric");
-        docs.add_category("testing");
+        let docs = FunctionDocumentationBuilder::new()
+            .description("Returns its input.".to_owned())
+            .add_example("Basic", "documented(42)".to_owned())
+            .add_example("", "documented(NULL)")
+            .add_category("numeric".to_owned())
+            .add_category("testing");
         register(&conn, "documented", Some(docs))?;
 
         assert_eq!(
@@ -481,8 +501,7 @@ mod test {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
 
-        let mut docs = FunctionDocumentationBuilder::new();
-        docs.add_category("testing");
+        let docs = FunctionDocumentationBuilder::new().add_category("testing");
         register(&conn, "categorized", Some(docs))?;
         register(&conn, "undocumented", None)?;
 

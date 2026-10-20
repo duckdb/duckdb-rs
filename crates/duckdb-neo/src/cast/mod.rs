@@ -3,12 +3,12 @@
 use crate::ffi;
 
 use crate::{
-    Result,
+    Error, Result,
     builder_helpers::{OpaqueHandle, ffi_enum_redeclaration, get_user_data, handle_unwind},
     check_api_call,
     connection::Context,
     handles::{CastFunctionHandle, CastFunctionLink},
-    logical_type::LogicalType,
+    logical_type::{LogicalType, LogicalTypeID},
     raw::{FromRaw, RawExt},
     vector::{Access, Vector, VectorElement},
 };
@@ -57,11 +57,26 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
     );
 }
 
-/// Builds and registers a user-defined cast.
-///
-/// A negative `implicit_cast_cost` makes the cast explicit-only. Non-negative
-/// costs allow implicit selection, with lower costs preferred when DuckDB
-/// resolves alternatives.
+fn validate_cast_type<T: VectorElement>(logical_type: &LogicalType) -> Result<()> {
+    // Nested layouts need child vectors, which are only available during execution.
+    if !matches!(
+        T::TYPE_ID,
+        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST
+            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
+            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP
+            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
+    ) && !T::validate(logical_type, None)?
+    {
+        return Err(Error::invalid_input(format!(
+            "Cast vector type {:?} does not match {:?}",
+            T::TYPE_ID,
+            logical_type.id()?
+        )));
+    }
+    Ok(())
+}
+
+/// Builds and registers a user-defined cast, explicit-only by default.
 #[derive(Debug)]
 pub struct CastFunctionBuilder<T: CastFunctionCallbacks> {
     source_type: LogicalType,
@@ -71,17 +86,27 @@ pub struct CastFunctionBuilder<T: CastFunctionCallbacks> {
 }
 
 impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
-    /// Create a cast builder for a source and target type.
-    pub fn new(source_type: LogicalType, target_type: LogicalType, implicit_cast_cost: i64, implementation: T) -> Self {
+    /// Create an explicit-only cast builder for a source and target type.
+    pub fn new(source_type: LogicalType, target_type: LogicalType, implementation: T) -> Self {
         Self {
             source_type,
             target_type,
-            implicit_cast_cost,
+            implicit_cast_cost: -1,
             user_data: OpaqueHandle::new(implementation),
         }
     }
 
+    /// Set the implicit conversion cost; negative costs keep the cast explicit-only.
+    /// Lower non-negative costs are preferred during implicit cast selection.
+    pub fn implicit_cast_cost(mut self, cost: i64) -> Self {
+        self.implicit_cast_cost = cost;
+        self
+    }
+
     fn build(&self, handle: CastFunctionHandle) -> Result<CastFunctionHandle> {
+        validate_cast_type::<T::InputType>(&self.source_type)?;
+        validate_cast_type::<T::OutputType>(&self.target_type)?;
+
         check_api_call!(
             ffi::duckdb_v2_cast_function_set_source_type,
             handle.raw(),
@@ -115,7 +140,7 @@ impl<T: CastFunctionCallbacks> CastFunctionBuilder<T> {
         Ok(handle)
     }
 
-    /// Register through a connection or extension, consuming the builder.
+    /// Register through a connection, consuming the builder.
     #[allow(private_bounds)]
     pub fn register<C: CastFunctionLink>(self, link: &C) -> Result<()> {
         let handle = link.create_cast_function_handle()?;
@@ -195,20 +220,68 @@ mod tests {
     }
 
     #[test]
+    fn test_cast_rejects_mismatched_types() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let error = CastFunctionBuilder::new(
+            i32::logical_type(&conn)?,
+            f32::logical_type(&conn)?,
+            CastToFloat { offset: 0 },
+        )
+        .register(&conn)
+        .unwrap_err();
+        assert!(error.message.contains("Cast vector type"), "{error}");
+        let error = CastFunctionBuilder::new(
+            String::logical_type(&conn)?,
+            i32::logical_type(&conn)?,
+            CastToFloat { offset: 0 },
+        )
+        .register(&conn)
+        .unwrap_err();
+        assert!(error.message.contains("Cast vector type"), "{error}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_cast_implicit_cost() -> crate::Result<()> {
+        let env = Environment::new()?;
+        for cost in [None, Some(0)] {
+            let conn = env.open(StorageLocation::InMemory)?.connect()?;
+            custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?).register(&conn)?;
+            let builder = CastFunctionBuilder::new(
+                String::logical_type(&conn)?,
+                f32::logical_type(&conn)?.with_alias(&conn, "TEMPERATURE")?,
+                CastToFloat { offset: 0 },
+            );
+            let builder = match cost {
+                Some(cost) => builder.implicit_cast_cost(cost),
+                None => builder,
+            };
+            builder.register(&conn)?;
+            let mut result = conn.query(
+                "SELECT can_cast_implicitly(NULL::VARCHAR, NULL::TEMPERATURE)",
+                Parameters::None,
+            )?;
+            let chunk = result.next_chunk()?.expect("implicit cast query returns one row");
+            assert_eq!(chunk.get_vector_at::<bool>(0)?.get(0)?, Some(&cost.is_some()));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_cast_function() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
-        let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?)?;
+        let custom_type = custom_type::CustomType::new("TEMPERATURE", f32::logical_type(&conn)?);
         custom_type.register(&conn)?;
         let logical_type = f32::logical_type(&conn)?;
-        let temperature_type = logical_type.to_alias(&conn, "TEMPERATURE")?;
+        let temperature_type = logical_type.with_alias(&conn, "TEMPERATURE")?;
 
         CastFunctionBuilder::new(
             String::logical_type(&conn)?,
             temperature_type,
-            0,
             CastToFloat { offset: 10 },
         )
         .register(&conn)?;

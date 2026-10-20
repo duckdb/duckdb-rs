@@ -60,7 +60,8 @@ macro_rules! decimal_storage {
                 }
             }
 
-            impl VectorElement for $name {
+            // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
+            unsafe impl VectorElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
                 type Internal = $type;
@@ -68,7 +69,7 @@ macro_rules! decimal_storage {
                 type Ref<'a> = &'a $name;
 
                 fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
-                    if other.type_id() != Self::TYPE_ID {
+                    if other.id()? != Self::TYPE_ID {
                         return Ok(false);
                     }
                     Ok(matches!(DecimalSignature::from_logical_type(other)?.width, $min..=$max))
@@ -83,7 +84,8 @@ macro_rules! decimal_storage {
                 }
             }
 
-            impl WritableVectorElement for $name {
+            // SAFETY: the vector stores `$type`, the value's own storage type.
+            unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
                 unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -144,7 +146,7 @@ decimal_widths! {
 /// assert_eq!(price.0, 12_345i32);
 /// ```
 ///
-/// A scale above the width does not compile:
+/// `Decimal::new` with a scale above the width does not compile:
 ///
 /// ```compile_fail
 /// let _ = duckdb_neo::types::Decimal::<2, 3>::new(1);
@@ -230,7 +232,8 @@ where
     }
 }
 
-impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: `validate` accepts only `DECIMAL(WIDTH, SCALE)`, which DuckDB stores as `Internal`.
+unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
@@ -241,7 +244,7 @@ where
     type Ref<'a> = &'a Self;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
         Ok(DecimalSignature::from_logical_type(other)?
@@ -260,7 +263,8 @@ where
     }
 }
 
-impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
+// SAFETY: the vector stores `Internal`, the value's own storage type.
+unsafe impl<const WIDTH: u8, const SCALE: u8> WritableVectorElement for Decimal<WIDTH, SCALE>
 where
     Width<WIDTH>: DecimalWidth,
 {
@@ -347,7 +351,7 @@ impl DecimalSignature {
 
     /// Read the width and scale of a `DECIMAL` logical type.
     pub fn from_logical_type(logical_type: &LogicalType) -> Result<Self> {
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL {
             return Err(Error::api_error("logical type is not DECIMAL"));
         }
         let param = |index| -> Result<u8> {
@@ -364,7 +368,7 @@ impl DecimalSignature {
     }
 
     /// Pair a scaled integer with this width and scale.
-    pub fn to_value<T: DecimalContainer>(&self, value: T) -> DecimalValue {
+    pub fn with_payload<T: DecimalContainer>(&self, value: T) -> DecimalValue {
         DecimalValue::new(value, self.width, self.scale)
     }
 }
@@ -393,7 +397,7 @@ impl FromValue for DecimalValue {
             &mut scale
         )
         .map(|raw| Self {
-            value: (i128::from(raw.upper) << 64) | i128::from(raw.lower),
+            value: crate::value::from_hugeint(raw),
             width,
             scale,
         })
@@ -411,8 +415,8 @@ mod tests {
     #[test]
     fn decimal_storage_matches_width() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query(
             "SELECT -1.5::DECIMAL(4, 1), 12.345::DECIMAL(9, 3), 1.5::DECIMAL(18, 1), 1.5::DECIMAL(38, 1), 1::INTEGER",
@@ -455,8 +459,8 @@ mod tests {
     #[test]
     fn typed_decimal_round_trips() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let decimal = Decimal::<18, 3>::new(-123_456);
         let value = decimal.value(&conn)?;
@@ -497,8 +501,8 @@ mod tests {
     #[test]
     fn decimal_value_is_checked() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         assert!(DecimalValue::new(9_999i16, 4, 0).value(&conn).is_ok());
         assert!(DecimalValue::new(-9_999i16, 4, 4).value(&conn).is_ok());

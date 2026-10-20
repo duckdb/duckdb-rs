@@ -2,12 +2,12 @@
 
 use std::marker::PhantomData;
 
-use libduckdb_sys::v2::duckdb_v2_str;
+use crate::ffi::duckdb_v2_str;
 
 use crate::builder_helpers::copy_render_box;
 use crate::error::Error;
 use crate::{
-    DropHandle, Result,
+    Result,
     arrow::{ArrowArray, ArrowSchema, ArrowStream},
     builder_helpers::ffi_enum_redeclaration,
     check_api_call,
@@ -36,6 +36,7 @@ duckdb_v2_arrow_result_wait
 */
 
 ffi_enum_redeclaration! {
+    /// SQL statement classification; expanding statements report `Multi` or `Pragma`.
     #[allow(missing_docs)]
     pub enum StatementType <- ffi::DUCKDB_V2_STATEMENT_TYPE {
             Invalid = DUCKDB_V2_STATEMENT_TYPE_INVALID,
@@ -72,6 +73,7 @@ ffi_enum_redeclaration! {
             Connect = DUCKDB_V2_STATEMENT_TYPE_CONNECT,
             Disconnect = DUCKDB_V2_STATEMENT_TYPE_DISCONNECT,
             ExternalResource = DUCKDB_V2_STATEMENT_TYPE_EXTERNAL_RESOURCE,
+            Passthrough = DUCKDB_V2_STATEMENT_TYPE_PASSTHROUGH,
     }
 }
 
@@ -160,6 +162,8 @@ macro_rules! query_result {
 
             $(#[$meta])*
             ///
+            /// Dropping an unfinished result aborts the statement and rolls back autocommit writes.
+            ///
             /// A result is not `Send`: stepping it runs the query on the connection, which
             /// must not race with the connection's `&self` methods on another thread.
             ///
@@ -169,13 +173,29 @@ macro_rules! query_result {
                 "assert_send::<duckdb_neo::query_result::", stringify!($name), "<'static>>();\n",
                 "```",
             )]
-            #[derive(Debug, DropHandle)]
-            #[drop_handle(ffi::[<$prefix _destroy>])]
+            #[doc = concat!(
+                "```compile_fail,unused_must_use\n",
+                "#![deny(unused_must_use)]\n",
+                "fn discard(result: duckdb_neo::Result<duckdb_neo::query_result::", stringify!($name), "<'_>>) -> duckdb_neo::Result<()> {\n",
+                "    result?;\n",
+                "    Ok(())\n",
+                "}\n",
+                "```",
+            )]
+            #[must_use = "a result does nothing until stepped, fetched or drained; dropping it aborts the statement"]
+            #[derive(Debug)]
             pub struct $name<'a> {
                 pub(crate) handle: ffi::[<$prefix _handle>],
                 // DuckDB reads these while the result executes.
                 _collections: BoundCollections<'a>,
                 phantom: PhantomData<&'a mut Connection>,
+            }
+
+            impl Drop for $name<'_> {
+                fn drop(&mut self) {
+                    // SAFETY: the result owns the handle, including during unwinding.
+                    let _ = unsafe { ffi::[<$prefix _destroy>](&mut self.handle) };
+                }
             }
 
             impl<'a> $name<'a> {
@@ -235,6 +255,9 @@ macro_rules! query_result {
                 }
 
                 /// Return whether the result contains rows, changed rows, or no output.
+                ///
+                /// Expanding statements can return `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED`
+                /// until stepping resolves their output metadata.
                 pub fn result_type(&self) -> Result<ResultType> {
                     check_api_call!(ffi::[<$prefix _get_result_type>], self.handle, RET)?.try_into()
                 }
@@ -261,8 +284,8 @@ query_result! {
     ///
     /// # fn main() -> duckdb_neo::Result<()> {
     /// let env = Environment::new()?;
-    /// let db = env.open(StorageLocation::InMemory)?;
-    /// let conn = db.connect()?;
+    /// let instance = env.open(StorageLocation::InMemory)?;
+    /// let conn = instance.connect()?;
     /// let mut statements = conn.parse("SELECT * FROM range(3)")?;
     /// let statement = statements.next().expect("expected a statement")?;
     ///
@@ -302,8 +325,8 @@ query_result! {
     ///
     /// # fn main() -> duckdb_neo::Result<()> {
     /// let env = Environment::new()?;
-    /// let db = env.open(StorageLocation::InMemory)?;
-    /// let conn = db.connect()?;
+    /// let instance = env.open(StorageLocation::InMemory)?;
+    /// let conn = instance.connect()?;
     ///
     /// let mut result = conn.arrow_query("SELECT * FROM range(3)", Parameters::None, None)?;
     /// while let Some(array) = result.next_array()? {
@@ -323,6 +346,9 @@ query_result! {
 
 impl QueryResult<'_> {
     /// Return an owned copy of the result schema.
+    ///
+    /// Expanding statements return `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED`
+    /// until stepping binds their row-producing statement.
     pub fn schema(&self) -> Result<Schema> {
         check_api_call!(ffi::duckdb_v2_result_get_schema, self.handle, RET).map(|handle| Schema { handle })
     }
@@ -331,8 +357,22 @@ impl QueryResult<'_> {
     ///
     /// Zero selects sizing defaults; `render_mode` is `0` for rows or `1` for
     /// columns, and `limit` describes a limit already applied by the caller.
+    ///
+    /// The result is consumed, also when rendering fails:
+    ///
+    /// ```compile_fail,E0382
+    /// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let instance = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// # let conn = instance.connect()?;
+    /// let mut result = conn.query("SELECT 42", Parameters::None)?;
+    /// let _ = result.to_text(0, 0, 0, 2, 0);
+    /// result.schema()?; // error: `result` was moved by `to_text`
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn to_text(
-        &mut self,
+        mut self,
         max_rows: usize,
         max_width: usize,
         max_col_width: usize,
@@ -343,6 +383,7 @@ impl QueryResult<'_> {
 
         let mut string = String::new();
 
+        // DuckDB nulls the handle once it adopts the result, so `Drop` is then a no-op.
         check_api_call!(
             ffi::duckdb_v2_result_render_box,
             &mut self.handle,
@@ -362,6 +403,9 @@ impl QueryResult<'_> {
 
 impl<'a> ArrowQueryResult<'a> {
     /// Return the Arrow schema of the result's arrays.
+    ///
+    /// Expanding statements return `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED`
+    /// until stepping binds their row-producing statement.
     pub fn schema(&self) -> Result<ArrowSchema> {
         // SAFETY: DuckDB returns an owned schema.
         check_api_call!(ffi::duckdb_v2_arrow_result_get_schema, self.handle, RET)
@@ -378,8 +422,8 @@ impl<'a> ArrowQueryResult<'a> {
     /// ```compile_fail
     /// # use duckdb_neo::{Parameters, environment::{Environment, StorageLocation}};
     /// # fn main() -> duckdb_neo::Result<()> {
-    /// # let db = Environment::new()?.open(StorageLocation::InMemory)?;
-    /// let mut conn = db.connect()?;
+    /// # let instance = Environment::new()?.open(StorageLocation::InMemory)?;
+    /// let mut conn = instance.connect()?;
     /// let stream = conn.arrow_query("SELECT 42", Parameters::None, None)?.to_arrow_stream()?;
     /// conn.set_option("threads", "1", None)?; // error: `conn` is still borrowed by `stream`
     /// drop(stream);
@@ -407,14 +451,24 @@ mod tests {
     use crate::{
         Parameters,
         environment::{Environment, StorageLocation},
+        error::DuckDBError,
         query_result::{ArrowResultStep, ResultType, StatementType},
     };
 
     #[test]
+    fn test_passthrough_statement_type() -> crate::Result<()> {
+        assert_eq!(
+            StatementType::try_from(crate::ffi::DUCKDB_V2_STATEMENT_TYPE::DUCKDB_V2_STATEMENT_TYPE_PASSTHROUGH)?,
+            StatementType::Passthrough
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_query_result_helpers() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = conn.parse(
             "
@@ -444,10 +498,26 @@ mod tests {
     }
 
     #[test]
+    fn test_query_result_drop_during_unwind() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+        let result = conn.query("SELECT * FROM range(5000)", Parameters::None)?;
+
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _result = result;
+            panic!("unwind with an unfinished result");
+        }));
+        assert!(unwound.is_err());
+        assert_eq!(conn.execute("SELECT 1", Parameters::None)?, 0);
+        Ok(())
+    }
+
+    #[test]
     fn test_chunks_outlive_result() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query("SELECT * FROM range(5000)", Parameters::None)?;
         let first = result.next_chunk()?.unwrap();
@@ -468,8 +538,8 @@ mod tests {
     #[test]
     fn test_query_to_textbox() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements = conn.parse(
             "
@@ -487,7 +557,7 @@ mod tests {
         assert_eq!(result, 3);
 
         let stmt = statements.next().unwrap()?;
-        let mut result = conn.query(stmt, Parameters::None)?;
+        let result = conn.query(stmt, Parameters::None)?;
 
         let text = result.to_text(10, 80, 20, 0, 0)?;
         println!("{}", text);
@@ -509,10 +579,25 @@ mod tests {
     }
 
     #[test]
+    fn test_query_to_text_error_releases_connection() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+
+        let result = conn.query("SELECT * FROM range(3)", Parameters::None)?;
+        let error = result.to_text(0, 0, 0, 2, 0).unwrap_err();
+        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+
+        let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        Ok(())
+    }
+
+    #[test]
     fn test_arrow_query_result() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         conn.execute("CREATE TABLE test (id INTEGER)", Parameters::None)?;
         let mut result = conn.arrow_query("INSERT INTO test FROM range(3)", Parameters::None, None)?;
@@ -549,8 +634,8 @@ mod tests {
     #[test]
     fn test_arrow_query_to_arrow_stream() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let result = conn.arrow_query("SELECT * FROM range(3)", Parameters::None, Some(1024))?;
         let arrow_stream = result.to_arrow_stream()?;

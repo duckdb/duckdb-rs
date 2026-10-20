@@ -13,7 +13,7 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
-/// Reads a `STRUCT` vector as named fields.
+/// Reads `STRUCT` and `TUPLE` vectors as child fields.
 #[derive(Debug)]
 pub struct Struct;
 
@@ -107,8 +107,8 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
                 return Err(Error::invalid_input(format!(
                     "StructValue field '{}' has type {}, its schema has {}",
                     name,
-                    actual.to_string()?,
-                    expected.to_string()?,
+                    actual.to_text()?,
+                    expected.to_text()?,
                 )));
             }
         }
@@ -126,18 +126,26 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
     }
 }
 
-impl VectorElement for Struct {
+// SAFETY: fields are read only through the child vectors, with their own checks.
+unsafe impl VectorElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT;
     type Ref<'a> = StructRow<'a>;
 
     type Internal = Struct;
+
+    fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
+        Ok(matches!(
+            other.id()?,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
+        ))
+    }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
         StructRow {
-            children: vector.children().expect("validated nested vector has children"),
+            children: vector.children(),
             logical_type: vector.logical_type(),
             logical,
         }
@@ -145,6 +153,8 @@ impl VectorElement for Struct {
 }
 
 trait StructFieldWrite {
+    fn validate(&self, child: &Vector<'_, Unknown>) -> Result<()>;
+
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
 }
 
@@ -158,6 +168,10 @@ where
     T: WritableVectorElement + 'a,
     T::Write<'a>: 'a,
 {
+    fn validate(&self, child: &Vector<'_, Unknown>) -> Result<()> {
+        child.validate_as::<T>()
+    }
+
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()> {
         child.write_as::<T>(index, self.value)
     }
@@ -189,7 +203,8 @@ impl<'a> StructWrite<'a> {
     }
 }
 
-impl WritableVectorElement for Struct {
+// SAFETY: fields are written only through the child vectors' own `write`.
+unsafe impl WritableVectorElement for Struct {
     type Write<'a> = StructWrite<'a>;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -205,33 +220,45 @@ impl WritableVectorElement for Struct {
             )));
         }
 
-        vector.set_row_validity(index, true)?;
-        let vector_len = vector.len();
-        let children = vector
-            .children_collection_mut()
-            .expect("validated nested vector has children");
-
-        for (i, field) in value.fields.into_iter().enumerate() {
-            let child = children.cached_mut::<Unknown>(i)?;
-            if child.len() != vector_len {
-                child.set_size(vector_len)?;
+        vector.check_row_writable(index)?;
+        if let Some(children) = vector.children() {
+            for (i, field) in value.fields.iter().enumerate() {
+                field.validate(children.get_untyped_vector_at(i)?)?;
             }
-            field.write(child, index)?;
         }
-        Ok(())
+
+        let vector_len = vector.len();
+        if let Some(children) = vector.children_collection_mut() {
+            for (i, field) in value.fields.into_iter().enumerate() {
+                let child = children.cached_mut::<Unknown>(i)?;
+                if child.len() != vector_len {
+                    child.set_size(vector_len)?;
+                }
+                field.write(child, index)?;
+            }
+        }
+        vector.set_row_validity(index, true)
     }
 }
 
 /// A borrowed struct row that resolves named fields to child vectors.
 #[derive(Debug)]
 pub struct StructRow<'a> {
-    children: &'a VectorCollection,
+    children: Option<&'a VectorCollection>,
     logical_type: &'a LogicalType,
     logical: usize,
 }
 
 impl<'a> StructRow<'a> {
-    // TODO: fn get_index(idx: usize)
+    /// Return a field by its zero-based position after validating its logical type.
+    pub fn get_index<T: VectorElement>(&self, index: usize) -> Result<Option<T::Ref<'a>>> {
+        let child = self
+            .children
+            .filter(|children| index < children.col_count())
+            .map(|children| children.cached_unchecked(index))
+            .ok_or_else(|| Error::invalid_parameter(format!("Struct field index {} is out of bounds", index)))?;
+        child.get_as_checked::<T>(self.logical)
+    }
 
     /// Return a struct field by name after validating its logical type.
     pub fn get<T: VectorElement>(&self, name: &str) -> Result<Option<T::Ref<'a>>> {
@@ -239,20 +266,93 @@ impl<'a> StructRow<'a> {
         let index = fields
             .iter()
             .position(|(field_name, _)| field_name == name)
+            .or_else(|| {
+                fields
+                    .iter()
+                    .position(|(field_name, _)| field_name.eq_ignore_ascii_case(name))
+            })
             .ok_or_else(|| Error::invalid_parameter(format!("Field '{}' not found in struct", name)))?;
-        let child = (index < self.children.col_count())
-            .then(|| self.children.cached_unchecked(index))
-            .ok_or_else(|| Error::invalid_input(format!("Struct field '{}' is missing its child vector", name)))?;
+        self.get_index::<T>(index)
+    }
+}
 
-        if child.logical_type().type_id() != T::TYPE_ID {
-            return Err(Error::invalid_input(format!(
-                "Field '{}' has type {:?}, expected {:?}",
-                name,
-                child.logical_type().type_id(),
-                T::TYPE_ID
-            )));
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        data_chunk::DataChunk,
+        environment::{Environment, StorageLocation},
+    };
+
+    #[test]
+    fn struct_positional_access_supports_tuple_vectors() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query("SELECT row(42, 'duck')", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+        assert_eq!(row.get_index::<i32>(0)?, Some(&42));
+        assert_eq!(row.get_index::<String>(1)?, Some("duck"));
+        assert!(row.get_index::<i32>(2).is_err());
+
+        let mut chunk = DataChunk::create(&conn, &[<(i32, String) as DuckDBType>::logical_type(&conn)?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+            vector.set_size(1)?;
+            vector.write(
+                0,
+                Some(StructWrite::default().field::<i32>(Some(7)).field::<String>(None)),
+            )?;
         }
+        let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+        assert_eq!(row.get_index::<i32>(0)?, Some(&7));
+        assert_eq!(row.get_index::<String>(1)?, None);
+        Ok(())
+    }
 
-        child.get_as_checked::<T>(self.logical)
+    #[test]
+    fn struct_type_mismatch_preserves_row() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let value = conn
+            .query("SELECT {'key': 42, 'value': 'duck'}", Parameters::None)?
+            .next_chunk()?
+            .unwrap()
+            .get_vector_at::<Struct>(0)?
+            .get_value_slow(0)?;
+        let mut chunk = DataChunk::create(&conn, &[value.logical_type()?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+            vector.set_size(2)?;
+            vector.write_value_slow(0, value)?;
+            vector.write(1, None)?;
+            for index in 0..2 {
+                let invalid = StructWrite::default().field::<i32>(Some(7)).field::<i32>(Some(8));
+                assert!(vector.write(index, Some(invalid)).is_err());
+            }
+        }
+        let vector = chunk.get_vector_at::<Struct>(0)?;
+        let row = vector.get(0)?.unwrap();
+        assert_eq!(row.get::<i32>("key")?, Some(&42));
+        assert_eq!(row.get::<String>("value")?, Some("duck"));
+        assert!(vector.get(1)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn struct_field_names_are_case_insensitive() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query("SELECT {'Key': 42}", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+        assert_eq!(row.get::<i32>("Key")?, Some(&42));
+        assert_eq!(row.get::<i32>("KEY")?, Some(&42));
+        assert_eq!(row.get::<i32>("key")?, Some(&42));
+        Ok(())
     }
 }

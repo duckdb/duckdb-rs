@@ -5,7 +5,7 @@ use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 ffi_enum_redeclaration! {
     /// The lexical class of a token, as reported by [`SqlTokenIterator`](crate::tokens::SqlTokenIterator).
     pub enum TokenType <- ffi::DUCKDB_V2_TOKEN_TYPE {
-        /// Not an actual token class; reported when tokenization fails.
+        /// FFI failure sentinel; [`SqlTokenIterator`](crate::tokens::SqlTokenIterator) returns an error instead.
         Invalid = DUCKDB_V2_TOKEN_TYPE_INVALID,
         /// A keyword of the connection's grammar.
         Keyword = DUCKDB_V2_TOKEN_TYPE_KEYWORD,
@@ -21,14 +21,14 @@ ffi_enum_redeclaration! {
         Comment = DUCKDB_V2_TOKEN_TYPE_COMMENT,
         /// A statement-terminating semicolon.
         Terminator = DUCKDB_V2_TOKEN_TYPE_TERMINATOR,
-        /// Not a token; reported once the input is exhausted.
+        /// FFI exhaustion sentinel; [`SqlTokenIterator`](crate::tokens::SqlTokenIterator) returns `None` instead.
         EndOfInput = DUCKDB_V2_TOKEN_TYPE_END_OF_INPUT,
     }
 }
 
 #[repr(u32)]
 /// How consistently a function maps the same inputs to the same result.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionPropertyStability {
     /// The same inputs always produce the same result.
     Consistent = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_STABILITY_CONSISTENT as u32,
@@ -57,12 +57,12 @@ impl From<FunctionPropertyStability> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE 
 
 #[repr(u32)]
 /// How a function handles collations on its arguments.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionPropertyCollation {
     /// Combine input collations and propagate them to the result.
     Propagate = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PROPAGATE as u32,
     /// Apply combinable collations to inputs before invoking the function.
-    PushCombineable =
+    PushCombinable =
         ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE as u32,
     /// Ignore argument collations.
     Ignore = ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_IGNORE as u32,
@@ -74,7 +74,7 @@ impl From<FunctionPropertyCollation> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE 
             FunctionPropertyCollation::Propagate => {
                 ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PROPAGATE
             }
-            FunctionPropertyCollation::PushCombineable => {
+            FunctionPropertyCollation::PushCombinable => {
                 ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE
             }
             FunctionPropertyCollation::Ignore => {
@@ -85,15 +85,16 @@ impl From<FunctionPropertyCollation> for ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE 
 }
 
 /// An optimizer property to apply when registering a function.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionProperty {
-    /// Set how stable the function's result is across rows and queries.
+    /// Set result stability across rows and queries; defaults to [`FunctionPropertyStability::Consistent`].
     Stability(FunctionPropertyStability),
-    /// Whether the function receives rows containing null arguments.
+    /// Whether null arguments reach the function; defaults to `false` (NULL in, NULL out).
     HasSpecialNullHandling(bool),
-    /// Whether the function may raise a runtime error.
+    /// Whether the function may raise runtime errors; defaults to `true`.
+    /// Setting `false` promises callbacks never return `Err` or panic; doing so becomes an internal error.
     IsFallible(bool),
-    /// Set how the function handles argument collations.
+    /// Set argument collation handling; defaults to [`FunctionPropertyCollation::Propagate`].
     CollationHandling(FunctionPropertyCollation),
 }
 
@@ -101,13 +102,13 @@ pub enum FunctionProperty {
 ///
 /// Wraps the shared [`FunctionProperty`] values and adds the aggregate-only ones,
 /// which DuckDB rejects on other function types.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AggregateFunctionProperty {
     /// A property shared by every function type.
     Shared(FunctionProperty),
-    /// Whether an aggregate's result depends on input order.
+    /// Whether an aggregate's result depends on input order; defaults to `true`.
     AggregateOrderDependent(bool),
-    /// Whether `DISTINCT` can affect an aggregate's result.
+    /// Whether `DISTINCT` can affect an aggregate's result; defaults to `true`.
     AggregateDistinctDependent(bool),
 }
 
@@ -179,5 +180,28 @@ impl From<FunctionProperty>
                 collation_handling.into(),
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_push_combinable() {
+        assert_eq!(
+            ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::from(FunctionPropertyCollation::PushCombinable),
+            ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::DUCKDB_V2_FUNCTION_PROPERTY_COLLATION_HANDLING_PUSH_COMBINABLE
+        );
+    }
+
+    #[test]
+    fn test_property_traits() {
+        fn assert_traits<T: Copy + Eq + std::hash::Hash>() {}
+
+        assert_traits::<FunctionPropertyStability>();
+        assert_traits::<FunctionPropertyCollation>();
+        assert_traits::<FunctionProperty>();
+        assert_traits::<AggregateFunctionProperty>();
     }
 }

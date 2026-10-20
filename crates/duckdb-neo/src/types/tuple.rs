@@ -1,4 +1,5 @@
-//! Anonymous `TUPLE` logical types (heterogeneous fixed-arity sequences).
+//! Rust tuples of arity 0–8 map to `TUPLE`; reads use `(Option<A>, …)` and reject `STRUCT` values.
+//! Typed vectors use [`super::Struct`] with [`super::StructRow::get_index`] for positional fields.
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
@@ -12,10 +13,10 @@ use crate::{
 
 fn validate_tuple(value: &Value, expected_len: usize) -> Result<()> {
     let logical_type = value.logical_type()?;
-    if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE {
+    if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE {
         return Err(Error::invalid_input(format!(
             "Expected TUPLE value, found {}",
-            logical_type.to_string()?
+            logical_type.to_text()?
         )));
     }
     let actual_len = value.child_count()?;

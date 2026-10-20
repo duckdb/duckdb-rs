@@ -4,6 +4,7 @@ use crate::{
     environment::{Environment, StorageLocation},
     logical_type::LogicalTypeID,
     signature::{FunctionParameter, SignatureBuilder},
+    types::FromValue,
 };
 
 use super::*;
@@ -12,12 +13,7 @@ struct ScalarWithData {
     base_data: Vec<i32>,
 }
 
-use crate::types::FromValue;
-
-impl ScalarCallbacks for ScalarWithData {
-    type BindData = Vec<i32>;
-    type InitData = i32;
-
+impl ScalarBindCallbacks for ScalarWithData {
     fn bind(&self, context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
         assert_eq!(arguments.logical_type(0)?, LogicalType::from_text(context, "INTEGER")?);
         assert!(
@@ -26,16 +22,26 @@ impl ScalarCallbacks for ScalarWithData {
                 .is_some_and(|v| i32::from_value(&v).unwrap() == Some(2))
         );
 
-        Ok(vec![1, 2, 3])
+        Ok(vec![10, 20])
     }
+}
 
+impl ScalarInitCallbacks for ScalarWithData {
     fn init(&self, bind_data: Option<&Self::BindData>, _context: &Context) -> Result<Self::InitData> {
-        Ok(bind_data.unwrap().iter().sum())
+        let bind_data = bind_data.expect("bind callback must provide data");
+        assert_eq!(self.base_data, [1, 2, 3]);
+        assert_eq!(bind_data, &[10, 20]);
+        Ok(bind_data.iter().sum())
     }
+}
+
+impl ScalarCallbacks for ScalarWithData {
+    type BindData = Vec<i32>;
+    type InitData = i32;
 
     fn exec(
         &self,
-        _bind_data: Option<&Self::BindData>,
+        bind_data: Option<&Self::BindData>,
         init_data: Option<&mut Self::InitData>,
         _context: &Context,
 
@@ -51,10 +57,14 @@ impl ScalarCallbacks for ScalarWithData {
             .expect("Expected at least one value in input vector")
             .expect("Expected input value to be non-null");
 
+        let bind_data = bind_data.expect("bind callback must provide data");
+        let init_data = init_data.expect("init callback must provide data");
+        assert_eq!(bind_data, &[10, 20]);
+        assert_eq!(*init_data, 30);
         output.set_size(1)?;
         output.write(
             0,
-            Some(self.base_data.iter().map(|x| x * in_data).sum::<i32>() - *init_data.unwrap()),
+            Some(self.base_data.iter().map(|x| x * in_data).sum::<i32>() + bind_data.iter().sum::<i32>() - *init_data),
         )?;
 
         Ok(())
@@ -103,9 +113,9 @@ impl ScalarCallbacks for BasicScalarPanicFunction {
 
 #[test]
 fn test_scalar_bind_init_user_data() -> crate::Result<()> {
-    let env = Environment::new().expect("Failed to create environment");
-    let db = env.open(StorageLocation::InMemory).expect("Failed to open database");
-    let conn = db.connect().expect("Failed to connect");
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "custom_scalar",
@@ -116,114 +126,91 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
             base_data: vec![1, 2, 3],
         },
     )
-    .register(&conn)
-    .expect("Failed to register scalar function");
+    .with_bind()
+    .with_init()
+    .register(&conn)?;
 
-    let mut result = conn
-        .query("SELECT custom_scalar(2)", Parameters::None)
-        .expect("Failed to execute query");
+    let mut result = conn.query("SELECT custom_scalar(2)", Parameters::None)?;
 
-    while let Some(chunk) = result.next_chunk().expect("Failed to get result chunk") {
-        let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector from chunk");
-        let mut reader = vector.iter().unwrap();
-
-        let data = reader
-            .next()
-            .expect("Expected at least one value in output vector")
-            .expect("Expected output value to be non-null");
-
-        assert!(*data == 6, "Expected value 6, got {}", data);
-    }
+    let chunk = result.next_chunk()?.expect("expected a result chunk");
+    assert_eq!(chunk.row_count()?, 1);
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&12));
+    assert!(result.next_chunk()?.is_none());
 
     Ok(())
 }
 
 #[test]
 fn test_scalar_panic() -> crate::Result<()> {
-    let env = Environment::new().expect("Failed to create environment");
-    // DuckDB only invalidates the database when the internal error is raised on the
-    // client thread; if a worker thread raises it first, only the transaction is
-    // invalidated. A single thread makes the panic always run on the client thread.
-    let db = env.instance().expect("Failed to create instance");
-    db.config()?.set_text("threads", "1", SettingScope::Global)?;
-    db.attach(&StorageLocation::InMemory)
-        .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let env = Environment::new()?;
+    // A client-thread panic invalidates the instance, not just the worker transaction.
+    let instance = env.instance()?;
+    instance.config()?.set_text("threads", "1", SettingScope::Global)?;
+    instance.attach(&StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "panic_func",
         SignatureBuilder::new().return_type(i32::logical_type(&conn)?),
         BasicScalarPanicFunction,
     )
-    .register(&conn)
-    .expect("Failed to register scalar function");
+    .register(&conn)?;
 
-    let statements = conn.parse("SELECT panic_func()").expect("Failed to parse query");
-    for stmt in statements {
-        let stmt = stmt.expect("Failed to get statement");
+    let error = conn
+        .query("SELECT panic_func()", Parameters::None)
+        .and_then(|mut result| result.drain())
+        .expect_err("expected a panic error");
+    assert!(error.message.contains("This function panics"), "{error}");
 
-        let mut result = conn.query(stmt, Parameters::None).expect("Failed to execute statement");
-
-        let error;
-
-        loop {
-            if let Err(e) = result.step() {
-                error = Some(e);
-                break;
-            }
-        }
-
-        assert!(error.is_some(), "Expected error when executing panic function");
-    }
-    let statements = conn.parse("SELECT 42").unwrap();
-
-    for statement in statements {
-        let stmt = statement.expect("Failed to get statement");
-
-        let result = conn.query(stmt, Parameters::None);
-
-        assert!(
-            result.is_err(),
-            "Expected error when executing panic function. DuckDB should be locked."
-        );
-    }
+    let error = conn
+        .query("SELECT 42", Parameters::None)
+        .and_then(|mut result| result.drain())
+        .expect_err("expected database invalidation");
+    assert!(error.message.to_lowercase().contains("invalidated"), "{error}");
 
     Ok(())
 }
 
 #[test]
 fn test_invalid_scalar_function_registration() -> crate::Result<()> {
-    let env = Environment::new().expect("Failed to create environment");
-    let db = env
-        .open(StorageLocation::InMemory)
-        .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
-    let result = ScalarFunctionBuilder::new(
+    let error = ScalarFunctionBuilder::new(
         "basic",
         SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>(""))
-            .param(FunctionParameter::new::<i32>(""))
+            .param(FunctionParameter::new::<i32>("x"))
+            .param(FunctionParameter::new::<i32>("x"))
             .return_type(i32::logical_type(&conn)?),
         BasicScalarFunction,
     )
-    .register(&conn);
+    .register(&conn)
+    .expect_err("duplicate parameter names must be rejected");
+    assert!(error.message.contains("Duplicate parameter name"), "{error}");
 
-    assert!(
-        result.is_err(),
-        "Expected error when registering invalid scalar function"
-    );
+    let error = ScalarFunctionBuilder::new(
+        "",
+        SignatureBuilder::new().return_type(i32::logical_type(&conn)?),
+        BasicScalarFunction,
+    )
+    .register(&conn)
+    .expect_err("empty function names must be rejected");
+    assert!(error.message.contains("Function name cannot be empty"), "{error}");
+
+    let error = ScalarFunctionBuilder::new("missing_return", SignatureBuilder::new(), BasicScalarFunction)
+        .register(&conn)
+        .expect_err("missing return types must be rejected");
+    assert!(error.message.contains("Return type must be set"), "{error}");
 
     Ok(())
 }
 
 #[test]
 fn test_scalar_building() -> crate::Result<()> {
-    let env = Environment::new().expect("Failed to create environment");
-    let db = env
-        .open(StorageLocation::InMemory)
-        .expect("Failed to open in-memory database");
-    let conn = db.connect().expect("Failed to connect to database");
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "basic",
@@ -232,22 +219,14 @@ fn test_scalar_building() -> crate::Result<()> {
             .return_type(i32::logical_type(&conn)?),
         BasicScalarFunction,
     )
-    .register(&conn)
-    .expect("Failed to register scalar function");
+    .register(&conn)?;
 
-    let mut result = conn
-        .query("SELECT basic(10)", Parameters::None)
-        .expect("Failed to execute query");
+    let mut result = conn.query("SELECT basic(10)", Parameters::None)?;
 
-    while let Some(chunk) = result.next_chunk().expect("Failed to get result chunk") {
-        let vector = chunk.get_vector_at::<i32>(0).expect("Failed to get vector from chunk");
-
-        assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
-
-        let value = vector.iter().unwrap().next().unwrap();
-
-        assert!(value == Some(&42), "Expected value 42, got {:?}", value);
-    }
+    let chunk = result.next_chunk()?.expect("expected a result chunk");
+    assert_eq!(chunk.row_count()?, 1);
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+    assert!(result.next_chunk()?.is_none());
 
     Ok(())
 }
@@ -255,8 +234,8 @@ fn test_scalar_building() -> crate::Result<()> {
 #[test]
 fn test_scalar_property() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "basic",
@@ -265,76 +244,27 @@ fn test_scalar_property() -> crate::Result<()> {
             .return_type(i32::logical_type(&conn)?),
         BasicScalarFunction,
     )
-    .set_property(FunctionProperty::HasSpecialNullHandling(false))
+    .set_property(FunctionProperty::HasSpecialNullHandling(true))
     .register(&conn)?;
 
-    let mut result = conn.query("SELECT basic(NULL)", Parameters::None)?;
-    while let Some(chunk) = result.next_chunk()? {
-        let vector = chunk.get_vector_at::<i32>(0)?;
-
-        assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
-
-        let value = vector.iter()?.next().unwrap();
-
-        assert!(value.is_none(), "Expected value NULL, got {:?}", value);
-    }
-
-    Ok(())
-}
-
-struct OverrideAbleScalar;
-
-impl ScalarCallbacks for OverrideAbleScalar {
-    type BindData = ();
-    type InitData = ();
-
-    fn resolve_types(context: &Context, _arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
-        Ok(Some(i8::logical_type(context)?))
-    }
-
-    fn exec(
-        &self,
-        _bind_data: Option<&Self::BindData>,
-        _init_data: Option<&mut Self::InitData>,
-        _context: &Context,
-        _input: &mut VectorCollection,
-        output: Vector<'_, Unknown>,
-    ) -> Result<()> {
-        let mut output = output.cast::<i8>()?;
-
-        output.set_size(1)?;
-        output.write(0, Some(42i8))?;
-
-        Ok(())
-    }
-}
-
-#[test]
-fn test_scalar_override_result() -> crate::Result<()> {
-    let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
-
     ScalarFunctionBuilder::new(
-        "override",
+        "default_nulls",
         SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("in"))
-            .return_type(String::logical_type(&conn)?),
-        OverrideAbleScalar {},
+            .param(FunctionParameter::new::<i32>("input"))
+            .return_type(i32::logical_type(&conn)?),
+        BasicScalarFunction,
     )
     .register(&conn)?;
 
-    let mut result = conn.query("SELECT override(42)", Parameters::None)?;
-
-    while let Some(chunk) = result.next_chunk()? {
-        let vector = chunk.get_vector_at::<i8>(0)?;
-
-        assert!(vector.len() == 1, "Expected vector size 1, got {}", vector.len());
-
-        let value = vector.iter()?.next().unwrap();
-
-        assert!(value == Some(&42), "Expected value 42, got {:?}", value);
-    }
+    let mut result = conn.query(
+        "SELECT basic(NULL::INTEGER), default_nulls(NULL::INTEGER)",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.expect("expected a result chunk");
+    assert_eq!(chunk.row_count()?, 1);
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+    assert_eq!(chunk.get_vector_at::<i32>(1)?.get(0)?, None);
+    assert!(result.next_chunk()?.is_none());
 
     Ok(())
 }
@@ -344,14 +274,16 @@ struct FoldProbe {
     folded: std::sync::Arc<std::sync::Mutex<Vec<bool>>>,
 }
 
-impl ScalarCallbacks for FoldProbe {
-    type BindData = ();
-    type InitData = ();
-
+impl ScalarBindCallbacks for FoldProbe {
     fn bind(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<Self::BindData> {
         self.folded.lock().unwrap().push(arguments.value(0)?.is_some());
         Ok(())
     }
+}
+
+impl ScalarCallbacks for FoldProbe {
+    type BindData = ();
+    type InitData = ();
 
     fn exec(
         &self,
@@ -374,8 +306,8 @@ impl ScalarCallbacks for FoldProbe {
 #[test]
 fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let folded = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     ScalarFunctionBuilder::new(
@@ -385,6 +317,7 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
             .return_type(i32::logical_type(&conn)?),
         FoldProbe { folded: folded.clone() },
     )
+    .with_bind()
     .register(&conn)?;
 
     // An unbound prepared parameter is not a constant, so binding must not fail.
@@ -408,7 +341,7 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
     Ok(())
 }
 
-// Uses the default bind, which must not evaluate its arguments.
+// With no bind callback registered, argument expressions are not evaluated.
 struct Identity;
 
 impl ScalarCallbacks for Identity {
@@ -436,8 +369,8 @@ impl ScalarCallbacks for Identity {
 #[test]
 fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "identity",
@@ -461,14 +394,15 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
 
 struct DynamicResolve;
 
+impl ScalarResolveTypesCallbacks for DynamicResolve {
+    fn resolve_types(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<LogicalType> {
+        arguments.logical_type(0)
+    }
+}
+
 impl ScalarCallbacks for DynamicResolve {
     type BindData = ();
     type InitData = ();
-
-    fn resolve_types(_context: &Context, arguments: BindArguments<'_>) -> Result<Option<LogicalType>> {
-        let lt = arguments.logical_type(0)?;
-        Ok(Some(lt))
-    }
 
     fn exec(
         &self,
@@ -476,14 +410,13 @@ impl ScalarCallbacks for DynamicResolve {
         _init_data: Option<&mut Self::InitData>,
         _context: &Context,
         vectors: &mut VectorCollection,
-        mut output: Vector<'_, Unknown>,
+        output: Vector<'_, Unknown>,
     ) -> Result<()> {
-        output.set_size(vectors.row_count()?)?;
+        let vec = vectors.get_untyped_vector_at(0)?;
 
-        let vec = vectors.get_untyped_vector_at(0).unwrap();
-
+        // SAFETY: the resolver selects the input type, and DuckDB retains both vectors for this batch.
         unsafe {
-            output.copy_from(vec)?;
+            output.reference(vec)?;
         }
 
         Ok(())
@@ -491,15 +424,18 @@ impl ScalarCallbacks for DynamicResolve {
 }
 
 #[test]
-fn test_scalar_dynamic_return_type() -> crate::Result<()> {
+fn test_scalar_any_resolves_input_type_and_value() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(
         "dynamic_resolve",
         SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("input"))
+            .param(FunctionParameter::with_type(
+                "input",
+                LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?,
+            ))
             .return_type(LogicalType::create_from_id(
                 &conn,
                 LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY,
@@ -507,11 +443,126 @@ fn test_scalar_dynamic_return_type() -> crate::Result<()> {
             )?),
         DynamicResolve,
     )
+    .with_resolve_types()
     .register(&conn)?;
 
-    let mut query = conn.query("SELECT dynamic_resolve(10)", Parameters::None)?;
+    let mut query = conn.query(
+        "SELECT dynamic_resolve(10::INTEGER), dynamic_resolve('duck'::VARCHAR)",
+        Parameters::None,
+    )?;
+    let chunk = query.next_chunk()?.expect("expected a result chunk");
+    assert_eq!(chunk.row_count()?, 1);
+    let integer = chunk.get_vector_at::<i32>(0)?;
+    let text = chunk.get_vector_at::<String>(1)?;
+    assert_eq!(integer.logical_type(), &i32::logical_type(&conn)?);
+    assert_eq!(text.logical_type(), &String::logical_type(&conn)?);
+    assert_eq!(integer.get(0)?, Some(&10));
+    assert_eq!(text.get(0)?, Some("duck"));
+    assert!(query.next_chunk()?.is_none());
 
-    assert!(query.next_chunk()?.unwrap().row_count()? == 1);
+    Ok(())
+}
 
+#[test]
+fn test_scalar_any_requires_resolver() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    let any = LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?;
+    let error = ScalarFunctionBuilder::new(
+        "missing_resolver",
+        SignatureBuilder::new()
+            .param(FunctionParameter::with_type("input", any.clone()))
+            .return_type(any),
+        DynamicResolve,
+    )
+    .register(&conn)
+    .expect_err("ANY return must require a resolver");
+    assert!(
+        error
+            .message
+            .contains("ANY return type requires a resolve types callback"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[derive(PartialEq)]
+struct NonDefaultState(i32);
+
+struct OptionalLifecycle {
+    bind: bool,
+    init: bool,
+}
+
+impl ScalarBindCallbacks for OptionalLifecycle {
+    fn bind(&self, _context: &Context, _arguments: BindArguments<'_>) -> Result<Self::BindData> {
+        assert!(self.bind);
+        Ok(NonDefaultState(10))
+    }
+}
+
+impl ScalarInitCallbacks for OptionalLifecycle {
+    fn init(&self, bind_data: Option<&Self::BindData>, _context: &Context) -> Result<Self::InitData> {
+        assert!(self.init);
+        assert_eq!(bind_data.map(|data| data.0), self.bind.then_some(10));
+        Ok(NonDefaultState(20))
+    }
+}
+
+impl ScalarCallbacks for OptionalLifecycle {
+    type BindData = NonDefaultState;
+    type InitData = NonDefaultState;
+
+    fn exec(
+        &self,
+        bind_data: Option<&Self::BindData>,
+        init_data: Option<&mut Self::InitData>,
+        _context: &Context,
+        input: &mut VectorCollection,
+        output: Vector<'_, Unknown>,
+    ) -> Result<()> {
+        assert_eq!(bind_data.map(|data| data.0), self.bind.then_some(10));
+        assert_eq!(init_data.map(|data| data.0), self.init.then_some(20));
+        let mut output = output.cast::<i32>()?;
+        output.set_size(input.row_count()?)?;
+        for i in 0..input.row_count()? {
+            output.write(i, Some(42))?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn test_scalar_optional_bind_and_init() -> Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+
+    for (name, bind, init) in [
+        ("neither", false, false),
+        ("bind_only", true, false),
+        ("init_only", false, true),
+        ("both_callbacks", true, true),
+    ] {
+        let mut builder = ScalarFunctionBuilder::new(
+            name,
+            SignatureBuilder::new().return_type(i32::logical_type(&conn)?),
+            OptionalLifecycle { bind, init },
+        );
+        if bind {
+            builder = builder.with_bind();
+        }
+        if init {
+            builder = builder.with_init();
+        }
+        builder.register(&conn)?;
+        let sql = format!("SELECT {name}()");
+        let chunk = conn
+            .query(sql.as_str(), Parameters::None)?
+            .next_chunk()?
+            .expect("expected a result chunk");
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+    }
     Ok(())
 }

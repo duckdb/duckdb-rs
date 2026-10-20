@@ -23,7 +23,7 @@ impl<'a> DuckDBStr<'a> {
         }
     }
 
-    /// Return the string, or `None` when DuckDB returned a null pointer.
+    /// Return the string, or `None` for a null pointer with nonzero length.
     ///
     /// Only for text DuckDB produces; use [`Self::to_string_lossy`] for paths from the OS.
     pub(crate) fn as_str(&self) -> Option<&'a str> {
@@ -32,13 +32,16 @@ impl<'a> DuckDBStr<'a> {
         Some(unsafe { std::str::from_utf8_unchecked(bytes) })
     }
 
-    /// Return the text with invalid UTF-8 replaced, or `None` when DuckDB returned a null pointer.
+    /// Replace invalid UTF-8, or return `None` for a null pointer with nonzero length.
     pub(crate) fn to_string_lossy(self) -> Option<Cow<'a, str>> {
         self.as_bytes().map(String::from_utf8_lossy)
     }
 
-    /// Return the raw bytes, or `None` when DuckDB returned a null pointer.
+    /// Return the bytes, or `None` for a null pointer with nonzero length.
     pub(crate) fn as_bytes(&self) -> Option<&'a [u8]> {
+        if self.raw.len == 0 {
+            return Some(&[]);
+        }
         if self.raw.ptr.is_null() {
             return None;
         }
@@ -92,5 +95,22 @@ pub(crate) fn bytes_view(value: &ffi::duckdb_v2_bytes) -> &[u8] {
             let len = value.value.pointer.length as usize;
             std::slice::from_raw_parts(value.value.pointer.ptr.cast(), len)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DuckDBStr;
+    use crate::ffi;
+
+    #[test]
+    fn canonical_empty_view_is_empty() {
+        let text = DuckDBStr::from_raw(ffi::duckdb_v2_str {
+            ptr: std::ptr::null(),
+            len: 0,
+        });
+        assert_eq!(text.as_bytes(), Some(b"".as_slice()));
+        assert_eq!(text.as_str(), Some(""));
+        assert_eq!(text.to_string_lossy().as_deref(), Some(""));
     }
 }

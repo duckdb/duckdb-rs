@@ -28,44 +28,38 @@ pub struct Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.message.is_empty() {
-            write!(f, "DuckDB error (code {:#x})", self.code as u32)
+            write!(f, "DuckDB error (code {})", self.code as u32)
         } else {
-            write!(f, "{} (code {:#x})", self.message, self.code as u32)
+            write!(f, "{} (code {})", self.message, self.code as u32)
         }
     }
 }
 
 impl Error {
-    /// Create an [`Error`] from a raw error code and an error handle.
+    /// Copy an error's text, then destroy and clear its handle.
     ///
-    /// Internally this fetches the text corresponding to the error, if available.
     /// # Safety
-    /// This function crosses the FFI boundary to fetch the text in the error handle.
-    /// It is the caller's responsibility to ensure that the handle is valid.
-    pub(crate) unsafe fn from_code_and_handle(code: DuckDBError, handle: ffi::duckdb_v2_error_info_handle) -> Self {
-        match handle.is_null() {
-            true => Error {
-                code,
-                message: "Unknown error".to_string(),
-            },
-            false => {
-                let mut text = ffi::duckdb_v2_str::default();
-
-                let message = if unsafe { ffi::duckdb_v2_error_info_get_text(handle, &mut text) }
-                    == DuckDBError::DUCKDB_V2_ERROR_NONE
-                    && !text.ptr.is_null()
-                    && text.len > 0
-                {
-                    // Borrowed view, valid until we destroy the handle below — copy it out.
-                    let bytes = unsafe { std::slice::from_raw_parts(text.ptr as *const u8, text.len as usize) };
-                    String::from_utf8_lossy(bytes).into_owned()
-                } else {
-                    "Unknown error".to_string()
-                };
-
-                Error { code, message }
+    /// `handle` must be null or an owned live error handle.
+    pub(crate) unsafe fn from_code_and_handle(
+        code: DuckDBError,
+        handle: &mut ffi::duckdb_v2_error_info_handle,
+    ) -> Self {
+        let mut message = String::new();
+        if !handle.is_null() {
+            let mut text = ffi::duckdb_v2_str::default();
+            // SAFETY: the caller supplies a live error handle.
+            if unsafe { ffi::duckdb_v2_error_info_get_text(*handle, &mut text) } == DuckDBError::DUCKDB_V2_ERROR_NONE
+                && !text.ptr.is_null()
+                && text.len > 0
+            {
+                // SAFETY: the borrowed text stays valid until the handle is destroyed below.
+                let bytes = unsafe { std::slice::from_raw_parts(text.ptr as *const u8, text.len as usize) };
+                message = String::from_utf8_lossy(bytes).into_owned();
             }
+            // SAFETY: the caller transfers ownership of this live handle.
+            unsafe { ffi::duckdb_v2_error_info_destroy(handle) };
         }
+        Error { code, message }
     }
 
     /// Create an API-classified error with a human-readable message.
@@ -92,7 +86,8 @@ impl Error {
         }
     }
 
-    /// Create an internal runtime error.
+    /// Create an INTERNAL error that intentionally invalidates the instance.
+    /// DuckDB describes this as an internal failure, including for callback panics.
     pub fn internal(message: impl Into<String>) -> Self {
         Error {
             code: DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
@@ -106,11 +101,11 @@ impl std::error::Error for Error {}
 /// [`check_api_call_no_err!`] is a macro that safely converts FFI calls into `Results`.
 ///
 /// An arbitrary number of arguments can be passed to the macro.
-/// This macro does not account for error handling, and its intended use is for FFI calls that can't fail.
+/// This macro is intended for FFI calls with no error out-parameter.
 ///
 /// # Usage
 /// ```ignore
-/// check_api_call_no_err!(ffi::duckdb_v2_scalar_function_builder_destroy, &mut handle)
+/// check_api_call_no_err!(ffi::duckdb_v2_environment_destroy, &mut handle)
 ///     .unwrap();
 /// ```
 macro_rules! check_api_call_no_err {
@@ -146,7 +141,7 @@ macro_rules! check_api_call_no_err {
 /// check_api_call!(ffi::duckdb_v2_statement_add_collection, handle, &name.into())?;
 ///
 /// // With an out-parameter, evaluates to `Result<T>`
-/// let handle = check_api_call!(ffi::duckdb_v2_create_environment, RET)?;
+/// let handle = check_api_call!(ffi::duckdb_v2_environment_create, RET)?;
 ///
 /// println!("Handle address: {:?}", handle);
 /// ```
@@ -156,11 +151,11 @@ macro_rules! check_api_call {
         $crate::check_api_call!(@before $call; (); $($($args)*)?)
     };
 
-    // `ret` found, more args follow it
+    // `RET` found, more args follow it
     (@before $call:expr; ($($b:expr),*); RET, $($after:expr),* $(,)?) => {
         $crate::check_api_call!(@finish_ret $call; ($($b),*); ($($after),*))
     };
-    // `ret` found, nothing follows it
+    // `RET` found, nothing follows it
     (@before $call:expr; ($($b:expr),*); RET) => {
         $crate::check_api_call!(@finish_ret $call; ($($b),*); ())
     };
@@ -172,19 +167,18 @@ macro_rules! check_api_call {
     (@before $call:expr; ($($b:expr),*); $head:expr) => {
         $crate::check_api_call!(@before $call; ($($b,)* $head); )
     };
-    // no more tokens, `ret` never seen
+    // no more tokens, `RET` never seen
     (@before $call:expr; ($($b:expr),*); ) => {
         $crate::check_api_call!(@finish_noret $call; ($($b),*))
     };
 
-    // No `ret` -> Ok(())
+    // No `RET` -> Ok(())
     (@finish_noret $call:expr; ($($b:expr),*)) => {{
         let mut err: $crate::ffi::duckdb_v2_error_info_handle = std::ptr::null_mut();
         unsafe {
             let code = $call($($b,)* &mut err);
             if code != $crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE {
-                let error = $crate::error::Error::from_code_and_handle(code, err);
-                ffi::duckdb_v2_error_info_destroy(&mut err);
+                let error = $crate::error::Error::from_code_and_handle(code, &mut err);
                 Err(error)
             } else {
                 Ok(())
@@ -192,15 +186,14 @@ macro_rules! check_api_call {
         }
     }};
 
-    // `ret` present -> Ok(value)
+    // `RET` present -> Ok(value)
     (@finish_ret $call:expr; ($($b:expr),*); ($($a:expr),*)) => {{
         let mut err: $crate::ffi::duckdb_v2_error_info_handle = std::ptr::null_mut();
         let mut __out = std::mem::MaybeUninit::uninit();
         unsafe {
             let code = $call($($b,)* __out.as_mut_ptr(), $($a,)* &mut err);
             if code != $crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE {
-                let error = $crate::error::Error::from_code_and_handle(code, err);
-                $crate::ffi::duckdb_v2_error_info_destroy(&mut err);
+                let error = $crate::error::Error::from_code_and_handle(code, &mut err);
                 Err(error)
             } else {
                 Ok(__out.assume_init())
@@ -290,10 +283,10 @@ mod tests {
     #[test]
     fn test_string_renderers() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let logical_type = LogicalType::from_text(&conn, "MAP(VARCHAR, INTEGER)")?;
-        assert_eq!(logical_type.to_string()?, "MAP(VARCHAR, INTEGER)");
+        assert_eq!(logical_type.to_text()?, "MAP(VARCHAR, INTEGER)");
         for text in ["", "hello", "\u{e9}", &"long text".repeat(1024)] {
             assert_eq!(text.value(&conn)?.dbg_string()?, text);
         }
@@ -305,13 +298,41 @@ mod tests {
     }
 
     #[test]
+    fn test_from_null_error_handle() {
+        let mut handle = std::ptr::null_mut();
+        // SAFETY: a null error handle is allowed.
+        let error = unsafe { super::Error::from_code_and_handle(super::DuckDBError::DUCKDB_V2_ERROR_API, &mut handle) };
+        assert!(handle.is_null());
+        assert!(error.message.is_empty());
+        assert_eq!(error.to_string(), "DuckDB error (code 1)");
+    }
+
+    #[test]
+    fn test_from_live_error_handle() -> crate::Result<()> {
+        for message in ["error detail", ""] {
+            let mut handle = std::ptr::null_mut();
+            // SAFETY: the byte argument and output slot are valid for this call.
+            let code = unsafe { crate::ffi::duckdb_v2_validate_utf8(&crate::ffi_str::bytes_arg(b"\xff"), &mut handle) };
+            assert_ne!(code, super::DuckDBError::DUCKDB_V2_ERROR_NONE);
+            assert!(!handle.is_null());
+            super::check_api_call_no_err!(crate::ffi::duckdb_v2_error_info_set_text, handle, &message.into())?;
+            // SAFETY: this test owns the live error handle.
+            let error = unsafe { super::Error::from_code_and_handle(code, &mut handle) };
+            assert!(handle.is_null());
+            assert_eq!(error.code, code);
+            assert_eq!(error.message, message);
+        }
+        Ok(())
+    }
+
+    #[test]
     pub fn test_error_to_string() -> crate::Result<()> {
         let err = crate::error::Error {
             code: crate::error::DuckDBError::DUCKDB_V2_ERROR_API,
             message: "Test error".to_string(),
         };
 
-        assert_eq!(format!("{}", err), "Test error (code 0x1)".to_string());
+        assert_eq!(format!("{}", err), "Test error (code 1)".to_string());
         Ok(())
     }
 }

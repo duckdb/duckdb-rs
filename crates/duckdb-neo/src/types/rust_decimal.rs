@@ -1,4 +1,4 @@
-use super::{DecimalSignature, DecimalValue, MAX_DECIMAL_WIDTH};
+use super::{DecimalSignature, DecimalValue};
 use crate::{
     Result,
     connection::FFILink,
@@ -13,13 +13,17 @@ use crate::{
 /// Widest `DECIMAL` whose values all fit `rust_decimal`'s 96-bit mantissa.
 const MAX_RUST_DECIMAL_WIDTH: u8 = 28;
 
-/// Uses the widest `DECIMAL`, which holds any `rust_decimal::Decimal`.
+/// Uses the smallest fitting `DECIMAL` width.
+/// Values needing 29 digits exceed the vector reader's width limit; read them through [`Value`].
 impl From<rust_decimal::Decimal> for DecimalValue {
     fn from(value: rust_decimal::Decimal) -> Self {
+        let mantissa = value.mantissa();
+        let digits = mantissa.unsigned_abs().checked_ilog10().map_or(1, |digits| digits + 1) as u8;
+        let scale = value.scale() as u8;
         Self {
-            value: value.mantissa(),
-            width: MAX_DECIMAL_WIDTH,
-            scale: value.scale() as u8,
+            value: mantissa,
+            width: digits.max(scale),
+            scale,
         }
     }
 }
@@ -52,8 +56,10 @@ fn signature<U: VectorElement>(vector: &Vector<'_, U>) -> DecimalSignature {
         .expect("validated DECIMAL vector has a signature")
 }
 
-/// Reads and writes `DECIMAL` columns of width up to 28, which always fit.
-impl VectorElement for rust_decimal::Decimal {
+/// # Panics
+/// Panics if a stored value exceeds `rust_decimal`'s 96-bit mantissa.
+// SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
+unsafe impl VectorElement for rust_decimal::Decimal {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
 
     // The storage integer depends on the column's width.
@@ -62,7 +68,7 @@ impl VectorElement for rust_decimal::Decimal {
     type Ref<'a> = rust_decimal::Decimal;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
         Ok(DecimalSignature::from_logical_type(other)?.width <= MAX_RUST_DECIMAL_WIDTH)
@@ -87,7 +93,8 @@ impl VectorElement for rust_decimal::Decimal {
 }
 
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
-impl WritableVectorElement for rust_decimal::Decimal {
+// SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
+unsafe impl WritableVectorElement for rust_decimal::Decimal {
     type Write<'a> = rust_decimal::Decimal;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -111,7 +118,9 @@ impl WritableVectorElement for rust_decimal::Decimal {
             width,
             scale,
         };
-        decimal.check()?;
+        decimal
+            .check()
+            .map_err(|_| Error::invalid_input(format!("{value} does not fit DECIMAL({width}, {scale})")))?;
         match width {
             1..=4 => vector.write_raw(index, decimal.to_primitive::<i16>()),
             5..=9 => vector.write_raw(index, decimal.to_primitive::<i32>()),
@@ -140,28 +149,32 @@ mod tests {
     #[test]
     fn rust_decimal_value_round_trips() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
-        for text in [
-            "123.45",
-            "-0.001",
-            "0",
-            "79228162514264337593543950335",
-            "0.0000000000000000000000000001",
+        for (text, width) in [
+            ("123.45", 5),
+            ("-0.001", 3),
+            ("0", 1),
+            ("79228162514264337593543950335", 29),
+            ("0.0000000000000000000000000001", 28),
         ] {
             let decimal = dec(text);
             let raw = DecimalValue::from(decimal);
-            assert_eq!(raw.width, 38);
+            assert_eq!(raw.width, width);
             assert_eq!(rust_decimal::Decimal::try_from(raw), Ok(decimal));
 
             let value = decimal.value(&conn)?;
             assert_eq!(value.get::<rust_decimal::Decimal>()?, Some(decimal));
 
-            let mut result = conn.query("SELECT $1::VARCHAR", Parameters::positional(&[&decimal]))?;
+            let mut result = conn.query("SELECT $1", Parameters::positional(&[&decimal]))?;
             let chunk = result.next_chunk()?.expect("query returned no rows");
-            let text_vector = chunk.get_vector_at::<String>(0)?;
-            assert_eq!(text_vector.get(0)?.map(|s| s.to_string()), Some(text.to_string()));
+            if width <= MAX_RUST_DECIMAL_WIDTH {
+                let vector = chunk.get_vector_at::<rust_decimal::Decimal>(0)?;
+                assert_eq!(vector.get(0)?, Some(decimal));
+            } else {
+                assert!(chunk.get_vector_at::<rust_decimal::Decimal>(0).is_err());
+            }
         }
 
         Ok(())
@@ -176,8 +189,8 @@ mod tests {
         assert!(rust_decimal::Decimal::try_from(too_precise).is_err());
 
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let value = too_wide.value(&conn)?;
         assert!(value.get::<rust_decimal::Decimal>().is_err());
 
@@ -187,8 +200,8 @@ mod tests {
     #[test]
     fn rust_decimal_vector_reads_every_storage_width() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut result = conn.query(
             "SELECT -1.5::DECIMAL(4, 1), 123.45::DECIMAL(5, 2), 1.5::DECIMAL(18, 1), \
@@ -218,7 +231,7 @@ mod tests {
         assert!(chunk.get_vector_at::<rust_decimal::Decimal>(5).is_err());
 
         let map = chunk.get_vector_at::<crate::types::Map<i32, rust_decimal::Decimal>>(6)?;
-        assert_eq!(map.get(0)?.unwrap().get(&1)?, Some(dec("1.21")));
+        assert_eq!(map.get(0)?.unwrap().get(&1), Some(Some(dec("1.21"))));
 
         Ok(())
     }
@@ -226,8 +239,8 @@ mod tests {
     #[test]
     fn rust_decimal_vector_writes_rescale() -> Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         for width in [4, 9, 18, 28] {
             let logical_type = DecimalSignature { width, scale: 2 }.logical_type(&conn)?;
@@ -245,10 +258,13 @@ mod tests {
 
             assert!(vector.write(0, Some(dec("1.234"))).is_err());
             let too_big = 10i128.pow(u32::from(width) - 2);
+            let error = vector
+                .write(0, Some(rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
+                .unwrap_err();
             assert!(
-                vector
-                    .write(0, Some(rust_decimal::Decimal::from_i128_with_scale(too_big, 0)))
-                    .is_err()
+                error
+                    .message
+                    .contains(&format!("{too_big} does not fit DECIMAL({width}, 2)"))
             );
         }
 

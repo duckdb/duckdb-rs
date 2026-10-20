@@ -24,20 +24,17 @@ impl ReplacementScanCallbacks for CustomReplacementScan {
     fn scan(&self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
-        if let Some(table) = view.table
-            && table.starts_with("num")
-        {
+        if view.table.starts_with("num") {
             assert!(view.catalog == Some("test".to_string()));
             assert!(view.schema == Some("main".to_string()));
 
-            let split = table
+            let split = view
+                .table
                 .replace("num_", "")
                 .replace('\'', "")
                 .split('_')
                 .map(|x| x.parse::<i32>().unwrap())
                 .collect::<Vec<_>>();
-
-            dbg!(&split);
 
             replacement.set_reference(ReplacementType::Table("range".try_into()?))?;
             replacement.add_parameter(split[0].value(context)?)?;
@@ -54,7 +51,7 @@ impl ReplacementScanCallbacks for CustomNamedParameters {
     fn scan(&self, context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
-        if view.table.is_some_and(|t| t.starts_with("alltypes")) {
+        if view.table.starts_with("alltypes") {
             assert!(view.catalog.is_none());
             assert!(view.schema.is_none());
 
@@ -73,7 +70,7 @@ impl ReplacementScanCallbacks for CustomCdcScan {
     fn scan(&self, _context: &Context, name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
         let view = name.get_view()?;
 
-        if view.table.is_some_and(|t| t.starts_with("cdc")) {
+        if view.table.starts_with("cdc") {
             replacement.set_reference(ReplacementType::ColumnDataCollection("cdc"))?;
         }
 
@@ -84,10 +81,10 @@ impl ReplacementScanCallbacks for CustomCdcScan {
 #[test]
 fn test_replacement_scan() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
-    ReplacementScanBuilder::new(CustomReplacementScan { count: 42 }).register(&db)?;
+    ReplacementScanBuilder::new(CustomReplacementScan { count: 42 }).register(&instance)?;
 
     ReplacementScanBuilder::new(CustomNamedParameters {}).register(&conn)?;
 
@@ -95,7 +92,7 @@ fn test_replacement_scan() -> crate::Result<()> {
 
     let chunk = query.next_chunk()?.unwrap();
 
-    assert!(chunk.get_vector_at::<i64>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+    assert!(chunk.get_vector_at::<i64>(0)?.logical_type().id()? == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
 
     assert_eq!(chunk.row_count()?, 10 + 42);
 
@@ -122,8 +119,8 @@ fn test_replacement_scan() -> crate::Result<()> {
 #[test]
 fn test_replacement_scan_cdc() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let logical_types = [i32::logical_type(&conn)?, bool::logical_type(&conn)?];
     let names = ["id", "is_active"];
@@ -161,12 +158,8 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
     let chunk = query.next_chunk()?.unwrap();
 
-    assert!(
-        chunk.get_vector_at::<i32>(0)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-    );
-    assert!(
-        chunk.get_vector_at::<bool>(1)?.logical_type().type_id() == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN
-    );
+    assert!(chunk.get_vector_at::<i32>(0)?.logical_type().id()? == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+    assert!(chunk.get_vector_at::<bool>(1)?.logical_type().id()? == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
 
     assert_eq!(chunk.row_count()?, 2);
 
@@ -216,9 +209,9 @@ fn invalid_column_count_collection(conn: &crate::connection::Connection) -> Resu
 #[test]
 fn test_replacement_scan_cdc_rejects_other_connection() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
-    let other = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    let other = instance.connect()?;
 
     let result = ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", single_row_collection(&other)?)
@@ -227,12 +220,13 @@ fn test_replacement_scan_cdc_rejects_other_connection() -> crate::Result<()> {
 
     let result = ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", single_row_collection(&conn)?)
-        .register(&db);
+        .register(&instance);
     assert!(result.is_err());
 
     // Combining collections of two connections leaves one that neither can register.
-    let mut combined = single_row_collection(&conn)?.to_append()?;
-    combined.combine(single_row_collection(&other)?)?;
+    let combined = single_row_collection(&conn)?
+        .to_append()?
+        .combine(single_row_collection(&other)?)?;
     let result = ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", combined.to_normal())
         .register(&conn);
@@ -254,8 +248,8 @@ fn test_replacement_scan_cdc_unknown_name() -> crate::Result<()> {
     }
 
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let calls = Arc::new(AtomicUsize::new(0));
     ReplacementScanBuilder::new(UnknownName(calls.clone())).register(&conn)?;
@@ -275,8 +269,8 @@ fn test_replacement_scan_cdc_unknown_name() -> crate::Result<()> {
 #[test]
 fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     assert!(
         invalid_column_count_collection(&conn).is_err_and(|e| e.code == DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID)
@@ -288,8 +282,8 @@ fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
 #[test]
 fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     ReplacementScanBuilder::new(CustomCdcScan)
         .collection("cdc", single_row_collection(&conn)?)

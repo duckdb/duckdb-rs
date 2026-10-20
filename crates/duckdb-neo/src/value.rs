@@ -1,8 +1,5 @@
 //! Owned DuckDB values and their typed payloads.
 
-use std::fmt::Debug;
-
-use crate::connection::HasFactory;
 use crate::{DropHandle, Factory, ffi};
 
 use crate::{
@@ -24,8 +21,8 @@ use crate::{
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 ///
 /// let value = vec![Some(1_i32), None].value(&conn)?;
 ///
@@ -129,6 +126,10 @@ fn hugeint(value: i128) -> ffi::duckdb_v2_hugeint_t {
     }
 }
 
+pub(crate) fn from_hugeint(value: ffi::duckdb_v2_hugeint_t) -> i128 {
+    (i128::from(value.upper) << 64) | i128::from(value.lower)
+}
+
 fn uhugeint(value: u128) -> ffi::duckdb_v2_uhugeint_t {
     ffi::duckdb_v2_uhugeint_t {
         lower: value as u64,
@@ -143,180 +144,139 @@ macro_rules! create_value {
     }};
 }
 
-macro_rules! create_value_dispatch {
-    (
-        $link:expr,
-        $input:expr,
-        bool = $bool:path,
-        utinyint = $utinyint:path,
-        tinyint = $tinyint:path,
-        smallint = $smallint:path,
-        int = $int:path,
-        bigint = $bigint:path,
-        usmallint = $usmallint:path,
-        uint = $uint:path,
-        ubigint = $ubigint:path,
-        float = $float:path,
-        double = $double:path,
-        hugeint = $hugeint:path,
-        uhugeint = $uhugeint:path,
-        varchar = $varchar:path,
-        blob = $blob:path,
-        null = $null:path,
-        type = $type:path,
-        date = $date:path,
-        time = $time:path,
-        time_ns = $time_ns:path,
-        time_tz = $time_tz:path,
-        timestamp = $timestamp:path,
-        timestamp_sec = $timestamp_sec:path,
-        timestamp_ms = $timestamp_ms:path,
-        timestamp_ns = $timestamp_ns:path,
-        timestamp_tz = $timestamp_tz:path,
-        timestamp_tz_ns = $timestamp_tz_ns:path,
-        interval = $interval:path,
-        decimal = $decimal:path,
-        uuid = $uuid:path,
-        bit = $bit:path,
-        bignum = $bignum:path,
-        list = $list:path,
-        array = $array:path,
-        struct = $struct:path,
-        tuple = $tuple:path,
-        map = $map:path $(,)?
-    ) => {
-        match $input {
-            ValueInput::Null(logical_type) => create_value!($null, $link, logical_type.handle),
-            ValueInput::Bool(value) => create_value!($bool, $link, value),
-            ValueInput::UTinyInt(value) => create_value!($utinyint, $link, value),
-            ValueInput::TinyInt(value) => create_value!($tinyint, $link, value),
-            ValueInput::SmallInt(value) => create_value!($smallint, $link, value),
-            ValueInput::Int(value) => create_value!($int, $link, value),
-            ValueInput::BigInt(value) => create_value!($bigint, $link, value),
-            ValueInput::USmallInt(value) => create_value!($usmallint, $link, value),
-            ValueInput::UInt(value) => create_value!($uint, $link, value),
-            ValueInput::UBigInt(value) => create_value!($ubigint, $link, value),
-            ValueInput::Float(value) => create_value!($float, $link, value),
-            ValueInput::Double(value) => create_value!($double, $link, value),
-            ValueInput::HugeInt(value) => create_value!($hugeint, $link, &hugeint(value)),
-            ValueInput::UHugeInt(value) => create_value!($uhugeint, $link, &uhugeint(value)),
-            ValueInput::Varchar(value) => create_value!($varchar, $link, &value.into()),
-            ValueInput::Blob(value) => create_value!($blob, $link, &crate::ffi_str::bytes_arg(value)),
-            ValueInput::Type(logical_type) => create_value!($type, $link, logical_type.handle),
-            ValueInput::Date(value) => create_value!($date, $link, value),
-            ValueInput::Time(value) => create_value!($time, $link, value),
-            ValueInput::TimeNs(value) => create_value!($time_ns, $link, value),
-            ValueInput::TimeTz(value) => create_value!($time_tz, $link, value),
-            ValueInput::Timestamp(value) => create_value!($timestamp, $link, value),
-            ValueInput::TimestampSec(value) => create_value!($timestamp_sec, $link, value),
-            ValueInput::TimestampMs(value) => create_value!($timestamp_ms, $link, value),
-            ValueInput::TimestampNs(value) => create_value!($timestamp_ns, $link, value),
-            ValueInput::TimestampTz(value) => create_value!($timestamp_tz, $link, value),
-            ValueInput::TimestampTzNs(value) => create_value!($timestamp_tz_ns, $link, value),
-            ValueInput::Interval { months, days, micros } => {
-                create_value!($interval, $link, &ffi::duckdb_v2_interval_t { months, days, micros })
-            }
-            ValueInput::Decimal { value, width, scale } => {
-                create_value!($decimal, $link, &hugeint(value), width, scale)
-            }
-            ValueInput::Uuid(value) => create_value!($uuid, $link, &hugeint(value)),
-            ValueInput::Bit(value) => create_value!($bit, $link, &crate::ffi_str::bytes_arg(value)),
-            ValueInput::BigNum(value) => create_value!($bignum, $link, &crate::ffi_str::bytes_arg(value)),
-            ValueInput::List { child_type, children } => {
-                let children = value_handles(children);
-                create_value!(
-                    $list,
-                    $link,
-                    child_type.handle,
-                    children.as_ptr(),
-                    children.len() as u64
-                )
-            }
-            ValueInput::Array { child_type, children } => {
-                let children = value_handles(children);
-                create_value!(
-                    $array,
-                    $link,
-                    child_type.handle,
-                    children.as_ptr(),
-                    children.len() as u64
-                )
-            }
-            ValueInput::Struct { names, children } => {
-                check_same_len("STRUCT names and children", names.len(), children.len())?;
-                let names = names.iter().map(|name| (*name).into()).collect::<Vec<_>>();
-                let children = value_handles(children);
-                create_value!($struct, $link, names.as_ptr(), children.as_ptr(), children.len() as u64)
-            }
-            ValueInput::Tuple(children) => {
-                let children = value_handles(children);
-                create_value!($tuple, $link, children.as_ptr(), children.len() as u64)
-            }
-            ValueInput::Map {
-                key_type,
-                value_type,
-                keys,
-                values,
-            } => {
-                check_same_len("MAP keys and values", keys.len(), values.len())?;
-                let keys = value_handles(keys);
-                let values = value_handles(values);
-                create_value!(
-                    $map,
-                    $link,
-                    key_type.handle,
-                    value_type.handle,
-                    keys.as_ptr(),
-                    values.as_ptr(),
-                    keys.len() as u64
-                )
-            }
-        }
-    };
-}
-
 pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> {
-    create_value_dispatch!(
-        factory.raw(),
-        input,
-        bool = ffi::duckdb_v2_value_create_bool,
-        utinyint = ffi::duckdb_v2_value_create_utinyint,
-        tinyint = ffi::duckdb_v2_value_create_tinyint,
-        smallint = ffi::duckdb_v2_value_create_smallint,
-        int = ffi::duckdb_v2_value_create_int,
-        bigint = ffi::duckdb_v2_value_create_bigint,
-        usmallint = ffi::duckdb_v2_value_create_usmallint,
-        uint = ffi::duckdb_v2_value_create_uint,
-        ubigint = ffi::duckdb_v2_value_create_ubigint,
-        float = ffi::duckdb_v2_value_create_float,
-        double = ffi::duckdb_v2_value_create_double,
-        hugeint = ffi::duckdb_v2_value_create_hugeint,
-        uhugeint = ffi::duckdb_v2_value_create_uhugeint,
-        varchar = ffi::duckdb_v2_value_create_varchar,
-        blob = ffi::duckdb_v2_value_create_blob,
-        null = ffi::duckdb_v2_value_create_null,
-        type = ffi::duckdb_v2_value_create_type,
-        date = ffi::duckdb_v2_value_create_date,
-        time = ffi::duckdb_v2_value_create_time,
-        time_ns = ffi::duckdb_v2_value_create_time_ns,
-        time_tz = ffi::duckdb_v2_value_create_time_tz,
-        timestamp = ffi::duckdb_v2_value_create_timestamp,
-        timestamp_sec = ffi::duckdb_v2_value_create_timestamp_sec,
-        timestamp_ms = ffi::duckdb_v2_value_create_timestamp_ms,
-        timestamp_ns = ffi::duckdb_v2_value_create_timestamp_ns,
-        timestamp_tz = ffi::duckdb_v2_value_create_timestamp_tz,
-        timestamp_tz_ns = ffi::duckdb_v2_value_create_timestamp_tz_ns,
-        interval = ffi::duckdb_v2_value_create_interval,
-        decimal = ffi::duckdb_v2_value_create_decimal,
-        uuid = ffi::duckdb_v2_value_create_uuid,
-        bit = ffi::duckdb_v2_value_create_bit,
-        bignum = ffi::duckdb_v2_value_create_bignum,
-        list = ffi::duckdb_v2_value_create_list,
-        array = ffi::duckdb_v2_value_create_array,
-        struct = ffi::duckdb_v2_value_create_struct,
-        tuple = ffi::duckdb_v2_value_create_tuple,
-        map = ffi::duckdb_v2_value_create_map,
-    )
+    match input {
+        ValueInput::Null(logical_type) => {
+            create_value!(ffi::duckdb_v2_value_create_null, factory.raw(), logical_type.handle)
+        }
+        ValueInput::Bool(value) => create_value!(ffi::duckdb_v2_value_create_bool, factory.raw(), value),
+        ValueInput::UTinyInt(value) => create_value!(ffi::duckdb_v2_value_create_utinyint, factory.raw(), value),
+        ValueInput::TinyInt(value) => create_value!(ffi::duckdb_v2_value_create_tinyint, factory.raw(), value),
+        ValueInput::SmallInt(value) => create_value!(ffi::duckdb_v2_value_create_smallint, factory.raw(), value),
+        ValueInput::Int(value) => create_value!(ffi::duckdb_v2_value_create_int, factory.raw(), value),
+        ValueInput::BigInt(value) => create_value!(ffi::duckdb_v2_value_create_bigint, factory.raw(), value),
+        ValueInput::USmallInt(value) => create_value!(ffi::duckdb_v2_value_create_usmallint, factory.raw(), value),
+        ValueInput::UInt(value) => create_value!(ffi::duckdb_v2_value_create_uint, factory.raw(), value),
+        ValueInput::UBigInt(value) => create_value!(ffi::duckdb_v2_value_create_ubigint, factory.raw(), value),
+        ValueInput::Float(value) => create_value!(ffi::duckdb_v2_value_create_float, factory.raw(), value),
+        ValueInput::Double(value) => create_value!(ffi::duckdb_v2_value_create_double, factory.raw(), value),
+        ValueInput::HugeInt(value) => {
+            create_value!(ffi::duckdb_v2_value_create_hugeint, factory.raw(), &hugeint(value))
+        }
+        ValueInput::UHugeInt(value) => {
+            create_value!(ffi::duckdb_v2_value_create_uhugeint, factory.raw(), &uhugeint(value))
+        }
+        ValueInput::Varchar(value) => create_value!(ffi::duckdb_v2_value_create_varchar, factory.raw(), &value.into()),
+        ValueInput::Blob(value) => create_value!(
+            ffi::duckdb_v2_value_create_blob,
+            factory.raw(),
+            &crate::ffi_str::bytes_arg(value)
+        ),
+        ValueInput::Type(logical_type) => {
+            create_value!(ffi::duckdb_v2_value_create_type, factory.raw(), logical_type.handle)
+        }
+        ValueInput::Date(value) => create_value!(ffi::duckdb_v2_value_create_date, factory.raw(), value),
+        ValueInput::Time(value) => create_value!(ffi::duckdb_v2_value_create_time, factory.raw(), value),
+        ValueInput::TimeNs(value) => create_value!(ffi::duckdb_v2_value_create_time_ns, factory.raw(), value),
+        ValueInput::TimeTz(value) => create_value!(ffi::duckdb_v2_value_create_time_tz, factory.raw(), value),
+        ValueInput::Timestamp(value) => create_value!(ffi::duckdb_v2_value_create_timestamp, factory.raw(), value),
+        ValueInput::TimestampSec(value) => {
+            create_value!(ffi::duckdb_v2_value_create_timestamp_sec, factory.raw(), value)
+        }
+        ValueInput::TimestampMs(value) => create_value!(ffi::duckdb_v2_value_create_timestamp_ms, factory.raw(), value),
+        ValueInput::TimestampNs(value) => create_value!(ffi::duckdb_v2_value_create_timestamp_ns, factory.raw(), value),
+        ValueInput::TimestampTz(value) => create_value!(ffi::duckdb_v2_value_create_timestamp_tz, factory.raw(), value),
+        ValueInput::TimestampTzNs(value) => {
+            create_value!(ffi::duckdb_v2_value_create_timestamp_tz_ns, factory.raw(), value)
+        }
+        ValueInput::Interval { months, days, micros } => {
+            create_value!(
+                ffi::duckdb_v2_value_create_interval,
+                factory.raw(),
+                &ffi::duckdb_v2_interval_t { months, days, micros }
+            )
+        }
+        ValueInput::Decimal { value, width, scale } => {
+            create_value!(
+                ffi::duckdb_v2_value_create_decimal,
+                factory.raw(),
+                &hugeint(value),
+                width,
+                scale
+            )
+        }
+        ValueInput::Uuid(value) => create_value!(ffi::duckdb_v2_value_create_uuid, factory.raw(), &hugeint(value)),
+        ValueInput::Bit(value) => create_value!(
+            ffi::duckdb_v2_value_create_bit,
+            factory.raw(),
+            &crate::ffi_str::bytes_arg(value)
+        ),
+        ValueInput::BigNum(value) => create_value!(
+            ffi::duckdb_v2_value_create_bignum,
+            factory.raw(),
+            &crate::ffi_str::bytes_arg(value)
+        ),
+        ValueInput::List { child_type, children } => {
+            let children = value_handles(children);
+            create_value!(
+                ffi::duckdb_v2_value_create_list,
+                factory.raw(),
+                child_type.handle,
+                children.as_ptr(),
+                children.len() as u64
+            )
+        }
+        ValueInput::Array { child_type, children } => {
+            let children = value_handles(children);
+            create_value!(
+                ffi::duckdb_v2_value_create_array,
+                factory.raw(),
+                child_type.handle,
+                children.as_ptr(),
+                children.len() as u64
+            )
+        }
+        ValueInput::Struct { names, children } => {
+            check_same_len("STRUCT names and children", names.len(), children.len())?;
+            let names = names.iter().map(|name| (*name).into()).collect::<Vec<_>>();
+            let children = value_handles(children);
+            create_value!(
+                ffi::duckdb_v2_value_create_struct,
+                factory.raw(),
+                names.as_ptr(),
+                children.as_ptr(),
+                children.len() as u64
+            )
+        }
+        ValueInput::Tuple(children) => {
+            let children = value_handles(children);
+            create_value!(
+                ffi::duckdb_v2_value_create_tuple,
+                factory.raw(),
+                children.as_ptr(),
+                children.len() as u64
+            )
+        }
+        ValueInput::Map {
+            key_type,
+            value_type,
+            keys,
+            values,
+        } => {
+            check_same_len("MAP keys and values", keys.len(), values.len())?;
+            let keys = value_handles(keys);
+            let values = value_handles(values);
+            create_value!(
+                ffi::duckdb_v2_value_create_map,
+                factory.raw(),
+                key_type.handle,
+                value_type.handle,
+                keys.as_ptr(),
+                values.as_ptr(),
+                keys.len() as u64
+            )
+        }
+    }
 }
 
 impl Value {
@@ -325,20 +285,13 @@ impl Value {
         T::from_value(self)
     }
 
-    /// Create a typed `NULL` without a connection or callback context.
-    pub fn null<C: HasFactory + ?Sized>(link: &C, logical_type: &LogicalType) -> Result<Value> {
-        check_api_call!(
-            ffi::duckdb_v2_value_create_null,
-            link.factory()?.raw(),
-            logical_type.handle,
-            RET
-        )
-        .map(|handle| Value { handle })
+    /// Create a typed `NULL` of `logical_type`.
+    pub fn null<C: FFILink + ?Sized>(link: &C, logical_type: &LogicalType) -> Result<Value> {
+        link.create_value(ValueInput::Null(logical_type))
     }
 
     /// Cast a value using a connection or callback context's registered casts.
-    #[allow(private_bounds)]
-    pub fn cast<C: HasFactory + ?Sized>(&self, link: &C, target_type: LogicalType) -> Result<Value> {
+    pub fn cast<C: FFILink + ?Sized>(&self, link: &C, target_type: &LogicalType) -> Result<Value> {
         check_api_call!(
             ffi::duckdb_v2_value_cast,
             link.factory()?.raw(),
@@ -360,11 +313,12 @@ impl Value {
     }
 
     /// Return the logical type carried by a `TYPE` value.
-    pub fn type_value_get_inner(&self) -> Result<LogicalType> {
+    pub(crate) fn type_value_get_inner(&self) -> Result<LogicalType> {
         check_api_call!(ffi::duckdb_v2_value_get_type, self.handle, RET).map(|handle| LogicalType { handle })
     }
 
-    /// Return the number of children in a composite value.
+    /// Count elements/fields: MAP has two per entry, UNION has tag/member, and NULL or non-composites have zero.
+    /// LIST/ARRAY children are elements; STRUCT/TUPLE children are fields.
     pub fn child_count(&self) -> Result<usize> {
         check_api_call!(ffi::duckdb_v2_value_get_child_count, self.handle, RET).map(|count| count as usize)
     }
@@ -389,6 +343,10 @@ impl Value {
             length,
             RET
         )?;
+        if written > length {
+            return Err(Error::api_error("Invalid bignum length"));
+        }
+        // SAFETY: the C API initialized `written` bytes within the allocated capacity.
         unsafe {
             encoded.set_len(written as usize);
         }
@@ -416,23 +374,24 @@ impl Value {
             RET,
             &mut is_negative
         )?;
+        if written > length {
+            return Err(Error::api_error("Invalid bignum length"));
+        }
+        // SAFETY: the C API initialized `written` bytes within the allocated capacity.
         unsafe {
             decoded.set_len(written as usize);
         }
         Ok((is_negative, decoded))
     }
 
-    /// Return an owned copy of a child value.
-    ///
-    /// This is a per-value slow path; prefer typed vector access for query data.
-    /// A non-composite value or out-of-range index returns an error.
+    /// Copy a child: MAP alternates key/value, UNION has tag then active member; invalid indices return errors.
+    /// This slow path copies elements/fields; prefer typed vector access for query data.
     pub fn get_child(&self, index: usize) -> Result<Value> {
         check_api_call!(ffi::duckdb_v2_value_get_child, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 
-    /// Return owned copies of all child values.
-    ///
-    /// This is a per-value slow path; prefer typed vector access for query data.
+    /// Copy all children in [`Self::get_child`] order.
+    /// This is a slow per-value path; prefer typed vector access for query data.
     pub fn children(&self) -> Result<Vec<Value>> {
         let count = self.child_count()?;
         let mut children = Vec::with_capacity(count);
@@ -456,6 +415,12 @@ impl Value {
     }
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.dbg_string().map_err(|_| std::fmt::Error)?)
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -465,6 +430,7 @@ mod tests {
         builder_helpers::scalar_callback,
         connection::FFILink,
         environment::{Environment, StorageLocation},
+        error::DuckDBError,
         scalar::ScalarFunctionBuilder,
         signature::{FunctionParameter, SignatureBuilder},
         types::{BigNumValue, DuckDBType},
@@ -480,7 +446,9 @@ mod tests {
             names: &["a"],
             children: &two,
         });
-        assert!(result.is_err());
+        let err = result.expect_err("STRUCT length mismatch must be rejected");
+        assert_eq!(err.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.message, "STRUCT names and children: lengths differ (1 vs 2)");
 
         let result = link.create_value(ValueInput::Map {
             key_type: &int,
@@ -488,7 +456,9 @@ mod tests {
             keys: &two,
             values: &one,
         });
-        assert!(result.is_err());
+        let err = result.expect_err("MAP length mismatch must be rejected");
+        assert_eq!(err.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.message, "MAP keys and values: lengths differ (2 vs 1)");
         Ok(())
     }
 
@@ -519,10 +489,107 @@ mod tests {
     }
 
     #[test]
-    fn test_value_create() -> crate::Result<()> {
+    fn test_typed_null_list() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let logical_type = Vec::<i32>::logical_type(&conn)?;
+        let value = super::Value::null(&conn, &logical_type)?;
+        assert!(value.is_null()?);
+        assert_eq!(value.child_count()?, 0);
+        assert_eq!(value.logical_type()?.to_text()?, "INTEGER[]");
+        assert!(value.get::<Vec<Option<i32>>>()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_hugeint_parts_round_trip() {
+        for value in [
+            i128::MIN,
+            -(1_i128 << 64) + (1_i128 << 63),
+            -1,
+            0,
+            1_i128 << 63,
+            i128::MAX,
+        ] {
+            assert_eq!(super::from_hugeint(super::hugeint(value)), value);
+        }
+    }
+
+    #[test]
+    fn test_value_error_paths() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let list = vec![1_i32, 2].value(&conn)?;
+        for index in [2, usize::MAX] {
+            let err = list.get_child(index).expect_err("out-of-range child must fail");
+            assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+            assert!(err.message.contains("child index out of range"), "{err}");
+        }
+        let scalar = 42_i32.value(&conn)?;
+        let err = scalar.get_child(0).expect_err("scalar has no children");
+        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        let err = scalar.get::<super::LogicalType>().expect_err("integer is not TYPE");
+        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert!(err.message.contains("TYPE"), "{err}");
+
+        let text = "not an integer".value(&conn)?;
+        let target = i32::logical_type(&conn)?;
+        let err = text.cast(&conn, &target).expect_err("invalid integer cast must fail");
+        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert!(err.message.contains("Failed to cast value"), "{err}");
+        assert!(err.message.contains("not an integer"), "{err}");
+        assert_eq!(text.get::<String>()?.as_deref(), Some("not an integer"));
+        assert_eq!(scalar.get::<i32>()?, Some(42));
+        Ok(())
+    }
+
+    #[test]
+    fn test_value_display_and_type_payload() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        assert_eq!(42_i32.value(&conn)?.to_string(), "42");
+        assert_eq!("hello".value(&conn)?.to_string(), "hello");
+        let logical_type = i32::logical_type(&conn)?;
+        assert_eq!(super::Value::null(&conn, &logical_type)?.to_string(), "NULL");
+        let value = super::Value::from_logical_type(&conn, &logical_type)?;
+        let payload = value.get::<super::LogicalType>()?.expect("non-NULL TYPE payload");
+        assert_eq!(payload.id()?, logical_type.id()?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_cast_borrows_target_type() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let target = i64::logical_type(&conn)?;
+        let value = 42_i32.value(&conn)?;
+
+        assert_eq!(value.cast(&conn, &target)?.get::<i64>()?, Some(42));
+        assert_eq!(conn.value_cast(&value, &target)?.get::<i64>()?, Some(42));
+        assert_eq!(target.to_text()?, "BIGINT");
+        let null = super::Value::null(&conn, &target)?;
+        assert!(null.is_null()?);
+        assert_eq!(null.logical_type()?.to_text()?, "BIGINT");
+        Ok(())
+    }
+
+    #[test]
+    fn test_bignum_encode_decode_round_trip() -> crate::Result<()> {
+        for magnitude in [vec![0], vec![1], vec![1, 2, 3, 4], vec![255; 32]] {
+            for is_negative in [false, true] {
+                if is_negative && magnitude == [0] {
+                    continue;
+                }
+                let encoded = super::Value::encode_bignum(&magnitude, is_negative)?;
+                let (decoded_sign, decoded) = super::Value::decode_bignum(&encoded)?;
+                assert_eq!(decoded_sign, is_negative);
+                assert_eq!(decoded, magnitude);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_bignum_list_render() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
         let value = vec![
             None,
             Some(BigNumValue {
@@ -537,6 +604,7 @@ mod tests {
         .value(&conn)?;
 
         assert_eq!(value.dbg_string()?, "[NULL, -16909060, 84281096]");
+        assert_eq!(value.to_string(), "[NULL, -16909060, 84281096]");
         Ok(())
     }
 }

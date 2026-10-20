@@ -5,7 +5,7 @@
 //! their respective modules.
 
 use crate::connection::HasFactory;
-use crate::{column_data_collection::ColumnDataCollection, connection::Connection, database::Instance, ffi};
+use crate::{column_data_collection::ColumnDataCollection, connection::Connection, ffi, instance::Instance};
 
 macro_rules! define_handle {
     (
@@ -73,11 +73,11 @@ macro_rules! define_handle_column_data_collection {
         }
 
         pub(crate) trait $link {
-            fn $create(&self) -> $crate::Result<$name>;
+            fn $create(&mut self) -> $crate::Result<$name>;
         }
 
         impl $link for ColumnDataCollection<'_> {
-            fn $create(&self) -> $crate::Result<$name> {
+            fn $create(&mut self) -> $crate::Result<$name> {
                 $crate::check_api_call!($factory, $crate::raw::RawExt::raw(self), RET).map($name)
             }
         }

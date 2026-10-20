@@ -4,33 +4,33 @@ use std::{any::Any, sync::Arc};
 
 use crate::{
     connection::{Connection, Context, Extension},
-    database::Instance,
     ffi,
+    instance::Instance,
 };
 
-/// Keeps a connection and its database alive, and so their allocator and buffer managers.
+/// Keeps a connection and its instance alive, and so their allocator and buffer managers.
 pub(crate) type KeepAlive = Arc<dyn Any + Send + Sync>;
 
-/// What an object allocated through a link must hold to keep its connection and database alive.
+/// What an object allocated through a link must hold to keep its connection and instance alive.
 ///
 /// A [`Context`] gives none: it only exists inside callbacks, whose connection outlives them.
-pub(crate) trait DatabaseKeepAlive {
+pub(crate) trait InstanceKeepAlive {
     fn keep_alive(&self) -> Option<KeepAlive>;
 }
 
-impl DatabaseKeepAlive for Connection {
+impl InstanceKeepAlive for Connection {
     fn keep_alive(&self) -> Option<KeepAlive> {
-        Some(Arc::new((self.inner.clone(), self._db.clone())))
+        Some(Arc::new((self.inner.clone(), self.instance.clone())))
     }
 }
 
-impl DatabaseKeepAlive for Instance {
+impl InstanceKeepAlive for Instance {
     fn keep_alive(&self) -> Option<KeepAlive> {
         Some(Arc::new(self.handle.clone()))
     }
 }
 
-impl DatabaseKeepAlive for Context {
+impl InstanceKeepAlive for Context {
     fn keep_alive(&self) -> Option<KeepAlive> {
         None
     }

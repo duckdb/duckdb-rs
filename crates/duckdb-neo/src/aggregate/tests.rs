@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use libduckdb_sys::v2::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VALUE};
+use crate::ffi::{DUCKDB_V2_FUNCTION_PROPERTY_KEY, DUCKDB_V2_FUNCTION_PROPERTY_VALUE};
 
 use crate::{
     DuckDBType, Parameters,
@@ -13,6 +13,36 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     vector::{Unknown, Vector},
 };
+
+#[test]
+fn aggregate_state_slice_handles_empty_arrays() {
+    let items = [std::ptr::null_mut::<u64>()];
+    // SAFETY: null inputs are supported, and items is live for every borrowed slice.
+    unsafe {
+        assert!(super::state_slice::<*mut u64>(std::ptr::null(), 0).is_empty());
+        assert!(super::state_slice::<*mut u64>(std::ptr::null(), 1).is_empty());
+        assert!(super::state_slice(items.as_ptr(), 0).is_empty());
+        assert_eq!(super::state_slice(items.as_ptr(), items.len()), &items);
+    }
+}
+
+#[test]
+fn aggregate_states_iterator_tracks_remaining_states() {
+    let (mut first, mut second) = (10, 20);
+    let pointers = [&mut first as *mut i32, &mut second as *mut i32];
+    // SAFETY: both aligned values remain live and otherwise unborrowed until states is dropped.
+    let states = unsafe { States::new(&pointers) };
+    let mut iter = states.iter();
+    assert_eq!(iter.size_hint(), (2, Some(2)));
+    assert_eq!(iter.len(), 2);
+    assert_eq!(iter.next_back(), Some(&20));
+    assert_eq!(iter.len(), 1);
+    assert_eq!(iter.next(), Some(&10));
+    assert_eq!(iter.size_hint(), (0, Some(0)));
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
+    assert_eq!((&states).into_iter().copied().collect::<Vec<_>>(), [10, 20]);
+}
 
 struct BasicAggregate<T> {
     item: T,
@@ -111,8 +141,8 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
 #[test]
 pub fn basic_aggregate_test() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
@@ -143,11 +173,13 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
 #[test]
 pub fn aggregate_test_invalid_build() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
+    let instance = env.open(StorageLocation::InMemory)?;
 
-    db.config()?.set_text("threads", &1.to_string(), SettingScope::Global)?;
+    instance
+        .config()?
+        .set_text("threads", &1.to_string(), SettingScope::Global)?;
 
-    let conn = db.connect()?;
+    let conn = instance.connect()?;
 
     let mut result = AggregateFunctionBuilder::new(
         "to_concatenated",
@@ -183,8 +215,8 @@ pub fn aggregate_test_invalid_build() -> crate::Result<()> {
 #[test]
 fn aggregate_test_groups() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "to_concatenated",
@@ -277,8 +309,8 @@ impl AggregateCallbacks for UndersizedState {
 #[test]
 fn aggregate_test_undersized_state() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "undersized",
@@ -359,10 +391,6 @@ impl AggregateCallbacks for PaddedSum {
         result_offset: usize,
     ) -> crate::Result<()> {
         let mut result = result.cast::<i64>()?;
-        // A window passes its result vector unsized.
-        if result.len() < result_offset + states.len() {
-            result.set_size(result_offset + states.len())?;
-        }
         for (index, state) in states.iter().enumerate() {
             result.write(result_offset + index, Some(**state))?;
         }
@@ -373,8 +401,8 @@ impl AggregateCallbacks for PaddedSum {
 #[test]
 fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     AggregateFunctionBuilder::new(
         "padded_sum",
@@ -385,7 +413,7 @@ fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
     )
     .register(&conn)?;
 
-    // Window operators lay states out back to back, by the reported size.
+    // Windows lay states out by the reported size and finalize into unsized results.
     let mut result = conn.query(
         "SELECT padded_sum(i::INTEGER) OVER () AS total,
                 padded_sum(i::INTEGER) OVER (ORDER BY i) AS running

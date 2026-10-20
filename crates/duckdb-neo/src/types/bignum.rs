@@ -8,7 +8,7 @@ use super::string::owned_bytes;
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
 use crate::{
-    Parameters, Result, check_api_call,
+    Error, Parameters, Result, check_api_call,
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
@@ -25,7 +25,13 @@ pub struct BigNum(ffi::duckdb_v2_bignum_t);
 
 impl std::fmt::Debug for BigNum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("BigNum").field(&self.encoded()).finish()
+        match self.decode() {
+            Ok(value) => f.debug_tuple("BigNum").field(&value).finish(),
+            Err(_) => f
+                .debug_struct("BigNum")
+                .field("size", &self.encoded().len())
+                .finish_non_exhaustive(),
+        }
     }
 }
 
@@ -66,7 +72,8 @@ impl ToValue for BigNum {
     }
 }
 
-impl VectorElement for BigNum {
+// SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
+unsafe impl VectorElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
 
     type Internal = BigNum;
@@ -82,7 +89,8 @@ impl VectorElement for BigNum {
     }
 }
 
-impl WritableVectorElement for BigNum {
+// SAFETY: a `BigNum` only borrows DuckDB-encoded bytes, which `write_bytes` copies into the vector's arena.
+unsafe impl WritableVectorElement for BigNum {
     type Write<'a> = &'a BigNum;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -91,11 +99,12 @@ impl WritableVectorElement for BigNum {
 }
 
 /// The decoded sign and magnitude of a [`BigNum`].
+/// Non-canonical values are rejected when converted to a [`Value`] or written to a vector.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BigNumValue {
-    /// Whether the number is negative.
+    /// Whether the number is negative; must be false for zero.
     pub is_negative: bool,
-    /// The unsigned magnitude in big-endian byte order.
+    /// Nonempty big-endian magnitude without leading zero bytes; zero is `[0x00]`.
     pub magnitude: Vec<u8>,
 }
 
@@ -111,6 +120,14 @@ impl ToValue for BigNumValue {
 
 impl FromValue for BigNumValue {
     fn _get_inner(value: &Value) -> Result<Self> {
+        let logical_type = value.logical_type()?;
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM {
+            return Err(Error::invalid_input(format!(
+                "Expected BIGNUM value, found {}",
+                logical_type.to_text()?
+            )));
+        }
+
         let raw = check_api_call!(ffi::duckdb_v2_value_get_blob, value.raw(), RET)?;
         let encoded = owned_bytes(raw)?;
         let (is_negative, magnitude) = Value::decode_bignum(&encoded)?;
@@ -119,7 +136,8 @@ impl FromValue for BigNumValue {
 }
 
 // TODO: Review if needed..
-impl VectorElement for BigNumValue {
+// SAFETY: same storage as `BigNum`.
+unsafe impl VectorElement for BigNumValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
 
     type Internal = BigNum;
@@ -135,7 +153,8 @@ impl VectorElement for BigNumValue {
     }
 }
 
-impl WritableVectorElement for BigNumValue {
+// SAFETY: `encode_bignum` produces valid bytes, which `write_bytes` copies into the vector's arena.
+unsafe impl WritableVectorElement for BigNumValue {
     type Write<'a> = &'a BigNumValue;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -148,34 +167,79 @@ impl WritableVectorElement for BigNumValue {
 
 impl Display for BigNumValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.magnitude.iter().all(|&b| b == 0) {
-            return write!(f, "0");
-        }
+        use std::fmt::Write;
 
-        const CHUNK_DIVISOR: u128 = 1_000_000_000_000_000_000;
-        let mut magnitude = self.magnitude.to_vec();
-        let mut chunks: Vec<u64> = Vec::new();
+        const CHUNK_DIVISOR: u64 = 1_000_000_000;
+        let mut magnitude: Vec<u32> = self
+            .magnitude
+            .rchunks(4)
+            .rev()
+            .map(|bytes| bytes.iter().fold(0, |limb, &byte| (limb << 8) | u32::from(byte)))
+            .collect();
+        let mut start = magnitude.iter().position(|&limb| limb != 0).unwrap_or(magnitude.len());
+        let mut chunks = Vec::new();
 
-        while !magnitude.iter().all(|&b| b == 0) {
-            let mut remainder: u128 = 0;
-            for byte in magnitude.iter_mut() {
-                let cur = (remainder << 8) | (*byte as u128);
-                *byte = (cur / CHUNK_DIVISOR) as u8;
-                remainder = cur % CHUNK_DIVISOR;
+        while start < magnitude.len() {
+            let mut remainder = 0;
+            for limb in &mut magnitude[start..] {
+                let current = (remainder << 32) | u64::from(*limb);
+                *limb = (current / CHUNK_DIVISOR) as u32;
+                remainder = current % CHUNK_DIVISOR;
             }
-            chunks.push(remainder as u64);
+            chunks.push(remainder);
+            while start < magnitude.len() && magnitude[start] == 0 {
+                start += 1;
+            }
         }
 
-        if self.is_negative {
-            write!(f, "-")?;
+        let Some(last) = chunks.pop() else {
+            return f.pad_integral(true, "", "0");
+        };
+        let mut digits = last.to_string();
+        for chunk in chunks.iter().rev() {
+            write!(digits, "{chunk:09}")?;
         }
+        f.pad_integral(!self.is_negative, "", &digits)
+    }
+}
 
-        let mut iter = chunks.iter().rev();
-        write!(f, "{}", iter.next().unwrap())?;
-        for chunk in iter {
-            write!(f, "{:018}", chunk)?;
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn bignum_debug_shows_decoded_value() -> Result<()> {
+        use crate::environment::{Environment, StorageLocation};
+
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut result = conn.query("SELECT -16909060::BIGNUM", Parameters::None)?;
+        let chunk = result.next_chunk()?.unwrap();
+        let vector = chunk.get_vector_at::<BigNum>(0)?;
+        let value = vector.get(0)?.unwrap();
+        assert_eq!(
+            format!("{value:?}"),
+            "BigNum(BigNumValue { is_negative: true, magnitude: [1, 2, 3, 4] })"
+        );
         Ok(())
+    }
+
+    #[test]
+    fn bignum_display_digits_and_padding() {
+        for value in [0_u128, 1_000_000_000, 10_u128.pow(18), 10_u128.pow(36), u128::MAX] {
+            let bignum = BigNumValue {
+                is_negative: false,
+                magnitude: value.to_be_bytes().to_vec(),
+            };
+            assert_eq!(bignum.to_string(), value.to_string());
+            assert_eq!(format!("{bignum:+042}"), format!("{value:+042}"));
+            assert_eq!(format!("{bignum:*>42}"), format!("{value:*>42}"));
+        }
+        let negative = BigNumValue {
+            is_negative: true,
+            magnitude: vec![1],
+        };
+        assert_eq!(format!("{negative:05}"), "-0001");
+        assert_eq!(format!("{negative:+}"), "-1");
     }
 }

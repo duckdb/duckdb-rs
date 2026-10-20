@@ -1,3 +1,5 @@
+//! Register instance-wide settings with typed defaults and update callbacks.
+
 use crate::{
     FromRaw, Result,
     builder_helpers::{OpaqueHandle, get_user_data, handle_unwind},
@@ -39,6 +41,7 @@ unsafe extern "C" fn update_callback<T: CustomOptionCallbacks>(
     );
 }
 
+/// Builds a typed custom setting with GLOBAL and SESSION writes enabled by default.
 #[derive(Debug)]
 pub struct CustomOptionBuilder<T: CustomOptionCallbacks> {
     name: String,
@@ -52,6 +55,7 @@ pub struct CustomOptionBuilder<T: CustomOptionCallbacks> {
 }
 
 impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
+    /// Creates a named setting with its description, type, and update callback.
     pub fn new(
         name: impl Into<String>,
         description: impl Into<String>,
@@ -70,21 +74,26 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
         }
     }
 
+    /// Disables GLOBAL writes; registration fails if SESSION writes are also disabled.
     pub fn no_global(mut self) -> Self {
         self.no_global = true;
         self
     }
 
+    /// Disables SESSION writes; registration fails if GLOBAL writes are also disabled.
     pub fn no_session(mut self) -> Self {
         self.no_session = true;
         self
     }
 
+    /// Sets the default, cast to the option type without invoking the callback; otherwise it is typed NULL.
     pub fn default_value(mut self, value: Value) -> Self {
         self.default_value = Some(value);
         self
     }
 
+    /// Selects `Global` or `Session` for unqualified SET/RESET; `Default` is rejected at registration.
+    /// If omitted, DuckDB chooses `Session` when supported, otherwise `Global`.
     pub fn default_scope(mut self, scope: SettingScope) -> Self {
         self.default_scope = Some(scope);
         self
@@ -119,7 +128,7 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
             check_api_call!(
                 ffi::duckdb_v2_custom_option_set_default_scope,
                 handle.raw(),
-                default_scope.clone().into()
+                (*default_scope).into()
             )?;
         }
         if let Some(default_value) = self.default_value.as_ref() {
@@ -151,6 +160,8 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
         )
     }
 
+    /// Registers the option instance-wide, transferring its callback state to DuckDB until the instance closes.
+    /// Fails for duplicate or built-in names, both scopes disabled, or an unsupported default scope.
     #[allow(private_bounds)]
     pub fn register<C: CustomOptionBuilderLink>(self, link: &C) -> Result<()> {
         let handle = link.create_custom_option_handle()?;
@@ -159,7 +170,10 @@ impl<T: CustomOptionCallbacks> CustomOptionBuilder<T> {
     }
 }
 
+/// Handles SQL SET/RESET and Config writes; registering defaults does not invoke the callback.
 pub trait CustomOptionCallbacks: Send + Sync + 'static {
+    /// Accepts or replaces a value; DuckDB casts the return to the option type, and `Err` refuses the write.
+    /// The scope is resolved to `Global`/`Session`; RESET passes the possibly NULL default with `is_reset = true`.
     fn update(&self, context: &Context, value: Value, scope: SettingScope, is_reset: bool) -> Result<Value>;
 }
 

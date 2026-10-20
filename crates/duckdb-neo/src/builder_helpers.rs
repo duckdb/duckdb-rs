@@ -101,10 +101,15 @@ impl<T> Drop for OpaqueHandle<T> {
 }
 
 pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Error) {
-    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, error.code).expect("Failed to set error code");
-
-    check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, &(&error.message).into())
-        .expect("Failed to set error text");
+    if err.is_null() || unsafe { (*err).is_null() } {
+        return;
+    }
+    let code = match error.code {
+        ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE => ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_API,
+        code => code,
+    };
+    let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, code);
+    let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, &(&error.message).into());
 }
 
 pub(crate) unsafe extern "C" fn drop_opaque<T>(ptr: *mut c_void) {
@@ -174,6 +179,7 @@ pub(crate) fn handle_unwind<T, F: FnOnce() -> Result<T>>(
         }
         Err(panic) => {
             let text = panic_message(panic.as_ref());
+            // INTERNAL intentionally invalidates the instance and is reported as an internal DuckDB failure.
             let error = Error::internal(format!("Panic occurred: {text}"));
             set_error(err, &error);
             None
@@ -229,7 +235,7 @@ macro_rules! ffi_enum_redeclaration {
     ) => {
         $(#[$meta])*
         #[repr(u32)]
-        #[derive(Debug, PartialEq, Eq, Clone)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $name {
             $($(#[$variant_meta])* $variant = <$ffi_ty>::$ffi_variant as u32),*
         }
@@ -242,15 +248,15 @@ macro_rules! ffi_enum_redeclaration {
             }
         }
 
-        impl TryInto<$name> for $ffi_ty {
+        impl TryFrom<$ffi_ty> for $name {
             type Error = $crate::Error;
-            fn try_into(self) -> $crate::Result<$name> {
-                match self {
+            fn try_from(value: $ffi_ty) -> $crate::Result<Self> {
+                match value {
                     $(<$ffi_ty>::$ffi_variant => Ok($name::$variant),)*
                     _ => Err($crate::Error::api_error(format!(
                         "Unknown {}: {:?}",
                         stringify!($name),
-                        self
+                        value
                     ))),
                 }
             }
@@ -300,6 +306,48 @@ pub(crate) use scalar_callback;
 mod tests {
     use super::panic_message;
     use std::any::Any;
+
+    #[test]
+    fn test_enum_conversion_traits() -> crate::Result<()> {
+        fn assert_copy_hash<T: Copy + std::hash::Hash>() {}
+        assert_copy_hash::<crate::cast::CastMode>();
+        let mode = crate::cast::CastMode::try_from(crate::ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY)?;
+        assert_eq!(mode, crate::cast::CastMode::Try);
+        assert_eq!(
+            crate::ffi::DUCKDB_V2_CAST_MODE::from(mode),
+            crate::ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_error_maps_none_to_api() -> crate::Result<()> {
+        let mut handle = std::ptr::null_mut();
+        // SAFETY: the byte argument and output slot are valid for this call.
+        unsafe { crate::ffi::duckdb_v2_validate_utf8(&crate::ffi_str::bytes_arg(b"\xff"), &mut handle) };
+        assert!(!handle.is_null());
+        let error = crate::Error {
+            code: crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE,
+            message: "callback error".to_owned(),
+        };
+        super::set_error(&mut handle, &error);
+        let mut code = crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE;
+        super::check_api_call_no_err!(crate::ffi::duckdb_v2_error_info_get_code, handle, &mut code)?;
+        // SAFETY: this test transfers ownership of the live error handle.
+        let error = unsafe { crate::Error::from_code_and_handle(code, &mut handle) };
+        assert_eq!(error.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_API);
+        assert_eq!(error.message, "callback error");
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_error_null_slot() {
+        let error = crate::Error::api_error("callback error");
+        super::set_error(std::ptr::null_mut(), &error);
+        let mut slot = std::ptr::null_mut();
+        super::set_error(&mut slot, &error);
+        assert!(slot.is_null());
+    }
 
     #[test]
     fn extracts_standard_panic_messages() {

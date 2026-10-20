@@ -23,12 +23,18 @@ pub trait UnionSchema {
     fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>>;
 }
 
-/// An active member represented as a DuckDB `UNION` with schema `S`.
-#[derive(Debug)]
+/// A DuckDB `UNION` with schema `S`; implicit-cast costs select the active member.
+/// Conversion fails when multiple members tie for the cheapest cast.
 pub struct UnionValue<S, T> {
     /// The active member value.
     pub value: T,
     _schema: PhantomData<S>,
+}
+
+impl<S, T: std::fmt::Debug> std::fmt::Debug for UnionValue<S, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnionValue").field("value", &self.value).finish()
+    }
 }
 
 impl<S, T> UnionValue<S, T> {
@@ -59,25 +65,26 @@ impl<S: UnionSchema, T> DuckDBType for UnionValue<S, T> {
 impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         let value = self.value.value(link)?;
-        link.value_cast(&value, Self::logical_type(link)?)
+        link.value_cast(&value, &Self::logical_type(link)?)
     }
 }
 
-impl VectorElement for Union {
+// SAFETY: members are read only through the child vectors, and `validate` checks the tag.
+unsafe impl VectorElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION;
     type Ref<'a> = UnionRow<'a>;
 
     type Internal = Union;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 
         let Some(children) = children.filter(|children| children.col_count() > 0) else {
             return Err(Error::invalid_input("Union vector is missing its tag child"));
         };
-        children.get_untyped_vector_at(0)?.validate_as::<u8>()
+        children.get_untyped_vector_at(0)?.validate_as::<u8>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -110,21 +117,26 @@ impl<'a> UnionRow<'a> {
 
     /// Return a union member by index after validating its logical type.
     pub fn get<T: VectorElement>(&self, index: usize) -> Result<Option<T::Ref<'a>>> {
-        let index = index + 1;
+        let child_index = index
+            .checked_add(1)
+            .filter(|&index| index < self.children.col_count())
+            .ok_or_else(|| {
+                Error::invalid_parameter(format!(
+                    "Union member index {} is out of bounds ({} members)",
+                    index,
+                    self.children.col_count() - 1
+                ))
+            })?;
 
-        if index >= self.children.col_count() {
-            return Err(Error::invalid_parameter(format!(
-                "Union member index {} is out of bounds ({} members)",
-                index - 1,
-                self.children.col_count() - 1
-            )));
-        }
-
-        self.children.cached_unchecked(index).get_as_checked::<T>(self.logical)
+        self.children
+            .cached_unchecked(child_index)
+            .get_as_checked::<T>(self.logical)
     }
 }
 
 trait UnionFieldWrite {
+    fn validate(&self, child: &Vector<'_, Unknown>) -> Result<()>;
+
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()>;
 }
 
@@ -138,6 +150,10 @@ where
     T: WritableVectorElement + 'a,
     T::Write<'a>: 'a,
 {
+    fn validate(&self, child: &Vector<'_, Unknown>) -> Result<()> {
+        child.validate_as::<T>()
+    }
+
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()> {
         child.write_as::<T>(index, self.member)
     }
@@ -171,7 +187,8 @@ impl<'a> UnionWriter<'a> {
     }
 }
 
-impl WritableVectorElement for Union {
+// SAFETY: the tag is range-checked, and members are written through the children's own `write`.
+unsafe impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -191,13 +208,20 @@ impl WritableVectorElement for Union {
             )));
         }
 
+        let member = 1 + value.tag as usize;
+        value.value.validate(
+            vector
+                .children()
+                .ok_or_else(|| Error::invalid_input("Union vector is missing its member children"))?
+                .get_untyped_vector_at(member)?,
+        )?;
+
         let vector_len = vector.len();
         vector.set_row_validity(index, true)?;
         let children = vector
             .children_collection_mut()
             .expect("validated nested vector has children");
 
-        let member = 1 + value.tag as usize;
         for i in 0..children.col_count() {
             let child = children.cached_mut::<Unknown>(i)?;
             if child.len() != vector_len {
@@ -206,10 +230,11 @@ impl WritableVectorElement for Union {
             if i == 0 {
                 child.write_as::<u8>(index, Some(value.tag))?;
             } else if i != member {
-                // A NULL STRUCT, UNION or ARRAY row needs NULL descendants, which only the slow path sets.
+                // Nested fixed-width rows need NULL descendants, which only the slow path sets.
                 let nested = matches!(
-                    child.logical_type().type_id(),
+                    child.logical_type().id()?,
                     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT
+                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
                         | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
                         | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
                 );
@@ -222,5 +247,68 @@ impl WritableVectorElement for Union {
         }
         // The member's own write sets its validity.
         value.value.write(children.cached_mut::<Unknown>(member)?, index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        data_chunk::DataChunk,
+        environment::{Environment, StorageLocation},
+    };
+
+    #[test]
+    fn union_value_debug_does_not_require_schema_debug() {
+        struct Schema;
+        let value = UnionValue::<Schema, _>::new(42);
+        assert_eq!(format!("{value:?}"), "UnionValue { value: 42 }");
+    }
+
+    #[test]
+    fn union_type_mismatch_preserves_row() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let value = conn
+            .query(
+                "SELECT union_value(str := 'duck')::UNION(num INTEGER, str VARCHAR)",
+                Parameters::None,
+            )?
+            .next_chunk()?
+            .unwrap()
+            .get_vector_at::<Union>(0)?
+            .get_value_slow(0)?;
+        let mut chunk = DataChunk::create(&conn, &[value.logical_type()?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
+            vector.set_size(2)?;
+            vector.write_value_slow(0, value)?;
+            vector.write(1, None)?;
+            for index in 0..2 {
+                let invalid = UnionWriter::set_value::<String>(0, Some("bad"));
+                assert!(vector.write(index, Some(invalid)).is_err());
+            }
+        }
+        let vector = chunk.get_vector_at::<Union>(0)?;
+        let row = vector.get(0)?.unwrap();
+        assert_eq!(row.member(), 1);
+        assert_eq!(row.get::<i32>(0)?, None);
+        assert_eq!(row.get::<String>(1)?, Some("duck"));
+        assert!(vector.get(1)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn union_member_index_overflow_returns_error() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query("SELECT union_value(x := 42)", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        let row = chunk.get_vector_at::<Union>(0)?.get(0)?.unwrap();
+        assert!(row.get::<u8>(usize::MAX).is_err());
+        assert_eq!(row.get::<i32>(0)?, Some(&42));
+        Ok(())
     }
 }

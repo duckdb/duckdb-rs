@@ -16,15 +16,31 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, VectorElement, WritableVectorElement},
 };
-/// Reads a `MAP` vector with key type `K` and value type `V`.
+
+/// Reads and writes `MAP` vectors with key type `K` and value type `V`.
+/// Rows are written from a `HashMap`, in its iteration order.
 #[derive(Debug)]
-pub struct Map<K, V>(pub ffi::duckdb_v2_list_entry, pub PhantomData<(K, V)>);
+pub struct Map<K, V>(PhantomData<(K, V)>);
 
 /// Key-value entries represented as a DuckDB `MAP`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct MapValue<K, V> {
     /// Entries in insertion order.
     pub entries: Vec<(K, V)>,
+}
+
+impl<K, V> From<Vec<(K, V)>> for MapValue<K, V> {
+    fn from(entries: Vec<(K, V)>) -> Self {
+        Self { entries }
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for MapValue<K, V> {
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self {
+            entries: iter.into_iter().collect(),
+        }
+    }
 }
 
 impl<K: DuckDBType, V: DuckDBType> DuckDBType for MapValue<K, V> {
@@ -58,10 +74,10 @@ impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V
 impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
             return Err(Error::invalid_input(format!(
                 "Expected MAP value, found {}",
-                logical_type.to_string()?
+                logical_type.to_text()?
             )));
         }
 
@@ -88,7 +104,8 @@ impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     }
 }
 
-impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
+// SAFETY: a MAP is stored as a LIST of STRUCT(key, value), and `validate` checks both fields.
+unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP;
 
     type Ref<'a>
@@ -100,7 +117,7 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     type Internal = super::List<()>;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 
@@ -114,7 +131,7 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
             .ok_or_else(|| Error::invalid_input("Map vector must have one STRUCT(key, value) child"))?;
 
         fields.get_untyped_vector_at(0)?.validate_as::<K>()?;
-        fields.get_untyped_vector_at(1)?.validate_as::<V>()
+        fields.get_untyped_vector_at(1)?.validate_as::<V>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -138,9 +155,10 @@ impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     }
 }
 
-impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
+// SAFETY: the entry covers child rows written through the fields' own `write`.
+unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
     type Write<'a>
-        = HashMap<K::Write<'a>, V::Write<'a>>
+        = HashMap<K::Write<'a>, Option<V::Write<'a>>>
     where
         K: 'a,
         V: 'a;
@@ -169,14 +187,12 @@ impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement f
                 .expect("validated map entries have key and value children");
 
             let key_vector = fields.cached_mut::<K>(0)?;
-            key_vector.set_size(offset + len)?;
             for (child_index, key) in keys.into_iter().enumerate() {
                 key_vector.write(offset + child_index, Some(key))?;
             }
             let value_vector = fields.cached_mut::<V>(1)?;
-            value_vector.set_size(offset + len)?;
             for (child_index, value) in values.into_iter().enumerate() {
-                value_vector.write(offset + child_index, Some(value))?;
+                value_vector.write(offset + child_index, value)?;
             }
             Ok(offset)
         })();
@@ -228,60 +244,166 @@ where
     }
 }
 
-impl<'a, K: Debug + VectorElement, V: VectorElement + Debug> MapRow<'a, K, V>
+impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
+    /// Return the number of entries in the map.
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    /// Return whether the map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
+    /// Iterate over the map's `(key, value)` entries in storage order.
+    pub fn iter(&self) -> impl Iterator<Item = (Option<K::Ref<'a>>, Option<V::Ref<'a>>)> + use<'a, K, V> {
+        let children = self.children;
+        (self.offset..self.offset + self.length).map(move |logical| {
+            (
+                children.cached_unchecked(0).get_as_unchecked::<K>(logical),
+                children.cached_unchecked(1).get_as_unchecked::<V>(logical),
+            )
+        })
+    }
+
+    /// Return the map's keys in storage order, aligned with [`Self::values`].
+    pub fn keys(&self) -> Vec<Option<K::Ref<'a>>> {
+        self.iter().map(|(key, _)| key).collect()
+    }
+
+    /// Return the map's values in storage order, aligned with [`Self::keys`].
+    pub fn values(&self) -> Vec<Option<V::Ref<'a>>> {
+        self.iter().map(|(_, value)| value).collect()
+    }
+}
+
+impl<'a, K: VectorElement, V: VectorElement> MapRow<'a, K, V>
 where
     for<'b> K::Ref<'b>: PartialEq<&'b K>,
-    for<'b> <V as VectorElement>::Ref<'b>: Debug,
 {
-    /// Return the value associated with `key`, if it exists.
-    pub fn get(&self, key: &K) -> Result<Option<V::Ref<'a>>> {
-        let mut index = None;
+    /// Return the associated value; outer `None` means missing, inner `None` means NULL.
+    pub fn get(&self, key: &K) -> Option<Option<V::Ref<'a>>> {
+        (self.offset..self.offset + self.length)
+            .find(|&logical| {
+                self.children
+                    .cached_unchecked(0)
+                    .get_as_unchecked::<K>(logical)
+                    .is_some_and(|value| value == key)
+            })
+            .map(|logical| self.children.cached_unchecked(1).get_as_unchecked::<V>(logical))
+    }
+}
 
-        for logical in self.offset..self.offset + self.length {
-            if self
-                .children
-                .cached_unchecked(0)
-                .get_as_unchecked::<K>(logical)
-                .is_some_and(|value| value == key)
-            {
-                index = Some(logical);
-                break;
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        data_chunk::DataChunk,
+        environment::{Environment, StorageLocation},
+        types::List,
+    };
 
-        if index.is_none() {
-            return Err(Error::invalid_parameter(format!("Key '{:?}' not found in map", key)));
-        }
-
-        Ok(self.children.cached_unchecked(1).get_as_unchecked::<V>(index.unwrap()))
+    #[test]
+    fn map_value_conversions_preserve_order() {
+        let value = MapValue::from(vec![(2, "b"), (1, "a")]);
+        let collected = [(2, "b"), (1, "a")].into_iter().collect::<MapValue<_, _>>();
+        assert_eq!(value, collected);
+        assert_eq!(value.entries, [(2, "b"), (1, "a")]);
+        assert_eq!(MapValue::<i32, &str>::default(), MapValue::from(vec![]));
     }
 
-    /// Return the map's keys.
-    pub fn keys(&self) -> Result<Vec<K::Ref<'a>>> {
-        let mut keys = Vec::new();
+    #[test]
+    fn map_write_null_value_empty_map_and_null_row() -> Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
-        self.children.cached_unchecked(0).validate_as::<K>()?;
-
-        for logical in self.offset..self.offset + self.length {
-            if let Some(key) = self.children.cached_unchecked(0).get_as_unchecked::<K>(logical) {
-                keys.push(key);
-            }
+        let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+        {
+            let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
+            maps.set_size(3)?;
+            maps.write(0, Some(HashMap::from([(1, None), (2, Some(20))])))?;
+            maps.write(1, Some(HashMap::new()))?;
+            maps.write(2, None)?;
         }
-        Ok(keys)
+
+        let maps = chunk.get_vector_at::<Map<i32, i32>>(0)?;
+        let row = maps.get(0)?.expect("row 0 is not NULL");
+        assert_eq!(row.get(&1), Some(None));
+        assert_eq!(row.get(&2), Some(Some(&20)));
+        assert_eq!(row.get(&3), None);
+        let mut values = row.values();
+        values.sort();
+        assert_eq!(values, [None, Some(&20)]);
+
+        assert!(maps.get(1)?.expect("row 1 is not NULL").keys().is_empty());
+        assert!(maps.get(2)?.is_none());
+        Ok(())
     }
 
-    /// Return the map's values.
-    pub fn values(&self) -> Result<Vec<Option<V::Ref<'a>>>> {
-        let mut values: Vec<_> = Vec::new();
+    #[test]
+    fn map_row_len_is_empty_and_iter() -> Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
-        self.children.cached_unchecked(1).validate_as::<V>()?;
-
-        for logical in self.offset..self.offset + self.length {
-            let value = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical);
-
-            values.push(value);
+        let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+        {
+            let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
+            maps.set_size(2)?;
+            maps.write(0, Some(HashMap::from([(1, None), (2, Some(20)), (3, Some(30))])))?;
+            maps.write(1, Some(HashMap::new()))?;
         }
 
-        Ok(values)
+        let maps = chunk.get_vector_at::<Map<i32, i32>>(0)?;
+        let row = maps.get(0)?.expect("row 0 is not NULL");
+        assert_eq!(row.len(), 3);
+        assert!(!row.is_empty());
+        let mut entries: Vec<_> = row.iter().collect();
+        assert_eq!(row.keys().into_iter().zip(row.values()).collect::<Vec<_>>(), entries);
+        entries.sort();
+        assert_eq!(
+            entries,
+            [(Some(&1), None), (Some(&2), Some(&20)), (Some(&3), Some(&30))]
+        );
+
+        let empty = maps.get(1)?.expect("row 1 is not NULL");
+        assert_eq!(empty.len(), 0);
+        assert!(empty.is_empty());
+        assert_eq!(empty.iter().count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn map_row_with_list_keys() -> Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+
+        let mut result = conn.query("SELECT MAP {[1, 2]: 10, [3]: NULL}", Parameters::None)?;
+        let chunk = result.next_chunk()?.expect("query returns one chunk");
+        let maps = chunk.get_vector_at::<Map<List<i32>, i32>>(0)?;
+        let row = maps.get(0)?.expect("row 0 is not NULL");
+
+        let entries: Vec<_> = row
+            .iter()
+            .map(|(key, value)| (key.map(|key| key.iter().collect::<Vec<_>>()), value))
+            .collect();
+        assert_eq!(
+            entries,
+            [
+                (Some(vec![Some(&1), Some(&2)]), Some(&10)),
+                (Some(vec![Some(&3)]), None)
+            ]
+        );
+
+        let keys: Vec<_> = row
+            .keys()
+            .into_iter()
+            .map(|key| key.unwrap().iter().collect::<Vec<_>>())
+            .collect();
+        assert_eq!(keys, [vec![Some(&1), Some(&2)], vec![Some(&3)]]);
+        assert_eq!(row.values(), [Some(&10), None]);
+        Ok(())
     }
 }

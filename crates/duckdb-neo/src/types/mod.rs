@@ -14,11 +14,31 @@
 //! [`crate::vector::VectorElement`]/[`crate::vector::WritableVectorElement`]
 //! implementations live together in family modules grouped by logical type:
 //! `primitive`, `string` (`VARCHAR`/`BLOB`/`BIT`), `temporal`
-//! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`,
+//! (`DATE`/`TIME`/`TIMESTAMP`/`INTERVAL`), `uuid`, `decimal`, `bignum`, `rust_decimal` (feature-gated),
 //! `list`, `array`, `map`, `structs`, `union`, `variant`, and `tuple`. Each
-//! family module is private; its public types are re-exported below (or from
-//! [`crate::vector`] for vector-row helper types) so existing
-//! `crate::types::*` and `crate::vector::*` paths keep working.
+//! family module is private; its public types, including the borrowed row,
+//! iterator, and writer types of nested families, are re-exported below.
+//!
+//! ```
+//! use duckdb_neo::types::{
+//!     ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow, StructRow, StructWrite, UnionRow, UnionWriter,
+//! };
+//!
+//! fn array_items<'a>(row: ArrayRef<'a, i32>) -> ArrayIterator<'a, i32> {
+//!     row.iter()
+//! }
+//! fn list_items<'a>(row: ListRef<'a, i32>) -> ListIterator<'a, i32> {
+//!     row.iter()
+//! }
+//! fn map_row(_row: MapRow<'_, i32, i32>) {}
+//! fn struct_row(_row: StructRow<'_>) {}
+//! fn union_member(row: UnionRow<'_>) -> u8 {
+//!     row.member()
+//! }
+//!
+//! let _row: StructWrite<'_> = StructWrite::default().field::<i32>(Some(1));
+//! let _row: UnionWriter<'_> = UnionWriter::set_value::<i32>(0, Some(2));
+//! ```
 
 use crate::{Result, connection::FFILink, logical_type::LogicalType, value::Value};
 
@@ -31,36 +51,35 @@ mod tuple;
 mod uuid;
 mod variant;
 
-// Kept `pub(crate)` (rather than private) so `crate::vector` can re-export
-// their borrowed row/iterator types at their existing `crate::vector::*`
-// paths.
+// `pub(crate)` so `crate::vector` can size array vectors via `array::array_size`.
 pub(crate) mod array;
-pub(crate) mod list;
-pub(crate) mod map;
-pub(crate) mod structs;
-pub(crate) mod union;
+mod list;
+mod map;
+mod structs;
+mod union;
 
 pub use self::uuid::UuidValueRaw;
-pub use array::Array;
+pub use array::{Array, ArrayIterator, ArrayRef};
 pub use bignum::{BigNum, BigNumValue};
 pub use decimal::{
     Decimal, DecimalContainer, DecimalSignature, DecimalValue, DecimalWidth, HugeDecimal, LongDecimal,
     MAX_DECIMAL_WIDTH, ShortDecimal, Width, WordDecimal,
 };
-pub use list::List;
-pub use map::{Map, MapValue};
+pub use list::{List, ListIterator, ListRef};
+pub use map::{Map, MapRow, MapValue};
 pub use primitive::Any;
 pub use string::{BitValue, BlobValue};
-pub use structs::{Struct, StructSchema, StructValue};
+pub use structs::{Struct, StructRow, StructSchema, StructValue, StructWrite};
 pub use temporal::{
     DateValue, IntervalValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue,
     TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
 };
-pub use union::{Union, UnionSchema, UnionValue};
+pub use union::{Union, UnionRow, UnionSchema, UnionValue, UnionWriter};
 pub use variant::{Variant, VariantValue};
 
 #[cfg(feature = "rust_decimal")]
-pub mod rust_decimal;
+mod rust_decimal;
+
 /// Constructs the DuckDB logical type represented by a Rust type.
 pub trait DuckDBType {
     /// Return the DuckDB logical type represented by this Rust type.

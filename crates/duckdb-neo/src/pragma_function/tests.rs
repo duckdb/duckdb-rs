@@ -48,9 +48,7 @@ struct Shift;
 
 impl PragmaQueryCallbacks for Shift {
     fn query(&self, _context: &Context, arguments: BindArguments<'_>) -> Result<String> {
-        let shift_by = arguments
-            .index(&"shift_by".to_string())?
-            .expect("the shift_by argument is present");
+        let shift_by = arguments.index("shift_by")?.expect("the shift_by argument is present");
         let n = constant::<i32>(&arguments, 0)?.unwrap();
         let by = constant::<i32>(&arguments, shift_by)?.unwrap();
         Ok(format!("SELECT {}::INTEGER", n + by))
@@ -94,8 +92,7 @@ impl PragmaExecCallbacks for Panicking {
 fn test_query_pragma_without_parameters() -> Result<()> {
     let (_env, conn) = connect()?;
 
-    let mut docs = FunctionDocumentationBuilder::new();
-    docs.description("Returns the answer");
+    let docs = FunctionDocumentationBuilder::new().description("Returns the answer");
     let signature = SignatureBuilder::new().documentation(docs);
     PragmaFunctionBuilder::query("rs_answer", signature, Answer).register(&conn)?;
 

@@ -1,8 +1,5 @@
-//! The `LIST` logical type.
-//!
-//! [`List`] is the vector-element representation of one list row (an offset
-//! and length into a child vector); [`Vec<T>`] is the owned scalar
-//! representation used with [`super::ToValue`]/[`super::FromValue`].
+//! [`List`] is a borrowed-vector `LIST` element; [`Vec<T>`] is its owned scalar form.
+//! `Vec<u8>` maps to `UTINYINT[]`; use [`super::BlobValue`] for `BLOB`.
 
 use std::marker::PhantomData;
 
@@ -14,7 +11,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, VectorView, WritableVectorElement},
+    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
 };
 
 /// A physical list entry parameterized by its child element type.
@@ -24,6 +21,18 @@ pub struct List<L> {
     pub(crate) offset: u64,
     pub(crate) length: u64,
     pub(crate) _marker: PhantomData<L>,
+}
+
+impl<L> List<L> {
+    /// Return the starting index in the child vector.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    /// Return the number of child elements in this entry.
+    pub fn length(&self) -> u64 {
+        self.length
+    }
 }
 
 impl<T: DuckDBType> DuckDBType for Vec<T> {
@@ -47,10 +56,10 @@ impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
 impl<T: FromValue> FromValue for Vec<Option<T>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.type_id() != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
+        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST {
             return Err(Error::invalid_input(format!(
                 "Expected LIST value, found {}",
-                logical_type.to_string()?
+                logical_type.to_text()?
             )));
         }
 
@@ -58,7 +67,8 @@ impl<T: FromValue> FromValue for Vec<Option<T>> {
     }
 }
 
-impl<L: VectorElement> VectorElement for List<L> {
+// SAFETY: `List` matches DuckDB's list entry, and `validate` checks the child as `L`.
+unsafe impl<L: VectorElement> VectorElement for List<L> {
     type Ref<'a>
         = ListRef<'a, L>
     where
@@ -69,14 +79,14 @@ impl<L: VectorElement> VectorElement for List<L> {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        if other.type_id() != Self::TYPE_ID {
+        if other.id()? != Self::TYPE_ID {
             return Ok(false);
         }
 
         let Some(children) = children.filter(|children| children.col_count() == 1) else {
             return Err(Error::invalid_input("List vector must have exactly one child"));
         };
-        children.get_untyped_vector_at(0)?.validate_as::<L>()
+        children.get_untyped_vector_at(0)?.validate_as::<L>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
@@ -95,7 +105,8 @@ impl<L: VectorElement> VectorElement for List<L> {
     }
 }
 
-impl<T: WritableVectorElement> WritableVectorElement for List<T> {
+// SAFETY: the entry covers child rows appended through the child's own `write`.
+unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
     type Write<'a>
         = Vec<Option<T::Write<'a>>>
     where
@@ -143,6 +154,10 @@ pub struct ListRef<'a, T> {
 }
 
 impl<'a, T: VectorElement> ListRef<'a, T> {
+    /// Return an element; outer `None` means the index is out of bounds.
+    pub fn get(&self, index: usize) -> Option<Option<T::Ref<'a>>> {
+        (index < self.len()).then(|| self.child.get_as_unchecked::<T>(self.list.offset as usize + index))
+    }
     /// Iterate over the list's values.
     pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator {
@@ -163,17 +178,23 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
     pub fn is_empty(&self) -> bool {
         self.list.length == 0
     }
+}
 
-    // TODO: Maybe remove?
-    /// Return a unified view of the list's child vector.
-    pub fn view(&self) -> &VectorView<T> {
-        unsafe {
-            self.child
-                .view
-                .as_ref()
-                .expect("list child must be readable")
-                .cast::<T>()
-        }
+impl<'a, T: VectorElement + 'a> IntoIterator for ListRef<'a, T> {
+    type Item = Option<T::Ref<'a>>;
+    type IntoIter = ListIterator<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T: VectorElement + 'a> IntoIterator for &ListRef<'a, T> {
+    type Item = Option<T::Ref<'a>>;
+    type IntoIter = ListIterator<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -199,5 +220,66 @@ impl<'a, T: VectorElement + 'a> Iterator for ListIterator<'a, T> {
         self.index += 1;
 
         Some(self.child.get_as_unchecked::<T>(logical))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.length - self.index;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a, T: VectorElement + 'a> ExactSizeIterator for ListIterator<'a, T> {}
+impl<'a, T: VectorElement + 'a> std::iter::FusedIterator for ListIterator<'a, T> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::environment::{Environment, StorageLocation};
+
+    #[test]
+    fn list_entry_accessors() {
+        let entry = List::<i32> {
+            offset: 7,
+            length: 3,
+            _marker: PhantomData,
+        };
+        assert_eq!(entry.offset(), 7);
+        assert_eq!(entry.length(), 3);
+    }
+
+    #[test]
+    fn list_ref_get_and_iteration() -> Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query("SELECT ['a', NULL, 'b'], []::VARCHAR[]", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        let vector = chunk.get_vector_at::<List<String>>(0)?;
+        let row = vector.get(0)?.unwrap();
+        assert_eq!(row.get(0), Some(Some("a")));
+        assert_eq!(row.get(1), Some(None));
+        assert_eq!(row.get(2), Some(Some("b")));
+        assert_eq!(row.get(3), None);
+        assert_eq!(row.get(usize::MAX), None);
+        assert_eq!((&row).into_iter().collect::<Vec<_>>(), vec![Some("a"), None, Some("b")]);
+        let mut iter = row.into_iter();
+        fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
+        assert_traits(&iter, &iter);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        assert_eq!(iter.next(), Some(Some("a")));
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.next(), Some(None));
+        assert_eq!(iter.next(), Some(Some("b")));
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+
+        let empty_vector = chunk.get_vector_at::<List<String>>(1)?;
+        let empty = empty_vector.get(0)?.unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(empty.get(0), None);
+        assert_eq!(empty.iter().len(), 0);
+        assert_eq!(empty.iter().next(), None);
+        Ok(())
     }
 }

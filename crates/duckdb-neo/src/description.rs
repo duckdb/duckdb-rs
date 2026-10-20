@@ -18,6 +18,10 @@ pub struct ColumnDescription {
     handle: ffi::duckdb_v2_column_description_handle,
 }
 
+// SAFETY: an owned C++ snapshot; `&self` methods only read it and shared types are atomically refcounted.
+unsafe impl Send for ColumnDescription {}
+unsafe impl Sync for ColumnDescription {}
+
 impl ColumnDescription {
     /// Return the column's name with its declared casing.
     pub fn name(&self) -> Result<&str> {
@@ -56,8 +60,8 @@ impl ColumnDescription {
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
-/// let db = env.open(StorageLocation::InMemory)?;
-/// let conn = db.connect()?;
+/// let instance = env.open(StorageLocation::InMemory)?;
+/// let conn = instance.connect()?;
 /// let mut statements =
 ///     conn.parse("CREATE TABLE items (id INTEGER, name VARCHAR DEFAULT 'unknown')")?;
 /// conn.execute(
@@ -78,8 +82,13 @@ pub struct TableDescription {
     handle: ffi::duckdb_v2_table_description_handle,
 }
 
+// SAFETY: an owned C++ snapshot; `&self` methods only read it and shared types are atomically refcounted.
+unsafe impl Send for TableDescription {}
+unsafe impl Sync for TableDescription {}
+
 impl TableDescription {
     /// Resolve a base table through the connection's catalog and search path.
+    /// Returns an error for missing tables, views, or ambiguous schema/catalog qualifiers.
     pub fn new(connection: &Connection, name: &QualifiedName) -> Result<Self> {
         check_api_call!(
             ffi::duckdb_v2_connection_describe_table,
@@ -101,8 +110,7 @@ impl TableDescription {
         check_api_call!(ffi::duckdb_v2_table_description_get_column_count, self.handle, RET).map(|count| count as usize)
     }
 
-    /// Return an owned description of the column at the zero-based index.
-    ///
+    /// Return an owned description at the zero-based index; out-of-range indices return an error.
     /// Columns follow declaration order, including generated columns.
     pub fn column(&self, index: usize) -> Result<ColumnDescription> {
         check_api_call!(
@@ -127,6 +135,7 @@ impl TableDescription {
     }
 
     /// Return whether the table belongs to a read-only catalog.
+    /// A `false` result does not guarantee that writes will succeed.
     pub fn readonly(&self) -> Result<bool> {
         check_api_call!(ffi::duckdb_v2_table_description_is_readonly, self.handle, RET)
     }
@@ -143,10 +152,17 @@ mod tests {
         qualified_name::QualifiedName,
     };
     #[test]
+    fn test_description_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<TableDescription>();
+        assert_send_sync::<super::ColumnDescription>();
+    }
+
+    #[test]
     fn test_table_description() -> crate::Result<()> {
         let env = Environment::new()?;
-        let db = env.open(StorageLocation::InMemory)?;
-        let conn = db.connect()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
 
         let mut statements =
             conn.parse("CREATE TABLE test (id INTEGER, name VARCHAR DEFAULT \'DEF\', td AS (2*id));")?;
@@ -167,7 +183,7 @@ mod tests {
         assert!(!id_col.has_default()?);
         assert!(!id_col.has_generated()?);
         assert_eq!(
-            id_col.logical_type()?.type_id(),
+            id_col.logical_type()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
         );
         assert_eq!(id_col.name()?, "id");
@@ -177,7 +193,7 @@ mod tests {
         assert!(name.has_default()?);
         assert!(!name.has_generated()?);
         assert_eq!(
-            name.logical_type()?.type_id(),
+            name.logical_type()?.id()?,
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
         );
         assert_eq!(name.name()?, "name");

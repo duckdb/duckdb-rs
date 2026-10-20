@@ -2,7 +2,7 @@
 //!
 //! [`UuidValueRaw`] mirrors DuckDB's internal signed 128-bit UUID representation
 //! exactly, so it is read and written through a direct pointer cast (see
-//! [`super::primitive::DeclareVectorElement`]), the same pattern used by the
+//! [`super::primitive::declare_vector_element`]), the same pattern used by the
 //! calendar/clock types in [`super::temporal`].
 //!
 //! With the `uuid` feature, `uuid::Uuid` can be used anywhere [`UuidValueRaw`]
@@ -19,13 +19,26 @@ use crate::{
     value::{Value, ValueInput},
     vector::{Vector, WritableVectorElement},
 };
+
 /// DuckDB's internal signed 128-bit UUID representation.
 ///
 /// DuckDB stores a UUID as a signed integer with its most significant bit flipped, so
 /// sorting matches the UUID byte order. Enable the `uuid` feature to convert to and from `uuid::Uuid`.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UuidValueRaw(pub i128);
+
+impl UuidValueRaw {
+    /// Convert canonical big-endian UUID bytes to DuckDB's signed storage form.
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self((u128::from_be_bytes(bytes) ^ (1 << 127)) as i128)
+    }
+
+    /// Return the canonical big-endian UUID bytes.
+    pub const fn to_bytes(self) -> [u8; 16] {
+        (self.0 as u128 ^ (1 << 127)).to_be_bytes()
+    }
+}
 
 impl DuckDBType for UuidValueRaw {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
@@ -42,11 +55,12 @@ impl ToValue for UuidValueRaw {
 impl FromValue for UuidValueRaw {
     fn _get_inner(value: &Value) -> Result<Self> {
         check_api_call!(ffi::duckdb_v2_value_get_uuid, value.raw(), RET)
-            .map(|raw| Self((i128::from(raw.upper) << 64) | i128::from(raw.lower)))
+            .map(|raw| Self(crate::value::from_hugeint(raw)))
     }
 }
 
-impl VectorElement for UuidValueRaw {
+// SAFETY: `UuidValueRaw` has the size and bit layout of DuckDB's UUID storage.
+unsafe impl VectorElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
 
     type Internal = ffi::duckdb_v2_hugeint_t;
@@ -65,11 +79,41 @@ impl VectorElement for UuidValueRaw {
     }
 }
 
-impl WritableVectorElement for UuidValueRaw {
+// SAFETY: every `i128` is a valid UUID.
+unsafe impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         vector.write_raw(index, value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UuidValueRaw;
+    use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn uuid_raw_canonical_bytes_order_and_hash() {
+        const NIL: UuidValueRaw = UuidValueRaw::from_bytes([0; 16]);
+        const NIL_BYTES: [u8; 16] = NIL.to_bytes();
+        assert_eq!(NIL, UuidValueRaw(i128::MIN));
+        assert_eq!(NIL_BYTES, [0; 16]);
+
+        let canonical = [0, (1_u128 << 127) - 1, 1_u128 << 127, u128::MAX];
+        let values = canonical.map(|value| UuidValueRaw::from_bytes(value.to_be_bytes()));
+        assert_eq!(values.map(|value| u128::from_be_bytes(value.to_bytes())), canonical);
+        assert_eq!(values.map(|value| value.0), [i128::MIN, -1, 0, i128::MAX]);
+        assert_eq!(
+            values
+                .into_iter()
+                .rev()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            values
+        );
+        assert_eq!(values.into_iter().collect::<HashSet<_>>().len(), values.len());
     }
 }
 
@@ -86,17 +130,15 @@ mod external {
     };
     use ::uuid::Uuid;
 
-    const SIGN_BIT: u128 = 1 << 127;
-
     impl From<Uuid> for UuidValueRaw {
         fn from(value: Uuid) -> Self {
-            Self((value.as_u128() ^ SIGN_BIT) as i128)
+            Self::from_bytes(*value.as_bytes())
         }
     }
 
     impl From<UuidValueRaw> for Uuid {
         fn from(value: UuidValueRaw) -> Self {
-            Uuid::from_u128(value.0 as u128 ^ SIGN_BIT)
+            Uuid::from_bytes(value.to_bytes())
         }
     }
 
@@ -118,7 +160,8 @@ mod external {
         }
     }
 
-    impl VectorElement for Uuid {
+    // SAFETY: same storage as `UuidValueRaw`.
+    unsafe impl VectorElement for Uuid {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
 
         type Internal = UuidValueRaw;
@@ -134,7 +177,8 @@ mod external {
         }
     }
 
-    impl WritableVectorElement for Uuid {
+    // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
+    unsafe impl WritableVectorElement for Uuid {
         type Write<'a> = Uuid;
 
         unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
@@ -155,8 +199,8 @@ mod external {
         #[test]
         fn uuid_conversion_matches_duckdb() -> Result<()> {
             let env = Environment::new()?;
-            let db = env.open(StorageLocation::InMemory)?;
-            let conn = db.connect()?;
+            let instance = env.open(StorageLocation::InMemory)?;
+            let conn = instance.connect()?;
             let expected = [uuid!("0bc67299-bf0d-4bf2-b92c-634b1f79c4f8"), Uuid::nil(), Uuid::max()];
 
             assert_eq!(Uuid::from(UuidValueRaw(i128::MIN)), Uuid::nil());

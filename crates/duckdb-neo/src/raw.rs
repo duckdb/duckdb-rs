@@ -52,9 +52,11 @@ pub trait AsRaw {
     ///
     /// # Safety
     ///
-    /// The handle is borrowed from `self`. It must not be used after `self` is
-    /// dropped, must not be destroyed, and must not be used to break invariants
-    /// that `self` relies on.
+    /// Unless ownership is transferred, the handle must not outlive `self` or be destroyed.
+    /// Do not use it to break invariants that `self` relies on.
+    ///
+    /// Forgetting an owning wrapper (for example with `std::mem::forget`) transfers
+    /// ownership to the caller, who must then destroy the handle or wrap it once.
     unsafe fn get_raw(&self) -> Self::Raw;
 }
 
@@ -105,7 +107,7 @@ mod tests {
         let raw = unsafe { logical_type.get_raw() };
         std::mem::forget(logical_type);
         let logical_type = unsafe { LogicalType::from_raw(raw) };
-        assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+        assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
 
         let collection = ColumnDataCollection::new(&conn, [i64::logical_type(&conn)?])?;
         assert!(!unsafe { collection.get_raw() }.is_null());

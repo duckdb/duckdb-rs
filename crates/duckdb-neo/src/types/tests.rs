@@ -28,13 +28,13 @@ impl UnionSchema for TestUnion {
 #[test]
 fn test_i32_to_value() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let value = 42_i32.value(&conn)?;
 
     assert_eq!(
-        value.logical_type()?.type_id(),
+        value.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
     assert_eq!(value.dbg_string()?, "42");
@@ -45,14 +45,14 @@ fn test_i32_to_value() -> crate::Result<()> {
 #[test]
 fn test_primitive_logical_types() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     macro_rules! assert_primitive {
         ($type:ty, $value:expr, $type_id:ident) => {
-            assert_eq!(<$type>::logical_type(&conn)?.type_id(), LogicalTypeID::$type_id);
+            assert_eq!(<$type>::logical_type(&conn)?.id()?, LogicalTypeID::$type_id);
             assert_eq!(
-                ($value as $type).value(&conn)?.logical_type()?.type_id(),
+                ($value as $type).value(&conn)?.logical_type()?.id()?,
                 LogicalTypeID::$type_id
             );
         };
@@ -78,13 +78,13 @@ fn test_primitive_logical_types() -> crate::Result<()> {
 #[test]
 fn test_remaining_value_creators() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     macro_rules! assert_type {
         ($value:expr, $type_id:ident) => {
             assert_eq!(
-                $value.value(&conn)?.logical_type()?.type_id(),
+                $value.value(&conn)?.logical_type()?.id()?,
                 LogicalTypeID::$type_id
             );
         };
@@ -114,7 +114,7 @@ fn test_remaining_value_creators() -> crate::Result<()> {
 
     let tuple = (42_i32, "duck").value(&conn)?;
     assert_eq!(
-        tuple.logical_type()?.type_id(),
+        tuple.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
     );
     assert_eq!(tuple.dbg_string()?, "(42, duck)");
@@ -130,12 +130,12 @@ fn test_remaining_value_creators() -> crate::Result<()> {
 #[test]
 fn test_binary_value_creators() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let empty_blob = BlobValue(Vec::<u8>::new()).value(&conn)?;
     assert_eq!(
-        empty_blob.logical_type()?.type_id(),
+        empty_blob.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB
     );
 
@@ -157,8 +157,8 @@ fn test_binary_value_creators() -> crate::Result<()> {
 #[test]
 fn test_temporal_value_creators() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     assert_eq!(DateValue(0).value(&conn)?.dbg_string()?, "1970-01-01");
     assert_eq!(TimeValue(1_000_000).value(&conn)?.dbg_string()?, "00:00:01");
@@ -190,8 +190,8 @@ fn test_temporal_value_creators() -> crate::Result<()> {
 #[test]
 fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let uuid = UuidValueRaw(i128::MIN).value(&conn)?;
     assert_eq!(uuid.dbg_string()?, "00000000-0000-0000-0000-000000000000");
@@ -210,7 +210,7 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     drop(logical_type);
     assert!(null.is_null()?);
     assert_eq!(
-        null.logical_type()?.type_id(),
+        null.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -220,8 +220,8 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
 #[test]
 fn test_primitive_value_getters() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     macro_rules! assert_round_trip {
         ($value:expr, $type:ty) => {
@@ -253,8 +253,8 @@ fn test_primitive_value_getters() -> crate::Result<()> {
 #[test]
 fn test_raw_value_getters() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let blob = BlobValue(vec![0_u8, 1, 255]);
     assert_eq!(blob.value(&conn)?.get::<BlobValue>()?, Some(blob));
@@ -311,17 +311,37 @@ fn test_raw_value_getters() -> crate::Result<()> {
 }
 
 #[test]
+fn test_bignum_value_getter_rejects_blob_and_bit() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+
+    let blob = BlobValue(vec![1_u8, 2, 3, 4]).value(&conn)?;
+    assert!(blob.get::<BigNumValue>().is_err());
+    let bit = BitValue(vec![3_u8, 0b1111_0101, 0, 0]).value(&conn)?;
+    assert!(bit.get::<BigNumValue>().is_err());
+
+    let bignum = BigNumValue {
+        is_negative: false,
+        magnitude: vec![1, 2, 3, 4],
+    };
+    assert_eq!(bignum.value(&conn)?.get::<BigNumValue>()?, Some(bignum));
+
+    Ok(())
+}
+
+#[test]
 fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     assert_eq!(Some(42_i32).value(&conn)?.get::<i32>()?, Some(42));
 
     let null = i32::null_value(&conn)?;
     assert_eq!(null.get::<i32>()?, None);
     assert_eq!(
-        null.logical_type()?.type_id(),
+        null.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -329,9 +349,9 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
     assert_eq!(optional_null.get::<i32>()?, None);
 
     let integer = i32::logical_type(&conn)?;
-    let type_value = Value::from_logical_type(&conn, &integer)?;
+    let type_value = integer.value(&conn)?;
     assert_eq!(
-        type_value.get::<LogicalType>()?.unwrap().type_id(),
+        type_value.get::<LogicalType>()?.unwrap().id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
 
@@ -341,16 +361,16 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
 #[test]
 fn test_list_to_value() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let values = vec![Some(1_i32), None, Some(3_i32)];
     let value = values.value(&conn)?;
     let logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
 
-    assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST);
+    assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST);
     assert_eq!(
-        logical_type.get_param(0)?.1.type_value_get_inner()?.type_id(),
+        logical_type.get_param(0)?.1.type_value_get_inner()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
     );
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
@@ -361,15 +381,15 @@ fn test_list_to_value() -> crate::Result<()> {
 #[test]
 fn test_array_to_value() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let values = [Some(1_i32), None, Some(3_i32)];
     let value = values.value(&conn)?;
     let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
 
-    assert_eq!(logical_type.type_id(), LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
-    assert_eq!(logical_type.to_string()?, "INTEGER[3]");
+    assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
+    assert_eq!(logical_type.to_text()?, "INTEGER[3]");
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
 
     Ok(())
@@ -378,8 +398,8 @@ fn test_array_to_value() -> crate::Result<()> {
 #[test]
 fn test_nested_value_getters() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     let list = vec![Some(1_i32), None, Some(3_i32)];
     assert_eq!(list.value(&conn)?.get::<Vec<Option<i32>>>()?, Some(list));
@@ -417,8 +437,8 @@ fn test_nested_value_getters() -> crate::Result<()> {
 #[test]
 fn test_complex_values() -> crate::Result<()> {
     let env = Environment::new()?;
-    let db = env.open(StorageLocation::InMemory)?;
-    let conn = db.connect()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
 
     assert_eq!("hello".value(&conn)?.dbg_string()?, "hello");
 
@@ -459,16 +479,53 @@ fn test_complex_values() -> crate::Result<()> {
 
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(
-        union.logical_type()?.type_id(),
+        union.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
     );
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;
     assert_eq!(
-        variant.logical_type()?.type_id(),
+        variant.logical_type()?.id()?,
         LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT
     );
+
+    Ok(())
+}
+
+struct EmptyStruct;
+
+impl StructSchema for EmptyStruct {
+    fn fields<C: FFILink + ?Sized>(_link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
+        Ok(Vec::new())
+    }
+}
+
+#[test]
+fn test_empty_struct_read_and_write() -> crate::Result<()> {
+    use crate::{data_chunk::DataChunk, parameter::Parameters};
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+    let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
+    let vector = chunk.get_vector_at::<Struct>(0)?;
+    assert!(vector.children().is_none());
+    let row = vector.get(0)?.unwrap();
+    assert!(row.get::<i32>("x").unwrap_err().message.contains("not found"));
+
+    let mut chunk = DataChunk::create(&conn, &[StructValue::<EmptyStruct>::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+        vector.set_size(2)?;
+        vector.write(0, Some(structs::StructWrite::default()))?;
+        vector.write(1, None)?;
+        let extra = structs::StructWrite::default().field::<i32>(Some(1));
+        assert!(vector.write(0, Some(extra)).is_err());
+    }
+    let vector = chunk.get_vector_at::<Struct>(0)?;
+    assert!(vector.get(0)?.is_some());
+    assert!(vector.get(1)?.is_none());
 
     Ok(())
 }
