@@ -6074,7 +6074,7 @@ pub struct duckdb_ext_api_v2 {
 static __DUCKDB_V2_ARENA_ALLOCATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arena_allocate(
+pub unsafe extern "C" fn duckdb_v2_arena_allocate(
     arena: duckdb_v2_arena_handle,
     byte_len: idx_t,
     out_ptr: *mut *mut u8,
@@ -6097,7 +6097,7 @@ pub unsafe fn duckdb_v2_arena_allocate(
 static __DUCKDB_V2_BIGNUM_DECODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_bignum_decode(
+pub unsafe extern "C" fn duckdb_v2_bignum_decode(
     in_data: *const u8,
     in_length: idx_t,
     out_data: *mut u8,
@@ -6126,7 +6126,7 @@ pub unsafe fn duckdb_v2_bignum_decode(
 static __DUCKDB_V2_BIGNUM_ENCODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_bignum_encode(
+pub unsafe extern "C" fn duckdb_v2_bignum_encode(
     in_data: *const u8,
     in_length: idx_t,
     is_negative: bool,
@@ -6155,7 +6155,7 @@ pub unsafe fn duckdb_v2_bignum_encode(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_append(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_append(
     collection: duckdb_v2_column_data_collection_handle,
     state: duckdb_v2_column_data_collection_append_state_handle,
     chunk: duckdb_v2_data_chunk_handle,
@@ -6178,7 +6178,7 @@ pub unsafe fn duckdb_v2_column_data_collection_append(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND_STATE_CREATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_append_state_create(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_append_state_create(
     collection: duckdb_v2_column_data_collection_handle,
     out_state: *mut duckdb_v2_column_data_collection_append_state_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -6199,7 +6199,7 @@ pub unsafe fn duckdb_v2_column_data_collection_append_state_create(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND_STATE_DESTROY: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_append_state_destroy(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_append_state_destroy(
     state: *mut duckdb_v2_column_data_collection_append_state_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND_STATE_DESTROY
@@ -6216,7 +6216,7 @@ pub unsafe fn duckdb_v2_column_data_collection_append_state_destroy(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_COMBINE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_combine(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_combine(
     target: duckdb_v2_column_data_collection_handle,
     source: *mut duckdb_v2_column_data_collection_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -6237,7 +6237,7 @@ pub unsafe fn duckdb_v2_column_data_collection_combine(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_create(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_create(
     factory: duckdb_v2_factory_handle,
     types_array: *const duckdb_v2_logical_type_handle,
     types_count: idx_t,
@@ -6262,7 +6262,7 @@ pub unsafe fn duckdb_v2_column_data_collection_create(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_destroy(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_destroy(
     collection: *mut duckdb_v2_column_data_collection_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_COLUMN_DATA_COLLECTION_DESTROY
@@ -6279,7 +6279,7 @@ pub unsafe fn duckdb_v2_column_data_collection_destroy(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_RESET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_reset(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_reset(
     collection: duckdb_v2_column_data_collection_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -6298,7 +6298,7 @@ pub unsafe fn duckdb_v2_column_data_collection_reset(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_ROW_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_row_count(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_row_count(
     collection: duckdb_v2_column_data_collection_handle,
     out_row_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -6319,7 +6319,7 @@ pub unsafe fn duckdb_v2_column_data_collection_row_count(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_SCAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_scan(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_scan(
     collection: duckdb_v2_column_data_collection_handle,
     shared_state: duckdb_v2_column_data_collection_shared_scan_state_handle,
     worker_state: duckdb_v2_column_data_collection_worker_scan_state_handle,
@@ -6346,7 +6346,7 @@ pub unsafe fn duckdb_v2_column_data_collection_scan(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_SHARED_SCAN_STATE_CREATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_shared_scan_state_create(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_shared_scan_state_create(
     collection: duckdb_v2_column_data_collection_handle,
     out_state: *mut duckdb_v2_column_data_collection_shared_scan_state_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -6367,7 +6367,7 @@ pub unsafe fn duckdb_v2_column_data_collection_shared_scan_state_create(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_SHARED_SCAN_STATE_DESTROY: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_shared_scan_state_destroy(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_shared_scan_state_destroy(
     state: *mut duckdb_v2_column_data_collection_shared_scan_state_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_COLUMN_DATA_COLLECTION_SHARED_SCAN_STATE_DESTROY
@@ -6384,7 +6384,7 @@ pub unsafe fn duckdb_v2_column_data_collection_shared_scan_state_destroy(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_WORKER_SCAN_STATE_CREATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_worker_scan_state_create(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_worker_scan_state_create(
     collection: duckdb_v2_column_data_collection_handle,
     out_state: *mut duckdb_v2_column_data_collection_worker_scan_state_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -6405,7 +6405,7 @@ pub unsafe fn duckdb_v2_column_data_collection_worker_scan_state_create(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_WORKER_SCAN_STATE_DESTROY: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_data_collection_worker_scan_state_destroy(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_worker_scan_state_destroy(
     state: *mut duckdb_v2_column_data_collection_worker_scan_state_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_COLUMN_DATA_COLLECTION_WORKER_SCAN_STATE_DESTROY
@@ -6422,7 +6422,7 @@ pub unsafe fn duckdb_v2_column_data_collection_worker_scan_state_destroy(
 static __DUCKDB_V2_CONFIG_GET_OPTION_BY_INDEX: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_config_get_option_by_index(
+pub unsafe extern "C" fn duckdb_v2_config_get_option_by_index(
     config: duckdb_v2_config_handle,
     index: idx_t,
     out_option: *mut duckdb_v2_option_handle,
@@ -6445,7 +6445,7 @@ pub unsafe fn duckdb_v2_config_get_option_by_index(
 static __DUCKDB_V2_CONFIG_GET_OPTION_BY_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_config_get_option_by_name(
+pub unsafe extern "C" fn duckdb_v2_config_get_option_by_name(
     config: duckdb_v2_config_handle,
     name: *const duckdb_v2_identifier_t,
     out_option: *mut duckdb_v2_option_handle,
@@ -6468,7 +6468,7 @@ pub unsafe fn duckdb_v2_config_get_option_by_name(
 static __DUCKDB_V2_CONFIG_GET_OPTION_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_config_get_option_count(
+pub unsafe extern "C" fn duckdb_v2_config_get_option_count(
     config: duckdb_v2_config_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -6489,7 +6489,7 @@ pub unsafe fn duckdb_v2_config_get_option_count(
 static __DUCKDB_V2_CONNECTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_create(
+pub unsafe extern "C" fn duckdb_v2_connection_create(
     instance: duckdb_v2_instance_handle,
     out_conn: *mut duckdb_v2_connection_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -6510,7 +6510,7 @@ pub unsafe fn duckdb_v2_connection_create(
 static __DUCKDB_V2_CONNECTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_destroy(
+pub unsafe extern "C" fn duckdb_v2_connection_destroy(
     conn: *mut duckdb_v2_connection_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_CONNECTION_DESTROY
@@ -6527,7 +6527,7 @@ pub unsafe fn duckdb_v2_connection_destroy(
 static __DUCKDB_V2_CONNECTION_INTERRUPT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_interrupt(
+pub unsafe extern "C" fn duckdb_v2_connection_interrupt(
     conn: duckdb_v2_connection_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -6546,7 +6546,7 @@ pub unsafe fn duckdb_v2_connection_interrupt(
 static __DUCKDB_V2_CONNECTION_PROGRESS_GET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_progress_get(
+pub unsafe extern "C" fn duckdb_v2_connection_progress_get(
     conn: duckdb_v2_connection_handle,
     out_percentage: *mut f64,
     out_rows_processed: *mut u64,
@@ -6571,7 +6571,7 @@ pub unsafe fn duckdb_v2_connection_progress_get(
 static __DUCKDB_V2_DATA_CHUNK_COPY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_copy(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_copy(
     factory: duckdb_v2_factory_handle,
     chunk: duckdb_v2_data_chunk_handle,
     out_chunk: *mut duckdb_v2_data_chunk_handle,
@@ -6594,7 +6594,7 @@ pub unsafe fn duckdb_v2_data_chunk_copy(
 static __DUCKDB_V2_DATA_CHUNK_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_create(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_create(
     factory: duckdb_v2_factory_handle,
     types: *const duckdb_v2_logical_type_handle,
     column_count: idx_t,
@@ -6619,7 +6619,7 @@ pub unsafe fn duckdb_v2_data_chunk_create(
 static __DUCKDB_V2_DATA_CHUNK_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_destroy(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_destroy(
     chunk: *mut duckdb_v2_data_chunk_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_DATA_CHUNK_DESTROY
@@ -6636,7 +6636,7 @@ pub unsafe fn duckdb_v2_data_chunk_destroy(
 static __DUCKDB_V2_DATA_CHUNK_GET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_get_size(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_get_size(
     chunk: duckdb_v2_data_chunk_handle,
     out_size: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -6657,7 +6657,7 @@ pub unsafe fn duckdb_v2_data_chunk_get_size(
 static __DUCKDB_V2_DATA_CHUNK_GET_VECTOR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_get_vector(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_get_vector(
     chunk: duckdb_v2_data_chunk_handle,
     index: idx_t,
     out_vector: *mut duckdb_v2_vector_handle,
@@ -6680,7 +6680,7 @@ pub unsafe fn duckdb_v2_data_chunk_get_vector(
 static __DUCKDB_V2_DATA_CHUNK_GET_VECTOR_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_get_vector_count(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_get_vector_count(
     chunk: duckdb_v2_data_chunk_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -6701,7 +6701,7 @@ pub unsafe fn duckdb_v2_data_chunk_get_vector_count(
 static __DUCKDB_V2_ENVIRONMENT_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_environment_create(
+pub unsafe extern "C" fn duckdb_v2_environment_create(
     out_env: *mut duckdb_v2_environment_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -6720,7 +6720,7 @@ pub unsafe fn duckdb_v2_environment_create(
 static __DUCKDB_V2_ENVIRONMENT_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_environment_destroy(
+pub unsafe extern "C" fn duckdb_v2_environment_destroy(
     env: *mut duckdb_v2_environment_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_ENVIRONMENT_DESTROY
@@ -6737,7 +6737,7 @@ pub unsafe fn duckdb_v2_environment_destroy(
 static __DUCKDB_V2_ENVIRONMENT_GET_INSTANCE_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_environment_get_instance_count(
+pub unsafe extern "C" fn duckdb_v2_environment_get_instance_count(
     env: duckdb_v2_environment_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -6758,7 +6758,7 @@ pub unsafe fn duckdb_v2_environment_get_instance_count(
 static __DUCKDB_V2_ERROR_INFO_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_error_info_destroy(
+pub unsafe extern "C" fn duckdb_v2_error_info_destroy(
     info: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_ERROR_INFO_DESTROY
@@ -6775,7 +6775,7 @@ pub unsafe fn duckdb_v2_error_info_destroy(
 static __DUCKDB_V2_ERROR_INFO_GET_CODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_error_info_get_code(
+pub unsafe extern "C" fn duckdb_v2_error_info_get_code(
     info: duckdb_v2_error_info_handle,
     out_code: *mut DUCKDB_V2_ERROR,
 ) -> DUCKDB_V2_ERROR {
@@ -6794,7 +6794,7 @@ pub unsafe fn duckdb_v2_error_info_get_code(
 static __DUCKDB_V2_ERROR_INFO_GET_RAW_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_error_info_get_raw_text(
+pub unsafe extern "C" fn duckdb_v2_error_info_get_raw_text(
     info: duckdb_v2_error_info_handle,
     out_raw_text: *mut duckdb_v2_str,
 ) -> DUCKDB_V2_ERROR {
@@ -6813,7 +6813,7 @@ pub unsafe fn duckdb_v2_error_info_get_raw_text(
 static __DUCKDB_V2_ERROR_INFO_GET_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_error_info_get_text(
+pub unsafe extern "C" fn duckdb_v2_error_info_get_text(
     info: duckdb_v2_error_info_handle,
     out_text: *mut duckdb_v2_str,
 ) -> DUCKDB_V2_ERROR {
@@ -6832,7 +6832,7 @@ pub unsafe fn duckdb_v2_error_info_get_text(
 static __DUCKDB_V2_ERROR_INFO_SET_CODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_error_info_set_code(
+pub unsafe extern "C" fn duckdb_v2_error_info_set_code(
     info: duckdb_v2_error_info_handle,
     code: DUCKDB_V2_ERROR,
 ) -> DUCKDB_V2_ERROR {
@@ -6851,7 +6851,7 @@ pub unsafe fn duckdb_v2_error_info_set_code(
 static __DUCKDB_V2_ERROR_INFO_SET_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_error_info_set_text(
+pub unsafe extern "C" fn duckdb_v2_error_info_set_text(
     info: duckdb_v2_error_info_handle,
     text: *const duckdb_v2_str,
 ) -> DUCKDB_V2_ERROR {
@@ -6870,7 +6870,7 @@ pub unsafe fn duckdb_v2_error_info_set_text(
 static __DUCKDB_V2_FACTORY_CREATE_TYPE_FROM_ID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_factory_create_type_from_id(
+pub unsafe extern "C" fn duckdb_v2_factory_create_type_from_id(
     factory: duckdb_v2_factory_handle,
     type_id: DUCKDB_V2_LOGICAL_TYPE_ID,
     param_names: *const duckdb_v2_identifier_t,
@@ -6899,7 +6899,7 @@ pub unsafe fn duckdb_v2_factory_create_type_from_id(
 static __DUCKDB_V2_FACTORY_CREATE_TYPE_FROM_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_factory_create_type_from_name(
+pub unsafe extern "C" fn duckdb_v2_factory_create_type_from_name(
     factory: duckdb_v2_factory_handle,
     name: duckdb_v2_qname_handle,
     param_names: *const duckdb_v2_identifier_t,
@@ -6928,7 +6928,7 @@ pub unsafe fn duckdb_v2_factory_create_type_from_name(
 static __DUCKDB_V2_FACTORY_CREATE_TYPE_FROM_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_factory_create_type_from_text(
+pub unsafe extern "C" fn duckdb_v2_factory_create_type_from_text(
     factory: duckdb_v2_factory_handle,
     text: *const duckdb_v2_str,
     out_type: *mut duckdb_v2_logical_type_handle,
@@ -6951,7 +6951,7 @@ pub unsafe fn duckdb_v2_factory_create_type_from_text(
 static __DUCKDB_V2_FACTORY_CREATE_TYPE_WITH_ALIAS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_factory_create_type_with_alias(
+pub unsafe extern "C" fn duckdb_v2_factory_create_type_with_alias(
     factory: duckdb_v2_factory_handle,
     base_type: duckdb_v2_logical_type_handle,
     alias_name: *const duckdb_v2_identifier_t,
@@ -6976,7 +6976,7 @@ pub unsafe fn duckdb_v2_factory_create_type_with_alias(
 static __DUCKDB_V2_INSTANCE_ATTACH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_attach(
+pub unsafe extern "C" fn duckdb_v2_instance_attach(
     instance: duckdb_v2_instance_handle,
     name: *const duckdb_v2_identifier_t,
     path: *const duckdb_v2_str,
@@ -7003,7 +7003,7 @@ pub unsafe fn duckdb_v2_instance_attach(
 static __DUCKDB_V2_INSTANCE_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_create(
+pub unsafe extern "C" fn duckdb_v2_instance_create(
     env: duckdb_v2_environment_handle,
     out_instance: *mut duckdb_v2_instance_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -7024,7 +7024,7 @@ pub unsafe fn duckdb_v2_instance_create(
 static __DUCKDB_V2_INSTANCE_CREATE_WITH_OPTIONS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_create_with_options(
+pub unsafe extern "C" fn duckdb_v2_instance_create_with_options(
     env: duckdb_v2_environment_handle,
     option_names: *const duckdb_v2_str,
     option_values: *const duckdb_v2_str,
@@ -7051,7 +7051,7 @@ pub unsafe fn duckdb_v2_instance_create_with_options(
 static __DUCKDB_V2_INSTANCE_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_destroy(
+pub unsafe extern "C" fn duckdb_v2_instance_destroy(
     instance: *mut duckdb_v2_instance_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_INSTANCE_DESTROY
@@ -7068,7 +7068,7 @@ pub unsafe fn duckdb_v2_instance_destroy(
 static __DUCKDB_V2_INSTANCE_DETACH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_detach(
+pub unsafe extern "C" fn duckdb_v2_instance_detach(
     instance: duckdb_v2_instance_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7089,7 +7089,7 @@ pub unsafe fn duckdb_v2_instance_detach(
 static __DUCKDB_V2_LIBRARY_VERSION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_library_version(
+pub unsafe extern "C" fn duckdb_v2_library_version(
     out_version: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -7108,7 +7108,7 @@ pub unsafe fn duckdb_v2_library_version(
 static __DUCKDB_V2_LOGICAL_TYPE_COPY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_copy(
+pub unsafe extern "C" fn duckdb_v2_logical_type_copy(
     type_: duckdb_v2_logical_type_handle,
     out_type: *mut duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -7129,7 +7129,7 @@ pub unsafe fn duckdb_v2_logical_type_copy(
 static __DUCKDB_V2_LOGICAL_TYPE_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_destroy(
+pub unsafe extern "C" fn duckdb_v2_logical_type_destroy(
     type_: *mut duckdb_v2_logical_type_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_LOGICAL_TYPE_DESTROY
@@ -7146,7 +7146,7 @@ pub unsafe fn duckdb_v2_logical_type_destroy(
 static __DUCKDB_V2_LOGICAL_TYPE_GET_ID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_get_id(
+pub unsafe extern "C" fn duckdb_v2_logical_type_get_id(
     type_: duckdb_v2_logical_type_handle,
     out_id: *mut DUCKDB_V2_LOGICAL_TYPE_ID,
     err: *mut duckdb_v2_error_info_handle,
@@ -7167,7 +7167,7 @@ pub unsafe fn duckdb_v2_logical_type_get_id(
 static __DUCKDB_V2_LOGICAL_TYPE_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_get_name(
+pub unsafe extern "C" fn duckdb_v2_logical_type_get_name(
     type_: duckdb_v2_logical_type_handle,
     out_name: *mut duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7188,7 +7188,7 @@ pub unsafe fn duckdb_v2_logical_type_get_name(
 static __DUCKDB_V2_LOGICAL_TYPE_GET_PARAM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_get_param(
+pub unsafe extern "C" fn duckdb_v2_logical_type_get_param(
     type_: duckdb_v2_logical_type_handle,
     index: idx_t,
     out_name: *mut duckdb_v2_identifier_t,
@@ -7213,7 +7213,7 @@ pub unsafe fn duckdb_v2_logical_type_get_param(
 static __DUCKDB_V2_LOGICAL_TYPE_GET_PARAM_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_get_param_count(
+pub unsafe extern "C" fn duckdb_v2_logical_type_get_param_count(
     type_: duckdb_v2_logical_type_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7234,7 +7234,7 @@ pub unsafe fn duckdb_v2_logical_type_get_param_count(
 static __DUCKDB_V2_LOGICAL_TYPE_IS_EQUAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_is_equal(
+pub unsafe extern "C" fn duckdb_v2_logical_type_is_equal(
     left: duckdb_v2_logical_type_handle,
     right: duckdb_v2_logical_type_handle,
     result: *mut bool,
@@ -7257,7 +7257,7 @@ pub unsafe fn duckdb_v2_logical_type_is_equal(
 static __DUCKDB_V2_LOGICAL_TYPE_TO_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_logical_type_to_text(
+pub unsafe extern "C" fn duckdb_v2_logical_type_to_text(
     type_: duckdb_v2_logical_type_handle,
     out_text: *mut ::std::os::raw::c_char,
     out_capacity: idx_t,
@@ -7282,7 +7282,7 @@ pub unsafe fn duckdb_v2_logical_type_to_text(
 static __DUCKDB_V2_OPTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_destroy(
+pub unsafe extern "C" fn duckdb_v2_option_destroy(
     option: *mut duckdb_v2_option_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_OPTION_DESTROY
@@ -7299,7 +7299,7 @@ pub unsafe fn duckdb_v2_option_destroy(
 static __DUCKDB_V2_OPTION_GET_ALIAS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_get_alias(
+pub unsafe extern "C" fn duckdb_v2_option_get_alias(
     option: duckdb_v2_option_handle,
     index: idx_t,
     out_alias: *mut duckdb_v2_identifier_t,
@@ -7322,7 +7322,7 @@ pub unsafe fn duckdb_v2_option_get_alias(
 static __DUCKDB_V2_OPTION_GET_ALIAS_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_get_alias_count(
+pub unsafe extern "C" fn duckdb_v2_option_get_alias_count(
     option: duckdb_v2_option_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7343,7 +7343,7 @@ pub unsafe fn duckdb_v2_option_get_alias_count(
 static __DUCKDB_V2_OPTION_GET_DEFAULT_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_get_default_value(
+pub unsafe extern "C" fn duckdb_v2_option_get_default_value(
     option: duckdb_v2_option_handle,
     out_value: *mut duckdb_v2_value_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -7364,7 +7364,7 @@ pub unsafe fn duckdb_v2_option_get_default_value(
 static __DUCKDB_V2_OPTION_GET_DESCRIPTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_get_description(
+pub unsafe extern "C" fn duckdb_v2_option_get_description(
     option: duckdb_v2_option_handle,
     out_description: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -7385,7 +7385,7 @@ pub unsafe fn duckdb_v2_option_get_description(
 static __DUCKDB_V2_OPTION_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_get_name(
+pub unsafe extern "C" fn duckdb_v2_option_get_name(
     option: duckdb_v2_option_handle,
     out_name: *mut duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7406,7 +7406,7 @@ pub unsafe fn duckdb_v2_option_get_name(
 static __DUCKDB_V2_PARSE_SQL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_parse_sql(
+pub unsafe extern "C" fn duckdb_v2_parse_sql(
     conn: duckdb_v2_connection_handle,
     sql: *const ::std::os::raw::c_char,
     out_iterator: *mut duckdb_v2_statement_iterator_handle,
@@ -7429,7 +7429,7 @@ pub unsafe fn duckdb_v2_parse_sql(
 static __DUCKDB_V2_RESULT_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_destroy(
+pub unsafe extern "C" fn duckdb_v2_result_destroy(
     result: *mut duckdb_v2_result_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_RESULT_DESTROY
@@ -7446,7 +7446,7 @@ pub unsafe fn duckdb_v2_result_destroy(
 static __DUCKDB_V2_RESULT_DRAIN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_drain(
+pub unsafe extern "C" fn duckdb_v2_result_drain(
     result: duckdb_v2_result_handle,
     out_rows_changed: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7467,7 +7467,7 @@ pub unsafe fn duckdb_v2_result_drain(
 static __DUCKDB_V2_RESULT_FETCH_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_fetch_chunk(
+pub unsafe extern "C" fn duckdb_v2_result_fetch_chunk(
     result: duckdb_v2_result_handle,
     out_chunk: *mut duckdb_v2_data_chunk_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -7488,7 +7488,7 @@ pub unsafe fn duckdb_v2_result_fetch_chunk(
 static __DUCKDB_V2_RESULT_GET_RESULT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_get_result_type(
+pub unsafe extern "C" fn duckdb_v2_result_get_result_type(
     result: duckdb_v2_result_handle,
     out_type: *mut DUCKDB_V2_RESULT_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -7509,7 +7509,7 @@ pub unsafe fn duckdb_v2_result_get_result_type(
 static __DUCKDB_V2_RESULT_GET_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_get_schema(
+pub unsafe extern "C" fn duckdb_v2_result_get_schema(
     result: duckdb_v2_result_handle,
     out_schema: *mut duckdb_v2_schema_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -7530,7 +7530,7 @@ pub unsafe fn duckdb_v2_result_get_schema(
 static __DUCKDB_V2_RESULT_GET_STATEMENT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_get_statement_type(
+pub unsafe extern "C" fn duckdb_v2_result_get_statement_type(
     result: duckdb_v2_result_handle,
     out_type: *mut DUCKDB_V2_STATEMENT_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -7551,7 +7551,7 @@ pub unsafe fn duckdb_v2_result_get_statement_type(
 static __DUCKDB_V2_RESULT_RENDER_BOX: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_render_box(
+pub unsafe extern "C" fn duckdb_v2_result_render_box(
     result: *mut duckdb_v2_result_handle,
     max_rows: idx_t,
     max_width: idx_t,
@@ -7597,7 +7597,7 @@ pub unsafe fn duckdb_v2_result_render_box(
 static __DUCKDB_V2_RESULT_STEP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_step(
+pub unsafe extern "C" fn duckdb_v2_result_step(
     result: duckdb_v2_result_handle,
     out_chunk: *mut duckdb_v2_data_chunk_handle,
     out_status: *mut DUCKDB_V2_RESULT_STEP_STATUS,
@@ -7620,7 +7620,7 @@ pub unsafe fn duckdb_v2_result_step(
 static __DUCKDB_V2_RESULT_WAIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_result_wait(
+pub unsafe extern "C" fn duckdb_v2_result_wait(
     result: duckdb_v2_result_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -7639,7 +7639,7 @@ pub unsafe fn duckdb_v2_result_wait(
 static __DUCKDB_V2_SCHEMA_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_schema_destroy(
+pub unsafe extern "C" fn duckdb_v2_schema_destroy(
     schema: *mut duckdb_v2_schema_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_SCHEMA_DESTROY
@@ -7656,7 +7656,7 @@ pub unsafe fn duckdb_v2_schema_destroy(
 static __DUCKDB_V2_SCHEMA_GET_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_schema_get_count(
+pub unsafe extern "C" fn duckdb_v2_schema_get_count(
     schema: duckdb_v2_schema_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -7677,7 +7677,7 @@ pub unsafe fn duckdb_v2_schema_get_count(
 static __DUCKDB_V2_SCHEMA_GET_FIELD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_schema_get_field(
+pub unsafe extern "C" fn duckdb_v2_schema_get_field(
     schema: duckdb_v2_schema_handle,
     index: idx_t,
     out_name: *mut duckdb_v2_identifier_t,
@@ -7702,7 +7702,7 @@ pub unsafe fn duckdb_v2_schema_get_field(
 static __DUCKDB_V2_SQL_STATEMENT_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_sql_statement_destroy(
+pub unsafe extern "C" fn duckdb_v2_sql_statement_destroy(
     statement: *mut duckdb_v2_sql_statement_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_SQL_STATEMENT_DESTROY
@@ -7719,7 +7719,7 @@ pub unsafe fn duckdb_v2_sql_statement_destroy(
 static __DUCKDB_V2_STATEMENT_BIND: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_statement_bind(
+pub unsafe extern "C" fn duckdb_v2_statement_bind(
     conn: duckdb_v2_connection_handle,
     statement: duckdb_v2_sql_statement_handle,
     out_schema: *mut duckdb_v2_schema_handle,
@@ -7744,7 +7744,7 @@ pub unsafe fn duckdb_v2_statement_bind(
 static __DUCKDB_V2_STATEMENT_EXECUTE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_statement_execute(
+pub unsafe extern "C" fn duckdb_v2_statement_execute(
     conn: duckdb_v2_connection_handle,
     statement: duckdb_v2_sql_statement_handle,
     parameter_names: *const duckdb_v2_identifier_t,
@@ -7781,7 +7781,7 @@ pub unsafe fn duckdb_v2_statement_execute(
 static __DUCKDB_V2_STATEMENT_ITERATOR_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_statement_iterator_destroy(
+pub unsafe extern "C" fn duckdb_v2_statement_iterator_destroy(
     iterator: *mut duckdb_v2_statement_iterator_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_STATEMENT_ITERATOR_DESTROY
@@ -7798,7 +7798,7 @@ pub unsafe fn duckdb_v2_statement_iterator_destroy(
 static __DUCKDB_V2_STATEMENT_ITERATOR_NEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_statement_iterator_next(
+pub unsafe extern "C" fn duckdb_v2_statement_iterator_next(
     iterator: duckdb_v2_statement_iterator_handle,
     out_statement: *mut duckdb_v2_sql_statement_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -7819,7 +7819,7 @@ pub unsafe fn duckdb_v2_statement_iterator_next(
 static __DUCKDB_V2_VALUE_CAST: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_cast(
+pub unsafe extern "C" fn duckdb_v2_value_cast(
     factory: duckdb_v2_factory_handle,
     value: duckdb_v2_value_handle,
     target_type: duckdb_v2_logical_type_handle,
@@ -7844,7 +7844,7 @@ pub unsafe fn duckdb_v2_value_cast(
 static __DUCKDB_V2_VALUE_CREATE_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_array(
+pub unsafe extern "C" fn duckdb_v2_value_create_array(
     factory: duckdb_v2_factory_handle,
     child_type: duckdb_v2_logical_type_handle,
     children: *const duckdb_v2_value_handle,
@@ -7871,7 +7871,7 @@ pub unsafe fn duckdb_v2_value_create_array(
 static __DUCKDB_V2_VALUE_CREATE_BIGINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_bigint(
+pub unsafe extern "C" fn duckdb_v2_value_create_bigint(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -7894,7 +7894,7 @@ pub unsafe fn duckdb_v2_value_create_bigint(
 static __DUCKDB_V2_VALUE_CREATE_BIGNUM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_bignum(
+pub unsafe extern "C" fn duckdb_v2_value_create_bignum(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_str,
     out_value: *mut duckdb_v2_value_handle,
@@ -7917,7 +7917,7 @@ pub unsafe fn duckdb_v2_value_create_bignum(
 static __DUCKDB_V2_VALUE_CREATE_BIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_bit(
+pub unsafe extern "C" fn duckdb_v2_value_create_bit(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_str,
     out_value: *mut duckdb_v2_value_handle,
@@ -7940,7 +7940,7 @@ pub unsafe fn duckdb_v2_value_create_bit(
 static __DUCKDB_V2_VALUE_CREATE_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_blob(
+pub unsafe extern "C" fn duckdb_v2_value_create_blob(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_str,
     out_value: *mut duckdb_v2_value_handle,
@@ -7963,7 +7963,7 @@ pub unsafe fn duckdb_v2_value_create_blob(
 static __DUCKDB_V2_VALUE_CREATE_BOOL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_bool(
+pub unsafe extern "C" fn duckdb_v2_value_create_bool(
     factory: duckdb_v2_factory_handle,
     in_value: bool,
     out_value: *mut duckdb_v2_value_handle,
@@ -7986,7 +7986,7 @@ pub unsafe fn duckdb_v2_value_create_bool(
 static __DUCKDB_V2_VALUE_CREATE_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_date(
+pub unsafe extern "C" fn duckdb_v2_value_create_date(
     factory: duckdb_v2_factory_handle,
     in_value: i32,
     out_value: *mut duckdb_v2_value_handle,
@@ -8009,7 +8009,7 @@ pub unsafe fn duckdb_v2_value_create_date(
 static __DUCKDB_V2_VALUE_CREATE_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_decimal(
+pub unsafe extern "C" fn duckdb_v2_value_create_decimal(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_hugeint_t,
     width: u8,
@@ -8036,7 +8036,7 @@ pub unsafe fn duckdb_v2_value_create_decimal(
 static __DUCKDB_V2_VALUE_CREATE_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_double(
+pub unsafe extern "C" fn duckdb_v2_value_create_double(
     factory: duckdb_v2_factory_handle,
     in_value: f64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8059,7 +8059,7 @@ pub unsafe fn duckdb_v2_value_create_double(
 static __DUCKDB_V2_VALUE_CREATE_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_float(
+pub unsafe extern "C" fn duckdb_v2_value_create_float(
     factory: duckdb_v2_factory_handle,
     in_value: f32,
     out_value: *mut duckdb_v2_value_handle,
@@ -8082,7 +8082,7 @@ pub unsafe fn duckdb_v2_value_create_float(
 static __DUCKDB_V2_VALUE_CREATE_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_hugeint(
+pub unsafe extern "C" fn duckdb_v2_value_create_hugeint(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_hugeint_t,
     out_value: *mut duckdb_v2_value_handle,
@@ -8105,7 +8105,7 @@ pub unsafe fn duckdb_v2_value_create_hugeint(
 static __DUCKDB_V2_VALUE_CREATE_INT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_int(
+pub unsafe extern "C" fn duckdb_v2_value_create_int(
     factory: duckdb_v2_factory_handle,
     in_value: i32,
     out_value: *mut duckdb_v2_value_handle,
@@ -8128,7 +8128,7 @@ pub unsafe fn duckdb_v2_value_create_int(
 static __DUCKDB_V2_VALUE_CREATE_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_interval(
+pub unsafe extern "C" fn duckdb_v2_value_create_interval(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_interval_t,
     out_value: *mut duckdb_v2_value_handle,
@@ -8151,7 +8151,7 @@ pub unsafe fn duckdb_v2_value_create_interval(
 static __DUCKDB_V2_VALUE_CREATE_LIST: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_list(
+pub unsafe extern "C" fn duckdb_v2_value_create_list(
     factory: duckdb_v2_factory_handle,
     child_type: duckdb_v2_logical_type_handle,
     children: *const duckdb_v2_value_handle,
@@ -8178,7 +8178,7 @@ pub unsafe fn duckdb_v2_value_create_list(
 static __DUCKDB_V2_VALUE_CREATE_MAP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_map(
+pub unsafe extern "C" fn duckdb_v2_value_create_map(
     factory: duckdb_v2_factory_handle,
     key_type: duckdb_v2_logical_type_handle,
     value_type: duckdb_v2_logical_type_handle,
@@ -8209,7 +8209,7 @@ pub unsafe fn duckdb_v2_value_create_map(
 static __DUCKDB_V2_VALUE_CREATE_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_null(
+pub unsafe extern "C" fn duckdb_v2_value_create_null(
     factory: duckdb_v2_factory_handle,
     type_: duckdb_v2_logical_type_handle,
     out_value: *mut duckdb_v2_value_handle,
@@ -8232,7 +8232,7 @@ pub unsafe fn duckdb_v2_value_create_null(
 static __DUCKDB_V2_VALUE_CREATE_SMALLINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_smallint(
+pub unsafe extern "C" fn duckdb_v2_value_create_smallint(
     factory: duckdb_v2_factory_handle,
     in_value: i16,
     out_value: *mut duckdb_v2_value_handle,
@@ -8255,7 +8255,7 @@ pub unsafe fn duckdb_v2_value_create_smallint(
 static __DUCKDB_V2_VALUE_CREATE_STRUCT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_struct(
+pub unsafe extern "C" fn duckdb_v2_value_create_struct(
     factory: duckdb_v2_factory_handle,
     names: *const duckdb_v2_identifier_t,
     children: *const duckdb_v2_value_handle,
@@ -8282,7 +8282,7 @@ pub unsafe fn duckdb_v2_value_create_struct(
 static __DUCKDB_V2_VALUE_CREATE_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_time(
+pub unsafe extern "C" fn duckdb_v2_value_create_time(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8305,7 +8305,7 @@ pub unsafe fn duckdb_v2_value_create_time(
 static __DUCKDB_V2_VALUE_CREATE_TIME_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_time_ns(
+pub unsafe extern "C" fn duckdb_v2_value_create_time_ns(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8328,7 +8328,7 @@ pub unsafe fn duckdb_v2_value_create_time_ns(
 static __DUCKDB_V2_VALUE_CREATE_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_time_tz(
+pub unsafe extern "C" fn duckdb_v2_value_create_time_tz(
     factory: duckdb_v2_factory_handle,
     in_value: u64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8351,7 +8351,7 @@ pub unsafe fn duckdb_v2_value_create_time_tz(
 static __DUCKDB_V2_VALUE_CREATE_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_timestamp(
+pub unsafe extern "C" fn duckdb_v2_value_create_timestamp(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8374,7 +8374,7 @@ pub unsafe fn duckdb_v2_value_create_timestamp(
 static __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_timestamp_ms(
+pub unsafe extern "C" fn duckdb_v2_value_create_timestamp_ms(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8397,7 +8397,7 @@ pub unsafe fn duckdb_v2_value_create_timestamp_ms(
 static __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_timestamp_ns(
+pub unsafe extern "C" fn duckdb_v2_value_create_timestamp_ns(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8420,7 +8420,7 @@ pub unsafe fn duckdb_v2_value_create_timestamp_ns(
 static __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_SEC: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_timestamp_sec(
+pub unsafe extern "C" fn duckdb_v2_value_create_timestamp_sec(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8443,7 +8443,7 @@ pub unsafe fn duckdb_v2_value_create_timestamp_sec(
 static __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_timestamp_tz(
+pub unsafe extern "C" fn duckdb_v2_value_create_timestamp_tz(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8466,7 +8466,7 @@ pub unsafe fn duckdb_v2_value_create_timestamp_tz(
 static __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_TZ_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_timestamp_tz_ns(
+pub unsafe extern "C" fn duckdb_v2_value_create_timestamp_tz_ns(
     factory: duckdb_v2_factory_handle,
     in_value: i64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8489,7 +8489,7 @@ pub unsafe fn duckdb_v2_value_create_timestamp_tz_ns(
 static __DUCKDB_V2_VALUE_CREATE_TINYINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_tinyint(
+pub unsafe extern "C" fn duckdb_v2_value_create_tinyint(
     factory: duckdb_v2_factory_handle,
     in_value: i8,
     out_value: *mut duckdb_v2_value_handle,
@@ -8512,7 +8512,7 @@ pub unsafe fn duckdb_v2_value_create_tinyint(
 static __DUCKDB_V2_VALUE_CREATE_TUPLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_tuple(
+pub unsafe extern "C" fn duckdb_v2_value_create_tuple(
     factory: duckdb_v2_factory_handle,
     children: *const duckdb_v2_value_handle,
     field_count: idx_t,
@@ -8537,7 +8537,7 @@ pub unsafe fn duckdb_v2_value_create_tuple(
 static __DUCKDB_V2_VALUE_CREATE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_type(
+pub unsafe extern "C" fn duckdb_v2_value_create_type(
     factory: duckdb_v2_factory_handle,
     in_type: duckdb_v2_logical_type_handle,
     out_value: *mut duckdb_v2_value_handle,
@@ -8560,7 +8560,7 @@ pub unsafe fn duckdb_v2_value_create_type(
 static __DUCKDB_V2_VALUE_CREATE_UBIGINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_ubigint(
+pub unsafe extern "C" fn duckdb_v2_value_create_ubigint(
     factory: duckdb_v2_factory_handle,
     in_value: u64,
     out_value: *mut duckdb_v2_value_handle,
@@ -8583,7 +8583,7 @@ pub unsafe fn duckdb_v2_value_create_ubigint(
 static __DUCKDB_V2_VALUE_CREATE_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_uhugeint(
+pub unsafe extern "C" fn duckdb_v2_value_create_uhugeint(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_uhugeint_t,
     out_value: *mut duckdb_v2_value_handle,
@@ -8606,7 +8606,7 @@ pub unsafe fn duckdb_v2_value_create_uhugeint(
 static __DUCKDB_V2_VALUE_CREATE_UINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_uint(
+pub unsafe extern "C" fn duckdb_v2_value_create_uint(
     factory: duckdb_v2_factory_handle,
     in_value: u32,
     out_value: *mut duckdb_v2_value_handle,
@@ -8629,7 +8629,7 @@ pub unsafe fn duckdb_v2_value_create_uint(
 static __DUCKDB_V2_VALUE_CREATE_USMALLINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_usmallint(
+pub unsafe extern "C" fn duckdb_v2_value_create_usmallint(
     factory: duckdb_v2_factory_handle,
     in_value: u16,
     out_value: *mut duckdb_v2_value_handle,
@@ -8652,7 +8652,7 @@ pub unsafe fn duckdb_v2_value_create_usmallint(
 static __DUCKDB_V2_VALUE_CREATE_UTINYINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_utinyint(
+pub unsafe extern "C" fn duckdb_v2_value_create_utinyint(
     factory: duckdb_v2_factory_handle,
     in_value: u8,
     out_value: *mut duckdb_v2_value_handle,
@@ -8675,7 +8675,7 @@ pub unsafe fn duckdb_v2_value_create_utinyint(
 static __DUCKDB_V2_VALUE_CREATE_UUID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_uuid(
+pub unsafe extern "C" fn duckdb_v2_value_create_uuid(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_hugeint_t,
     out_value: *mut duckdb_v2_value_handle,
@@ -8698,7 +8698,7 @@ pub unsafe fn duckdb_v2_value_create_uuid(
 static __DUCKDB_V2_VALUE_CREATE_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_create_varchar(
+pub unsafe extern "C" fn duckdb_v2_value_create_varchar(
     factory: duckdb_v2_factory_handle,
     in_value: *const duckdb_v2_str,
     out_value: *mut duckdb_v2_value_handle,
@@ -8721,7 +8721,7 @@ pub unsafe fn duckdb_v2_value_create_varchar(
 static __DUCKDB_V2_VALUE_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_destroy(
+pub unsafe extern "C" fn duckdb_v2_value_destroy(
     value: *mut duckdb_v2_value_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_VALUE_DESTROY
@@ -8738,7 +8738,7 @@ pub unsafe fn duckdb_v2_value_destroy(
 static __DUCKDB_V2_VALUE_GET_BIGINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_bigint(
+pub unsafe extern "C" fn duckdb_v2_value_get_bigint(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -8759,7 +8759,7 @@ pub unsafe fn duckdb_v2_value_get_bigint(
 static __DUCKDB_V2_VALUE_GET_BLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_blob(
+pub unsafe extern "C" fn duckdb_v2_value_get_blob(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -8780,7 +8780,7 @@ pub unsafe fn duckdb_v2_value_get_blob(
 static __DUCKDB_V2_VALUE_GET_BOOL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_bool(
+pub unsafe extern "C" fn duckdb_v2_value_get_bool(
     value: duckdb_v2_value_handle,
     out: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -8801,7 +8801,7 @@ pub unsafe fn duckdb_v2_value_get_bool(
 static __DUCKDB_V2_VALUE_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_child(
+pub unsafe extern "C" fn duckdb_v2_value_get_child(
     value: duckdb_v2_value_handle,
     index: idx_t,
     out_child: *mut duckdb_v2_value_handle,
@@ -8824,7 +8824,7 @@ pub unsafe fn duckdb_v2_value_get_child(
 static __DUCKDB_V2_VALUE_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_child_count(
+pub unsafe extern "C" fn duckdb_v2_value_get_child_count(
     value: duckdb_v2_value_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -8845,7 +8845,7 @@ pub unsafe fn duckdb_v2_value_get_child_count(
 static __DUCKDB_V2_VALUE_GET_DATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_date(
+pub unsafe extern "C" fn duckdb_v2_value_get_date(
     value: duckdb_v2_value_handle,
     out: *mut i32,
     err: *mut duckdb_v2_error_info_handle,
@@ -8866,7 +8866,7 @@ pub unsafe fn duckdb_v2_value_get_date(
 static __DUCKDB_V2_VALUE_GET_DECIMAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_decimal(
+pub unsafe extern "C" fn duckdb_v2_value_get_decimal(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_hugeint_t,
     out_width: *mut u8,
@@ -8891,7 +8891,7 @@ pub unsafe fn duckdb_v2_value_get_decimal(
 static __DUCKDB_V2_VALUE_GET_DOUBLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_double(
+pub unsafe extern "C" fn duckdb_v2_value_get_double(
     value: duckdb_v2_value_handle,
     out: *mut f64,
     err: *mut duckdb_v2_error_info_handle,
@@ -8912,7 +8912,7 @@ pub unsafe fn duckdb_v2_value_get_double(
 static __DUCKDB_V2_VALUE_GET_FLOAT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_float(
+pub unsafe extern "C" fn duckdb_v2_value_get_float(
     value: duckdb_v2_value_handle,
     out: *mut f32,
     err: *mut duckdb_v2_error_info_handle,
@@ -8933,7 +8933,7 @@ pub unsafe fn duckdb_v2_value_get_float(
 static __DUCKDB_V2_VALUE_GET_HUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_hugeint(
+pub unsafe extern "C" fn duckdb_v2_value_get_hugeint(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_hugeint_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -8954,7 +8954,7 @@ pub unsafe fn duckdb_v2_value_get_hugeint(
 static __DUCKDB_V2_VALUE_GET_INT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_int(
+pub unsafe extern "C" fn duckdb_v2_value_get_int(
     value: duckdb_v2_value_handle,
     out: *mut i32,
     err: *mut duckdb_v2_error_info_handle,
@@ -8975,7 +8975,7 @@ pub unsafe fn duckdb_v2_value_get_int(
 static __DUCKDB_V2_VALUE_GET_INTERVAL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_interval(
+pub unsafe extern "C" fn duckdb_v2_value_get_interval(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_interval_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -8996,7 +8996,7 @@ pub unsafe fn duckdb_v2_value_get_interval(
 static __DUCKDB_V2_VALUE_GET_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_logical_type(
+pub unsafe extern "C" fn duckdb_v2_value_get_logical_type(
     value: duckdb_v2_value_handle,
     out_type: *mut duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9017,7 +9017,7 @@ pub unsafe fn duckdb_v2_value_get_logical_type(
 static __DUCKDB_V2_VALUE_GET_SMALLINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_smallint(
+pub unsafe extern "C" fn duckdb_v2_value_get_smallint(
     value: duckdb_v2_value_handle,
     out: *mut i16,
     err: *mut duckdb_v2_error_info_handle,
@@ -9038,7 +9038,7 @@ pub unsafe fn duckdb_v2_value_get_smallint(
 static __DUCKDB_V2_VALUE_GET_TIME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_time(
+pub unsafe extern "C" fn duckdb_v2_value_get_time(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9059,7 +9059,7 @@ pub unsafe fn duckdb_v2_value_get_time(
 static __DUCKDB_V2_VALUE_GET_TIME_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_time_ns(
+pub unsafe extern "C" fn duckdb_v2_value_get_time_ns(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9080,7 +9080,7 @@ pub unsafe fn duckdb_v2_value_get_time_ns(
 static __DUCKDB_V2_VALUE_GET_TIME_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_time_tz(
+pub unsafe extern "C" fn duckdb_v2_value_get_time_tz(
     value: duckdb_v2_value_handle,
     out: *mut u64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9101,7 +9101,7 @@ pub unsafe fn duckdb_v2_value_get_time_tz(
 static __DUCKDB_V2_VALUE_GET_TIMESTAMP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_timestamp(
+pub unsafe extern "C" fn duckdb_v2_value_get_timestamp(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9122,7 +9122,7 @@ pub unsafe fn duckdb_v2_value_get_timestamp(
 static __DUCKDB_V2_VALUE_GET_TIMESTAMP_MS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_timestamp_ms(
+pub unsafe extern "C" fn duckdb_v2_value_get_timestamp_ms(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9143,7 +9143,7 @@ pub unsafe fn duckdb_v2_value_get_timestamp_ms(
 static __DUCKDB_V2_VALUE_GET_TIMESTAMP_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_timestamp_ns(
+pub unsafe extern "C" fn duckdb_v2_value_get_timestamp_ns(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9164,7 +9164,7 @@ pub unsafe fn duckdb_v2_value_get_timestamp_ns(
 static __DUCKDB_V2_VALUE_GET_TIMESTAMP_SEC: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_timestamp_sec(
+pub unsafe extern "C" fn duckdb_v2_value_get_timestamp_sec(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9185,7 +9185,7 @@ pub unsafe fn duckdb_v2_value_get_timestamp_sec(
 static __DUCKDB_V2_VALUE_GET_TIMESTAMP_TZ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_timestamp_tz(
+pub unsafe extern "C" fn duckdb_v2_value_get_timestamp_tz(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9206,7 +9206,7 @@ pub unsafe fn duckdb_v2_value_get_timestamp_tz(
 static __DUCKDB_V2_VALUE_GET_TIMESTAMP_TZ_NS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_timestamp_tz_ns(
+pub unsafe extern "C" fn duckdb_v2_value_get_timestamp_tz_ns(
     value: duckdb_v2_value_handle,
     out: *mut i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9227,7 +9227,7 @@ pub unsafe fn duckdb_v2_value_get_timestamp_tz_ns(
 static __DUCKDB_V2_VALUE_GET_TINYINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_tinyint(
+pub unsafe extern "C" fn duckdb_v2_value_get_tinyint(
     value: duckdb_v2_value_handle,
     out: *mut i8,
     err: *mut duckdb_v2_error_info_handle,
@@ -9248,7 +9248,7 @@ pub unsafe fn duckdb_v2_value_get_tinyint(
 static __DUCKDB_V2_VALUE_GET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_type(
+pub unsafe extern "C" fn duckdb_v2_value_get_type(
     value: duckdb_v2_value_handle,
     out_type: *mut duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9269,7 +9269,7 @@ pub unsafe fn duckdb_v2_value_get_type(
 static __DUCKDB_V2_VALUE_GET_UBIGINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_ubigint(
+pub unsafe extern "C" fn duckdb_v2_value_get_ubigint(
     value: duckdb_v2_value_handle,
     out: *mut u64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9290,7 +9290,7 @@ pub unsafe fn duckdb_v2_value_get_ubigint(
 static __DUCKDB_V2_VALUE_GET_UHUGEINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_uhugeint(
+pub unsafe extern "C" fn duckdb_v2_value_get_uhugeint(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_uhugeint_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -9311,7 +9311,7 @@ pub unsafe fn duckdb_v2_value_get_uhugeint(
 static __DUCKDB_V2_VALUE_GET_UINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_uint(
+pub unsafe extern "C" fn duckdb_v2_value_get_uint(
     value: duckdb_v2_value_handle,
     out: *mut u32,
     err: *mut duckdb_v2_error_info_handle,
@@ -9332,7 +9332,7 @@ pub unsafe fn duckdb_v2_value_get_uint(
 static __DUCKDB_V2_VALUE_GET_USMALLINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_usmallint(
+pub unsafe extern "C" fn duckdb_v2_value_get_usmallint(
     value: duckdb_v2_value_handle,
     out: *mut u16,
     err: *mut duckdb_v2_error_info_handle,
@@ -9353,7 +9353,7 @@ pub unsafe fn duckdb_v2_value_get_usmallint(
 static __DUCKDB_V2_VALUE_GET_UTINYINT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_utinyint(
+pub unsafe extern "C" fn duckdb_v2_value_get_utinyint(
     value: duckdb_v2_value_handle,
     out: *mut u8,
     err: *mut duckdb_v2_error_info_handle,
@@ -9374,7 +9374,7 @@ pub unsafe fn duckdb_v2_value_get_utinyint(
 static __DUCKDB_V2_VALUE_GET_UUID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_uuid(
+pub unsafe extern "C" fn duckdb_v2_value_get_uuid(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_hugeint_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -9395,7 +9395,7 @@ pub unsafe fn duckdb_v2_value_get_uuid(
 static __DUCKDB_V2_VALUE_GET_VARCHAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_get_varchar(
+pub unsafe extern "C" fn duckdb_v2_value_get_varchar(
     value: duckdb_v2_value_handle,
     out: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -9416,7 +9416,7 @@ pub unsafe fn duckdb_v2_value_get_varchar(
 static __DUCKDB_V2_VALUE_IS_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_is_null(
+pub unsafe extern "C" fn duckdb_v2_value_is_null(
     value: duckdb_v2_value_handle,
     out_is_null: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -9437,7 +9437,7 @@ pub unsafe fn duckdb_v2_value_is_null(
 static __DUCKDB_V2_VALUE_TO_STRING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_value_to_string(
+pub unsafe extern "C" fn duckdb_v2_value_to_string(
     value: duckdb_v2_value_handle,
     out_string: *mut ::std::os::raw::c_char,
     out_capacity: idx_t,
@@ -9462,7 +9462,7 @@ pub unsafe fn duckdb_v2_value_to_string(
 static __DUCKDB_V2_VECTOR_CONSTANT_SET_VALID: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_constant_set_valid(
+pub unsafe extern "C" fn duckdb_v2_vector_constant_set_valid(
     vector: duckdb_v2_vector_handle,
     validity: bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -9483,7 +9483,7 @@ pub unsafe fn duckdb_v2_vector_constant_set_valid(
 static __DUCKDB_V2_VECTOR_FLAT_GET_VALIDITY_MUTABLE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_vector_flat_get_validity_mutable(
+pub unsafe extern "C" fn duckdb_v2_vector_flat_get_validity_mutable(
     vector: duckdb_v2_vector_handle,
     out_validity: *mut *mut u64,
     err: *mut duckdb_v2_error_info_handle,
@@ -9504,7 +9504,7 @@ pub unsafe fn duckdb_v2_vector_flat_get_validity_mutable(
 static __DUCKDB_V2_VECTOR_FLATTEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_flatten(
+pub unsafe extern "C" fn duckdb_v2_vector_flatten(
     vector: duckdb_v2_vector_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -9523,7 +9523,7 @@ pub unsafe fn duckdb_v2_vector_flatten(
 static __DUCKDB_V2_VECTOR_GET_ARENA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_arena(
+pub unsafe extern "C" fn duckdb_v2_vector_get_arena(
     vector: duckdb_v2_vector_handle,
     out_arena: *mut duckdb_v2_arena_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9544,7 +9544,7 @@ pub unsafe fn duckdb_v2_vector_get_arena(
 static __DUCKDB_V2_VECTOR_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_child(
+pub unsafe extern "C" fn duckdb_v2_vector_get_child(
     vector: duckdb_v2_vector_handle,
     index: idx_t,
     out_child: *mut duckdb_v2_vector_handle,
@@ -9567,7 +9567,7 @@ pub unsafe fn duckdb_v2_vector_get_child(
 static __DUCKDB_V2_VECTOR_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_child_count(
+pub unsafe extern "C" fn duckdb_v2_vector_get_child_count(
     vector: duckdb_v2_vector_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -9588,7 +9588,7 @@ pub unsafe fn duckdb_v2_vector_get_child_count(
 static __DUCKDB_V2_VECTOR_GET_DATA_MUTABLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_data_mutable(
+pub unsafe extern "C" fn duckdb_v2_vector_get_data_mutable(
     vector: duckdb_v2_vector_handle,
     out_data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -9609,7 +9609,7 @@ pub unsafe fn duckdb_v2_vector_get_data_mutable(
 static __DUCKDB_V2_VECTOR_GET_LOGICAL_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_logical_type(
+pub unsafe extern "C" fn duckdb_v2_vector_get_logical_type(
     vector: duckdb_v2_vector_handle,
     out_type: *mut duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9630,7 +9630,7 @@ pub unsafe fn duckdb_v2_vector_get_logical_type(
 static __DUCKDB_V2_VECTOR_GET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_size(
+pub unsafe extern "C" fn duckdb_v2_vector_get_size(
     vector: duckdb_v2_vector_handle,
     out_size: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -9651,7 +9651,7 @@ pub unsafe fn duckdb_v2_vector_get_size(
 static __DUCKDB_V2_VECTOR_GET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_value(
+pub unsafe extern "C" fn duckdb_v2_vector_get_value(
     vector: duckdb_v2_vector_handle,
     row: idx_t,
     out_value: *mut duckdb_v2_value_handle,
@@ -9674,7 +9674,7 @@ pub unsafe fn duckdb_v2_vector_get_value(
 static __DUCKDB_V2_VECTOR_GET_VECTOR_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_vector_type(
+pub unsafe extern "C" fn duckdb_v2_vector_get_vector_type(
     vector: duckdb_v2_vector_handle,
     out_type: *mut DUCKDB_V2_VECTOR_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -9695,7 +9695,7 @@ pub unsafe fn duckdb_v2_vector_get_vector_type(
 static __DUCKDB_V2_VECTOR_GET_VIEW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_get_view(
+pub unsafe extern "C" fn duckdb_v2_vector_get_view(
     vector: duckdb_v2_vector_handle,
     out_view: *mut duckdb_v2_vector_view,
     err: *mut duckdb_v2_error_info_handle,
@@ -9716,7 +9716,7 @@ pub unsafe fn duckdb_v2_vector_get_view(
 static __DUCKDB_V2_VECTOR_MAKE_CONSTANT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_make_constant(
+pub unsafe extern "C" fn duckdb_v2_vector_make_constant(
     vector: duckdb_v2_vector_handle,
     value: duckdb_v2_value_handle,
     count: idx_t,
@@ -9739,7 +9739,7 @@ pub unsafe fn duckdb_v2_vector_make_constant(
 static __DUCKDB_V2_VECTOR_MAKE_SEQUENCE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_make_sequence(
+pub unsafe extern "C" fn duckdb_v2_vector_make_sequence(
     vector: duckdb_v2_vector_handle,
     start: i64,
     increment: i64,
@@ -9764,7 +9764,7 @@ pub unsafe fn duckdb_v2_vector_make_sequence(
 static __DUCKDB_V2_VECTOR_REFERENCE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_reference(
+pub unsafe extern "C" fn duckdb_v2_vector_reference(
     vector: duckdb_v2_vector_handle,
     source: duckdb_v2_vector_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9785,7 +9785,7 @@ pub unsafe fn duckdb_v2_vector_reference(
 static __DUCKDB_V2_VECTOR_SET_NULL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_set_null(
+pub unsafe extern "C" fn duckdb_v2_vector_set_null(
     vector: duckdb_v2_vector_handle,
     row: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -9806,7 +9806,7 @@ pub unsafe fn duckdb_v2_vector_set_null(
 static __DUCKDB_V2_VECTOR_SET_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_set_size(
+pub unsafe extern "C" fn duckdb_v2_vector_set_size(
     vector: duckdb_v2_vector_handle,
     size: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -9827,7 +9827,7 @@ pub unsafe fn duckdb_v2_vector_set_size(
 static __DUCKDB_V2_VECTOR_SET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_set_value(
+pub unsafe extern "C" fn duckdb_v2_vector_set_value(
     vector: duckdb_v2_vector_handle,
     row: idx_t,
     value: duckdb_v2_value_handle,
@@ -9850,7 +9850,7 @@ pub unsafe fn duckdb_v2_vector_set_value(
 static __DUCKDB_V2_CONNECTION_REGISTER_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_scalar_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_scalar_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_scalar_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9871,7 +9871,7 @@ pub unsafe fn duckdb_v2_connection_register_scalar_function(
 static __DUCKDB_V2_CONTEXT_LOG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_context_log(
+pub unsafe extern "C" fn duckdb_v2_context_log(
     ctx: duckdb_v2_context_handle,
     level: DUCKDB_V2_LOG_LEVEL,
     log_type: *const duckdb_v2_str,
@@ -9896,7 +9896,7 @@ pub unsafe fn duckdb_v2_context_log(
 static __DUCKDB_V2_EXTENSION_REGISTER_SCALAR_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_scalar_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_scalar_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_scalar_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9917,7 +9917,7 @@ pub unsafe fn duckdb_v2_extension_register_scalar_function(
 static __DUCKDB_V2_FUNCTION_SIGNATURE_ADD_PARAMETER: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_function_signature_add_parameter(
+pub unsafe extern "C" fn duckdb_v2_function_signature_add_parameter(
     sig: duckdb_v2_function_signature_handle,
     name: *const duckdb_v2_identifier_t,
     type_: duckdb_v2_logical_type_handle,
@@ -9944,7 +9944,7 @@ pub unsafe fn duckdb_v2_function_signature_add_parameter(
 static __DUCKDB_V2_FUNCTION_SIGNATURE_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_function_signature_set_return_type(
+pub unsafe extern "C" fn duckdb_v2_function_signature_set_return_type(
     sig: duckdb_v2_function_signature_handle,
     type_: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9965,7 +9965,7 @@ pub unsafe fn duckdb_v2_function_signature_set_return_type(
 static __DUCKDB_V2_SCALAR_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_create(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_scalar_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -9986,7 +9986,7 @@ pub unsafe fn duckdb_v2_scalar_function_create(
 static __DUCKDB_V2_SCALAR_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_destroy(
     function: *mut duckdb_v2_scalar_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_SCALAR_FUNCTION_DESTROY
@@ -10003,7 +10003,7 @@ pub unsafe fn duckdb_v2_scalar_function_destroy(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_ARG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_exec_get_arg(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_arg(
     info: duckdb_v2_scalar_function_exec_info_handle,
     index: idx_t,
     vector: *mut duckdb_v2_vector_handle,
@@ -10026,7 +10026,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_arg(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_ARG_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_exec_get_arg_count(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_arg_count(
     info: duckdb_v2_scalar_function_exec_info_handle,
     positional_fixed: *mut idx_t,
     positional_variadic: *mut idx_t,
@@ -10053,7 +10053,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_arg_count(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_exec_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_bind_data(
     info: duckdb_v2_scalar_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10074,7 +10074,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_bind_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_exec_get_init_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_init_data(
     info: duckdb_v2_scalar_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10095,7 +10095,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_init_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_RESULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_exec_get_result(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_result(
     info: duckdb_v2_scalar_function_exec_info_handle,
     vector: *mut duckdb_v2_vector_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -10116,7 +10116,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_result(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_ROW_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_exec_get_row_count(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_row_count(
     info: duckdb_v2_scalar_function_exec_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10137,7 +10137,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_row_count(
 static __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_exec_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_exec_get_user_data(
     info: duckdb_v2_scalar_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10158,7 +10158,7 @@ pub unsafe fn duckdb_v2_scalar_function_exec_get_user_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_GET_SIGNATURE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_get_signature(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_get_signature(
     function: duckdb_v2_scalar_function_handle,
     sig: *mut duckdb_v2_function_signature_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -10179,7 +10179,7 @@ pub unsafe fn duckdb_v2_scalar_function_get_signature(
 static __DUCKDB_V2_SCALAR_FUNCTION_INIT_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_init_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_init_get_bind_data(
     info: duckdb_v2_scalar_function_init_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10200,7 +10200,7 @@ pub unsafe fn duckdb_v2_scalar_function_init_get_bind_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_INIT_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_init_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_init_get_user_data(
     info: duckdb_v2_scalar_function_init_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10221,7 +10221,7 @@ pub unsafe fn duckdb_v2_scalar_function_init_get_user_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_INIT_SET_INIT_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_init_set_init_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_init_set_init_data(
     info: duckdb_v2_scalar_function_init_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -10242,7 +10242,7 @@ pub unsafe fn duckdb_v2_scalar_function_init_set_init_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_BIND_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_set_bind_callback(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_bind_callback(
     function: duckdb_v2_scalar_function_handle,
     callback: duckdb_v2_scalar_function_bind_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10263,7 +10263,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_bind_callback(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_EXEC_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_set_exec_callback(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_exec_callback(
     function: duckdb_v2_scalar_function_handle,
     callback: duckdb_v2_scalar_function_exec_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10284,7 +10284,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_exec_callback(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_INIT_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_set_init_callback(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_init_callback(
     function: duckdb_v2_scalar_function_handle,
     callback: duckdb_v2_scalar_function_init_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10305,7 +10305,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_init_callback(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_name(
     function: duckdb_v2_scalar_function_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10326,7 +10326,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_name(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_user_data(
     function: duckdb_v2_scalar_function_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -10347,7 +10347,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_BIND_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_bind_set_return_type(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_bind_set_return_type(
     info: duckdb_v2_aggregate_function_bind_info_handle,
     return_type: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -10368,7 +10368,7 @@ pub unsafe fn duckdb_v2_aggregate_function_bind_set_return_type(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_combine_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_combine_get_bind_data(
     info: duckdb_v2_aggregate_function_combine_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10389,7 +10389,7 @@ pub unsafe fn duckdb_v2_aggregate_function_combine_get_bind_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_SOURCES: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_combine_get_sources(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_combine_get_sources(
     info: duckdb_v2_aggregate_function_combine_info_handle,
     states: *mut *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10410,7 +10410,7 @@ pub unsafe fn duckdb_v2_aggregate_function_combine_get_sources(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_STATE_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_combine_get_state_count(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_combine_get_state_count(
     info: duckdb_v2_aggregate_function_combine_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10431,7 +10431,7 @@ pub unsafe fn duckdb_v2_aggregate_function_combine_get_state_count(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_TARGETS: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_combine_get_targets(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_combine_get_targets(
     info: duckdb_v2_aggregate_function_combine_info_handle,
     states: *mut *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10452,7 +10452,7 @@ pub unsafe fn duckdb_v2_aggregate_function_combine_get_targets(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_combine_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_combine_get_user_data(
     info: duckdb_v2_aggregate_function_combine_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10473,7 +10473,7 @@ pub unsafe fn duckdb_v2_aggregate_function_combine_get_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_aggregate_function_create(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_aggregate_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -10494,7 +10494,7 @@ pub unsafe fn duckdb_v2_aggregate_function_create(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_aggregate_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_destroy(
     function: *mut duckdb_v2_aggregate_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY
@@ -10511,7 +10511,7 @@ pub unsafe fn duckdb_v2_aggregate_function_destroy(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_destroy_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_destroy_get_bind_data(
     info: duckdb_v2_aggregate_function_destroy_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10532,7 +10532,7 @@ pub unsafe fn duckdb_v2_aggregate_function_destroy_get_bind_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_STATE_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_destroy_get_state_count(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_destroy_get_state_count(
     info: duckdb_v2_aggregate_function_destroy_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10553,7 +10553,7 @@ pub unsafe fn duckdb_v2_aggregate_function_destroy_get_state_count(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_STATES: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_destroy_get_states(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_destroy_get_states(
     info: duckdb_v2_aggregate_function_destroy_info_handle,
     states: *mut *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10574,7 +10574,7 @@ pub unsafe fn duckdb_v2_aggregate_function_destroy_get_states(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_destroy_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_destroy_get_user_data(
     info: duckdb_v2_aggregate_function_destroy_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10595,7 +10595,7 @@ pub unsafe fn duckdb_v2_aggregate_function_destroy_get_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_finalize_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_finalize_get_bind_data(
     info: duckdb_v2_aggregate_function_finalize_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10616,7 +10616,7 @@ pub unsafe fn duckdb_v2_aggregate_function_finalize_get_bind_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_RESULT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_finalize_get_result(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_finalize_get_result(
     info: duckdb_v2_aggregate_function_finalize_info_handle,
     vector: *mut duckdb_v2_vector_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -10637,7 +10637,7 @@ pub unsafe fn duckdb_v2_aggregate_function_finalize_get_result(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_RESULT_OFFSET: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_finalize_get_result_offset(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_finalize_get_result_offset(
     info: duckdb_v2_aggregate_function_finalize_info_handle,
     offset: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10658,7 +10658,7 @@ pub unsafe fn duckdb_v2_aggregate_function_finalize_get_result_offset(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_STATE_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_finalize_get_state_count(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_finalize_get_state_count(
     info: duckdb_v2_aggregate_function_finalize_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10679,7 +10679,7 @@ pub unsafe fn duckdb_v2_aggregate_function_finalize_get_state_count(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_STATES: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_finalize_get_states(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_finalize_get_states(
     info: duckdb_v2_aggregate_function_finalize_info_handle,
     states: *mut *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10700,7 +10700,7 @@ pub unsafe fn duckdb_v2_aggregate_function_finalize_get_states(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_finalize_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_finalize_get_user_data(
     info: duckdb_v2_aggregate_function_finalize_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10721,7 +10721,7 @@ pub unsafe fn duckdb_v2_aggregate_function_finalize_get_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_GET_SIGNATURE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_get_signature(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_get_signature(
     function: duckdb_v2_aggregate_function_handle,
     sig: *mut duckdb_v2_function_signature_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -10742,7 +10742,7 @@ pub unsafe fn duckdb_v2_aggregate_function_get_signature(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_init_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_init_get_bind_data(
     info: duckdb_v2_aggregate_function_init_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10763,7 +10763,7 @@ pub unsafe fn duckdb_v2_aggregate_function_init_get_bind_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_STATE_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_init_get_state_count(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_init_get_state_count(
     info: duckdb_v2_aggregate_function_init_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10784,7 +10784,7 @@ pub unsafe fn duckdb_v2_aggregate_function_init_get_state_count(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_STATES: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_init_get_states(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_init_get_states(
     info: duckdb_v2_aggregate_function_init_info_handle,
     states: *mut *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10805,7 +10805,7 @@ pub unsafe fn duckdb_v2_aggregate_function_init_get_states(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_init_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_init_get_user_data(
     info: duckdb_v2_aggregate_function_init_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -10826,7 +10826,7 @@ pub unsafe fn duckdb_v2_aggregate_function_init_get_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_BIND_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_bind_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_bind_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_bind_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10847,7 +10847,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_bind_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_COMBINE_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_combine_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_combine_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_combine_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10868,7 +10868,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_combine_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_DESTROY_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_destroy_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_destroy_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_destroy_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10889,7 +10889,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_destroy_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_FINALIZE_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_finalize_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_finalize_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_finalize_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10910,7 +10910,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_finalize_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_INIT_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_init_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_init_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_init_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10931,7 +10931,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_init_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_aggregate_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_name(
     function: duckdb_v2_aggregate_function_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -10952,7 +10952,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_name(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_SIZE_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_size_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_size_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_size_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10973,7 +10973,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_size_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_UPDATE_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_update_callback(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_update_callback(
     function: duckdb_v2_aggregate_function_handle,
     callback: duckdb_v2_aggregate_function_update_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -10994,7 +10994,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_update_callback(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_user_data(
     function: duckdb_v2_aggregate_function_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -11015,7 +11015,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SIZE_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_size_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_size_get_bind_data(
     info: duckdb_v2_aggregate_function_size_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11036,7 +11036,7 @@ pub unsafe fn duckdb_v2_aggregate_function_size_get_bind_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SIZE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_size_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_size_get_user_data(
     info: duckdb_v2_aggregate_function_size_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11057,7 +11057,7 @@ pub unsafe fn duckdb_v2_aggregate_function_size_get_user_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SIZE_SET_STATE_SIZE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_size_set_state_size(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_size_set_state_size(
     info: duckdb_v2_aggregate_function_size_info_handle,
     size: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -11078,7 +11078,7 @@ pub unsafe fn duckdb_v2_aggregate_function_size_set_state_size(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_ARG: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_update_get_arg(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_update_get_arg(
     info: duckdb_v2_aggregate_function_update_info_handle,
     index: idx_t,
     vector: *mut duckdb_v2_vector_handle,
@@ -11101,7 +11101,7 @@ pub unsafe fn duckdb_v2_aggregate_function_update_get_arg(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_ARG_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_update_get_arg_count(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_update_get_arg_count(
     info: duckdb_v2_aggregate_function_update_info_handle,
     positional_fixed: *mut idx_t,
     positional_variadic: *mut idx_t,
@@ -11128,7 +11128,7 @@ pub unsafe fn duckdb_v2_aggregate_function_update_get_arg_count(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_update_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_update_get_bind_data(
     info: duckdb_v2_aggregate_function_update_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11149,7 +11149,7 @@ pub unsafe fn duckdb_v2_aggregate_function_update_get_bind_data(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_ROW_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_update_get_row_count(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_update_get_row_count(
     info: duckdb_v2_aggregate_function_update_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -11170,7 +11170,7 @@ pub unsafe fn duckdb_v2_aggregate_function_update_get_row_count(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_STATES: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_update_get_states(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_update_get_states(
     info: duckdb_v2_aggregate_function_update_info_handle,
     states: *mut *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11191,7 +11191,7 @@ pub unsafe fn duckdb_v2_aggregate_function_update_get_states(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_aggregate_function_update_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_update_get_user_data(
     info: duckdb_v2_aggregate_function_update_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11212,7 +11212,7 @@ pub unsafe fn duckdb_v2_aggregate_function_update_get_user_data(
 static __DUCKDB_V2_CONNECTION_REGISTER_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_aggregate_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_aggregate_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_aggregate_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11233,7 +11233,7 @@ pub unsafe fn duckdb_v2_connection_register_aggregate_function(
 static __DUCKDB_V2_EXTENSION_REGISTER_AGGREGATE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_aggregate_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_aggregate_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_aggregate_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11254,7 +11254,7 @@ pub unsafe fn duckdb_v2_extension_register_aggregate_function(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_SET_PROPERTY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_aggregate_function_set_property(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_set_property(
     function: duckdb_v2_aggregate_function_handle,
     key: DUCKDB_V2_FUNCTION_PROPERTY_KEY,
     value: DUCKDB_V2_FUNCTION_PROPERTY_VALUE,
@@ -11277,7 +11277,7 @@ pub unsafe fn duckdb_v2_aggregate_function_set_property(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_PROPERTY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_set_property(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_property(
     function: duckdb_v2_scalar_function_handle,
     key: DUCKDB_V2_FUNCTION_PROPERTY_KEY,
     value: DUCKDB_V2_FUNCTION_PROPERTY_VALUE,
@@ -11300,7 +11300,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_property(
 static __DUCKDB_V2_CONNECTION_REGISTER_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_table_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_table_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_table_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11321,7 +11321,7 @@ pub unsafe fn duckdb_v2_connection_register_table_function(
 static __DUCKDB_V2_EXTENSION_REGISTER_TABLE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_table_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_table_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_table_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11342,7 +11342,7 @@ pub unsafe fn duckdb_v2_extension_register_table_function(
 static __DUCKDB_V2_TABLE_FUNCTION_BIND_ADD_RESULT_COLUMN: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_bind_add_result_column(
+pub unsafe extern "C" fn duckdb_v2_table_function_bind_add_result_column(
     info: duckdb_v2_table_function_bind_info_handle,
     name: *const duckdb_v2_identifier_t,
     type_: duckdb_v2_logical_type_handle,
@@ -11365,7 +11365,7 @@ pub unsafe fn duckdb_v2_table_function_bind_add_result_column(
 static __DUCKDB_V2_TABLE_FUNCTION_BIND_SET_CARDINALITY: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_bind_set_cardinality(
+pub unsafe extern "C" fn duckdb_v2_table_function_bind_set_cardinality(
     info: duckdb_v2_table_function_bind_info_handle,
     cardinality: idx_t,
     is_exact: bool,
@@ -11388,7 +11388,7 @@ pub unsafe fn duckdb_v2_table_function_bind_set_cardinality(
 static __DUCKDB_V2_TABLE_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_function_create(
+pub unsafe extern "C" fn duckdb_v2_table_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_table_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11409,7 +11409,7 @@ pub unsafe fn duckdb_v2_table_function_create(
 static __DUCKDB_V2_TABLE_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_table_function_destroy(
     function: *mut duckdb_v2_table_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_DESTROY
@@ -11426,7 +11426,7 @@ pub unsafe fn duckdb_v2_table_function_destroy(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_bind_data(
     info: duckdb_v2_table_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11447,7 +11447,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_global_state(
     info: duckdb_v2_table_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11468,7 +11468,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_global_state(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_local_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_local_state(
     info: duckdb_v2_table_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11489,7 +11489,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_local_state(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_OUTPUT_CHUNK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_output_chunk(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_output_chunk(
     info: duckdb_v2_table_function_exec_info_handle,
     chunk: *mut duckdb_v2_data_chunk_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11510,7 +11510,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_output_chunk(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_user_data(
     info: duckdb_v2_table_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11531,7 +11531,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_GET_SIGNATURE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_function_get_signature(
+pub unsafe extern "C" fn duckdb_v2_table_function_get_signature(
     function: duckdb_v2_table_function_handle,
     sig: *mut duckdb_v2_function_signature_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11552,7 +11552,7 @@ pub unsafe fn duckdb_v2_table_function_get_signature(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_global_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_global_get_bind_data(
     info: duckdb_v2_table_function_init_global_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11573,7 +11573,7 @@ pub unsafe fn duckdb_v2_table_function_init_global_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_global_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_global_get_user_data(
     info: duckdb_v2_table_function_init_global_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11594,7 +11594,7 @@ pub unsafe fn duckdb_v2_table_function_init_global_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_SET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_global_set_global_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_global_set_global_state(
     info: duckdb_v2_table_function_init_global_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -11615,7 +11615,7 @@ pub unsafe fn duckdb_v2_table_function_init_global_set_global_state(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_SET_MAX_THREADS: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_global_set_max_threads(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_global_set_max_threads(
     info: duckdb_v2_table_function_init_global_info_handle,
     max_threads: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -11636,7 +11636,7 @@ pub unsafe fn duckdb_v2_table_function_init_global_set_max_threads(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_local_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_local_get_bind_data(
     info: duckdb_v2_table_function_init_local_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11657,7 +11657,7 @@ pub unsafe fn duckdb_v2_table_function_init_local_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_local_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_local_get_global_state(
     info: duckdb_v2_table_function_init_local_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11678,7 +11678,7 @@ pub unsafe fn duckdb_v2_table_function_init_local_get_global_state(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_local_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_local_get_user_data(
     info: duckdb_v2_table_function_init_local_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11699,7 +11699,7 @@ pub unsafe fn duckdb_v2_table_function_init_local_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_SET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_local_set_local_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_local_set_local_state(
     info: duckdb_v2_table_function_init_local_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -11720,7 +11720,7 @@ pub unsafe fn duckdb_v2_table_function_init_local_set_local_state(
 static __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_progress_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_progress_get_bind_data(
     info: duckdb_v2_table_function_progress_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11741,7 +11741,7 @@ pub unsafe fn duckdb_v2_table_function_progress_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_progress_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_progress_get_global_state(
     info: duckdb_v2_table_function_progress_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11762,7 +11762,7 @@ pub unsafe fn duckdb_v2_table_function_progress_get_global_state(
 static __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_progress_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_progress_get_user_data(
     info: duckdb_v2_table_function_progress_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -11783,7 +11783,7 @@ pub unsafe fn duckdb_v2_table_function_progress_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_SET_PROGRESS: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_progress_set_progress(
+pub unsafe extern "C" fn duckdb_v2_table_function_progress_set_progress(
     info: duckdb_v2_table_function_progress_info_handle,
     progress: f64,
     err: *mut duckdb_v2_error_info_handle,
@@ -11804,7 +11804,7 @@ pub unsafe fn duckdb_v2_table_function_progress_set_progress(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_BIND_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_bind_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_bind_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_bind_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -11825,7 +11825,7 @@ pub unsafe fn duckdb_v2_table_function_set_bind_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_EXEC_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_exec_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_exec_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_exec_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -11846,7 +11846,7 @@ pub unsafe fn duckdb_v2_table_function_set_exec_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_INIT_GLOBAL_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_init_global_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_init_global_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_init_global_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -11867,7 +11867,7 @@ pub unsafe fn duckdb_v2_table_function_set_init_global_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_INIT_LOCAL_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_init_local_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_init_local_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_init_local_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -11888,7 +11888,7 @@ pub unsafe fn duckdb_v2_table_function_set_init_local_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_name(
     function: duckdb_v2_table_function_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -11909,7 +11909,7 @@ pub unsafe fn duckdb_v2_table_function_set_name(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_PROGRESS_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_progress_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_progress_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_progress_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -11930,7 +11930,7 @@ pub unsafe fn duckdb_v2_table_function_set_progress_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_function_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_user_data(
     function: duckdb_v2_table_function_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -11951,7 +11951,7 @@ pub unsafe fn duckdb_v2_table_function_set_user_data(
 static __DUCKDB_V2_CAST_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_create(
+pub unsafe extern "C" fn duckdb_v2_cast_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_cast_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -11972,7 +11972,7 @@ pub unsafe fn duckdb_v2_cast_function_create(
 static __DUCKDB_V2_CAST_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_cast_function_destroy(
     function: *mut duckdb_v2_cast_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_CAST_FUNCTION_DESTROY
@@ -11989,7 +11989,7 @@ pub unsafe fn duckdb_v2_cast_function_destroy(
 static __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_INPUT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_exec_get_input(
+pub unsafe extern "C" fn duckdb_v2_cast_function_exec_get_input(
     info: duckdb_v2_cast_function_exec_info_handle,
     vector: *mut duckdb_v2_vector_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12010,7 +12010,7 @@ pub unsafe fn duckdb_v2_cast_function_exec_get_input(
 static __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_MODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_exec_get_mode(
+pub unsafe extern "C" fn duckdb_v2_cast_function_exec_get_mode(
     info: duckdb_v2_cast_function_exec_info_handle,
     mode: *mut DUCKDB_V2_CAST_MODE,
     err: *mut duckdb_v2_error_info_handle,
@@ -12031,7 +12031,7 @@ pub unsafe fn duckdb_v2_cast_function_exec_get_mode(
 static __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_OUTPUT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_exec_get_output(
+pub unsafe extern "C" fn duckdb_v2_cast_function_exec_get_output(
     info: duckdb_v2_cast_function_exec_info_handle,
     vector: *mut duckdb_v2_vector_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12052,7 +12052,7 @@ pub unsafe fn duckdb_v2_cast_function_exec_get_output(
 static __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_ROW_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_cast_function_exec_get_row_count(
+pub unsafe extern "C" fn duckdb_v2_cast_function_exec_get_row_count(
     info: duckdb_v2_cast_function_exec_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -12073,7 +12073,7 @@ pub unsafe fn duckdb_v2_cast_function_exec_get_row_count(
 static __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_cast_function_exec_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_cast_function_exec_get_user_data(
     info: duckdb_v2_cast_function_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -12094,7 +12094,7 @@ pub unsafe fn duckdb_v2_cast_function_exec_get_user_data(
 static __DUCKDB_V2_CAST_FUNCTION_SET_EXEC_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_set_exec_callback(
+pub unsafe extern "C" fn duckdb_v2_cast_function_set_exec_callback(
     function: duckdb_v2_cast_function_handle,
     callback: duckdb_v2_cast_function_exec_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -12115,7 +12115,7 @@ pub unsafe fn duckdb_v2_cast_function_set_exec_callback(
 static __DUCKDB_V2_CAST_FUNCTION_SET_IMPLICIT_CAST_COST: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_cast_function_set_implicit_cast_cost(
+pub unsafe extern "C" fn duckdb_v2_cast_function_set_implicit_cast_cost(
     function: duckdb_v2_cast_function_handle,
     cost: i64,
     err: *mut duckdb_v2_error_info_handle,
@@ -12136,7 +12136,7 @@ pub unsafe fn duckdb_v2_cast_function_set_implicit_cast_cost(
 static __DUCKDB_V2_CAST_FUNCTION_SET_SOURCE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_set_source_type(
+pub unsafe extern "C" fn duckdb_v2_cast_function_set_source_type(
     function: duckdb_v2_cast_function_handle,
     source_type: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12157,7 +12157,7 @@ pub unsafe fn duckdb_v2_cast_function_set_source_type(
 static __DUCKDB_V2_CAST_FUNCTION_SET_TARGET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_set_target_type(
+pub unsafe extern "C" fn duckdb_v2_cast_function_set_target_type(
     function: duckdb_v2_cast_function_handle,
     target_type: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12178,7 +12178,7 @@ pub unsafe fn duckdb_v2_cast_function_set_target_type(
 static __DUCKDB_V2_CAST_FUNCTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_cast_function_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_cast_function_set_user_data(
     function: duckdb_v2_cast_function_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -12199,7 +12199,7 @@ pub unsafe fn duckdb_v2_cast_function_set_user_data(
 static __DUCKDB_V2_COLUMN_DATA_COLLECTION_CLEAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_data_collection_clear(
+pub unsafe extern "C" fn duckdb_v2_column_data_collection_clear(
     collection: duckdb_v2_column_data_collection_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -12218,7 +12218,7 @@ pub unsafe fn duckdb_v2_column_data_collection_clear(
 static __DUCKDB_V2_CONNECTION_REGISTER_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_cast_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_cast_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_cast_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12239,7 +12239,7 @@ pub unsafe fn duckdb_v2_connection_register_cast_function(
 static __DUCKDB_V2_CONNECTION_REGISTER_CUSTOM_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_register_custom_type(
+pub unsafe extern "C" fn duckdb_v2_connection_register_custom_type(
     conn: duckdb_v2_connection_handle,
     type_: duckdb_v2_custom_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12260,7 +12260,7 @@ pub unsafe fn duckdb_v2_connection_register_custom_type(
 static __DUCKDB_V2_CONNECTION_REGISTER_REPLACEMENT_SCAN: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_replacement_scan(
+pub unsafe extern "C" fn duckdb_v2_connection_register_replacement_scan(
     conn: duckdb_v2_connection_handle,
     scan: duckdb_v2_replacement_scan_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12281,7 +12281,7 @@ pub unsafe fn duckdb_v2_connection_register_replacement_scan(
 static __DUCKDB_V2_CONTEXT_GET_FILE_SYSTEM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_context_get_file_system(
+pub unsafe extern "C" fn duckdb_v2_context_get_file_system(
     context: duckdb_v2_context_handle,
     file_system: *mut duckdb_v2_file_system_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12302,7 +12302,7 @@ pub unsafe fn duckdb_v2_context_get_file_system(
 static __DUCKDB_V2_CUSTOM_TYPE_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_type_create(
+pub unsafe extern "C" fn duckdb_v2_custom_type_create(
     factory: duckdb_v2_factory_handle,
     type_: *mut duckdb_v2_custom_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12323,7 +12323,7 @@ pub unsafe fn duckdb_v2_custom_type_create(
 static __DUCKDB_V2_CUSTOM_TYPE_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_type_destroy(
+pub unsafe extern "C" fn duckdb_v2_custom_type_destroy(
     type_: *mut duckdb_v2_custom_type_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_CUSTOM_TYPE_DESTROY
@@ -12340,7 +12340,7 @@ pub unsafe fn duckdb_v2_custom_type_destroy(
 static __DUCKDB_V2_CUSTOM_TYPE_SET_BASE_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_type_set_base_type(
+pub unsafe extern "C" fn duckdb_v2_custom_type_set_base_type(
     type_: duckdb_v2_custom_type_handle,
     base_type: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12361,7 +12361,7 @@ pub unsafe fn duckdb_v2_custom_type_set_base_type(
 static __DUCKDB_V2_CUSTOM_TYPE_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_type_set_name(
+pub unsafe extern "C" fn duckdb_v2_custom_type_set_name(
     type_: duckdb_v2_custom_type_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -12382,7 +12382,7 @@ pub unsafe fn duckdb_v2_custom_type_set_name(
 static __DUCKDB_V2_EXTENSION_REGISTER_CAST_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_cast_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_cast_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_cast_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12403,7 +12403,7 @@ pub unsafe fn duckdb_v2_extension_register_cast_function(
 static __DUCKDB_V2_EXTENSION_REGISTER_CUSTOM_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_extension_register_custom_type(
+pub unsafe extern "C" fn duckdb_v2_extension_register_custom_type(
     extension: duckdb_v2_extension_handle,
     type_: duckdb_v2_custom_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12424,7 +12424,7 @@ pub unsafe fn duckdb_v2_extension_register_custom_type(
 static __DUCKDB_V2_EXTENSION_REGISTER_REPLACEMENT_SCAN: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_replacement_scan(
+pub unsafe extern "C" fn duckdb_v2_extension_register_replacement_scan(
     extension: duckdb_v2_extension_handle,
     scan: duckdb_v2_replacement_scan_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12445,7 +12445,7 @@ pub unsafe fn duckdb_v2_extension_register_replacement_scan(
 static __DUCKDB_V2_FILE_CLOSE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_close(
+pub unsafe extern "C" fn duckdb_v2_file_close(
     file: duckdb_v2_file_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -12464,7 +12464,7 @@ pub unsafe fn duckdb_v2_file_close(
 static __DUCKDB_V2_FILE_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_destroy(
+pub unsafe extern "C" fn duckdb_v2_file_destroy(
     file: *mut duckdb_v2_file_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_FILE_DESTROY
@@ -12481,7 +12481,7 @@ pub unsafe fn duckdb_v2_file_destroy(
 static __DUCKDB_V2_FILE_OPEN_OPTIONS_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_open_options_create(
+pub unsafe extern "C" fn duckdb_v2_file_open_options_create(
     file_system: duckdb_v2_file_system_handle,
     options: *mut duckdb_v2_file_open_options_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12502,7 +12502,7 @@ pub unsafe fn duckdb_v2_file_open_options_create(
 static __DUCKDB_V2_FILE_OPEN_OPTIONS_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_open_options_destroy(
+pub unsafe extern "C" fn duckdb_v2_file_open_options_destroy(
     options: *mut duckdb_v2_file_open_options_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_FILE_OPEN_OPTIONS_DESTROY
@@ -12519,7 +12519,7 @@ pub unsafe fn duckdb_v2_file_open_options_destroy(
 static __DUCKDB_V2_FILE_OPEN_OPTIONS_SET_FLAG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_open_options_set_flag(
+pub unsafe extern "C" fn duckdb_v2_file_open_options_set_flag(
     options: duckdb_v2_file_open_options_handle,
     flag: DUCKDB_V2_FILE_FLAG,
     err: *mut duckdb_v2_error_info_handle,
@@ -12540,7 +12540,7 @@ pub unsafe fn duckdb_v2_file_open_options_set_flag(
 static __DUCKDB_V2_FILE_OPEN_OPTIONS_SET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_open_options_set_value(
+pub unsafe extern "C" fn duckdb_v2_file_open_options_set_value(
     options: duckdb_v2_file_open_options_handle,
     name: *const duckdb_v2_str,
     value: duckdb_v2_value_handle,
@@ -12563,7 +12563,7 @@ pub unsafe fn duckdb_v2_file_open_options_set_value(
 static __DUCKDB_V2_FILE_READ: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_read(
+pub unsafe extern "C" fn duckdb_v2_file_read(
     file: duckdb_v2_file_handle,
     buffer: *mut ::std::os::raw::c_void,
     buffer_size: idx_t,
@@ -12588,7 +12588,7 @@ pub unsafe fn duckdb_v2_file_read(
 static __DUCKDB_V2_FILE_READ_AT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_read_at(
+pub unsafe extern "C" fn duckdb_v2_file_read_at(
     file: duckdb_v2_file_handle,
     buffer: *mut ::std::os::raw::c_void,
     buffer_size: idx_t,
@@ -12613,7 +12613,7 @@ pub unsafe fn duckdb_v2_file_read_at(
 static __DUCKDB_V2_FILE_SEEK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_seek(
+pub unsafe extern "C" fn duckdb_v2_file_seek(
     file: duckdb_v2_file_handle,
     position: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -12634,7 +12634,7 @@ pub unsafe fn duckdb_v2_file_seek(
 static __DUCKDB_V2_FILE_SIZE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_size(
+pub unsafe extern "C" fn duckdb_v2_file_size(
     file: duckdb_v2_file_handle,
     size: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -12655,7 +12655,7 @@ pub unsafe fn duckdb_v2_file_size(
 static __DUCKDB_V2_FILE_SYNC: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_sync(
+pub unsafe extern "C" fn duckdb_v2_file_sync(
     file: duckdb_v2_file_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -12674,7 +12674,7 @@ pub unsafe fn duckdb_v2_file_sync(
 static __DUCKDB_V2_FILE_SYSTEM_OPEN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_open(
+pub unsafe extern "C" fn duckdb_v2_file_system_open(
     file_system: duckdb_v2_file_system_handle,
     file_path: *const duckdb_v2_str,
     options: duckdb_v2_file_open_options_handle,
@@ -12699,7 +12699,7 @@ pub unsafe fn duckdb_v2_file_system_open(
 static __DUCKDB_V2_FILE_TELL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_tell(
+pub unsafe extern "C" fn duckdb_v2_file_tell(
     file: duckdb_v2_file_handle,
     position: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -12720,7 +12720,7 @@ pub unsafe fn duckdb_v2_file_tell(
 static __DUCKDB_V2_FILE_WRITE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_write(
+pub unsafe extern "C" fn duckdb_v2_file_write(
     file: duckdb_v2_file_handle,
     buffer: *const ::std::os::raw::c_void,
     buffer_size: idx_t,
@@ -12745,7 +12745,7 @@ pub unsafe fn duckdb_v2_file_write(
 static __DUCKDB_V2_FILE_WRITE_AT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_write_at(
+pub unsafe extern "C" fn duckdb_v2_file_write_at(
     file: duckdb_v2_file_handle,
     buffer: *const ::std::os::raw::c_void,
     buffer_size: idx_t,
@@ -12770,7 +12770,7 @@ pub unsafe fn duckdb_v2_file_write_at(
 static __DUCKDB_V2_INSTANCE_REGISTER_REPLACEMENT_SCAN: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_instance_register_replacement_scan(
+pub unsafe extern "C" fn duckdb_v2_instance_register_replacement_scan(
     instance: duckdb_v2_instance_handle,
     scan: duckdb_v2_replacement_scan_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12791,7 +12791,7 @@ pub unsafe fn duckdb_v2_instance_register_replacement_scan(
 static __DUCKDB_V2_QNAME_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_create(
+pub unsafe extern "C" fn duckdb_v2_qname_create(
     parts: *const duckdb_v2_identifier_t,
     part_count: idx_t,
     name: *mut duckdb_v2_qname_handle,
@@ -12814,7 +12814,7 @@ pub unsafe fn duckdb_v2_qname_create(
 static __DUCKDB_V2_QNAME_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_destroy(
+pub unsafe extern "C" fn duckdb_v2_qname_destroy(
     name: *mut duckdb_v2_qname_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_QNAME_DESTROY
@@ -12831,7 +12831,7 @@ pub unsafe fn duckdb_v2_qname_destroy(
 static __DUCKDB_V2_QNAME_EQUALS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_equals(
+pub unsafe extern "C" fn duckdb_v2_qname_equals(
     left: duckdb_v2_qname_handle,
     right: duckdb_v2_qname_handle,
     result: *mut bool,
@@ -12854,7 +12854,7 @@ pub unsafe fn duckdb_v2_qname_equals(
 static __DUCKDB_V2_QNAME_GET_PART: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_get_part(
+pub unsafe extern "C" fn duckdb_v2_qname_get_part(
     name: duckdb_v2_qname_handle,
     index: idx_t,
     part: *mut duckdb_v2_identifier_t,
@@ -12877,7 +12877,7 @@ pub unsafe fn duckdb_v2_qname_get_part(
 static __DUCKDB_V2_QNAME_GET_PART_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_get_part_count(
+pub unsafe extern "C" fn duckdb_v2_qname_get_part_count(
     name: duckdb_v2_qname_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -12898,7 +12898,7 @@ pub unsafe fn duckdb_v2_qname_get_part_count(
 static __DUCKDB_V2_QNAME_HASH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_hash(
+pub unsafe extern "C" fn duckdb_v2_qname_hash(
     name: duckdb_v2_qname_handle,
     hash: *mut u64,
     err: *mut duckdb_v2_error_info_handle,
@@ -12919,7 +12919,7 @@ pub unsafe fn duckdb_v2_qname_hash(
 static __DUCKDB_V2_QNAME_PARSE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_parse(
+pub unsafe extern "C" fn duckdb_v2_qname_parse(
     text: *const duckdb_v2_str,
     name: *mut duckdb_v2_qname_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12940,7 +12940,7 @@ pub unsafe fn duckdb_v2_qname_parse(
 static __DUCKDB_V2_QNAME_RENDER: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_qname_render(
+pub unsafe extern "C" fn duckdb_v2_qname_render(
     name: duckdb_v2_qname_handle,
     out_text: *mut ::std::os::raw::c_char,
     out_capacity: idx_t,
@@ -12965,7 +12965,7 @@ pub unsafe fn duckdb_v2_qname_render(
 static __DUCKDB_V2_REPLACEMENT_SCAN_ADD_ARGUMENT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_add_argument(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_add_argument(
     info: duckdb_v2_replacement_scan_info_handle,
     value: duckdb_v2_value_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -12986,7 +12986,7 @@ pub unsafe fn duckdb_v2_replacement_scan_add_argument(
 static __DUCKDB_V2_REPLACEMENT_SCAN_ADD_NAMED_ARGUMENT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_replacement_scan_add_named_argument(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_add_named_argument(
     info: duckdb_v2_replacement_scan_info_handle,
     name: *const duckdb_v2_identifier_t,
     value: duckdb_v2_value_handle,
@@ -13009,7 +13009,7 @@ pub unsafe fn duckdb_v2_replacement_scan_add_named_argument(
 static __DUCKDB_V2_REPLACEMENT_SCAN_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_create(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_create(
     factory: duckdb_v2_factory_handle,
     scan: *mut duckdb_v2_replacement_scan_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13030,7 +13030,7 @@ pub unsafe fn duckdb_v2_replacement_scan_create(
 static __DUCKDB_V2_REPLACEMENT_SCAN_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_destroy(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_destroy(
     scan: *mut duckdb_v2_replacement_scan_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_REPLACEMENT_SCAN_DESTROY
@@ -13047,7 +13047,7 @@ pub unsafe fn duckdb_v2_replacement_scan_destroy(
 static __DUCKDB_V2_REPLACEMENT_SCAN_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_get_name(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_get_name(
     info: duckdb_v2_replacement_scan_info_handle,
     name: *mut duckdb_v2_qname_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13068,7 +13068,7 @@ pub unsafe fn duckdb_v2_replacement_scan_get_name(
 static __DUCKDB_V2_REPLACEMENT_SCAN_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_get_user_data(
     info: duckdb_v2_replacement_scan_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13089,7 +13089,7 @@ pub unsafe fn duckdb_v2_replacement_scan_get_user_data(
 static __DUCKDB_V2_REPLACEMENT_SCAN_SET_ALIAS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_set_alias(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_set_alias(
     info: duckdb_v2_replacement_scan_info_handle,
     alias: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -13110,7 +13110,7 @@ pub unsafe fn duckdb_v2_replacement_scan_set_alias(
 static __DUCKDB_V2_REPLACEMENT_SCAN_SET_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_set_callback(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_set_callback(
     scan: duckdb_v2_replacement_scan_handle,
     callback: duckdb_v2_replacement_scan_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -13131,7 +13131,7 @@ pub unsafe fn duckdb_v2_replacement_scan_set_callback(
 static __DUCKDB_V2_REPLACEMENT_SCAN_SET_COLLECTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_set_collection(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_set_collection(
     info: duckdb_v2_replacement_scan_info_handle,
     collection: duckdb_v2_column_data_collection_handle,
     column_names: *const duckdb_v2_identifier_t,
@@ -13156,7 +13156,7 @@ pub unsafe fn duckdb_v2_replacement_scan_set_collection(
 static __DUCKDB_V2_REPLACEMENT_SCAN_SET_FUNCTION_NAME: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_replacement_scan_set_function_name(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_set_function_name(
     info: duckdb_v2_replacement_scan_info_handle,
     name: duckdb_v2_qname_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13177,7 +13177,7 @@ pub unsafe fn duckdb_v2_replacement_scan_set_function_name(
 static __DUCKDB_V2_REPLACEMENT_SCAN_SET_SUBQUERY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_set_subquery(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_set_subquery(
     info: duckdb_v2_replacement_scan_info_handle,
     sql: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -13198,7 +13198,7 @@ pub unsafe fn duckdb_v2_replacement_scan_set_subquery(
 static __DUCKDB_V2_REPLACEMENT_SCAN_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_replacement_scan_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_replacement_scan_set_user_data(
     scan: duckdb_v2_replacement_scan_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -13219,7 +13219,7 @@ pub unsafe fn duckdb_v2_replacement_scan_set_user_data(
 static __DUCKDB_V2_ARROW_EXPORTER_APPEND: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_exporter_append(
+pub unsafe extern "C" fn duckdb_v2_arrow_exporter_append(
     exporter: duckdb_v2_arrow_exporter_handle,
     chunk: *mut duckdb_v2_data_chunk_handle,
     consume: bool,
@@ -13244,7 +13244,7 @@ pub unsafe fn duckdb_v2_arrow_exporter_append(
 static __DUCKDB_V2_ARROW_EXPORTER_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_exporter_create(
+pub unsafe extern "C" fn duckdb_v2_arrow_exporter_create(
     context: duckdb_v2_context_handle,
     types: *const duckdb_v2_logical_type_handle,
     names: *const duckdb_v2_str,
@@ -13273,7 +13273,7 @@ pub unsafe fn duckdb_v2_arrow_exporter_create(
 static __DUCKDB_V2_ARROW_EXPORTER_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_exporter_destroy(
+pub unsafe extern "C" fn duckdb_v2_arrow_exporter_destroy(
     exporter: *mut duckdb_v2_arrow_exporter_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_ARROW_EXPORTER_DESTROY
@@ -13290,7 +13290,7 @@ pub unsafe fn duckdb_v2_arrow_exporter_destroy(
 static __DUCKDB_V2_ARROW_EXPORTER_GET_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_exporter_get_schema(
+pub unsafe extern "C" fn duckdb_v2_arrow_exporter_get_schema(
     exporter: duckdb_v2_arrow_exporter_handle,
     out_schema: *mut ArrowSchema,
     err: *mut duckdb_v2_error_info_handle,
@@ -13311,7 +13311,7 @@ pub unsafe fn duckdb_v2_arrow_exporter_get_schema(
 static __DUCKDB_V2_ARROW_EXPORTER_NEXT_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_exporter_next_array(
+pub unsafe extern "C" fn duckdb_v2_arrow_exporter_next_array(
     exporter: duckdb_v2_arrow_exporter_handle,
     out_array: *mut ArrowArray,
     err: *mut duckdb_v2_error_info_handle,
@@ -13332,7 +13332,7 @@ pub unsafe fn duckdb_v2_arrow_exporter_next_array(
 static __DUCKDB_V2_ARROW_IMPORTER_APPEND: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_importer_append(
+pub unsafe extern "C" fn duckdb_v2_arrow_importer_append(
     importer: duckdb_v2_arrow_importer_handle,
     array: *mut ArrowArray,
     consume: bool,
@@ -13357,7 +13357,7 @@ pub unsafe fn duckdb_v2_arrow_importer_append(
 static __DUCKDB_V2_ARROW_IMPORTER_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_importer_create(
+pub unsafe extern "C" fn duckdb_v2_arrow_importer_create(
     context: duckdb_v2_context_handle,
     schema: *mut ArrowSchema,
     batch_size: idx_t,
@@ -13382,7 +13382,7 @@ pub unsafe fn duckdb_v2_arrow_importer_create(
 static __DUCKDB_V2_ARROW_IMPORTER_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_importer_destroy(
+pub unsafe extern "C" fn duckdb_v2_arrow_importer_destroy(
     importer: *mut duckdb_v2_arrow_importer_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_ARROW_IMPORTER_DESTROY
@@ -13399,7 +13399,7 @@ pub unsafe fn duckdb_v2_arrow_importer_destroy(
 static __DUCKDB_V2_ARROW_IMPORTER_GET_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_importer_get_schema(
+pub unsafe extern "C" fn duckdb_v2_arrow_importer_get_schema(
     importer: duckdb_v2_arrow_importer_handle,
     out_schema: *mut duckdb_v2_schema_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13420,7 +13420,7 @@ pub unsafe fn duckdb_v2_arrow_importer_get_schema(
 static __DUCKDB_V2_ARROW_IMPORTER_NEXT_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_importer_next_chunk(
+pub unsafe extern "C" fn duckdb_v2_arrow_importer_next_chunk(
     importer: duckdb_v2_arrow_importer_handle,
     out_chunk: *mut duckdb_v2_data_chunk_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13441,7 +13441,7 @@ pub unsafe fn duckdb_v2_arrow_importer_next_chunk(
 static __DUCKDB_V2_COLUMN_DESCRIPTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_description_destroy(
+pub unsafe extern "C" fn duckdb_v2_column_description_destroy(
     column: *mut duckdb_v2_column_description_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_COLUMN_DESCRIPTION_DESTROY
@@ -13458,7 +13458,7 @@ pub unsafe fn duckdb_v2_column_description_destroy(
 static __DUCKDB_V2_COLUMN_DESCRIPTION_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_description_get_name(
+pub unsafe extern "C" fn duckdb_v2_column_description_get_name(
     column: duckdb_v2_column_description_handle,
     name: *mut duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -13479,7 +13479,7 @@ pub unsafe fn duckdb_v2_column_description_get_name(
 static __DUCKDB_V2_COLUMN_DESCRIPTION_GET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_description_get_type(
+pub unsafe extern "C" fn duckdb_v2_column_description_get_type(
     column: duckdb_v2_column_description_handle,
     type_: *mut duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13500,7 +13500,7 @@ pub unsafe fn duckdb_v2_column_description_get_type(
 static __DUCKDB_V2_COLUMN_DESCRIPTION_HAS_DEFAULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_column_description_has_default(
+pub unsafe extern "C" fn duckdb_v2_column_description_has_default(
     column: duckdb_v2_column_description_handle,
     has_default: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -13521,7 +13521,7 @@ pub unsafe fn duckdb_v2_column_description_has_default(
 static __DUCKDB_V2_COLUMN_DESCRIPTION_HAS_GENERATED: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_column_description_has_generated(
+pub unsafe extern "C" fn duckdb_v2_column_description_has_generated(
     column: duckdb_v2_column_description_handle,
     has_generated: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -13542,7 +13542,7 @@ pub unsafe fn duckdb_v2_column_description_has_generated(
 static __DUCKDB_V2_CONNECTION_DESCRIBE_TABLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_describe_table(
+pub unsafe extern "C" fn duckdb_v2_connection_describe_table(
     conn: duckdb_v2_connection_handle,
     name: duckdb_v2_qname_handle,
     desc: *mut duckdb_v2_table_description_handle,
@@ -13565,7 +13565,7 @@ pub unsafe fn duckdb_v2_connection_describe_table(
 static __DUCKDB_V2_CONNECTION_REGISTER_COPY_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_copy_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_copy_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_copy_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13586,7 +13586,7 @@ pub unsafe fn duckdb_v2_connection_register_copy_function(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_column_count(
     info: duckdb_v2_copy_from_bind_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -13607,7 +13607,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_column_count(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_COLUMN_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_column_name(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_column_name(
     info: duckdb_v2_copy_from_bind_info_handle,
     index: idx_t,
     name: *mut duckdb_v2_identifier_t,
@@ -13630,7 +13630,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_column_name(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_column_type(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_column_type(
     info: duckdb_v2_copy_from_bind_info_handle,
     index: idx_t,
     type_: *mut duckdb_v2_logical_type_handle,
@@ -13653,7 +13653,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_column_type(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_FILE_PATH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_file_path(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_file_path(
     info: duckdb_v2_copy_from_bind_info_handle,
     path: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -13674,7 +13674,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_file_path(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_OPTION_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_option_count(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_option_count(
     info: duckdb_v2_copy_from_bind_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -13695,7 +13695,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_option_count(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_OPTION_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_option_name(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_option_name(
     info: duckdb_v2_copy_from_bind_info_handle,
     index: idx_t,
     name: *mut duckdb_v2_identifier_t,
@@ -13718,7 +13718,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_option_name(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_OPTION_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_option_value(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_option_value(
     info: duckdb_v2_copy_from_bind_info_handle,
     index: idx_t,
     value: *mut duckdb_v2_value_handle,
@@ -13741,7 +13741,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_option_value(
 static __DUCKDB_V2_COPY_FROM_BIND_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_get_user_data(
     info: duckdb_v2_copy_from_bind_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13762,7 +13762,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_get_user_data(
 static __DUCKDB_V2_COPY_FROM_BIND_SET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_set_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_set_bind_data(
     info: duckdb_v2_copy_from_bind_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -13783,7 +13783,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_set_bind_data(
 static __DUCKDB_V2_COPY_FROM_BIND_SET_CARDINALITY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_bind_set_cardinality(
+pub unsafe extern "C" fn duckdb_v2_copy_from_bind_set_cardinality(
     info: duckdb_v2_copy_from_bind_info_handle,
     cardinality: idx_t,
     is_exact: bool,
@@ -13806,7 +13806,7 @@ pub unsafe fn duckdb_v2_copy_from_bind_set_cardinality(
 static __DUCKDB_V2_COPY_FROM_EXEC_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_exec_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_exec_get_bind_data(
     info: duckdb_v2_copy_from_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13827,7 +13827,7 @@ pub unsafe fn duckdb_v2_copy_from_exec_get_bind_data(
 static __DUCKDB_V2_COPY_FROM_EXEC_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_exec_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_copy_from_exec_get_global_state(
     info: duckdb_v2_copy_from_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13848,7 +13848,7 @@ pub unsafe fn duckdb_v2_copy_from_exec_get_global_state(
 static __DUCKDB_V2_COPY_FROM_EXEC_GET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_exec_get_local_state(
+pub unsafe extern "C" fn duckdb_v2_copy_from_exec_get_local_state(
     info: duckdb_v2_copy_from_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13869,7 +13869,7 @@ pub unsafe fn duckdb_v2_copy_from_exec_get_local_state(
 static __DUCKDB_V2_COPY_FROM_EXEC_GET_OUTPUT_CHUNK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_exec_get_output_chunk(
+pub unsafe extern "C" fn duckdb_v2_copy_from_exec_get_output_chunk(
     info: duckdb_v2_copy_from_exec_info_handle,
     chunk: *mut duckdb_v2_data_chunk_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -13890,7 +13890,7 @@ pub unsafe fn duckdb_v2_copy_from_exec_get_output_chunk(
 static __DUCKDB_V2_COPY_FROM_EXEC_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_exec_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_exec_get_user_data(
     info: duckdb_v2_copy_from_exec_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13911,7 +13911,7 @@ pub unsafe fn duckdb_v2_copy_from_exec_get_user_data(
 static __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_global_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_global_get_bind_data(
     info: duckdb_v2_copy_from_init_global_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13932,7 +13932,7 @@ pub unsafe fn duckdb_v2_copy_from_init_global_get_bind_data(
 static __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_global_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_global_get_user_data(
     info: duckdb_v2_copy_from_init_global_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -13953,7 +13953,7 @@ pub unsafe fn duckdb_v2_copy_from_init_global_get_user_data(
 static __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_SET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_global_set_global_state(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_global_set_global_state(
     info: duckdb_v2_copy_from_init_global_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -13974,7 +13974,7 @@ pub unsafe fn duckdb_v2_copy_from_init_global_set_global_state(
 static __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_SET_MAX_THREADS: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_global_set_max_threads(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_global_set_max_threads(
     info: duckdb_v2_copy_from_init_global_info_handle,
     max_threads: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -13995,7 +13995,7 @@ pub unsafe fn duckdb_v2_copy_from_init_global_set_max_threads(
 static __DUCKDB_V2_COPY_FROM_INIT_LOCAL_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_local_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_local_get_bind_data(
     info: duckdb_v2_copy_from_init_local_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14016,7 +14016,7 @@ pub unsafe fn duckdb_v2_copy_from_init_local_get_bind_data(
 static __DUCKDB_V2_COPY_FROM_INIT_LOCAL_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_local_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_local_get_global_state(
     info: duckdb_v2_copy_from_init_local_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14037,7 +14037,7 @@ pub unsafe fn duckdb_v2_copy_from_init_local_get_global_state(
 static __DUCKDB_V2_COPY_FROM_INIT_LOCAL_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_local_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_local_get_user_data(
     info: duckdb_v2_copy_from_init_local_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14058,7 +14058,7 @@ pub unsafe fn duckdb_v2_copy_from_init_local_get_user_data(
 static __DUCKDB_V2_COPY_FROM_INIT_LOCAL_SET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_init_local_set_local_state(
+pub unsafe extern "C" fn duckdb_v2_copy_from_init_local_set_local_state(
     info: duckdb_v2_copy_from_init_local_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -14079,7 +14079,7 @@ pub unsafe fn duckdb_v2_copy_from_init_local_set_local_state(
 static __DUCKDB_V2_COPY_FROM_PROGRESS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_progress_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_progress_get_bind_data(
     info: duckdb_v2_copy_from_progress_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14100,7 +14100,7 @@ pub unsafe fn duckdb_v2_copy_from_progress_get_bind_data(
 static __DUCKDB_V2_COPY_FROM_PROGRESS_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_progress_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_copy_from_progress_get_global_state(
     info: duckdb_v2_copy_from_progress_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14121,7 +14121,7 @@ pub unsafe fn duckdb_v2_copy_from_progress_get_global_state(
 static __DUCKDB_V2_COPY_FROM_PROGRESS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_progress_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_from_progress_get_user_data(
     info: duckdb_v2_copy_from_progress_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14142,7 +14142,7 @@ pub unsafe fn duckdb_v2_copy_from_progress_get_user_data(
 static __DUCKDB_V2_COPY_FROM_PROGRESS_SET_PROGRESS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_progress_set_progress(
+pub unsafe extern "C" fn duckdb_v2_copy_from_progress_set_progress(
     info: duckdb_v2_copy_from_progress_info_handle,
     progress: f64,
     err: *mut duckdb_v2_error_info_handle,
@@ -14163,7 +14163,7 @@ pub unsafe fn duckdb_v2_copy_from_progress_set_progress(
 static __DUCKDB_V2_COPY_FROM_SET_BIND_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_set_bind_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_from_set_bind_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_from_bind_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14184,7 +14184,7 @@ pub unsafe fn duckdb_v2_copy_from_set_bind_callback(
 static __DUCKDB_V2_COPY_FROM_SET_EXEC_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_set_exec_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_from_set_exec_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_from_exec_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14205,7 +14205,7 @@ pub unsafe fn duckdb_v2_copy_from_set_exec_callback(
 static __DUCKDB_V2_COPY_FROM_SET_INIT_GLOBAL_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_set_init_global_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_from_set_init_global_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_from_init_global_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14226,7 +14226,7 @@ pub unsafe fn duckdb_v2_copy_from_set_init_global_callback(
 static __DUCKDB_V2_COPY_FROM_SET_INIT_LOCAL_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_from_set_init_local_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_from_set_init_local_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_from_init_local_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14247,7 +14247,7 @@ pub unsafe fn duckdb_v2_copy_from_set_init_local_callback(
 static __DUCKDB_V2_COPY_FROM_SET_PROGRESS_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_from_set_progress_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_from_set_progress_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_from_progress_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14268,7 +14268,7 @@ pub unsafe fn duckdb_v2_copy_from_set_progress_callback(
 static __DUCKDB_V2_COPY_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_function_create(
+pub unsafe extern "C" fn duckdb_v2_copy_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_copy_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -14289,7 +14289,7 @@ pub unsafe fn duckdb_v2_copy_function_create(
 static __DUCKDB_V2_COPY_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_copy_function_destroy(
     function: *mut duckdb_v2_copy_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_COPY_FUNCTION_DESTROY
@@ -14306,7 +14306,7 @@ pub unsafe fn duckdb_v2_copy_function_destroy(
 static __DUCKDB_V2_COPY_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_copy_function_set_name(
     function: duckdb_v2_copy_function_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -14327,7 +14327,7 @@ pub unsafe fn duckdb_v2_copy_function_set_name(
 static __DUCKDB_V2_COPY_FUNCTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_function_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_function_set_user_data(
     function: duckdb_v2_copy_function_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -14348,7 +14348,7 @@ pub unsafe fn duckdb_v2_copy_function_set_user_data(
 static __DUCKDB_V2_COPY_TO_BATCH_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_batch_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_get_bind_data(
     info: duckdb_v2_copy_to_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14369,7 +14369,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_get_bind_data(
 static __DUCKDB_V2_COPY_TO_BATCH_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_batch_get_init_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_get_init_data(
     info: duckdb_v2_copy_to_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14390,7 +14390,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_get_init_data(
 static __DUCKDB_V2_COPY_TO_BATCH_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_batch_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_get_user_data(
     info: duckdb_v2_copy_to_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14411,7 +14411,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_get_user_data(
 static __DUCKDB_V2_COPY_TO_BATCH_SET_BATCH_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_batch_set_batch_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_set_batch_data(
     info: duckdb_v2_copy_to_batch_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -14432,7 +14432,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_set_batch_data(
 static __DUCKDB_V2_COPY_TO_BATCH_SIZE_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_batch_size_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_size_get_bind_data(
     info: duckdb_v2_copy_to_batch_size_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14453,7 +14453,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_size_get_bind_data(
 static __DUCKDB_V2_COPY_TO_BATCH_SIZE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_batch_size_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_size_get_user_data(
     info: duckdb_v2_copy_to_batch_size_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14474,7 +14474,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_size_get_user_data(
 static __DUCKDB_V2_COPY_TO_BATCH_SIZE_SET_TARGET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_batch_size_set_target(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_size_set_target(
     info: duckdb_v2_copy_to_batch_size_info_handle,
     rows: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -14495,7 +14495,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_size_set_target(
 static __DUCKDB_V2_COPY_TO_BATCH_TAKE_INPUT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_batch_take_input(
+pub unsafe extern "C" fn duckdb_v2_copy_to_batch_take_input(
     info: duckdb_v2_copy_to_batch_info_handle,
     collection: *mut duckdb_v2_column_data_collection_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -14516,7 +14516,7 @@ pub unsafe fn duckdb_v2_copy_to_batch_take_input(
 static __DUCKDB_V2_COPY_TO_BIND_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_column_count(
     info: duckdb_v2_copy_to_bind_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -14537,7 +14537,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_column_count(
 static __DUCKDB_V2_COPY_TO_BIND_GET_COLUMN_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_column_name(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_column_name(
     info: duckdb_v2_copy_to_bind_info_handle,
     index: idx_t,
     name: *mut duckdb_v2_identifier_t,
@@ -14560,7 +14560,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_column_name(
 static __DUCKDB_V2_COPY_TO_BIND_GET_COLUMN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_column_type(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_column_type(
     info: duckdb_v2_copy_to_bind_info_handle,
     index: idx_t,
     type_: *mut duckdb_v2_logical_type_handle,
@@ -14583,7 +14583,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_column_type(
 static __DUCKDB_V2_COPY_TO_BIND_GET_FILE_PATH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_file_path(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_file_path(
     info: duckdb_v2_copy_to_bind_info_handle,
     path: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -14604,7 +14604,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_file_path(
 static __DUCKDB_V2_COPY_TO_BIND_GET_OPTION_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_option_count(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_option_count(
     info: duckdb_v2_copy_to_bind_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -14625,7 +14625,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_option_count(
 static __DUCKDB_V2_COPY_TO_BIND_GET_OPTION_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_option_name(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_option_name(
     info: duckdb_v2_copy_to_bind_info_handle,
     index: idx_t,
     name: *mut duckdb_v2_identifier_t,
@@ -14648,7 +14648,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_option_name(
 static __DUCKDB_V2_COPY_TO_BIND_GET_OPTION_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_option_value(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_option_value(
     info: duckdb_v2_copy_to_bind_info_handle,
     index: idx_t,
     value: *mut duckdb_v2_value_handle,
@@ -14671,7 +14671,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_option_value(
 static __DUCKDB_V2_COPY_TO_BIND_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_get_user_data(
     info: duckdb_v2_copy_to_bind_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14692,7 +14692,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_get_user_data(
 static __DUCKDB_V2_COPY_TO_BIND_SET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_bind_set_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_bind_set_bind_data(
     info: duckdb_v2_copy_to_bind_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -14713,7 +14713,7 @@ pub unsafe fn duckdb_v2_copy_to_bind_set_bind_data(
 static __DUCKDB_V2_COPY_TO_FINALIZE_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_finalize_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_finalize_get_bind_data(
     info: duckdb_v2_copy_to_finalize_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14734,7 +14734,7 @@ pub unsafe fn duckdb_v2_copy_to_finalize_get_bind_data(
 static __DUCKDB_V2_COPY_TO_FINALIZE_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_finalize_get_init_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_finalize_get_init_data(
     info: duckdb_v2_copy_to_finalize_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14755,7 +14755,7 @@ pub unsafe fn duckdb_v2_copy_to_finalize_get_init_data(
 static __DUCKDB_V2_COPY_TO_FINALIZE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_finalize_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_finalize_get_user_data(
     info: duckdb_v2_copy_to_finalize_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14776,7 +14776,7 @@ pub unsafe fn duckdb_v2_copy_to_finalize_get_user_data(
 static __DUCKDB_V2_COPY_TO_FLUSH_GET_BATCH_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_flush_get_batch_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_flush_get_batch_data(
     info: duckdb_v2_copy_to_flush_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14797,7 +14797,7 @@ pub unsafe fn duckdb_v2_copy_to_flush_get_batch_data(
 static __DUCKDB_V2_COPY_TO_FLUSH_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_flush_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_flush_get_bind_data(
     info: duckdb_v2_copy_to_flush_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14818,7 +14818,7 @@ pub unsafe fn duckdb_v2_copy_to_flush_get_bind_data(
 static __DUCKDB_V2_COPY_TO_FLUSH_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_flush_get_init_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_flush_get_init_data(
     info: duckdb_v2_copy_to_flush_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14839,7 +14839,7 @@ pub unsafe fn duckdb_v2_copy_to_flush_get_init_data(
 static __DUCKDB_V2_COPY_TO_FLUSH_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_flush_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_flush_get_user_data(
     info: duckdb_v2_copy_to_flush_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14860,7 +14860,7 @@ pub unsafe fn duckdb_v2_copy_to_flush_get_user_data(
 static __DUCKDB_V2_COPY_TO_INIT_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_init_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_init_get_bind_data(
     info: duckdb_v2_copy_to_init_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14881,7 +14881,7 @@ pub unsafe fn duckdb_v2_copy_to_init_get_bind_data(
 static __DUCKDB_V2_COPY_TO_INIT_GET_FILE_PATH: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_init_get_file_path(
+pub unsafe extern "C" fn duckdb_v2_copy_to_init_get_file_path(
     info: duckdb_v2_copy_to_init_info_handle,
     path: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -14902,7 +14902,7 @@ pub unsafe fn duckdb_v2_copy_to_init_get_file_path(
 static __DUCKDB_V2_COPY_TO_INIT_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_init_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_init_get_user_data(
     info: duckdb_v2_copy_to_init_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -14923,7 +14923,7 @@ pub unsafe fn duckdb_v2_copy_to_init_get_user_data(
 static __DUCKDB_V2_COPY_TO_INIT_SET_INIT_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_init_set_init_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_init_set_init_data(
     info: duckdb_v2_copy_to_init_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -14944,7 +14944,7 @@ pub unsafe fn duckdb_v2_copy_to_init_set_init_data(
 static __DUCKDB_V2_COPY_TO_SET_BATCH_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_batch_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_batch_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_batch_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14965,7 +14965,7 @@ pub unsafe fn duckdb_v2_copy_to_set_batch_callback(
 static __DUCKDB_V2_COPY_TO_SET_BATCH_SIZE_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_batch_size_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_batch_size_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_batch_size_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -14986,7 +14986,7 @@ pub unsafe fn duckdb_v2_copy_to_set_batch_size_callback(
 static __DUCKDB_V2_COPY_TO_SET_BIND_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_bind_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_bind_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_bind_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -15007,7 +15007,7 @@ pub unsafe fn duckdb_v2_copy_to_set_bind_callback(
 static __DUCKDB_V2_COPY_TO_SET_FINALIZE_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_finalize_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_finalize_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_finalize_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -15028,7 +15028,7 @@ pub unsafe fn duckdb_v2_copy_to_set_finalize_callback(
 static __DUCKDB_V2_COPY_TO_SET_FLUSH_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_flush_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_flush_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_flush_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -15049,7 +15049,7 @@ pub unsafe fn duckdb_v2_copy_to_set_flush_callback(
 static __DUCKDB_V2_COPY_TO_SET_INIT_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_init_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_init_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_init_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -15070,7 +15070,7 @@ pub unsafe fn duckdb_v2_copy_to_set_init_callback(
 static __DUCKDB_V2_EXPRESSION_CAST_GET_MODE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_cast_get_mode(
+pub unsafe extern "C" fn duckdb_v2_expression_cast_get_mode(
     expression: duckdb_v2_expression_handle,
     mode: *mut DUCKDB_V2_CAST_MODE,
     err: *mut duckdb_v2_error_info_handle,
@@ -15091,7 +15091,7 @@ pub unsafe fn duckdb_v2_expression_cast_get_mode(
 static __DUCKDB_V2_EXPRESSION_COLUMN_REF_GET_INDEX: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_column_ref_get_index(
+pub unsafe extern "C" fn duckdb_v2_expression_column_ref_get_index(
     expression: duckdb_v2_expression_handle,
     index: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15112,7 +15112,7 @@ pub unsafe fn duckdb_v2_expression_column_ref_get_index(
 static __DUCKDB_V2_EXPRESSION_CONSTANT_GET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_constant_get_value(
+pub unsafe extern "C" fn duckdb_v2_expression_constant_get_value(
     expression: duckdb_v2_expression_handle,
     value: *mut duckdb_v2_value_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -15133,7 +15133,7 @@ pub unsafe fn duckdb_v2_expression_constant_get_value(
 static __DUCKDB_V2_EXPRESSION_FUNCTION_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_function_get_name(
+pub unsafe extern "C" fn duckdb_v2_expression_function_get_name(
     expression: duckdb_v2_expression_handle,
     name: *mut duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15154,7 +15154,7 @@ pub unsafe fn duckdb_v2_expression_function_get_name(
 static __DUCKDB_V2_EXPRESSION_FUNCTION_GET_QNAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_function_get_qname(
+pub unsafe extern "C" fn duckdb_v2_expression_function_get_qname(
     expression: duckdb_v2_expression_handle,
     name: *mut duckdb_v2_qname_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -15175,7 +15175,7 @@ pub unsafe fn duckdb_v2_expression_function_get_qname(
 static __DUCKDB_V2_EXPRESSION_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_get_child(
+pub unsafe extern "C" fn duckdb_v2_expression_get_child(
     expression: duckdb_v2_expression_handle,
     index: idx_t,
     child: *mut duckdb_v2_expression_handle,
@@ -15198,7 +15198,7 @@ pub unsafe fn duckdb_v2_expression_get_child(
 static __DUCKDB_V2_EXPRESSION_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_get_child_count(
+pub unsafe extern "C" fn duckdb_v2_expression_get_child_count(
     expression: duckdb_v2_expression_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15219,7 +15219,7 @@ pub unsafe fn duckdb_v2_expression_get_child_count(
 static __DUCKDB_V2_EXPRESSION_GET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_get_return_type(
+pub unsafe extern "C" fn duckdb_v2_expression_get_return_type(
     expression: duckdb_v2_expression_handle,
     type_: *mut duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -15240,7 +15240,7 @@ pub unsafe fn duckdb_v2_expression_get_return_type(
 static __DUCKDB_V2_EXPRESSION_GET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_expression_get_type(
+pub unsafe extern "C" fn duckdb_v2_expression_get_type(
     expression: duckdb_v2_expression_handle,
     type_: *mut DUCKDB_V2_EXPRESSION_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -15261,7 +15261,7 @@ pub unsafe fn duckdb_v2_expression_get_type(
 static __DUCKDB_V2_EXTENSION_REGISTER_COPY_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_copy_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_copy_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_copy_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -15282,7 +15282,7 @@ pub unsafe fn duckdb_v2_extension_register_copy_function(
 static __DUCKDB_V2_IDENTIFIER_RENDER_QUOTED: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_identifier_render_quoted(
+pub unsafe extern "C" fn duckdb_v2_identifier_render_quoted(
     name: *const duckdb_v2_identifier_t,
     out_text: *mut ::std::os::raw::c_char,
     out_capacity: idx_t,
@@ -15307,7 +15307,7 @@ pub unsafe fn duckdb_v2_identifier_render_quoted(
 static __DUCKDB_V2_PREPARED_STATEMENT_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_prepared_statement_create(
+pub unsafe extern "C" fn duckdb_v2_prepared_statement_create(
     conn: duckdb_v2_connection_handle,
     statement: duckdb_v2_sql_statement_handle,
     require_cacheable: bool,
@@ -15332,7 +15332,7 @@ pub unsafe fn duckdb_v2_prepared_statement_create(
 static __DUCKDB_V2_PREPARED_STATEMENT_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_prepared_statement_destroy(
+pub unsafe extern "C" fn duckdb_v2_prepared_statement_destroy(
     prepared: *mut duckdb_v2_prepared_statement_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_PREPARED_STATEMENT_DESTROY
@@ -15349,7 +15349,7 @@ pub unsafe fn duckdb_v2_prepared_statement_destroy(
 static __DUCKDB_V2_PREPARED_STATEMENT_EXECUTE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_prepared_statement_execute(
+pub unsafe extern "C" fn duckdb_v2_prepared_statement_execute(
     prepared: duckdb_v2_prepared_statement_handle,
     parameter_names: *const duckdb_v2_identifier_t,
     parameter_values: *const duckdb_v2_value_handle,
@@ -15376,7 +15376,7 @@ pub unsafe fn duckdb_v2_prepared_statement_execute(
 static __DUCKDB_V2_PREPARED_STATEMENT_REUSES_PLAN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_prepared_statement_reuses_plan(
+pub unsafe extern "C" fn duckdb_v2_prepared_statement_reuses_plan(
     prepared: duckdb_v2_prepared_statement_handle,
     out_reuses: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -15397,7 +15397,7 @@ pub unsafe fn duckdb_v2_prepared_statement_reuses_plan(
 static __DUCKDB_V2_TABLE_DESCRIPTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_description_destroy(
+pub unsafe extern "C" fn duckdb_v2_table_description_destroy(
     desc: *mut duckdb_v2_table_description_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_TABLE_DESCRIPTION_DESTROY
@@ -15414,7 +15414,7 @@ pub unsafe fn duckdb_v2_table_description_destroy(
 static __DUCKDB_V2_TABLE_DESCRIPTION_GET_COLUMN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_description_get_column(
+pub unsafe extern "C" fn duckdb_v2_table_description_get_column(
     desc: duckdb_v2_table_description_handle,
     index: idx_t,
     column: *mut duckdb_v2_column_description_handle,
@@ -15437,7 +15437,7 @@ pub unsafe fn duckdb_v2_table_description_get_column(
 static __DUCKDB_V2_TABLE_DESCRIPTION_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_description_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_description_get_column_count(
     desc: duckdb_v2_table_description_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15458,7 +15458,7 @@ pub unsafe fn duckdb_v2_table_description_get_column_count(
 static __DUCKDB_V2_TABLE_DESCRIPTION_GET_QNAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_description_get_qname(
+pub unsafe extern "C" fn duckdb_v2_table_description_get_qname(
     desc: duckdb_v2_table_description_handle,
     name: *mut duckdb_v2_qname_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -15479,7 +15479,7 @@ pub unsafe fn duckdb_v2_table_description_get_qname(
 static __DUCKDB_V2_TABLE_DESCRIPTION_IS_READONLY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_description_is_readonly(
+pub unsafe extern "C" fn duckdb_v2_table_description_is_readonly(
     desc: duckdb_v2_table_description_handle,
     readonly: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -15500,7 +15500,7 @@ pub unsafe fn duckdb_v2_table_description_is_readonly(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_column_count(
     info: duckdb_v2_table_function_exec_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15521,7 +15521,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_column_count(
 static __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_exec_get_column_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_exec_get_column_index(
     info: duckdb_v2_table_function_exec_info_handle,
     index: idx_t,
     column_index: *mut idx_t,
@@ -15544,7 +15544,7 @@ pub unsafe fn duckdb_v2_table_function_exec_get_column_index(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_ACCEPT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_accept(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_accept(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     index: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15565,7 +15565,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_accept(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_get_bind_data(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -15586,7 +15586,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_get_column_count(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15607,7 +15607,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_column_count(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_column_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_get_column_index(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     index: idx_t,
     column_index: *mut idx_t,
@@ -15630,7 +15630,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_column_index(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_FILTER: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_filter(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_get_filter(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     index: idx_t,
     filter: *mut duckdb_v2_expression_handle,
@@ -15653,7 +15653,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_filter(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_FILTER_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_filter_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_get_filter_count(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15674,7 +15674,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_filter_count(
 static __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_filter_pushdown_get_user_data(
     info: duckdb_v2_table_function_filter_pushdown_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -15695,7 +15695,7 @@ pub unsafe fn duckdb_v2_table_function_filter_pushdown_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_global_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_global_get_column_count(
     info: duckdb_v2_table_function_init_global_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15716,7 +15716,7 @@ pub unsafe fn duckdb_v2_table_function_init_global_get_column_count(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_global_get_column_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_global_get_column_index(
     info: duckdb_v2_table_function_init_global_info_handle,
     index: idx_t,
     column_index: *mut idx_t,
@@ -15739,7 +15739,7 @@ pub unsafe fn duckdb_v2_table_function_init_global_get_column_index(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_local_get_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_local_get_column_count(
     info: duckdb_v2_table_function_init_local_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15760,7 +15760,7 @@ pub unsafe fn duckdb_v2_table_function_init_local_get_column_count(
 static __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_init_local_get_column_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_init_local_get_column_index(
     info: duckdb_v2_table_function_init_local_info_handle,
     index: idx_t,
     column_index: *mut idx_t,
@@ -15783,7 +15783,7 @@ pub unsafe fn duckdb_v2_table_function_init_local_get_column_index(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_FILTER_PUSHDOWN_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_filter_pushdown_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_filter_pushdown_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_filter_pushdown_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -15804,7 +15804,7 @@ pub unsafe fn duckdb_v2_table_function_set_filter_pushdown_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_PROJECTION_PUSHDOWN: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_projection_pushdown(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_projection_pushdown(
     function: duckdb_v2_table_function_handle,
     enable: bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -15825,7 +15825,7 @@ pub unsafe fn duckdb_v2_table_function_set_projection_pushdown(
 static __DUCKDB_V2_SQL_STATEMENT_GET_PARAMETER_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_sql_statement_get_parameter_count(
+pub unsafe extern "C" fn duckdb_v2_sql_statement_get_parameter_count(
     statement: duckdb_v2_sql_statement_handle,
     out_count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -15846,7 +15846,7 @@ pub unsafe fn duckdb_v2_sql_statement_get_parameter_count(
 static __DUCKDB_V2_SQL_STATEMENT_GET_PARAMETER_NAME: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_sql_statement_get_parameter_name(
+pub unsafe extern "C" fn duckdb_v2_sql_statement_get_parameter_name(
     statement: duckdb_v2_sql_statement_handle,
     index: idx_t,
     out_name: *mut duckdb_v2_identifier_t,
@@ -15869,7 +15869,7 @@ pub unsafe fn duckdb_v2_sql_statement_get_parameter_name(
 static __DUCKDB_V2_SQL_STATEMENT_GET_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_sql_statement_get_text(
+pub unsafe extern "C" fn duckdb_v2_sql_statement_get_text(
     statement: duckdb_v2_sql_statement_handle,
     out_text: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -15890,7 +15890,7 @@ pub unsafe fn duckdb_v2_sql_statement_get_text(
 static __DUCKDB_V2_SQL_STATEMENT_GET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_sql_statement_get_type(
+pub unsafe extern "C" fn duckdb_v2_sql_statement_get_type(
     statement: duckdb_v2_sql_statement_handle,
     out_type: *mut DUCKDB_V2_STATEMENT_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -15911,7 +15911,7 @@ pub unsafe fn duckdb_v2_sql_statement_get_type(
 static __DUCKDB_V2_TOKEN_ITERATOR_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_token_iterator_destroy(
+pub unsafe extern "C" fn duckdb_v2_token_iterator_destroy(
     iterator: *mut duckdb_v2_token_iterator_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_TOKEN_ITERATOR_DESTROY
@@ -15928,7 +15928,7 @@ pub unsafe fn duckdb_v2_token_iterator_destroy(
 static __DUCKDB_V2_TOKEN_ITERATOR_ENDS_UNTERMINATED: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_token_iterator_ends_unterminated(
+pub unsafe extern "C" fn duckdb_v2_token_iterator_ends_unterminated(
     iterator: duckdb_v2_token_iterator_handle,
     out_ends_unterminated: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -15949,7 +15949,7 @@ pub unsafe fn duckdb_v2_token_iterator_ends_unterminated(
 static __DUCKDB_V2_TOKEN_ITERATOR_NEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_token_iterator_next(
+pub unsafe extern "C" fn duckdb_v2_token_iterator_next(
     iterator: duckdb_v2_token_iterator_handle,
     out_type: *mut DUCKDB_V2_TOKEN_TYPE,
     out_start: *mut idx_t,
@@ -15974,7 +15974,7 @@ pub unsafe fn duckdb_v2_token_iterator_next(
 static __DUCKDB_V2_TOKENIZE_SQL: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_tokenize_sql(
+pub unsafe extern "C" fn duckdb_v2_tokenize_sql(
     conn: duckdb_v2_connection_handle,
     sql: *const duckdb_v2_str,
     out_iterator: *mut duckdb_v2_token_iterator_handle,
@@ -15997,7 +15997,7 @@ pub unsafe fn duckdb_v2_tokenize_sql(
 static __DUCKDB_V2_ATTACH_OPTIONS_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_attach_options_create(
+pub unsafe extern "C" fn duckdb_v2_attach_options_create(
     instance: duckdb_v2_instance_handle,
     out_options: *mut duckdb_v2_attach_options_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -16018,7 +16018,7 @@ pub unsafe fn duckdb_v2_attach_options_create(
 static __DUCKDB_V2_ATTACH_OPTIONS_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_attach_options_destroy(
+pub unsafe extern "C" fn duckdb_v2_attach_options_destroy(
     options: *mut duckdb_v2_attach_options_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_ATTACH_OPTIONS_DESTROY
@@ -16035,7 +16035,7 @@ pub unsafe fn duckdb_v2_attach_options_destroy(
 static __DUCKDB_V2_ATTACH_OPTIONS_SET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_attach_options_set(
+pub unsafe extern "C" fn duckdb_v2_attach_options_set(
     options: duckdb_v2_attach_options_handle,
     key: *const duckdb_v2_identifier_t,
     setting: *const duckdb_v2_str,
@@ -16058,7 +16058,7 @@ pub unsafe fn duckdb_v2_attach_options_set(
 static __DUCKDB_V2_INSTANCE_SET_DEFAULT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_set_default(
+pub unsafe extern "C" fn duckdb_v2_instance_set_default(
     instance: duckdb_v2_instance_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16079,7 +16079,7 @@ pub unsafe fn duckdb_v2_instance_set_default(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_get_bind_data(
     info: duckdb_v2_table_function_partition_data_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16100,7 +16100,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_get_global_state(
     info: duckdb_v2_table_function_partition_data_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16121,7 +16121,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_get_global_state(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_get_local_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_get_local_state(
     info: duckdb_v2_table_function_partition_data_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16142,7 +16142,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_get_local_state(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_PARTITION_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_get_partition_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_get_partition_column_count(
     info: duckdb_v2_table_function_partition_data_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16163,7 +16163,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_get_partition_column_count
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_PARTITION_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_get_partition_column_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_get_partition_column_index(
     info: duckdb_v2_table_function_partition_data_info_handle,
     index: idx_t,
     column_index: *mut idx_t,
@@ -16186,7 +16186,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_get_partition_column_index
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_get_user_data(
     info: duckdb_v2_table_function_partition_data_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16207,7 +16207,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_REQUIRES_BATCH_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_requires_batch_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_requires_batch_index(
     info: duckdb_v2_table_function_partition_data_info_handle,
     required: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -16228,7 +16228,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_requires_batch_index(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_REQUIRES_PARTITION_COLUMNS: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_requires_partition_columns(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_requires_partition_columns(
     info: duckdb_v2_table_function_partition_data_info_handle,
     required: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -16249,7 +16249,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_requires_partition_columns
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_SET_BATCH_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_set_batch_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_set_batch_index(
     info: duckdb_v2_table_function_partition_data_info_handle,
     batch_index: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16270,7 +16270,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_set_batch_index(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_SET_PARTITION_VALUE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partition_data_set_partition_value(
+pub unsafe extern "C" fn duckdb_v2_table_function_partition_data_set_partition_value(
     info: duckdb_v2_table_function_partition_data_info_handle,
     index: idx_t,
     value: duckdb_v2_value_handle,
@@ -16293,7 +16293,7 @@ pub unsafe fn duckdb_v2_table_function_partition_data_set_partition_value(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partitioning_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_partitioning_get_bind_data(
     info: duckdb_v2_table_function_partitioning_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16314,7 +16314,7 @@ pub unsafe fn duckdb_v2_table_function_partitioning_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_PARTITION_COLUMN_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partitioning_get_partition_column_count(
+pub unsafe extern "C" fn duckdb_v2_table_function_partitioning_get_partition_column_count(
     info: duckdb_v2_table_function_partitioning_info_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16335,7 +16335,7 @@ pub unsafe fn duckdb_v2_table_function_partitioning_get_partition_column_count(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_PARTITION_COLUMN_INDEX: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partitioning_get_partition_column_index(
+pub unsafe extern "C" fn duckdb_v2_table_function_partitioning_get_partition_column_index(
     info: duckdb_v2_table_function_partitioning_info_handle,
     index: idx_t,
     column_index: *mut idx_t,
@@ -16358,7 +16358,7 @@ pub unsafe fn duckdb_v2_table_function_partitioning_get_partition_column_index(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partitioning_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_partitioning_get_user_data(
     info: duckdb_v2_table_function_partitioning_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16379,7 +16379,7 @@ pub unsafe fn duckdb_v2_table_function_partitioning_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_SET_PARTITION_INFO: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_partitioning_set_partition_info(
+pub unsafe extern "C" fn duckdb_v2_table_function_partitioning_set_partition_info(
     info: duckdb_v2_table_function_partitioning_info_handle,
     partition_info: DUCKDB_V2_TABLE_PARTITION_INFO,
     err: *mut duckdb_v2_error_info_handle,
@@ -16400,7 +16400,7 @@ pub unsafe fn duckdb_v2_table_function_partitioning_set_partition_info(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_PARTITION_DATA_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_partition_data_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_partition_data_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_partition_data_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -16421,7 +16421,7 @@ pub unsafe fn duckdb_v2_table_function_set_partition_data_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_PARTITIONING_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_partitioning_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_partitioning_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_partitioning_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -16442,7 +16442,7 @@ pub unsafe fn duckdb_v2_table_function_set_partitioning_callback(
 static __DUCKDB_V2_VALIDATE_UTF8: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_validate_utf8(
+pub unsafe extern "C" fn duckdb_v2_validate_utf8(
     text: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -16461,7 +16461,7 @@ pub unsafe fn duckdb_v2_validate_utf8(
 static __DUCKDB_V2_CONNECTION_REGISTER_MULTI_FILE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_multi_file_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_multi_file_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_multi_file_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -16482,7 +16482,7 @@ pub unsafe fn duckdb_v2_connection_register_multi_file_function(
 static __DUCKDB_V2_COPY_TO_SET_STATISTICS_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_copy_to_set_statistics_callback(
+pub unsafe extern "C" fn duckdb_v2_copy_to_set_statistics_callback(
     function: duckdb_v2_copy_function_handle,
     callback: duckdb_v2_copy_to_statistics_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -16503,7 +16503,7 @@ pub unsafe fn duckdb_v2_copy_to_set_statistics_callback(
 static __DUCKDB_V2_COPY_TO_STATISTICS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_statistics_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_statistics_get_bind_data(
     info: duckdb_v2_copy_to_statistics_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16524,7 +16524,7 @@ pub unsafe fn duckdb_v2_copy_to_statistics_get_bind_data(
 static __DUCKDB_V2_COPY_TO_STATISTICS_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_statistics_get_init_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_statistics_get_init_data(
     info: duckdb_v2_copy_to_statistics_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16545,7 +16545,7 @@ pub unsafe fn duckdb_v2_copy_to_statistics_get_init_data(
 static __DUCKDB_V2_COPY_TO_STATISTICS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_statistics_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_copy_to_statistics_get_user_data(
     info: duckdb_v2_copy_to_statistics_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16566,7 +16566,7 @@ pub unsafe fn duckdb_v2_copy_to_statistics_get_user_data(
 static __DUCKDB_V2_COPY_TO_STATISTICS_SET_FILE_SIZE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_statistics_set_file_size(
+pub unsafe extern "C" fn duckdb_v2_copy_to_statistics_set_file_size(
     info: duckdb_v2_copy_to_statistics_info_handle,
     file_size_bytes: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16587,7 +16587,7 @@ pub unsafe fn duckdb_v2_copy_to_statistics_set_file_size(
 static __DUCKDB_V2_COPY_TO_STATISTICS_SET_ROW_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_to_statistics_set_row_count(
+pub unsafe extern "C" fn duckdb_v2_copy_to_statistics_set_row_count(
     info: duckdb_v2_copy_to_statistics_info_handle,
     row_count: idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16608,7 +16608,7 @@ pub unsafe fn duckdb_v2_copy_to_statistics_set_row_count(
 static __DUCKDB_V2_DATA_CHUNK_GET_CAPACITY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_get_capacity(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_get_capacity(
     chunk: duckdb_v2_data_chunk_handle,
     out_capacity: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -16629,7 +16629,7 @@ pub unsafe fn duckdb_v2_data_chunk_get_capacity(
 static __DUCKDB_V2_EXTENSION_REGISTER_MULTI_FILE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_multi_file_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_multi_file_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_multi_file_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -16650,7 +16650,7 @@ pub unsafe fn duckdb_v2_extension_register_multi_file_function(
 static __DUCKDB_V2_MULTI_FILE_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_multi_file_function_create(
+pub unsafe extern "C" fn duckdb_v2_multi_file_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_multi_file_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -16671,7 +16671,7 @@ pub unsafe fn duckdb_v2_multi_file_function_create(
 static __DUCKDB_V2_MULTI_FILE_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_multi_file_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_multi_file_function_destroy(
     function: *mut duckdb_v2_multi_file_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_DESTROY
@@ -16688,7 +16688,7 @@ pub unsafe fn duckdb_v2_multi_file_function_destroy(
 static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_FILE_EXTENSION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_multi_file_function_set_file_extension(
+pub unsafe extern "C" fn duckdb_v2_multi_file_function_set_file_extension(
     function: duckdb_v2_multi_file_function_handle,
     extension: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -16709,7 +16709,7 @@ pub unsafe fn duckdb_v2_multi_file_function_set_file_extension(
 static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_multi_file_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_multi_file_function_set_name(
     function: duckdb_v2_multi_file_function_handle,
     name: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -16730,7 +16730,7 @@ pub unsafe fn duckdb_v2_multi_file_function_set_name(
 static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_READER_TYPE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_multi_file_function_set_reader_type(
+pub unsafe extern "C" fn duckdb_v2_multi_file_function_set_reader_type(
     function: duckdb_v2_multi_file_function_handle,
     reader_type: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -16751,7 +16751,7 @@ pub unsafe fn duckdb_v2_multi_file_function_set_reader_type(
 static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_SINGLE_FILE_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_multi_file_function_set_single_file_function(
+pub unsafe extern "C" fn duckdb_v2_multi_file_function_set_single_file_function(
     function: duckdb_v2_multi_file_function_handle,
     name: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -16772,7 +16772,7 @@ pub unsafe fn duckdb_v2_multi_file_function_set_single_file_function(
 static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_claim_batch_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_claim_batch_get_bind_data(
     info: duckdb_v2_table_function_claim_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16793,7 +16793,7 @@ pub unsafe fn duckdb_v2_table_function_claim_batch_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_claim_batch_get_global_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_claim_batch_get_global_state(
     info: duckdb_v2_table_function_claim_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16814,7 +16814,7 @@ pub unsafe fn duckdb_v2_table_function_claim_batch_get_global_state(
 static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_claim_batch_get_local_state(
+pub unsafe extern "C" fn duckdb_v2_table_function_claim_batch_get_local_state(
     info: duckdb_v2_table_function_claim_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16835,7 +16835,7 @@ pub unsafe fn duckdb_v2_table_function_claim_batch_get_local_state(
 static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_claim_batch_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_claim_batch_get_user_data(
     info: duckdb_v2_table_function_claim_batch_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -16856,7 +16856,7 @@ pub unsafe fn duckdb_v2_table_function_claim_batch_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_SET_CLAIMED: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_claim_batch_set_claimed(
+pub unsafe extern "C" fn duckdb_v2_table_function_claim_batch_set_claimed(
     info: duckdb_v2_table_function_claim_batch_info_handle,
     claimed: bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -16877,7 +16877,7 @@ pub unsafe fn duckdb_v2_table_function_claim_batch_set_claimed(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_CLAIM_BATCH_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_claim_batch_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_claim_batch_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_claim_batch_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -16898,7 +16898,7 @@ pub unsafe fn duckdb_v2_table_function_set_claim_batch_callback(
 static __DUCKDB_V2_FUNCTION_BIND_GET_ARG_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_get_arg_count(
+pub unsafe extern "C" fn duckdb_v2_function_bind_get_arg_count(
     info: duckdb_v2_function_bind_info_handle,
     positional_fixed: *mut idx_t,
     positional_variadic: *mut idx_t,
@@ -16925,7 +16925,7 @@ pub unsafe fn duckdb_v2_function_bind_get_arg_count(
 static __DUCKDB_V2_FUNCTION_BIND_GET_ARG_INDEX: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_get_arg_index(
+pub unsafe extern "C" fn duckdb_v2_function_bind_get_arg_index(
     info: duckdb_v2_function_bind_info_handle,
     name: *const duckdb_v2_identifier_t,
     index: *mut idx_t,
@@ -16950,7 +16950,7 @@ pub unsafe fn duckdb_v2_function_bind_get_arg_index(
 static __DUCKDB_V2_FUNCTION_BIND_GET_ARG_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_get_arg_name(
+pub unsafe extern "C" fn duckdb_v2_function_bind_get_arg_name(
     info: duckdb_v2_function_bind_info_handle,
     index: idx_t,
     name: *mut duckdb_v2_identifier_t,
@@ -16973,7 +16973,7 @@ pub unsafe fn duckdb_v2_function_bind_get_arg_name(
 static __DUCKDB_V2_FUNCTION_BIND_GET_ARG_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_get_arg_type(
+pub unsafe extern "C" fn duckdb_v2_function_bind_get_arg_type(
     info: duckdb_v2_function_bind_info_handle,
     index: idx_t,
     type_: *mut duckdb_v2_logical_type_handle,
@@ -16996,7 +16996,7 @@ pub unsafe fn duckdb_v2_function_bind_get_arg_type(
 static __DUCKDB_V2_FUNCTION_BIND_GET_ARG_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_get_arg_value(
+pub unsafe extern "C" fn duckdb_v2_function_bind_get_arg_value(
     info: duckdb_v2_function_bind_info_handle,
     index: idx_t,
     value: *mut duckdb_v2_value_handle,
@@ -17019,7 +17019,7 @@ pub unsafe fn duckdb_v2_function_bind_get_arg_value(
 static __DUCKDB_V2_FUNCTION_BIND_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_function_bind_get_user_data(
     info: duckdb_v2_function_bind_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -17040,7 +17040,7 @@ pub unsafe fn duckdb_v2_function_bind_get_user_data(
 static __DUCKDB_V2_FUNCTION_BIND_SET_BIND_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_bind_set_bind_data(
+pub unsafe extern "C" fn duckdb_v2_function_bind_set_bind_data(
     info: duckdb_v2_function_bind_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -17061,7 +17061,7 @@ pub unsafe fn duckdb_v2_function_bind_set_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_BIND_SET_ORDER_PRESERVATION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_bind_set_order_preservation(
+pub unsafe extern "C" fn duckdb_v2_table_function_bind_set_order_preservation(
     info: duckdb_v2_table_function_bind_info_handle,
     order: DUCKDB_V2_ORDER_PRESERVATION,
     err: *mut duckdb_v2_error_info_handle,
@@ -17082,7 +17082,7 @@ pub unsafe fn duckdb_v2_table_function_bind_set_order_preservation(
 static __DUCKDB_V2_ARROW_RESULT_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_destroy(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_destroy(
     result: *mut duckdb_v2_arrow_result_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_ARROW_RESULT_DESTROY
@@ -17099,7 +17099,7 @@ pub unsafe fn duckdb_v2_arrow_result_destroy(
 static __DUCKDB_V2_ARROW_RESULT_DRAIN: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_drain(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_drain(
     result: duckdb_v2_arrow_result_handle,
     out_rows_changed: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -17120,7 +17120,7 @@ pub unsafe fn duckdb_v2_arrow_result_drain(
 static __DUCKDB_V2_ARROW_RESULT_FETCH_ARRAY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_fetch_array(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_fetch_array(
     result: duckdb_v2_arrow_result_handle,
     out_array: *mut ArrowArray,
     err: *mut duckdb_v2_error_info_handle,
@@ -17141,7 +17141,7 @@ pub unsafe fn duckdb_v2_arrow_result_fetch_array(
 static __DUCKDB_V2_ARROW_RESULT_GET_RESULT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_get_result_type(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_get_result_type(
     result: duckdb_v2_arrow_result_handle,
     out_type: *mut DUCKDB_V2_RESULT_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -17162,7 +17162,7 @@ pub unsafe fn duckdb_v2_arrow_result_get_result_type(
 static __DUCKDB_V2_ARROW_RESULT_GET_SCHEMA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_get_schema(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_get_schema(
     result: duckdb_v2_arrow_result_handle,
     out_schema: *mut ArrowSchema,
     err: *mut duckdb_v2_error_info_handle,
@@ -17183,7 +17183,7 @@ pub unsafe fn duckdb_v2_arrow_result_get_schema(
 static __DUCKDB_V2_ARROW_RESULT_GET_STATEMENT_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_get_statement_type(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_get_statement_type(
     result: duckdb_v2_arrow_result_handle,
     out_type: *mut DUCKDB_V2_STATEMENT_TYPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -17204,7 +17204,7 @@ pub unsafe fn duckdb_v2_arrow_result_get_statement_type(
 static __DUCKDB_V2_ARROW_RESULT_STEP: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_step(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_step(
     result: duckdb_v2_arrow_result_handle,
     out_array: *mut ArrowArray,
     out_status: *mut DUCKDB_V2_RESULT_STEP_STATUS,
@@ -17227,7 +17227,7 @@ pub unsafe fn duckdb_v2_arrow_result_step(
 static __DUCKDB_V2_ARROW_RESULT_TO_ARROW_C_STREAM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_to_arrow_c_stream(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_to_arrow_c_stream(
     result: *mut duckdb_v2_arrow_result_handle,
     out_stream: *mut ArrowArrayStream,
     err: *mut duckdb_v2_error_info_handle,
@@ -17248,7 +17248,7 @@ pub unsafe fn duckdb_v2_arrow_result_to_arrow_c_stream(
 static __DUCKDB_V2_ARROW_RESULT_WAIT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_arrow_result_wait(
+pub unsafe extern "C" fn duckdb_v2_arrow_result_wait(
     result: duckdb_v2_arrow_result_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -17267,7 +17267,7 @@ pub unsafe fn duckdb_v2_arrow_result_wait(
 static __DUCKDB_V2_PREPARED_STATEMENT_EXECUTE_ARROW: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_prepared_statement_execute_arrow(
+pub unsafe extern "C" fn duckdb_v2_prepared_statement_execute_arrow(
     prepared: duckdb_v2_prepared_statement_handle,
     parameter_names: *const duckdb_v2_identifier_t,
     parameter_values: *const duckdb_v2_value_handle,
@@ -17304,7 +17304,7 @@ pub unsafe fn duckdb_v2_prepared_statement_execute_arrow(
 static __DUCKDB_V2_STATEMENT_EXECUTE_ARROW: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_statement_execute_arrow(
+pub unsafe extern "C" fn duckdb_v2_statement_execute_arrow(
     conn: duckdb_v2_connection_handle,
     statement: duckdb_v2_sql_statement_handle,
     parameter_names: *const duckdb_v2_identifier_t,
@@ -17344,7 +17344,7 @@ pub unsafe fn duckdb_v2_statement_execute_arrow(
 static __DUCKDB_V2_SCALAR_FUNCTION_RESOLVE_TYPES_SET_RETURN_TYPE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_resolve_types_set_return_type(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_resolve_types_set_return_type(
     info: duckdb_v2_scalar_function_resolve_types_info_handle,
     return_type: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17365,7 +17365,7 @@ pub unsafe fn duckdb_v2_scalar_function_resolve_types_set_return_type(
 static __DUCKDB_V2_SCALAR_FUNCTION_SET_RESOLVE_TYPES_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_set_resolve_types_callback(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_set_resolve_types_callback(
     function: duckdb_v2_scalar_function_handle,
     callback: duckdb_v2_scalar_function_resolve_types_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -17386,7 +17386,7 @@ pub unsafe fn duckdb_v2_scalar_function_set_resolve_types_callback(
 static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_get_bind_info_get_bind_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_get_bind_info_get_bind_data(
     info: duckdb_v2_table_function_get_bind_info_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -17407,7 +17407,7 @@ pub unsafe fn duckdb_v2_table_function_get_bind_info_get_bind_data(
 static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_get_bind_info_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_table_function_get_bind_info_get_user_data(
     info: duckdb_v2_table_function_get_bind_info_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -17428,7 +17428,7 @@ pub unsafe fn duckdb_v2_table_function_get_bind_info_get_user_data(
 static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_COLUMN_IDENTIFIER: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_get_bind_info_set_column_identifier(
+pub unsafe extern "C" fn duckdb_v2_table_function_get_bind_info_set_column_identifier(
     info: duckdb_v2_table_function_get_bind_info_info_handle,
     column_index: idx_t,
     child_path: *const idx_t,
@@ -17455,7 +17455,7 @@ pub unsafe fn duckdb_v2_table_function_get_bind_info_set_column_identifier(
 static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_OPTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_get_bind_info_set_option(
+pub unsafe extern "C" fn duckdb_v2_table_function_get_bind_info_set_option(
     info: duckdb_v2_table_function_get_bind_info_info_handle,
     key: *mut duckdb_v2_str,
     value: duckdb_v2_value_handle,
@@ -17478,7 +17478,7 @@ pub unsafe fn duckdb_v2_table_function_get_bind_info_set_option(
 static __DUCKDB_V2_TABLE_FUNCTION_SET_GET_BIND_INFO_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_table_function_set_get_bind_info_callback(
+pub unsafe extern "C" fn duckdb_v2_table_function_set_get_bind_info_callback(
     function: duckdb_v2_table_function_handle,
     callback: duckdb_v2_table_function_get_bind_info_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -17499,7 +17499,7 @@ pub unsafe fn duckdb_v2_table_function_set_get_bind_info_callback(
 static __DUCKDB_V2_CONNECTION_GET_FACTORY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_get_factory(
+pub unsafe extern "C" fn duckdb_v2_connection_get_factory(
     conn: duckdb_v2_connection_handle,
     out_factory: *mut duckdb_v2_factory_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17520,7 +17520,7 @@ pub unsafe fn duckdb_v2_connection_get_factory(
 static __DUCKDB_V2_CONTEXT_GET_FACTORY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_context_get_factory(
+pub unsafe extern "C" fn duckdb_v2_context_get_factory(
     ctx: duckdb_v2_context_handle,
     out_factory: *mut duckdb_v2_factory_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17541,7 +17541,7 @@ pub unsafe fn duckdb_v2_context_get_factory(
 static __DUCKDB_V2_INSTANCE_GET_FACTORY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_get_factory(
+pub unsafe extern "C" fn duckdb_v2_instance_get_factory(
     instance: duckdb_v2_instance_handle,
     out_factory: *mut duckdb_v2_factory_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17562,7 +17562,7 @@ pub unsafe fn duckdb_v2_instance_get_factory(
 static __DUCKDB_V2_SCALAR_FUNCTION_BIND_SET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_scalar_function_bind_set_bind_data(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_bind_set_bind_data(
     info: duckdb_v2_scalar_function_bind_info_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -17583,7 +17583,7 @@ pub unsafe fn duckdb_v2_scalar_function_bind_set_bind_data(
 static __DUCKDB_V2_CONFIG_GET_OPTION_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_config_get_option_value(
+pub unsafe extern "C" fn duckdb_v2_config_get_option_value(
     config: duckdb_v2_config_handle,
     name: *const duckdb_v2_identifier_t,
     out_value: *mut duckdb_v2_value_handle,
@@ -17608,7 +17608,7 @@ pub unsafe fn duckdb_v2_config_get_option_value(
 static __DUCKDB_V2_CONFIG_SET_OPTION_TEXT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_config_set_option_text(
+pub unsafe extern "C" fn duckdb_v2_config_set_option_text(
     config: duckdb_v2_config_handle,
     name: *const duckdb_v2_identifier_t,
     setting: *const duckdb_v2_str,
@@ -17633,7 +17633,7 @@ pub unsafe fn duckdb_v2_config_set_option_text(
 static __DUCKDB_V2_CONFIG_SET_OPTION_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_config_set_option_value(
+pub unsafe extern "C" fn duckdb_v2_config_set_option_value(
     config: duckdb_v2_config_handle,
     name: *const duckdb_v2_identifier_t,
     value: duckdb_v2_value_handle,
@@ -17658,7 +17658,7 @@ pub unsafe fn duckdb_v2_config_set_option_value(
 static __DUCKDB_V2_CONNECTION_GET_CONFIG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_get_config(
+pub unsafe extern "C" fn duckdb_v2_connection_get_config(
     conn: duckdb_v2_connection_handle,
     out_config: *mut duckdb_v2_config_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17679,7 +17679,7 @@ pub unsafe fn duckdb_v2_connection_get_config(
 static __DUCKDB_V2_CONNECTION_GET_FILE_SYSTEM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_get_file_system(
+pub unsafe extern "C" fn duckdb_v2_connection_get_file_system(
     conn: duckdb_v2_connection_handle,
     file_system: *mut duckdb_v2_file_system_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17700,7 +17700,7 @@ pub unsafe fn duckdb_v2_connection_get_file_system(
 static __DUCKDB_V2_CONNECTION_LOG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_log(
+pub unsafe extern "C" fn duckdb_v2_connection_log(
     conn: duckdb_v2_connection_handle,
     level: DUCKDB_V2_LOG_LEVEL,
     log_type: *const duckdb_v2_str,
@@ -17725,7 +17725,7 @@ pub unsafe fn duckdb_v2_connection_log(
 static __DUCKDB_V2_CONTEXT_GET_CONFIG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_context_get_config(
+pub unsafe extern "C" fn duckdb_v2_context_get_config(
     ctx: duckdb_v2_context_handle,
     out_config: *mut duckdb_v2_config_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17746,7 +17746,7 @@ pub unsafe fn duckdb_v2_context_get_config(
 static __DUCKDB_V2_INSTANCE_GET_CONFIG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_get_config(
+pub unsafe extern "C" fn duckdb_v2_instance_get_config(
     instance: duckdb_v2_instance_handle,
     out_config: *mut duckdb_v2_config_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17767,7 +17767,7 @@ pub unsafe fn duckdb_v2_instance_get_config(
 static __DUCKDB_V2_INSTANCE_GET_FILE_SYSTEM: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_get_file_system(
+pub unsafe extern "C" fn duckdb_v2_instance_get_file_system(
     instance: duckdb_v2_instance_handle,
     file_system: *mut duckdb_v2_file_system_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17788,7 +17788,7 @@ pub unsafe fn duckdb_v2_instance_get_file_system(
 static __DUCKDB_V2_INSTANCE_LOG: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_log(
+pub unsafe extern "C" fn duckdb_v2_instance_log(
     instance: duckdb_v2_instance_handle,
     level: DUCKDB_V2_LOG_LEVEL,
     log_type: *const duckdb_v2_str,
@@ -17813,7 +17813,7 @@ pub unsafe fn duckdb_v2_instance_log(
 static __DUCKDB_V2_OPTION_GET_DEFAULT_SCOPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_get_default_scope(
+pub unsafe extern "C" fn duckdb_v2_option_get_default_scope(
     option: duckdb_v2_option_handle,
     out_scope: *mut DUCKDB_V2_SETTING_SCOPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -17834,7 +17834,7 @@ pub unsafe fn duckdb_v2_option_get_default_scope(
 static __DUCKDB_V2_OPTION_SUPPORTS_SCOPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_option_supports_scope(
+pub unsafe extern "C" fn duckdb_v2_option_supports_scope(
     option: duckdb_v2_option_handle,
     scope: DUCKDB_V2_SETTING_SCOPE,
     out_supported: *mut bool,
@@ -17857,7 +17857,7 @@ pub unsafe fn duckdb_v2_option_supports_scope(
 static __DUCKDB_V2_AGGREGATE_FUNCTION_GET_DOCS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_aggregate_function_get_docs(
+pub unsafe extern "C" fn duckdb_v2_aggregate_function_get_docs(
     function: duckdb_v2_aggregate_function_handle,
     docs: *mut duckdb_v2_function_docs_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17878,7 +17878,7 @@ pub unsafe fn duckdb_v2_aggregate_function_get_docs(
 static __DUCKDB_V2_CONNECTION_REGISTER_PRAGMA_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_pragma_function(
+pub unsafe extern "C" fn duckdb_v2_connection_register_pragma_function(
     conn: duckdb_v2_connection_handle,
     function: duckdb_v2_pragma_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17899,7 +17899,7 @@ pub unsafe fn duckdb_v2_connection_register_pragma_function(
 static __DUCKDB_V2_EXTENSION_REGISTER_PRAGMA_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_pragma_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_pragma_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_pragma_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -17920,7 +17920,7 @@ pub unsafe fn duckdb_v2_extension_register_pragma_function(
 static __DUCKDB_V2_FACTORY_CREATE_COMMON_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_factory_create_common_type(
+pub unsafe extern "C" fn duckdb_v2_factory_create_common_type(
     factory: duckdb_v2_factory_handle,
     types: *const duckdb_v2_logical_type_handle,
     type_count: idx_t,
@@ -17945,7 +17945,7 @@ pub unsafe fn duckdb_v2_factory_create_common_type(
 static __DUCKDB_V2_FUNCTION_DOCS_ADD_CATEGORY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_docs_add_category(
+pub unsafe extern "C" fn duckdb_v2_function_docs_add_category(
     docs: duckdb_v2_function_docs_handle,
     category: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -17966,7 +17966,7 @@ pub unsafe fn duckdb_v2_function_docs_add_category(
 static __DUCKDB_V2_FUNCTION_DOCS_ADD_EXAMPLE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_docs_add_example(
+pub unsafe extern "C" fn duckdb_v2_function_docs_add_example(
     docs: duckdb_v2_function_docs_handle,
     title: *const duckdb_v2_str,
     example: *const duckdb_v2_str,
@@ -17989,7 +17989,7 @@ pub unsafe fn duckdb_v2_function_docs_add_example(
 static __DUCKDB_V2_FUNCTION_DOCS_SET_DESCRIPTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_function_docs_set_description(
+pub unsafe extern "C" fn duckdb_v2_function_docs_set_description(
     docs: duckdb_v2_function_docs_handle,
     description: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -18010,7 +18010,7 @@ pub unsafe fn duckdb_v2_function_docs_set_description(
 static __DUCKDB_V2_PRAGMA_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_create(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_create(
     factory: duckdb_v2_factory_handle,
     function: *mut duckdb_v2_pragma_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18031,7 +18031,7 @@ pub unsafe fn duckdb_v2_pragma_function_create(
 static __DUCKDB_V2_PRAGMA_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_destroy(
     function: *mut duckdb_v2_pragma_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_PRAGMA_FUNCTION_DESTROY
@@ -18048,7 +18048,7 @@ pub unsafe fn duckdb_v2_pragma_function_destroy(
 static __DUCKDB_V2_PRAGMA_FUNCTION_GET_DOCS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_get_docs(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_get_docs(
     function: duckdb_v2_pragma_function_handle,
     docs: *mut duckdb_v2_function_docs_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18069,7 +18069,7 @@ pub unsafe fn duckdb_v2_pragma_function_get_docs(
 static __DUCKDB_V2_PRAGMA_FUNCTION_GET_SIGNATURE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_get_signature(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_get_signature(
     function: duckdb_v2_pragma_function_handle,
     sig: *mut duckdb_v2_function_signature_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18090,7 +18090,7 @@ pub unsafe fn duckdb_v2_pragma_function_get_signature(
 static __DUCKDB_V2_PRAGMA_FUNCTION_QUERY_SET_QUERY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_query_set_query(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_query_set_query(
     info: duckdb_v2_pragma_function_query_info_handle,
     query: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -18111,7 +18111,7 @@ pub unsafe fn duckdb_v2_pragma_function_query_set_query(
 static __DUCKDB_V2_PRAGMA_FUNCTION_SET_EXEC_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_pragma_function_set_exec_callback(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_set_exec_callback(
     function: duckdb_v2_pragma_function_handle,
     callback: duckdb_v2_pragma_function_exec_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -18132,7 +18132,7 @@ pub unsafe fn duckdb_v2_pragma_function_set_exec_callback(
 static __DUCKDB_V2_PRAGMA_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_set_name(
     function: duckdb_v2_pragma_function_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -18153,7 +18153,7 @@ pub unsafe fn duckdb_v2_pragma_function_set_name(
 static __DUCKDB_V2_PRAGMA_FUNCTION_SET_QUERY_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_pragma_function_set_query_callback(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_set_query_callback(
     function: duckdb_v2_pragma_function_handle,
     callback: duckdb_v2_pragma_function_query_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -18174,7 +18174,7 @@ pub unsafe fn duckdb_v2_pragma_function_set_query_callback(
 static __DUCKDB_V2_PRAGMA_FUNCTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_pragma_function_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_pragma_function_set_user_data(
     function: duckdb_v2_pragma_function_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -18195,7 +18195,7 @@ pub unsafe fn duckdb_v2_pragma_function_set_user_data(
 static __DUCKDB_V2_SCALAR_FUNCTION_GET_DOCS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_scalar_function_get_docs(
+pub unsafe extern "C" fn duckdb_v2_scalar_function_get_docs(
     function: duckdb_v2_scalar_function_handle,
     docs: *mut duckdb_v2_function_docs_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18216,7 +18216,7 @@ pub unsafe fn duckdb_v2_scalar_function_get_docs(
 static __DUCKDB_V2_TABLE_FUNCTION_GET_DOCS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_table_function_get_docs(
+pub unsafe extern "C" fn duckdb_v2_table_function_get_docs(
     function: duckdb_v2_table_function_handle,
     docs: *mut duckdb_v2_function_docs_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18237,7 +18237,7 @@ pub unsafe fn duckdb_v2_table_function_get_docs(
 static __DUCKDB_V2_CONNECTION_REGISTER_CUSTOM_OPTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_connection_register_custom_option(
+pub unsafe extern "C" fn duckdb_v2_connection_register_custom_option(
     conn: duckdb_v2_connection_handle,
     option: duckdb_v2_custom_option_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18258,7 +18258,7 @@ pub unsafe fn duckdb_v2_connection_register_custom_option(
 static __DUCKDB_V2_CUSTOM_OPTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_create(
+pub unsafe extern "C" fn duckdb_v2_custom_option_create(
     factory: duckdb_v2_factory_handle,
     option: *mut duckdb_v2_custom_option_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18279,7 +18279,7 @@ pub unsafe fn duckdb_v2_custom_option_create(
 static __DUCKDB_V2_CUSTOM_OPTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_destroy(
+pub unsafe extern "C" fn duckdb_v2_custom_option_destroy(
     option: *mut duckdb_v2_custom_option_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_CUSTOM_OPTION_DESTROY
@@ -18296,7 +18296,7 @@ pub unsafe fn duckdb_v2_custom_option_destroy(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_DEFAULT_SCOPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_set_default_scope(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_default_scope(
     option: duckdb_v2_custom_option_handle,
     scope: DUCKDB_V2_SETTING_SCOPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -18317,7 +18317,7 @@ pub unsafe fn duckdb_v2_custom_option_set_default_scope(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_DEFAULT_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_set_default_value(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_default_value(
     option: duckdb_v2_custom_option_handle,
     value: duckdb_v2_value_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18338,7 +18338,7 @@ pub unsafe fn duckdb_v2_custom_option_set_default_value(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_DESCRIPTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_set_description(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_description(
     option: duckdb_v2_custom_option_handle,
     description: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -18359,7 +18359,7 @@ pub unsafe fn duckdb_v2_custom_option_set_description(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_set_name(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_name(
     option: duckdb_v2_custom_option_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -18380,7 +18380,7 @@ pub unsafe fn duckdb_v2_custom_option_set_name(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_SUPPORTS_SCOPE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_custom_option_set_supports_scope(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_supports_scope(
     option: duckdb_v2_custom_option_handle,
     scope: DUCKDB_V2_SETTING_SCOPE,
     supported: bool,
@@ -18403,7 +18403,7 @@ pub unsafe fn duckdb_v2_custom_option_set_supports_scope(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_set_type(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_type(
     option: duckdb_v2_custom_option_handle,
     type_: duckdb_v2_logical_type_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18424,7 +18424,7 @@ pub unsafe fn duckdb_v2_custom_option_set_type(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_UPDATE_CALLBACK: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_custom_option_set_update_callback(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_update_callback(
     option: duckdb_v2_custom_option_handle,
     callback: duckdb_v2_custom_option_update_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -18445,7 +18445,7 @@ pub unsafe fn duckdb_v2_custom_option_set_update_callback(
 static __DUCKDB_V2_CUSTOM_OPTION_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_custom_option_set_user_data(
     option: duckdb_v2_custom_option_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -18466,7 +18466,7 @@ pub unsafe fn duckdb_v2_custom_option_set_user_data(
 static __DUCKDB_V2_CUSTOM_OPTION_UPDATE_GET_SCOPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_update_get_scope(
+pub unsafe extern "C" fn duckdb_v2_custom_option_update_get_scope(
     info: duckdb_v2_custom_option_update_info_handle,
     scope: *mut DUCKDB_V2_SETTING_SCOPE,
     err: *mut duckdb_v2_error_info_handle,
@@ -18487,7 +18487,7 @@ pub unsafe fn duckdb_v2_custom_option_update_get_scope(
 static __DUCKDB_V2_CUSTOM_OPTION_UPDATE_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_custom_option_update_get_user_data(
+pub unsafe extern "C" fn duckdb_v2_custom_option_update_get_user_data(
     info: duckdb_v2_custom_option_update_info_handle,
     data: *mut *mut ::std::os::raw::c_void,
     err: *mut duckdb_v2_error_info_handle,
@@ -18508,7 +18508,7 @@ pub unsafe fn duckdb_v2_custom_option_update_get_user_data(
 static __DUCKDB_V2_CUSTOM_OPTION_UPDATE_GET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_update_get_value(
+pub unsafe extern "C" fn duckdb_v2_custom_option_update_get_value(
     info: duckdb_v2_custom_option_update_info_handle,
     value: *mut duckdb_v2_value_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18529,7 +18529,7 @@ pub unsafe fn duckdb_v2_custom_option_update_get_value(
 static __DUCKDB_V2_CUSTOM_OPTION_UPDATE_IS_RESET: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_update_is_reset(
+pub unsafe extern "C" fn duckdb_v2_custom_option_update_is_reset(
     info: duckdb_v2_custom_option_update_info_handle,
     is_reset: *mut bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -18550,7 +18550,7 @@ pub unsafe fn duckdb_v2_custom_option_update_is_reset(
 static __DUCKDB_V2_CUSTOM_OPTION_UPDATE_SET_VALUE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_custom_option_update_set_value(
+pub unsafe extern "C" fn duckdb_v2_custom_option_update_set_value(
     info: duckdb_v2_custom_option_update_info_handle,
     value: duckdb_v2_value_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18571,7 +18571,7 @@ pub unsafe fn duckdb_v2_custom_option_update_set_value(
 static __DUCKDB_V2_EXTENSION_REGISTER_CUSTOM_OPTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_custom_option(
+pub unsafe extern "C" fn duckdb_v2_extension_register_custom_option(
     extension: duckdb_v2_extension_handle,
     option: duckdb_v2_custom_option_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18592,7 +18592,7 @@ pub unsafe fn duckdb_v2_extension_register_custom_option(
 static __DUCKDB_V2_EXTENSION_REGISTER_LOG_SINK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_extension_register_log_sink(
+pub unsafe extern "C" fn duckdb_v2_extension_register_log_sink(
     extension: duckdb_v2_extension_handle,
     sink: duckdb_v2_log_sink_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18613,7 +18613,7 @@ pub unsafe fn duckdb_v2_extension_register_log_sink(
 static __DUCKDB_V2_EXTENSION_REGISTER_MACRO_FUNCTION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_extension_register_macro_function(
+pub unsafe extern "C" fn duckdb_v2_extension_register_macro_function(
     extension: duckdb_v2_extension_handle,
     function: duckdb_v2_macro_function_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18634,7 +18634,7 @@ pub unsafe fn duckdb_v2_extension_register_macro_function(
 static __DUCKDB_V2_FILE_SYSTEM_PATH_EXISTS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_path_exists(
+pub unsafe extern "C" fn duckdb_v2_file_system_path_exists(
     file_system: duckdb_v2_file_system_handle,
     path: *const duckdb_v2_str,
     out_exists: *mut bool,
@@ -18657,7 +18657,7 @@ pub unsafe fn duckdb_v2_file_system_path_exists(
 static __DUCKDB_V2_FILE_SYSTEM_PATH_EXPAND: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_path_expand(
+pub unsafe extern "C" fn duckdb_v2_file_system_path_expand(
     file_system: duckdb_v2_file_system_handle,
     path: *const duckdb_v2_str,
     sink: duckdb_v2_text_sink_fn,
@@ -18682,7 +18682,7 @@ pub unsafe fn duckdb_v2_file_system_path_expand(
 static __DUCKDB_V2_FILE_SYSTEM_PATH_IS_REMOTE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_path_is_remote(
+pub unsafe extern "C" fn duckdb_v2_file_system_path_is_remote(
     file_system: duckdb_v2_file_system_handle,
     path: *const duckdb_v2_str,
     out_is_remote: *mut bool,
@@ -18705,7 +18705,7 @@ pub unsafe fn duckdb_v2_file_system_path_is_remote(
 static __DUCKDB_V2_INSTANCE_REGISTER_LOG_SINK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_instance_register_log_sink(
+pub unsafe extern "C" fn duckdb_v2_instance_register_log_sink(
     instance: duckdb_v2_instance_handle,
     sink: duckdb_v2_log_sink_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18726,7 +18726,7 @@ pub unsafe fn duckdb_v2_instance_register_log_sink(
 static __DUCKDB_V2_LOG_SINK_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_log_sink_create(
+pub unsafe extern "C" fn duckdb_v2_log_sink_create(
     factory: duckdb_v2_factory_handle,
     sink: *mut duckdb_v2_log_sink_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -18747,7 +18747,7 @@ pub unsafe fn duckdb_v2_log_sink_create(
 static __DUCKDB_V2_LOG_SINK_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_log_sink_destroy(
+pub unsafe extern "C" fn duckdb_v2_log_sink_destroy(
     sink: *mut duckdb_v2_log_sink_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_LOG_SINK_DESTROY
@@ -18764,7 +18764,7 @@ pub unsafe fn duckdb_v2_log_sink_destroy(
 static __DUCKDB_V2_LOG_SINK_SET_FLUSH_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_log_sink_set_flush_callback(
+pub unsafe extern "C" fn duckdb_v2_log_sink_set_flush_callback(
     sink: duckdb_v2_log_sink_handle,
     callback: duckdb_v2_log_sink_flush_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -18785,7 +18785,7 @@ pub unsafe fn duckdb_v2_log_sink_set_flush_callback(
 static __DUCKDB_V2_LOG_SINK_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_log_sink_set_name(
+pub unsafe extern "C" fn duckdb_v2_log_sink_set_name(
     sink: duckdb_v2_log_sink_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -18806,7 +18806,7 @@ pub unsafe fn duckdb_v2_log_sink_set_name(
 static __DUCKDB_V2_LOG_SINK_SET_USER_DATA: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_log_sink_set_user_data(
+pub unsafe extern "C" fn duckdb_v2_log_sink_set_user_data(
     sink: duckdb_v2_log_sink_handle,
     data: *mut duckdb_v2_opaque,
     err: *mut duckdb_v2_error_info_handle,
@@ -18827,7 +18827,7 @@ pub unsafe fn duckdb_v2_log_sink_set_user_data(
 static __DUCKDB_V2_LOG_SINK_SET_WRITE_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_log_sink_set_write_callback(
+pub unsafe extern "C" fn duckdb_v2_log_sink_set_write_callback(
     sink: duckdb_v2_log_sink_handle,
     callback: duckdb_v2_log_sink_write_callback_fn,
     err: *mut duckdb_v2_error_info_handle,
@@ -18848,7 +18848,7 @@ pub unsafe fn duckdb_v2_log_sink_set_write_callback(
 static __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_CONNECTION_ID: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_log_sink_write_info_get_connection_id(
+pub unsafe extern "C" fn duckdb_v2_log_sink_write_info_get_connection_id(
     info: duckdb_v2_log_sink_write_info_handle,
     id: *mut idx_t,
     present: *mut bool,
@@ -18871,7 +18871,7 @@ pub unsafe fn duckdb_v2_log_sink_write_info_get_connection_id(
 static __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_QUERY_ID: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_log_sink_write_info_get_query_id(
+pub unsafe extern "C" fn duckdb_v2_log_sink_write_info_get_query_id(
     info: duckdb_v2_log_sink_write_info_handle,
     id: *mut idx_t,
     present: *mut bool,
@@ -18894,7 +18894,7 @@ pub unsafe fn duckdb_v2_log_sink_write_info_get_query_id(
 static __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_THREAD_ID: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_log_sink_write_info_get_thread_id(
+pub unsafe extern "C" fn duckdb_v2_log_sink_write_info_get_thread_id(
     info: duckdb_v2_log_sink_write_info_handle,
     id: *mut idx_t,
     present: *mut bool,
@@ -18917,7 +18917,7 @@ pub unsafe fn duckdb_v2_log_sink_write_info_get_thread_id(
 static __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_TRANSACTION_ID: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_log_sink_write_info_get_transaction_id(
+pub unsafe extern "C" fn duckdb_v2_log_sink_write_info_get_transaction_id(
     info: duckdb_v2_log_sink_write_info_handle,
     id: *mut idx_t,
     present: *mut bool,
@@ -18940,7 +18940,7 @@ pub unsafe fn duckdb_v2_log_sink_write_info_get_transaction_id(
 static __DUCKDB_V2_MACRO_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_macro_function_create(
+pub unsafe extern "C" fn duckdb_v2_macro_function_create(
     factory: duckdb_v2_factory_handle,
     type_: DUCKDB_V2_MACRO_FUNCTION_TYPE,
     function: *mut duckdb_v2_macro_function_handle,
@@ -18963,7 +18963,7 @@ pub unsafe fn duckdb_v2_macro_function_create(
 static __DUCKDB_V2_MACRO_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_macro_function_destroy(
+pub unsafe extern "C" fn duckdb_v2_macro_function_destroy(
     function: *mut duckdb_v2_macro_function_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_MACRO_FUNCTION_DESTROY
@@ -18980,7 +18980,7 @@ pub unsafe fn duckdb_v2_macro_function_destroy(
 static __DUCKDB_V2_MACRO_FUNCTION_GET_DOCS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_macro_function_get_docs(
+pub unsafe extern "C" fn duckdb_v2_macro_function_get_docs(
     function: duckdb_v2_macro_function_handle,
     docs: *mut duckdb_v2_function_docs_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -19001,7 +19001,7 @@ pub unsafe fn duckdb_v2_macro_function_get_docs(
 static __DUCKDB_V2_MACRO_FUNCTION_GET_SIGNATURE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_macro_function_get_signature(
+pub unsafe extern "C" fn duckdb_v2_macro_function_get_signature(
     function: duckdb_v2_macro_function_handle,
     sig: *mut duckdb_v2_function_signature_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -19022,7 +19022,7 @@ pub unsafe fn duckdb_v2_macro_function_get_signature(
 static __DUCKDB_V2_MACRO_FUNCTION_SET_BODY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_macro_function_set_body(
+pub unsafe extern "C" fn duckdb_v2_macro_function_set_body(
     function: duckdb_v2_macro_function_handle,
     body: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -19043,7 +19043,7 @@ pub unsafe fn duckdb_v2_macro_function_set_body(
 static __DUCKDB_V2_MACRO_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_macro_function_set_name(
+pub unsafe extern "C" fn duckdb_v2_macro_function_set_name(
     function: duckdb_v2_macro_function_handle,
     name: *const duckdb_v2_identifier_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -19064,7 +19064,7 @@ pub unsafe fn duckdb_v2_macro_function_set_name(
 static __DUCKDB_V2_VECTOR_CAST: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_vector_cast(
+pub unsafe extern "C" fn duckdb_v2_vector_cast(
     factory: duckdb_v2_factory_handle,
     source: duckdb_v2_vector_handle,
     target: duckdb_v2_vector_handle,
@@ -19093,7 +19093,7 @@ pub unsafe fn duckdb_v2_vector_cast(
 static __DUCKDB_V2_CONNECTION_ENABLE_PROFILING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_enable_profiling(
+pub unsafe extern "C" fn duckdb_v2_connection_enable_profiling(
     conn: duckdb_v2_connection_handle,
     enabled: bool,
     err: *mut duckdb_v2_error_info_handle,
@@ -19114,7 +19114,7 @@ pub unsafe fn duckdb_v2_connection_enable_profiling(
 static __DUCKDB_V2_CONNECTION_GET_QUERY_METRICS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_connection_get_query_metrics(
+pub unsafe extern "C" fn duckdb_v2_connection_get_query_metrics(
     conn: duckdb_v2_connection_handle,
     metrics: *mut duckdb_v2_query_metrics_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -19135,7 +19135,7 @@ pub unsafe fn duckdb_v2_connection_get_query_metrics(
 static __DUCKDB_V2_COPY_FUNCTION_SET_FILE_EXTENSION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_copy_function_set_file_extension(
+pub unsafe extern "C" fn duckdb_v2_copy_function_set_file_extension(
     function: duckdb_v2_copy_function_handle,
     extension: *const duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -19156,7 +19156,7 @@ pub unsafe fn duckdb_v2_copy_function_set_file_extension(
 static __DUCKDB_V2_DATA_CHUNK_CLEAR: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_data_chunk_clear(
+pub unsafe extern "C" fn duckdb_v2_data_chunk_clear(
     chunk: duckdb_v2_data_chunk_handle,
     err: *mut duckdb_v2_error_info_handle,
 ) -> DUCKDB_V2_ERROR {
@@ -19175,7 +19175,7 @@ pub unsafe fn duckdb_v2_data_chunk_clear(
 static __DUCKDB_V2_FILE_SYSTEM_PATH_GLOB: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_path_glob(
+pub unsafe extern "C" fn duckdb_v2_file_system_path_glob(
     file_system: duckdb_v2_file_system_handle,
     pattern: *const duckdb_v2_str,
     callback: duckdb_v2_file_system_path_glob_callback_fn,
@@ -19200,7 +19200,7 @@ pub unsafe fn duckdb_v2_file_system_path_glob(
 static __DUCKDB_V2_FILE_SYSTEM_PATH_MOVE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_path_move(
+pub unsafe extern "C" fn duckdb_v2_file_system_path_move(
     file_system: duckdb_v2_file_system_handle,
     source: *const duckdb_v2_str,
     target: *const duckdb_v2_str,
@@ -19223,7 +19223,7 @@ pub unsafe fn duckdb_v2_file_system_path_move(
 static __DUCKDB_V2_FILE_SYSTEM_PATH_REMOVE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_file_system_path_remove(
+pub unsafe extern "C" fn duckdb_v2_file_system_path_remove(
     file_system: duckdb_v2_file_system_handle,
     path: *const duckdb_v2_str,
     out_removed: *mut bool,
@@ -19246,7 +19246,7 @@ pub unsafe fn duckdb_v2_file_system_path_remove(
 static __DUCKDB_V2_QUERY_METRICS_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_query_metrics_destroy(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_destroy(
     metrics: *mut duckdb_v2_query_metrics_handle,
 ) -> DUCKDB_V2_ERROR {
     let function_ptr = __DUCKDB_V2_QUERY_METRICS_DESTROY
@@ -19263,7 +19263,7 @@ pub unsafe fn duckdb_v2_query_metrics_destroy(
 static __DUCKDB_V2_QUERY_METRICS_GET_ROOT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_query_metrics_get_root(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_get_root(
     metrics: duckdb_v2_query_metrics_handle,
     node: *mut duckdb_v2_query_metrics_node_handle,
     err: *mut duckdb_v2_error_info_handle,
@@ -19284,7 +19284,7 @@ pub unsafe fn duckdb_v2_query_metrics_get_root(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_query_metrics_node_get_child(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_child(
     node: duckdb_v2_query_metrics_node_handle,
     index: idx_t,
     child: *mut duckdb_v2_query_metrics_node_handle,
@@ -19307,7 +19307,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_child(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_query_metrics_node_get_child_count(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_child_count(
     node: duckdb_v2_query_metrics_node_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -19328,7 +19328,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_child_count(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_query_metrics_node_get_metric(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_metric(
     node: duckdb_v2_query_metrics_node_handle,
     name: *const duckdb_v2_str,
     value: *mut duckdb_v2_value_handle,
@@ -19353,7 +19353,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_metric(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_COUNT: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_query_metrics_node_get_metric_count(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_metric_count(
     node: duckdb_v2_query_metrics_node_handle,
     count: *mut idx_t,
     err: *mut duckdb_v2_error_info_handle,
@@ -19374,7 +19374,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_metric_count(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_NAME: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_query_metrics_node_get_metric_name(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_metric_name(
     node: duckdb_v2_query_metrics_node_handle,
     index: idx_t,
     name: *mut duckdb_v2_str,
@@ -19397,7 +19397,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_metric_name(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_VALUE: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-pub unsafe fn duckdb_v2_query_metrics_node_get_metric_value(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_metric_value(
     node: duckdb_v2_query_metrics_node_handle,
     index: idx_t,
     value: *mut duckdb_v2_value_handle,
@@ -19420,7 +19420,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_metric_value(
 static __DUCKDB_V2_QUERY_METRICS_NODE_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_query_metrics_node_get_name(
+pub unsafe extern "C" fn duckdb_v2_query_metrics_node_get_name(
     node: duckdb_v2_query_metrics_node_handle,
     name: *mut duckdb_v2_str,
     err: *mut duckdb_v2_error_info_handle,
@@ -19441,7 +19441,7 @@ pub unsafe fn duckdb_v2_query_metrics_node_get_name(
 static __DUCKDB_V2_STATEMENT_ADD_COLLECTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
-pub unsafe fn duckdb_v2_statement_add_collection(
+pub unsafe extern "C" fn duckdb_v2_statement_add_collection(
     statement: duckdb_v2_sql_statement_handle,
     name: *const duckdb_v2_identifier_t,
     collection: duckdb_v2_column_data_collection_handle,

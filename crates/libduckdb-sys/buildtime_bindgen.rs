@@ -1,4 +1,4 @@
-use crate::{CApi, HeaderLocation, is_loadable_extension};
+use crate::{CApi, HeaderLocation, is_loadable_api};
 
 use std::{fs::OpenOptions, io::Write, path::Path};
 
@@ -20,9 +20,9 @@ fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
     Some(method)
 }
 
-#[cfg(any(feature = "loadable-extension", feature = "loadable-extension-v2"))]
+#[cfg(feature = "loadable-extension-v2")]
 fn generate_functions_v2(mut output: String) -> String {
-    // (1) parse sqlite3_api_routines fields from bindgen output
+    // (1) parse the duckdb_ext_api_v2 fields from bindgen output
     let ast: syn::File = syn::parse_str(&output).expect("could not parse bindgen output");
     let duckdb_ext_api_v2: syn::ItemStruct = ast
         .items
@@ -57,9 +57,10 @@ fn generate_functions_v2(mut output: String) -> String {
 
         let ty = &method.output;
 
+        // Same ABI as the linked bindings, so code can take either as the same function pointer type.
         let tokens = quote::quote! {
             static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
-            pub unsafe fn #duckdb_fn_name(#args) #ty {
+            pub unsafe extern "C" fn #duckdb_fn_name(#args) #ty {
                 let function_ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
                 assert!(!function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
                 let fun: unsafe extern "C" fn(#args) #ty = ::std::mem::transmute(function_ptr);
@@ -83,7 +84,7 @@ fn generate_functions_v2(mut output: String) -> String {
         });
     }
 
-    // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
+    // (2) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
     let tokens = quote::quote! {
         /// Like DUCKDB_EXTENSION_API_INIT macro
         pub unsafe fn duckdb_rs_extension_api_v2_init(input: &duckdb_v2_extension_input, version: &str) -> ::std::result::Result<bool, &'static str> {
@@ -107,7 +108,7 @@ fn generate_functions_v2(mut output: String) -> String {
     output
 }
 
-#[cfg(any(feature = "loadable-extension", feature = "loadable-extension-v2"))]
+#[cfg(feature = "loadable-extension")]
 fn generate_functions_v1(mut output: String) -> String {
     // (1) parse sqlite3_api_routines fields from bindgen output
     let ast: syn::File = syn::parse_str(&output).expect("could not parse bindgen output");
@@ -217,7 +218,7 @@ pub fn write_to_out_dir(location: &HeaderLocation, api: CApi, out_path: &Path) {
 
     builder = match api {
         CApi::V1 => {
-            if is_loadable_extension() {
+            if is_loadable_api(api) {
                 builder = builder.ignore_functions();
             }
             // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
@@ -225,7 +226,7 @@ pub fn write_to_out_dir(location: &HeaderLocation, api: CApi, out_path: &Path) {
             builder.clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
         }
         CApi::V2 => {
-            if is_loadable_extension() {
+            if is_loadable_api(api) {
                 builder = builder.ignore_functions();
             }
             builder
@@ -248,10 +249,14 @@ pub fn write_to_out_dir(location: &HeaderLocation, api: CApi, out_path: &Path) {
 
     let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
-    #[cfg(any(feature = "loadable-extension", feature = "loadable-extension-v2"))]
+    #[cfg(feature = "loadable-extension")]
     let output = if api == CApi::V1 {
         generate_functions_v1(output)
-    } else if api == CApi::V2 {
+    } else {
+        output
+    };
+    #[cfg(feature = "loadable-extension-v2")]
+    let output = if api == CApi::V2 {
         generate_functions_v2(output)
     } else {
         output

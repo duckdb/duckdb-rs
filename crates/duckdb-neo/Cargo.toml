@@ -49,7 +49,7 @@ bundled-cmake-icu = ["bundled-cmake", "libduckdb-sys/icu"]
 bundled-cmake-tpcds = ["bundled-cmake", "libduckdb-sys/tpcds"]
 bundled-cmake-tpch = ["bundled-cmake", "libduckdb-sys/tpch"]
 
-build-extension = ["libduckdb-sys/loadable-extension-v2", "buildtime-bindgen"]
+build-extension = ["libduckdb-sys/loadable-extension-v2"]
 build-extension-static = []
 
 [dependencies]

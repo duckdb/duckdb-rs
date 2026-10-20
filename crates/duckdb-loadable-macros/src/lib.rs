@@ -25,8 +25,9 @@ struct CEntryPointMacroArgs {
 
 /// Turns a function into the entrypoint of a `duckdb-neo` extension, written against DuckDB's v2 C API.
 ///
-/// The function takes a `duckdb_neo::extension::Extension` to register functionality through and returns a
-/// `Result` whose error converts into `Box<dyn Error>`; an error or a panic fails the load with its message. Arguments:
+/// The function takes a `&duckdb_neo::extension::Extension` to register functionality through and returns a
+/// `Result` whose error converts into `Box<dyn Error>`. An error fails the load with its message. A panic is reported
+/// as an internal error instead, which invalidates the database. Arguments:
 ///
 /// - `extension_name`: the name DuckDB knows the extension by. A loadable build must be in
 ///   `<extension_name>.duckdb_extension`.
@@ -40,8 +41,8 @@ struct CEntryPointMacroArgs {
 #[cfg(feature = "neo")]
 #[proc_macro_attribute]
 pub fn duckdb_entrypoint_c_api_v2(meta: TokenStream, item: TokenStream) -> TokenStream {
-    match neo::parse(meta, parse_macro_input!(item)) {
-        Ok(stream) => stream,
+    match neo::parse(meta.into(), parse_macro_input!(item)) {
+        Ok(stream) => stream.into(),
         Err(e) => TokenStream::from(e.write_errors()),
     }
 }

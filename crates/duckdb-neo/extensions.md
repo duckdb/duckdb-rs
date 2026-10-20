@@ -9,15 +9,17 @@ use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
 use duckdb_neo::extension::Extension;
 
 #[duckdb_entrypoint_c_api_v2(extension_name = "my_ext", api_version = "v2.0.0")]
-fn entrypoint(extension: Extension) -> duckdb_neo::Result<()> {
-    // Register scalar, aggregate, table, ... functions with `.register(&extension)`.
+fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
+    // Register scalar, aggregate, table, ... functions with `.register(extension)`.
     Ok(())
 }
 ```
 
-Returning an error or panicking fails the load with its message. Enable exactly one of these features:
+Returning an error fails the load with its message. A panic is reported as an internal error instead, which
+invalidates the database: after the failed `LOAD`, every later query on it errors too. A static extension that fails
+either way makes every instance fail to open. Enable exactly one of these features:
 
-- `build-extension` - A loadable extension, loaded with `LOAD`. Implies `buildtime-bindgen`.
+- `build-extension` - A loadable extension, loaded with `LOAD`.
 - `build-extension-static` - An extension linked into a binary.
 
 Both are pinned to the exact DuckDB build `duckdb-neo` was built against, the `DUCKDB_RELEASE_COMMIT` in

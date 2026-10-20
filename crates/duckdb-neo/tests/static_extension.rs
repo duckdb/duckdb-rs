@@ -40,15 +40,15 @@ impl ScalarCallbacks for TimesTen {
 }
 
 #[duckdb_entrypoint_c_api_v2(extension_name = "neo_static_demo", api_version = "v2.0.0")]
-fn entrypoint(extension: Extension) -> duckdb_neo::Result<()> {
+fn entrypoint(extension: &Extension) -> duckdb_neo::Result<()> {
     ScalarFunctionBuilder::new(
         "neo_static_times_ten",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(&extension)?),
+            .return_type(i32::logical_type(extension)?),
         TimesTen,
     )
-    .register(&extension)
+    .register(extension)
 }
 
 fn connect() -> duckdb_neo::Result<Connection> {

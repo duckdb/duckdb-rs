@@ -14,9 +14,9 @@ impl ScalarCallbacks for AmplifyTest {
 
     fn exec(
         &self,
-        bind_data: Option<&Self::BindData>,
-        init_data: Option<&mut Self::InitData>,
-        context: &duckdb_neo::connection::Context,
+        _bind_data: Option<&Self::BindData>,
+        _init_data: Option<&mut Self::InitData>,
+        _context: &duckdb_neo::connection::Context,
         vectors: &mut duckdb_neo::data_chunk::VectorCollection,
         output: duckdb_neo::vector::Vector<'_, duckdb_neo::vector::Unknown>,
     ) -> duckdb_neo::Result<()> {
@@ -37,15 +37,15 @@ impl ScalarCallbacks for AmplifyTest {
 }
 
 #[duckdb_entrypoint_c_api_v2(extension_name = "test", api_version = "v2.0.0")]
-pub fn entrypoint(extension: Extension) -> Result<(), Box<dyn ::std::error::Error>> {
+pub fn entrypoint(extension: &Extension) -> Result<(), Box<dyn ::std::error::Error>> {
     ScalarFunctionBuilder::new(
         "test",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i32>("input"))
-            .return_type(i32::logical_type(&extension)?),
+            .return_type(i32::logical_type(extension)?),
         AmplifyTest {},
     )
-    .register(&extension)?;
+    .register(extension)?;
 
     Ok(())
 }

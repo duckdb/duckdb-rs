@@ -9,18 +9,15 @@
 //!   `register_static_extension`. Its calls bind to DuckDB at link time.
 
 use crate::{
-    AsRaw, Parameters, Result,
+    AsRaw, Result,
     connection::{Context, FFILink, Factory, HasFactory},
     ffi,
-    logical_type::{LogicalType, LogicalTypeID},
-    value::{Value, ValueInput},
 };
 
 #[cfg(all(feature = "build-extension", feature = "build-extension-static"))]
 compile_error!("`build-extension` and `build-extension-static` are mutually exclusive");
 
-/// A non-owning handle valid only during the extension's load callback.
-/// [`FromRaw::from_raw`](crate::FromRaw::from_raw) requires the handle of the extension currently being loaded.
+/// The extension being loaded, lent to its entrypoint for the duration of the load.
 #[derive(AsRaw, Debug)]
 pub struct Extension {
     pub(crate) handle: ffi::duckdb_v2_extension_handle,
@@ -33,20 +30,7 @@ impl HasFactory for Extension {
     }
 }
 
-impl FFILink for Extension {
-    fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
-        self.context.create_value(input)
-    }
-    fn logical_type_create(&self, name: &str, parameters: Parameters<'_>) -> Result<LogicalType> {
-        self.context.logical_type_create(name, parameters)
-    }
-    fn logical_type_create_from_id(&self, type_id: LogicalTypeID, parameters: Parameters<'_>) -> Result<LogicalType> {
-        self.context.logical_type_create_from_id(type_id, parameters)
-    }
-    fn value_cast(&self, value: &Value, target_type: &LogicalType) -> Result<Value> {
-        self.context.value_cast(value, target_type)
-    }
-}
+impl FFILink for Extension {}
 
 /// Runs the body of an extension's entrypoint; called by `#[duckdb_entrypoint_c_api_v2]`.
 ///
@@ -57,7 +41,7 @@ impl FFILink for Extension {
 pub unsafe fn run_extension_entrypoint(
     input: *const ffi::duckdb_v2_extension_input,
     version: &str,
-    body: impl FnOnce(Extension) -> std::result::Result<(), Box<dyn std::error::Error>>,
+    body: impl FnOnce(&Extension) -> std::result::Result<(), Box<dyn std::error::Error>>,
 ) {
     use crate::{FromRaw, error::Error};
 
@@ -78,7 +62,7 @@ pub unsafe fn run_extension_entrypoint(
     };
     crate::builder_helpers::handle_unwind(
         || {
-            body(extension).map_err(|error| match error.downcast::<Error>() {
+            body(&extension).map_err(|error| match error.downcast::<Error>() {
                 Ok(error) => *error,
                 Err(error) => Error::api_error(error.to_string()),
             })

@@ -28,16 +28,7 @@ pub struct LogMetadata<'a> {
     _callback: PhantomData<&'a ()>,
 }
 
-#[cfg(not(feature = "build-extension"))]
 type IdGetter = unsafe extern "C" fn(
-    ffi::duckdb_v2_log_sink_write_info_handle,
-    *mut ffi::idx_t,
-    *mut bool,
-    *mut ffi::duckdb_v2_error_info_handle,
-) -> ffi::DUCKDB_V2_ERROR;
-
-#[cfg(feature = "build-extension")]
-type IdGetter = unsafe fn(
     ffi::duckdb_v2_log_sink_write_info_handle,
     *mut ffi::idx_t,
     *mut bool,
