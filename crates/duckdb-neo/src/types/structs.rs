@@ -257,7 +257,7 @@ impl<'a> StructRow<'a> {
             .filter(|children| index < children.col_count())
             .map(|children| children.cached_unchecked(index))
             .ok_or_else(|| Error::invalid_parameter(format!("Struct field index {} is out of bounds", index)))?;
-        child.get_as_checked::<T>(self.logical)
+        child.cast_ref::<T>()?.get(self.logical)
     }
 
     /// Return a struct field by name after validating its logical type.

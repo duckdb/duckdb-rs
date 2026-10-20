@@ -32,18 +32,16 @@ unsafe extern "C" fn exec_callback<T: CastFunctionCallbacks>(
         || {
             let user_data = get_user_data!(ffi::duckdb_v2_cast_function_exec_get_user_data, info);
 
-            let input = Vector::from_handle(
+            let input = Vector::<T::InputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_input, info, RET)?,
                 Access::Exclusive,
             )?;
-            let input = input.cast::<T::InputType>()?;
 
             let mode = check_api_call!(ffi::duckdb_v2_cast_function_exec_get_mode, info, RET)?;
-            let output = Vector::from_handle(
+            let output = Vector::<T::OutputType>::from_handle(
                 &check_api_call!(ffi::duckdb_v2_cast_function_exec_get_output, info, RET)?,
                 Access::Writable,
             )?;
-            let output = output.cast::<T::OutputType>()?;
 
             T::exec(
                 user_data,

@@ -141,16 +141,24 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const ffi::duckdb_v2_list_entry;
         let list = unsafe { &*data_ptr.add(physical) };
 
-        MapRow::<K, V> {
-            children: vector
-                .children()
-                .expect("validated nested vector has children")
-                .cached_unchecked(0)
-                .children()
-                .expect("validated map entries have key and value children"),
+        let children = vector
+            .children()
+            .expect("validated nested vector has children")
+            .cached_unchecked(0)
+            .children()
+            .expect("validated map entries have key and value children");
+        // SAFETY: Map<K, V>::validate checked both fields.
+        let (keys, values) = unsafe {
+            (
+                children.cached_unchecked(0).cast_ref_unchecked::<K>(),
+                children.cached_unchecked(1).cast_ref_unchecked::<V>(),
+            )
+        };
+        MapRow {
+            keys,
+            values,
             offset: list.offset as usize,
             length: list.length as usize,
-            _marker: PhantomData,
         }
     }
 }
@@ -210,11 +218,11 @@ unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorEl
 
 /// A borrowed map row backed by matching ranges in key and value vectors.
 #[derive(Debug)]
-pub struct MapRow<'a, K, V> {
-    pub(crate) children: &'a VectorCollection,
+pub struct MapRow<'a, K: VectorElement, V: VectorElement> {
+    keys: &'a Vector<'a, K>,
+    values: &'a Vector<'a, V>,
     pub(crate) offset: usize,
     pub(crate) length: usize,
-    pub(crate) _marker: PhantomData<(K, V)>,
 }
 
 impl<'a, K: Debug + VectorElement, V: VectorElement + Debug> MapRow<'a, K, V>
@@ -230,13 +238,9 @@ where
         let mut map = HashMap::new();
         map.reserve(self.length);
 
-        for logical in self.offset..self.offset + self.length {
-            if let Some(key) = { self.children.cached_unchecked(0).get_as_unchecked::<K>(logical) } {
-                if let Some(value) = self.children.cached_unchecked(1).get_as_unchecked::<V>(logical) {
-                    map.insert(key, Some(value));
-                } else {
-                    map.insert(key, None);
-                }
+        for (key, value) in self.iter() {
+            if let Some(key) = key {
+                map.insert(key, value);
             }
         }
 
@@ -257,13 +261,10 @@ impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
 
     /// Iterate over the map's `(key, value)` entries in storage order.
     pub fn iter(&self) -> impl Iterator<Item = (Option<K::Ref<'a>>, Option<V::Ref<'a>>)> + use<'a, K, V> {
-        let children = self.children;
-        (self.offset..self.offset + self.length).map(move |logical| {
-            (
-                children.cached_unchecked(0).get_as_unchecked::<K>(logical),
-                children.cached_unchecked(1).get_as_unchecked::<V>(logical),
-            )
-        })
+        let (keys, values) = (self.keys, self.values);
+        // SAFETY: The parent reader cached all descendant views before constructing this row.
+        (self.offset..self.offset + self.length)
+            .map(move |logical| unsafe { (keys.get_unchecked(logical), values.get_unchecked(logical)) })
     }
 
     /// Return the map's keys in storage order, aligned with [`Self::values`].
@@ -283,14 +284,10 @@ where
 {
     /// Return the associated value; outer `None` means missing, inner `None` means NULL.
     pub fn get(&self, key: &K) -> Option<Option<V::Ref<'a>>> {
+        // SAFETY: The parent reader cached all descendant views before constructing this row.
         (self.offset..self.offset + self.length)
-            .find(|&logical| {
-                self.children
-                    .cached_unchecked(0)
-                    .get_as_unchecked::<K>(logical)
-                    .is_some_and(|value| value == key)
-            })
-            .map(|logical| self.children.cached_unchecked(1).get_as_unchecked::<V>(logical))
+            .find(|&logical| unsafe { self.keys.get_unchecked(logical) }.is_some_and(|value| value == key))
+            .map(|logical| unsafe { self.values.get_unchecked(logical) })
     }
 }
 

@@ -1,4 +1,9 @@
-use crate::{Result, check_api_call, error::DuckDBError, error::Error, ffi};
+use crate::{
+    Result,
+    error::{DuckDBError, Error},
+    ffi,
+    vector::Arena,
+};
 
 /// DuckDB's internal representation of `VARCHAR`-like data, such as bytes and strings.
 ///
@@ -32,11 +37,8 @@ impl DuckDBBytes {
     /// Encode a string in DuckDB's internal byte representation.
     ///
     /// # Safety
-    /// `heap` must return a valid arena that outlives every use of the returned bytes.
-    pub(crate) unsafe fn new<F: FnOnce() -> Result<ffi::duckdb_v2_arena_handle>>(
-        value: &[u8],
-        heap: F,
-    ) -> Result<Self> {
+    /// `arena` must return a valid arena that outlives every use of the returned bytes.
+    pub(crate) unsafe fn new<'arena, F: FnOnce() -> Result<&'arena Arena>>(value: &[u8], arena: F) -> Result<Self> {
         let length = u32::try_from(value.len()).map_err(|_| Error {
             code: DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE,
             message: format!(
@@ -61,14 +63,9 @@ impl DuckDBBytes {
                 prefix: Default::default(),
                 ptr: std::ptr::null_mut(),
             };
-            let heap = heap()?;
+            let arena = arena()?;
 
-            check_api_call!(
-                ffi::duckdb_v2_arena_allocate,
-                heap,
-                value.len() as u64,
-                (&raw mut pointer.ptr).cast(),
-            )?;
+            pointer.ptr = arena.allocate(length as usize).map(|x| x as *mut i8)?;
 
             unsafe {
                 // the engine compares and orders on the prefix, so it must mirror the first bytes

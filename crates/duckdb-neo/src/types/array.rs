@@ -10,7 +10,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// A fixed-length array element marker; `[T; N]` is the owned form.
@@ -94,15 +94,18 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
     where
         Self: Sized + 'a,
     {
-        let child = vector
-            .children()
-            .expect("validated nested vector has children")
-            .cached_unchecked(0);
+        // SAFETY: Array<T>::validate checked the child as T.
+        let child = unsafe {
+            vector
+                .children()
+                .expect("validated nested vector has children")
+                .cached_unchecked(0)
+                .cast_ref_unchecked::<T>()
+        };
         ArrayRef {
-            offset: physical * vector.array_size(),
-            size: vector.array_size(),
+            offset: physical * vector.metadata().array_size(),
+            size: vector.metadata().array_size(),
             child,
-            _marker: PhantomData,
         }
     }
 }
@@ -115,7 +118,7 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         T: 'a;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        let array_size = vector.array_size();
+        let array_size = vector.metadata().array_size();
 
         if let Some(values) = &value
             && values.len() != array_size
@@ -158,11 +161,10 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
 
 /// A borrowed array row backed by a contiguous range in its child vector.
 #[derive(Debug)]
-pub struct ArrayRef<'a, T> {
+pub struct ArrayRef<'a, T: VectorElement> {
     offset: usize,
     size: usize,
-    child: &'a Vector<'a, Unknown>,
-    _marker: PhantomData<T>,
+    child: &'a Vector<'a, T>,
 }
 
 impl<'a, T: VectorElement> ArrayRef<'a, T> {
@@ -173,7 +175,6 @@ impl<'a, T: VectorElement> ArrayRef<'a, T> {
             offset: self.offset,
             length: self.size,
             index: 0,
-            _type: PhantomData,
         }
     }
 
@@ -199,12 +200,11 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ArrayRef<'a, T> {
 
 /// Traverses the child-vector range belonging to an [`ArrayRef`].
 #[derive(Debug)]
-pub struct ArrayIterator<'a, T> {
-    child: &'a Vector<'a, Unknown>,
+pub struct ArrayIterator<'a, T: VectorElement> {
+    child: &'a Vector<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
-    _type: PhantomData<T>,
 }
 
 impl<'a, T: VectorElement + 'a> Iterator for ArrayIterator<'a, T> {
@@ -218,7 +218,8 @@ impl<'a, T: VectorElement + 'a> Iterator for ArrayIterator<'a, T> {
         let logical = self.offset + self.index;
         self.index += 1;
 
-        Some(self.child.get_as_unchecked::<T>(logical))
+        // SAFETY: ArrayRef retains the parent's cached descendant views.
+        Some(unsafe { self.child.get_unchecked(logical) })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

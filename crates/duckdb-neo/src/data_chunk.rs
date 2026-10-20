@@ -172,8 +172,7 @@ impl VectorCollection {
         self.complete.set(false);
         let slot = &mut self.cache[index];
         if slot.get().is_none_or(|vector| vector.access != self.access) {
-            let vector = Vector::from_handle(&self.handles[index], self.access)?;
-            vector.validate_as::<T>()?;
+            let vector = Vector::<T>::from_handle(&self.handles[index], self.access)?.cast_unchecked();
             *slot = OnceCell::from(vector);
         }
         let vector = slot.get_mut().expect("view was just cached");
@@ -243,7 +242,9 @@ impl VectorCollection {
     ///
     /// Panics if `index` is out of range.
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.get_untyped_vector_at_mut(index)?.cast::<T>()
+        self.check_index(index);
+        self.evict(index);
+        Vector::from_handle(&self.handles[index], self.access)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.

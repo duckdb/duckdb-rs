@@ -444,14 +444,6 @@ mod tests {
             DecimalSignature::from_logical_type(vector.logical_type())?,
             DecimalSignature { width: 9, scale: 3 }
         );
-        assert_eq!(
-            vector.decimal_signature(),
-            Some(DecimalSignature { width: 9, scale: 3 })
-        );
-        assert_eq!(
-            chunk.get_vector_at::<i32>(4).ok().and_then(|v| v.decimal_signature()),
-            None
-        );
 
         Ok(())
     }

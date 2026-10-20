@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{Vector, VectorElement, WritableVectorElement},
 };
 
 /// A physical list entry parameterized by its child element type.
@@ -97,10 +97,14 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
         let list = unsafe { &*data_ptr.add(physical) };
         ListRef {
             list,
-            child: vector
-                .children()
-                .expect("validated nested vector has children")
-                .cached_unchecked(0),
+            // SAFETY: List<L>::validate checked the child as L.
+            child: unsafe {
+                vector
+                    .children()
+                    .expect("validated nested vector has children")
+                    .cached_unchecked(0)
+                    .cast_ref_unchecked::<L>()
+            },
         }
     }
 }
@@ -148,15 +152,16 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
 
 /// A borrowed list row backed by a range in its child vector.
 #[derive(Debug)]
-pub struct ListRef<'a, T> {
+pub struct ListRef<'a, T: VectorElement> {
     list: &'a List<T>,
-    child: &'a Vector<'a, Unknown>,
+    child: &'a Vector<'a, T>,
 }
 
 impl<'a, T: VectorElement> ListRef<'a, T> {
     /// Return an element; outer `None` means the index is out of bounds.
     pub fn get(&self, index: usize) -> Option<Option<T::Ref<'a>>> {
-        (index < self.len()).then(|| self.child.get_as_unchecked::<T>(self.list.offset as usize + index))
+        // SAFETY: The parent reader cached all descendant views before constructing this row.
+        (index < self.len()).then(|| unsafe { self.child.get_unchecked(self.list.offset as usize + index) })
     }
     /// Iterate over the list's values.
     pub fn iter(&self) -> ListIterator<'a, T> {
@@ -165,7 +170,6 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
             offset: self.list.offset as usize,
             length: self.list.length as usize,
             index: 0,
-            _type: PhantomData,
         }
     }
 
@@ -200,12 +204,11 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ListRef<'a, T> {
 
 /// Traverses the child-vector range belonging to a [`ListRef`].
 #[derive(Debug)]
-pub struct ListIterator<'a, T> {
-    child: &'a Vector<'a, Unknown>,
+pub struct ListIterator<'a, T: VectorElement> {
+    child: &'a Vector<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
-    _type: PhantomData<T>,
 }
 
 impl<'a, T: VectorElement + 'a> Iterator for ListIterator<'a, T> {
@@ -219,7 +222,8 @@ impl<'a, T: VectorElement + 'a> Iterator for ListIterator<'a, T> {
         let logical = self.offset + self.index;
         self.index += 1;
 
-        Some(self.child.get_as_unchecked::<T>(logical))
+        // SAFETY: ListRef retains the parent's cached descendant views.
+        Some(unsafe { self.child.get_unchecked(logical) })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

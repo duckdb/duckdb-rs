@@ -25,6 +25,64 @@ use crate::{
 };
 
 #[test]
+fn vector_from_handle_rejects_type_mismatches() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut result = conn.query(
+        "SELECT 42::INTEGER, [1, 2]::INTEGER[], 1.234::DECIMAL(18, 3)",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.expect("one result chunk");
+
+    let err = super::Vector::<i64>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared)
+        .expect_err("scalar type mismatch");
+    assert!(err.message.contains("INTEGER"), "{}", err.message);
+
+    let err = super::Vector::<List<i64>>::from_handle(&chunk.get_vector_handle_at(1), super::Access::Shared)
+        .expect_err("nested child type mismatch");
+    assert!(err.message.contains("INTEGER[]"), "{}", err.message);
+
+    let err = super::Vector::<crate::types::Decimal<18, 2>>::from_handle(
+        &chunk.get_vector_handle_at(2),
+        super::Access::Shared,
+    )
+    .expect_err("decimal scale mismatch");
+    assert!(err.message.contains("DECIMAL(18,3)"), "{}", err.message);
+    Ok(())
+}
+
+#[test]
+fn vector_dynamic_fields_validate_before_reading() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let chunk = conn
+        .query(
+            "SELECT {'value': 42, 'empty': NULL::INTEGER, 'items': [1, NULL]::INTEGER[]},
+                    union_value(num := 42)::UNION(num INTEGER, str VARCHAR)",
+            Parameters::None,
+        )?
+        .next_chunk()?
+        .expect("one result chunk");
+
+    let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+    assert_eq!(row.get::<i32>("value")?, Some(&42));
+    assert!(row.get::<String>("value").is_err());
+    assert_eq!(row.get::<i32>("empty")?, None);
+    assert!(row.get::<String>("empty").is_err());
+    let items = row.get::<List<i32>>("items")?.unwrap();
+    assert_eq!(items.iter().collect::<Vec<_>>(), [Some(&1), None]);
+    assert!(row.get::<List<String>>("items").is_err());
+
+    let row = chunk.get_vector_at::<Union>(1)?.get(0)?.unwrap();
+    assert_eq!(row.member(), 0);
+    assert_eq!(row.get::<i32>(0)?, Some(&42));
+    assert!(row.get::<String>(0).is_err());
+    assert_eq!(row.get::<String>(1)?, None);
+    assert!(row.get::<i32>(1).is_err());
+    Ok(())
+}
+
+#[test]
 fn vector_decimal_mismatch_reports_parameters() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
@@ -1480,10 +1538,10 @@ pub fn test_vector_set_value() -> crate::Result<()> {
             let value = if !vector.is_null(index)? {
                 match vector.logical_type().id()? {
                     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER => {
-                        Some(vector.get_as_checked::<i32>(index)?.unwrap().value(ctx)?)
+                        Some(vector.cast_ref::<i32>()?.get(index)?.unwrap().value(ctx)?)
                     }
                     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN => {
-                        Some(vector.get_as_checked::<bool>(index)?.unwrap().value(ctx)?)
+                        Some(vector.cast_ref::<bool>()?.get(index)?.unwrap().value(ctx)?)
                     }
                     _ => None,
                 }

@@ -108,11 +108,15 @@ pub struct UnionRow<'a> {
 impl<'a> UnionRow<'a> {
     /// Return the active union member index.
     pub fn member(&self) -> u8 {
-        *self
-            .children
-            .cached_unchecked(0)
-            .get_as_unchecked::<u8>(self.logical)
-            .unwrap()
+        // SAFETY: Union::validate checked the tag as u8; the parent reader cached its view.
+        unsafe {
+            *self
+                .children
+                .cached_unchecked(0)
+                .cast_ref_unchecked::<u8>()
+                .get_unchecked(self.logical)
+                .unwrap()
+        }
     }
 
     /// Return a union member by index after validating its logical type.
@@ -130,7 +134,8 @@ impl<'a> UnionRow<'a> {
 
         self.children
             .cached_unchecked(child_index)
-            .get_as_checked::<T>(self.logical)
+            .cast_ref::<T>()?
+            .get(self.logical)
     }
 }
 
