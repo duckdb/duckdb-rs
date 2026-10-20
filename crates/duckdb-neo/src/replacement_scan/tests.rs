@@ -280,6 +280,35 @@ fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
 }
 
 #[test]
+fn test_replacement_scan_cdc_borrowed_scan() -> crate::Result<()> {
+    struct InspectCollection;
+
+    impl ReplacementScanCallbacks for InspectCollection {
+        fn scan(&self, context: &Context, _name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+            let collection = replacement.collection("cdc").unwrap();
+            let mut scan = collection.to_scan(context)?;
+            let chunk = scan.next_chunk()?.unwrap();
+            assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&1));
+            assert!(scan.next_chunk()?.is_none());
+            replacement.set_reference(ReplacementType::ColumnDataCollection("cdc"))
+        }
+    }
+
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    ReplacementScanBuilder::new(InspectCollection)
+        .collection("cdc", single_row_collection(&conn)?)
+        .register(&conn)?;
+
+    let conn = Box::new(conn);
+    let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
+    let chunk = query.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&1));
+    Ok(())
+}
+
+#[test]
 fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;

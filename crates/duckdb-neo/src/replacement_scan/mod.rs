@@ -213,8 +213,7 @@ where
             )));
         }
 
-        // Registration erases 'conn; its connection keeps the C handles and instance alive until it closes.
-        // The stored collections must never access their factory borrow after registration.
+        // Registration erases 'conn; its connection owns the collections through teardown.
         let data = OpaqueHandle::new(ReplacementScanData {
             implementation: self.implementation,
             collections: self.collections,

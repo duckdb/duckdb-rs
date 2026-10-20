@@ -1,15 +1,17 @@
 //! Buffer-backed collections of columnar data chunks.
 //!
 //! A [`ColumnDataCollection`] has a fixed schema and can be moved into an
-//! appending or scanning state. Appended chunks are copied into storage owned
-//! by the collection.
+//! appending state or borrowed for scanning. Appended chunks are copied into
+//! storage owned by the collection.
+
+use std::marker::PhantomData;
 
 use crate::column_data_collection::ColumnParameter::{Named, Positional};
 use crate::connection::HasFactory;
 use crate::ffi;
 
 use crate::{
-    AsRaw, DropHandle, Factory, Result, check_api_call,
+    AsRaw, DropHandle, Result, check_api_call,
     data_chunk::{DataChunk, DataChunkMut, DataChunkRef},
     handles::{
         ColumnDataCollectionAppendLink, ColumnDataCollectionAppendStateHandle, ColumnDataCollectionSharedScanLink,
@@ -112,8 +114,9 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 /// An owned collection of data chunks with a fixed column schema.
 ///
 /// Move the collection into [`ColumnDataCollectionAppender`] to add rows or
-/// [`ColumnDataCollectionScan`] to iterate over its chunks. Each transition
-/// consumes the previous state, and the collection can be recovered afterward.
+/// borrow it through [`ColumnDataCollectionScan`] to iterate over its chunks.
+/// Scanning takes a separate connection or callback context to allocate its
+/// output chunk; the collection does not retain that context's factory.
 ///
 /// # Lifetime
 ///
@@ -162,13 +165,14 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 /// appender.append(&mut chunk)?;
 /// assert_eq!(appender.len()?, 2);
 ///
-/// let mut scan = appender.to_scan()?;
+/// let mut scan = appender.to_scan(&conn)?;
 /// let chunk = scan.next_chunk()?.expect("expected a chunk");
 /// let values = chunk.get_vector_at::<i32>(0)?;
 /// assert_eq!(values.get(0)?, Some(&10));
 /// assert_eq!(values.get(1)?, Some(&20));
 ///
-/// let collection = scan.to_normal();
+/// drop(scan);
+/// let collection = appender.to_normal();
 /// assert_eq!(collection.len()?, 2);
 /// # Ok(())
 /// # }
@@ -179,8 +183,8 @@ pub struct ColumnDataCollection<'conn> {
     pub(crate) handle: ffi::duckdb_v2_column_data_collection_handle,
     pub(crate) logical_types: Vec<LogicalType>,
     pub(crate) column_names: Option<Vec<String>>,
-    pub(crate) factory: &'conn Factory,
     pub(crate) origin: Option<ffi::duckdb_v2_connection_handle>,
+    pub(crate) _marker: PhantomData<&'conn ()>,
 }
 
 impl<'conn> ColumnDataCollection<'conn> {
@@ -215,8 +219,8 @@ impl<'conn> ColumnDataCollection<'conn> {
             handle,
             logical_types,
             column_names: names,
-            factory,
             origin: link.connection_origin(),
+            _marker: PhantomData,
         })
     }
 
@@ -250,21 +254,38 @@ impl<'conn> ColumnDataCollection<'conn> {
         ColumnDataCollectionAppender::new(self)
     }
 
-    /// Consume the collection and initialize an iterator over its chunks.
-    pub fn to_scan(self) -> Result<ColumnDataCollectionScan<'conn>> {
-        ColumnDataCollectionScan::new(self)
+    /// Borrow the collection to iterate over its chunks.
+    ///
+    /// `link` supplies the factory for the scan's output chunk. Both it and the
+    /// collection must outlive the scan.
+    ///
+    /// ```compile_fail,E0597
+    /// # use duckdb_neo::{DuckDBType, environment::{Environment, StorageLocation}};
+    /// # use duckdb_neo::column_data_collection::ColumnDataCollection;
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    /// let scan = {
+    ///     let collection = ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?;
+    ///     collection.to_scan(&conn)?
+    /// };
+    /// assert!(scan.is_empty()?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn to_scan<'scan, C: HasFactory>(&'scan self, link: &'scan C) -> Result<ColumnDataCollectionScan<'scan>> {
+        ColumnDataCollectionScan::new(self, link)
     }
 }
 
-// SAFETY: shared methods only read; creating state requires unique access.
-// Appending and scanning consume the collection, whose buffers have no thread affinity.
+// SAFETY: shared methods read or create independent scan states; mutation requires ownership.
+// The collection's buffers have no thread affinity.
 unsafe impl Send for ColumnDataCollection<'_> {}
 unsafe impl Sync for ColumnDataCollection<'_> {}
 
 /// A scan over the chunks stored in a [`ColumnDataCollection`].
 ///
-/// The scan owns the collection and its progress state. It can be consumed to
-/// recover the collection or switch directly to appending.
+/// The scan borrows the collection and owns its progress state. Dropping it
+/// releases the borrow, allowing the collection to be appended to again.
 ///
 /// Chunks are read with [`next_chunk`](Self::next_chunk) rather than through
 /// [`Iterator`]: DuckDB does not copy the scanned data, so each chunk points
@@ -275,15 +296,14 @@ pub struct ColumnDataCollectionScan<'conn> {
     shared_scan_state: ColumnDataCollectionSharedScanStateHandle,
     /// Reused for every scan call; DuckDB resets it before filling it.
     chunk: DataChunk<'conn>,
-    // State fields must precede the collection so they drop before its storage.
-    collection: ColumnDataCollection<'conn>,
+    collection: &'conn ColumnDataCollection<'conn>,
 }
 
 impl<'conn> ColumnDataCollectionScan<'conn> {
-    fn new(mut collection: ColumnDataCollection<'conn>) -> Result<Self> {
+    fn new<C: HasFactory>(collection: &'conn ColumnDataCollection<'conn>, link: &'conn C) -> Result<Self> {
         let worker_scan_state = collection.create_worker_scan_state()?;
         let shared_scan_state = collection.create_shared_scan_state()?;
-        let chunk = DataChunk::create(collection.factory, &collection.logical_types, false)?;
+        let chunk = DataChunk::create(link, &collection.logical_types, false)?;
 
         Ok(ColumnDataCollectionScan {
             collection,
@@ -309,7 +329,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
     /// # let conn = instance.connect()?;
     /// # let collection = ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?;
     /// let chunk = {
-    ///     let mut scan = collection.to_scan()?;
+    ///     let mut scan = collection.to_scan(&conn)?;
     ///     scan.next_chunk()?
     /// }; // error: `scan` does not live long enough
     /// # drop(chunk);
@@ -348,17 +368,7 @@ impl<'conn> ColumnDataCollectionScan<'conn> {
 
     /// Return the collection being scanned.
     pub fn collection(&self) -> &ColumnDataCollection<'conn> {
-        &self.collection
-    }
-
-    /// Stop scanning and return the underlying collection.
-    pub fn to_normal(self) -> ColumnDataCollection<'conn> {
         self.collection
-    }
-
-    /// Stop scanning and initialize the collection for appending.
-    pub fn to_append(self) -> Result<ColumnDataCollectionAppender<'conn>> {
-        ColumnDataCollectionAppender::new(self.collection)
     }
 }
 
@@ -375,7 +385,7 @@ pub struct ColumnDataCollectionAppender<'conn> {
 }
 
 impl<'conn> ColumnDataCollectionAppender<'conn> {
-    fn new(mut collection: ColumnDataCollection<'conn>) -> Result<Self> {
+    fn new(collection: ColumnDataCollection<'conn>) -> Result<Self> {
         let appender = collection.create_append_state()?;
 
         Ok(Self { collection, appender })
@@ -444,9 +454,11 @@ impl<'conn> ColumnDataCollectionAppender<'conn> {
         self.collection
     }
 
-    /// Finish appending and initialize an iterator over the stored chunks.
-    pub fn to_scan(self) -> Result<ColumnDataCollectionScan<'conn>> {
-        ColumnDataCollectionScan::new(self.collection)
+    /// Borrow the appended rows for scanning without ending the append state.
+    ///
+    /// Appending can resume after the scan is dropped.
+    pub fn to_scan<'scan, C: HasFactory>(&'scan self, link: &'scan C) -> Result<ColumnDataCollectionScan<'scan>> {
+        self.collection.to_scan(link)
     }
 
     /// Return the total number of rows across all stored chunks.
@@ -468,7 +480,8 @@ mod test {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let collection = ColumnDataCollection::new(&conn, [i32::logical_type(&conn)?])?;
-        let mut scan = collection.to_append()?.to_scan()?;
+        let appender = collection.to_append()?;
+        let mut scan = appender.to_scan(&conn)?;
         assert!(scan.next_chunk()?.is_none());
         Ok(())
     }
@@ -669,7 +682,7 @@ mod test {
 
         collection.append(&mut chunk)?;
 
-        let mut scan = collection.to_scan()?;
+        let mut scan = collection.to_scan(&conn)?;
 
         while let Some(chunk) = scan.next_chunk()? {
             let id = chunk.get_vector_at::<i32>(0)?;
@@ -682,6 +695,39 @@ mod test {
             assert_eq!(is_active.get(1)?, None);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_collection_scan_borrow() -> crate::Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let types = [i32::logical_type(&conn)?];
+        let mut chunk = DataChunk::create(&conn, &types, true)?;
+        let mut values = chunk.get_vector_at_mut::<i32>(0)?;
+        values.set_size(1)?;
+        values.write(0, Some(42))?;
+        let mut appender = ColumnDataCollection::new(&conn, &types)?.to_append()?;
+        appender.append(&mut chunk)?;
+
+        let mut first = appender.to_scan(&conn)?;
+        let mut second = appender.to_scan(&conn)?;
+        for scan in [&mut first, &mut second] {
+            let chunk = scan.next_chunk()?.unwrap();
+            assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+            assert!(scan.next_chunk()?.is_none());
+        }
+        drop(first);
+        drop(second);
+
+        appender.append(&mut chunk)?;
+        let collection = appender.to_normal();
+        assert_eq!(collection.len()?, 2);
+        let mut scan = collection.to_scan(&conn)?;
+        let mut rows = Vec::new();
+        while let Some(chunk) = scan.next_chunk()? {
+            rows.extend(chunk.get_vector_at::<i32>(0)?.iter()?.flatten().copied());
+        }
+        assert_eq!(rows, [42, 42]);
         Ok(())
     }
 
@@ -712,7 +758,7 @@ mod test {
         appender.append(&mut chunk_of(&[4, 5])?)?;
         assert_eq!(appender.len()?, 5);
 
-        let mut scan = appender.to_scan()?;
+        let mut scan = appender.to_scan(&conn)?;
         let mut values = Vec::new();
         while let Some(chunk) = scan.next_chunk()? {
             values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|value| *value.unwrap()));

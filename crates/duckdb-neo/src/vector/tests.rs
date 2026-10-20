@@ -2208,7 +2208,7 @@ fn test_collection_append() -> crate::Result<()> {
 
     // Borrowed chunks from a scan can be appended too.
     let mut target = ColumnDataCollection::new(&conn, &types)?.to_append()?;
-    let mut scan = source.to_scan()?;
+    let mut scan = source.to_scan(&conn)?;
     while let Some(mut scanned) = scan.next_chunk()? {
         target.append(&mut scanned)?;
     }
