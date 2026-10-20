@@ -1,7 +1,7 @@
 //! Derives reusable paths from Cargo's `OUT_DIR` layout.
 //!
-//! Cargo currently uses
-//! `<target-dir>/[<triple>/]<profile>/build/<pkg>-<hash>/out`. This is an
+//! Cargo uses `<build-dir>/[<triple>/]<profile>/build/<pkg>-<hash>/out`, or
+//! `.../build/<pkg>/<hash>/out` with the newer build-dir layout. This is an
 //! implementation detail, so these helpers return `None` for unrecognized
 //! layouts. The download root is one level above the profile directory so
 //! debug and release builds share a cache.
@@ -13,12 +13,21 @@ fn profile_dir(out_dir: &Path) -> Option<&Path> {
         return None;
     }
 
-    let build_dir = out_dir.parent()?.parent()?;
+    let unit_dir = out_dir.parent()?;
+    let mut build_dir = unit_dir.parent()?;
+    // The newer layout nests the hash below the package name: `build/<pkg>/<hash>/out`.
+    if build_dir.file_name()? != "build" && is_unit_hash(unit_dir.file_name()?.to_str()?) {
+        build_dir = build_dir.parent()?;
+    }
     if build_dir.file_name()? != "build" {
         return None;
     }
 
     build_dir.parent()
+}
+
+fn is_unit_hash(name: &str) -> bool {
+    name.len() == 16 && name.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 pub(crate) fn download_root(out_dir: &Path) -> Option<PathBuf> {
@@ -109,5 +118,26 @@ mod tests {
             profile_deps_dir(out_dir),
             Some(PathBuf::from("/home/ci/build/project/target/debug/deps")),
         );
+    }
+
+    #[test]
+    fn resolves_paths_from_new_layout_out_dir() {
+        let out_dir = Path::new("/workspace/target/debug/build/libduckdb-sys/1234567890abcdef/out");
+
+        assert_eq!(
+            download_root(out_dir),
+            Some(PathBuf::from("/workspace/target/duckdb-download")),
+        );
+        assert_eq!(
+            profile_deps_dir(out_dir),
+            Some(PathBuf::from("/workspace/target/debug/deps")),
+        );
+    }
+
+    #[test]
+    fn rejects_new_layout_shape_without_unit_hash() {
+        let out_dir = Path::new("/workspace/build/project/generated/out");
+
+        assert_eq!(download_root(out_dir), None);
     }
 }
