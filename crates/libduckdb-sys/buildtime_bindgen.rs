@@ -83,25 +83,27 @@ fn generate_functions_v2(mut output: String) -> String {
         });
     }
 
-    // // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
-    // let tokens = quote::quote! {
-    //     /// Like DUCKDB_EXTENSION_API_INIT macro
-    //     pub unsafe fn duckdb_rs_extension_api_v2_init(info: , access: *const duckdb_extension_access, version: &str) -> ::std::result::Result<bool, &'static str> {
-    //         let version_c_string = std::ffi::CString::new(version).unwrap();
-    //         let #p_api = (*access).get_api.unwrap()(info, version_c_string.as_ptr()) as *const duckdb_ext_api_v2;
-    //         if #p_api.is_null() {
-    //             // get_api can return a nullptr when the version is not matched. In this case, we don't need to set
-    //             // an error, but can instead just stop the initialization process and let duckdb handle things
-    //             return Ok(false);
-    //         }
-    //         #(#stores)*
-    //         Ok(true)
-    //     }
-    // };
-    // output.push_str(&prettyplease::unparse(
-    //     &syn::parse2(tokens).expect("could not parse quote output"),
-    // ));
-    // output.push('\n');
+    // (3) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
+    let tokens = quote::quote! {
+        /// Like DUCKDB_EXTENSION_API_INIT macro
+        pub unsafe fn duckdb_rs_extension_api_v2_init(input: &duckdb_v2_extension_input, version: &str) -> ::std::result::Result<bool, &'static str> {
+            let version_c_string = std::ffi::CString::new(version).unwrap();
+            let Some(get_api) = input.get_api else {
+                return Err("get_api is NULL: loadable extensions cannot be statically linked");
+            };
+            let #p_api = get_api(input.extension, version_c_string.as_ptr()) as *const duckdb_ext_api_v2;
+            if #p_api.is_null() {
+                // get_api returns NULL on a version mismatch; DuckDB has already recorded why
+                return Ok(false);
+            }
+            #(#stores)*
+            Ok(true)
+        }
+    };
+    output.push_str(&prettyplease::unparse(
+        &syn::parse2(tokens).expect("could not parse quote output"),
+    ));
+    output.push('\n');
     output
 }
 
@@ -230,6 +232,8 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
                 // The v2 wrapper matches on real Rust enums rather than
                 // constified integer values.
                 .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#)
+                // Every v2 function is still unstable, so without this the bindings would be empty.
+                .clang_arg("-DDUCKDB_V2_API_ALLOW_UNSTABLE=1")
         }
     };
 

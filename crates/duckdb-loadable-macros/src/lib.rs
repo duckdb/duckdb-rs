@@ -25,8 +25,8 @@ struct CEntryPointMacroArgs {
 
 #[proc_macro_attribute]
 pub fn duckdb_entrypoint_c_api_v2(meta: TokenStream, item: TokenStream) -> TokenStream {
-    match neo::parse(meta.into(), parse_macro_input!(item)) {
-        Ok(stream) => stream.into(),
+    match neo::parse(meta, parse_macro_input!(item)) {
+        Ok(stream) => stream,
         Err(e) => TokenStream::from(e.write_errors()),
     }
 }

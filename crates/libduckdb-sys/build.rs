@@ -47,6 +47,11 @@ pub enum CApi {
 /// Emit every bindings artifact this build needs into `out_dir`, either by
 /// running bindgen (`buildtime_bindgen`) or by copying the pregenerated files.
 pub(crate) fn write_all_bindings(header: &HeaderLocation, out_dir: &Path) {
+    assert!(
+        (cfg!(feature = "capi-v1") && cfg!(feature = "capi-v2")) == false,
+        "both API's enabled at the same time is not allowed"
+    );
+
     #[cfg(feature = "capi-v1")]
     write_api_bindings(header, CApi::V1, &out_dir.join("bindgen.rs"));
     #[cfg(feature = "capi-v2")]

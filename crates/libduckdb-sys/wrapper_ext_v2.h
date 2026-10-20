@@ -5,4 +5,4 @@
 // Matches build.rs bindgen setup for currently ungated unstable extension API
 // symbols.
 #define DUCKDB_EXTENSION_API_VERSION_UNSTABLE
-#include "duckdb/duckdb_extension_v2.h"
+#include "duckdb/src/include/duckdb_extension_v2.h"

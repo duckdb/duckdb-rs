@@ -4,7 +4,6 @@ pub const DUCKDB_V2_API_VERSION_MAJOR: u32 = 2;
 pub const DUCKDB_V2_API_VERSION_MINOR: u32 = 0;
 pub const DUCKDB_V2_API_VERSION_PATCH: u32 = 0;
 pub const DUCKDB_V2_API_ALLOW_DEPRECATED: u32 = 1;
-pub const DUCKDB_V2_API_ALLOW_UNSTABLE: u32 = 0;
 pub const DUCKDB_V2_BYTES_INLINE_LENGTH: u32 = 12;
 pub type idx_t = u64;
 #[repr(C)]
@@ -615,6 +614,22 @@ pub struct _duckdb_v2_qname {
 }
 #[doc = " An owned qualified name: an ordered path of one to three non-empty identifier parts whose last element is the object\n name. Construct with `duckdb_v2_qname_parse()` or `duckdb_v2_qname_create()`, read with\n `duckdb_v2_qname_get_part_count()` and `duckdb_v2_qname_get_part()`, render back to SQL with\n `duckdb_v2_qname_render()`, compare with `duckdb_v2_qname_equals()`, and destroy with `duckdb_v2_qname_destroy()`.\n Two handles are compared with `duckdb_v2_qname_equals()`, never by pointer."]
 pub type duckdb_v2_qname_handle = *mut _duckdb_v2_qname;
+#[doc = " An owned snapshot of the metrics of a query. Taken with `duckdb_v2_connection_get_query_metrics()`, read from its\n root node via `duckdb_v2_query_metrics_get_root()`, and destroyed with `duckdb_v2_query_metrics_destroy()`. Later\n queries do not update it."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_query_metrics {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " An owned snapshot of the metrics of a query. Taken with `duckdb_v2_connection_get_query_metrics()`, read from its\n root node via `duckdb_v2_query_metrics_get_root()`, and destroyed with `duckdb_v2_query_metrics_destroy()`. Later\n queries do not update it."]
+pub type duckdb_v2_query_metrics_handle = *mut _duckdb_v2_query_metrics;
+#[doc = " A borrowed opaque handle to one node of a query metrics snapshot, valid for as long as the snapshot is. Read its name\n with `duckdb_v2_query_metrics_node_get_name()`, its metrics with `duckdb_v2_query_metrics_node_get_metric()` or by\n index, and its children with `duckdb_v2_query_metrics_node_get_child()`."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_query_metrics_node {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to one node of a query metrics snapshot, valid for as long as the snapshot is. Read its name\n with `duckdb_v2_query_metrics_node_get_name()`, its metrics with `duckdb_v2_query_metrics_node_get_metric()` or by\n index, and its children with `duckdb_v2_query_metrics_node_get_child()`."]
+pub type duckdb_v2_query_metrics_node_handle = *mut _duckdb_v2_query_metrics_node;
 #[doc = " An owned, ordered list of (name, type) fields. Read with schema_get_count and schema_get_field. Destroy via\n schema_destroy."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5063,6 +5078,149 @@ pub struct duckdb_ext_api_v2 {
     pub duckdb_v2_validate_utf8: ::std::option::Option<
         unsafe extern "C" fn(text: *const duckdb_v2_str, err: *mut duckdb_v2_error_info_handle) -> DUCKDB_V2_ERROR,
     >,
+    pub duckdb_v2_connection_register_multi_file_function: ::std::option::Option<
+        unsafe extern "C" fn(
+            conn: duckdb_v2_connection_handle,
+            function: duckdb_v2_multi_file_function_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_copy_to_set_statistics_callback: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_copy_function_handle,
+            callback: duckdb_v2_copy_to_statistics_callback_fn,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_copy_to_statistics_get_bind_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_copy_to_statistics_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_copy_to_statistics_get_init_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_copy_to_statistics_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_copy_to_statistics_get_user_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_copy_to_statistics_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_copy_to_statistics_set_file_size: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_copy_to_statistics_info_handle,
+            file_size_bytes: idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_copy_to_statistics_set_row_count: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_copy_to_statistics_info_handle,
+            row_count: idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_data_chunk_get_capacity: ::std::option::Option<
+        unsafe extern "C" fn(
+            chunk: duckdb_v2_data_chunk_handle,
+            out_capacity: *mut idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_extension_register_multi_file_function: ::std::option::Option<
+        unsafe extern "C" fn(
+            extension: duckdb_v2_extension_handle,
+            function: duckdb_v2_multi_file_function_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_multi_file_function_create: ::std::option::Option<
+        unsafe extern "C" fn(
+            factory: duckdb_v2_factory_handle,
+            function: *mut duckdb_v2_multi_file_function_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_multi_file_function_destroy: ::std::option::Option<
+        unsafe extern "C" fn(function: *mut duckdb_v2_multi_file_function_handle) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_multi_file_function_set_file_extension: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_multi_file_function_handle,
+            extension: *mut duckdb_v2_str,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_multi_file_function_set_name: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_multi_file_function_handle,
+            name: *mut duckdb_v2_str,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_multi_file_function_set_reader_type: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_multi_file_function_handle,
+            reader_type: *mut duckdb_v2_str,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_multi_file_function_set_single_file_function: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_multi_file_function_handle,
+            name: *mut duckdb_v2_str,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_claim_batch_get_bind_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_claim_batch_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_claim_batch_get_global_state: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_claim_batch_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_claim_batch_get_local_state: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_claim_batch_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_claim_batch_get_user_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_claim_batch_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_claim_batch_set_claimed: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_claim_batch_info_handle,
+            claimed: bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_set_claim_batch_callback: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_table_function_handle,
+            callback: duckdb_v2_table_function_claim_batch_callback_fn,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
     pub duckdb_v2_function_bind_get_arg_count: ::std::option::Option<
         unsafe extern "C" fn(
             info: duckdb_v2_function_bind_info_handle,
@@ -5222,6 +5380,45 @@ pub struct duckdb_ext_api_v2 {
             err: *mut duckdb_v2_error_info_handle,
         ) -> DUCKDB_V2_ERROR,
     >,
+    pub duckdb_v2_table_function_get_bind_info_get_bind_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_get_bind_info_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_get_bind_info_get_user_data: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_get_bind_info_info_handle,
+            data: *mut *mut ::std::os::raw::c_void,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_get_bind_info_set_column_identifier: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_get_bind_info_info_handle,
+            column_index: idx_t,
+            child_path: *const idx_t,
+            child_path_length: idx_t,
+            identifier: duckdb_v2_value_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_get_bind_info_set_option: ::std::option::Option<
+        unsafe extern "C" fn(
+            info: duckdb_v2_table_function_get_bind_info_info_handle,
+            key: *mut duckdb_v2_str,
+            value: duckdb_v2_value_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_table_function_set_get_bind_info_callback: ::std::option::Option<
+        unsafe extern "C" fn(
+            function: duckdb_v2_table_function_handle,
+            callback: duckdb_v2_table_function_get_bind_info_callback_fn,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
     pub duckdb_v2_connection_get_factory: ::std::option::Option<
         unsafe extern "C" fn(
             conn: duckdb_v2_connection_handle,
@@ -5363,6 +5560,15 @@ pub struct duckdb_ext_api_v2 {
         unsafe extern "C" fn(
             extension: duckdb_v2_extension_handle,
             function: duckdb_v2_pragma_function_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_factory_create_common_type: ::std::option::Option<
+        unsafe extern "C" fn(
+            factory: duckdb_v2_factory_handle,
+            types: *const duckdb_v2_logical_type_handle,
+            type_count: idx_t,
+            out_type: *mut duckdb_v2_logical_type_handle,
             err: *mut duckdb_v2_error_info_handle,
         ) -> DUCKDB_V2_ERROR,
     >,
@@ -5739,6 +5945,20 @@ pub struct duckdb_ext_api_v2 {
             err: *mut duckdb_v2_error_info_handle,
         ) -> DUCKDB_V2_ERROR,
     >,
+    pub duckdb_v2_connection_enable_profiling: ::std::option::Option<
+        unsafe extern "C" fn(
+            conn: duckdb_v2_connection_handle,
+            enabled: bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_connection_get_query_metrics: ::std::option::Option<
+        unsafe extern "C" fn(
+            conn: duckdb_v2_connection_handle,
+            metrics: *mut duckdb_v2_query_metrics_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
     pub duckdb_v2_copy_function_set_file_extension: ::std::option::Option<
         unsafe extern "C" fn(
             function: duckdb_v2_copy_function_handle,
@@ -5774,6 +5994,69 @@ pub struct duckdb_ext_api_v2 {
             file_system: duckdb_v2_file_system_handle,
             path: *const duckdb_v2_str,
             out_removed: *mut bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_destroy:
+        ::std::option::Option<unsafe extern "C" fn(metrics: *mut duckdb_v2_query_metrics_handle) -> DUCKDB_V2_ERROR>,
+    pub duckdb_v2_query_metrics_get_root: ::std::option::Option<
+        unsafe extern "C" fn(
+            metrics: duckdb_v2_query_metrics_handle,
+            node: *mut duckdb_v2_query_metrics_node_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_child: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            index: idx_t,
+            child: *mut duckdb_v2_query_metrics_node_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_child_count: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            count: *mut idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_metric: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            name: *const duckdb_v2_str,
+            value: *mut duckdb_v2_value_handle,
+            present: *mut bool,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_metric_count: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            count: *mut idx_t,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_metric_name: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            index: idx_t,
+            name: *mut duckdb_v2_str,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_metric_value: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            index: idx_t,
+            value: *mut duckdb_v2_value_handle,
+            err: *mut duckdb_v2_error_info_handle,
+        ) -> DUCKDB_V2_ERROR,
+    >,
+    pub duckdb_v2_query_metrics_node_get_name: ::std::option::Option<
+        unsafe extern "C" fn(
+            node: duckdb_v2_query_metrics_node_handle,
+            name: *mut duckdb_v2_str,
             err: *mut duckdb_v2_error_info_handle,
         ) -> DUCKDB_V2_ERROR,
     >,
@@ -16175,6 +16458,443 @@ pub unsafe fn duckdb_v2_validate_utf8(
     (fun)(text, err)
 }
 
+static __DUCKDB_V2_CONNECTION_REGISTER_MULTI_FILE_FUNCTION: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_connection_register_multi_file_function(
+    conn: duckdb_v2_connection_handle,
+    function: duckdb_v2_multi_file_function_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_CONNECTION_REGISTER_MULTI_FILE_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        conn: duckdb_v2_connection_handle,
+        function: duckdb_v2_multi_file_function_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(conn, function, err)
+}
+
+static __DUCKDB_V2_COPY_TO_SET_STATISTICS_CALLBACK: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_copy_to_set_statistics_callback(
+    function: duckdb_v2_copy_function_handle,
+    callback: duckdb_v2_copy_to_statistics_callback_fn,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_COPY_TO_SET_STATISTICS_CALLBACK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_copy_function_handle,
+        callback: duckdb_v2_copy_to_statistics_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, callback, err)
+}
+
+static __DUCKDB_V2_COPY_TO_STATISTICS_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_copy_to_statistics_get_bind_data(
+    info: duckdb_v2_copy_to_statistics_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_COPY_TO_STATISTICS_GET_BIND_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_copy_to_statistics_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_COPY_TO_STATISTICS_GET_INIT_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_copy_to_statistics_get_init_data(
+    info: duckdb_v2_copy_to_statistics_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_COPY_TO_STATISTICS_GET_INIT_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_copy_to_statistics_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_COPY_TO_STATISTICS_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_copy_to_statistics_get_user_data(
+    info: duckdb_v2_copy_to_statistics_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_COPY_TO_STATISTICS_GET_USER_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_copy_to_statistics_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_COPY_TO_STATISTICS_SET_FILE_SIZE: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_copy_to_statistics_set_file_size(
+    info: duckdb_v2_copy_to_statistics_info_handle,
+    file_size_bytes: idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_COPY_TO_STATISTICS_SET_FILE_SIZE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_copy_to_statistics_info_handle,
+        file_size_bytes: idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, file_size_bytes, err)
+}
+
+static __DUCKDB_V2_COPY_TO_STATISTICS_SET_ROW_COUNT: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_copy_to_statistics_set_row_count(
+    info: duckdb_v2_copy_to_statistics_info_handle,
+    row_count: idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_COPY_TO_STATISTICS_SET_ROW_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_copy_to_statistics_info_handle,
+        row_count: idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, row_count, err)
+}
+
+static __DUCKDB_V2_DATA_CHUNK_GET_CAPACITY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_data_chunk_get_capacity(
+    chunk: duckdb_v2_data_chunk_handle,
+    out_capacity: *mut idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_DATA_CHUNK_GET_CAPACITY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        chunk: duckdb_v2_data_chunk_handle,
+        out_capacity: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(chunk, out_capacity, err)
+}
+
+static __DUCKDB_V2_EXTENSION_REGISTER_MULTI_FILE_FUNCTION: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_extension_register_multi_file_function(
+    extension: duckdb_v2_extension_handle,
+    function: duckdb_v2_multi_file_function_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_EXTENSION_REGISTER_MULTI_FILE_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        extension: duckdb_v2_extension_handle,
+        function: duckdb_v2_multi_file_function_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(extension, function, err)
+}
+
+static __DUCKDB_V2_MULTI_FILE_FUNCTION_CREATE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_multi_file_function_create(
+    factory: duckdb_v2_factory_handle,
+    function: *mut duckdb_v2_multi_file_function_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_CREATE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        factory: duckdb_v2_factory_handle,
+        function: *mut duckdb_v2_multi_file_function_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(factory, function, err)
+}
+
+static __DUCKDB_V2_MULTI_FILE_FUNCTION_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_multi_file_function_destroy(
+    function: *mut duckdb_v2_multi_file_function_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_DESTROY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: *mut duckdb_v2_multi_file_function_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function)
+}
+
+static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_FILE_EXTENSION: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_multi_file_function_set_file_extension(
+    function: duckdb_v2_multi_file_function_handle,
+    extension: *mut duckdb_v2_str,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_FILE_EXTENSION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_multi_file_function_handle,
+        extension: *mut duckdb_v2_str,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, extension, err)
+}
+
+static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_multi_file_function_set_name(
+    function: duckdb_v2_multi_file_function_handle,
+    name: *mut duckdb_v2_str,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_NAME
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_multi_file_function_handle,
+        name: *mut duckdb_v2_str,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, name, err)
+}
+
+static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_READER_TYPE: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_multi_file_function_set_reader_type(
+    function: duckdb_v2_multi_file_function_handle,
+    reader_type: *mut duckdb_v2_str,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_READER_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_multi_file_function_handle,
+        reader_type: *mut duckdb_v2_str,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, reader_type, err)
+}
+
+static __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_SINGLE_FILE_FUNCTION: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_multi_file_function_set_single_file_function(
+    function: duckdb_v2_multi_file_function_handle,
+    name: *mut duckdb_v2_str,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_SINGLE_FILE_FUNCTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_multi_file_function_handle,
+        name: *mut duckdb_v2_str,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, name, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_claim_batch_get_bind_data(
+    info: duckdb_v2_table_function_claim_batch_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_BIND_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_claim_batch_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_GLOBAL_STATE: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_claim_batch_get_global_state(
+    info: duckdb_v2_table_function_claim_batch_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_GLOBAL_STATE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_claim_batch_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_LOCAL_STATE: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_claim_batch_get_local_state(
+    info: duckdb_v2_table_function_claim_batch_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_LOCAL_STATE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_claim_batch_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_claim_batch_get_user_data(
+    info: duckdb_v2_table_function_claim_batch_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_USER_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_claim_batch_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_SET_CLAIMED: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_claim_batch_set_claimed(
+    info: duckdb_v2_table_function_claim_batch_info_handle,
+    claimed: bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_SET_CLAIMED
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_claim_batch_info_handle,
+        claimed: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, claimed, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_SET_CLAIM_BATCH_CALLBACK: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_set_claim_batch_callback(
+    function: duckdb_v2_table_function_handle,
+    callback: duckdb_v2_table_function_claim_batch_callback_fn,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_SET_CLAIM_BATCH_CALLBACK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_table_function_handle,
+        callback: duckdb_v2_table_function_claim_batch_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, callback, err)
+}
+
 static __DUCKDB_V2_FUNCTION_BIND_GET_ARG_COUNT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
@@ -16663,6 +17383,119 @@ pub unsafe fn duckdb_v2_scalar_function_set_resolve_types_callback(
     (fun)(function, callback, err)
 }
 
+static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_BIND_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_get_bind_info_get_bind_data(
+    info: duckdb_v2_table_function_get_bind_info_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_BIND_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_get_bind_info_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_USER_DATA: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_get_bind_info_get_user_data(
+    info: duckdb_v2_table_function_get_bind_info_info_handle,
+    data: *mut *mut ::std::os::raw::c_void,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_USER_DATA
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_get_bind_info_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, data, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_COLUMN_IDENTIFIER: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_get_bind_info_set_column_identifier(
+    info: duckdb_v2_table_function_get_bind_info_info_handle,
+    column_index: idx_t,
+    child_path: *const idx_t,
+    child_path_length: idx_t,
+    identifier: duckdb_v2_value_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_COLUMN_IDENTIFIER
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_get_bind_info_info_handle,
+        column_index: idx_t,
+        child_path: *const idx_t,
+        child_path_length: idx_t,
+        identifier: duckdb_v2_value_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, column_index, child_path, child_path_length, identifier, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_OPTION: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_get_bind_info_set_option(
+    info: duckdb_v2_table_function_get_bind_info_info_handle,
+    key: *mut duckdb_v2_str,
+    value: duckdb_v2_value_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_OPTION
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        info: duckdb_v2_table_function_get_bind_info_info_handle,
+        key: *mut duckdb_v2_str,
+        value: duckdb_v2_value_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(info, key, value, err)
+}
+
+static __DUCKDB_V2_TABLE_FUNCTION_SET_GET_BIND_INFO_CALLBACK: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_table_function_set_get_bind_info_callback(
+    function: duckdb_v2_table_function_handle,
+    callback: duckdb_v2_table_function_get_bind_info_callback_fn,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_TABLE_FUNCTION_SET_GET_BIND_INFO_CALLBACK
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        function: duckdb_v2_table_function_handle,
+        callback: duckdb_v2_table_function_get_bind_info_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(function, callback, err)
+}
+
 static __DUCKDB_V2_CONNECTION_GET_FACTORY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
@@ -17082,6 +17915,31 @@ pub unsafe fn duckdb_v2_extension_register_pragma_function(
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
     (fun)(extension, function, err)
+}
+
+static __DUCKDB_V2_FACTORY_CREATE_COMMON_TYPE: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_factory_create_common_type(
+    factory: duckdb_v2_factory_handle,
+    types: *const duckdb_v2_logical_type_handle,
+    type_count: idx_t,
+    out_type: *mut duckdb_v2_logical_type_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_FACTORY_CREATE_COMMON_TYPE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        factory: duckdb_v2_factory_handle,
+        types: *const duckdb_v2_logical_type_handle,
+        type_count: idx_t,
+        out_type: *mut duckdb_v2_logical_type_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(factory, types, type_count, out_type, err)
 }
 
 static __DUCKDB_V2_FUNCTION_DOCS_ADD_CATEGORY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
@@ -18232,6 +19090,48 @@ pub unsafe fn duckdb_v2_vector_cast(
     (fun)(factory, source, target, mode, out_converted, cast_err, err)
 }
 
+static __DUCKDB_V2_CONNECTION_ENABLE_PROFILING: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_connection_enable_profiling(
+    conn: duckdb_v2_connection_handle,
+    enabled: bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_CONNECTION_ENABLE_PROFILING
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        conn: duckdb_v2_connection_handle,
+        enabled: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(conn, enabled, err)
+}
+
+static __DUCKDB_V2_CONNECTION_GET_QUERY_METRICS: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_connection_get_query_metrics(
+    conn: duckdb_v2_connection_handle,
+    metrics: *mut duckdb_v2_query_metrics_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_CONNECTION_GET_QUERY_METRICS
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        conn: duckdb_v2_connection_handle,
+        metrics: *mut duckdb_v2_query_metrics_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(conn, metrics, err)
+}
+
 static __DUCKDB_V2_COPY_FUNCTION_SET_FILE_EXTENSION: ::std::sync::atomic::AtomicPtr<
     (),
 > = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
@@ -18343,6 +19243,201 @@ pub unsafe fn duckdb_v2_file_system_path_remove(
     (fun)(file_system, path, out_removed, err)
 }
 
+static __DUCKDB_V2_QUERY_METRICS_DESTROY: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_query_metrics_destroy(
+    metrics: *mut duckdb_v2_query_metrics_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_DESTROY
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        metrics: *mut duckdb_v2_query_metrics_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(metrics)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_GET_ROOT: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_query_metrics_get_root(
+    metrics: duckdb_v2_query_metrics_handle,
+    node: *mut duckdb_v2_query_metrics_node_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_GET_ROOT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        metrics: duckdb_v2_query_metrics_handle,
+        node: *mut duckdb_v2_query_metrics_node_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(metrics, node, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_query_metrics_node_get_child(
+    node: duckdb_v2_query_metrics_node_handle,
+    index: idx_t,
+    child: *mut duckdb_v2_query_metrics_node_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        index: idx_t,
+        child: *mut duckdb_v2_query_metrics_node_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, index, child, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD_COUNT: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_query_metrics_node_get_child_count(
+    node: duckdb_v2_query_metrics_node_handle,
+    count: *mut idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        count: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, count, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_query_metrics_node_get_metric(
+    node: duckdb_v2_query_metrics_node_handle,
+    name: *const duckdb_v2_str,
+    value: *mut duckdb_v2_value_handle,
+    present: *mut bool,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        name: *const duckdb_v2_str,
+        value: *mut duckdb_v2_value_handle,
+        present: *mut bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, name, value, present, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_COUNT: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_query_metrics_node_get_metric_count(
+    node: duckdb_v2_query_metrics_node_handle,
+    count: *mut idx_t,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_COUNT
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        count: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, count, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_NAME: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_query_metrics_node_get_metric_name(
+    node: duckdb_v2_query_metrics_node_handle,
+    index: idx_t,
+    name: *mut duckdb_v2_str,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_NAME
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        index: idx_t,
+        name: *mut duckdb_v2_str,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, index, name, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_VALUE: ::std::sync::atomic::AtomicPtr<
+    (),
+> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+pub unsafe fn duckdb_v2_query_metrics_node_get_metric_value(
+    node: duckdb_v2_query_metrics_node_handle,
+    index: idx_t,
+    value: *mut duckdb_v2_value_handle,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_VALUE
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        index: idx_t,
+        value: *mut duckdb_v2_value_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, index, value, err)
+}
+
+static __DUCKDB_V2_QUERY_METRICS_NODE_GET_NAME: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
+    ::std::ptr::null_mut(),
+);
+pub unsafe fn duckdb_v2_query_metrics_node_get_name(
+    node: duckdb_v2_query_metrics_node_handle,
+    name: *mut duckdb_v2_str,
+    err: *mut duckdb_v2_error_info_handle,
+) -> DUCKDB_V2_ERROR {
+    let function_ptr = __DUCKDB_V2_QUERY_METRICS_NODE_GET_NAME
+        .load(::std::sync::atomic::Ordering::Acquire);
+    assert!(
+        ! function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted"
+    );
+    let fun: unsafe extern "C" fn(
+        node: duckdb_v2_query_metrics_node_handle,
+        name: *mut duckdb_v2_str,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
+    (fun)(node, name, err)
+}
+
 static __DUCKDB_V2_STATEMENT_ADD_COLLECTION: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(
     ::std::ptr::null_mut(),
 );
@@ -18368,5 +19463,2529 @@ pub unsafe fn duckdb_v2_statement_add_collection(
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR = ::std::mem::transmute(function_ptr);
     (fun)(statement, name, collection, column_names, column_count, err)
+}
+
+/// Like DUCKDB_EXTENSION_API_INIT macro
+pub unsafe fn duckdb_rs_extension_api_v2_init(
+    input: &duckdb_v2_extension_input,
+    version: &str,
+) -> ::std::result::Result<bool, &'static str> {
+    let version_c_string = std::ffi::CString::new(version).unwrap();
+    let Some(get_api) = input.get_api else {
+        return Err("get_api is NULL: loadable extensions cannot be statically linked");
+    };
+    let p_api = get_api(input.extension, version_c_string.as_ptr())
+        as *const duckdb_ext_api_v2;
+    if p_api.is_null() {
+        return Ok(false);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arena_allocate {
+        __DUCKDB_V2_ARENA_ALLOCATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_bignum_decode {
+        __DUCKDB_V2_BIGNUM_DECODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_bignum_encode {
+        __DUCKDB_V2_BIGNUM_ENCODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_append {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_append_state_create {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND_STATE_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_append_state_destroy {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_APPEND_STATE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_combine {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_COMBINE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_create {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_destroy {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_reset {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_RESET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_row_count {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_scan {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_shared_scan_state_create
+    {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_SHARED_SCAN_STATE_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_column_data_collection_shared_scan_state_destroy
+    {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_SHARED_SCAN_STATE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_worker_scan_state_create
+    {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_WORKER_SCAN_STATE_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_column_data_collection_worker_scan_state_destroy
+    {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_WORKER_SCAN_STATE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_config_get_option_by_index {
+        __DUCKDB_V2_CONFIG_GET_OPTION_BY_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_config_get_option_by_name {
+        __DUCKDB_V2_CONFIG_GET_OPTION_BY_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_config_get_option_count {
+        __DUCKDB_V2_CONFIG_GET_OPTION_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_create {
+        __DUCKDB_V2_CONNECTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_destroy {
+        __DUCKDB_V2_CONNECTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_interrupt {
+        __DUCKDB_V2_CONNECTION_INTERRUPT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_progress_get {
+        __DUCKDB_V2_CONNECTION_PROGRESS_GET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_copy {
+        __DUCKDB_V2_DATA_CHUNK_COPY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_create {
+        __DUCKDB_V2_DATA_CHUNK_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_destroy {
+        __DUCKDB_V2_DATA_CHUNK_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_get_size {
+        __DUCKDB_V2_DATA_CHUNK_GET_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_get_vector {
+        __DUCKDB_V2_DATA_CHUNK_GET_VECTOR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_get_vector_count {
+        __DUCKDB_V2_DATA_CHUNK_GET_VECTOR_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_environment_create {
+        __DUCKDB_V2_ENVIRONMENT_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_environment_destroy {
+        __DUCKDB_V2_ENVIRONMENT_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_environment_get_instance_count {
+        __DUCKDB_V2_ENVIRONMENT_GET_INSTANCE_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_error_info_destroy {
+        __DUCKDB_V2_ERROR_INFO_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_error_info_get_code {
+        __DUCKDB_V2_ERROR_INFO_GET_CODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_error_info_get_raw_text {
+        __DUCKDB_V2_ERROR_INFO_GET_RAW_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_error_info_get_text {
+        __DUCKDB_V2_ERROR_INFO_GET_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_error_info_set_code {
+        __DUCKDB_V2_ERROR_INFO_SET_CODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_error_info_set_text {
+        __DUCKDB_V2_ERROR_INFO_SET_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_factory_create_type_from_id {
+        __DUCKDB_V2_FACTORY_CREATE_TYPE_FROM_ID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_factory_create_type_from_name {
+        __DUCKDB_V2_FACTORY_CREATE_TYPE_FROM_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_factory_create_type_from_text {
+        __DUCKDB_V2_FACTORY_CREATE_TYPE_FROM_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_factory_create_type_with_alias {
+        __DUCKDB_V2_FACTORY_CREATE_TYPE_WITH_ALIAS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_attach {
+        __DUCKDB_V2_INSTANCE_ATTACH
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_create {
+        __DUCKDB_V2_INSTANCE_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_create_with_options {
+        __DUCKDB_V2_INSTANCE_CREATE_WITH_OPTIONS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_destroy {
+        __DUCKDB_V2_INSTANCE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_detach {
+        __DUCKDB_V2_INSTANCE_DETACH
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_library_version {
+        __DUCKDB_V2_LIBRARY_VERSION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_copy {
+        __DUCKDB_V2_LOGICAL_TYPE_COPY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_destroy {
+        __DUCKDB_V2_LOGICAL_TYPE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_get_id {
+        __DUCKDB_V2_LOGICAL_TYPE_GET_ID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_get_name {
+        __DUCKDB_V2_LOGICAL_TYPE_GET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_get_param {
+        __DUCKDB_V2_LOGICAL_TYPE_GET_PARAM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_get_param_count {
+        __DUCKDB_V2_LOGICAL_TYPE_GET_PARAM_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_is_equal {
+        __DUCKDB_V2_LOGICAL_TYPE_IS_EQUAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_logical_type_to_text {
+        __DUCKDB_V2_LOGICAL_TYPE_TO_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_destroy {
+        __DUCKDB_V2_OPTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_get_alias {
+        __DUCKDB_V2_OPTION_GET_ALIAS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_get_alias_count {
+        __DUCKDB_V2_OPTION_GET_ALIAS_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_get_default_value {
+        __DUCKDB_V2_OPTION_GET_DEFAULT_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_get_description {
+        __DUCKDB_V2_OPTION_GET_DESCRIPTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_get_name {
+        __DUCKDB_V2_OPTION_GET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_parse_sql {
+        __DUCKDB_V2_PARSE_SQL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_destroy {
+        __DUCKDB_V2_RESULT_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_drain {
+        __DUCKDB_V2_RESULT_DRAIN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_fetch_chunk {
+        __DUCKDB_V2_RESULT_FETCH_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_get_result_type {
+        __DUCKDB_V2_RESULT_GET_RESULT_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_get_schema {
+        __DUCKDB_V2_RESULT_GET_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_get_statement_type {
+        __DUCKDB_V2_RESULT_GET_STATEMENT_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_render_box {
+        __DUCKDB_V2_RESULT_RENDER_BOX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_step {
+        __DUCKDB_V2_RESULT_STEP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_result_wait {
+        __DUCKDB_V2_RESULT_WAIT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_schema_destroy {
+        __DUCKDB_V2_SCHEMA_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_schema_get_count {
+        __DUCKDB_V2_SCHEMA_GET_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_schema_get_field {
+        __DUCKDB_V2_SCHEMA_GET_FIELD
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_sql_statement_destroy {
+        __DUCKDB_V2_SQL_STATEMENT_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_statement_bind {
+        __DUCKDB_V2_STATEMENT_BIND
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_statement_execute {
+        __DUCKDB_V2_STATEMENT_EXECUTE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_statement_iterator_destroy {
+        __DUCKDB_V2_STATEMENT_ITERATOR_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_statement_iterator_next {
+        __DUCKDB_V2_STATEMENT_ITERATOR_NEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_cast {
+        __DUCKDB_V2_VALUE_CAST
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_array {
+        __DUCKDB_V2_VALUE_CREATE_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_bigint {
+        __DUCKDB_V2_VALUE_CREATE_BIGINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_bignum {
+        __DUCKDB_V2_VALUE_CREATE_BIGNUM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_bit {
+        __DUCKDB_V2_VALUE_CREATE_BIT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_blob {
+        __DUCKDB_V2_VALUE_CREATE_BLOB
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_bool {
+        __DUCKDB_V2_VALUE_CREATE_BOOL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_date {
+        __DUCKDB_V2_VALUE_CREATE_DATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_decimal {
+        __DUCKDB_V2_VALUE_CREATE_DECIMAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_double {
+        __DUCKDB_V2_VALUE_CREATE_DOUBLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_float {
+        __DUCKDB_V2_VALUE_CREATE_FLOAT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_hugeint {
+        __DUCKDB_V2_VALUE_CREATE_HUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_int {
+        __DUCKDB_V2_VALUE_CREATE_INT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_interval {
+        __DUCKDB_V2_VALUE_CREATE_INTERVAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_list {
+        __DUCKDB_V2_VALUE_CREATE_LIST
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_map {
+        __DUCKDB_V2_VALUE_CREATE_MAP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_null {
+        __DUCKDB_V2_VALUE_CREATE_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_smallint {
+        __DUCKDB_V2_VALUE_CREATE_SMALLINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_struct {
+        __DUCKDB_V2_VALUE_CREATE_STRUCT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_time {
+        __DUCKDB_V2_VALUE_CREATE_TIME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_time_ns {
+        __DUCKDB_V2_VALUE_CREATE_TIME_NS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_time_tz {
+        __DUCKDB_V2_VALUE_CREATE_TIME_TZ
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_timestamp {
+        __DUCKDB_V2_VALUE_CREATE_TIMESTAMP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_timestamp_ms {
+        __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_MS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_timestamp_ns {
+        __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_NS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_timestamp_sec {
+        __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_SEC
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_timestamp_tz {
+        __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_TZ
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_timestamp_tz_ns {
+        __DUCKDB_V2_VALUE_CREATE_TIMESTAMP_TZ_NS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_tinyint {
+        __DUCKDB_V2_VALUE_CREATE_TINYINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_tuple {
+        __DUCKDB_V2_VALUE_CREATE_TUPLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_type {
+        __DUCKDB_V2_VALUE_CREATE_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_ubigint {
+        __DUCKDB_V2_VALUE_CREATE_UBIGINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_uhugeint {
+        __DUCKDB_V2_VALUE_CREATE_UHUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_uint {
+        __DUCKDB_V2_VALUE_CREATE_UINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_usmallint {
+        __DUCKDB_V2_VALUE_CREATE_USMALLINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_utinyint {
+        __DUCKDB_V2_VALUE_CREATE_UTINYINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_uuid {
+        __DUCKDB_V2_VALUE_CREATE_UUID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_create_varchar {
+        __DUCKDB_V2_VALUE_CREATE_VARCHAR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_destroy {
+        __DUCKDB_V2_VALUE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_bigint {
+        __DUCKDB_V2_VALUE_GET_BIGINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_blob {
+        __DUCKDB_V2_VALUE_GET_BLOB
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_bool {
+        __DUCKDB_V2_VALUE_GET_BOOL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_child {
+        __DUCKDB_V2_VALUE_GET_CHILD
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_child_count {
+        __DUCKDB_V2_VALUE_GET_CHILD_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_date {
+        __DUCKDB_V2_VALUE_GET_DATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_decimal {
+        __DUCKDB_V2_VALUE_GET_DECIMAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_double {
+        __DUCKDB_V2_VALUE_GET_DOUBLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_float {
+        __DUCKDB_V2_VALUE_GET_FLOAT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_hugeint {
+        __DUCKDB_V2_VALUE_GET_HUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_int {
+        __DUCKDB_V2_VALUE_GET_INT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_interval {
+        __DUCKDB_V2_VALUE_GET_INTERVAL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_logical_type {
+        __DUCKDB_V2_VALUE_GET_LOGICAL_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_smallint {
+        __DUCKDB_V2_VALUE_GET_SMALLINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_time {
+        __DUCKDB_V2_VALUE_GET_TIME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_time_ns {
+        __DUCKDB_V2_VALUE_GET_TIME_NS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_time_tz {
+        __DUCKDB_V2_VALUE_GET_TIME_TZ
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_timestamp {
+        __DUCKDB_V2_VALUE_GET_TIMESTAMP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_timestamp_ms {
+        __DUCKDB_V2_VALUE_GET_TIMESTAMP_MS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_timestamp_ns {
+        __DUCKDB_V2_VALUE_GET_TIMESTAMP_NS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_timestamp_sec {
+        __DUCKDB_V2_VALUE_GET_TIMESTAMP_SEC
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_timestamp_tz {
+        __DUCKDB_V2_VALUE_GET_TIMESTAMP_TZ
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_timestamp_tz_ns {
+        __DUCKDB_V2_VALUE_GET_TIMESTAMP_TZ_NS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_tinyint {
+        __DUCKDB_V2_VALUE_GET_TINYINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_type {
+        __DUCKDB_V2_VALUE_GET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_ubigint {
+        __DUCKDB_V2_VALUE_GET_UBIGINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_uhugeint {
+        __DUCKDB_V2_VALUE_GET_UHUGEINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_uint {
+        __DUCKDB_V2_VALUE_GET_UINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_usmallint {
+        __DUCKDB_V2_VALUE_GET_USMALLINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_utinyint {
+        __DUCKDB_V2_VALUE_GET_UTINYINT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_uuid {
+        __DUCKDB_V2_VALUE_GET_UUID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_get_varchar {
+        __DUCKDB_V2_VALUE_GET_VARCHAR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_is_null {
+        __DUCKDB_V2_VALUE_IS_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_value_to_string {
+        __DUCKDB_V2_VALUE_TO_STRING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_constant_set_valid {
+        __DUCKDB_V2_VECTOR_CONSTANT_SET_VALID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_flat_get_validity_mutable {
+        __DUCKDB_V2_VECTOR_FLAT_GET_VALIDITY_MUTABLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_flatten {
+        __DUCKDB_V2_VECTOR_FLATTEN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_arena {
+        __DUCKDB_V2_VECTOR_GET_ARENA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_child {
+        __DUCKDB_V2_VECTOR_GET_CHILD
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_child_count {
+        __DUCKDB_V2_VECTOR_GET_CHILD_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_data_mutable {
+        __DUCKDB_V2_VECTOR_GET_DATA_MUTABLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_logical_type {
+        __DUCKDB_V2_VECTOR_GET_LOGICAL_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_size {
+        __DUCKDB_V2_VECTOR_GET_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_value {
+        __DUCKDB_V2_VECTOR_GET_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_vector_type {
+        __DUCKDB_V2_VECTOR_GET_VECTOR_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_get_view {
+        __DUCKDB_V2_VECTOR_GET_VIEW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_make_constant {
+        __DUCKDB_V2_VECTOR_MAKE_CONSTANT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_make_sequence {
+        __DUCKDB_V2_VECTOR_MAKE_SEQUENCE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_reference {
+        __DUCKDB_V2_VECTOR_REFERENCE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_set_null {
+        __DUCKDB_V2_VECTOR_SET_NULL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_set_size {
+        __DUCKDB_V2_VECTOR_SET_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_set_value {
+        __DUCKDB_V2_VECTOR_SET_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_scalar_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_SCALAR_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_context_log {
+        __DUCKDB_V2_CONTEXT_LOG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_scalar_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_SCALAR_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_signature_add_parameter {
+        __DUCKDB_V2_FUNCTION_SIGNATURE_ADD_PARAMETER
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_signature_set_return_type {
+        __DUCKDB_V2_FUNCTION_SIGNATURE_SET_RETURN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_create {
+        __DUCKDB_V2_SCALAR_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_destroy {
+        __DUCKDB_V2_SCALAR_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_arg {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_ARG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_arg_count {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_ARG_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_bind_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_init_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_result {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_RESULT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_row_count {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_exec_get_user_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_EXEC_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_get_signature {
+        __DUCKDB_V2_SCALAR_FUNCTION_GET_SIGNATURE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_init_get_bind_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_INIT_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_init_get_user_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_INIT_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_init_set_init_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_INIT_SET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_bind_callback {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_BIND_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_exec_callback {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_EXEC_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_init_callback {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_INIT_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_name {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_user_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_bind_set_return_type {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_BIND_SET_RETURN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_combine_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_combine_get_sources {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_SOURCES
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_combine_get_state_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_STATE_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_combine_get_targets {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_TARGETS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_combine_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_COMBINE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_create {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_destroy {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_destroy_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_destroy_get_state_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_STATE_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_destroy_get_states {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_STATES
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_destroy_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_DESTROY_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_finalize_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_finalize_get_result {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_RESULT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_finalize_get_result_offset {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_RESULT_OFFSET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_finalize_get_state_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_STATE_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_finalize_get_states {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_STATES
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_finalize_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_FINALIZE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_get_signature {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_GET_SIGNATURE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_init_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_init_get_state_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_STATE_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_init_get_states {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_STATES
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_init_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_INIT_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_bind_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_BIND_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_combine_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_COMBINE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_destroy_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_DESTROY_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_finalize_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_FINALIZE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_init_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_INIT_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_name {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_size_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_SIZE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_update_callback {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_UPDATE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_size_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SIZE_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_size_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SIZE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_size_set_state_size {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SIZE_SET_STATE_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_update_get_arg {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_ARG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_update_get_arg_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_ARG_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_update_get_bind_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_update_get_row_count {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_update_get_states {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_STATES
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_update_get_user_data {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_UPDATE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_aggregate_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_AGGREGATE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_aggregate_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_AGGREGATE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_set_property {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_SET_PROPERTY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_property {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_PROPERTY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_table_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_TABLE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_table_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_TABLE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_bind_add_result_column {
+        __DUCKDB_V2_TABLE_FUNCTION_BIND_ADD_RESULT_COLUMN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_bind_set_cardinality {
+        __DUCKDB_V2_TABLE_FUNCTION_BIND_SET_CARDINALITY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_create {
+        __DUCKDB_V2_TABLE_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_destroy {
+        __DUCKDB_V2_TABLE_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_global_state {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_local_state {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_LOCAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_output_chunk {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_OUTPUT_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_get_signature {
+        __DUCKDB_V2_TABLE_FUNCTION_GET_SIGNATURE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_global_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_global_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_global_set_global_state {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_SET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_global_set_max_threads {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_SET_MAX_THREADS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_local_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_local_get_global_state {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_local_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_local_set_local_state {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_SET_LOCAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_progress_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_progress_get_global_state {
+        __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_progress_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_progress_set_progress {
+        __DUCKDB_V2_TABLE_FUNCTION_PROGRESS_SET_PROGRESS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_bind_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_BIND_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_exec_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_EXEC_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_init_global_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_INIT_GLOBAL_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_init_local_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_INIT_LOCAL_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_name {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_progress_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_PROGRESS_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_create {
+        __DUCKDB_V2_CAST_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_destroy {
+        __DUCKDB_V2_CAST_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_exec_get_input {
+        __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_INPUT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_exec_get_mode {
+        __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_MODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_exec_get_output {
+        __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_OUTPUT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_exec_get_row_count {
+        __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_exec_get_user_data {
+        __DUCKDB_V2_CAST_FUNCTION_EXEC_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_set_exec_callback {
+        __DUCKDB_V2_CAST_FUNCTION_SET_EXEC_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_set_implicit_cast_cost {
+        __DUCKDB_V2_CAST_FUNCTION_SET_IMPLICIT_CAST_COST
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_set_source_type {
+        __DUCKDB_V2_CAST_FUNCTION_SET_SOURCE_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_set_target_type {
+        __DUCKDB_V2_CAST_FUNCTION_SET_TARGET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_cast_function_set_user_data {
+        __DUCKDB_V2_CAST_FUNCTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_data_collection_clear {
+        __DUCKDB_V2_COLUMN_DATA_COLLECTION_CLEAR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_cast_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_CAST_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_custom_type {
+        __DUCKDB_V2_CONNECTION_REGISTER_CUSTOM_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_replacement_scan {
+        __DUCKDB_V2_CONNECTION_REGISTER_REPLACEMENT_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_context_get_file_system {
+        __DUCKDB_V2_CONTEXT_GET_FILE_SYSTEM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_type_create {
+        __DUCKDB_V2_CUSTOM_TYPE_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_type_destroy {
+        __DUCKDB_V2_CUSTOM_TYPE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_type_set_base_type {
+        __DUCKDB_V2_CUSTOM_TYPE_SET_BASE_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_type_set_name {
+        __DUCKDB_V2_CUSTOM_TYPE_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_cast_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_CAST_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_custom_type {
+        __DUCKDB_V2_EXTENSION_REGISTER_CUSTOM_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_replacement_scan {
+        __DUCKDB_V2_EXTENSION_REGISTER_REPLACEMENT_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_close {
+        __DUCKDB_V2_FILE_CLOSE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_destroy {
+        __DUCKDB_V2_FILE_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_open_options_create {
+        __DUCKDB_V2_FILE_OPEN_OPTIONS_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_open_options_destroy {
+        __DUCKDB_V2_FILE_OPEN_OPTIONS_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_open_options_set_flag {
+        __DUCKDB_V2_FILE_OPEN_OPTIONS_SET_FLAG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_open_options_set_value {
+        __DUCKDB_V2_FILE_OPEN_OPTIONS_SET_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_read {
+        __DUCKDB_V2_FILE_READ
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_read_at {
+        __DUCKDB_V2_FILE_READ_AT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_seek {
+        __DUCKDB_V2_FILE_SEEK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_size {
+        __DUCKDB_V2_FILE_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_sync {
+        __DUCKDB_V2_FILE_SYNC
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_open {
+        __DUCKDB_V2_FILE_SYSTEM_OPEN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_tell {
+        __DUCKDB_V2_FILE_TELL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_write {
+        __DUCKDB_V2_FILE_WRITE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_write_at {
+        __DUCKDB_V2_FILE_WRITE_AT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_register_replacement_scan {
+        __DUCKDB_V2_INSTANCE_REGISTER_REPLACEMENT_SCAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_create {
+        __DUCKDB_V2_QNAME_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_destroy {
+        __DUCKDB_V2_QNAME_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_equals {
+        __DUCKDB_V2_QNAME_EQUALS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_get_part {
+        __DUCKDB_V2_QNAME_GET_PART
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_get_part_count {
+        __DUCKDB_V2_QNAME_GET_PART_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_hash {
+        __DUCKDB_V2_QNAME_HASH
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_parse {
+        __DUCKDB_V2_QNAME_PARSE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_qname_render {
+        __DUCKDB_V2_QNAME_RENDER
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_add_argument {
+        __DUCKDB_V2_REPLACEMENT_SCAN_ADD_ARGUMENT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_add_named_argument {
+        __DUCKDB_V2_REPLACEMENT_SCAN_ADD_NAMED_ARGUMENT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_create {
+        __DUCKDB_V2_REPLACEMENT_SCAN_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_destroy {
+        __DUCKDB_V2_REPLACEMENT_SCAN_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_get_name {
+        __DUCKDB_V2_REPLACEMENT_SCAN_GET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_get_user_data {
+        __DUCKDB_V2_REPLACEMENT_SCAN_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_set_alias {
+        __DUCKDB_V2_REPLACEMENT_SCAN_SET_ALIAS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_set_callback {
+        __DUCKDB_V2_REPLACEMENT_SCAN_SET_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_set_collection {
+        __DUCKDB_V2_REPLACEMENT_SCAN_SET_COLLECTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_set_function_name {
+        __DUCKDB_V2_REPLACEMENT_SCAN_SET_FUNCTION_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_set_subquery {
+        __DUCKDB_V2_REPLACEMENT_SCAN_SET_SUBQUERY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_replacement_scan_set_user_data {
+        __DUCKDB_V2_REPLACEMENT_SCAN_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_exporter_append {
+        __DUCKDB_V2_ARROW_EXPORTER_APPEND
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_exporter_create {
+        __DUCKDB_V2_ARROW_EXPORTER_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_exporter_destroy {
+        __DUCKDB_V2_ARROW_EXPORTER_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_exporter_get_schema {
+        __DUCKDB_V2_ARROW_EXPORTER_GET_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_exporter_next_array {
+        __DUCKDB_V2_ARROW_EXPORTER_NEXT_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_importer_append {
+        __DUCKDB_V2_ARROW_IMPORTER_APPEND
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_importer_create {
+        __DUCKDB_V2_ARROW_IMPORTER_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_importer_destroy {
+        __DUCKDB_V2_ARROW_IMPORTER_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_importer_get_schema {
+        __DUCKDB_V2_ARROW_IMPORTER_GET_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_importer_next_chunk {
+        __DUCKDB_V2_ARROW_IMPORTER_NEXT_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_description_destroy {
+        __DUCKDB_V2_COLUMN_DESCRIPTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_description_get_name {
+        __DUCKDB_V2_COLUMN_DESCRIPTION_GET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_description_get_type {
+        __DUCKDB_V2_COLUMN_DESCRIPTION_GET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_description_has_default {
+        __DUCKDB_V2_COLUMN_DESCRIPTION_HAS_DEFAULT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_column_description_has_generated {
+        __DUCKDB_V2_COLUMN_DESCRIPTION_HAS_GENERATED
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_describe_table {
+        __DUCKDB_V2_CONNECTION_DESCRIBE_TABLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_copy_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_COPY_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_column_count {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_column_name {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_COLUMN_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_column_type {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_COLUMN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_file_path {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_FILE_PATH
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_option_count {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_OPTION_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_option_name {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_OPTION_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_option_value {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_OPTION_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_get_user_data {
+        __DUCKDB_V2_COPY_FROM_BIND_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_set_bind_data {
+        __DUCKDB_V2_COPY_FROM_BIND_SET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_bind_set_cardinality {
+        __DUCKDB_V2_COPY_FROM_BIND_SET_CARDINALITY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_exec_get_bind_data {
+        __DUCKDB_V2_COPY_FROM_EXEC_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_exec_get_global_state {
+        __DUCKDB_V2_COPY_FROM_EXEC_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_exec_get_local_state {
+        __DUCKDB_V2_COPY_FROM_EXEC_GET_LOCAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_exec_get_output_chunk {
+        __DUCKDB_V2_COPY_FROM_EXEC_GET_OUTPUT_CHUNK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_exec_get_user_data {
+        __DUCKDB_V2_COPY_FROM_EXEC_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_global_get_bind_data {
+        __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_global_get_user_data {
+        __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_global_set_global_state {
+        __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_SET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_global_set_max_threads {
+        __DUCKDB_V2_COPY_FROM_INIT_GLOBAL_SET_MAX_THREADS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_local_get_bind_data {
+        __DUCKDB_V2_COPY_FROM_INIT_LOCAL_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_local_get_global_state {
+        __DUCKDB_V2_COPY_FROM_INIT_LOCAL_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_local_get_user_data {
+        __DUCKDB_V2_COPY_FROM_INIT_LOCAL_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_init_local_set_local_state {
+        __DUCKDB_V2_COPY_FROM_INIT_LOCAL_SET_LOCAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_progress_get_bind_data {
+        __DUCKDB_V2_COPY_FROM_PROGRESS_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_progress_get_global_state {
+        __DUCKDB_V2_COPY_FROM_PROGRESS_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_progress_get_user_data {
+        __DUCKDB_V2_COPY_FROM_PROGRESS_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_progress_set_progress {
+        __DUCKDB_V2_COPY_FROM_PROGRESS_SET_PROGRESS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_set_bind_callback {
+        __DUCKDB_V2_COPY_FROM_SET_BIND_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_set_exec_callback {
+        __DUCKDB_V2_COPY_FROM_SET_EXEC_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_set_init_global_callback {
+        __DUCKDB_V2_COPY_FROM_SET_INIT_GLOBAL_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_set_init_local_callback {
+        __DUCKDB_V2_COPY_FROM_SET_INIT_LOCAL_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_from_set_progress_callback {
+        __DUCKDB_V2_COPY_FROM_SET_PROGRESS_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_function_create {
+        __DUCKDB_V2_COPY_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_function_destroy {
+        __DUCKDB_V2_COPY_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_function_set_name {
+        __DUCKDB_V2_COPY_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_function_set_user_data {
+        __DUCKDB_V2_COPY_FUNCTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_get_bind_data {
+        __DUCKDB_V2_COPY_TO_BATCH_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_get_init_data {
+        __DUCKDB_V2_COPY_TO_BATCH_GET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_get_user_data {
+        __DUCKDB_V2_COPY_TO_BATCH_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_set_batch_data {
+        __DUCKDB_V2_COPY_TO_BATCH_SET_BATCH_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_size_get_bind_data {
+        __DUCKDB_V2_COPY_TO_BATCH_SIZE_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_size_get_user_data {
+        __DUCKDB_V2_COPY_TO_BATCH_SIZE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_size_set_target {
+        __DUCKDB_V2_COPY_TO_BATCH_SIZE_SET_TARGET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_batch_take_input {
+        __DUCKDB_V2_COPY_TO_BATCH_TAKE_INPUT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_column_count {
+        __DUCKDB_V2_COPY_TO_BIND_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_column_name {
+        __DUCKDB_V2_COPY_TO_BIND_GET_COLUMN_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_column_type {
+        __DUCKDB_V2_COPY_TO_BIND_GET_COLUMN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_file_path {
+        __DUCKDB_V2_COPY_TO_BIND_GET_FILE_PATH
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_option_count {
+        __DUCKDB_V2_COPY_TO_BIND_GET_OPTION_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_option_name {
+        __DUCKDB_V2_COPY_TO_BIND_GET_OPTION_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_option_value {
+        __DUCKDB_V2_COPY_TO_BIND_GET_OPTION_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_get_user_data {
+        __DUCKDB_V2_COPY_TO_BIND_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_bind_set_bind_data {
+        __DUCKDB_V2_COPY_TO_BIND_SET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_finalize_get_bind_data {
+        __DUCKDB_V2_COPY_TO_FINALIZE_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_finalize_get_init_data {
+        __DUCKDB_V2_COPY_TO_FINALIZE_GET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_finalize_get_user_data {
+        __DUCKDB_V2_COPY_TO_FINALIZE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_flush_get_batch_data {
+        __DUCKDB_V2_COPY_TO_FLUSH_GET_BATCH_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_flush_get_bind_data {
+        __DUCKDB_V2_COPY_TO_FLUSH_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_flush_get_init_data {
+        __DUCKDB_V2_COPY_TO_FLUSH_GET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_flush_get_user_data {
+        __DUCKDB_V2_COPY_TO_FLUSH_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_init_get_bind_data {
+        __DUCKDB_V2_COPY_TO_INIT_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_init_get_file_path {
+        __DUCKDB_V2_COPY_TO_INIT_GET_FILE_PATH
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_init_get_user_data {
+        __DUCKDB_V2_COPY_TO_INIT_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_init_set_init_data {
+        __DUCKDB_V2_COPY_TO_INIT_SET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_batch_callback {
+        __DUCKDB_V2_COPY_TO_SET_BATCH_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_batch_size_callback {
+        __DUCKDB_V2_COPY_TO_SET_BATCH_SIZE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_bind_callback {
+        __DUCKDB_V2_COPY_TO_SET_BIND_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_finalize_callback {
+        __DUCKDB_V2_COPY_TO_SET_FINALIZE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_flush_callback {
+        __DUCKDB_V2_COPY_TO_SET_FLUSH_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_init_callback {
+        __DUCKDB_V2_COPY_TO_SET_INIT_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_cast_get_mode {
+        __DUCKDB_V2_EXPRESSION_CAST_GET_MODE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_column_ref_get_index {
+        __DUCKDB_V2_EXPRESSION_COLUMN_REF_GET_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_constant_get_value {
+        __DUCKDB_V2_EXPRESSION_CONSTANT_GET_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_function_get_name {
+        __DUCKDB_V2_EXPRESSION_FUNCTION_GET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_function_get_qname {
+        __DUCKDB_V2_EXPRESSION_FUNCTION_GET_QNAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_get_child {
+        __DUCKDB_V2_EXPRESSION_GET_CHILD
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_get_child_count {
+        __DUCKDB_V2_EXPRESSION_GET_CHILD_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_get_return_type {
+        __DUCKDB_V2_EXPRESSION_GET_RETURN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_expression_get_type {
+        __DUCKDB_V2_EXPRESSION_GET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_copy_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_COPY_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_identifier_render_quoted {
+        __DUCKDB_V2_IDENTIFIER_RENDER_QUOTED
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_prepared_statement_create {
+        __DUCKDB_V2_PREPARED_STATEMENT_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_prepared_statement_destroy {
+        __DUCKDB_V2_PREPARED_STATEMENT_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_prepared_statement_execute {
+        __DUCKDB_V2_PREPARED_STATEMENT_EXECUTE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_prepared_statement_reuses_plan {
+        __DUCKDB_V2_PREPARED_STATEMENT_REUSES_PLAN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_description_destroy {
+        __DUCKDB_V2_TABLE_DESCRIPTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_description_get_column {
+        __DUCKDB_V2_TABLE_DESCRIPTION_GET_COLUMN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_description_get_column_count {
+        __DUCKDB_V2_TABLE_DESCRIPTION_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_description_get_qname {
+        __DUCKDB_V2_TABLE_DESCRIPTION_GET_QNAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_description_is_readonly {
+        __DUCKDB_V2_TABLE_DESCRIPTION_IS_READONLY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_column_count {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_exec_get_column_index {
+        __DUCKDB_V2_TABLE_FUNCTION_EXEC_GET_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_accept {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_ACCEPT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_get_column_count
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_get_column_index
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_get_filter {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_FILTER
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_get_filter_count
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_FILTER_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_filter_pushdown_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_FILTER_PUSHDOWN_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_global_get_column_count {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_global_get_column_index {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_GLOBAL_GET_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_local_get_column_count {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_init_local_get_column_index {
+        __DUCKDB_V2_TABLE_FUNCTION_INIT_LOCAL_GET_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_filter_pushdown_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_FILTER_PUSHDOWN_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_projection_pushdown {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_PROJECTION_PUSHDOWN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_sql_statement_get_parameter_count {
+        __DUCKDB_V2_SQL_STATEMENT_GET_PARAMETER_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_sql_statement_get_parameter_name {
+        __DUCKDB_V2_SQL_STATEMENT_GET_PARAMETER_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_sql_statement_get_text {
+        __DUCKDB_V2_SQL_STATEMENT_GET_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_sql_statement_get_type {
+        __DUCKDB_V2_SQL_STATEMENT_GET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_token_iterator_destroy {
+        __DUCKDB_V2_TOKEN_ITERATOR_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_token_iterator_ends_unterminated {
+        __DUCKDB_V2_TOKEN_ITERATOR_ENDS_UNTERMINATED
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_token_iterator_next {
+        __DUCKDB_V2_TOKEN_ITERATOR_NEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_tokenize_sql {
+        __DUCKDB_V2_TOKENIZE_SQL
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_attach_options_create {
+        __DUCKDB_V2_ATTACH_OPTIONS_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_attach_options_destroy {
+        __DUCKDB_V2_ATTACH_OPTIONS_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_attach_options_set {
+        __DUCKDB_V2_ATTACH_OPTIONS_SET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_set_default {
+        __DUCKDB_V2_INSTANCE_SET_DEFAULT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partition_data_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partition_data_get_global_state
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partition_data_get_local_state {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_LOCAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partition_data_get_partition_column_count
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_PARTITION_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partition_data_get_partition_column_index
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_PARTITION_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partition_data_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partition_data_requires_batch_index
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_REQUIRES_BATCH_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partition_data_requires_partition_columns
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_REQUIRES_PARTITION_COLUMNS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partition_data_set_batch_index {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_SET_BATCH_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partition_data_set_partition_value
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITION_DATA_SET_PARTITION_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partitioning_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partitioning_get_partition_column_count
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_PARTITION_COLUMN_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_partitioning_get_partition_column_index
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_PARTITION_COLUMN_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partitioning_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_partitioning_set_partition_info
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_PARTITIONING_SET_PARTITION_INFO
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_partition_data_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_PARTITION_DATA_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_partitioning_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_PARTITIONING_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_validate_utf8 {
+        __DUCKDB_V2_VALIDATE_UTF8
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_multi_file_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_MULTI_FILE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_set_statistics_callback {
+        __DUCKDB_V2_COPY_TO_SET_STATISTICS_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_statistics_get_bind_data {
+        __DUCKDB_V2_COPY_TO_STATISTICS_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_statistics_get_init_data {
+        __DUCKDB_V2_COPY_TO_STATISTICS_GET_INIT_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_statistics_get_user_data {
+        __DUCKDB_V2_COPY_TO_STATISTICS_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_statistics_set_file_size {
+        __DUCKDB_V2_COPY_TO_STATISTICS_SET_FILE_SIZE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_to_statistics_set_row_count {
+        __DUCKDB_V2_COPY_TO_STATISTICS_SET_ROW_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_get_capacity {
+        __DUCKDB_V2_DATA_CHUNK_GET_CAPACITY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_multi_file_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_MULTI_FILE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_multi_file_function_create {
+        __DUCKDB_V2_MULTI_FILE_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_multi_file_function_destroy {
+        __DUCKDB_V2_MULTI_FILE_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_multi_file_function_set_file_extension {
+        __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_FILE_EXTENSION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_multi_file_function_set_name {
+        __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_multi_file_function_set_reader_type {
+        __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_READER_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_multi_file_function_set_single_file_function {
+        __DUCKDB_V2_MULTI_FILE_FUNCTION_SET_SINGLE_FILE_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_claim_batch_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_claim_batch_get_global_state {
+        __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_GLOBAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_claim_batch_get_local_state {
+        __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_LOCAL_STATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_claim_batch_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_claim_batch_set_claimed {
+        __DUCKDB_V2_TABLE_FUNCTION_CLAIM_BATCH_SET_CLAIMED
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_claim_batch_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_CLAIM_BATCH_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_get_arg_count {
+        __DUCKDB_V2_FUNCTION_BIND_GET_ARG_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_get_arg_index {
+        __DUCKDB_V2_FUNCTION_BIND_GET_ARG_INDEX
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_get_arg_name {
+        __DUCKDB_V2_FUNCTION_BIND_GET_ARG_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_get_arg_type {
+        __DUCKDB_V2_FUNCTION_BIND_GET_ARG_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_get_arg_value {
+        __DUCKDB_V2_FUNCTION_BIND_GET_ARG_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_get_user_data {
+        __DUCKDB_V2_FUNCTION_BIND_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_bind_set_bind_data {
+        __DUCKDB_V2_FUNCTION_BIND_SET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_bind_set_order_preservation {
+        __DUCKDB_V2_TABLE_FUNCTION_BIND_SET_ORDER_PRESERVATION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_destroy {
+        __DUCKDB_V2_ARROW_RESULT_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_drain {
+        __DUCKDB_V2_ARROW_RESULT_DRAIN
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_fetch_array {
+        __DUCKDB_V2_ARROW_RESULT_FETCH_ARRAY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_get_result_type {
+        __DUCKDB_V2_ARROW_RESULT_GET_RESULT_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_get_schema {
+        __DUCKDB_V2_ARROW_RESULT_GET_SCHEMA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_get_statement_type {
+        __DUCKDB_V2_ARROW_RESULT_GET_STATEMENT_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_step {
+        __DUCKDB_V2_ARROW_RESULT_STEP
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_to_arrow_c_stream {
+        __DUCKDB_V2_ARROW_RESULT_TO_ARROW_C_STREAM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_arrow_result_wait {
+        __DUCKDB_V2_ARROW_RESULT_WAIT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_prepared_statement_execute_arrow {
+        __DUCKDB_V2_PREPARED_STATEMENT_EXECUTE_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_statement_execute_arrow {
+        __DUCKDB_V2_STATEMENT_EXECUTE_ARROW
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_resolve_types_set_return_type {
+        __DUCKDB_V2_SCALAR_FUNCTION_RESOLVE_TYPES_SET_RETURN_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_set_resolve_types_callback {
+        __DUCKDB_V2_SCALAR_FUNCTION_SET_RESOLVE_TYPES_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_get_bind_info_get_bind_data {
+        __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_get_bind_info_get_user_data {
+        __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api)
+        .duckdb_v2_table_function_get_bind_info_set_column_identifier
+    {
+        __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_COLUMN_IDENTIFIER
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_get_bind_info_set_option {
+        __DUCKDB_V2_TABLE_FUNCTION_GET_BIND_INFO_SET_OPTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_set_get_bind_info_callback {
+        __DUCKDB_V2_TABLE_FUNCTION_SET_GET_BIND_INFO_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_get_factory {
+        __DUCKDB_V2_CONNECTION_GET_FACTORY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_context_get_factory {
+        __DUCKDB_V2_CONTEXT_GET_FACTORY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_get_factory {
+        __DUCKDB_V2_INSTANCE_GET_FACTORY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_bind_set_bind_data {
+        __DUCKDB_V2_SCALAR_FUNCTION_BIND_SET_BIND_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_config_get_option_value {
+        __DUCKDB_V2_CONFIG_GET_OPTION_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_config_set_option_text {
+        __DUCKDB_V2_CONFIG_SET_OPTION_TEXT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_config_set_option_value {
+        __DUCKDB_V2_CONFIG_SET_OPTION_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_get_config {
+        __DUCKDB_V2_CONNECTION_GET_CONFIG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_get_file_system {
+        __DUCKDB_V2_CONNECTION_GET_FILE_SYSTEM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_log {
+        __DUCKDB_V2_CONNECTION_LOG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_context_get_config {
+        __DUCKDB_V2_CONTEXT_GET_CONFIG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_get_config {
+        __DUCKDB_V2_INSTANCE_GET_CONFIG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_get_file_system {
+        __DUCKDB_V2_INSTANCE_GET_FILE_SYSTEM
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_log {
+        __DUCKDB_V2_INSTANCE_LOG
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_get_default_scope {
+        __DUCKDB_V2_OPTION_GET_DEFAULT_SCOPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_option_supports_scope {
+        __DUCKDB_V2_OPTION_SUPPORTS_SCOPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_aggregate_function_get_docs {
+        __DUCKDB_V2_AGGREGATE_FUNCTION_GET_DOCS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_pragma_function {
+        __DUCKDB_V2_CONNECTION_REGISTER_PRAGMA_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_pragma_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_PRAGMA_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_factory_create_common_type {
+        __DUCKDB_V2_FACTORY_CREATE_COMMON_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_docs_add_category {
+        __DUCKDB_V2_FUNCTION_DOCS_ADD_CATEGORY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_docs_add_example {
+        __DUCKDB_V2_FUNCTION_DOCS_ADD_EXAMPLE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_function_docs_set_description {
+        __DUCKDB_V2_FUNCTION_DOCS_SET_DESCRIPTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_create {
+        __DUCKDB_V2_PRAGMA_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_destroy {
+        __DUCKDB_V2_PRAGMA_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_get_docs {
+        __DUCKDB_V2_PRAGMA_FUNCTION_GET_DOCS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_get_signature {
+        __DUCKDB_V2_PRAGMA_FUNCTION_GET_SIGNATURE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_query_set_query {
+        __DUCKDB_V2_PRAGMA_FUNCTION_QUERY_SET_QUERY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_set_exec_callback {
+        __DUCKDB_V2_PRAGMA_FUNCTION_SET_EXEC_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_set_name {
+        __DUCKDB_V2_PRAGMA_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_set_query_callback {
+        __DUCKDB_V2_PRAGMA_FUNCTION_SET_QUERY_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_pragma_function_set_user_data {
+        __DUCKDB_V2_PRAGMA_FUNCTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_scalar_function_get_docs {
+        __DUCKDB_V2_SCALAR_FUNCTION_GET_DOCS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_table_function_get_docs {
+        __DUCKDB_V2_TABLE_FUNCTION_GET_DOCS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_register_custom_option {
+        __DUCKDB_V2_CONNECTION_REGISTER_CUSTOM_OPTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_create {
+        __DUCKDB_V2_CUSTOM_OPTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_destroy {
+        __DUCKDB_V2_CUSTOM_OPTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_default_scope {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_DEFAULT_SCOPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_default_value {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_DEFAULT_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_description {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_DESCRIPTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_name {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_supports_scope {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_SUPPORTS_SCOPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_type {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_TYPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_update_callback {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_UPDATE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_set_user_data {
+        __DUCKDB_V2_CUSTOM_OPTION_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_update_get_scope {
+        __DUCKDB_V2_CUSTOM_OPTION_UPDATE_GET_SCOPE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_update_get_user_data {
+        __DUCKDB_V2_CUSTOM_OPTION_UPDATE_GET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_update_get_value {
+        __DUCKDB_V2_CUSTOM_OPTION_UPDATE_GET_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_update_is_reset {
+        __DUCKDB_V2_CUSTOM_OPTION_UPDATE_IS_RESET
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_custom_option_update_set_value {
+        __DUCKDB_V2_CUSTOM_OPTION_UPDATE_SET_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_custom_option {
+        __DUCKDB_V2_EXTENSION_REGISTER_CUSTOM_OPTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_log_sink {
+        __DUCKDB_V2_EXTENSION_REGISTER_LOG_SINK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_extension_register_macro_function {
+        __DUCKDB_V2_EXTENSION_REGISTER_MACRO_FUNCTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_path_exists {
+        __DUCKDB_V2_FILE_SYSTEM_PATH_EXISTS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_path_expand {
+        __DUCKDB_V2_FILE_SYSTEM_PATH_EXPAND
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_path_is_remote {
+        __DUCKDB_V2_FILE_SYSTEM_PATH_IS_REMOTE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_instance_register_log_sink {
+        __DUCKDB_V2_INSTANCE_REGISTER_LOG_SINK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_create {
+        __DUCKDB_V2_LOG_SINK_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_destroy {
+        __DUCKDB_V2_LOG_SINK_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_set_flush_callback {
+        __DUCKDB_V2_LOG_SINK_SET_FLUSH_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_set_name {
+        __DUCKDB_V2_LOG_SINK_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_set_user_data {
+        __DUCKDB_V2_LOG_SINK_SET_USER_DATA
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_set_write_callback {
+        __DUCKDB_V2_LOG_SINK_SET_WRITE_CALLBACK
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_write_info_get_connection_id {
+        __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_CONNECTION_ID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_write_info_get_query_id {
+        __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_QUERY_ID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_write_info_get_thread_id {
+        __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_THREAD_ID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_log_sink_write_info_get_transaction_id {
+        __DUCKDB_V2_LOG_SINK_WRITE_INFO_GET_TRANSACTION_ID
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_macro_function_create {
+        __DUCKDB_V2_MACRO_FUNCTION_CREATE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_macro_function_destroy {
+        __DUCKDB_V2_MACRO_FUNCTION_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_macro_function_get_docs {
+        __DUCKDB_V2_MACRO_FUNCTION_GET_DOCS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_macro_function_get_signature {
+        __DUCKDB_V2_MACRO_FUNCTION_GET_SIGNATURE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_macro_function_set_body {
+        __DUCKDB_V2_MACRO_FUNCTION_SET_BODY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_macro_function_set_name {
+        __DUCKDB_V2_MACRO_FUNCTION_SET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_vector_cast {
+        __DUCKDB_V2_VECTOR_CAST
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_enable_profiling {
+        __DUCKDB_V2_CONNECTION_ENABLE_PROFILING
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_connection_get_query_metrics {
+        __DUCKDB_V2_CONNECTION_GET_QUERY_METRICS
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_copy_function_set_file_extension {
+        __DUCKDB_V2_COPY_FUNCTION_SET_FILE_EXTENSION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_data_chunk_clear {
+        __DUCKDB_V2_DATA_CHUNK_CLEAR
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_path_glob {
+        __DUCKDB_V2_FILE_SYSTEM_PATH_GLOB
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_path_move {
+        __DUCKDB_V2_FILE_SYSTEM_PATH_MOVE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_file_system_path_remove {
+        __DUCKDB_V2_FILE_SYSTEM_PATH_REMOVE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_destroy {
+        __DUCKDB_V2_QUERY_METRICS_DESTROY
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_get_root {
+        __DUCKDB_V2_QUERY_METRICS_GET_ROOT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_child {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_child_count {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_CHILD_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_metric {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_metric_count {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_COUNT
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_metric_name {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_metric_value {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_METRIC_VALUE
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_query_metrics_node_get_name {
+        __DUCKDB_V2_QUERY_METRICS_NODE_GET_NAME
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    if let Some(fun) = (*p_api).duckdb_v2_statement_add_collection {
+        __DUCKDB_V2_STATEMENT_ADD_COLLECTION
+            .store(fun as usize as *mut (), ::std::sync::atomic::Ordering::Release);
+    }
+    Ok(true)
 }
 
