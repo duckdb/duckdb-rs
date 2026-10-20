@@ -1,9 +1,12 @@
 //! DuckDB instances and their global configuration.
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    borrow::Borrow,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use crate::{
-    AsRaw, DropHandle, Factory, FromRaw, Result, check_api_call,
+    AsRaw, DropHandle, Factory, Result, check_api_call,
     connection::{Connection, HasFactory},
     connection_options::Config,
     environment::{Environment, EnvironmentHandle, StorageLocation},
@@ -25,29 +28,157 @@ pub struct InstanceHandle {
 // SAFETY: an instance handle may be used and destroyed on any thread.
 unsafe impl Send for InstanceHandle {}
 
-/// A builder for the per-database options of one [`Instance::attach`] call.
-///
-/// Each `set_option` call adds one `(KEY value)` entry, mirroring the options of
-/// SQL `ATTACH`. Nothing is validated until the attach itself.
-#[derive(Debug, AsRaw, FromRaw, DropHandle)]
+#[derive(Debug, DropHandle)]
 #[drop_handle(ffi::duckdb_v2_attach_options_destroy)]
-pub struct AttachOptionsBuilder {
-    /// The owned attach-options handle.
-    pub(crate) handle: ffi::duckdb_v2_attach_options_handle,
+struct AttachOptions {
+    handle: ffi::duckdb_v2_attach_options_handle,
 }
 
-impl AttachOptionsBuilder {
-    /// Set one attach option, like a `(KEY value)` entry of SQL `ATTACH`.
-    ///
-    /// Keys are matched case-insensitively; setting the same key again replaces
-    /// the previous value.
-    pub fn set_option(&mut self, key: &str, value: &str) -> Result<()> {
-        check_api_call!(
-            ffi::duckdb_v2_attach_options_set,
-            self.handle,
-            &key.into(),
-            &value.into()
-        )
+/// Configures startup options for an initially empty [`Instance`].
+///
+/// Options are validated when [`Self::build`] creates the instance.
+/// Per-database options belong to [`AttachBuilder`].
+///
+/// ```
+/// use duckdb_neo::{environment::Environment, instance::InstanceBuilder};
+///
+/// # fn main() -> duckdb_neo::Result<()> {
+/// let env = Environment::new()?;
+/// let instance = InstanceBuilder::new().option("threads", "2").build(&env)?;
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone, Default)]
+#[must_use]
+pub struct InstanceBuilder {
+    options: Vec<(String, String)>,
+}
+
+impl InstanceBuilder {
+    /// Configure an empty instance with DuckDB's default startup options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set an instance startup option as text; later values replace earlier ones.
+    pub fn option(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.options.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set instance startup options as text; later values replace earlier ones.
+    pub fn options<K, V>(mut self, options: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.options
+            .extend(options.into_iter().map(|(key, value)| (key.into(), value.into())));
+        self
+    }
+
+    /// Create an empty instance in an owned or borrowed environment.
+    pub fn build(self, environment: impl Borrow<Environment>) -> Result<Instance> {
+        let environment = environment.borrow();
+        let names: Vec<ffi::duckdb_v2_str> = self.options.iter().map(|(key, _)| key.into()).collect();
+        let values: Vec<ffi::duckdb_v2_str> = self.options.iter().map(|(_, value)| value.into()).collect();
+        let handle = check_api_call!(
+            ffi::duckdb_v2_instance_create_with_options,
+            environment.handle.handle,
+            names.as_ptr(),
+            values.as_ptr(),
+            self.options.len() as u64,
+            RET
+        )?;
+        Ok(Instance {
+            handle: Arc::new(Mutex::new(InstanceHandle {
+                handle,
+                _env: environment.handle.clone(),
+            })),
+            factory: OnceLock::new(),
+        })
+    }
+}
+
+/// Configures one database attachment independently of an instance.
+///
+/// The current default is preserved unless [`Self::make_default`] is called.
+/// Options are validated when the builder is passed to [`Instance::attach`].
+/// A bare [`StorageLocation`] converts into a builder with no options.
+/// Startup options belong to [`InstanceBuilder`].
+///
+/// ```
+/// use duckdb_neo::{
+///     environment::{Environment, StorageLocation},
+///     instance::{AttachBuilder, Instance},
+///     Parameters,
+/// };
+///
+/// # fn main() -> duckdb_neo::Result<()> {
+/// let attachment = AttachBuilder::new(StorageLocation::InMemory)
+///     .options([("read_only", "false")])
+///     .alias("analytics")
+///     .make_default();
+/// let instance = Instance::new(Environment::new()?)?;
+/// instance.attach(attachment)?;
+/// instance.connect()?.execute("CREATE TABLE example (id INTEGER)", Parameters::None)?;
+/// instance.detach("analytics")?;
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct AttachBuilder {
+    location: StorageLocation,
+    options: Vec<(String, String)>,
+    alias: Option<String>,
+    make_default: bool,
+}
+
+impl AttachBuilder {
+    /// Configure an attachment at `location` without changing the default database.
+    pub fn new(location: StorageLocation) -> Self {
+        Self {
+            location,
+            options: Vec::new(),
+            alias: None,
+            make_default: false,
+        }
+    }
+
+    /// Set a per-database option as text; later values replace earlier ones.
+    pub fn option(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.options.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set per-database options as text; later values replace earlier ones.
+    pub fn options<K, V>(mut self, options: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.options
+            .extend(options.into_iter().map(|(key, value)| (key.into(), value.into())));
+        self
+    }
+
+    /// Make the attached database the default for new connections only.
+    pub fn make_default(mut self) -> Self {
+        self.make_default = true;
+        self
+    }
+
+    /// Set the attachment's name instead of deriving it from the location.
+    pub fn alias(mut self, name: impl Into<String>) -> Self {
+        self.alias = Some(name.into());
+        self
+    }
+}
+
+impl From<StorageLocation> for AttachBuilder {
+    fn from(location: StorageLocation) -> Self {
+        Self::new(location)
     }
 }
 
@@ -111,75 +242,39 @@ impl HasFactory for Instance {
 }
 
 impl Instance {
-    /// Create an empty instance under `environment`, with no database attached yet.
-    pub fn new(environment: &Environment) -> Result<Self> {
-        check_api_call!(ffi::duckdb_v2_instance_create, environment.handle.handle, RET).map(|handle| Instance {
-            handle: Arc::new(Mutex::new(InstanceHandle {
-                handle,
-                _env: environment.handle.clone(),
-            })),
-            factory: OnceLock::new(),
-        })
+    /// Create an empty instance with default startup options.
+    /// Accepts either an owned or borrowed environment, which the instance keeps alive.
+    pub fn new(environment: impl Borrow<Environment>) -> Result<Self> {
+        InstanceBuilder::new().build(environment)
     }
 
-    /// Create an empty instance with startup options; unknown option names return an error.
-    pub fn new_with_options(environment: &Environment, options: impl Into<Vec<(String, String)>>) -> Result<Self> {
-        let options = options.into();
-
-        let names: Vec<ffi::duckdb_v2_str> = options.iter().map(|v| (&v.0).into()).collect::<Vec<_>>();
-        let values: Vec<ffi::duckdb_v2_str> = options.iter().map(|v| (&v.1).into()).collect::<Vec<_>>();
-
-        check_api_call!(
-            ffi::duckdb_v2_instance_create_with_options,
-            environment.handle.handle,
-            names.as_ptr(),
-            values.as_ptr(),
-            options.len() as u64,
-            RET
-        )
-        .map(|handle| Instance {
-            handle: Arc::new(Mutex::new(InstanceHandle {
-                handle,
-                _env: environment.handle.clone(),
-            })),
-            factory: OnceLock::new(),
-        })
-    }
-
-    /// Return a new [`AttachOptionsBuilder`] for configuring an attach from this instance.
-    pub fn get_attach_options_builder(&self) -> Result<AttachOptionsBuilder> {
-        check_api_call!(ffi::duckdb_v2_attach_options_create, self.raw(), RET)
-            .map(|handle| AttachOptionsBuilder { handle })
-    }
-
-    /// Attach the database at `location` under its derived name.
-    ///
-    /// The attached database becomes the default.
-    pub fn attach(&self, location: &StorageLocation) -> Result<&Self> {
-        self.attach_with_options(location, None, None, true)?;
-        Ok(self)
-    }
-
-    /// Attach at `location` using optional alias and options such as `READ_ONLY`.
-    /// `make_default` chooses the database for future connections only.
-    pub fn attach_with_options(
-        &self,
-        location: &StorageLocation,
-        alias: Option<&str>,
-        options: Option<&AttachOptionsBuilder>,
-        make_default: bool,
-    ) -> Result<&Self> {
-        let location = location.as_str();
-        let options: ffi::duckdb_v2_attach_options_handle = options.map_or(std::ptr::null_mut(), |o| o.raw());
-        let alias_str: Option<ffi::duckdb_v2_str> = alias.map(Into::into);
-
+    /// Attach a location or configured attachment without changing the default unless requested.
+    pub fn attach(&self, attachment: impl Into<AttachBuilder>) -> Result<&Self> {
+        let attachment = attachment.into();
+        let options = if attachment.options.is_empty() {
+            None
+        } else {
+            let options = AttachOptions {
+                handle: check_api_call!(ffi::duckdb_v2_attach_options_create, self.raw(), RET)?,
+            };
+            for (key, value) in &attachment.options {
+                check_api_call!(
+                    ffi::duckdb_v2_attach_options_set,
+                    options.handle,
+                    &key.into(),
+                    &value.into()
+                )?;
+            }
+            Some(options)
+        };
+        let alias: Option<ffi::duckdb_v2_str> = attachment.alias.as_ref().map(Into::into);
         check_api_call!(
             ffi::duckdb_v2_instance_attach,
             self.raw(),
-            alias_str.as_ref().map_or(std::ptr::null(), |a| a as *const _),
-            &location.into(),
-            options,
-            make_default
+            alias.as_ref().map_or(std::ptr::null(), |name| name as *const _),
+            &attachment.location.as_str().into(),
+            options.as_ref().map_or(std::ptr::null_mut(), |options| options.handle),
+            attachment.make_default
         )?;
         Ok(self)
     }
@@ -214,6 +309,7 @@ mod tests {
     use crate::{
         Parameters,
         environment::{Environment, StorageLocation},
+        instance::{AttachBuilder, Instance},
     };
 
     #[test]
@@ -245,21 +341,17 @@ mod tests {
     #[test]
     fn test_instance_attach_options() -> crate::Result<()> {
         let env = Environment::new()?;
-        let instance = env.instance()?;
-        let mut attach_options = instance.get_attach_options_builder()?;
+
         let directory = tempfile::tempdir().expect("create temporary database directory");
         let location = StorageLocation::OnDisk(directory.path().join("attach.db").to_str().unwrap().to_owned());
-
-        instance.attach_with_options(&location, Some("ondisk"), None, true)?;
-
+        let instance = Instance::new(&env)?;
+        instance.attach(AttachBuilder::new(location.clone()).alias("ondisk").make_default())?;
         instance.detach("ondisk")?;
-
-        attach_options.set_option("read_only", "true")?;
-
-        // Keep a default database available after the on-disk database is detached.
-        instance.attach(&StorageLocation::InMemory)?;
-
-        instance.attach_with_options(&location, Some("ro"), Some(&attach_options), false)?;
+        instance.attach(
+            AttachBuilder::new(location)
+                .alias("ro")
+                .options([("read_only", "true")]),
+        )?;
 
         instance.set_default("ro")?;
 

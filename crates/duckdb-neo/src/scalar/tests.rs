@@ -1,7 +1,8 @@
 use crate::{
     DuckDBType, Parameters,
-    connection::{Context, SettingScope},
+    connection::Context,
     environment::{Environment, StorageLocation},
+    instance::{AttachBuilder, InstanceBuilder},
     logical_type::LogicalTypeID,
     signature::{FunctionParameter, SignatureBuilder},
     types::FromValue,
@@ -144,9 +145,8 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 fn test_scalar_panic() -> crate::Result<()> {
     let env = Environment::new()?;
     // A client-thread panic invalidates the instance, not just the worker transaction.
-    let instance = env.instance()?;
-    instance.config()?.set_text("threads", "1", SettingScope::Global)?;
-    instance.attach(&StorageLocation::InMemory)?;
+    let instance = InstanceBuilder::new().option("threads", "1").build(&env)?;
+    instance.attach(AttachBuilder::new(StorageLocation::InMemory).make_default())?;
     let conn = instance.connect()?;
 
     ScalarFunctionBuilder::new(

@@ -3,24 +3,19 @@
 
 use duckdb_neo::{
     Parameters,
-    connection::{Connection, SettingScope},
+    connection::Connection,
     environment::{Environment, StorageLocation},
+    instance::{AttachBuilder, InstanceBuilder},
 };
 
 /// Open a connection that can only use statically linked extensions.
 fn connect(extension_directory: &std::path::Path) -> duckdb_neo::Result<Connection> {
-    let instance = Environment::new()?.instance()?;
-    let config = instance.config()?;
-
-    config.set_text(
-        "extension_directory",
-        &extension_directory.to_string_lossy(),
-        SettingScope::Global,
-    )?;
-    config.set_text("autoinstall_known_extensions", "false", SettingScope::Global)?;
-    config.set_text("autoload_known_extensions", "false", SettingScope::Global)?;
-
-    instance.attach(&StorageLocation::InMemory)?;
+    let instance = InstanceBuilder::new()
+        .option("extension_directory", extension_directory.to_string_lossy().as_ref())
+        .option("autoinstall_known_extensions", "false")
+        .option("autoload_known_extensions", "false")
+        .build(Environment::new()?)?;
+    instance.attach(AttachBuilder::new(StorageLocation::InMemory).make_default())?;
     instance.connect()
 }
 

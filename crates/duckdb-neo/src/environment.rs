@@ -2,7 +2,7 @@
 //!
 //! An [`Environment`] is the root of the handle hierarchy. It owns engine state
 //! shared by the instances created through [`Environment::open`] or
-//! [`Environment::instance`]. Instances keep their environment alive,
+//! [`InstanceBuilder`](crate::instance::InstanceBuilder). Instances keep their environment alive,
 //! and connections in turn keep their instance alive.
 //!
 //! [`StorageLocation`] selects either a transient in-memory database or a
@@ -10,7 +10,10 @@
 
 use std::sync::Arc;
 
-use crate::{DropHandle, Result, check_api_call, ffi, instance::Instance};
+use crate::{
+    DropHandle, Result, check_api_call, ffi,
+    instance::{AttachBuilder, Instance},
+};
 
 /// A shared handle to a DuckDB environment.
 #[derive(Debug, DropHandle)]
@@ -122,17 +125,12 @@ impl Environment {
         check_api_call!(ffi::duckdb_v2_environment_get_instance_count, self.handle.handle, RET).map(|x| x as usize)
     }
 
-    /// Create an instance and attach a database at `location`.
-    /// For more fine grained control, use [`Self::instance`] and the [`Instance`] API directly.
+    /// Create an instance and attach `location` as its default database.
+    /// For separate startup and attachment configuration, use [`crate::instance::InstanceBuilder`] and [`AttachBuilder`].
     pub fn open(&self, location: StorageLocation) -> Result<Instance> {
         let instance = Instance::new(self)?;
-        instance.attach(&location)?;
+        instance.attach(AttachBuilder::new(location).make_default())?;
         Ok(instance)
-    }
-
-    /// Create a new instance of the DuckDB engine without attaching any database.
-    pub fn instance(&self) -> Result<Instance> {
-        Instance::new(self)
     }
 }
 
@@ -157,9 +155,7 @@ mod tests {
     fn test_instance_count() -> crate::Result<()> {
         let env = Environment::new()?;
         assert_eq!(env.instance_count()?, 0);
-        let instance = env.instance()?;
-        assert_eq!(env.instance_count()?, 1);
-        instance.attach(&StorageLocation::InMemory)?;
+        let instance = env.open(StorageLocation::InMemory)?;
         assert_eq!(env.instance_count()?, 1);
         drop(instance);
         assert_eq!(env.instance_count()?, 0);
@@ -170,15 +166,15 @@ mod tests {
     fn test_concurrent_instance_creation() -> crate::Result<()> {
         let env = Environment::new()?;
         let (first, second) = std::thread::scope(|scope| {
-            let first = scope.spawn(|| env.instance());
-            let second = scope.spawn(|| env.instance());
+            let first = scope.spawn(|| env.open(StorageLocation::InMemory));
+            let second = scope.spawn(|| env.open(StorageLocation::InMemory));
             (first.join().unwrap(), second.join().unwrap())
         });
         let (first, second) = (first?, second?);
         assert_eq!(env.instance_count()?, 2);
         drop(env);
-        first.attach(&StorageLocation::InMemory)?;
-        second.attach(&StorageLocation::InMemory)?;
+        first.connect()?.execute("SELECT 1", crate::Parameters::None)?;
+        second.connect()?.execute("SELECT 2", crate::Parameters::None)?;
         Ok(())
     }
 
