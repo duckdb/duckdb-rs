@@ -202,7 +202,8 @@ unsafe impl WritableVectorElement for String {
     type Write<'a> = &'a str;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_bytes(index, value.map(|v| v.as_bytes()))
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
     }
 }
 
@@ -211,7 +212,8 @@ unsafe impl WritableVectorElement for BlobValue {
     type Write<'a> = &'a [u8];
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_bytes(index, value)
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, value) }
     }
 }
 
@@ -223,7 +225,8 @@ unsafe impl WritableVectorElement for BitValue {
         if let Some(value) = value {
             check_bit(value)?;
         }
-        vector.write_bytes(index, value)
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, value) }
     }
 }
 
@@ -244,7 +247,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn).unwrap()], true).unwrap();
         let mut vector = chunk.get_vector_at_mut::<String>(0).unwrap();
         vector.set_size(1).unwrap();
-        vector.write_bytes(0, Some(&[0xff])).unwrap();
+        // SAFETY: This writable byte vector is flat and has one row.
+        unsafe { vector.write_bytes(0, Some(&[0xff])) }.unwrap();
         let _ = vector.get(0);
     }
 

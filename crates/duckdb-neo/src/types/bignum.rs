@@ -94,7 +94,8 @@ unsafe impl WritableVectorElement for BigNum {
     type Write<'a> = &'a BigNum;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_bytes(index, value.map(BigNum::encoded))
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, value.map(BigNum::encoded)) }
     }
 }
 
@@ -161,7 +162,8 @@ unsafe impl WritableVectorElement for BigNumValue {
         let encoded = value
             .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
             .transpose()?;
-        vector.write_bytes(index, encoded.as_deref())
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, encoded.as_deref()) }
     }
 }
 

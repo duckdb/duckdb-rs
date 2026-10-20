@@ -169,6 +169,125 @@ fn vector_iterator_reports_remaining_rows() -> crate::Result<()> {
 }
 
 #[test]
+fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
+    use super::{Vector, VectorElement, WritableVectorElement};
+
+    #[derive(Debug)]
+    struct Probe;
+
+    // SAFETY: Probe uses INTEGER's physical representation.
+    unsafe impl VectorElement for Probe {
+        const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER;
+        type Internal = i32;
+        type Ref<'a> = &'a i32;
+
+        unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+        where
+            Self: 'a,
+        {
+            // SAFETY: The caller guarantees a valid INTEGER row.
+            unsafe { i32::get(vector, physical, logical) }
+        }
+    }
+
+    // SAFETY: Probe rejects writes without changing the vector.
+    unsafe impl WritableVectorElement for Probe {
+        type Write<'a> = ();
+
+        unsafe fn write(_vector: &mut Vector<'_, Self>, _index: usize, _value: Option<()>) -> crate::Result<()> {
+            Err(Error::invalid_input("element writer called"))
+        }
+    }
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<Probe>(0)?;
+        vector.set_size(1)?;
+        assert_eq!(vector.write(0, Some(())).unwrap_err().message, "element writer called");
+        for index in [1, usize::MAX] {
+            for value in [Some(()), None] {
+                let err = vector.write(index, value).unwrap_err();
+                assert!(err.message.contains("out of bounds"), "{}", err.message);
+            }
+        }
+    }
+    {
+        let mut vector = chunk.get_vector_at_mut::<super::Unknown>(0)?;
+        let err = vector.write_as::<Probe>(1, Some(())).unwrap_err();
+        assert!(err.message.contains("out of bounds"), "{}", err.message);
+    }
+    chunk
+        .get_vector_at_mut::<i32>(0)?
+        .make_constant(42_i32.value(&conn)?, 1)?;
+    assert_eq!(
+        chunk.get_vector_at_mut::<Probe>(0)?.write(0, None).unwrap_err().message,
+        "vector is not flat"
+    );
+    assert_eq!(
+        chunk
+            .get_vector_at_mut::<super::Unknown>(0)?
+            .write_as::<Probe>(0, Some(()))
+            .unwrap_err()
+            .message,
+        "vector is not flat"
+    );
+    Ok(())
+}
+
+#[test]
+fn vector_byte_writes_check_bounds_before_allocating() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, None)?;
+    let value = "long enough to require an arena allocation";
+    for index in [1, usize::MAX] {
+        assert!(vector.write(index, Some(value)).is_err());
+        assert!(vector.write_as::<String>(index, Some(value)).is_err());
+        assert!(vector.write(index, None).is_err());
+        assert!(vector.heap.is_none());
+        assert_eq!(vector.get(0)?, None);
+    }
+    vector.write(0, Some(value))?;
+    assert_eq!(vector.get(0)?, Some(value));
+    Ok(())
+}
+
+#[test]
+fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut lists = DataChunk::create(&conn, &[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
+    let mut list = lists.get_vector_at_mut::<List<i32>>(0)?;
+    list.set_size(1)?;
+    list.write(0, Some(vec![Some(42)]))?;
+    let child_len = list.children().unwrap().row_count()?;
+    for index in [1, usize::MAX] {
+        assert!(list.write(index, Some(vec![Some(7)])).is_err());
+        assert!(list.write(index, None).is_err());
+        assert_eq!(list.children().unwrap().row_count()?, child_len);
+        assert_eq!(list_values(list.get(0)?), Some(vec![Some(42)]));
+    }
+
+    let mut maps = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+    let mut map = maps.get_vector_at_mut::<Map<i32, i32>>(0)?;
+    map.set_size(1)?;
+    map.write(0, Some(HashMap::from([(1, Some(42))])))?;
+    let child_len = map.children().unwrap().row_count()?;
+    for index in [1, usize::MAX] {
+        assert!(map.write(index, Some(HashMap::from([(2, Some(7))]))).is_err());
+        assert!(map.write(index, None).is_err());
+        assert_eq!(map.children().unwrap().row_count()?, child_len);
+        assert_eq!(map.get(0)?.unwrap().iter().collect::<Vec<_>>(), [(Some(&1), Some(&42))]);
+    }
+    Ok(())
+}
+
+#[test]
 fn vector_internal_writes_report_non_flat_storage() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;

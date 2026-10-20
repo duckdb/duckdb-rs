@@ -220,7 +220,6 @@ unsafe impl WritableVectorElement for Struct {
             )));
         }
 
-        vector.check_row_writable(index)?;
         if let Some(children) = vector.children() {
             for (i, field) in value.fields.iter().enumerate() {
                 field.validate(children.get_untyped_vector_at(i)?)?;
@@ -237,7 +236,8 @@ unsafe impl WritableVectorElement for Struct {
                 field.write(child, index)?;
             }
         }
-        vector.set_row_validity(index, true)
+        // SAFETY: The caller guarantees a writable, flat, in-bounds parent row.
+        unsafe { vector.set_row_validity_unchecked(index, true) }
     }
 }
 

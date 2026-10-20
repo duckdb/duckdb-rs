@@ -130,8 +130,6 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
             )));
         }
 
-        vector.check_row_writable(index)?;
-
         let child_len = vector
             .len()
             .checked_mul(array_size)
@@ -155,7 +153,8 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         for (child_index, value) in values.into_iter().enumerate() {
             child.write(offset + child_index, value)?;
         }
-        vector.set_row_validity(index, true)
+        // SAFETY: The caller guarantees a writable, flat, in-bounds parent row.
+        unsafe { vector.set_row_validity_unchecked(index, true) }
     }
 }
 

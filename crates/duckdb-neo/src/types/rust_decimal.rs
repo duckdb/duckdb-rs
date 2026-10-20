@@ -52,6 +52,7 @@ impl FromValue for rust_decimal::Decimal {
 
 fn signature<U: VectorElement>(vector: &Vector<'_, U>) -> DecimalSignature {
     vector
+        .metadata()
         .decimal_signature()
         .expect("validated DECIMAL vector has a signature")
 }
@@ -99,7 +100,8 @@ unsafe impl WritableVectorElement for rust_decimal::Decimal {
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
-            return vector.write_raw::<()>(index, None);
+            // SAFETY: The caller guarantees a writable, flat, in-bounds row; no data is written.
+            return unsafe { vector.write_internal::<()>(index, None) };
         };
         let DecimalSignature { width, scale } = signature(vector);
         let from_scale = value.scale();
@@ -121,11 +123,14 @@ unsafe impl WritableVectorElement for rust_decimal::Decimal {
         decimal
             .check()
             .map_err(|_| Error::invalid_input(format!("{value} does not fit DECIMAL({width}, {scale})")))?;
-        match width {
-            1..=4 => vector.write_raw(index, decimal.to_primitive::<i16>()),
-            5..=9 => vector.write_raw(index, decimal.to_primitive::<i32>()),
-            10..=18 => vector.write_raw(index, decimal.to_primitive::<i64>()),
-            _ => vector.write_raw(index, Some(decimal.value)),
+        // SAFETY: The caller guarantees a writable row; the storage integer matches its width.
+        unsafe {
+            match width {
+                1..=4 => vector.write_internal(index, decimal.to_primitive::<i16>()),
+                5..=9 => vector.write_internal(index, decimal.to_primitive::<i32>()),
+                10..=18 => vector.write_internal(index, decimal.to_primitive::<i64>()),
+                _ => vector.write_internal(index, Some(decimal.value)),
+            }
         }
     }
 }

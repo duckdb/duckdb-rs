@@ -118,11 +118,10 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(values) = value else {
-            return vector.write_raw::<List<T>>(index, None);
+            // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+            return unsafe { vector.write_internal::<List<T>>(index, None) };
         };
 
-        // Reject the row before appending, or a failed write would leave orphaned child elements.
-        vector.check_row_writable(index)?;
         let len = values.len();
         let child = vector
             .children_collection_mut()
@@ -139,14 +138,17 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
             Ok(offset)
         })();
         let offset = result?;
-        vector.write_raw::<List<T>>(
-            index,
-            Some(List {
-                offset: offset as u64,
-                length: len as u64,
-                _marker: PhantomData,
-            }),
-        )
+        // SAFETY: The caller validated the parent row; the entry covers the appended children.
+        unsafe {
+            vector.write_internal::<List<T>>(
+                index,
+                Some(List {
+                    offset: offset as u64,
+                    length: len as u64,
+                    _marker: PhantomData,
+                }),
+            )
+        }
     }
 }
 

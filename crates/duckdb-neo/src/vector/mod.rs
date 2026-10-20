@@ -425,7 +425,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Vector::from_handle(&self.handle, Access::Exclusive)
     }
 
-    /// Check that `index` is a row `write_raw` can write.
+    /// Check that `index` is a row `write_internal` can write.
+    #[inline]
     pub(crate) fn check_row_writable(&self, index: usize) -> Result<()> {
         if index >= self.len {
             return Err(out_of_bounds(index, self.len));
@@ -436,9 +437,10 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(())
     }
 
-    pub(crate) fn write_raw<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
-        self.check_row_writable(index)?;
-
+    /// # Safety
+    /// The vector must be writable and flat, and `index` must be in bounds.
+    /// For a non-NULL value, `U` and referenced data must match the vector's physical storage and lifetime.
+    pub(crate) unsafe fn write_internal<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
         let is_valid = value.is_some();
         if let Some(value) = value {
             let view = self.view.as_mut().ok_or_else(not_writable)?;
@@ -447,16 +449,22 @@ impl<'a, T: VectorElement> Vector<'a, T> {
                 data.add(index).write(value);
             }
         }
-        self.set_row_validity(index, is_valid)
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { self.set_row_validity_unchecked(index, is_valid) }
     }
 
     pub(crate) fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
+        self.check_row_writable(index)?;
+        if !self.is_writable() {
+            return Err(not_writable());
         }
-        if self.kind != StorageKind::Flat {
-            return Err(not_flat());
-        }
+        // SAFETY: Writability, flat storage, and bounds were checked above.
+        unsafe { self.set_row_validity_unchecked(index, is_valid) }
+    }
+
+    /// # Safety
+    /// The vector must be writable and flat, and `index` must be in bounds.
+    pub(crate) unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
         let handle = self.handle;
         let view = self.view.as_mut().ok_or_else(not_writable)?;
         if is_valid && view.view.validity.is_null() {
@@ -491,16 +499,16 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(self.heap.as_ref().unwrap())
     }
 
-    pub(crate) fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
+    /// # Safety
+    /// The vector must have byte storage, be writable and flat, and `index` must be in bounds.
+    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
         let value = match value {
             None => None,
             // SAFETY: the vector owns the arena and keeps the stored bytes alive.
             Some(value) => Some(unsafe { DuckDBBytes::new(value, || self.arena())? }),
         };
-        self.write_raw(index, value)
+        // SAFETY: The caller guarantees the row is writable; the arena owns the stored bytes.
+        unsafe { self.write_internal(index, value) }
     }
 
     /// Write one owned [`Value`] through DuckDB's generic value API.
@@ -711,7 +719,8 @@ impl<T: WritableVectorElement> Vector<'_, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        // SAFETY: checked writable above.
+        self.check_row_writable(index)?;
+        // SAFETY: Writability, flat storage, and bounds were checked above.
         unsafe { T::write(self, index, value) }
     }
 }
@@ -725,10 +734,11 @@ impl<T: VectorElement> Vector<'_, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
+        self.check_row_writable(index)?;
         self.validate_as::<U>()?;
         // SAFETY: Validation checked U; the repr(C) wrappers differ only in their direct and nested markers.
         let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
-        // SAFETY: checked writable above.
+        // SAFETY: Writability, flat storage, and bounds were checked above.
         unsafe { U::write(typed, index, value) }
     }
 }

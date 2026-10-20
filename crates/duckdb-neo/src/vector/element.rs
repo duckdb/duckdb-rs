@@ -84,11 +84,12 @@ pub unsafe trait WritableVectorElement: VectorElement {
 
     /// Write one value into a writable vector.
     ///
-    /// Prefer [`Vector::write`], which upholds this requirement.
+    /// Prefer [`Vector::write`], which upholds these requirements.
     ///
     /// # Safety
     ///
-    /// `vector` must be writable, see [`Vector::is_writable`].
+    /// - `vector` must be writable and use flat storage.
+    /// - `index` must be less than [`Vector::len`].
     ///
     /// ```compile_fail,E0133
     /// # use duckdb_neo::vector::{Vector, WritableVectorElement};

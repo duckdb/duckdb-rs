@@ -173,11 +173,10 @@ unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorEl
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else {
-            return vector.write_raw::<ffi::duckdb_v2_list_entry>(index, None);
+            // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+            return unsafe { vector.write_internal::<ffi::duckdb_v2_list_entry>(index, None) };
         };
 
-        // Reject the row before appending, or a failed write would leave orphaned child elements.
-        vector.check_row_writable(index)?;
         let len = value.len();
         // Write one child at a time, so only one child wrapper is borrowed.
         let (keys, values): (Vec<_>, Vec<_>) = value.into_iter().unzip();
@@ -206,13 +205,16 @@ unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorEl
         })();
 
         let offset = result?;
-        vector.write_raw(
-            index,
-            Some(ffi::duckdb_v2_list_entry {
-                offset: offset as u64,
-                length: len as u64,
-            }),
-        )
+        // SAFETY: The caller validated the parent row; the entry covers the appended children.
+        unsafe {
+            vector.write_internal(
+                index,
+                Some(ffi::duckdb_v2_list_entry {
+                    offset: offset as u64,
+                    length: len as u64,
+                }),
+            )
+        }
     }
 }
 

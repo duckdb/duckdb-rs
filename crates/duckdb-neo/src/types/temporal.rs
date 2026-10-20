@@ -51,7 +51,8 @@ macro_rules! declare_storage_value {
             type Write<'a> = Self;
 
             unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-                vector.write_raw(index, value)
+                // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+                unsafe { vector.write_internal(index, value) }
             }
         }
     };
@@ -234,7 +235,8 @@ unsafe impl WritableVectorElement for IntervalValue {
     type Write<'a> = Self;
 
     unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_raw(index, value)
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_internal(index, value) }
     }
 }
 
