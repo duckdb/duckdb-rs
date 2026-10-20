@@ -192,8 +192,8 @@ fn generate_functions_v1(mut output: String) -> String {
     output
 }
 
-pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
-    let header = header.header_path(api).to_string_lossy().into_owned();
+pub fn write_to_out_dir(location: &HeaderLocation, api: CApi, out_path: &Path) {
+    let header = location.header_path(api).to_string_lossy().into_owned();
     let mut output = Vec::new();
 
     // ONLY generate bindings for symbols containing "duckdb" in their name
@@ -211,6 +211,9 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
         .blocklist_type("ArrowArrayStream")
         .layout_tests(false) // causes problems on WASM builds
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+    for extra_header in location.extra_header_paths(api) {
+        builder = builder.header(extra_header.to_string_lossy());
+    }
 
     builder = match api {
         CApi::V1 => {
@@ -253,8 +256,6 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
     } else {
         output
     };
-
-    println!("{}", &output);
 
     let mut file = OpenOptions::new()
         .write(true)

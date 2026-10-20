@@ -4,8 +4,8 @@
 //! Callback-borrowed views and wrappers that retain parent objects stay in
 //! their respective modules.
 
-use crate::connection::{Extension, HasFactory};
 use crate::{column_data_collection::ColumnDataCollection, connection::Connection, ffi, instance::Instance};
+use crate::{connection::HasFactory, extension::Extension};
 
 macro_rules! define_handle {
     (

@@ -6751,3 +6751,35 @@ unsafe extern "C" {
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
+#[doc = "! Describes a statically linked extension, or something linked in the same way that is not an extension. DuckDB\n! allocates and zero-fills it, the describe function fills it in."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct duckdb_extension_descriptor {
+    #[doc = "! In: the layout DuckDB offers. Out: the layout the describe function filled, never higher than the offer."]
+    pub version: u32,
+    #[doc = "! Reports why the describe function refused. DuckDB copies the message."]
+    pub set_error: ::std::option::Option<
+        unsafe extern "C" fn(descriptor: *mut duckdb_extension_descriptor, message: *const ::std::os::raw::c_char),
+    >,
+    #[doc = "! DuckDB's state for set_error, opaque to the extension."]
+    pub internal: *mut ::std::os::raw::c_void,
+    pub name: *const ::std::os::raw::c_char,
+    pub extension_version: *const ::std::os::raw::c_char,
+    #[doc = "! What the entry point was built against: the DuckDB version for entry_cpp, the C API version the extension\n! targets for entry_capi_v1 and entry_capi_v2. The same values the loadable extension metadata carries. DuckDB\n! records it and reports it; it does not refuse a mismatch on it yet."]
+    pub api_version: *const ::std::os::raw::c_char,
+    #[doc = "! void (duckdb::ExtensionLoader &)"]
+    pub entry_cpp: ::std::option::Option<unsafe extern "C" fn()>,
+    #[doc = "! bool (duckdb_extension_info, struct duckdb_extension_access *)"]
+    pub entry_capi_v1: ::std::option::Option<unsafe extern "C" fn()>,
+    #[doc = "! void (struct duckdb_v2_extension_input *)"]
+    pub entry_capi_v2: ::std::option::Option<unsafe extern "C" fn()>,
+    #[doc = "! Set instead of an entry point by a capability, something linked like an extension that is not one (such as\n! httplib): DuckDB calls it for every database it opens, before loading extensions, and neither lists nor loads\n! it as an extension.\n! void (duckdb::DatabaseInstance &)"]
+    pub database_callback: ::std::option::Option<unsafe extern "C" fn()>,
+}
+#[doc = "! Every statically linkable extension provides duckdb_extension_<name>_describe with this signature. Returns 0 on\n! success."]
+pub type duckdb_extension_describe_t =
+    ::std::option::Option<unsafe extern "C" fn(descriptor: *mut duckdb_extension_descriptor) -> i32>;
+unsafe extern "C" {
+    #[doc = "! Calls describe and registers what it describes for every database opened afterwards. Returns 0 on\n! success. Registering the same describe function again is a no-op; a different one under a registered name is an\n! error. A failed registration also makes opening a database fail with the reason."]
+    pub fn duckdb_register_static_extension(describe: duckdb_extension_describe_t) -> i32;
+}

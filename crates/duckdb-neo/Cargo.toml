@@ -50,6 +50,7 @@ bundled-cmake-tpcds = ["bundled-cmake", "libduckdb-sys/tpcds"]
 bundled-cmake-tpch = ["bundled-cmake", "libduckdb-sys/tpch"]
 
 build-extension = ["libduckdb-sys/loadable-extension-v2", "buildtime-bindgen"]
+build-extension-static = []
 
 [dependencies]
 chrono = { workspace = true, optional = true }

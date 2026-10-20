@@ -23,6 +23,21 @@ struct CEntryPointMacroArgs {
     min_duckdb_version: Option<String>,
 }
 
+/// Turns a function into the entrypoint of a `duckdb-neo` extension, written against DuckDB's v2 C API.
+///
+/// The function takes a `duckdb_neo::extension::Extension` to register functionality through and returns a
+/// `Result` whose error converts into `Box<dyn Error>`; an error or a panic fails the load with its message. Arguments:
+///
+/// - `extension_name`: the name DuckDB knows the extension by. A loadable build must be in
+///   `<extension_name>.duckdb_extension`.
+/// - `api_version`: the C API version the extension needs, such as `"v2.0.0"`.
+///
+/// It emits `<extension_name>_init_c_api_v2`, the entrypoint DuckDB calls, and needs one of `duckdb-neo`'s features:
+///
+/// - `build-extension`: build a `cdylib` and load it with `LOAD`.
+/// - `build-extension-static`: the macro also emits `duckdb_extension_<extension_name>_describe`; pass that to
+///   `duckdb_neo::extension::register_static_extension` to link the extension into the binary.
+#[cfg(feature = "neo")]
 #[proc_macro_attribute]
 pub fn duckdb_entrypoint_c_api_v2(meta: TokenStream, item: TokenStream) -> TokenStream {
     match neo::parse(meta, parse_macro_input!(item)) {

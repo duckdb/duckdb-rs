@@ -1,7 +1,7 @@
 use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
 use duckdb_neo::DuckDBType;
 use duckdb_neo::{
-    connection::Extension,
+    extension::Extension,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
 };

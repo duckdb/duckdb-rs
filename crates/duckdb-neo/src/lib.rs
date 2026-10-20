@@ -61,6 +61,7 @@ pub mod enums;
 pub mod environment;
 pub mod error;
 pub mod expression;
+pub mod extension;
 pub mod file;
 pub mod instance;
 pub mod log;

@@ -27,6 +27,11 @@ pub fn parse(meta: TokenStream, ast: syn::Item) -> Result<TokenStream> {
         Span::call_site(),
     );
     let func_ident = func.sig.ident.clone();
+    let describe = Ident::new(
+        format!("duckdb_extension_{}_describe", args.extension_name).as_str(),
+        Span::call_site(),
+    );
+    let extension_name = args.extension_name;
     let version = args.api_version;
 
     Ok(quote_spanned! {func.span() =>
@@ -36,11 +41,13 @@ pub fn parse(meta: TokenStream, ast: syn::Item) -> Result<TokenStream> {
         #[allow(clippy::useless_conversion)]
         pub unsafe extern "C" fn #c_entrypoint(input: *mut ::duckdb_neo::ffi::duckdb_v2_extension_input) {
             unsafe {
-                ::duckdb_neo::connection::run_extension_entrypoint(input, #version, |extension| {
+                ::duckdb_neo::extension::run_extension_entrypoint(input, #version, |extension| {
                     #func_ident(extension).map_err(::std::convert::Into::into)
                 })
             }
         }
+
+        ::duckdb_neo::__describe_static_extension!(#describe, #c_entrypoint, #extension_name, #version);
 
         #func
     }

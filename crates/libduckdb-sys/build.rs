@@ -44,14 +44,12 @@ pub enum CApi {
     V2,
 }
 
+#[cfg(all(feature = "capi-v1", feature = "capi-v2"))]
+compile_error!("both API's enabled at the same time is not allowed");
+
 /// Emit every bindings artifact this build needs into `out_dir`, either by
 /// running bindgen (`buildtime_bindgen`) or by copying the pregenerated files.
 pub(crate) fn write_all_bindings(header: &HeaderLocation, out_dir: &Path) {
-    assert!(
-        (cfg!(feature = "capi-v1") && cfg!(feature = "capi-v2")) == false,
-        "both API's enabled at the same time is not allowed"
-    );
-
     #[cfg(feature = "capi-v1")]
     write_api_bindings(header, CApi::V1, &out_dir.join("bindgen.rs"));
     #[cfg(feature = "capi-v2")]
@@ -166,6 +164,21 @@ impl HeaderLocation {
                 CApi::V2 if is_loadable_extension() => "wrapper_ext_v2.h",
                 CApi::V2 => "wrapper_v2.h",
             }),
+        }
+    }
+
+    /// Headers bound together with [`Self::header_path`]; the wrapper headers include them themselves.
+    #[cfg(feature = "buildtime_bindgen")]
+    fn extra_header_paths(&self, api: CApi) -> Vec<PathBuf> {
+        // Static registration is not in the loadable extension's vtable: it only exists where DuckDB is linked.
+        let names: &[&str] = match api {
+            CApi::V2 if !is_loadable_extension() => &["duckdb_static_extension.h"],
+            _ => &[],
+        };
+        match self {
+            HeaderLocation::IncludeDir(path) => names.iter().map(|name| path.join(name)).collect(),
+            HeaderLocation::HeaderPath(path) => names.iter().map(|name| path.with_file_name(name)).collect(),
+            HeaderLocation::Wrapper => Vec::new(),
         }
     }
 
