@@ -10,7 +10,7 @@ use crate::{Result, error::check_api_call, ffi, ffi_str::DuckDBStr, raw::RawExt,
 /// A query or operator node borrowed from a [`QueryMetrics`] snapshot.
 ///
 /// Snapshots may omit metrics and operator nodes; completeness is not guaranteed.
-#[derive(Debug, AsRaw, FromRaw)]
+#[derive(Debug, Clone, Copy, AsRaw, FromRaw)]
 pub struct QueryMetricsNode<'a> {
     pub(crate) handle: ffi::duckdb_v2_query_metrics_node_handle,
     _marker: PhantomData<&'a ()>,
@@ -33,12 +33,8 @@ impl<'a> QueryMetricsNode<'a> {
 
     /// Return `QUERY` for the root node or an operator name such as `TABLE_SCAN` for other nodes.
     pub fn name(&self) -> Result<String> {
-        check_api_call!(ffi::duckdb_v2_query_metrics_node_get_name, self.raw(), RET).map(|x| {
-            DuckDBStr::from_raw(x)
-                .as_str()
-                .expect("Failed to parse name")
-                .to_string()
-        })
+        check_api_call!(ffi::duckdb_v2_query_metrics_node_get_name, self.raw(), RET)
+            .map(|x| DuckDBStr::from_raw(x).as_str().unwrap_or_default().to_string())
     }
 
     /// Return the number of child operators.
@@ -61,7 +57,7 @@ impl<'a> QueryMetricsNode<'a> {
             RET
         )
         .map(|x| DuckDBStr::from_raw(x).as_str())?
-        .expect("Failed to fetch name");
+        .unwrap_or_default();
 
         let value = check_api_call!(
             ffi::duckdb_v2_query_metrics_node_get_metric_value,

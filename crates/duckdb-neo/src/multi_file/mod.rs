@@ -61,7 +61,7 @@ impl MultiFileFunctionBuilder {
             check_api_call!(
                 ffi::duckdb_v2_multi_file_function_set_file_extension,
                 handle.raw(),
-                &mut (extension).into()
+                &mut extension.into()
             )?;
         }
 
@@ -69,7 +69,7 @@ impl MultiFileFunctionBuilder {
             check_api_call!(
                 ffi::duckdb_v2_multi_file_function_set_reader_type,
                 handle.raw(),
-                &mut (reader_type).into()
+                &mut reader_type.into()
             )?;
         }
 

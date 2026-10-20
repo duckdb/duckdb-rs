@@ -398,6 +398,7 @@ mod tests {
         environment::{Environment, StorageLocation},
         error::DuckDBError,
         logical_type::{LogicalType, LogicalTypeID},
+        types::DuckDBType,
     };
 
     #[test]
@@ -634,8 +635,6 @@ mod tests {
 
         Ok(())
     }
-
-    use crate::types::DuckDBType;
 
     #[test]
     fn test_common_type() -> crate::Result<()> {
