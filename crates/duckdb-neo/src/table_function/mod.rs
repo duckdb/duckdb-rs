@@ -11,6 +11,8 @@
 
 use std::any::Any;
 
+use duckdb_loadable_macros::AsRaw;
+
 use crate::ffi;
 
 use crate::{
@@ -398,6 +400,51 @@ unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
     );
 }
 
+unsafe extern "C" fn get_bind_info_callback<T: TableGetBindInfoCallbacks>(
+    info: ffi::duckdb_v2_table_function_get_bind_info_info_handle,
+    context: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_table_function_get_bind_info_get_user_data, info);
+            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_get_bind_info_get_bind_data, info)
+                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+
+            T::bind_info(
+                user_data,
+                bind_data,
+                &unsafe { Context::from_raw(context) },
+                BindInfoApi { handle: &info },
+            )
+        },
+        err,
+    );
+}
+
+unsafe extern "C" fn claim_batch_callback<T: TableClaimBatchCallbacks>(
+    info: ffi::duckdb_v2_table_function_claim_batch_info_handle,
+    context: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_table_function_claim_batch_get_user_data, info);
+            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_claim_batch_get_bind_data, info)
+                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+            let local_state = get_local_state!(ffi::duckdb_v2_table_function_claim_batch_get_local_state, info);
+            let global_state = get_global_state!(ffi::duckdb_v2_table_function_claim_batch_get_global_state, info);
+
+            let result = T::claim_batch(user_data, bind_data, global_state, local_state, &unsafe {
+                Context::from_raw(context)
+            })?;
+
+            check_api_call!(ffi::duckdb_v2_table_function_claim_batch_set_claimed, info, result)
+        },
+        err,
+    );
+}
+
 ffi_enum_redeclaration! {
     /// Whether, and how, a scan's partitions line up with a set of columns.
     ///
@@ -586,6 +633,8 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
     partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
     partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
+    claim_batch_callback: ffi::duckdb_v2_table_function_claim_batch_callback_fn,
+    get_bind_info_callback: ffi::duckdb_v2_table_function_get_bind_info_callback_fn,
 }
 
 impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
@@ -595,6 +644,20 @@ impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
     /// all of them itself.
     pub fn with_filter_pushdown(mut self) -> Self {
         self.filter_pushdown_callback = Some(filter_pushdown_callback::<T>);
+        self
+    }
+}
+
+impl<T: TableGetBindInfoCallbacks> TableFunctionBuilder<T> {
+    pub fn with_get_bind_info(mut self) -> Self {
+        self.get_bind_info_callback = Some(get_bind_info_callback::<T>);
+        self
+    }
+}
+
+impl<T: TableClaimBatchCallbacks> TableFunctionBuilder<T> {
+    pub fn with_claim_batch(mut self) -> Self {
+        self.claim_batch_callback = Some(claim_batch_callback::<T>);
         self
     }
 }
@@ -621,6 +684,8 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             filter_pushdown_callback: None,
             partition_data_callback: None,
             partitioning_callback: None,
+            claim_batch_callback: None,
+            get_bind_info_callback: None,
         }
     }
 
@@ -712,6 +777,22 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
                 ffi::duckdb_v2_table_function_set_partitioning_callback,
                 handle.raw(),
                 self.partitioning_callback
+            )?;
+        }
+
+        if self.claim_batch_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_claim_batch_callback,
+                handle.raw(),
+                self.claim_batch_callback
+            )?;
+        }
+
+        if self.get_bind_info_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_get_bind_info_callback,
+                handle.raw(),
+                self.get_bind_info_callback
             )?;
         }
 
@@ -874,6 +955,48 @@ pub trait TablePartitioningCallbacks: TableFunctionCallbacks {
     ) -> Result<TablePartitionInfo> {
         Ok(TablePartitionInfo::NotPartitioned)
     }
+}
+
+#[derive(Debug)]
+pub struct BindInfoApi<'a> {
+    handle: &'a ffi::duckdb_v2_table_function_get_bind_info_info_handle,
+}
+
+impl<'a> BindInfoApi<'a> {
+    pub fn set_column_identifier(&self, col_index: usize, child_indexes: &[u64], identifier: &Value) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_get_bind_info_set_column_identifier,
+            *self.handle,
+            col_index as u64,
+            child_indexes.as_ptr() as *const u64,
+            child_indexes.len() as u64,
+            identifier.raw()
+        )
+    }
+
+    pub fn set_option(&self, key: impl AsRef<str>, value: &Value) -> Result<()> {
+        let str = key.as_ref();
+        check_api_call!(
+            ffi::duckdb_v2_table_function_get_bind_info_set_option,
+            *self.handle,
+            &mut str.into(),
+            value.raw()
+        )
+    }
+}
+
+pub trait TableGetBindInfoCallbacks: TableFunctionCallbacks {
+    fn bind_info<'a>(&'a self, bind_data: &Self::BindData, context: &Context, api: BindInfoApi<'a>) -> Result<()>;
+}
+
+pub trait TableClaimBatchCallbacks: TableFunctionCallbacks {
+    fn claim_batch(
+        &self,
+        bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
+        local_state: Option<&mut Self::LocalState>,
+        context: &Context,
+    ) -> Result<bool>;
 }
 
 #[cfg(test)]
