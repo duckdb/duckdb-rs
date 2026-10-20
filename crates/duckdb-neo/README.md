@@ -137,7 +137,8 @@ If you encounter any shortcomings in the bindings that force an `libduckdb-sys` 
 
 ## Extensions
 
-TODO
+_Experimental._ `duckdb-neo` can also be used to write DuckDB extensions, loadable with `LOAD` or statically linked
+into a binary. See [extensions.md](extensions.md).
 
 ## Rust version compatibility
 

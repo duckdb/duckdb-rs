@@ -41,6 +41,7 @@ winduckdb = []
 download-lib = ["dep:ureq"]
 # Warning: experimental feature
 loadable-extension = ["prettyplease", "quote", "syn", "capi-v1"]
+loadable-extension-v2 = ["prettyplease", "quote", "syn", "capi-v2"]
 # Generate bindings for the v1 C API header (`duckdb.h`), exposed as `libduckdb_sys::v1`
 # and re-exported at the crate root. Disable with `default-features = false` when only
 # the v2 API is needed.

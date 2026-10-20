@@ -105,6 +105,8 @@ fn main() -> duckdb_neo::Result<()> {
 
 `libduckdb-sys` exposes the v1 bindings as `libduckdb_sys::v1` (also re-exported at the crate root) behind the default `capi-v1` feature, and the v2 bindings as `libduckdb_sys::v2` behind its `capi-v2` feature. `duckdb-neo` disables the default features and enables `capi-v2`, so only the v2 bindings are generated.
 
+To write DuckDB extensions with `duckdb-neo`, loadable or statically linked, see [crates/duckdb-neo/extensions.md](crates/duckdb-neo/extensions.md).
+
 ## Examples
 
 The following [examples](crates/duckdb/examples) demonstrate various features and use cases of duckdb-rs:

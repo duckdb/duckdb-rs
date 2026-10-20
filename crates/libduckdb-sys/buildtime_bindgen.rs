@@ -1,8 +1,8 @@
-use crate::{CApi, HeaderLocation, is_loadable_extension};
+use crate::{CApi, HeaderLocation, is_loadable_api};
 
 use std::{fs::OpenOptions, io::Write, path::Path};
 
-#[cfg(feature = "loadable-extension")]
+#[cfg(any(feature = "loadable-extension", feature = "loadable-extension-v2"))]
 fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
     let syn::Type::Path(type_path) = ty else {
         return None;
@@ -20,8 +20,96 @@ fn extract_method(ty: &syn::Type) -> Option<&syn::TypeBareFn> {
     Some(method)
 }
 
+#[cfg(feature = "loadable-extension-v2")]
+fn generate_functions_v2(mut output: String) -> String {
+    // (1) parse the duckdb_ext_api_v2 fields from bindgen output
+    let ast: syn::File = syn::parse_str(&output).expect("could not parse bindgen output");
+    let duckdb_ext_api_v2: syn::ItemStruct = ast
+        .items
+        .into_iter()
+        .find_map(|i| {
+            if let syn::Item::Struct(s) = i {
+                if s.ident == "duckdb_ext_api_v2" { Some(s) } else { None }
+            } else {
+                None
+            }
+        })
+        .expect("could not find duckdb_ext_api_v2");
+
+    let p_api = quote::format_ident!("p_api");
+    let mut stores = Vec::new();
+
+    for field in duckdb_ext_api_v2.fields {
+        let ident = field.ident.expect("unnamed field");
+        let span = ident.span();
+        let function_name = ident.to_string();
+        let ptr_name = syn::Ident::new(format!("__{}", function_name.to_uppercase()).as_ref(), span);
+
+        // Create syntax name
+        let duckdb_fn_name = syn::Ident::new(&function_name, span);
+
+        let method = extract_method(&field.ty).unwrap_or_else(|| panic!("unexpected type for {function_name}"));
+
+        let arg_names: syn::punctuated::Punctuated<&syn::Ident, syn::token::Comma> =
+            method.inputs.iter().map(|i| &i.name.as_ref().unwrap().0).collect();
+
+        let args = &method.inputs;
+
+        let ty = &method.output;
+
+        // Same ABI as the linked bindings, so code can take either as the same function pointer type.
+        let tokens = quote::quote! {
+            static #ptr_name: ::std::sync::atomic::AtomicPtr<()> = ::std::sync::atomic::AtomicPtr::new(::std::ptr::null_mut());
+            pub unsafe extern "C" fn #duckdb_fn_name(#args) #ty {
+                let function_ptr = #ptr_name.load(::std::sync::atomic::Ordering::Acquire);
+                assert!(!function_ptr.is_null(), "DuckDB API not initialized or DuckDB feature omitted");
+                let fun: unsafe extern "C" fn(#args) #ty = ::std::mem::transmute(function_ptr);
+                (fun)(#arg_names)
+            }
+        };
+
+        output.push_str(&prettyplease::unparse(
+            &syn::parse2(tokens).expect("could not parse quote output"),
+        ));
+
+        output.push('\n');
+
+        stores.push(quote::quote! {
+            if let Some(fun) = (*#p_api).#ident {
+                #ptr_name.store(
+                    fun as usize as *mut (),
+                    ::std::sync::atomic::Ordering::Release,
+                );
+            }
+        });
+    }
+
+    // (2) generate rust code similar to DUCKDB_EXTENSION_API_INIT macro
+    let tokens = quote::quote! {
+        /// Like DUCKDB_EXTENSION_API_INIT macro
+        pub unsafe fn duckdb_rs_extension_api_v2_init(input: &duckdb_v2_extension_input, version: &str) -> ::std::result::Result<bool, &'static str> {
+            let version_c_string = std::ffi::CString::new(version).unwrap();
+            let Some(get_api) = input.get_api else {
+                return Err("get_api is NULL: loadable extensions cannot be statically linked");
+            };
+            let #p_api = get_api(input.extension, version_c_string.as_ptr()) as *const duckdb_ext_api_v2;
+            if #p_api.is_null() {
+                // get_api returns NULL on a version mismatch; DuckDB has already recorded why
+                return Ok(false);
+            }
+            #(#stores)*
+            Ok(true)
+        }
+    };
+    output.push_str(&prettyplease::unparse(
+        &syn::parse2(tokens).expect("could not parse quote output"),
+    ));
+    output.push('\n');
+    output
+}
+
 #[cfg(feature = "loadable-extension")]
-fn generate_functions(mut output: String) -> String {
+fn generate_functions_v1(mut output: String) -> String {
     // (1) parse sqlite3_api_routines fields from bindgen output
     let ast: syn::File = syn::parse_str(&output).expect("could not parse bindgen output");
     let duckdb_ext_api_v1: syn::ItemStruct = ast
@@ -105,8 +193,8 @@ fn generate_functions(mut output: String) -> String {
     output
 }
 
-pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
-    let header = header.header_path(api).to_string_lossy().into_owned();
+pub fn write_to_out_dir(location: &HeaderLocation, api: CApi, out_path: &Path) {
+    let header = location.header_path(api).to_string_lossy().into_owned();
     let mut output = Vec::new();
 
     // ONLY generate bindings for symbols containing "duckdb" in their name
@@ -124,28 +212,38 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
         .blocklist_type("ArrowArrayStream")
         .layout_tests(false) // causes problems on WASM builds
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
+    for extra_header in location.extra_header_paths(api) {
+        builder = builder.header(extra_header.to_string_lossy());
+    }
 
     builder = match api {
         CApi::V1 => {
-            if is_loadable_extension() {
+            if is_loadable_api(api) {
                 builder = builder.ignore_functions();
             }
             // We have to pass DDUCKDB_EXTENSION_API_VERSION_UNSTABLE for now,
             // until we figure out how to feature gate the generated API
             builder.clang_arg("-DDUCKDB_EXTENSION_API_VERSION_UNSTABLE")
         }
-        CApi::V2 => builder
-            // The v2 header spells its enums and macro constants in upper
-            // case, which the case-sensitive allowlist above would drop.
-            .allowlist_item(r#"DUCKDB_V2_\w*"#)
-            // The v2 wrapper matches on real Rust enums rather than
-            // constified integer values.
-            .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#),
+        CApi::V2 => {
+            if is_loadable_api(api) {
+                builder = builder.ignore_functions();
+            }
+            builder
+                // The v2 header spells its enums and macro constants in upper
+                // case, which the case-sensitive allowlist above would drop.
+                .allowlist_item(r#"DUCKDB_V2_\w*"#)
+                // The v2 wrapper matches on real Rust enums rather than
+                // constified integer values.
+                .rustified_non_exhaustive_enum(r#"DUCKDB_V2_\w*"#)
+                // Every v2 function is still unstable, so without this the bindings would be empty.
+                .clang_arg("-DDUCKDB_V2_API_ALLOW_UNSTABLE=1")
+        }
     };
 
     builder
         .generate()
-        .unwrap_or_else(|_| panic!("could not run bindgen on header {header}"))
+        .unwrap_or_else(|e| panic!("could not run bindgen on header {header}: {e}"))
         .write(Box::new(&mut output))
         .expect("could not write output of bindgen");
 
@@ -153,7 +251,13 @@ pub fn write_to_out_dir(header: &HeaderLocation, api: CApi, out_path: &Path) {
 
     #[cfg(feature = "loadable-extension")]
     let output = if api == CApi::V1 {
-        generate_functions(output)
+        generate_functions_v1(output)
+    } else {
+        output
+    };
+    #[cfg(feature = "loadable-extension-v2")]
+    let output = if api == CApi::V2 {
+        generate_functions_v2(output)
     } else {
         output
     };

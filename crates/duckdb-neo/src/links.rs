@@ -3,7 +3,8 @@
 use std::{any::Any, sync::Arc};
 
 use crate::{
-    connection::{Connection, Context, Extension},
+    connection::{Connection, Context},
+    extension::Extension,
     ffi,
     instance::Instance,
 };

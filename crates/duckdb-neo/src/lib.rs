@@ -61,6 +61,7 @@ pub mod enums;
 pub mod environment;
 pub mod error;
 pub mod expression;
+pub mod extension;
 pub mod file;
 pub mod instance;
 pub mod log;
@@ -86,7 +87,7 @@ pub mod vector;
 
 use crate::error::{check_api_call, check_api_call_string};
 use connection::Factory;
-use libduckdb_sys::v2 as ffi;
+pub use libduckdb_sys::v2 as ffi;
 
 pub(crate) use duckdb_loadable_macros::DropHandle;
 pub use duckdb_loadable_macros::{AsRaw, FromRaw};

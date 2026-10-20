@@ -106,8 +106,9 @@ pub(crate) fn link_windows_system_libs() {
 #[cfg(not(feature = "buildtime_bindgen"))]
 fn copy_pregenerated_bindings(api: CApi, out_path: &Path) {
     let bindings_path = match api {
-        CApi::V1 if is_loadable_extension() => "src/bindgen_bundled_version_loadable.rs",
+        CApi::V1 if is_loadable_api(api) => "src/bindgen_bundled_version_loadable.rs",
         CApi::V1 => "src/bindgen_bundled_version.rs",
+        CApi::V2 if is_loadable_api(api) => "src/bindgen_bundled_version_loadable_v2.rs",
         CApi::V2 => "src/bindgen_bundled_version_v2.rs",
     };
     println!("cargo:rerun-if-changed={bindings_path}");
@@ -120,16 +121,27 @@ pub enum HeaderLocation {
     Wrapper,
 }
 
+/// Whether any bindings are built for a loadable extension, which must not link against libduckdb.
 #[allow(dead_code)]
 fn is_loadable_extension() -> bool {
-    cfg!(feature = "loadable-extension")
+    cfg!(feature = "loadable-extension") || cfg!(feature = "loadable-extension-v2")
+}
+
+/// Whether the bindings for `api` call DuckDB through the function table handed to a loadable extension.
+#[allow(dead_code)]
+fn is_loadable_api(api: CApi) -> bool {
+    match api {
+        CApi::V1 => cfg!(feature = "loadable-extension"),
+        CApi::V2 => cfg!(feature = "loadable-extension-v2"),
+    }
 }
 
 #[allow(dead_code)]
 fn header_filename(api: CApi) -> &'static str {
     match api {
-        CApi::V1 if is_loadable_extension() => "duckdb_extension.h",
+        CApi::V1 if is_loadable_api(api) => "duckdb_extension.h",
         CApi::V1 => "duckdb.h",
+        CApi::V2 if is_loadable_api(api) => "duckdb_extension_v2.h",
         CApi::V2 => "duckdb_v2.h",
     }
 }
@@ -154,10 +166,26 @@ impl HeaderLocation {
             HeaderLocation::IncludeDir(path) => path.join(header_filename(api)),
             HeaderLocation::HeaderPath(path) => path.with_file_name(header_filename(api)),
             HeaderLocation::Wrapper => PathBuf::from(match api {
-                CApi::V1 if is_loadable_extension() => "wrapper_ext.h",
+                CApi::V1 if is_loadable_api(api) => "wrapper_ext.h",
                 CApi::V1 => "wrapper.h",
+                CApi::V2 if is_loadable_api(api) => "wrapper_ext_v2.h",
                 CApi::V2 => "wrapper_v2.h",
             }),
+        }
+    }
+
+    /// Headers bound together with [`Self::header_path`]; the wrapper headers include them themselves.
+    #[cfg(feature = "buildtime_bindgen")]
+    fn extra_header_paths(&self, api: CApi) -> Vec<PathBuf> {
+        // Static registration is not in the loadable extension's vtable: it only exists where DuckDB is linked.
+        let names: &[&str] = match api {
+            CApi::V2 if !is_loadable_api(api) => &["duckdb_static_extension.h"],
+            _ => &[],
+        };
+        match self {
+            HeaderLocation::IncludeDir(path) => names.iter().map(|name| path.join(name)).collect(),
+            HeaderLocation::HeaderPath(path) => names.iter().map(|name| path.with_file_name(name)).collect(),
+            HeaderLocation::Wrapper => Vec::new(),
         }
     }
 

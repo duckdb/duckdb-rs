@@ -4,8 +4,8 @@
 //! Callback-borrowed views and wrappers that retain parent objects stay in
 //! their respective modules.
 
-use crate::connection::HasFactory;
 use crate::{column_data_collection::ColumnDataCollection, connection::Connection, ffi, instance::Instance};
+use crate::{connection::HasFactory, extension::Extension};
 
 macro_rules! define_handle {
     (
@@ -94,7 +94,7 @@ define_handle! {
     factory: ffi::duckdb_v2_log_sink_create,
     registerers: {
         Instance => ffi::duckdb_v2_instance_register_log_sink,
-        // Extension => ffi::duckdb_v2_extension_register_log_sink,
+        Extension => ffi::duckdb_v2_extension_register_log_sink,
     },
 }
 
@@ -108,7 +108,7 @@ define_handle! {
     factory: ffi::duckdb_v2_scalar_function_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_scalar_function,
-        // Extension => ffi::duckdb_v2_extension_register_scalar_function,
+        Extension => ffi::duckdb_v2_extension_register_scalar_function,
     },
 }
 
@@ -122,7 +122,7 @@ define_handle! {
     factory: ffi::duckdb_v2_aggregate_function_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_aggregate_function,
-        // Extension => ffi::duckdb_v2_extension_register_aggregate_function
+        Extension => ffi::duckdb_v2_extension_register_aggregate_function
     }
 }
 
@@ -136,7 +136,7 @@ define_handle! {
     factory: ffi::duckdb_v2_table_function_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_table_function,
-        // Extension => ffi::duckdb_v2_extension_register_table_function,
+        Extension => ffi::duckdb_v2_extension_register_table_function,
     },
 }
 
@@ -150,7 +150,7 @@ define_handle! {
     factory: ffi::duckdb_v2_custom_option_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_custom_option,
-        // Extension => ffi::duckdb_v2_extension_register_custom_option,
+        Extension => ffi::duckdb_v2_extension_register_custom_option,
     },
 }
 
@@ -164,7 +164,7 @@ define_handle! {
     factory: ffi::duckdb_v2_pragma_function_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_pragma_function,
-        // Extension => ffi::duckdb_v2_extension_register_pragma_function,
+        Extension => ffi::duckdb_v2_extension_register_pragma_function,
     },
 }
 
@@ -178,7 +178,7 @@ define_handle! {
     factory: ffi::duckdb_v2_cast_function_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_cast_function,
-        // Extension => ffi::duckdb_v2_extension_register_cast_function,
+        Extension => ffi::duckdb_v2_extension_register_cast_function,
     },
 }
 
@@ -192,7 +192,7 @@ define_handle! {
     factory: ffi::duckdb_v2_copy_function_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_copy_function,
-        // Extension => ffi::duckdb_v2_extension_register_copy_function,
+        Extension => ffi::duckdb_v2_extension_register_copy_function,
     },
 }
 
@@ -206,7 +206,7 @@ define_handle! {
     factory: ffi::duckdb_v2_custom_type_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_custom_type,
-        // Extension => ffi::duckdb_v2_extension_register_custom_type,
+        Extension => ffi::duckdb_v2_extension_register_custom_type,
     },
 }
 
@@ -220,7 +220,7 @@ define_handle! {
     factory: ffi::duckdb_v2_replacement_scan_create,
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_replacement_scan,
-        // Extension => ffi::duckdb_v2_extension_register_replacement_scan,
+        Extension => ffi::duckdb_v2_extension_register_replacement_scan,
         Instance => ffi::duckdb_v2_instance_register_replacement_scan,
     },
 }
