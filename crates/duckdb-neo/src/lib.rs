@@ -67,6 +67,7 @@ pub mod instance;
 pub mod log;
 pub mod log_sink;
 pub mod logical_type;
+pub mod metrics;
 pub mod pragma_function;
 pub mod qualified_name;
 pub mod query_progress;

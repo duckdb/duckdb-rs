@@ -23,8 +23,10 @@ use crate::{
     connection_options::Config,
     error::{Error, check_api_call},
     ffi,
+    ffi_str::DuckDBStr,
     instance::{Instance, InstanceHandle},
     logical_type::{LogicalType, LogicalTypeID},
+    metrics::QueryMetrics,
     query_result::{ArrowQueryResult, QueryResult},
     raw::RawExt,
     statement::{PreparedStatement, Statement, Statements},
@@ -262,6 +264,15 @@ impl Connection {
         InterruptHandle {
             conn: Arc::downgrade(&self.inner),
         }
+    }
+
+    pub fn set_profiling(&self, enabled: bool) -> Result<()> {
+        check_api_call!(ffi::duckdb_v2_connection_enable_profiling, self.raw(), enabled)
+    }
+
+    pub fn query_metrics(&self) -> Result<QueryMetrics> {
+        check_api_call!(ffi::duckdb_v2_connection_get_query_metrics, self.raw(), RET)
+            .map(|handle| QueryMetrics { handle })
     }
 }
 

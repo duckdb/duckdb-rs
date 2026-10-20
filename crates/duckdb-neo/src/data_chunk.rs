@@ -461,6 +461,10 @@ impl<'a> DataChunkRef<'a> {
         })
     }
 
+    pub fn capacity(&self) -> Result<usize> {
+        check_api_call!(ffi::duckdb_v2_data_chunk_get_capacity, self.raw(), RET).map(|x| x as usize)
+    }
+
     /// Return the number of rows shared by the chunk's vectors.
     pub fn row_count(&self) -> Result<usize> {
         self.vectors.row_count()
