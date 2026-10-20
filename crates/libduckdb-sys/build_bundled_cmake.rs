@@ -80,6 +80,11 @@ pub fn main(out_dir: &str) {
     // Mirrors build_bundled_cc.rs; gcc/clang enable exceptions by default.
     if win_target() && is_compiler("msvc") {
         config.cxxflag("/EHsc");
+        // CMake's default `/DWIN32 /D_WINDOWS` is dropped the same way; the TPC-H dbgen
+        // sources need `WIN32` to include <process.h> before their own macros.
+        for flag in ["/DWIN32", "/D_WINDOWS"] {
+            config.cflag(flag).cxxflag(flag);
+        }
     }
 
     // Unity builds (DuckDB's default) combine .cpp files into fewer translation
@@ -120,19 +125,6 @@ pub fn main(out_dir: &str) {
     // escape hatch back to DuckDB's standard allocator.
     let disable_jemalloc = env_flag("DUCKDB_DISABLE_JEMALLOC");
     config.define("ENABLE_JEMALLOC", if disable_jemalloc { "OFF" } else { "ON" });
-
-    // Upstream CMake defaults these to OFF, but duckdb-rs `bundled` has historically
-    // shipped with both enabled. Keep `bundled-cmake` aligned with `bundled` unless
-    // extension loading is compiled out entirely.
-    config
-        .define(
-            "ENABLE_EXTENSION_AUTOLOADING",
-            if disable_extension_load { "0" } else { "1" },
-        )
-        .define(
-            "ENABLE_EXTENSION_AUTOINSTALL",
-            if disable_extension_load { "0" } else { "1" },
-        );
 
     // Windows MAX_PATH caveat: this build emits very deep object paths (Ninja ignores
     // CMAKE_OBJECT_PATH_MAX), and since DuckDB 2.0 the unity build includes each
@@ -260,11 +252,9 @@ fn select_generator(out_dir: &str) -> Generator {
     }
 }
 
-// Suppress warnings. On MSVC also keep CMake's default `/DWIN32 /D_WINDOWS`,
-// which overriding the init flags would drop and DuckDB sources rely on.
 fn init_flags() -> &'static str {
     if win_target() && is_compiler("msvc") {
-        "/DWIN32 /D_WINDOWS /w"
+        "/w"
     } else {
         "-w"
     }
