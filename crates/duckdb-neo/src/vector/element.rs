@@ -33,7 +33,7 @@ pub unsafe trait VectorElement: Sized {
     /// The DuckDB logical type represented by this Rust type.
     const TYPE_ID: LogicalTypeID;
 
-    /// Physical entries exposed by [`VectorView::as_slice`](crate::vector::VectorView::as_slice).
+    /// Physical entries exposed by [`VectorReader::as_slice`](crate::vector::VectorReader::as_slice).
     /// Use `()` when the element does not expose a physical representation.
     type Internal;
 
@@ -51,7 +51,8 @@ pub unsafe trait VectorElement: Sized {
 
     /// Borrow a value at its physical and logical indexes.
     ///
-    /// Prefer [`Vector::get`] or [`Vector::iter`], which uphold these requirements.
+    /// Prefer [`VectorReader::get`](crate::vector::VectorReader::get) or
+    /// [`VectorReader::iter`](crate::vector::VectorReader::iter), which uphold these requirements.
     ///
     /// # Safety
     ///

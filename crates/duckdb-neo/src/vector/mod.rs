@@ -30,7 +30,8 @@
 //! # let mut result = conn.query("SELECT 1::INTEGER", Parameters::None)?;
 //! # let chunk = result.next_chunk()?.expect("one result chunk");
 //! let vector = chunk.get_vector_at::<i32>(0)?;
-//! for value in vector.iter()? {
+//! let reader = vector.reader()?;
+//! for value in reader.iter() {
 //!     assert_eq!(value, Some(&1));
 //! }
 //! # Ok(())
@@ -167,8 +168,10 @@ impl Arena {
     }
 }
 
+mod reader;
 mod view;
 
+pub use reader::{Selection, VectorReader, VectorReaderIter};
 pub use view::*;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
@@ -751,20 +754,20 @@ impl<T: HasDuckDBBytes> Vector<'_, T> {
 }
 
 impl<T: VectorElement> Vector<'_, T> {
+    /// Prepare a storage-specific reader, caching descendant views once.
+    ///
+    /// Returns an error for [`StorageKind::Other`]; flatten the vector explicitly first.
+    pub fn reader(&self) -> Result<VectorReader<'_, T>> {
+        VectorReader::new(self)
+    }
+
     /// Return the value at a logical row.
     ///
     /// Returns `None` for a `NULL` row. Vectors with
     /// [`StorageKind::Other`] return an error until flattened.
+    /// Prefer retaining a [`Self::reader`] when reading multiple rows.
     pub fn get(&self, index: usize) -> Result<Option<T::Ref<'_>>> {
-        if self.view.is_none() {
-            return Err(other_not_readable());
-        }
-        self.cache_children()?;
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-        // SAFETY: Children were cached above; the vector is already typed as T.
-        Ok(unsafe { self.get_unchecked(index) })
+        self.reader()?.get(index)
     }
 
     /// # Safety
@@ -789,14 +792,9 @@ impl<T: VectorElement> Vector<'_, T> {
         check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 
-    /// Iterate over the vector after checking its readable state once.
+    /// Iterate over the vector through a prepared [`VectorReader`].
     pub fn iter(&self) -> Result<VectorIter<'_, '_, T>> {
-        if self.view.is_none() {
-            return Err(other_not_readable());
-        }
-        self.cache_children()?;
-
-        Ok(VectorIter { vector: self, index: 0 })
+        Ok(self.reader()?.iter())
     }
 }
 
@@ -851,35 +849,10 @@ impl<T: VectorElement> Vector<'_, T> {
 }
 
 /// Iterates over the logical rows of a vector.
-#[derive(Debug)]
-pub struct VectorIter<'vector, 'a, T: VectorElement> {
-    vector: &'vector Vector<'a, T>,
-    index: usize,
-}
-
-impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T> {
-    type Item = Option<T::Ref<'vector>>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.vector.len {
-            return None;
-        }
-        // SAFETY: Vector::iter cached every descendant view before constructing this iterator.
-        let value = unsafe { self.vector.get_unchecked(self.index) };
-        self.index += 1;
-        Some(value)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.vector.len - self.index;
-        (remaining, Some(remaining))
-    }
-}
-
-impl<T: VectorElement> ExactSizeIterator for VectorIter<'_, '_, T> {}
-
-impl<T: VectorElement> std::iter::FusedIterator for VectorIter<'_, '_, T> {}
+///
+/// Retains the original lifetime parameters for compatibility; the iterator
+/// itself only needs the vector borrow.
+pub type VectorIter<'vector, 'a, T> = VectorReaderIter<'vector, T>;
 
 fn not_writable() -> Error {
     Error::invalid_input(
