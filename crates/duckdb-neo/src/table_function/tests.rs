@@ -15,8 +15,8 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     table_function::{
         BindFunctionHandle, ExecColumnInfo, InitColumnData, OrderPreservation, PartitionData, PartitioningData,
-        PushdownData, TableFilterPushdownCallbacks, TableFunctionBuilder, TableFunctionCallbacks, TablePartitionInfo,
-        TablePartitioningCallbacks,
+        PushdownData, TableClaimBatchCallbacks, TableFilterPushdownCallbacks, TableFunctionBuilder,
+        TableFunctionCallbacks, TablePartitionInfo, TablePartitioningCallbacks,
     },
 };
 
@@ -683,5 +683,150 @@ fn test_table_function_zero_threads() -> Result<()> {
         .and_then(|mut result| result.drain())
         .expect_err("zero threads must fail");
     assert!(error.message.contains("maximum number of threads must be at least 1"));
+    Ok(())
+}
+
+const CLAIM_BATCH_ROWS: usize = 1_000;
+
+#[derive(Default)]
+struct BatchedRange {
+    claimed: Arc<AtomicUsize>,
+    exec_calls: Arc<AtomicUsize>,
+}
+
+impl TableFunctionCallbacks for BatchedRange {
+    type BindData = (usize, Option<usize>);
+    type GlobalState = AtomicUsize;
+    type LocalState = Option<std::ops::Range<usize>>;
+
+    fn bind(
+        &self,
+        context: &Context,
+        arguments: Vec<BindArgument>,
+        bind_handle: BindFunctionHandle<'_>,
+    ) -> Result<Self::BindData> {
+        let argument = |index: usize| -> Result<Option<usize>> {
+            Ok(arguments[index]
+                .value
+                .as_ref()
+                .unwrap()
+                .get::<i32>()?
+                .map(|x| x as usize))
+        };
+        bind_handle.add_result_column("i", &i64::logical_type(context)?)?;
+        Ok((argument(0)?.unwrap(), argument(1)?))
+    }
+
+    fn init_global_state(
+        &self,
+        _bind_data: &Self::BindData,
+        _context: &Context,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<(Option<Self::GlobalState>, Option<usize>)> {
+        Ok((Some(AtomicUsize::new(0)), Some(4)))
+    }
+
+    fn init_local_state(
+        &self,
+        _bind_data: &Self::BindData,
+        _global_state: Option<&Self::GlobalState>,
+        _context: &Context,
+        _column_data: InitColumnData<'_>,
+    ) -> Result<Option<Self::LocalState>> {
+        Ok(Some(None))
+    }
+
+    fn exec(
+        &self,
+        _bind_data: &Self::BindData,
+        _global_state: Option<&Self::GlobalState>,
+        local_state: Option<&mut Self::LocalState>,
+        _context: &Context,
+        mut output: DataChunkRef<'_>,
+        _column_info: ExecColumnInfo<'_>,
+    ) -> Result<()> {
+        self.exec_calls.fetch_add(1, Ordering::SeqCst);
+        // An empty output chunk signals that the next batch can be claimed.
+        let Some(batch) = local_state.unwrap().take() else {
+            return Ok(());
+        };
+        assert!(batch.len() <= output.capacity()?);
+
+        let mut vector = output.get_vector_at_mut::<i64>(0)?;
+        vector.set_size(batch.len())?;
+        for (row, value) in batch.enumerate() {
+            vector.write(row, Some(value as i64))?;
+        }
+        Ok(())
+    }
+}
+
+impl TableClaimBatchCallbacks for BatchedRange {
+    fn claim_batch(
+        &self,
+        &(rows, fail_at): &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
+        local_state: Option<&mut Self::LocalState>,
+        _context: &Context,
+    ) -> Result<bool> {
+        let batch = global_state.unwrap().fetch_add(1, Ordering::SeqCst);
+        if fail_at == Some(batch) {
+            return Err(Error::invalid_input(format!("cannot claim batch {batch}")));
+        }
+        let start = batch * CLAIM_BATCH_ROWS;
+        if start >= rows {
+            return Ok(false);
+        }
+
+        self.claimed.fetch_add(1, Ordering::SeqCst);
+        *local_state.unwrap() = Some(start..(start + CLAIM_BATCH_ROWS).min(rows));
+        Ok(true)
+    }
+}
+
+#[test]
+fn test_table_function_claim_batch() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    conn.config()?.set_text("threads", "4", SettingScope::Default)?;
+
+    let reader = BatchedRange::default();
+    let (claimed, exec_calls) = (reader.claimed.clone(), reader.exec_calls.clone());
+    TableFunctionBuilder::new(
+        "batched_range",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("rows"))
+            .param(FunctionParameter::new::<i32>("fail_at")),
+        reader,
+    )
+    .with_claim_batch()
+    .register(&conn)?;
+
+    let mut result = conn.query("SELECT i FROM batched_range(10500, NULL)", Parameters::None)?;
+    let mut rows = Vec::new();
+    while let Some(chunk) = result.next_chunk()? {
+        let vector = chunk.get_vector_at::<i64>(0)?;
+        for row in 0..vector.len() {
+            rows.push(*vector.get(row)?.unwrap());
+        }
+    }
+    drop(result);
+    rows.sort_unstable();
+    assert_eq!(rows, (0..10_500).collect::<Vec<_>>());
+    // Each batch needs one exec call for its rows and one empty call to mark its end.
+    assert_eq!(claimed.swap(0, Ordering::SeqCst), 11);
+    assert_eq!(exec_calls.swap(0, Ordering::SeqCst), 2 * 11);
+
+    // If no batch is available, the scan ends without calling exec.
+    let mut result = conn.query("SELECT i FROM batched_range(0, NULL)", Parameters::None)?;
+    assert!(result.next_chunk()?.is_none());
+    drop(result);
+    assert_eq!(claimed.load(Ordering::SeqCst), 0);
+    assert_eq!(exec_calls.load(Ordering::SeqCst), 0);
+
+    let error = conn
+        .execute("SELECT count(*) FROM batched_range(10500, 3)", Parameters::None)
+        .unwrap_err();
+    assert!(error.message.contains("cannot claim batch 3"), "{error}");
     Ok(())
 }

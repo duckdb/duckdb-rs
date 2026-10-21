@@ -461,6 +461,11 @@ impl<'a> DataChunkRef<'a> {
         })
     }
 
+    /// Return the maximum number of rows the chunk can hold.
+    pub fn capacity(&self) -> Result<usize> {
+        check_api_call!(ffi::duckdb_v2_data_chunk_get_capacity, self.raw(), RET).map(|x| x as usize)
+    }
+
     /// Return the number of rows shared by the chunk's vectors.
     pub fn row_count(&self) -> Result<usize> {
         self.vectors.row_count()
@@ -647,6 +652,7 @@ mod tests {
 
         assert_eq!(data_chunk.row_count()?, 0);
         assert_eq!(data_chunk.col_count(), 1);
+        assert_eq!(data_chunk.capacity()?, 2048);
         // SAFETY: both handles are borrowed while the chunk is alive and are never destroyed.
         assert_eq!(unsafe { crate::AsRaw::get_raw(&*data_chunk) }, data_chunk.chunk.handle);
         // SAFETY: this only compares the borrowed handle and does not mutate the chunk.

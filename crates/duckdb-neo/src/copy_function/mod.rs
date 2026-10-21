@@ -6,7 +6,8 @@
 //! [`CopyFromFunctionCallbacks`] to bind the file path and target columns,
 //! optionally set up shared and worker-local read state, and produce output
 //! chunks. A type may implement either trait, or both to support the format's
-//! name on both sides of `COPY`. Register with [`CopyFunctionBuilder`].
+//! name on both sides of `COPY`. Register with [`CopyFunctionBuilder`]; opt into
+//! reporting `RETURN_STATS` statistics with [`CopyToStatisticsCallbacks`].
 
 use std::{any::Any, collections::HashMap, num::NonZeroUsize};
 
@@ -153,6 +154,38 @@ unsafe extern "C" fn batch_size_callback<T: CopyToFunctionCallbacks>(
     );
 }
 
+unsafe extern "C" fn statistics_callback<T: CopyToStatisticsCallbacks>(
+    info: ffi::duckdb_v2_copy_to_statistics_info_handle,
+    context: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_copy_to_statistics_get_user_data, info);
+            let bind_data = check_api_call!(ffi::duckdb_v2_copy_to_statistics_get_bind_data, info, RET)?;
+            let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
+
+            let init_data = get_init_data!(ffi::duckdb_v2_copy_to_statistics_get_init_data, info).unwrap();
+
+            let statistics = T::statistics(
+                user_data,
+                &unsafe { Context::from_raw(context) },
+                &bind_data.data,
+                init_data,
+            )?;
+
+            if let Some(file_size) = statistics.file_size {
+                check_api_call!(ffi::duckdb_v2_copy_to_statistics_set_file_size, info, file_size as u64)?;
+            }
+            if let Some(row_count) = statistics.row_count {
+                check_api_call!(ffi::duckdb_v2_copy_to_statistics_set_row_count, info, row_count as u64)?;
+            }
+            Ok(())
+        },
+        err,
+    );
+}
+
 unsafe extern "C" fn flush_to_callback<T: CopyToFunctionCallbacks>(
     info: ffi::duckdb_v2_copy_to_flush_info_handle,
     context: ffi::duckdb_v2_context_handle,
@@ -221,6 +254,7 @@ pub struct CopyFunctionBuilder<T> {
     name: String,
     progress: bool,
     fallback_file_extension: Option<String>,
+    statistics_callback: ffi::duckdb_v2_copy_to_statistics_callback_fn,
 }
 
 impl<T> CopyFunctionBuilder<T> {
@@ -231,6 +265,7 @@ impl<T> CopyFunctionBuilder<T> {
             user_data: OpaqueHandle::new(user_data),
             progress: false,
             fallback_file_extension: None,
+            statistics_callback: None,
         }
     }
 
@@ -267,6 +302,16 @@ impl<T> CopyFunctionBuilder<T> {
     }
 }
 
+impl<T: CopyToStatisticsCallbacks> CopyFunctionBuilder<T> {
+    /// Report the statistics of each written file through [`CopyToStatisticsCallbacks`].
+    ///
+    /// Without this DuckDB rejects `COPY ... TO` statements that ask for `RETURN_STATS`.
+    pub fn with_statistics(mut self) -> Self {
+        self.statistics_callback = Some(statistics_callback::<T>);
+        self
+    }
+}
+
 impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
     fn build(&self, handle: &CopyFunctionBuilderHandle) -> Result<()> {
         self.build_common(handle)?;
@@ -300,6 +345,14 @@ impl<T: CopyToFunctionCallbacks> CopyFunctionBuilder<T> {
             handle.raw(),
             Some(batch_size_callback::<T>)
         )?;
+
+        if self.statistics_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_copy_to_set_statistics_callback,
+                handle.raw(),
+                self.statistics_callback
+            )?;
+        }
 
         check_api_call!(
             ffi::duckdb_v2_copy_to_set_finalize_callback,
@@ -662,6 +715,17 @@ unsafe extern "C" fn progress_from_callback<T: CopyFromFunctionCallbacks>(
     );
 }
 
+/// Statistics of one written file, returned by `COPY ... TO` with `RETURN_STATS`.
+///
+/// DuckDB reports `0` for a value left as `None`.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CopyToStatistics {
+    /// The number of rows written to the file.
+    pub row_count: Option<usize>,
+    /// The size of the file in bytes.
+    pub file_size: Option<usize>,
+}
+
 /// The target columns, file path, and options supplied to a `COPY ... FROM`
 /// format during binding.
 ///
@@ -869,6 +933,25 @@ pub trait CopyToFunctionCallbacks: Send + Sync + 'static {
 
     /// **Finalize:** finish and close the output after all batches are flushed.
     fn finalize(&self, context: &Context, bind_data: &Self::BindData, init_data: &Self::InitData) -> Result<()>;
+}
+
+/// Reports the statistics of each file a `COPY ... TO` format writes.
+///
+/// Implement this for formats that can describe the files they write, which
+/// `COPY ... TO` returns when the statement asks for them with `RETURN_STATS`.
+/// Enable the callback with [`CopyFunctionBuilder::with_statistics`]; it is
+/// ignored, and never registered, without it.
+pub trait CopyToStatisticsCallbacks: CopyToFunctionCallbacks {
+    /// **Statistics:** describe one written file.
+    ///
+    /// Runs once per output file, after [`CopyToFunctionCallbacks::finalize`]
+    /// for that file, and only when the statement asks for `RETURN_STATS`.
+    fn statistics(
+        &self,
+        context: &Context,
+        bind_data: &Self::BindData,
+        init_data: &Self::InitData,
+    ) -> Result<CopyToStatistics>;
 }
 
 #[cfg(test)]

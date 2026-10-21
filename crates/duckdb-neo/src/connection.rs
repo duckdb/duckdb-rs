@@ -25,6 +25,7 @@ use crate::{
     ffi,
     instance::{Instance, InstanceHandle},
     logical_type::{LogicalType, LogicalTypeID},
+    metrics::QueryMetrics,
     query_result::{ArrowQueryResult, QueryResult},
     raw::RawExt,
     statement::{PreparedStatement, Statement, Statements},
@@ -263,6 +264,21 @@ impl Connection {
             conn: Arc::downgrade(&self.inner),
         }
     }
+
+    /// Enable or disable profiling for subsequent queries on this connection.
+    ///
+    /// Profiling collects [`QueryMetrics`] and prints each query's profile. Set
+    /// `enable_profiling` to `no_output` to collect metrics without printing.
+    pub fn set_profiling(&self, enabled: bool) -> Result<()> {
+        check_api_call!(ffi::duckdb_v2_connection_enable_profiling, self.raw(), enabled)
+    }
+
+    /// Snapshot the metrics of this connection's last completed query.
+    /// Returns an error while a query result is still live.
+    pub fn query_metrics(&self) -> Result<QueryMetrics> {
+        check_api_call!(ffi::duckdb_v2_connection_get_query_metrics, self.raw(), RET)
+            .map(|handle| QueryMetrics { handle })
+    }
 }
 
 impl HasFactory for Connection {
@@ -304,6 +320,20 @@ pub trait FFILink: HasFactory {
     #[doc(hidden)]
     fn create_value(&self, input: ValueInput<'_>) -> Result<Value> {
         value::create(self.factory()?, input)
+    }
+
+    /// Find a type that all `logical_types` can implicitly cast to, as in a SQL list literal.
+    /// Returns an error for an empty slice, `ANY`, or types with no common type.
+    fn common_type(&self, logical_types: &[LogicalType]) -> Result<LogicalType> {
+        let types = logical_types.iter().map(|x| x.handle).collect::<Vec<_>>();
+        check_api_call!(
+            ffi::duckdb_v2_factory_create_common_type,
+            self.factory()?.raw(),
+            types.as_ptr(),
+            types.len() as u64,
+            RET
+        )
+        .map(|handle| LogicalType { handle })
     }
 }
 
@@ -361,9 +391,14 @@ impl<T: FFILink + ?Sized> FFILink for &T {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+
     use crate::{
         Parameters,
+        connection::FFILink,
         environment::{Environment, StorageLocation},
+        error::DuckDBError,
+        logical_type::{LogicalType, LogicalTypeID},
+        types::DuckDBType,
     };
 
     #[test]
@@ -597,6 +632,48 @@ mod tests {
         assert!(!interrupt.is_alive());
 
         interrupt.interrupt()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_common_type() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let instance = env.open(StorageLocation::InMemory)?;
+        let conn = instance.connect()?;
+
+        assert_eq!(
+            conn.common_type(&[i16::logical_type(&conn)?, i32::logical_type(&conn)?])?
+                .id()?,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+        );
+
+        assert!(
+            conn.common_type(&[<Vec<i16>>::logical_type(&conn)?, i32::logical_type(&conn)?])
+                .is_err(),
+        );
+
+        assert_eq!(
+            conn.common_type(&[bool::logical_type(&conn)?, u64::logical_type(&conn)?])?
+                .id()?,
+            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT
+        );
+
+        let common_text = |types: &[&str]| -> crate::Result<String> {
+            let types = types
+                .iter()
+                .map(|text| LogicalType::from_text(&conn, text))
+                .collect::<crate::Result<Vec<_>>>()?;
+            conn.common_type(&types)?.to_text()
+        };
+        assert_eq!(common_text(&["DECIMAL(4,1)", "DECIMAL(5,4)"])?, "DECIMAL(7,4)");
+        assert_eq!(common_text(&["INTEGER[]", "BIGINT[]"])?, "BIGINT[]");
+        assert_eq!(common_text(&["VARCHAR"])?, "VARCHAR");
+
+        let error = conn.common_type(&[]).unwrap_err();
+        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        let error = common_text(&["INTEGER[]", "INTEGER"]).unwrap_err();
+        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_QUERY_NOT_IMPLEMENTED);
 
         Ok(())
     }

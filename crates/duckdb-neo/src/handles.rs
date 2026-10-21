@@ -4,6 +4,9 @@
 //! Callback-borrowed views and wrappers that retain parent objects stay in
 //! their respective modules.
 
+use crate::error::check_api_call;
+use crate::macro_function::MacroFunctionType;
+use crate::raw::RawExt;
 use crate::{column_data_collection::ColumnDataCollection, connection::Connection, ffi, instance::Instance};
 use crate::{connection::HasFactory, extension::Extension};
 
@@ -169,6 +172,37 @@ define_handle! {
 }
 
 define_handle! {
+    name: MacroFunctionBuilderHandle,
+    handle: ffi::duckdb_v2_macro_function_handle,
+    destroy: ffi::duckdb_v2_macro_function_destroy,
+}
+
+pub(crate) trait MacroFunctionBuilderLink {
+    fn create_macro_function_handle(&self, macro_type: MacroFunctionType) -> crate::Result<MacroFunctionBuilderHandle>;
+    fn register_macro_function_handle(&self, handle: MacroFunctionBuilderHandle) -> crate::Result<()>;
+}
+
+impl MacroFunctionBuilderLink for Extension {
+    fn create_macro_function_handle(&self, macro_type: MacroFunctionType) -> crate::Result<MacroFunctionBuilderHandle> {
+        check_api_call!(
+            ffi::duckdb_v2_macro_function_create,
+            self.factory()?.raw(),
+            macro_type.into(),
+            RET
+        )
+        .map(MacroFunctionBuilderHandle)
+    }
+
+    fn register_macro_function_handle(&self, handle: MacroFunctionBuilderHandle) -> crate::Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_extension_register_macro_function,
+            self.handle,
+            handle.raw()
+        )
+    }
+}
+
+define_handle! {
     name: CastFunctionHandle,
     link: CastFunctionLink,
     create: create_cast_function_handle,
@@ -207,6 +241,20 @@ define_handle! {
     registerers: {
         Connection => ffi::duckdb_v2_connection_register_custom_type,
         Extension => ffi::duckdb_v2_extension_register_custom_type,
+    },
+}
+
+define_handle! {
+    name: MultiFileFunctionHandle,
+    link: MultiFileFunctionLink,
+    create: create_multi_file_function_handle,
+    register: register_multi_file_function_handle,
+    handle: ffi::duckdb_v2_multi_file_function_handle,
+    destroy: ffi::duckdb_v2_multi_file_function_destroy,
+    factory: ffi::duckdb_v2_multi_file_function_create,
+    registerers: {
+        Connection => ffi::duckdb_v2_connection_register_multi_file_function,
+        Extension => ffi::duckdb_v2_extension_register_multi_file_function,
     },
 }
 

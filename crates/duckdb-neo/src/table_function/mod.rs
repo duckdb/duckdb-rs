@@ -7,7 +7,9 @@
 //! help DuckDB optimize query plans and track execution. Functions that can
 //! apply the query's filters themselves implement
 //! [`TableFilterPushdownCallbacks`] on top, and functions that can describe the
-//! batches they produce implement [`TablePartitioningCallbacks`].
+//! batches they produce implement [`TablePartitioningCallbacks`]. Readers wrapped
+//! by a [`MultiFileFunctionBuilder`](crate::multi_file::MultiFileFunctionBuilder)
+//! can also implement [`TableGetBindInfoCallbacks`] and [`TableClaimBatchCallbacks`].
 
 use std::any::Any;
 
@@ -398,6 +400,51 @@ unsafe extern "C" fn filter_pushdown_callback<T: TableFilterPushdownCallbacks>(
     );
 }
 
+unsafe extern "C" fn get_bind_info_callback<T: TableGetBindInfoCallbacks>(
+    info: ffi::duckdb_v2_table_function_get_bind_info_info_handle,
+    context: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_table_function_get_bind_info_get_user_data, info);
+            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_get_bind_info_get_bind_data, info)
+                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+
+            T::bind_info(
+                user_data,
+                bind_data,
+                &unsafe { Context::from_raw(context) },
+                BindInfoApi { handle: &info },
+            )
+        },
+        err,
+    );
+}
+
+unsafe extern "C" fn claim_batch_callback<T: TableClaimBatchCallbacks>(
+    info: ffi::duckdb_v2_table_function_claim_batch_info_handle,
+    context: ffi::duckdb_v2_context_handle,
+    err: *mut ffi::duckdb_v2_error_info_handle,
+) {
+    handle_unwind(
+        || {
+            let user_data = get_user_data!(ffi::duckdb_v2_table_function_claim_batch_get_user_data, info);
+            let bind_data = get_bind_data!(ffi::duckdb_v2_table_function_claim_batch_get_bind_data, info)
+                .ok_or_else(|| Error::api_error("Table function bind data not set"))?;
+            let local_state = get_local_state!(ffi::duckdb_v2_table_function_claim_batch_get_local_state, info);
+            let global_state = get_global_state!(ffi::duckdb_v2_table_function_claim_batch_get_global_state, info);
+
+            let result = T::claim_batch(user_data, bind_data, global_state, local_state, &unsafe {
+                Context::from_raw(context)
+            })?;
+
+            check_api_call!(ffi::duckdb_v2_table_function_claim_batch_set_claimed, info, result)
+        },
+        err,
+    );
+}
+
 ffi_enum_redeclaration! {
     /// Whether, and how, a scan's partitions line up with a set of columns.
     ///
@@ -586,6 +633,8 @@ pub struct TableFunctionBuilder<T: TableFunctionCallbacks> {
     filter_pushdown_callback: ffi::duckdb_v2_table_function_filter_pushdown_callback_fn,
     partition_data_callback: ffi::duckdb_v2_table_function_partition_data_callback_fn,
     partitioning_callback: ffi::duckdb_v2_table_function_partitioning_callback_fn,
+    claim_batch_callback: ffi::duckdb_v2_table_function_claim_batch_callback_fn,
+    get_bind_info_callback: ffi::duckdb_v2_table_function_get_bind_info_callback_fn,
 }
 
 impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
@@ -595,6 +644,23 @@ impl<T: TableFilterPushdownCallbacks> TableFunctionBuilder<T> {
     /// all of them itself.
     pub fn with_filter_pushdown(mut self) -> Self {
         self.filter_pushdown_callback = Some(filter_pushdown_callback::<T>);
+        self
+    }
+}
+
+impl<T: TableGetBindInfoCallbacks> TableFunctionBuilder<T> {
+    /// Enable column identifiers and reader metadata through [`TableGetBindInfoCallbacks`].
+    /// Without this callback, multi-file readers match columns by name only.
+    pub fn with_get_bind_info(mut self) -> Self {
+        self.get_bind_info_callback = Some(get_bind_info_callback::<T>);
+        self
+    }
+}
+
+impl<T: TableClaimBatchCallbacks> TableFunctionBuilder<T> {
+    /// Enable batch-based scanning through [`TableClaimBatchCallbacks`].
+    pub fn with_claim_batch(mut self) -> Self {
+        self.claim_batch_callback = Some(claim_batch_callback::<T>);
         self
     }
 }
@@ -621,6 +687,8 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
             filter_pushdown_callback: None,
             partition_data_callback: None,
             partitioning_callback: None,
+            claim_batch_callback: None,
+            get_bind_info_callback: None,
         }
     }
 
@@ -712,6 +780,22 @@ impl<T: TableFunctionCallbacks> TableFunctionBuilder<T> {
                 ffi::duckdb_v2_table_function_set_partitioning_callback,
                 handle.raw(),
                 self.partitioning_callback
+            )?;
+        }
+
+        if self.claim_batch_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_claim_batch_callback,
+                handle.raw(),
+                self.claim_batch_callback
+            )?;
+        }
+
+        if self.get_bind_info_callback.is_some() {
+            check_api_call!(
+                ffi::duckdb_v2_table_function_set_get_bind_info_callback,
+                handle.raw(),
+                self.get_bind_info_callback
             )?;
         }
 
@@ -874,6 +958,77 @@ pub trait TablePartitioningCallbacks: TableFunctionCallbacks {
     ) -> Result<TablePartitionInfo> {
         Ok(TablePartitionInfo::NotPartitioned)
     }
+}
+
+/// Callback-scoped access to column identifiers and reader metadata.
+#[derive(Debug)]
+pub struct BindInfoApi<'a> {
+    handle: &'a ffi::duckdb_v2_table_function_get_bind_info_info_handle,
+}
+
+impl<'a> BindInfoApi<'a> {
+    /// Assign an `INTEGER` field ID or `VARCHAR` name to a result column or nested field.
+    ///
+    /// `child_indexes` identifies the nested field: a `STRUCT` field index or `0`
+    /// for `LIST` elements at each level. An empty path identifies the column itself.
+    pub fn set_column_identifier(&self, col_index: usize, child_indexes: &[u64], identifier: &Value) -> Result<()> {
+        check_api_call!(
+            ffi::duckdb_v2_table_function_get_bind_info_set_column_identifier,
+            *self.handle,
+            col_index as u64,
+            child_indexes.as_ptr(),
+            child_indexes.len() as u64,
+            identifier.raw()
+        )
+    }
+
+    /// Set a reader metadata option, replacing any existing value for the key.
+    /// Multi-file functions expose these options as per-file reader metadata.
+    pub fn set_option(&self, key: impl AsRef<str>, value: &Value) -> Result<()> {
+        let str = key.as_ref();
+        check_api_call!(
+            ffi::duckdb_v2_table_function_get_bind_info_set_option,
+            *self.handle,
+            &mut str.into(),
+            value.raw()
+        )
+    }
+}
+
+/// Reports column identifiers and reader metadata for a bound table function.
+///
+/// Implement this for single-file readers wrapped by a
+/// [`MultiFileFunctionBuilder`](crate::multi_file::MultiFileFunctionBuilder).
+/// The wrapper requests this information for each file it binds, matches columns
+/// by the reported identifiers (so field IDs can identify renamed columns), and
+/// exposes the options as per-file reader metadata. The callback is only registered
+/// when [`TableFunctionBuilder::with_get_bind_info`] is called.
+pub trait TableGetBindInfoCallbacks: TableFunctionCallbacks {
+    /// **Bind info:** report column identifiers and reader metadata for `bind_data` through `api`.
+    /// May run multiple times per bind; report only information established by [`bind`](TableFunctionCallbacks::bind).
+    fn bind_info(&self, bind_data: &Self::BindData, context: &Context, api: BindInfoApi<'_>) -> Result<()>;
+}
+
+/// Distributes scan work across threads in batches.
+///
+/// Each scanning thread claims a batch into its local state before its first
+/// [`exec`](TableFunctionCallbacks::exec) call and whenever `exec` returns an empty
+/// output chunk. Each `exec` call produces rows only from the current batch.
+/// Returning `false` from `claim_batch` ends the scan for that thread.
+///
+/// Batch boundaries let multi-file functions preserve per-file row order across
+/// threads. The callback is only registered when
+/// [`TableFunctionBuilder::with_claim_batch`] is called.
+pub trait TableClaimBatchCallbacks: TableFunctionCallbacks {
+    /// **Claim batch:** reserve the next batch in `local_state`, returning `false` if none remain.
+    /// Other threads may block on this callback; reserve the work here and read it in `exec`.
+    fn claim_batch(
+        &self,
+        bind_data: &Self::BindData,
+        global_state: Option<&Self::GlobalState>,
+        local_state: Option<&mut Self::LocalState>,
+        context: &Context,
+    ) -> Result<bool>;
 }
 
 #[cfg(test)]

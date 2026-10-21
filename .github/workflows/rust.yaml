@@ -104,7 +104,7 @@ jobs:
         run: cargo test -p duckdb-neo --features "chrono uuid r2d2 rust_decimal" --locked
 
       - name: Test duckdb-neo static extension
-        run: cargo test -p duckdb-neo --features build-extension-static --test static_extension --locked
+        run: cargo test -p duckdb-neo --features build-extension-static --test static_extension --test static_macro_function --locked
 
       - name: Build duckdb-neo loadable extension
         run: cargo build -p duckdb-neo --example 002-extension --features build-extension --locked
