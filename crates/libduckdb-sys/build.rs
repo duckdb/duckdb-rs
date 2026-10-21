@@ -305,13 +305,9 @@ mod build_linked {
         let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
 
         // Cache downloads beside the profile directory so successive builds reuse them.
+        // An unrecognized layout only loses the shared cache, so fall back to OUT_DIR.
         let download_dir = crate::build_paths::download_root(Path::new(out_dir))
-            .ok_or_else(|| {
-                format!(
-                    "Could not determine DuckDB download directory from Cargo OUT_DIR '{out_dir}'. \
-                     Set DUCKDB_LIB_DIR to use an existing DuckDB library."
-                )
-            })?
+            .unwrap_or_else(|| Path::new(out_dir).join("duckdb-download"))
             .join(&target)
             .join(&version);
         fs::create_dir_all(&download_dir)?;
@@ -376,27 +372,20 @@ mod build_linked {
         Ok(())
     }
 
-    // Copy libduckdb into target/<profile>/deps so executables/tests can load it via
-    // the default Cargo rpath, just like when DUCKDB_LIB_DIR is set.
+    // Copy libduckdb into OUT_DIR and add it as a link search path: Cargo puts search paths
+    // inside the target directory on the loader path when it runs binaries, in any layout.
     fn copy_libduckdb(
         download_dir: &Path,
         lib_filename: &str,
         out_dir: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(deps_dir) = crate::build_paths::profile_deps_dir(Path::new(out_dir)) else {
-            return Err(format!(
-                "Could not determine runtime library directory from Cargo OUT_DIR '{out_dir}'. \
-                 Set DUCKDB_LIB_DIR to use an existing DuckDB library."
-            )
-            .into());
-        };
-        fs::create_dir_all(&deps_dir)?;
         let source = download_dir.join(lib_filename);
-        let dest = deps_dir.join(lib_filename);
+        let dest = Path::new(out_dir).join(lib_filename);
         if dest.exists() {
             fs::remove_file(&dest)?;
         }
         fs::copy(&source, &dest)?;
+        println!("cargo:rustc-link-search=native={out_dir}");
         println!("cargo:warning=Copied libduckdb to {}", dest.display());
         Ok(())
     }

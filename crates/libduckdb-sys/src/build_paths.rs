@@ -34,10 +34,6 @@ pub(crate) fn download_root(out_dir: &Path) -> Option<PathBuf> {
     Some(profile_dir(out_dir)?.parent()?.join("duckdb-download"))
 }
 
-pub(crate) fn profile_deps_dir(out_dir: &Path) -> Option<PathBuf> {
-    Some(profile_dir(out_dir)?.join("deps"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,10 +46,6 @@ mod tests {
             download_root(out_dir),
             Some(PathBuf::from("/workspace/target/duckdb-download")),
         );
-        assert_eq!(
-            profile_deps_dir(out_dir),
-            Some(PathBuf::from("/workspace/target/debug/deps")),
-        );
     }
 
     #[test]
@@ -63,10 +55,6 @@ mod tests {
         assert_eq!(
             download_root(out_dir),
             Some(PathBuf::from("/workspace/aarch64-apple-darwin/duckdb-download")),
-        );
-        assert_eq!(
-            profile_deps_dir(out_dir),
-            Some(PathBuf::from("/workspace/aarch64-apple-darwin/debug/deps")),
         );
     }
 
@@ -82,12 +70,6 @@ mod tests {
                 "/workspace/custom-target/x86_64-unknown-linux-gnu/duckdb-download"
             )),
         );
-        assert_eq!(
-            profile_deps_dir(out_dir),
-            Some(PathBuf::from(
-                "/workspace/custom-target/x86_64-unknown-linux-gnu/release/deps"
-            )),
-        );
     }
 
     #[test]
@@ -95,7 +77,6 @@ mod tests {
         let out_dir = Path::new("/var/jenkins/build/workspace/project/generated/out");
 
         assert_eq!(download_root(out_dir), None);
-        assert_eq!(profile_deps_dir(out_dir), None);
     }
 
     #[test]
@@ -103,7 +84,6 @@ mod tests {
         let out_dir = Path::new("/workspace/generated/libduckdb-sys/out");
 
         assert_eq!(download_root(out_dir), None);
-        assert_eq!(profile_deps_dir(out_dir), None);
     }
 
     #[test]
@@ -114,10 +94,6 @@ mod tests {
             download_root(out_dir),
             Some(PathBuf::from("/home/ci/build/project/target/duckdb-download")),
         );
-        assert_eq!(
-            profile_deps_dir(out_dir),
-            Some(PathBuf::from("/home/ci/build/project/target/debug/deps")),
-        );
     }
 
     #[test]
@@ -127,10 +103,6 @@ mod tests {
         assert_eq!(
             download_root(out_dir),
             Some(PathBuf::from("/workspace/target/duckdb-download")),
-        );
-        assert_eq!(
-            profile_deps_dir(out_dir),
-            Some(PathBuf::from("/workspace/target/debug/deps")),
         );
     }
 
