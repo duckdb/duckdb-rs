@@ -70,6 +70,33 @@ pub unsafe trait VectorElement: Sized {
         Self: 'a;
 }
 
+/// Marks vector elements backed by DuckDB's byte storage and arena.
+///
+/// Implemented for [`String`], [`UnsafeString`](crate::types::UnsafeString),
+/// [`BlobValue`](crate::types::BlobValue), [`BitValue`](crate::types::BitValue),
+/// [`BigNum`](crate::types::BigNum), and [`BigNumValue`](crate::types::BigNumValue).
+///
+/// Non-byte vectors do not expose an arena:
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn arena(vector: &mut Vector<'_, i32>) {
+///     let _ = vector.arena();
+/// }
+/// ```
+///
+/// Nor can they acquire a combined byte-writing view:
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn byte_view(vector: &mut Vector<'_, i32>) {
+///     let _ = vector.get_view_mut_with_arena();
+/// }
+/// ```
+pub trait HasDuckDBBytes: VectorElement {}
+
 /// Adds a supported output representation to a readable vector element.
 ///
 /// # Safety

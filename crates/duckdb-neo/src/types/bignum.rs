@@ -13,7 +13,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, Vector, VectorElement, WritableVectorElement},
 };
 use std::fmt::Display;
 
@@ -71,6 +71,9 @@ impl ToValue for BigNum {
         link.create_value(ValueInput::BigNum(&encoded))
     }
 }
+
+impl HasDuckDBBytes for BigNum {}
+impl HasDuckDBBytes for BigNumValue {}
 
 // SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
 unsafe impl VectorElement for BigNum {

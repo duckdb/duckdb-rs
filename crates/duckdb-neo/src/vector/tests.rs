@@ -115,6 +115,193 @@ fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
 }
 
 #[test]
+fn vector_mutable_view_initializes_and_preserves_validity_mask() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(65)?;
+    for index in 0..vector.len() {
+        vector.write(index, Some(index as i32))?;
+    }
+    assert!(vector.get_view()?.validity().is_none());
+
+    {
+        let mut view = vector.get_view_mut()?;
+        // SAFETY: Every row contains an initialized INTEGER value.
+        let validity = unsafe { view.validity_mut() }.expect("writable validity mask");
+        assert_eq!(validity.len(), 2);
+        assert_eq!(validity[0], u64::MAX);
+        assert_ne!(validity[1] & 1, 0);
+        validity[0] &= !1;
+        validity[1] &= !1;
+    }
+
+    assert_eq!(vector.get(0)?, None);
+    assert_eq!(vector.get(63)?, Some(&63));
+    assert_eq!(vector.get(64)?, None);
+
+    {
+        let mut view = vector.get_view_mut()?;
+        // SAFETY: The NULL rows still contain their initialized INTEGER values.
+        let validity = unsafe { view.validity_mut() }.expect("writable validity mask");
+        assert_eq!(validity[0] & 1, 0);
+        assert_eq!(validity[1] & 1, 0);
+        validity[0] |= 1;
+        validity[1] |= 1;
+    }
+    assert_eq!(vector.get(0)?, Some(&0));
+    assert_eq!(vector.get(64)?, Some(&64));
+    Ok(())
+}
+
+#[test]
+fn vector_mutable_view_guards_do_not_swap_cached_views() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut first_chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut second_chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut first = first_chunk.get_vector_at_mut::<i32>(0)?;
+    let mut second = second_chunk.get_vector_at_mut::<i32>(0)?;
+    first.set_size(1)?;
+    second.set_size(2)?;
+    first.write(0, Some(10))?;
+    second.write(0, Some(20))?;
+    second.write(1, Some(30))?;
+    {
+        let mut first_view = first.get_view_mut()?;
+        let mut second_view = second.get_view_mut()?;
+        std::mem::swap(&mut first_view, &mut second_view);
+        assert_eq!(first_view.len(), 2);
+        assert_eq!(second_view.len(), 1);
+        // SAFETY: Both flat INTEGER buffers are fully initialized.
+        unsafe {
+            first_view.as_slice_mut().unwrap()[1] = 40;
+            second_view.as_slice_mut().unwrap()[0] = 50;
+        }
+    }
+    assert_eq!(first.get(0)?, Some(&50));
+    assert_eq!(second.get(0)?, Some(&20));
+    assert_eq!(second.get(1)?, Some(&40));
+    Ok(())
+}
+
+#[test]
+fn vector_mutable_view_with_arena_writes_strings() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    let values = ["", "héllo", "123456789012", "1234567890123", "a longer string with 🦆"];
+    vector.set_size(values.len())?;
+    {
+        let (mut view, arena) = vector.get_view_mut_with_arena()?;
+        let data = view.as_mut_ptr();
+        for (index, value) in values.iter().enumerate() {
+            // SAFETY: Each slot is in bounds and its UTF-8 bytes belong to this vector.
+            unsafe { data.add(index).write(arena.add_str(value)?) };
+        }
+        // SAFETY: Every slot now contains initialized bytes owned by this vector.
+        let data = unsafe { view.as_slice_mut() }.unwrap();
+        for (encoded, value) in data.iter().zip(values) {
+            assert_eq!(encoded.get_data(), value.as_bytes());
+            assert_eq!(encoded.size(), value.len());
+        }
+        // SAFETY: Clearing a VARCHAR row's validity has no descendant requirements.
+        unsafe { view.validity_mut() }.unwrap()[0] &= !(1 << 1);
+    }
+    assert!(vector.heap.is_some());
+    for (index, value) in values.iter().enumerate() {
+        assert_eq!(vector.get(index)?, (index != 1).then_some(*value));
+    }
+    Ok(())
+}
+
+#[test]
+fn vector_mutable_view_with_arena_writes_binary_bytes() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[BlobValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<BlobValue>(0)?;
+    let values: &[&[u8]] = &[b"", &[0, 255, 128], b"123456789012", &[255; 13]];
+    vector.set_size(values.len())?;
+    {
+        let (mut view, arena) = vector.get_view_mut_with_arena()?;
+        let data = view.as_mut_ptr();
+        for (index, value) in values.iter().enumerate() {
+            // SAFETY: Each slot is in bounds and its BLOB bytes belong to this vector.
+            unsafe { data.add(index).write(arena.add_bytes(value)?) };
+        }
+        // SAFETY: The returned bytes remain in this vector's arena until all reads finish.
+        let value = unsafe { super::DuckDBBytes::new(arena, b"direct constructor")? };
+        assert_eq!(value.get_data(), b"direct constructor");
+    }
+    for (index, value) in values.iter().enumerate() {
+        assert_eq!(vector.get(index)?, Some(*value));
+    }
+    Ok(())
+}
+
+#[test]
+fn vector_byte_writes_acquire_arena_only_for_long_values() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    vector.set_size(4)?;
+    vector.write(0, Some(""))?;
+    vector.write(1, Some("123456789012"))?;
+    vector.write(2, None)?;
+    assert!(vector.heap.is_none());
+    assert_eq!(vector.get(0)?, Some(""));
+    assert_eq!(vector.get(1)?, Some("123456789012"));
+    assert_eq!(vector.get(2)?, None);
+
+    vector.write(3, Some("1234567890123"))?;
+    assert!(vector.heap.is_some());
+    assert_eq!(vector.get(3)?, Some("1234567890123"));
+    Ok(())
+}
+
+#[test]
+fn vector_mutable_view_with_arena_rejects_read_only_vectors() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut shared = super::Vector::<String>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared)?;
+    let error = shared.get_view_mut_with_arena().expect_err("shared input");
+    assert!(error.message.contains("not writable"), "{}", error.message);
+    assert!(shared.heap.is_none());
+    Ok(())
+}
+
+#[test]
+fn vector_byte_backed_types_expose_arenas() -> crate::Result<()> {
+    fn check<T: super::HasDuckDBBytes + DuckDBType>() -> crate::Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[T::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<T>(0)?;
+        vector.arena()?;
+        let (mut view, arena) = vector.get_view_mut_with_arena()?;
+        assert!(view.is_empty());
+        // SAFETY: The empty vector has no row initialization or descendant requirements.
+        assert!(unsafe { view.validity_mut() }.unwrap().is_empty());
+        // SAFETY: The encoded value is read before the vector or its arena can change.
+        let bytes = unsafe { arena.add_bytes(b"encoded storage")? };
+        assert_eq!(bytes.get_data(), b"encoded storage");
+        Ok(())
+    }
+
+    check::<String>()?;
+    check::<BlobValue>()?;
+    check::<BitValue>()?;
+    check::<BigNum>()?;
+    check::<BigNumValue>()?;
+    Ok(())
+}
+
+#[test]
 fn vector_cast_rows_preserves_target_type() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;

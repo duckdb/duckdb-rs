@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Deref};
 
 use crate::{
     ffi,
@@ -19,24 +19,29 @@ pub struct VectorView<T> {
 }
 
 impl<T: VectorElement> VectorView<T> {
-    /// Map a logical row to its physical storage index.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `logical` is outside the view.
-    pub fn physical_index(&self, logical: usize) -> usize {
-        assert!(
-            logical < self.len(),
-            "logical index {logical} out of bounds for vector view of length {}",
-            self.len()
-        );
-
+    #[inline]
+    pub unsafe fn physical_index_unchecked(&self, logical: usize) -> usize {
         match self.kind {
             StorageKind::Constant => 0,
             StorageKind::Flat if self.view.sel.is_null() => logical,
             StorageKind::Flat | StorageKind::Dictionary => unsafe { *self.view.sel.add(logical) as usize },
             StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
         }
+    }
+
+    /// Map a logical row to its physical storage index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `logical` is outside the view.
+    #[inline]
+    pub fn physical_index(&self, logical: usize) -> usize {
+        assert!(
+            logical < self.len(),
+            "logical index {logical} out of bounds for vector view of length {}",
+            self.len()
+        );
+        unsafe { self.physical_index_unchecked(logical) }
     }
 
     /// Return whether the vector contains no logical rows.
@@ -87,32 +92,14 @@ impl<T: VectorElement> VectorView<T> {
     ///
     /// # Safety
     ///
-    /// Slices can return uninitialized memory for unselected or null entries.
-    /// The caller is responsible for ensuring that they read only initialized and valid entries using the [`Self::selection`] and [`Self::validity`] methods.
+    /// Every entry in the returned slice must be initialized, including unselected and NULL slots.
+    /// Read only entries that are valid for the vector's logical type. Use [`Self::as_ptr`]
+    /// when the buffer contains uninitialized slots.
     pub unsafe fn as_slice(&self) -> Option<&[T::Internal]> {
         if self.view.data.is_null() {
             None
         } else {
             Some(unsafe { std::slice::from_raw_parts(self.view.data as *const T::Internal, self.physical_len()) })
-        }
-    }
-
-    /// Return the vector's physical storage as mutable.
-    ///
-    /// Flat vectors contain one entry per logical row, constant vectors
-    /// contain one entry, and dictionary vectors use [`Self::selection`] to
-    /// map logical rows into this slice.
-    ///
-    /// # Safety
-    ///
-    /// As for [`Self::as_slice`], the caller must read only initialized and valid entries.
-    /// Every entry written must be a valid value of the vector's type whose out-of-line data,
-    /// such as a string's bytes, outlives the vector; do not copy such entries from another vector.
-    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
-        if self.view.data.is_null() {
-            None
-        } else {
-            Some(unsafe { std::slice::from_raw_parts_mut(self.view.data as *mut T::Internal, self.physical_len()) })
         }
     }
 
@@ -122,15 +109,6 @@ impl<T: VectorElement> VectorView<T> {
             std::ptr::null()
         } else {
             self.view.data as *const T::Internal
-        }
-    }
-
-    /// Return a mutable pointer to the physical storage, or null when no data is exposed.
-    pub fn as_mut_ptr(&mut self) -> *mut T::Internal {
-        if self.view.data.is_null() {
-            std::ptr::null_mut()
-        } else {
-            self.view.data as *mut T::Internal
         }
     }
 
@@ -159,23 +137,88 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
-    /// Return the physical validity bitmask as a mutable slice, or `None` when every entry is valid.
-    pub fn validity_mut(&mut self) -> Option<&mut [u64]> {
-        if self.view.validity.is_null() {
-            None
-        } else {
-            Some(unsafe {
-                std::slice::from_raw_parts_mut(self.view.validity as *mut u64, self.physical_len().div_ceil(64))
-            })
-        }
-    }
-
     /// Change only the element marker, preserving the existing storage view.
     pub(crate) fn cast_owned<U: VectorElement>(self) -> VectorView<U> {
         VectorView {
             view: self.view,
             kind: self.kind,
             _marker: PhantomData,
+        }
+    }
+}
+
+/// An exclusive borrow of a writable flat vector's storage.
+///
+/// Read access delegates to [`VectorView`], but the cached view cannot be replaced:
+///
+/// ```compile_fail,E0596
+/// use duckdb_neo::{Result, vector::Vector};
+///
+/// fn swap_views(a: &mut Vector<'_, i32>, b: &mut Vector<'_, i32>) -> Result<()> {
+///     let mut a = a.get_view_mut()?;
+///     let mut b = b.get_view_mut()?;
+///     std::mem::swap(&mut *a, &mut *b);
+///     Ok(())
+/// }
+/// ```
+///
+/// The vector cannot be resized while its view is still in use:
+///
+/// ```compile_fail,E0499
+/// use duckdb_neo::{Result, vector::Vector};
+///
+/// fn resize(vector: &mut Vector<'_, i32>) -> Result<()> {
+///     let view = vector.get_view_mut()?;
+///     vector.set_size(10)?;
+///     assert_eq!(view.len(), 10);
+///     Ok(())
+/// }
+/// ```
+#[derive(Debug)]
+pub struct VectorViewMut<'view, T> {
+    pub(crate) view: &'view mut VectorView<T>,
+}
+
+impl<T> Deref for VectorViewMut<'_, T> {
+    type Target = VectorView<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.view
+    }
+}
+
+impl<T: VectorElement> VectorViewMut<'_, T> {
+    /// Return mutable physical storage, or `None` when no data is exposed.
+    ///
+    /// # Safety
+    /// Every entry must already be initialized, including NULL slots. Every value
+    /// written must match the vector's logical type, and its out-of-line data must
+    /// outlive all vector reads. Use [`Self::as_mut_ptr`] for uninitialized slots.
+    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
+        if self.view.view.data.is_null() {
+            None
+        } else {
+            Some(unsafe { std::slice::from_raw_parts_mut(self.view.view.data as *mut T::Internal, self.len()) })
+        }
+    }
+
+    /// Return a mutable pointer to physical storage, or null when no data is exposed.
+    pub fn as_mut_ptr(&mut self) -> *mut T::Internal {
+        self.view.view.data as *mut T::Internal
+    }
+
+    /// Return the writable validity mask, with one bit per row.
+    ///
+    /// # Safety
+    /// Rows marked valid must contain initialized values of the vector's logical type.
+    /// NULL STRUCT and ARRAY rows must also have NULL descendants.
+    pub unsafe fn validity_mut(&mut self) -> Option<&mut [u64]> {
+        if self.view.view.validity.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::slice::from_raw_parts_mut(self.view.view.validity as *mut u64, self.len().div_ceil(64))
+            })
         }
     }
 }

@@ -47,9 +47,7 @@ use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
 use crate::raw::RawExt;
 use crate::{
-    Result,
-    bytes::DuckDBBytes,
-    check_api_call,
+    Result, check_api_call,
     connection::HasFactory,
     data_chunk::{ChildrenMut, RowCount, VectorCollection},
     error::Error,
@@ -114,14 +112,36 @@ ffi_enum_redeclaration! {
     }
 }
 
+pub use crate::bytes::DuckDBBytes;
+
+/// A borrowed byte arena, valid until its vector is resized, flattened, or destroyed.
 #[derive(Debug, FromRaw, AsRaw)]
 pub struct Arena {
     pub(crate) handle: ffi::duckdb_v2_arena_handle,
 }
 
 impl Arena {
+    /// Reserve uninitialized bytes in the arena.
     pub fn allocate(&self, len: usize) -> Result<*mut u8> {
         check_api_call!(ffi::duckdb_v2_arena_allocate, self.raw(), len as u64, RET)
+    }
+
+    /// Encode bytes, storing short values inline and copying longer values into this arena.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    pub unsafe fn add_bytes(&self, value: &[u8]) -> Result<DuckDBBytes> {
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { DuckDBBytes::new(self, value) }
+    }
+
+    /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    pub unsafe fn add_str(&self, value: &str) -> Result<DuckDBBytes> {
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { self.add_bytes(value.as_bytes()) }
     }
 }
 
@@ -276,11 +296,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.view.as_ref().ok_or(not_flat())
     }
 
-    pub fn get_view_mut(&mut self) -> Result<&mut VectorView<T>> {
+    /// Borrow the writable flat storage view, allocating a writable validity mask if needed.
+    pub fn get_view_mut(&mut self) -> Result<VectorViewMut<'_, T>> {
         if !self.is_writable() || self.kind != StorageKind::Flat {
             return Err(not_writable());
         }
-        self.view.as_mut().ok_or(not_flat())
+        let view = self.view.as_mut().ok_or_else(not_flat)?;
+        view.view.validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
+        Ok(VectorViewMut { view })
     }
 
     fn acquire_view<U: VectorElement>(
@@ -490,27 +513,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(())
     }
 
-    fn arena(&mut self) -> Result<&Arena> {
-        if self.heap.is_none() {
-            let handle =
-                check_api_call!(ffi::duckdb_v2_vector_get_arena, self.handle, RET).map(|handle| Arena { handle })?;
-            self.heap = Some(handle);
-        }
-        Ok(self.heap.as_ref().unwrap())
-    }
-
-    /// # Safety
-    /// The vector must have byte storage, be writable and flat, and `index` must be in bounds.
-    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        let value = match value {
-            None => None,
-            // SAFETY: the vector owns the arena and keeps the stored bytes alive.
-            Some(value) => Some(unsafe { DuckDBBytes::new(value, || self.arena())? }),
-        };
-        // SAFETY: The caller guarantees the row is writable; the arena owns the stored bytes.
-        unsafe { self.write_internal(index, value) }
-    }
-
     /// Write one owned [`Value`] through DuckDB's generic value API.
     ///
     /// This is the slow path; prefer [`Self::write`] for typed vector access.
@@ -657,6 +659,67 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 }
 
+impl<T: HasDuckDBBytes> Vector<'_, T> {
+    /// Borrow the vector's byte arena, acquiring it on first use.
+    ///
+    /// Use [`Self::get_view_mut_with_arena`] to borrow the arena and writable storage together.
+    pub fn arena(&mut self) -> Result<&Arena> {
+        if self.heap.is_none() {
+            let handle =
+                check_api_call!(ffi::duckdb_v2_vector_get_arena, self.handle, RET).map(|handle| Arena { handle })?;
+            self.heap = Some(handle);
+        }
+        Ok(self.heap.as_ref().unwrap())
+    }
+
+    /// Borrow writable flat storage and its byte arena together for bulk encoding.
+    ///
+    /// Fails unless the vector is writable and flat. Neither the vector nor its
+    /// arena can be replaced or resized while these borrows are in use.
+    ///
+    /// ```
+    /// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
+    /// # fn main() -> duckdb_neo::Result<()> {
+    /// # let env = Environment::new()?;
+    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    /// let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    /// let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    /// vector.set_size(2)?;
+    /// let (mut view, arena) = vector.get_view_mut_with_arena()?;
+    /// let data = view.as_mut_ptr();
+    /// for (index, text) in ["hello", "a longer string"].into_iter().enumerate() {
+    ///     // SAFETY: Each slot is in bounds and the vector owns the encoded UTF-8 bytes.
+    ///     unsafe { data.add(index).write(arena.add_str(text)?); }
+    /// }
+    /// assert_eq!(vector.get(1)?, Some("a longer string"));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_view_mut_with_arena(&mut self) -> Result<(VectorViewMut<'_, T>, &Arena)> {
+        self.get_view_mut()?;
+        self.arena()?;
+        Ok((
+            VectorViewMut {
+                view: self.view.as_mut().unwrap(),
+            },
+            self.heap.as_ref().unwrap(),
+        ))
+    }
+
+    /// # Safety
+    /// The vector must be writable and flat, and `index` must be in bounds.
+    /// The bytes must be valid for the vector's logical type.
+    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
+        let value = match value {
+            None => None,
+            // SAFETY: the vector owns the arena and keeps the stored bytes alive.
+            Some(value) => Some(unsafe { DuckDBBytes::new_with_arena(value, || self.arena())? }),
+        };
+        // SAFETY: The caller guarantees the row is writable; the arena owns the stored bytes.
+        unsafe { self.write_internal(index, value) }
+    }
+}
+
 impl<T: VectorElement> Vector<'_, T> {
     /// Return the value at a logical row.
     ///
@@ -682,7 +745,7 @@ impl<T: VectorElement> Vector<'_, T> {
         }
 
         let view = self.view.as_ref()?;
-        let physical = view.physical_index(index);
+        let physical = unsafe { view.physical_index_unchecked(index) };
         if view.is_null_physical(physical) {
             None
         } else {

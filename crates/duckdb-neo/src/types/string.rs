@@ -1,7 +1,8 @@
 //! `VARCHAR`, `BLOB`, and `BIT` byte-oriented logical types.
 //!
-//! [`str`] and [`String`] represent `VARCHAR`; [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
-//! All four share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
+//! [`str`], [`String`], and [`UnsafeString`] represent `VARCHAR`;
+//! [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
+//! All share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi_str::{DuckDBStr, bytes_view};
@@ -15,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, Vector, VectorElement, WritableVectorElement},
 };
 /// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
 pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
@@ -56,6 +57,20 @@ impl DuckDBType for String {
 impl ToValue for String {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
         self.as_str().value(link)
+    }
+}
+
+/// A `VARCHAR` vector marker that reads borrowed strings without validating UTF-8.
+///
+/// # Safety
+/// Every non-NULL row read through this marker must contain valid UTF-8.
+/// Invalid UTF-8 causes undefined behavior. Use [`String`] for checked reads.
+#[derive(Debug)]
+pub struct UnsafeString;
+
+impl DuckDBType for UnsafeString {
+    fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
+        str::logical_type(link)
     }
 }
 
@@ -141,6 +156,11 @@ impl FromValue for BitValue {
     }
 }
 
+impl HasDuckDBBytes for String {}
+impl HasDuckDBBytes for UnsafeString {}
+impl HasDuckDBBytes for BlobValue {}
+impl HasDuckDBBytes for BitValue {}
+
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
@@ -197,6 +217,34 @@ unsafe impl VectorElement for String {
     }
 }
 
+// SAFETY: Same storage as `String`; users of this marker must guarantee valid UTF-8.
+unsafe impl VectorElement for UnsafeString {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
+
+    type Internal = DuckDBBytes;
+
+    type Ref<'a> = &'a str;
+
+    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    where
+        Self: 'a,
+    {
+        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const ffi::duckdb_v2_bytes;
+        let string_view = unsafe { &*data_ptr.add(physical) };
+        unsafe { std::str::from_utf8_unchecked(bytes_view(string_view)) }
+    }
+}
+
+// SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
+unsafe impl WritableVectorElement for UnsafeString {
+    type Write<'a> = &'a str;
+
+    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
+    }
+}
+
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
 unsafe impl WritableVectorElement for String {
     type Write<'a> = &'a str;
@@ -250,6 +298,33 @@ mod tests {
         // SAFETY: This writable byte vector is flat and has one row.
         unsafe { vector.write_bytes(0, Some(&[0xff])) }.unwrap();
         let _ = vector.get(0);
+    }
+
+    #[test]
+    fn unsafe_string_vector_reads_and_writes_valid_utf8() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[UnsafeString::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<UnsafeString>(0)?;
+        let values = [
+            Some(""),
+            Some("héllo"),
+            Some("goo\0se"),
+            Some("123456789012"),
+            Some("1234567890123"),
+            Some("a longer string with 🦆"),
+            None,
+        ];
+        vector.set_size(values.len())?;
+        for (index, value) in values.iter().enumerate() {
+            vector.write(index, *value)?;
+            assert_eq!(vector.get(index)?, *value);
+        }
+        assert_eq!(vector.iter()?.collect::<Vec<_>>(), values);
+        let checked = chunk.get_vector_at::<String>(0)?;
+        assert_eq!(checked.iter()?.collect::<Vec<_>>(), values);
+        assert!(chunk.get_vector_at::<BlobValue>(0).is_err());
+        Ok(())
     }
 
     #[test]
