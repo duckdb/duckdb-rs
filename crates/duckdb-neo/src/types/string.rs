@@ -16,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{HasDuckDBBytes, Vector, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, VectorElement, WritableVectorElement},
 };
 /// Copy bytes DuckDB just returned; `raw` must be null or valid for the duration of the call.
 pub(crate) fn owned_bytes(raw: ffi::duckdb_v2_str) -> Result<Vec<u8>> {
@@ -169,11 +169,15 @@ unsafe impl VectorElement for BlobValue {
 
     type Ref<'a> = &'a [u8];
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
+        let data_ptr = vector.as_ptr() as *const DuckDBBytes;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
@@ -186,11 +190,15 @@ unsafe impl VectorElement for BitValue {
 
     type Ref<'a> = &'a [u8];
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const DuckDBBytes;
+        let data_ptr = vector.as_ptr() as *const DuckDBBytes;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
@@ -205,11 +213,15 @@ unsafe impl VectorElement for String {
 
     type Ref<'a> = &'a str;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const ffi::duckdb_v2_bytes;
+        let data_ptr = vector.as_ptr() as *const ffi::duckdb_v2_bytes;
 
         let string_view = unsafe { &*data_ptr.add(physical) };
 
@@ -225,11 +237,15 @@ unsafe impl VectorElement for UnsafeString {
 
     type Ref<'a> = &'a str;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const ffi::duckdb_v2_bytes;
+        let data_ptr = vector.as_ptr() as *const ffi::duckdb_v2_bytes;
         let string_view = unsafe { &*data_ptr.add(physical) };
         unsafe { std::str::from_utf8_unchecked(bytes_view(string_view)) }
     }
@@ -239,7 +255,11 @@ unsafe impl VectorElement for UnsafeString {
 unsafe impl WritableVectorElement for UnsafeString {
     type Write<'a> = &'a str;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
     }
@@ -249,7 +269,11 @@ unsafe impl WritableVectorElement for UnsafeString {
 unsafe impl WritableVectorElement for String {
     type Write<'a> = &'a str;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value.map(|v| v.as_bytes())) }
     }
@@ -259,7 +283,11 @@ unsafe impl WritableVectorElement for String {
 unsafe impl WritableVectorElement for BlobValue {
     type Write<'a> = &'a [u8];
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value) }
     }
@@ -269,7 +297,11 @@ unsafe impl WritableVectorElement for BlobValue {
 unsafe impl WritableVectorElement for BitValue {
     type Write<'a> = &'a [u8];
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<&[u8]>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<&[u8]>,
+    ) -> Result<()> {
         if let Some(value) = value {
             check_bit(value)?;
         }
@@ -296,8 +328,8 @@ mod tests {
         let mut vector = chunk.get_vector_at_mut::<String>(0).unwrap();
         vector.set_size(1).unwrap();
         // SAFETY: This writable byte vector is flat and has one row.
-        unsafe { vector.write_bytes(0, Some(&[0xff])) }.unwrap();
-        let _ = vector.get(0);
+        unsafe { vector.writer().unwrap().write_bytes(0, Some(&[0xff])) }.unwrap();
+        let _ = vector.reader().unwrap().get(0);
     }
 
     #[test]
@@ -317,12 +349,12 @@ mod tests {
         ];
         vector.set_size(values.len())?;
         for (index, value) in values.iter().enumerate() {
-            vector.write(index, *value)?;
-            assert_eq!(vector.get(index)?, *value);
+            vector.writer()?.set(index, *value)?;
+            assert_eq!(vector.reader()?.get(index)?, *value);
         }
-        assert_eq!(vector.iter()?.collect::<Vec<_>>(), values);
+        assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), values);
         let checked = chunk.get_vector_at::<String>(0)?;
-        assert_eq!(checked.iter()?.collect::<Vec<_>>(), values);
+        assert_eq!(checked.reader()?.iter().collect::<Vec<_>>(), values);
         assert!(chunk.get_vector_at::<BlobValue>(0).is_err());
         Ok(())
     }

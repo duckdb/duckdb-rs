@@ -1,8 +1,8 @@
-use crate::{Result, logical_type::LogicalTypeID};
+use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
-    Arena, HasDuckDBBytes, StorageKind, Vector, VectorElement, VectorView, WritableVectorElement, not_flat,
-    not_writable, out_of_bounds,
+    Arena, DuckDBBytes, HasDuckDBBytes, StorageKind, TypeMetadata, Vector, VectorElement, VectorView,
+    WritableVectorElement, not_flat, not_writable, out_of_bounds,
 };
 
 /// Exclusive access to a writable flat vector.
@@ -68,7 +68,7 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
         if vector.storage_kind() != StorageKind::Flat {
             return Err(not_flat());
         }
-        vector.get_view()?;
+        vector.view.as_ref().ok_or_else(not_flat)?;
         Ok(Self {
             inner: FlatWriter { vector },
         })
@@ -135,8 +135,8 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
     /// Bit `index % 64` of word `index / 64` marks a non-NULL row.
     ///
     /// # Safety
-    /// Rows marked valid must contain initialized values of the logical type.
-    /// NULL STRUCT, ARRAY, and UNION rows must have NULL descendants. This only
+    /// Rows marked valid must contain initialized values of the logical type
+    /// before any read. NULL STRUCT, ARRAY, and UNION rows must have NULL descendants. This only
     /// changes the parent's mask; it does not update children.
     ///
     /// A borrowed mask cannot survive a typed write that might replace it:
@@ -163,7 +163,7 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
     /// }
     /// ```
     pub unsafe fn validity_mut(&mut self) -> Result<&mut [u64]> {
-        self.inner.vector.get_view_mut()?;
+        self.inner.ensure_validity_writable()?;
         let len = self.len().div_ceil(64);
         if len == 0 {
             return Ok(&mut []);
@@ -177,25 +177,73 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
     /// Set a row's validity without changing its data or descendants.
     ///
     /// # Safety
-    /// A row marked valid must contain an initialized value of the logical type.
-    /// A NULL STRUCT, ARRAY, or UNION row must have NULL descendants.
+    /// A row marked valid must contain an initialized value of the logical type
+    /// before any read. A NULL STRUCT, ARRAY, or UNION row must have NULL descendants.
     pub unsafe fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
         }
         // SAFETY: The writer is flat and writable, and the row is in bounds.
-        unsafe { self.inner.vector.set_row_validity_unchecked(index, is_valid) }
+        unsafe { self.inner.set_validity_unchecked(index, is_valid) }
     }
 
     /// Set every row's validity, including padding bits in the last word.
     ///
     /// # Safety
-    /// Rows marked valid must contain initialized values of the logical type.
-    /// NULL STRUCT, ARRAY, and UNION rows must have NULL descendants.
+    /// Rows marked valid must contain initialized values of the logical type
+    /// before any read. NULL STRUCT, ARRAY, and UNION rows must have NULL descendants.
     pub unsafe fn fill_validity(&mut self, is_valid: bool) -> Result<()> {
         // SAFETY: The caller upholds the validity and descendant invariants.
         unsafe { self.validity_mut()? }.fill(if is_valid { u64::MAX } else { 0 });
         Ok(())
+    }
+
+    pub(crate) fn metadata(&self) -> TypeMetadata {
+        self.inner.vector.metadata()
+    }
+
+    pub(crate) fn children(&self) -> Option<&crate::data_chunk::VectorCollection> {
+        self.inner.vector.children()
+    }
+
+    pub(crate) fn children_collection_mut(&mut self) -> Option<&mut crate::data_chunk::VectorCollection> {
+        self.inner.vector.children_collection_mut()
+    }
+
+    pub(crate) fn set_null_slow(&mut self, index: usize) -> Result<()> {
+        self.inner.vector.set_null_slow(index)
+    }
+
+    pub(crate) fn write_value_slow(&mut self, index: usize, value: crate::value::Value) -> Result<()> {
+        self.inner.vector.write_value_slow(index, value)
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn write_internal<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
+        if let Some(value) = value {
+            let data = self.view().as_ptr() as *mut U;
+            // SAFETY: The caller guarantees the row's bounds and physical representation.
+            unsafe { data.add(index).write(value) };
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_as<U: WritableVectorElement>(
+        &mut self,
+        index: usize,
+        value: Option<U::Write<'_>>,
+    ) -> Result<()> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        self.inner.vector.validate_as::<U>()?;
+        // SAFETY: U was validated; the repr(C) wrappers differ only in element markers.
+        let typed = unsafe { &mut *(self.inner.vector as *mut Vector<'_, T> as *mut Vector<'_, U>) };
+        let mut writer = VectorWriter {
+            inner: FlatWriter { vector: typed },
+        };
+        // SAFETY: This writer inherits flat, exclusive storage and checked bounds.
+        unsafe { writer.set_unchecked(index, value) }
     }
 
     fn view(&self) -> &VectorView<T> {
@@ -223,10 +271,16 @@ impl<T: WritableVectorElement> VectorWriter<'_, '_, T> {
     ///
     /// # Safety
     /// `index` must be less than [`Self::len`].
-    #[inline]
+    #[inline(always)]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
+        let is_valid = value.is_some();
         // SAFETY: The writer guarantees flat, writable storage; the caller guarantees bounds.
-        unsafe { write_unchecked(self.inner.vector, index, value) }
+        unsafe { T::write(self, index, value)? };
+        // VARIANT's value API determines nullness after casting the supplied Value.
+        if T::TYPE_ID != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT {
+            unsafe { self.inner.set_validity_unchecked(index, is_valid)? };
+        }
+        Ok(())
     }
 }
 
@@ -245,25 +299,54 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
     /// }
     /// ```
     pub fn arena(&mut self) -> Result<&Arena> {
-        self.inner.vector.arena()
+        if self.inner.vector.heap.is_none() {
+            let handle = check_api_call!(ffi::duckdb_v2_vector_get_arena, self.inner.vector.handle, RET)?;
+            self.inner.vector.heap = Some(Arena { handle });
+        }
+        Ok(self.inner.vector.heap.as_ref().unwrap())
+    }
+
+    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
+        let encoded = match value {
+            None => None,
+            // SAFETY: The vector owns the arena for every subsequent read.
+            Some(value) => Some(unsafe { DuckDBBytes::from_parts(&[value], || self.arena())? }),
+        };
+        // SAFETY: The caller guarantees the row is in bounds and bytes match its logical type.
+        unsafe { self.write_internal(index, encoded) }
     }
 }
 
-#[inline]
-pub(super) unsafe fn write_unchecked<T: WritableVectorElement>(
-    vector: &mut Vector<'_, T>,
-    index: usize,
-    value: Option<T::Write<'_>>,
-) -> Result<()> {
-    let is_valid = value.is_some();
-    // SAFETY: The caller guarantees flat, writable storage and an in-bounds row.
-    unsafe { T::write(vector, index, value)? };
-    // VARIANT's value API determines nullness after casting the supplied Value.
-    if T::TYPE_ID != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT {
-        // SAFETY: The caller guarantees flat, writable storage and an in-bounds row.
-        unsafe { vector.set_row_validity_unchecked(index, is_valid)? };
+impl<T: VectorElement> FlatWriter<'_, '_, T> {
+    fn ensure_validity_writable(&mut self) -> Result<()> {
+        if !self.vector.validity_writable {
+            let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.vector.handle, RET)?;
+            self.vector.view.as_mut().ok_or_else(not_flat)?.view.validity = validity;
+            self.vector.validity_writable = true;
+        }
+        Ok(())
     }
-    Ok(())
+
+    #[inline(always)]
+    unsafe fn set_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
+        let view = self.vector.view.as_ref().ok_or_else(not_flat)?;
+        if is_valid && view.view.validity.is_null() {
+            return Ok(());
+        }
+        self.ensure_validity_writable()?;
+        let validity = self.vector.view.as_ref().unwrap().view.validity as *mut u64;
+        // SAFETY: The owning writer guarantees flat, writable storage; the caller guarantees bounds.
+        let word = unsafe { validity.add(index / 64) };
+        let mask = 1u64 << (index % 64);
+        unsafe {
+            if is_valid {
+                *word |= mask;
+            } else {
+                *word &= !mask;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

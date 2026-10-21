@@ -20,16 +20,14 @@ impl ScalarCallbacks for AmplifyTest {
         vectors: &mut duckdb_neo::data_chunk::VectorCollection,
         output: duckdb_neo::vector::Vector<'_, duckdb_neo::vector::Unknown>,
     ) -> duckdb_neo::Result<()> {
-        let input = vectors.get_vector_at::<i32>(0)?;
+        let input = vectors.get_vector_at::<i32>(0)?.reader()?;
 
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
+        let mut writer = output.writer()?;
 
-        for (i, item) in input.iter()?.enumerate() {
-            match item {
-                Some(v) => output.write(i, Some(v * 10))?,
-                None => output.write(i, None)?,
-            };
+        for (i, item) in input.iter().enumerate() {
+            writer.set(i, item.map(|value| value * 10))?;
         }
 
         Ok(())

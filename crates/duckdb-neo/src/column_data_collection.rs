@@ -158,8 +158,8 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 /// let mut chunk = DataChunk::create(&conn, &types, true)?;
 /// let mut values = chunk.get_vector_at_mut::<i32>(0)?;
 /// values.set_size(2)?;
-/// values.write(0, Some(10))?;
-/// values.write(1, Some(20))?;
+/// values.writer()?.set(0, Some(10))?;
+/// values.writer()?.set(1, Some(20))?;
 ///
 /// let mut appender = collection.to_append()?;
 /// appender.append(&mut chunk)?;
@@ -167,7 +167,7 @@ impl<S: Into<String> + Clone, const N: usize> From<&[(LogicalType, S); N]> for C
 ///
 /// let mut scan = appender.to_scan(&conn)?;
 /// let chunk = scan.next_chunk()?.expect("expected a chunk");
-/// let values = chunk.get_vector_at::<i32>(0)?;
+/// let values = chunk.get_vector_at::<i32>(0)?.reader()?;
 /// assert_eq!(values.get(0)?, Some(&10));
 /// assert_eq!(values.get(1)?, Some(&20));
 ///
@@ -503,7 +503,7 @@ mod test {
             let collection = ColumnDataCollection::new(context, [i32::logical_type(context)?])?;
             let mut output = output;
             output.set_size(1)?;
-            output.write(0, Some(collection.is_empty()?))
+            output.writer()?.set(0, Some(collection.is_empty()?))
         });
 
         let env = Environment::new()?;
@@ -519,7 +519,7 @@ mod test {
 
         let mut result = conn.query("SELECT collection_is_empty()", Parameters::None)?;
         let chunk = result.next_chunk()?.expect("expected a result chunk");
-        assert_eq!(chunk.get_vector_at::<bool>(0)?.get(0)?, Some(&true));
+        assert_eq!(chunk.get_vector_at::<bool>(0)?.reader()?.get(0)?, Some(&true));
         Ok(())
     }
 
@@ -565,8 +565,8 @@ mod test {
         id.set_size(2)?;
         is_active.set_size(2)?;
 
-        id.write(0, Some(10))?;
-        id.write(1, None)?;
+        id.writer()?.set(0, Some(10))?;
+        id.writer()?.set(1, None)?;
 
         let mut collection = collection.to_append()?;
 
@@ -580,10 +580,10 @@ mod test {
 
         let [id, is_active] = chunk.get_vector_array_mut([0, 1])?;
         let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
-        id.write(0, Some(10))?;
-        id.write(1, Some(12))?;
-        is_active.write(0, Some(false))?;
-        is_active.write(1, None)?;
+        id.writer()?.set(0, Some(10))?;
+        id.writer()?.set(1, Some(12))?;
+        is_active.writer()?.set(0, Some(false))?;
+        is_active.writer()?.set(1, None)?;
 
         let mut collection = collection.to_append()?;
 
@@ -598,8 +598,8 @@ mod test {
         id.set_size(1)?;
         is_active.set_size(1)?;
 
-        id.write(0, Some(14))?;
-        is_active.write(0, Some(true))?;
+        id.writer()?.set(0, Some(14))?;
+        is_active.writer()?.set(0, Some(true))?;
 
         let mut collection_2 = ColumnDataCollection::new(&conn, &logical_types)?.to_append()?;
         collection_2.append(&mut chunk_2)?;
@@ -637,16 +637,18 @@ mod test {
 
         if let Some(chunk) = result.next_chunk()? {
             let id = chunk.get_vector_at::<i32>(0)?;
+            let id_reader = id.reader()?;
             let is_active = chunk.get_vector_at::<bool>(1)?;
+            let is_active_reader = is_active.reader()?;
 
-            assert_eq!(id.get(0)?, Some(&10));
-            assert_eq!(is_active.get(0)?, Some(&false));
+            assert_eq!(id_reader.get(0)?, Some(&10));
+            assert_eq!(is_active_reader.get(0)?, Some(&false));
 
-            assert_eq!(id.get(1)?, Some(&12));
-            assert_eq!(is_active.get(1)?, None);
+            assert_eq!(id_reader.get(1)?, Some(&12));
+            assert_eq!(is_active_reader.get(1)?, None);
 
-            assert_eq!(id.get(2)?, Some(&14));
-            assert_eq!(is_active.get(2)?, Some(&true));
+            assert_eq!(id_reader.get(2)?, Some(&14));
+            assert_eq!(is_active_reader.get(2)?, Some(&true));
         } else {
             panic!("Expected a result chunk, but got none");
         }
@@ -672,11 +674,11 @@ mod test {
         id.set_size(2)?;
         is_active.set_size(2)?;
 
-        id.write(0, Some(10))?;
-        id.write(1, None)?;
+        id.writer()?.set(0, Some(10))?;
+        id.writer()?.set(1, None)?;
 
-        is_active.write(0, Some(false))?;
-        is_active.write(1, None)?;
+        is_active.writer()?.set(0, Some(false))?;
+        is_active.writer()?.set(1, None)?;
 
         let mut collection = collection.to_append()?;
 
@@ -686,13 +688,15 @@ mod test {
 
         while let Some(chunk) = scan.next_chunk()? {
             let id = chunk.get_vector_at::<i32>(0)?;
+            let id_reader = id.reader()?;
             let is_active = chunk.get_vector_at::<bool>(1)?;
+            let is_active_reader = is_active.reader()?;
 
-            assert_eq!(id.get(0)?, Some(&10));
-            assert_eq!(is_active.get(0)?, Some(&false));
+            assert_eq!(id_reader.get(0)?, Some(&10));
+            assert_eq!(is_active_reader.get(0)?, Some(&false));
 
-            assert_eq!(id.get(1)?, None);
-            assert_eq!(is_active.get(1)?, None);
+            assert_eq!(id_reader.get(1)?, None);
+            assert_eq!(is_active_reader.get(1)?, None);
         }
 
         Ok(())
@@ -705,7 +709,7 @@ mod test {
         let mut chunk = DataChunk::create(&conn, &types, true)?;
         let mut values = chunk.get_vector_at_mut::<i32>(0)?;
         values.set_size(1)?;
-        values.write(0, Some(42))?;
+        values.writer()?.set(0, Some(42))?;
         let mut appender = ColumnDataCollection::new(&conn, &types)?.to_append()?;
         appender.append(&mut chunk)?;
 
@@ -713,7 +717,7 @@ mod test {
         let mut second = appender.to_scan(&conn)?;
         for scan in [&mut first, &mut second] {
             let chunk = scan.next_chunk()?.unwrap();
-            assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+            assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
             assert!(scan.next_chunk()?.is_none());
         }
         drop(first);
@@ -725,7 +729,7 @@ mod test {
         let mut scan = collection.to_scan(&conn)?;
         let mut rows = Vec::new();
         while let Some(chunk) = scan.next_chunk()? {
-            rows.extend(chunk.get_vector_at::<i32>(0)?.iter()?.flatten().copied());
+            rows.extend(chunk.get_vector_at::<i32>(0)?.reader()?.iter().flatten().copied());
         }
         assert_eq!(rows, [42, 42]);
         Ok(())
@@ -743,7 +747,7 @@ mod test {
             let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
             vector.set_size(values.len())?;
             for (row, value) in values.iter().enumerate() {
-                vector.write(row, Some(*value))?;
+                vector.writer()?.set(row, Some(*value))?;
             }
             Ok(chunk)
         };
@@ -761,7 +765,13 @@ mod test {
         let mut scan = appender.to_scan(&conn)?;
         let mut values = Vec::new();
         while let Some(chunk) = scan.next_chunk()? {
-            values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|value| *value.unwrap()));
+            values.extend(
+                chunk
+                    .get_vector_at::<i32>(0)?
+                    .reader()?
+                    .iter()
+                    .map(|value| *value.unwrap()),
+            );
         }
         assert_eq!(values, [1, 2, 3, 4, 5]);
 

@@ -146,7 +146,7 @@ fn test_table_function() -> Result<()> {
                 if threshold.is_some_and(|threshold| item <= threshold) {
                     continue;
                 }
-                output_vector.write(written, Some(item))?;
+                output_vector.writer()?.set(written, Some(item))?;
                 written += 1;
             }
             output_vector.set_size(written)?;
@@ -229,12 +229,12 @@ fn test_table_function() -> Result<()> {
     let mut row_count = 0;
 
     while let Some(chunk) = result.next_chunk()? {
-        let vector = chunk.get_vector_at::<i32>(0)?;
+        let reader = chunk.get_vector_at::<i32>(0)?.reader()?;
 
-        row_count += vector.len();
+        row_count += reader.len();
 
-        for i in 0..vector.len() {
-            let value = vector.get(i)?;
+        for i in 0..reader.len() {
+            let value = reader.get(i)?;
 
             assert!(value.is_some_and(|v| (146..152).contains(v)));
         }
@@ -332,8 +332,8 @@ fn test_table_function_partitioning() -> Result<()> {
             values.set_size(ROWS_PER_BATCH)?;
 
             for row in 0..ROWS_PER_BATCH {
-                parts.write(row, Some(part))?;
-                values.write(row, Some(row as i32))?;
+                parts.writer()?.set(row, Some(part))?;
+                values.writer()?.set(row, Some(row as i32))?;
             }
 
             // `partition_data` runs on this thread, right after this batch.
@@ -432,8 +432,8 @@ fn test_table_function_partitioning() -> Result<()> {
     let mut rows = Vec::new();
 
     while let Some(chunk) = result.next_chunk()? {
-        let parts = chunk.get_vector_at::<i32>(0)?;
-        let sums = chunk.get_vector_at::<i128>(1)?;
+        let parts = chunk.get_vector_at::<i32>(0)?.reader()?;
+        let sums = chunk.get_vector_at::<i128>(1)?.reader()?;
 
         for row in 0..parts.len() {
             rows.push((*parts.get(row)?.unwrap(), *sums.get(row)?.unwrap()));
@@ -465,8 +465,8 @@ fn test_table_function_partitioning() -> Result<()> {
     let mut scan = conn.query("SELECT part, val FROM partitioned_range()", Parameters::None)?;
     let mut ordered_rows = Vec::new();
     while let Some(chunk) = scan.next_chunk()? {
-        let parts = chunk.get_vector_at::<i32>(0)?;
-        let values = chunk.get_vector_at::<i32>(1)?;
+        let parts = chunk.get_vector_at::<i32>(0)?.reader()?;
+        let values = chunk.get_vector_at::<i32>(1)?.reader()?;
         for row in 0..parts.len() {
             ordered_rows.push((*parts.get(row)?.unwrap(), *values.get(row)?.unwrap()));
         }
@@ -484,7 +484,7 @@ fn test_table_function_partitioning() -> Result<()> {
     )?;
     let mut plan_rows = 0;
     while let Some(chunk) = plan.next_chunk()? {
-        let plans = chunk.get_vector_at::<String>(1)?;
+        let plans = chunk.get_vector_at::<String>(1)?.reader()?;
         for row in 0..plans.len() {
             let text = plans.get(row)?.expect("EXPLAIN plan is not NULL");
             assert!(!text.contains("Partitioned Aggregate"));
@@ -600,7 +600,9 @@ impl TableFunctionCallbacks for ProjectionScan {
             let mut vector = output.get_vector_at_mut::<i32>(position)?;
             vector.set_size(size)?;
             for row in 0..size {
-                vector.write(row, Some((start + row + declared * 10_000) as i32))?;
+                vector
+                    .writer()?
+                    .set(row, Some((start + row + declared * 10_000) as i32))?;
             }
         }
         assert!(columns.get_column_index(columns.count()?).is_err());
@@ -634,9 +636,9 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
             let mut result = conn.query("SELECT second FROM projection_scan(5000)", Parameters::None)?;
             let mut rows = Vec::new();
             while let Some(chunk) = result.next_chunk()? {
-                let vector = chunk.get_vector_at::<i32>(0)?;
-                for row in 0..vector.len() {
-                    rows.push(vector.get(row)?.copied());
+                let reader = chunk.get_vector_at::<i32>(0)?.reader()?;
+                for row in 0..reader.len() {
+                    rows.push(reader.get(row)?.copied());
                 }
             }
             assert_eq!(rows, (10_000..15_000).map(Some).collect::<Vec<_>>());
@@ -644,7 +646,7 @@ fn test_table_function_projection_lifecycle() -> Result<()> {
 
             let mut count = conn.query("SELECT count(*) FROM projection_scan(5000)", Parameters::None)?;
             let chunk = count.next_chunk()?.expect("count returns one row");
-            assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&5_000));
+            assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&5_000));
             assert!(count.next_chunk()?.is_none());
             assert!(mappings.lock().unwrap().contains(&vec![0]));
 
@@ -755,7 +757,7 @@ impl TableFunctionCallbacks for BatchedRange {
         let mut vector = output.get_vector_at_mut::<i64>(0)?;
         vector.set_size(batch.len())?;
         for (row, value) in batch.enumerate() {
-            vector.write(row, Some(value as i64))?;
+            vector.writer()?.set(row, Some(value as i64))?;
         }
         Ok(())
     }
@@ -805,9 +807,9 @@ fn test_table_function_claim_batch() -> Result<()> {
     let mut result = conn.query("SELECT i FROM batched_range(10500, NULL)", Parameters::None)?;
     let mut rows = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
-        let vector = chunk.get_vector_at::<i64>(0)?;
-        for row in 0..vector.len() {
-            rows.push(*vector.get(row)?.unwrap());
+        let reader = chunk.get_vector_at::<i64>(0)?.reader()?;
+        for row in 0..reader.len() {
+            rows.push(*reader.get(row)?.unwrap());
         }
     }
     drop(result);

@@ -524,13 +524,13 @@ mod tests {
         let second = result.next_chunk()?.unwrap();
         drop(result);
 
-        assert_eq!(first.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
-        assert_eq!(second.get_vector_at::<i64>(0)?.get(0)?, Some(&2048));
+        assert_eq!(first.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&0));
+        assert_eq!(second.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&2048));
 
         // The temporary result is dropped at the end of the statement, freeing the connection.
         let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
         assert_eq!(conn.execute("SELECT 1", Parameters::None)?, 0);
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
 
         Ok(())
     }
@@ -589,7 +589,7 @@ mod tests {
         assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
 
         let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
         Ok(())
     }
 

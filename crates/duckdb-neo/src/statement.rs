@@ -440,7 +440,7 @@ mod tests {
 
         let mut values = Vec::new();
         while let Some(chunk) = query.next_chunk()? {
-            values.extend(chunk.get_vector_at::<i64>(0)?.iter()?.flatten().copied());
+            values.extend(chunk.get_vector_at::<i64>(0)?.reader()?.iter().flatten().copied());
         }
         assert_eq!(values, (10..15).collect::<Vec<i64>>());
 
@@ -492,9 +492,9 @@ mod tests {
 
         let mut vec = chunk.get_vector_at_mut::<String>(0)?;
         vec.set_size(3)?;
-        vec.write(0, Some("first"))?;
-        vec.write(1, None)?;
-        vec.write(2, Some("third"))?;
+        vec.writer()?.set(0, Some("first"))?;
+        vec.writer()?.set(1, None)?;
+        vec.writer()?.set(2, Some("third"))?;
 
         cdc.append(&mut chunk)?;
 
@@ -507,12 +507,13 @@ mod tests {
 
         while let Some(chunk) = query.next_chunk()? {
             let vec = chunk.get_vector_at::<String>(0)?;
+            let vec_reader = vec.reader()?;
 
             assert_eq!(vec.len(), 3);
 
-            assert_eq!(vec.get(0)?, Some("first"));
-            assert_eq!(vec.get(1)?, None);
-            assert_eq!(vec.get(2)?, Some("third"));
+            assert_eq!(vec_reader.get(0)?, Some("first"));
+            assert_eq!(vec_reader.get(1)?, None);
+            assert_eq!(vec_reader.get(2)?, Some("third"));
         }
 
         Ok(())
@@ -528,8 +529,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[i64::logical_type(&conn)?], true)?;
         let mut vec = chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(2)?;
-        vec.write(0, Some(1))?;
-        vec.write(1, Some(2))?;
+        vec.writer()?.set(0, Some(1))?;
+        vec.writer()?.set(1, Some(2))?;
         cdc.append(&mut chunk)?;
 
         let statement = Statements::parse(&conn, "SELECT sum(x)::BIGINT FROM cdc")?
@@ -542,11 +543,11 @@ mod tests {
         drop(statement);
 
         let chunk = query.next_chunk()?.expect("one chunk");
-        assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?.copied(), Some(3));
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?.copied(), Some(3));
         drop(query);
 
         let chunk = prepared.execute(Parameters::None)?.next_chunk()?.expect("one chunk");
-        assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?.copied(), Some(3));
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?.copied(), Some(3));
 
         Ok(())
     }

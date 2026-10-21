@@ -17,7 +17,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, WritableVectorElement},
+    vector::WritableVectorElement,
 };
 
 /// DuckDB's internal signed 128-bit UUID representation.
@@ -70,11 +70,15 @@ unsafe impl VectorElement for UuidValueRaw {
     where
         Self: 'a;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const UuidValueRaw;
+        let data_ptr = vector.as_ptr() as *const UuidValueRaw;
         unsafe { &*data_ptr.add(physical) }
     }
 }
@@ -83,7 +87,11 @@ unsafe impl VectorElement for UuidValueRaw {
 unsafe impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_internal(index, value) }
     }
@@ -127,7 +135,7 @@ mod external {
         logical_type::{LogicalType, LogicalTypeID},
         types::{DuckDBType, FromValue, ToValue},
         value::Value,
-        vector::{Vector, VectorElement, WritableVectorElement},
+        vector::{VectorElement, WritableVectorElement},
     };
     use ::uuid::Uuid;
 
@@ -169,7 +177,11 @@ mod external {
 
         type Ref<'a> = Uuid;
 
-        unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+        unsafe fn get<'a, U: VectorElement>(
+            vector: &crate::vector::VectorReader<'a, U>,
+            physical: usize,
+            logical: usize,
+        ) -> Self::Ref<'a>
         where
             Self: 'a,
         {
@@ -182,7 +194,11 @@ mod external {
     unsafe impl WritableVectorElement for Uuid {
         type Write<'a> = Uuid;
 
-        unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        unsafe fn write(
+            vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+            index: usize,
+            value: Option<Self::Write<'_>>,
+        ) -> Result<()> {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row.
             unsafe { vector.write_internal(index, value.map(UuidValueRaw::from)) }
         }
@@ -211,7 +227,7 @@ mod external {
             let query_one = |sql: &str, params: Parameters<'_>| -> Result<Option<Uuid>> {
                 let mut result = conn.query(sql, params)?;
                 let chunk = result.next_chunk()?.expect("query returned no rows");
-                chunk.get_vector_at::<Uuid>(0)?.get(0)
+                chunk.get_vector_at::<Uuid>(0)?.reader()?.get(0)
             };
 
             for uuid in expected {
@@ -229,12 +245,12 @@ mod external {
             let mut values = chunk.get_vector_at_mut::<Uuid>(0)?;
             values.set_size(expected.len() + 1)?;
             for (index, uuid) in expected.into_iter().enumerate() {
-                values.write(index, Some(uuid))?;
+                values.writer()?.set(index, Some(uuid))?;
             }
-            values.write(expected.len(), None)?;
+            values.writer()?.set(expected.len(), None)?;
             let mut all = expected.map(Some).to_vec();
             all.push(None);
-            assert_eq!(values.iter()?.collect::<Vec<_>>(), all);
+            assert_eq!(values.reader()?.iter().collect::<Vec<_>>(), all);
 
             Ok(())
         }

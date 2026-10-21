@@ -23,7 +23,7 @@
 //!
 //! let mut result = connection.query("SELECT $1::INTEGER", Parameters::positional(&[&42]))?;
 //! let chunk = result.next_chunk()?.expect("query returned no rows");
-//! let values = chunk.get_vector_at::<i32>(0)?;
+//! let values = chunk.get_vector_at::<i32>(0)?.reader()?;
 //!
 //! assert_eq!(values.get(0)?, Some(&42));
 //! # Ok(())
@@ -154,7 +154,7 @@ mod tests {
             .unwrap();
 
         let vector = result.get_vector_at::<i32>(0).unwrap();
-        let value = vector.iter().unwrap().next().unwrap();
+        let value = vector.reader()?.iter().next().unwrap();
         assert_eq!(value, Some(&1));
 
         let result = conn
@@ -163,7 +163,7 @@ mod tests {
             .unwrap();
 
         let vector = result.get_vector_at::<i32>(0).unwrap();
-        let value = vector.iter().unwrap().next().unwrap();
+        let value = vector.reader()?.iter().next().unwrap();
         assert_eq!(value, Some(&2));
 
         Ok(())
@@ -194,7 +194,7 @@ mod tests {
                 );
                 assert_eq!(vector.len(), 1);
 
-                let value = vector.iter().unwrap().next().unwrap();
+                let value = vector.reader()?.iter().next().unwrap();
 
                 assert_eq!(value, Some(&42));
 
@@ -235,7 +235,7 @@ mod tests {
 
         assert_eq!(vector.len(), 3);
 
-        let values: Vec<Option<&i32>> = vector.iter().unwrap().collect();
+        let values: Vec<Option<&i32>> = vector.reader()?.iter().collect();
 
         assert_eq!(values, vec![Some(&2), Some(&4), Some(&6)]);
         assert!(result.next_chunk()?.is_none());
@@ -327,11 +327,11 @@ mod tests {
         let result1 = conn1.query("SELECT 1", Parameters::None)?.next_chunk()?.unwrap();
         let result2 = conn2.query("SELECT 2", Parameters::None)?.next_chunk()?.unwrap();
 
-        let vector1 = result1.get_vector_at::<i32>(0)?;
-        let vector2 = result2.get_vector_at::<i32>(0)?;
+        let reader1 = result1.get_vector_at::<i32>(0)?.reader()?;
+        let reader2 = result2.get_vector_at::<i32>(0)?.reader()?;
 
-        let value1 = vector1.get(0)?;
-        let value2 = vector2.get(0)?;
+        let value1 = reader1.get(0)?;
+        let value2 = reader2.get(0)?;
 
         assert_eq!(value1, Some(&1));
         assert_eq!(value2, Some(&2));

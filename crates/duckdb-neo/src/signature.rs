@@ -315,7 +315,10 @@ mod test {
         let vector = input.get_vector_at::<i32>(2)?;
         let mut result = result;
         result.set_size(1)?;
-        result.write(0, Some(*vector.get(0).unwrap().unwrap() as u64 + vectors_len as u64))?;
+        result.writer()?.set(
+            0,
+            Some(*vector.reader()?.get(0).unwrap().unwrap() as u64 + vectors_len as u64),
+        )?;
         Ok(())
     });
 
@@ -323,14 +326,14 @@ mod test {
         let vectors_len = input.col_count();
         let mut result = result;
         result.set_size(1)?;
-        result.write(0, Some(vectors_len as u64))?;
+        result.writer()?.set(0, Some(vectors_len as u64))?;
         Ok(())
     });
 
     fn query_u64(conn: &crate::connection::Connection, sql: &str) -> crate::Result<Option<u64>> {
         let mut result = conn.query(sql, Parameters::None)?;
         let chunk = result.next_chunk()?.expect("expected a result chunk");
-        Ok(chunk.get_vector_at::<u64>(0)?.get(0)?.copied())
+        Ok(chunk.get_vector_at::<u64>(0)?.reader()?.get(0)?.copied())
     }
 
     #[test]
@@ -354,8 +357,9 @@ mod test {
             Parameters::None,
         )?;
         let chunk = result.next_chunk()?.expect("expected a result chunk");
-        let column =
-            |i| -> crate::Result<Option<String>> { Ok(chunk.get_vector_at::<String>(i)?.get(0)?.map(str::to_owned)) };
+        let column = |i| -> crate::Result<Option<String>> {
+            Ok(chunk.get_vector_at::<String>(i)?.reader()?.get(0)?.map(str::to_owned))
+        };
         assert_eq!(column(0)?.as_deref(), Some("[INTEGER, VARCHAR, INTEGER]"));
         assert_eq!(column(1)?.as_deref(), Some("UBIGINT"));
 
@@ -429,8 +433,8 @@ mod test {
         let input = input.get_vector_at::<i32>(0)?;
         let mut result = result;
         result.set_size(input.len())?;
-        for (i, value) in input.iter()?.enumerate() {
-            result.write(i, value.copied())?;
+        for (i, value) in input.reader()?.iter().enumerate() {
+            result.writer()?.set(i, value.copied())?;
         }
         Ok(())
     });
@@ -468,7 +472,9 @@ mod test {
         let mut result = conn.query(sql.as_str(), Parameters::None)?;
         let chunk = result.next_chunk()?.expect("expected a result chunk");
         assert_eq!(chunk.row_count()?, 1);
-        let column = |i| -> Result<Option<String>> { Ok(chunk.get_vector_at::<String>(i)?.get(0)?.map(str::to_owned)) };
+        let column = |i| -> Result<Option<String>> {
+            Ok(chunk.get_vector_at::<String>(i)?.reader()?.get(0)?.map(str::to_owned))
+        };
         Ok([column(0)?, column(1)?, column(2)?])
     }
 

@@ -137,7 +137,7 @@ fn query_rows(connection: &Connection, sql: &str) -> duckdb_neo::Result<Vec<Stri
     let mut rows = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
         let columns = (0..chunk.col_count())
-            .map(|index| chunk.get_vector_at::<String>(index))
+            .map(|index| chunk.get_vector_at::<String>(index)?.reader())
             .collect::<duckdb_neo::Result<Vec<_>>>()?;
         for row in 0..chunk.row_count()? {
             let values = columns

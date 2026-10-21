@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{VectorElement, WritableVectorElement},
 };
 
 /// A physical list entry parameterized by its child element type.
@@ -89,21 +89,27 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
         children.get_untyped_vector_at(0)?.validate_as::<L>().map(|()| true)
     }
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const List<L>;
+        let data_ptr = vector.as_ptr() as *const List<L>;
         let list = unsafe { &*data_ptr.add(physical) };
         ListRef {
             list,
             // SAFETY: List<L>::validate checked the child as L.
             child: unsafe {
-                vector
-                    .children()
-                    .expect("validated nested vector has children")
-                    .cached_unchecked(0)
-                    .cast_ref_unchecked::<L>()
+                crate::vector::VectorReader::from_prepared(
+                    vector
+                        .children()
+                        .expect("validated nested vector has children")
+                        .cached_unchecked(0)
+                        .cast_ref_unchecked::<L>(),
+                )
             },
         }
     }
@@ -116,7 +122,11 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
     where
         T: 'a;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         let Some(values) = value else {
             // SAFETY: The caller guarantees a writable, flat, in-bounds row.
             return unsafe { vector.write_internal::<List<T>>(index, None) };
@@ -132,8 +142,9 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
             // Append after the child's elements, including any written through another wrapper.
             let offset = child.current_size()?;
             child.set_size(offset + len)?;
+            let mut writer = child.writer()?;
             for (child_index, value) in values.into_iter().enumerate() {
-                child.write(offset + child_index, value)?;
+                writer.set(offset + child_index, value)?;
             }
             Ok(offset)
         })();
@@ -156,7 +167,7 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
 #[derive(Debug)]
 pub struct ListRef<'a, T: VectorElement> {
     list: &'a List<T>,
-    child: &'a Vector<'a, T>,
+    child: crate::vector::VectorReader<'a, T>,
 }
 
 impl<'a, T: VectorElement> ListRef<'a, T> {
@@ -207,7 +218,7 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ListRef<'a, T> {
 /// Traverses the child-vector range belonging to a [`ListRef`].
 #[derive(Debug)]
 pub struct ListIterator<'a, T: VectorElement> {
-    child: &'a Vector<'a, T>,
+    child: crate::vector::VectorReader<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
@@ -261,7 +272,7 @@ mod tests {
             .next_chunk()?
             .unwrap();
         let vector = chunk.get_vector_at::<List<String>>(0)?;
-        let row = vector.get(0)?.unwrap();
+        let row = vector.reader()?.get(0)?.unwrap();
         assert_eq!(row.get(0), Some(Some("a")));
         assert_eq!(row.get(1), Some(None));
         assert_eq!(row.get(2), Some(Some("b")));
@@ -281,7 +292,7 @@ mod tests {
         assert_eq!(iter.next(), None);
 
         let empty_vector = chunk.get_vector_at::<List<String>>(1)?;
-        let empty = empty_vector.get(0)?.unwrap();
+        let empty = empty_vector.reader()?.get(0)?.unwrap();
         assert!(empty.is_empty());
         assert_eq!(empty.get(0), None);
         assert_eq!(empty.iter().len(), 0);

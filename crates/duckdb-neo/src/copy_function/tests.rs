@@ -75,7 +75,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         let mut data_chunk = DataChunk::create(&context, &[i64::logical_type(context)?], true)?;
         let mut vec = data_chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(1)?;
-        vec.write(0, Some(10))?;
+        vec.writer()?.set(0, Some(10))?;
 
         to_append.append(&mut data_chunk)?;
 
@@ -84,7 +84,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         while let Some(chunk) = scanner.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
 
-            for item in in_vector.iter()?.flatten() {
+            for item in in_vector.reader()?.iter().flatten() {
                 let mapped_value = ((*item) as f64 * self.multiplier) as i32;
                 result.push(mapped_value);
             }
@@ -177,9 +177,9 @@ pub fn test_copy_function() -> crate::Result<()> {
 
     let mut stats = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
-        let filenames = chunk.get_vector_at::<String>(0)?;
-        let counts = chunk.get_vector_at::<u64>(1)?;
-        let file_sizes = chunk.get_vector_at::<u64>(2)?;
+        let filenames = chunk.get_vector_at::<String>(0)?.reader()?;
+        let counts = chunk.get_vector_at::<u64>(1)?.reader()?;
+        let file_sizes = chunk.get_vector_at::<u64>(2)?.reader()?;
         for row in 0..chunk.row_count()? {
             stats.push((
                 filenames.get(row)?.unwrap().to_string(),
@@ -267,7 +267,7 @@ fn test_copy_deferred_input() -> crate::Result<()> {
             let mut scan = input.to_scan(context)?;
             let mut rows = self.rows.lock().unwrap();
             while let Some(chunk) = scan.next_chunk()? {
-                rows.extend(chunk.get_vector_at::<i64>(0)?.iter()?.flatten().copied());
+                rows.extend(chunk.get_vector_at::<i64>(0)?.reader()?.iter().flatten().copied());
             }
             Ok(())
         }
@@ -427,7 +427,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
-            vec.write(row, Some((*produced + row) as i64))?;
+            vec.writer()?.set(row, Some((*produced + row) as i64))?;
         }
 
         *produced += batch;
@@ -464,7 +464,7 @@ pub fn test_copy_from_function() -> crate::Result<()> {
     let mut result = conn.query(statement, Parameters::None).expect("Failed to query");
     while let Some(chunk) = result.next_chunk().expect("Failed to fetch chunk") {
         let column = chunk.get_vector_at::<i64>(0).expect("Failed to get column");
-        for item in column.iter().expect("Failed to iterate").flatten() {
+        for item in column.reader()?.iter().flatten() {
             values.push(*item);
         }
     }
@@ -517,7 +517,7 @@ impl CopyToFunctionCallbacks for EchoFormat {
         let mut scan = input.to_scan(context)?;
         while let Some(chunk) = scan.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
-            result.extend(in_vector.iter()?.flatten().copied());
+            result.extend(in_vector.reader()?.iter().flatten().copied());
         }
         Ok(result)
     }
@@ -592,7 +592,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
-            vec.write(row, Some((*produced + row) as i64))?;
+            vec.writer()?.set(row, Some((*produced + row) as i64))?;
         }
 
         *produced += batch;

@@ -10,7 +10,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{VectorElement, WritableVectorElement},
 };
 
 /// A fixed-length array element marker; `[T; N]` is the owned form.
@@ -90,7 +90,11 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
         children.get_untyped_vector_at(0)?.validate_as::<T>().map(|()| true)
     }
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -105,7 +109,8 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
         ArrayRef {
             offset: physical * vector.metadata().array_size(),
             size: vector.metadata().array_size(),
-            child,
+            // SAFETY: The parent reader prepared and validated every descendant.
+            child: unsafe { crate::vector::VectorReader::from_prepared(child) },
         }
     }
 }
@@ -117,7 +122,11 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
     where
         T: 'a;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         let array_size = vector.metadata().array_size();
 
         if let Some(values) = &value
@@ -150,8 +159,9 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         let offset = index
             .checked_mul(array_size)
             .ok_or_else(|| Error::invalid_input("Array child offset overflow"))?;
+        let mut writer = child.writer()?;
         for (child_index, value) in values.into_iter().enumerate() {
-            child.write(offset + child_index, value)?;
+            writer.set(offset + child_index, value)?;
         }
         Ok(())
     }
@@ -162,7 +172,7 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
 pub struct ArrayRef<'a, T: VectorElement> {
     offset: usize,
     size: usize,
-    child: &'a Vector<'a, T>,
+    child: crate::vector::VectorReader<'a, T>,
 }
 
 impl<'a, T: VectorElement> ArrayRef<'a, T> {
@@ -199,7 +209,7 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ArrayRef<'a, T> {
 /// Traverses the child-vector range belonging to an [`ArrayRef`].
 #[derive(Debug)]
 pub struct ArrayIterator<'a, T: VectorElement> {
-    child: &'a Vector<'a, T>,
+    child: crate::vector::VectorReader<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
@@ -263,7 +273,7 @@ mod tests {
             .next_chunk()?
             .unwrap();
         let vector = chunk.get_vector_at::<Array<i32>>(0)?;
-        let row = vector.get(0)?.unwrap();
+        let row = vector.reader()?.get(0)?.unwrap();
         assert_eq!(row.len(), 3);
         assert!(!row.is_empty());
         let mut iter = (&row).into_iter();
@@ -287,14 +297,14 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[<[i32; 2]>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
         vector.set_size(1)?;
-        vector.write(0, Some(vec![Some(11), Some(12)]))?;
+        vector.writer()?.set(0, Some(vec![Some(11), Some(12)]))?;
         let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
 
-        let err = vector.write(1, Some(vec![Some(21), Some(22)])).unwrap_err();
+        let err = vector.writer()?.set(1, Some(vec![Some(21), Some(22)])).unwrap_err();
         assert!(err.to_string().contains("Vector index 1 is out of bounds for length 1"));
         assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), child_len);
         assert_eq!(
-            vector.get(0)?.unwrap().iter().collect::<Vec<_>>(),
+            vector.reader()?.get(0)?.unwrap().iter().collect::<Vec<_>>(),
             vec![Some(&11), Some(&12)]
         );
         Ok(())

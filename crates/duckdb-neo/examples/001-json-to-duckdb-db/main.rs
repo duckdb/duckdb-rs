@@ -38,11 +38,11 @@ fn main() -> Result<()> {
     let mut customers = vec![];
 
     while let Some(chunk) = csv_data.next_chunk()? {
-        let id = chunk.get_vector_at::<i64>(0)?;
-        let name = chunk.get_vector_at::<String>(1)?;
-        let email = chunk.get_vector_at::<String>(2)?;
+        let id = chunk.get_vector_at::<i64>(0)?.reader()?;
+        let name = chunk.get_vector_at::<String>(1)?.reader()?;
+        let email = chunk.get_vector_at::<String>(2)?.reader()?;
         // `make_date` handles leap years and month lengths.
-        let birthday = chunk.get_vector_at::<DateValue>(3)?;
+        let birthday = chunk.get_vector_at::<DateValue>(3)?.reader()?;
 
         for i in 0..chunk.row_count()? {
             let customer = Customer {
@@ -70,10 +70,10 @@ fn main() -> Result<()> {
     )?;
 
     while let Some(chunk) = db_customers.next_chunk()? {
-        let id = chunk.get_vector_at::<i32>(0)?;
-        let name = chunk.get_vector_at::<String>(1)?;
-        let email = chunk.get_vector_at::<String>(2)?;
-        let birthday = chunk.get_vector_at::<String>(3)?;
+        let id = chunk.get_vector_at::<i32>(0)?.reader()?;
+        let name = chunk.get_vector_at::<String>(1)?.reader()?;
+        let email = chunk.get_vector_at::<String>(2)?.reader()?;
+        let birthday = chunk.get_vector_at::<String>(3)?.reader()?;
 
         for i in 0..chunk.row_count()? {
             println!(

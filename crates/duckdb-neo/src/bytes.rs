@@ -142,7 +142,7 @@ mod tests {
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<String>(0)?;
-        test(vector.arena()?)
+        test(vector.writer()?.arena()?)
     }
 
     #[test]

@@ -168,12 +168,16 @@ impl Arena {
     }
 }
 
+mod combined;
 mod reader;
 mod view;
 mod writer;
 
+#[doc(hidden)]
+pub use combined::VectorReaderTuple;
+pub use combined::{CombinedVectorIterator, EnumeratedCombinedVectorIterator};
 pub use reader::{Selection, VectorReader, VectorReaderIter};
-pub use view::*;
+use view::VectorView;
 pub use writer::VectorWriter;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
@@ -194,6 +198,23 @@ pub(crate) enum Access {
 ///
 /// Storage representation and writability are runtime properties. Casting only
 /// changes the logical element type and preserves the chunk lifetime.
+/// Read rows through [`Self::reader`] and write them through [`Self::writer`].
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn read(vector: &Vector<'_, i32>) {
+///     let _ = vector.get(0);
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn write(vector: &mut Vector<'_, i32>) {
+///     let _ = vector.write(0, Some(42));
+/// }
+/// ```
 // `repr(C)` fixes field order; the nested `VectorView<T>` is also `repr(C)`.
 #[repr(C)]
 #[derive(Debug)]
@@ -317,43 +338,12 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.children.as_ref()
     }
 
-    /// Borrow the readable storage view.
-    ///
-    /// Returns `None` for [`StorageKind::Other`] until the vector is
-    /// [`flatten`](Self::flatten)ed.
-    pub fn get_view(&self) -> Result<&VectorView<T>> {
-        self.view.as_ref().ok_or(not_flat())
-    }
-
     /// Prepare exclusive write access without flattening or allocating a validity mask.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
     /// before acquiring its writer.
     pub fn writer(&mut self) -> Result<VectorWriter<'_, 'a, T>> {
         VectorWriter::new(self)
-    }
-
-    /// Borrow the writable flat storage view, allocating a writable validity mask if needed.
-    pub fn get_view_mut(&mut self) -> Result<VectorViewMut<'_, T>> {
-        if !self.is_writable() || self.kind != StorageKind::Flat {
-            return Err(not_writable());
-        }
-        let view = self.view.as_mut().ok_or_else(not_flat)?;
-        if !self.validity_writable {
-            view.view.validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
-            self.validity_writable = true;
-        }
-        Ok(VectorViewMut { view })
-    }
-
-    /// Set every row's validity, including padding bits in the last mask word.
-    ///
-    /// # Safety
-    /// Rows marked valid must be initialized before reading. NULL STRUCT, ARRAY,
-    /// and UNION rows must have NULL descendants; this only changes the parent's mask.
-    pub unsafe fn fill_validity(&mut self, is_valid: bool) -> Result<()> {
-        // SAFETY: The caller upholds the validity and descendant invariants.
-        unsafe { self.writer()?.fill_validity(is_valid) }
     }
 
     fn acquire_view<U: VectorElement>(
@@ -473,20 +463,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
     }
 
-    /// Return whether a logical row is `NULL`.
-    pub fn is_null(&self, index: usize) -> Result<bool> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-
-        let view = self
-            .view
-            .as_ref()
-            .ok_or_else(|| Error::invalid_input("vector has no readable view"))?;
-
-        Ok(view.is_null(index))
-    }
-
     /// # Safety
     /// Reference without copying; source storage must outlive destination reads and remain unchanged.
     pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
@@ -500,62 +476,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Vector::from_handle(&self.handle, Access::Exclusive)
     }
 
-    /// Check that `index` is a row `write_internal` can write.
-    #[inline]
-    pub(crate) fn check_row_writable(&self, index: usize) -> Result<()> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-        if self.kind != StorageKind::Flat {
-            return Err(not_flat());
-        }
-        Ok(())
-    }
-
-    /// # Safety
-    /// The vector must be writable and flat, and `index` must be in bounds.
-    /// For a non-NULL value, `U` and referenced data must match the vector's physical storage and lifetime.
-    pub(crate) unsafe fn write_internal<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
-        if let Some(value) = value {
-            let view = self.view.as_mut().ok_or_else(not_writable)?;
-            let data = view.as_ptr() as *mut U;
-            unsafe {
-                data.add(index).write(value);
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
-        self.check_row_writable(index)?;
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        // SAFETY: Writability, flat storage, and bounds were checked above.
-        unsafe { self.set_row_validity_unchecked(index, is_valid) }
-    }
-
-    /// # Safety
-    /// The vector must be writable and flat, and `index` must be in bounds.
-    #[inline]
-    pub unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
-        let view = self.view.as_ref().ok_or_else(not_flat)?;
-        if is_valid && view.view.validity.is_null() {
-            return Ok(());
-        }
-        if !self.validity_writable {
-            self.get_view_mut()?;
-        }
-        let mut view = VectorViewMut {
-            view: self.view.as_mut().unwrap(),
-        };
-        unsafe { view.set_row_validity_unchecked(index, is_valid) }
-        Ok(())
-    }
-
     /// Write one owned [`Value`] through DuckDB's generic value API.
     ///
-    /// This is the slow path; prefer [`Self::write`] for typed vector access.
+    /// This is the slow path; prefer [`VectorWriter::set`] for typed vector access.
     pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
@@ -567,7 +490,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// Set one row to `NULL` through DuckDB's generic value API.
     ///
-    /// This is the slow path; prefer [`Self::write`] with `None`.
+    /// This is the slow path; prefer [`VectorWriter::set`] with `None`.
     pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
@@ -699,67 +622,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 }
 
-impl<T: HasDuckDBBytes> Vector<'_, T> {
-    /// Borrow the vector's byte arena, acquiring it on first use.
-    ///
-    /// Use [`Self::get_view_mut_with_arena`] to borrow the arena and writable storage together.
-    pub fn arena(&mut self) -> Result<&Arena> {
-        if self.heap.is_none() {
-            let handle =
-                check_api_call!(ffi::duckdb_v2_vector_get_arena, self.handle, RET).map(|handle| Arena { handle })?;
-            self.heap = Some(handle);
-        }
-        Ok(self.heap.as_ref().unwrap())
-    }
-
-    /// Borrow writable flat storage and its byte arena together for bulk encoding.
-    ///
-    /// Fails unless the vector is writable and flat. Neither the vector nor its
-    /// arena can be replaced or resized while these borrows are in use.
-    ///
-    /// ```
-    /// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
-    /// # fn main() -> duckdb_neo::Result<()> {
-    /// # let env = Environment::new()?;
-    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    /// let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
-    /// let mut vector = chunk.get_vector_at_mut::<String>(0)?;
-    /// vector.set_size(2)?;
-    /// let (mut view, arena) = vector.get_view_mut_with_arena()?;
-    /// let data = view.as_mut_ptr();
-    /// for (index, text) in ["hello", "a longer string"].into_iter().enumerate() {
-    ///     // SAFETY: Each slot is in bounds and the vector owns the encoded UTF-8 bytes.
-    ///     unsafe { data.add(index).write(arena.add_str(text)?); }
-    /// }
-    /// assert_eq!(vector.get(1)?, Some("a longer string"));
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn get_view_mut_with_arena(&mut self) -> Result<(VectorViewMut<'_, T>, &Arena)> {
-        self.get_view_mut()?;
-        self.arena()?;
-        Ok((
-            VectorViewMut {
-                view: self.view.as_mut().unwrap(),
-            },
-            self.heap.as_ref().unwrap(),
-        ))
-    }
-
-    /// # Safety
-    /// The vector must be writable and flat, and `index` must be in bounds.
-    /// The bytes must be valid for the vector's logical type.
-    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        let value: Option<DuckDBBytes> = match value {
-            None => None,
-            // SAFETY: the vector owns the arena and keeps the stored bytes alive.
-            Some(value) => Some(unsafe { DuckDBBytes::from_parts(&[value], || self.arena())? }),
-        };
-        // SAFETY: The caller guarantees the row is writable; the arena owns the stored bytes.
-        unsafe { self.write_internal(index, value) }
-    }
-}
-
 impl<T: VectorElement> Vector<'_, T> {
     /// Prepare a storage-specific reader, caching descendant views once.
     ///
@@ -768,89 +630,13 @@ impl<T: VectorElement> Vector<'_, T> {
         VectorReader::new(self)
     }
 
-    /// Return the value at a logical row.
-    ///
-    /// Returns `None` for a `NULL` row. Vectors with
-    /// [`StorageKind::Other`] return an error until flattened.
-    /// Prefer retaining a [`Self::reader`] when reading multiple rows.
-    pub fn get(&self, index: usize) -> Result<Option<T::Ref<'_>>> {
-        self.reader()?.get(index)
-    }
-
-    /// # Safety
-    /// All descendant vector views must have been cached before reading.
-    #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'_>> {
-        let view = self.view.as_ref()?;
-        let physical = unsafe { view.physical_index_unchecked(index) };
-        if view.is_null_physical(physical) {
-            None
-        } else {
-            // SAFETY: T is validated, children are cached, and the row is in bounds and valid.
-            Some(unsafe { T::get(self, physical, index) })
-        }
-    }
-
     /// Materialize one row as an owned [`Value`].
     ///
-    /// This is the slow path; prefer [`Self::get`] or [`Self::iter`] for typed
-    /// vector access.
+    /// This is the slow path; prefer [`VectorReader::get`] or [`VectorReader::iter`].
     pub fn get_value_slow(&self, index: usize) -> Result<Value> {
         check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
-
-    /// Iterate over the vector through a prepared [`VectorReader`].
-    pub fn iter(&self) -> Result<VectorIter<'_, '_, T>> {
-        Ok(self.reader()?.iter())
-    }
 }
-
-impl<T: WritableVectorElement> Vector<'_, T> {
-    /// Write a value at a logical row.
-    ///
-    /// The vector must be writable with flat storage, and `index` must be in
-    /// range. Pass `None` to write SQL `NULL`.
-    /// Prefer retaining a [`Self::writer`] when writing multiple rows.
-    #[inline]
-    pub fn write(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
-        self.writer()?.set(index, value)
-    }
-
-    /// Write a value and its NULL validity without checking the row's storage or bounds.
-    /// Logical value checks, such as array length and decimal range, still apply.
-    ///
-    /// # Safety
-    /// The vector must be writable and flat, and `index` must be in bounds.
-    #[inline]
-    pub unsafe fn write_without_validation(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
-        // SAFETY: The caller guarantees flat, writable storage and an in-bounds row.
-        unsafe { writer::write_unchecked(self, index, value) }
-    }
-}
-
-impl<T: VectorElement> Vector<'_, T> {
-    pub(crate) fn write_as<U: WritableVectorElement>(
-        &mut self,
-        index: usize,
-        value: Option<U::Write<'_>>,
-    ) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        self.check_row_writable(index)?;
-        self.validate_as::<U>()?;
-        // SAFETY: Validation checked U; the repr(C) wrappers differ only in their direct and nested markers.
-        let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
-        // SAFETY: Writability, flat storage, and bounds were checked above.
-        unsafe { typed.write_without_validation(index, value) }
-    }
-}
-
-/// Iterates over the logical rows of a vector.
-///
-/// Retains the original lifetime parameters for compatibility; the iterator
-/// itself only needs the vector borrow.
-pub type VectorIter<'vector, 'a, T> = VectorReaderIter<'vector, T>;
 
 fn not_writable() -> Error {
     Error::invalid_input(

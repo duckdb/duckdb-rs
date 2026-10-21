@@ -59,15 +59,25 @@ impl Selection<'_> {
 ///
 /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
 ///     let value = vector.reader()?.get(0)?;
-///     vector.write(0, Some(42))?;
+///     vector.writer()?.set(0, Some(42))?;
 ///     assert_eq!(value, Some(&42));
 ///     Ok(())
 /// }
 /// ```
-#[derive(Debug)]
 pub struct VectorReader<'vec, T: VectorElement> {
     vector: &'vec Vector<'vec, T>,
+    data: *const T::Internal,
     storage: ReaderStorage<'vec>,
+}
+
+impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VectorReader")
+            .field("len", &self.len())
+            .field("data", &self.data.cast::<()>())
+            .field("storage", &self.storage)
+            .finish()
+    }
 }
 
 impl<T: VectorElement> Copy for VectorReader<'_, T> {}
@@ -138,9 +148,16 @@ impl ReaderStorage<'_> {
 
 impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
-        let view = vector.view.as_ref().ok_or_else(other_not_readable)?;
+        if vector.view.is_none() {
+            return Err(other_not_readable());
+        }
         vector.cache_children()?;
+        // SAFETY: The vector and all descendants have readable, cached views.
+        Ok(unsafe { Self::from_prepared(vector) })
+    }
 
+    pub(crate) unsafe fn from_prepared(vector: &'vec Vector<'vec, T>) -> Self {
+        let view = vector.view.as_ref().expect("prepared vector has a readable view");
         let flat = FlatReader {
             validity: view.view.validity,
         };
@@ -151,13 +168,15 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             }),
             StorageKind::Dictionary => ReaderStorage::Dictionary(DictionaryReader {
                 values: flat,
-                selection: view
-                    .selection()
-                    .ok_or_else(|| crate::error::Error::invalid_input("dictionary vector has no selection"))?,
+                selection: view.selection().expect("prepared dictionary has a selection"),
             }),
-            StorageKind::Other => return Err(other_not_readable()),
+            StorageKind::Other => unreachable!("prepared vector has a readable storage kind"),
         };
-        Ok(Self { vector, storage })
+        Self {
+            vector,
+            data: view.as_ptr(),
+            storage,
+        }
     }
 
     /// Return the number of logical rows.
@@ -184,8 +203,9 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// Use [`Self::selection`] to map logical rows to physical slots, and check
     /// [`Self::validity`] before reading a slot. The pointer is invalidated when
     /// the vector is resized, reshaped, or destroyed.
+    #[inline(always)]
     pub fn as_ptr(&self) -> *const T::Internal {
-        self.view().as_ptr()
+        self.data
     }
 
     /// Borrow physical storage, or `None` when no data is exposed.
@@ -223,7 +243,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     ///
     /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
     ///     let mask = vector.reader()?.validity();
-    ///     vector.write(0, None)?;
+    ///     vector.writer()?.set(0, None)?;
     ///     assert!(mask.is_none());
     ///     Ok(())
     /// }
@@ -273,11 +293,38 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         self.vector.view.as_ref().expect("reader has a readable view")
     }
 
-    #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
+    pub(crate) fn metadata(&self) -> super::TypeMetadata {
+        self.vector.metadata()
+    }
+
+    pub(crate) fn children(&self) -> Option<&'vec crate::data_chunk::VectorCollection> {
+        self.vector.children()
+    }
+
+    pub(crate) fn logical_type(&self) -> &'vec crate::logical_type::LogicalType {
+        self.vector.logical_type()
+    }
+
+    pub(crate) fn get_value_slow(&self, index: usize) -> Result<crate::value::Value> {
+        self.vector.get_value_slow(index)
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
         let physical = unsafe { self.storage.physical_index_unchecked(index) }?;
-        // SAFETY: The vector is typed, its descendants are prepared, and the row is valid.
-        Some(unsafe { T::get(self.vector, physical, index) })
+        // SAFETY: The reader is typed, its descendants are prepared, and the row is valid.
+        Some(unsafe { T::get(self, physical, index) })
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn get_flat_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
+        let ReaderStorage::Flat(reader) = &self.storage else {
+            // SAFETY: The caller guarantees flat storage for this prepared reader.
+            unsafe { std::hint::unreachable_unchecked() }
+        };
+        unsafe { reader.physical_index_unchecked(index) }?;
+        // SAFETY: Flat storage uses the logical index directly; validity was checked above.
+        Some(unsafe { T::get(self, index, index) })
     }
 }
 

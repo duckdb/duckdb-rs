@@ -129,7 +129,7 @@ impl TableFunctionCallbacks for KvReader {
             let mut vector = output.get_vector_at_mut::<i64>(index)?;
             vector.set_size(batch.len())?;
             for (row, values) in bind_data.rows[batch.clone()].iter().enumerate() {
-                vector.write(row, Some(values[column]))?;
+                vector.writer()?.set(row, Some(values[column]))?;
             }
         }
 
@@ -213,8 +213,8 @@ fn query_pairs(conn: &Connection, sql: &str) -> Result<Vec<(i64, i64)>> {
     let mut result = conn.query(sql, Parameters::None)?;
     let mut rows = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
-        let first = chunk.get_vector_at::<i64>(0)?;
-        let second = chunk.get_vector_at::<i64>(1)?;
+        let first = chunk.get_vector_at::<i64>(0)?.reader()?;
+        let second = chunk.get_vector_at::<i64>(1)?.reader()?;
         for row in 0..first.len() {
             rows.push((*first.get(row)?.unwrap(), *second.get(row)?.unwrap()));
         }

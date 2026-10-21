@@ -284,8 +284,8 @@ fn writer_value_api_preserves_cast_nullness_and_refreshes_validity() -> Result<(
         // SAFETY: This observes the refreshed mask without changing its bits.
         assert_eq!(unsafe { writer.validity_mut()? }[0] & 3, 2);
     }
-    assert!(vector.is_null(0)?);
-    assert!(!vector.is_null(1)?);
+    assert!(vector.reader()?.is_null(0)?);
+    assert!(!vector.reader()?.is_null(1)?);
     Ok(())
 }
 

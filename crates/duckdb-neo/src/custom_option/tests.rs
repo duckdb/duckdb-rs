@@ -35,7 +35,7 @@ fn setting(conn: &Connection, name: &str) -> Result<Option<i64>> {
         Parameters::None,
     )?;
     let chunk = result.next_chunk()?.expect("expected a result chunk");
-    Ok(chunk.get_vector_at::<i64>(0)?.get(0)?.copied())
+    Ok(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?.copied())
 }
 
 #[test]

@@ -22,7 +22,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{VectorElement, WritableVectorElement},
 };
 
 /// The widest `DECIMAL` DuckDB supports.
@@ -75,11 +75,11 @@ macro_rules! decimal_storage {
                     Ok(matches!(DecimalSignature::from_logical_type(other)?.width, $min..=$max))
                 }
 
-                unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+                unsafe fn get<'a, U: VectorElement>(vector: &crate::vector::VectorReader<'a, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
                 where
                     Self: 'a,
                 {
-                    let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const $name;
+                    let data_ptr = vector.as_ptr() as *const $name;
                     unsafe { &*data_ptr.add(physical) }
                 }
             }
@@ -88,7 +88,7 @@ macro_rules! decimal_storage {
             unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
-                unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, '_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
                     unsafe { vector.write_internal(index, value) }
                 }
@@ -255,11 +255,15 @@ where
             })
     }
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const Self;
+        let data_ptr = vector.as_ptr() as *const Self;
         unsafe { &*data_ptr.add(physical) }
     }
 }
@@ -271,7 +275,11 @@ where
 {
     type Write<'a> = Self;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_internal(index, value) }
     }
@@ -427,15 +435,21 @@ mod tests {
         let chunk = result.next_chunk()?.expect("query returned no rows");
 
         assert_eq!(
-            chunk.get_vector_at::<ShortDecimal>(0)?.get(0)?,
+            chunk.get_vector_at::<ShortDecimal>(0)?.reader()?.get(0)?,
             Some(&ShortDecimal(-15))
         );
         assert_eq!(
-            chunk.get_vector_at::<WordDecimal>(1)?.get(0)?,
+            chunk.get_vector_at::<WordDecimal>(1)?.reader()?.get(0)?,
             Some(&WordDecimal(12_345))
         );
-        assert_eq!(chunk.get_vector_at::<LongDecimal>(2)?.get(0)?, Some(&LongDecimal(15)));
-        assert_eq!(chunk.get_vector_at::<HugeDecimal>(3)?.get(0)?, Some(&HugeDecimal(15)));
+        assert_eq!(
+            chunk.get_vector_at::<LongDecimal>(2)?.reader()?.get(0)?,
+            Some(&LongDecimal(15))
+        );
+        assert_eq!(
+            chunk.get_vector_at::<HugeDecimal>(3)?.reader()?.get(0)?,
+            Some(&HugeDecimal(15))
+        );
 
         assert!(chunk.get_vector_at::<WordDecimal>(0).is_err());
         assert!(chunk.get_vector_at::<HugeDecimal>(2).is_err());
@@ -472,10 +486,17 @@ mod tests {
             ]),
         )?;
         let chunk = result.next_chunk()?.expect("query returned no rows");
-        assert_eq!(chunk.get_vector_at::<Decimal<18, 3>>(0)?.get(0)?, Some(&decimal));
-        assert_eq!(chunk.get_vector_at::<Decimal<4, 1>>(1)?.get(0)?, None);
         assert_eq!(
-            chunk.get_vector_at::<String>(2)?.get(0)?.map(|s| s.to_string()),
+            chunk.get_vector_at::<Decimal<18, 3>>(0)?.reader()?.get(0)?,
+            Some(&decimal)
+        );
+        assert_eq!(chunk.get_vector_at::<Decimal<4, 1>>(1)?.reader()?.get(0)?, None);
+        assert_eq!(
+            chunk
+                .get_vector_at::<String>(2)?
+                .reader()?
+                .get(0)?
+                .map(|s| s.to_string()),
             Some("[123.45]".to_string())
         );
         assert!(chunk.get_vector_at::<Decimal<18, 2>>(0).is_err());
@@ -484,10 +505,10 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Decimal::<9, 2>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Decimal<9, 2>>(0)?;
         vector.set_size(2)?;
-        vector.write(0, Some(Decimal::new(-1)))?;
-        vector.write(1, None)?;
-        assert_eq!(vector.get(0)?, Some(&Decimal::new(-1)));
-        assert_eq!(vector.get(1)?, None);
+        vector.writer()?.set(0, Some(Decimal::new(-1)))?;
+        vector.writer()?.set(1, None)?;
+        assert_eq!(vector.reader()?.get(0)?, Some(&Decimal::new(-1)));
+        assert_eq!(vector.reader()?.get(1)?, None);
 
         Ok(())
     }

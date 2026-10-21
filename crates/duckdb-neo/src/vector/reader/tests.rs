@@ -56,11 +56,11 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(130)?;
     for index in 0..vector.len() {
-        vector.write(index, Some(index as i32))?;
+        vector.writer()?.set(index, Some(index as i32))?;
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
-    assert_eq!(reader.as_ptr(), vector.get_view()?.as_ptr());
+    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().as_ptr());
     assert!(reader.validity().is_none());
     // SAFETY: Every physical slot was initialized above.
     let values = unsafe { vector.reader()?.as_slice() }.unwrap();
@@ -68,7 +68,7 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     assert_physical_reads(&reader)?;
 
     for index in [0, 64, 129] {
-        vector.write(index, None)?;
+        vector.writer()?.set(index, None)?;
     }
     let reader = vector.reader()?;
     let mask = reader.validity().unwrap();
@@ -107,7 +107,7 @@ fn flat_reader_handles_empty_rows_nulls_and_bounds() -> Result<()> {
     vector.set_size(130)?;
     for index in 0..vector.len() {
         let value = (index % 3 != 0).then_some(index as i32);
-        vector.write(index, value)?;
+        vector.writer()?.set(index, value)?;
     }
     let reader = vector.reader()?;
     assert_eq!(reader.storage_kind(), StorageKind::Flat);
@@ -136,7 +136,7 @@ fn reader_iterator_tracks_remaining_rows() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(3)?;
     for (index, value) in [Some(1), None, Some(3)].into_iter().enumerate() {
-        vector.write(index, value)?;
+        vector.writer()?.set(index, value)?;
     }
     let mut iter = vector.reader()?.iter();
     fn assert_traits(_: &impl ExactSizeIterator, _: &impl std::iter::FusedIterator) {}
@@ -173,7 +173,7 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             assert_eq!(reader.is_empty(), count == 0);
             assert_eq!(reader.selection(), Selection::Constant);
             assert_eq!(reader.selection().index(usize::MAX), 0);
-            assert_eq!(reader.as_ptr(), vector.get_view()?.as_ptr());
+            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().as_ptr());
             assert!(reader.validity().is_none_or(|mask| mask.len() == 1));
             if let Some(value) = expected {
                 // SAFETY: The non-NULL constant has one initialized physical slot.
@@ -256,9 +256,10 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
         let Selection::Dictionary(selection) = reader.selection() else {
             panic!("dictionary reader must expose its selection");
         };
-        assert_eq!(selection, vector.get_view()?.selection().unwrap());
-        assert_eq!(reader.as_ptr(), vector.get_view()?.as_ptr());
-        assert_eq!(reader.validity(), vector.get_view()?.validity());
+        let view = vector.view.as_ref().unwrap();
+        assert_eq!(selection, view.selection().unwrap());
+        assert_eq!(reader.as_ptr(), view.as_ptr());
+        assert_eq!(reader.validity(), view.validity());
         assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
         assert_eq!(reader.get(0)?, Some(&i32::MAX));
         assert_eq!(reader.get(1)?, None);
@@ -269,7 +270,7 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
     }
     output.set_size(reader.len())?;
     for (index, value) in reader.iter().enumerate() {
-        output.write(index, value.copied())?;
+        output.writer()?.set(index, value.copied())?;
     }
     Ok(())
 });

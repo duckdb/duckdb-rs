@@ -201,17 +201,19 @@ mod tests {
             );
 
             output.set_size(input.len())?;
+            let reader = input.reader()?;
+            let mut writer = output.writer()?;
 
-            for i in 0..input.len() {
-                let input_value = input.get(i).unwrap();
+            for i in 0..reader.len() {
+                let input_value = reader.get(i)?;
                 if input_value.is_none() {
-                    output.write(i, None)?;
+                    writer.set(i, None)?;
                     continue;
                 }
                 let input_value = input_value.unwrap();
                 let output_value = input_value.parse::<f32>().unwrap() + self.offset as f32;
 
-                output.write(i, Some(output_value))?;
+                writer.set(i, Some(output_value))?;
             }
             Ok(())
         }
@@ -261,7 +263,7 @@ mod tests {
                 Parameters::None,
             )?;
             let chunk = result.next_chunk()?.expect("implicit cast query returns one row");
-            assert_eq!(chunk.get_vector_at::<bool>(0)?.get(0)?, Some(&cost.is_some()));
+            assert_eq!(chunk.get_vector_at::<bool>(0)?.reader()?.get(0)?, Some(&cost.is_some()));
         }
         Ok(())
     }
@@ -291,9 +293,10 @@ mod tests {
 
         while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<f32>(0)?;
+            let vector_reader = vector.reader()?;
 
-            assert_eq!(vector.get(0)?, Some(&42.0));
-            assert_eq!(vector.get(1)?, None);
+            assert_eq!(vector_reader.get(0)?, Some(&42.0));
+            assert_eq!(vector_reader.get(1)?, None);
         }
 
         Ok(())
