@@ -201,6 +201,7 @@ pub struct Vector<'a, T: VectorElement> {
     kind: StorageKind,
     len: usize,
     heap: Option<Arena>,
+    validity_writable: bool,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     metadata: TypeMetadata,
@@ -242,6 +243,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             view,
             access,
             heap: None,
+            validity_writable: false,
             children,
             metadata: params,
             _chunk: PhantomData,
@@ -324,8 +326,24 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(not_writable());
         }
         let view = self.view.as_mut().ok_or_else(not_flat)?;
-        view.view.validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
+        if !self.validity_writable {
+            view.view.validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
+            self.validity_writable = true;
+        }
         Ok(VectorViewMut { view })
+    }
+
+    /// Set every row's validity, including padding bits in the last mask word.
+    ///
+    /// # Safety
+    /// Rows marked valid must be initialized before reading. NULL STRUCT and ARRAY
+    /// rows must also have NULL descendants; this only changes the parent's mask.
+    pub unsafe fn fill_validity(&mut self, is_valid: bool) -> Result<()> {
+        self.get_view_mut()?
+            .validity_mut()
+            .expect("writable validity mask")
+            .fill(if is_valid { u64::MAX } else { 0 });
+        Ok(())
     }
 
     fn acquire_view<U: VectorElement>(
@@ -349,6 +367,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
         self.heap = None;
+        self.validity_writable = false;
         if let Some(children) = &mut self.children {
             children.evict_all();
         }
@@ -364,6 +383,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             view: self.view.map(|view| view.cast_owned::<U>()),
             access: self.access,
             heap: self.heap,
+            validity_writable: self.validity_writable,
             children: self.children,
             metadata: self.metadata,
             _chunk: self._chunk,
@@ -486,7 +506,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// The vector must be writable and flat, and `index` must be in bounds.
     /// For a non-NULL value, `U` and referenced data must match the vector's physical storage and lifetime.
     pub(crate) unsafe fn write_internal<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
-        let is_valid = value.is_some();
         if let Some(value) = value {
             let view = self.view.as_mut().ok_or_else(not_writable)?;
             let data = view.as_ptr() as *mut U;
@@ -494,8 +513,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
                 data.add(index).write(value);
             }
         }
-        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-        unsafe { self.set_row_validity_unchecked(index, is_valid) }
+        Ok(())
     }
 
     pub(crate) fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
@@ -509,16 +527,19 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// # Safety
     /// The vector must be writable and flat, and `index` must be in bounds.
+    #[inline]
     pub unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
-        let mut view_mut = self
-            .view
-            .as_mut()
-            .ok_or_else(not_flat)
-            .map(|view| VectorViewMut { view })?;
-        view_mut.view.view.validity =
-            check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
-
-        unsafe { view_mut.set_row_validity_unchecked(index, is_valid) }
+        let view = self.view.as_ref().ok_or_else(not_flat)?;
+        if is_valid && view.view.validity.is_null() {
+            return Ok(());
+        }
+        if !self.validity_writable {
+            self.get_view_mut()?;
+        }
+        let mut view = VectorViewMut {
+            view: self.view.as_mut().unwrap(),
+        };
+        unsafe { view.set_row_validity_unchecked(index, is_valid) }
         Ok(())
     }
 
@@ -748,11 +769,8 @@ impl<T: VectorElement> Vector<'_, T> {
 
     /// # Safety
     /// All descendant vector views must have been cached before reading.
+    #[inline]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'_>> {
-        if index >= self.len {
-            return None;
-        }
-
         let view = self.view.as_ref()?;
         let physical = unsafe { view.physical_index_unchecked(index) };
         if view.is_null_physical(physical) {
@@ -787,13 +805,30 @@ impl<T: WritableVectorElement> Vector<'_, T> {
     ///
     /// The vector must be writable with flat storage, and `index` must be in
     /// range. Pass `None` to write SQL `NULL`.
+    #[inline]
     pub fn write(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
         self.check_row_writable(index)?;
         // SAFETY: Writability, flat storage, and bounds were checked above.
-        unsafe { T::write(self, index, value) }
+        unsafe { self.write_without_validation(index, value) }
+    }
+
+    /// Write a value and its NULL validity without checking the row's storage or bounds.
+    /// Logical value checks, such as array length and decimal range, still apply.
+    ///
+    /// # Safety
+    /// The vector must be writable and flat, and `index` must be in bounds.
+    #[inline]
+    pub unsafe fn write_without_validation(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
+        let is_valid = value.is_some();
+        unsafe { T::write(self, index, value)? };
+        // VARIANT's value API determines nullness after casting the supplied Value.
+        if T::TYPE_ID != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT {
+            unsafe { self.set_row_validity_unchecked(index, is_valid)? };
+        }
+        Ok(())
     }
 }
 
@@ -811,7 +846,7 @@ impl<T: VectorElement> Vector<'_, T> {
         // SAFETY: Validation checked U; the repr(C) wrappers differ only in their direct and nested markers.
         let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
         // SAFETY: Writability, flat storage, and bounds were checked above.
-        unsafe { U::write(typed, index, value) }
+        unsafe { typed.write_without_validation(index, value) }
     }
 }
 
@@ -825,6 +860,7 @@ pub struct VectorIter<'vector, 'a, T: VectorElement> {
 impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T> {
     type Item = Option<T::Ref<'vector>>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.vector.len {
             return None;

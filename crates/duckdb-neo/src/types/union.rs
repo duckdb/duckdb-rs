@@ -222,8 +222,6 @@ unsafe impl WritableVectorElement for Union {
         )?;
 
         let vector_len = vector.len();
-        // SAFETY: The caller guarantees a writable, flat, in-bounds parent row.
-        unsafe { vector.set_row_validity_unchecked(index, true)? };
         let children = vector
             .children_collection_mut()
             .expect("validated nested vector has children");

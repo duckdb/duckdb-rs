@@ -109,7 +109,11 @@ pub unsafe trait WritableVectorElement: VectorElement {
     where
         Self: 'a;
 
-    /// Write one value into a writable vector.
+    /// Encode one value into a writable vector.
+    ///
+    /// [`Vector::write`] and [`Vector::write_without_validation`] maintain the
+    /// row's validity after successful encoding. Nested NULL values must still
+    /// propagate to descendants, and value-API writers preserve cast nullness.
     ///
     /// Prefer [`Vector::write`], which upholds these requirements.
     ///

@@ -153,8 +153,7 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         for (child_index, value) in values.into_iter().enumerate() {
             child.write(offset + child_index, value)?;
         }
-        // SAFETY: The caller guarantees a writable, flat, in-bounds parent row.
-        unsafe { vector.set_row_validity_unchecked(index, true) }
+        Ok(())
     }
 }
 

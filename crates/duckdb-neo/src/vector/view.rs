@@ -229,15 +229,17 @@ impl<T: VectorElement> VectorViewMut<'_, T> {
     }
 
     /// # Safety
-    /// The vector must be writable and flat, and `index` must be in bounds.
+    /// The view must have writable validity storage, and `index` must be in bounds.
+    #[inline]
     pub unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) {
-        let validity = self.validity_mut().unwrap();
-
+        let word = unsafe { (self.view.view.validity as *mut u64).add(index / 64) };
         let mask = 1u64 << (index % 64);
-        if is_valid {
-            validity[index / 64] |= mask;
-        } else {
-            validity[index / 64] &= !mask;
+        unsafe {
+            if is_valid {
+                *word |= mask;
+            } else {
+                *word &= !mask;
+            }
         }
     }
 }

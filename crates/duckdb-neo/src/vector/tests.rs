@@ -115,6 +115,123 @@ fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
 }
 
 #[test]
+fn vector_write_without_validation_updates_validity_after_reshape() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(65)?;
+    for index in 0..vector.len() {
+        // SAFETY: The writable flat vector has 65 rows.
+        unsafe { vector.write_without_validation(index, Some(index as i32))? };
+    }
+    assert!(vector.get_view()?.validity().is_none());
+    // SAFETY: Both rows are within the writable flat vector.
+    unsafe {
+        vector.write_without_validation(0, None)?;
+        vector.write_without_validation(64, None)?;
+    }
+    assert!(vector.validity_writable);
+    assert_eq!(vector.get(0)?, None);
+    assert_eq!(vector.get(64)?, None);
+    vector.set_size(4097)?;
+    assert!(!vector.validity_writable);
+    // SAFETY: Resizing retained writable flat storage; all indices are in bounds.
+    unsafe {
+        vector.write_without_validation(0, Some(42))?;
+        vector.write_without_validation(64, Some(64))?;
+        vector.write_without_validation(4096, None)?;
+    }
+    assert!(vector.validity_writable);
+    assert_eq!(vector.get(0)?, Some(&42));
+    assert_eq!(vector.get(64)?, Some(&64));
+    assert_eq!(vector.get(4096)?, None);
+    vector.write_value_slow(0, Value::null(&conn, &i32::logical_type(&conn)?)?)?;
+    assert!(!vector.validity_writable);
+    // SAFETY: The value write preserved the writable flat row.
+    unsafe { vector.write_without_validation(0, Some(7))? };
+    assert_eq!(vector.get(0)?, Some(&7));
+    Ok(())
+}
+
+#[test]
+fn vector_fill_validity_handles_empty_and_partial_words() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    for count in [0, 1, 63, 64, 65, 129] {
+        vector.set_size(count)?;
+        for index in 0..count {
+            vector.write(index, Some(index as i32))?;
+        }
+        // SAFETY: INTEGER has no descendants and every row is initialized.
+        unsafe { vector.fill_validity(false)? };
+        assert!(vector.iter()?.all(|value| value.is_none()));
+        assert!(vector.get_view()?.validity().unwrap().iter().all(|word| *word == 0));
+        // SAFETY: Clearing validity did not change the initialized INTEGER data.
+        unsafe { vector.fill_validity(true)? };
+        assert!(
+            vector
+                .iter()?
+                .enumerate()
+                .all(|(index, value)| value == Some(&(index as i32)))
+        );
+        assert!(
+            vector
+                .get_view()?
+                .validity()
+                .unwrap()
+                .iter()
+                .all(|word| *word == u64::MAX)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn vector_fill_validity_rejects_read_only_and_constant_storage() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(1)?;
+    vector.write(0, Some(42))?;
+    drop(vector);
+    let mut shared = super::Vector::<i32>::from_handle(&chunk.get_vector_handle_at(0), super::Access::Shared)?;
+    // SAFETY: The initialized INTEGER row has no descendants; access is checked by the helper.
+    assert!(unsafe { shared.fill_validity(false) }.is_err());
+    assert_eq!(shared.get(0)?, Some(&42));
+    drop(shared);
+    let mut constant = chunk
+        .get_vector_at_mut::<i32>(0)?
+        .make_constant(42_i32.value(&conn)?, 1)?;
+    // SAFETY: The initialized INTEGER row has no descendants; storage is checked by the helper.
+    assert!(unsafe { constant.fill_validity(false) }.is_err());
+    assert_eq!(constant.get(0)?, Some(&42));
+    Ok(())
+}
+
+#[test]
+fn vector_variant_writes_preserve_cast_nullness() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Variant::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Variant>(0)?;
+    vector.set_size(2)?;
+    vector.write(0, Some(42_i32.value(&conn)?))?;
+    assert!(!vector.is_null(0)?);
+    vector.write(0, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
+    assert!(vector.is_null(0)?);
+    // SAFETY: The second VARIANT row is writable, flat, and in bounds.
+    unsafe {
+        vector.write_without_validation(1, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
+    }
+    assert!(vector.is_null(1)?);
+    Ok(())
+}
+
+#[test]
 fn vector_mutable_view_initializes_and_preserves_validity_mask() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
@@ -423,6 +540,14 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
         let mut vector = chunk.get_vector_at_mut::<Probe>(0)?;
         vector.set_size(1)?;
         assert_eq!(vector.write(0, Some(())).unwrap_err().message, "element writer called");
+        // SAFETY: Row 0 is in bounds in this writable flat vector.
+        assert_eq!(
+            unsafe { vector.write_without_validation(0, Some(())) }
+                .unwrap_err()
+                .message,
+            "element writer called"
+        );
+        assert!(vector.get_view()?.validity().is_none());
         for index in [1, usize::MAX] {
             for value in [Some(()), None] {
                 let err = vector.write(index, value).unwrap_err();

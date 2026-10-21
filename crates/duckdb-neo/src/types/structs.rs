@@ -236,8 +236,7 @@ unsafe impl WritableVectorElement for Struct {
                 field.write(child, index)?;
             }
         }
-        // SAFETY: The caller guarantees a writable, flat, in-bounds parent row.
-        unsafe { vector.set_row_validity_unchecked(index, true) }
+        Ok(())
     }
 }
 
