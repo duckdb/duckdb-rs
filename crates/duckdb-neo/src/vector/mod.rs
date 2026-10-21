@@ -151,6 +151,12 @@ impl Arena {
         unsafe { DuckDBBytes::from_parts(parts, || Ok(self)) }
     }
 
+    /// Concatenate UTF-8 string slices into inline storage or one arena allocation.
+    ///
+    /// The combined byte length must fit in a `u32`.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
     #[inline]
     pub unsafe fn add_strings(&self, parts: &[&str]) -> Result<DuckDBBytes> {
         let parts = parts.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
@@ -242,8 +248,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)
             .map(|handle| LogicalType { handle })?;
 
-        let kind = check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET)
-            .map(|v| StorageKind::try_from(v))??;
+        let kind =
+            check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
 
         let view = Self::acquire_view(*handle, kind)?;
