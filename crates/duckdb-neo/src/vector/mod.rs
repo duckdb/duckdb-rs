@@ -90,14 +90,6 @@ impl TypeMetadata {
             _ => 0,
         }
     }
-
-    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
-    pub(crate) fn decimal_signature(&self) -> Option<DecimalSignature> {
-        match self {
-            TypeMetadata::Decimal(signature) => Some(*signature),
-            _ => None,
-        }
-    }
 }
 
 ffi_enum_redeclaration! {
