@@ -112,11 +112,12 @@ pub unsafe trait WritableVectorElement: VectorElement {
 
     /// Encode one value into a writable vector.
     ///
-    /// [`Vector::write`] and [`Vector::write_without_validation`] maintain the
-    /// row's validity after successful encoding. Nested NULL values must still
-    /// propagate to descendants, and value-API writers preserve cast nullness.
+    /// [`VectorWriter::set`](crate::vector::VectorWriter::set) and
+    /// [`Vector::write_without_validation`] maintain the row's validity after
+    /// successful encoding. Nested NULL values must still propagate to descendants,
+    /// and value-API writers preserve cast nullness.
     ///
-    /// Prefer [`Vector::write`], which upholds these requirements.
+    /// Prefer [`VectorWriter::set`](crate::vector::VectorWriter::set), which upholds these requirements.
     ///
     /// # Safety
     ///

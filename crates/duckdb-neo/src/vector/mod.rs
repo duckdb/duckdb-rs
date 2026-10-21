@@ -170,9 +170,11 @@ impl Arena {
 
 mod reader;
 mod view;
+mod writer;
 
 pub use reader::{Selection, VectorReader, VectorReaderIter};
 pub use view::*;
+pub use writer::VectorWriter;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
 pub const CONSTANT_SELECTION_LEN: usize = 2048;
@@ -323,6 +325,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.view.as_ref().ok_or(not_flat())
     }
 
+    /// Prepare exclusive write access without flattening or allocating a validity mask.
+    ///
+    /// Fails unless this is writable output with flat storage. Resize the vector
+    /// before acquiring its writer.
+    pub fn writer(&mut self) -> Result<VectorWriter<'_, 'a, T>> {
+        VectorWriter::new(self)
+    }
+
     /// Borrow the writable flat storage view, allocating a writable validity mask if needed.
     pub fn get_view_mut(&mut self) -> Result<VectorViewMut<'_, T>> {
         if !self.is_writable() || self.kind != StorageKind::Flat {
@@ -339,14 +349,11 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Set every row's validity, including padding bits in the last mask word.
     ///
     /// # Safety
-    /// Rows marked valid must be initialized before reading. NULL STRUCT and ARRAY
-    /// rows must also have NULL descendants; this only changes the parent's mask.
+    /// Rows marked valid must be initialized before reading. NULL STRUCT, ARRAY,
+    /// and UNION rows must have NULL descendants; this only changes the parent's mask.
     pub unsafe fn fill_validity(&mut self, is_valid: bool) -> Result<()> {
-        self.get_view_mut()?
-            .validity_mut()
-            .expect("writable validity mask")
-            .fill(if is_valid { u64::MAX } else { 0 });
-        Ok(())
+        // SAFETY: The caller upholds the validity and descendant invariants.
+        unsafe { self.writer()?.fill_validity(is_valid) }
     }
 
     fn acquire_view<U: VectorElement>(
@@ -803,14 +810,10 @@ impl<T: WritableVectorElement> Vector<'_, T> {
     ///
     /// The vector must be writable with flat storage, and `index` must be in
     /// range. Pass `None` to write SQL `NULL`.
+    /// Prefer retaining a [`Self::writer`] when writing multiple rows.
     #[inline]
     pub fn write(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        self.check_row_writable(index)?;
-        // SAFETY: Writability, flat storage, and bounds were checked above.
-        unsafe { self.write_without_validation(index, value) }
+        self.writer()?.set(index, value)
     }
 
     /// Write a value and its NULL validity without checking the row's storage or bounds.
@@ -820,13 +823,8 @@ impl<T: WritableVectorElement> Vector<'_, T> {
     /// The vector must be writable and flat, and `index` must be in bounds.
     #[inline]
     pub unsafe fn write_without_validation(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
-        let is_valid = value.is_some();
-        unsafe { T::write(self, index, value)? };
-        // VARIANT's value API determines nullness after casting the supplied Value.
-        if T::TYPE_ID != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT {
-            unsafe { self.set_row_validity_unchecked(index, is_valid)? };
-        }
-        Ok(())
+        // SAFETY: The caller guarantees flat, writable storage and an in-bounds row.
+        unsafe { writer::write_unchecked(self, index, value) }
     }
 }
 
