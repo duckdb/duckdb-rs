@@ -122,6 +122,7 @@ pub struct Arena {
 
 impl Arena {
     /// Reserve uninitialized bytes in the arena.
+    #[inline]
     pub fn allocate(&self, len: usize) -> Result<*mut u8> {
         check_api_call!(ffi::duckdb_v2_arena_allocate, self.raw(), len as u64, RET)
     }
@@ -133,6 +134,27 @@ impl Arena {
     pub unsafe fn add_bytes(&self, value: &[u8]) -> Result<DuckDBBytes> {
         // SAFETY: The caller guarantees the arena's storage lifetime.
         unsafe { DuckDBBytes::new(self, value) }
+    }
+
+    /// Concatenate byte slices directly into inline storage or one arena allocation.
+    ///
+    /// No intermediate buffer is allocated. The combined length must fit in a `u32`.
+    /// This does not validate UTF-8 or other logical-type encodings.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    #[inline]
+    pub unsafe fn add_parts(&self, parts: &[&[u8]]) -> Result<DuckDBBytes> {
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { DuckDBBytes::from_parts(parts, || Ok(self)) }
+    }
+
+    #[inline]
+    pub unsafe fn add_strings(&self, parts: &[&str]) -> Result<DuckDBBytes> {
+        let parts = parts.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
+
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { DuckDBBytes::from_parts(parts.as_slice(), || Ok(self)) }
     }
 
     /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.
@@ -487,29 +509,16 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// # Safety
     /// The vector must be writable and flat, and `index` must be in bounds.
-    pub(crate) unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
-        let handle = self.handle;
-        let view = self.view.as_mut().ok_or_else(not_writable)?;
-        if is_valid && view.view.validity.is_null() {
-            return Ok(());
-        }
-        let validity = if view.view.validity.is_null() {
-            let validity: *mut u64 = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
-            view.view.validity = validity;
-            validity
-        } else {
-            view.view.validity as *mut u64
-        };
+    pub unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) -> Result<()> {
+        let mut view_mut = self
+            .view
+            .as_mut()
+            .ok_or_else(not_flat)
+            .map(|view| VectorViewMut { view })?;
+        view_mut.view.view.validity =
+            check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.handle, RET)?;
 
-        unsafe {
-            let mask = 1u64 << (index % 64);
-            let word = validity.add(index / 64);
-            if is_valid {
-                *word |= mask;
-            } else {
-                *word &= !mask;
-            }
-        }
+        unsafe { view_mut.set_row_validity_unchecked(index, is_valid) }
         Ok(())
     }
 
@@ -710,10 +719,10 @@ impl<T: HasDuckDBBytes> Vector<'_, T> {
     /// The vector must be writable and flat, and `index` must be in bounds.
     /// The bytes must be valid for the vector's logical type.
     pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        let value = match value {
+        let value: Option<DuckDBBytes> = match value {
             None => None,
             // SAFETY: the vector owns the arena and keeps the stored bytes alive.
-            Some(value) => Some(unsafe { DuckDBBytes::new_with_arena(value, || self.arena())? }),
+            Some(value) => Some(unsafe { DuckDBBytes::from_parts(&[value], || self.arena())? }),
         };
         // SAFETY: The caller guarantees the row is writable; the arena owns the stored bytes.
         unsafe { self.write_internal(index, value) }

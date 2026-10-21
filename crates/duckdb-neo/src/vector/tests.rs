@@ -243,6 +243,36 @@ fn vector_mutable_view_with_arena_writes_binary_bytes() -> crate::Result<()> {
 }
 
 #[test]
+fn vector_byte_writes_store_encoded_values() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    let values = [
+        Some("hello"),
+        Some("123456789012"),
+        Some("1234567890123"),
+        None,
+        Some(""),
+        Some("a longer string with 🦆"),
+    ];
+    vector.set_size(values.len())?;
+    for (index, value) in values.iter().copied().enumerate() {
+        vector.write(index, value)?;
+        if let Some(value) = value {
+            // SAFETY: This non-NULL slot has been initialized by the write above.
+            let encoded = unsafe { &*vector.get_view()?.as_ptr().add(index) };
+            assert_eq!(encoded.size(), value.len());
+            assert_eq!(encoded.get_data(), value.as_bytes());
+        }
+    }
+    for (index, value) in values.iter().copied().enumerate() {
+        assert_eq!(vector.get(index)?, value);
+    }
+    Ok(())
+}
+
+#[test]
 fn vector_byte_writes_acquire_arena_only_for_long_values() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;

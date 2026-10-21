@@ -34,7 +34,7 @@ impl<T: VectorElement> VectorView<T> {
     /// # Panics
     ///
     /// Panics if `logical` is outside the view.
-    #[inline]
+    #[inline(always)]
     pub fn physical_index(&self, logical: usize) -> usize {
         assert!(
             logical < self.len(),
@@ -207,18 +207,37 @@ impl<T: VectorElement> VectorViewMut<'_, T> {
         self.view.view.data as *mut T::Internal
     }
 
+    pub fn write_at(&mut self, index: usize, value: T::Internal) {
+        unsafe {
+            std::ptr::write(self.as_mut_ptr().add(index), value);
+        }
+    }
+
     /// Return the writable validity mask, with one bit per row.
     ///
     /// # Safety
     /// Rows marked valid must contain initialized values of the vector's logical type.
     /// NULL STRUCT and ARRAY rows must also have NULL descendants.
-    pub unsafe fn validity_mut(&mut self) -> Option<&mut [u64]> {
+    pub fn validity_mut(&mut self) -> Option<&mut [u64]> {
         if self.view.view.validity.is_null() {
             None
         } else {
             Some(unsafe {
                 std::slice::from_raw_parts_mut(self.view.view.validity as *mut u64, self.len().div_ceil(64))
             })
+        }
+    }
+
+    /// # Safety
+    /// The vector must be writable and flat, and `index` must be in bounds.
+    pub unsafe fn set_row_validity_unchecked(&mut self, index: usize, is_valid: bool) {
+        let validity = self.validity_mut().unwrap();
+
+        let mask = 1u64 << (index % 64);
+        if is_valid {
+            validity[index / 64] |= mask;
+        } else {
+            validity[index / 64] &= !mask;
         }
     }
 }
