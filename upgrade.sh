@@ -33,13 +33,13 @@ unreleased commit); a warning is printed when it differs from the pin. Both
 accept DUCKDB_VERSION to bump to a planned release at the same time; without
 it the current crate version is kept.
 Full upgrades also update workflow DuckDB version references and regenerate
-bindings. With --patch, increment only the duckdb-rs crate patch version and
-leave DuckDB sources, generated bindings, and workflow version references unchanged.
+bindings. With --patch, increment each crate's patch version and leave DuckDB
+sources, generated bindings, and workflow version references unchanged.
 EOF
 }
 
-current_workspace_version() {
-    grep '^version = "' Cargo.toml | head -n1 | sed -E 's/version = "([^"]+)"/\1/'
+current_crate_version() {
+    grep '^version = "' "$1" | head -n1 | sed -E 's/version = "([^"]+)"/\1/'
 }
 
 crate_version_to_duckdb_version() {
@@ -82,17 +82,26 @@ update_crate_versions() {
     sed_inplace "s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" \
         Cargo.toml \
         crates/duckdb/Cargo.toml \
-        crates/duckdb-neo/Cargo.toml \
         crates/libduckdb-sys/Cargo.toml \
         crates/duckdb-loadable-macros/Cargo.toml
 
+    sed_inplace "s!$CURRENT_NEO_VERSION_PATTERN!$TARGET_NEO_VERSION!g" \
+        Cargo.toml \
+        crates/duckdb-neo/Cargo.toml
+
     # Update README Cargo.toml examples, not prose/history.
     sed_inplace "/version = \"/s!$CURRENT_CRATE_VERSION_PATTERN!$TARGET_CRATE_VERSION!g" README.md
+    sed_inplace "/version = \"/s!$CURRENT_NEO_VERSION_PATTERN!$TARGET_NEO_VERSION!g" README.md
 
-    local UPDATED_CRATE_VERSION
-    UPDATED_CRATE_VERSION=$(current_workspace_version)
+    local UPDATED_CRATE_VERSION UPDATED_NEO_VERSION
+    UPDATED_CRATE_VERSION=$(current_crate_version Cargo.toml)
     if [ "$UPDATED_CRATE_VERSION" != "$TARGET_CRATE_VERSION" ]; then
         echo "Expected workspace version $TARGET_CRATE_VERSION, found $UPDATED_CRATE_VERSION" >&2
+        exit 1
+    fi
+    UPDATED_NEO_VERSION=$(current_crate_version crates/duckdb-neo/Cargo.toml)
+    if [ "$UPDATED_NEO_VERSION" != "$TARGET_NEO_VERSION" ]; then
+        echo "Expected duckdb-neo version $TARGET_NEO_VERSION, found $UPDATED_NEO_VERSION" >&2
         exit 1
     fi
 
@@ -184,16 +193,21 @@ if [ "$PATCH_MODE" -eq 0 ] && [ ${#POSITIONAL[@]} -gt 1 ]; then
     exit 1
 fi
 
-CURRENT_CRATE_VERSION=$(current_workspace_version)
+CURRENT_CRATE_VERSION=$(current_crate_version Cargo.toml)
+CURRENT_NEO_VERSION=$(current_crate_version crates/duckdb-neo/Cargo.toml)
 CURRENT_DUCKDB_VERSION=$(crate_version_to_duckdb_version "$CURRENT_CRATE_VERSION")
 CRATE_MAJOR=$(echo "$CURRENT_CRATE_VERSION" | cut -d. -f1)
+NEO_MAJOR=$(echo "$CURRENT_NEO_VERSION" | cut -d. -f1)
 CURRENT_CRATE_VERSION_PATTERN=${CURRENT_CRATE_VERSION//./\\.}
+CURRENT_NEO_VERSION_PATTERN=${CURRENT_NEO_VERSION//./\\.}
 CURRENT_DUCKDB_VERSION_PATTERN=${CURRENT_DUCKDB_VERSION//./\\.}
 
 if [ "$PATCH_MODE" -eq 1 ]; then
     TARGET_CRATE_VERSION=$(next_crate_patch_version "$CURRENT_CRATE_VERSION")
+    TARGET_NEO_VERSION=$(next_crate_patch_version "$CURRENT_NEO_VERSION")
     echo "Start crate patch release for DuckDB $CURRENT_DUCKDB_VERSION"
     echo "Update crate version from $CURRENT_CRATE_VERSION to $TARGET_CRATE_VERSION"
+    echo "Update duckdb-neo version from $CURRENT_NEO_VERSION to $TARGET_NEO_VERSION"
     update_crate_versions
     exit 0
 fi
@@ -214,6 +228,7 @@ if ! valid_duckdb_version "$DUCKDB_VERSION"; then
 fi
 DUCKDB_VERSION="v${DUCKDB_VERSION#v}"
 TARGET_CRATE_VERSION=$(duckdb_version_to_crate_version "$DUCKDB_VERSION" "$CRATE_MAJOR")
+TARGET_NEO_VERSION=$(duckdb_version_to_crate_version "$DUCKDB_VERSION" "$NEO_MAJOR")
 
 if [ -z "$DUCKDB_SHA" ] && [ "$DUCKDB_VERSION" = "$CURRENT_DUCKDB_VERSION" ]; then
     echo "Already up to date, latest DuckDB version is $DUCKDB_VERSION and workspace version is $CURRENT_CRATE_VERSION"
@@ -225,6 +240,7 @@ SHA_NOTE=""
 [ -n "$DUCKDB_SHA" ] && warn_if_release_pin_differs "$DUCKDB_SHA"
 echo "Start to upgrade DuckDB from $CURRENT_DUCKDB_VERSION to $DUCKDB_VERSION$SHA_NOTE"
 echo "Update crate version from $CURRENT_CRATE_VERSION to $TARGET_CRATE_VERSION"
+echo "Update duckdb-neo version from $CURRENT_NEO_VERSION to $TARGET_NEO_VERSION"
 
 update_crate_versions
 
