@@ -6,6 +6,9 @@ use std::{
 #[cfg(not(feature = "bundled"))]
 #[path = "src/build_paths.rs"]
 mod build_paths;
+#[cfg(any(feature = "bundled-cmake", all(not(feature = "bundled"), feature = "download-lib")))]
+#[path = "src/build_version.rs"]
+mod build_version;
 
 /// Tells whether we're building for Windows. This is more suitable than a plain
 /// `cfg!(windows)`, since the latter does not properly handle cross-compilation

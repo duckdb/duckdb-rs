@@ -23,6 +23,7 @@ pub fn main(out_dir: &str) {
     }
 
     println!("cargo:rerun-if-changed={}", source_dir.display());
+    println!("cargo:rerun-if-env-changed=DUCKDB_VERSION");
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
@@ -51,6 +52,8 @@ pub fn main(out_dir: &str) {
         }
     }
 
+    let version = crate::build_version::cmake_version(env!("CARGO_PKG_VERSION"), env_var("DUCKDB_VERSION").as_deref());
+    cargo_warning(&format!("bundled-cmake DuckDB version: {version}"));
     let cmake_build_type = cmake_build_type();
     let generator = select_generator(out_dir);
     let mut config = cmake::Config::new(source_dir);
@@ -62,8 +65,10 @@ pub fn main(out_dir: &str) {
         config.define("CMAKE_MAKE_PROGRAM", make_program);
     }
     configure_macos_deployment_target(&mut config);
+    // Always overwrite the cached version, including when an override is removed.
     config
         .profile(&cmake_build_type)
+        .define("DUCKDB_EXPLICIT_VERSION", &version)
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
