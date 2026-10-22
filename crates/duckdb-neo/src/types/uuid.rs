@@ -10,6 +10,7 @@
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
+use crate::types::HugeInt;
 use crate::vector::VectorElement;
 use crate::{
     Parameters, Result, check_api_call,
@@ -63,7 +64,7 @@ impl FromValue for UuidValueRaw {
 unsafe impl VectorElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
 
-    type Internal = ffi::duckdb_v2_hugeint_t;
+    type Internal = HugeInt;
 
     type Ref<'a>
         = &'a UuidValueRaw

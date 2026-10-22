@@ -19,6 +19,9 @@ use crate::{
 #[derive(Debug)]
 pub struct Any;
 
+pub type HugeInt = ffi::duckdb_v2_hugeint_t;
+pub type UHugeInt = ffi::duckdb_v2_uhugeint_t;
+
 impl DuckDBType for Any {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)
@@ -95,7 +98,7 @@ declare_primitive_type!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT, UHugeInt);
 /// Shared with the temporal family, whose storage-wrapper types follow the
 /// same direct pointer-cast access pattern as the primitives below.
 macro_rules! declare_vector_element {
-    ($type:tt , $type_id:ident) => {
+    ($type:ty, $type_id:ident) => {
         // SAFETY: `$type` is DuckDB's physical storage for `$type_id`.
         unsafe impl $crate::vector::VectorElement for $type {
             const TYPE_ID: $crate::logical_type::LogicalTypeID = $crate::logical_type::LogicalTypeID::$type_id;
@@ -131,8 +134,8 @@ declare_vector_element!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
 declare_vector_element!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
 declare_vector_element!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
 declare_vector_element!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
-declare_vector_element!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
-declare_vector_element!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
+declare_vector_element!(HugeInt, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
+declare_vector_element!(UHugeInt, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
 
 macro_rules! declare_writable_vector_element {
     ($type:ty) => {
@@ -158,11 +161,11 @@ declare_writable_vector_element!(i8);
 declare_writable_vector_element!(i16);
 declare_writable_vector_element!(i32);
 declare_writable_vector_element!(i64);
-declare_writable_vector_element!(i128);
+declare_writable_vector_element!(ffi::duckdb_v2_hugeint_t);
 declare_writable_vector_element!(u8);
 declare_writable_vector_element!(u16);
 declare_writable_vector_element!(u32);
 declare_writable_vector_element!(u64);
-declare_writable_vector_element!(u128);
+declare_writable_vector_element!(ffi::duckdb_v2_uhugeint_t);
 declare_writable_vector_element!(f32);
 declare_writable_vector_element!(f64);

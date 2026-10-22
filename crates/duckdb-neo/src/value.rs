@@ -1,5 +1,6 @@
 //! Owned DuckDB values and their typed payloads.
 
+use crate::types::HugeInt;
 use crate::{DropHandle, Factory, ffi};
 
 use crate::{
@@ -119,14 +120,14 @@ fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {
     values.iter().map(|value| value.handle).collect()
 }
 
-fn hugeint(value: i128) -> ffi::duckdb_v2_hugeint_t {
-    ffi::duckdb_v2_hugeint_t {
+fn hugeint(value: i128) -> HugeInt {
+    HugeInt {
         lower: value as u64,
         upper: (value >> 64) as i64,
     }
 }
 
-pub(crate) fn from_hugeint(value: ffi::duckdb_v2_hugeint_t) -> i128 {
+pub(crate) fn from_hugeint(value: HugeInt) -> i128 {
     (i128::from(value.upper) << 64) | i128::from(value.lower)
 }
 

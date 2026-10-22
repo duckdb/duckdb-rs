@@ -1704,6 +1704,50 @@ pub fn vector_test_bignum() -> crate::Result<()> {
 }
 
 #[test]
+fn vector_hugeint_ffi_storage() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+    macro_rules! assert_hugeint_storage {
+        ($primitive:ty, $storage:ident, $inputs:expr) => {{
+            let inputs: &[$primitive] = &$inputs;
+            let mut output = DataChunk::create(&conn, &[<$primitive>::logical_type(&conn)?], true)?;
+            let mut vector = output.get_vector_at_mut::<crate::ffi::$storage>(0)?;
+            vector.set_size(inputs.len() + 1)?;
+
+            for (index, &input) in inputs.iter().enumerate() {
+                let expected = crate::ffi::$storage {
+                    lower: input as u64,
+                    upper: (input >> 64) as _,
+                };
+                let mut result = conn.query("SELECT $1", Parameters::positional(&[&input]))?;
+                let chunk = result.next_chunk()?.unwrap();
+                let source = chunk.get_vector_at::<crate::ffi::$storage>(0)?;
+                let reader = source.reader()?;
+                let raw = reader.get(0)?.unwrap();
+                assert_eq!((raw.lower, raw.upper), (expected.lower, expected.upper));
+
+                vector.writer()?.set(index, Some(expected))?;
+                let raw = vector.reader()?.get(index)?.unwrap();
+                assert_eq!((raw.lower, raw.upper), (expected.lower, expected.upper));
+                assert_eq!(vector.get_value_slow(index)?.get::<$primitive>()?, Some(input));
+            }
+            vector.writer()?.set(inputs.len(), None)?;
+            assert!(vector.reader()?.get(inputs.len())?.is_none());
+            assert!(vector.get_value_slow(inputs.len())?.is_null()?);
+        }};
+    }
+
+    assert_hugeint_storage!(
+        i128,
+        duckdb_v2_hugeint_t,
+        [i128::MIN, -(1i128 << 64) - 1, -1, 0, (1i128 << 64) + 1, i128::MAX]
+    );
+    assert_hugeint_storage!(u128, duckdb_v2_uhugeint_t, [0, 1, (1u128 << 64) + 1, u128::MAX]);
+    Ok(())
+}
+
+#[test]
 pub fn vector_value_types() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
