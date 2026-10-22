@@ -96,7 +96,16 @@ pub fn main(out_dir: &str) {
     // Always set explicitly so the CMake cache does not keep a stale value when
     // the environment variable changes between builds.
     let disable_extension_load = env_flag_aliases(&["DUCKDB_DISABLE_EXTENSION_LOAD", "DISABLE_EXTENSION_LOAD"]);
-    config.define("DISABLE_EXTENSION_LOAD", if disable_extension_load { "1" } else { "0" });
+    config
+        .define("DISABLE_EXTENSION_LOAD", "0")
+        .define(
+            "ENABLE_EXTENSION_LOAD",
+            if disable_extension_load { "OFF" } else { "ON" },
+        )
+        .define(
+            "ENABLE_BUILTIN_HTTPLIB",
+            if disable_extension_load { "OFF" } else { "ON" },
+        );
 
     // Forward compiler launcher for sccache/ccache integration.
     for var in ["CMAKE_C_COMPILER_LAUNCHER", "CMAKE_CXX_COMPILER_LAUNCHER"] {
@@ -139,10 +148,19 @@ pub fn main(out_dir: &str) {
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
-    // loader → extensions → duckdb_static (which satisfies all core symbols).
-    let mut linked_extensions = vec!["core_functions"];
+    // loader → capabilities/extensions → duckdb_static (which satisfies all core symbols).
+    let capabilities: &[&str] = if disable_extension_load {
+        &[]
+    } else {
+        &["httplib", "loadable_extensions"]
+    };
+    let mut linked_extensions = capabilities.to_vec();
+    linked_extensions.push("core_functions");
     linked_extensions.extend(enabled_extensions.iter().copied());
     build_static_extension_loader(source_dir, out_dir, &linked_extensions);
+    for capability in capabilities {
+        link_static_library(&lib_dir, &cmake_build_type, &format!("duckdb_{capability}"));
+    }
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
     for extension in enabled_extensions {
         link_static_library(&lib_dir, &cmake_build_type, &format!("{extension}_extension"));
