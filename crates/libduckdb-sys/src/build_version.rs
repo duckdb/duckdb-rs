@@ -44,10 +44,15 @@ mod tests {
         assert_eq!(cmake_version("1.20000.0", Some("v2.1.0-dev42")), "v2.1.0-dev42");
     }
 
-    #[cfg(all(feature = "bundled-cmake", feature = "capi-v1"))]
+    #[cfg(all(feature = "bundled", feature = "capi-v1"))]
     #[test]
-    fn bundled_cmake_reports_requested_version() {
-        let expected = cmake_version(env!("CARGO_PKG_VERSION"), option_env!("DUCKDB_VERSION"));
+    fn bundled_reports_expected_version() {
+        let version = if cfg!(feature = "bundled-cmake") {
+            option_env!("DUCKDB_VERSION")
+        } else {
+            None
+        };
+        let expected = cmake_version(env!("CARGO_PKG_VERSION"), version);
         let actual = unsafe { std::ffi::CStr::from_ptr(crate::duckdb_library_version()) };
         assert_eq!(actual.to_str().unwrap(), expected);
     }
