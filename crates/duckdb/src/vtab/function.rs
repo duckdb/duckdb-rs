@@ -3,11 +3,13 @@ use super::{
     ffi::{
         duckdb_bind_add_result_column, duckdb_bind_get_extra_info, duckdb_bind_get_named_parameter,
         duckdb_bind_get_parameter, duckdb_bind_get_parameter_count, duckdb_bind_info, duckdb_bind_set_bind_data,
-        duckdb_bind_set_cardinality, duckdb_bind_set_error, duckdb_create_table_function, duckdb_data_chunk,
-        duckdb_delete_callback_t, duckdb_destroy_table_function, duckdb_table_function,
-        duckdb_table_function_add_named_parameter, duckdb_table_function_add_parameter, duckdb_table_function_init_t,
-        duckdb_table_function_set_bind, duckdb_table_function_set_extra_info, duckdb_table_function_set_function,
-        duckdb_table_function_set_init, duckdb_table_function_set_local_init, duckdb_table_function_set_name,
+        duckdb_bind_set_cardinality, duckdb_bind_set_error, duckdb_client_context,
+        duckdb_client_context_get_config_option, duckdb_create_table_function, duckdb_data_chunk,
+        duckdb_delete_callback_t, duckdb_destroy_client_context, duckdb_destroy_table_function, duckdb_table_function,
+        duckdb_table_function_add_named_parameter, duckdb_table_function_add_parameter,
+        duckdb_table_function_get_client_context, duckdb_table_function_init_t, duckdb_table_function_set_bind,
+        duckdb_table_function_set_extra_info, duckdb_table_function_set_function, duckdb_table_function_set_init,
+        duckdb_table_function_set_local_init, duckdb_table_function_set_name,
         duckdb_table_function_supports_projection_pushdown, idx_t,
     },
 };
@@ -94,6 +96,46 @@ impl BindInfo {
             let name = &CString::new(name).expect("named parameter must not contain NUL bytes");
             let ptr = duckdb_bind_get_named_parameter(self.ptr, name.as_ptr());
             if ptr.is_null() { None } else { Some(Value::from(ptr)) }
+        }
+    }
+
+    /// Retrieves the value of a session/config option available during the bind stage.
+    ///
+    /// This looks up a DuckDB configuration option (such as a session setting) by name
+    /// using the client context of the current table function bind. It returns `None`
+    /// if the option is unset or unknown.
+    ///
+    /// This is primarily useful for loadable extensions that need to read configuration
+    /// state while binding a table function.
+    ///
+    /// # Arguments
+    /// * `name`: The name of the configuration option to look up
+    ///
+    /// returns: The value of the option, or `None` if it is not set
+    ///
+    /// # Note
+    /// Only query option names you know to be registered. On an unregistered option
+    /// name, DuckDB's C API (`duckdb_client_context_get_config_option`) returns a null
+    /// value in release builds, but in debug/assertion builds it raises an internal
+    /// error. That error is a C++ exception thrown across the FFI boundary, which
+    /// cannot be caught from Rust and aborts the process, so the caller must
+    /// pre-validate the name. Passing a known option name avoids this.
+    pub fn get_config_option(&self, name: &str) -> Option<Value> {
+        let cname = CString::new(name).expect("config option name must not contain NUL bytes");
+        unsafe {
+            let mut ctx: duckdb_client_context = std::ptr::null_mut();
+            duckdb_table_function_get_client_context(self.ptr, &mut ctx);
+            // `get_client_context` is not documented to write `ctx` on every path;
+            // guard against passing a null context to the lookup, which would
+            // dereference it C++-side. Destroying a null context is a safe no-op.
+            let value = if ctx.is_null() {
+                None
+            } else {
+                let ptr = duckdb_client_context_get_config_option(ctx, cname.as_ptr(), std::ptr::null_mut());
+                if ptr.is_null() { None } else { Some(Value::from(ptr)) }
+            };
+            duckdb_destroy_client_context(&mut ctx);
+            value
         }
     }
 
