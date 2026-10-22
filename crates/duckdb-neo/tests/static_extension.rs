@@ -29,11 +29,12 @@ impl ScalarCallbacks for TimesTen {
         vectors: &mut VectorCollection,
         output: Vector<'_, Unknown>,
     ) -> duckdb_neo::Result<()> {
-        let input = vectors.get_vector_at::<i32>(0)?;
+        let input = vectors.get_vector_at::<i32>(0)?.reader()?;
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
-        for (i, item) in input.iter()?.enumerate() {
-            output.write(i, item.map(|value| value * 10))?;
+        let mut writer = output.writer()?;
+        for (i, item) in input.iter().enumerate() {
+            writer.set(i, item.map(|value| value * 10))?;
         }
         Ok(())
     }
@@ -60,7 +61,7 @@ fn connect() -> duckdb_neo::Result<Connection> {
 fn query_string(connection: &Connection, sql: &str) -> duckdb_neo::Result<Option<String>> {
     let mut result = connection.query(sql, Parameters::None)?;
     let chunk = result.next_chunk()?.expect("query should return a chunk");
-    Ok(chunk.get_vector_at::<String>(0)?.get(0)?.map(str::to_owned))
+    Ok(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?.map(str::to_owned))
 }
 
 #[test]
@@ -69,7 +70,7 @@ fn test_static_extension_loads_at_startup() -> duckdb_neo::Result<()> {
 
     let mut result = connection.query("SELECT neo_static_times_ten(4)", Parameters::None)?;
     let chunk = result.next_chunk()?.expect("query should return a chunk");
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&40));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&40));
     drop(result);
 
     // DuckDB does not record the version of a static C API extension yet, so only check how it was loaded.

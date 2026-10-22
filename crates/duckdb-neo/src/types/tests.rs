@@ -511,21 +511,22 @@ fn test_empty_struct_read_and_write() -> crate::Result<()> {
     let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
     let vector = chunk.get_vector_at::<Struct>(0)?;
     assert!(vector.children().is_none());
-    let row = vector.get(0)?.unwrap();
+    let row = vector.reader()?.get(0)?.unwrap();
     assert!(row.get::<i32>("x").unwrap_err().message.contains("not found"));
 
     let mut chunk = DataChunk::create(&conn, &[StructValue::<EmptyStruct>::logical_type(&conn)?], true)?;
     {
         let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
         vector.set_size(2)?;
-        vector.write(0, Some(structs::StructWrite::default()))?;
-        vector.write(1, None)?;
+        vector.writer()?.set(0, Some(structs::StructWrite::default()))?;
+        vector.writer()?.set(1, None)?;
         let extra = structs::StructWrite::default().field::<i32>(Some(1));
-        assert!(vector.write(0, Some(extra)).is_err());
+        assert!(vector.writer()?.set(0, Some(extra)).is_err());
     }
     let vector = chunk.get_vector_at::<Struct>(0)?;
-    assert!(vector.get(0)?.is_some());
-    assert!(vector.get(1)?.is_none());
+    let vector_reader = vector.reader()?;
+    assert!(vector_reader.get(0)?.is_some());
+    assert!(vector_reader.get(1)?.is_none());
 
     Ok(())
 }

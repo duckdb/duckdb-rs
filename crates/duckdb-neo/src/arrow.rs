@@ -390,13 +390,14 @@ mod tests {
         // Imported vectors may share Arrow or dictionary buffers, so they are read-only.
         let mut imported = chunk.get_vector_at_mut::<i64>(0)?;
         assert!(!imported.is_writable());
-        assert!(imported.write(0, Some(1)).is_err());
+        assert!(imported.writer().is_err());
 
-        let val1 = chunk.get_vector_at::<i64>(0)?;
-        let val2 = chunk.get_vector_at::<bool>(1)?;
-        let val3 = chunk.get_vector_at::<String>(2)?;
+        let val1 = chunk.get_vector_at::<i64>(0)?.reader()?;
+        let val2 = chunk.get_vector_at::<bool>(1)?.reader()?;
+        let val3 = chunk.get_vector_at::<String>(2)?.reader()?;
 
         result.set_size(chunk.row_count()?)?;
+        let mut writer = result.writer()?;
 
         for row in 0..chunk.row_count()? {
             let v1 = val1.get(row)?;
@@ -407,7 +408,7 @@ mod tests {
                 + v2.map_or(0, |x| if *x { 2 } else { 1 }) as i64
                 + v3.unwrap_or_default().len() as i64;
 
-            result.write(row, Some(sum))?;
+            writer.set(row, Some(sum))?;
         }
 
         Ok(())
@@ -438,8 +439,9 @@ mod tests {
         let chunk = result.next_chunk()?.expect("conversion must produce a result chunk");
         assert_eq!(chunk.row_count()?, 2);
         let res = chunk.get_vector_at::<i64>(0)?;
-        assert_eq!(*res.get(0)?.unwrap_or(&0), 2 + 2 + 5);
-        assert_eq!(*res.get(1)?.unwrap_or(&0), 1 + 1 + 5);
+        let res_reader = res.reader()?;
+        assert_eq!(*res_reader.get(0)?.unwrap_or(&0), 2 + 2 + 5);
+        assert_eq!(*res_reader.get(1)?.unwrap_or(&0), 1 + 1 + 5);
         drop(chunk);
         assert!(result.next_chunk()?.is_none());
 

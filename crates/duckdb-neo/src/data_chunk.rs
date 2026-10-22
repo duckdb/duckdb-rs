@@ -172,8 +172,7 @@ impl VectorCollection {
         self.complete.set(false);
         let slot = &mut self.cache[index];
         if slot.get().is_none_or(|vector| vector.access != self.access) {
-            let vector = Vector::from_handle(&self.handles[index], self.access)?;
-            vector.validate_as::<T>()?;
+            let vector = Vector::<T>::from_handle(&self.handles[index], self.access)?.cast_unchecked();
             *slot = OnceCell::from(vector);
         }
         let vector = slot.get_mut().expect("view was just cached");
@@ -243,7 +242,9 @@ impl VectorCollection {
     ///
     /// Panics if `index` is out of range.
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.get_untyped_vector_at_mut(index)?.cast::<T>()
+        self.check_index(index);
+        self.evict(index);
+        Vector::from_handle(&self.handles[index], self.access)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
@@ -398,7 +399,7 @@ impl std::fmt::Debug for DataChunkRef<'_> {
 /// let mut result = conn.query(statement, Parameters::None)?;
 /// let chunk = result.next_chunk()?.expect("expected rows");
 ///
-/// let values = chunk.get_vector_at::<i32>(0)?;
+/// let values = chunk.get_vector_at::<i32>(0)?.reader()?;
 /// assert_eq!(chunk.row_count()?, 2);
 /// assert_eq!(values.get(0)?, Some(&10));
 /// # Ok(())
@@ -516,8 +517,8 @@ impl<'a> DataChunkRef<'a> {
     /// let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
     /// let shared = chunk.get_vector_at::<i32>(0)?;
     /// let mut exclusive = chunk.get_vector_at_mut::<i32>(0)?;
-    /// exclusive.write(0, Some(1))?;
-    /// let _ = shared.get(0)?;
+    /// exclusive.writer()?.set(0, Some(1))?;
+    /// let _ = shared.reader()?.get(0)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -668,16 +669,16 @@ mod tests {
         let types = [i32::logical_type(&conn)?];
         let mut writable = DataChunk::create(&conn, &types, true)?;
         let mut vector = writable.get_vector_at_mut::<i32>(0)?;
-        assert!(vector.write(0, Some(42)).is_err());
+        assert!(vector.writer()?.set(0, Some(42)).is_err());
         vector.set_size(1)?;
-        vector.write(0, Some(42))?;
-        assert_eq!(vector.get(0)?, Some(&42));
+        vector.writer()?.set(0, Some(42))?;
+        assert_eq!(vector.reader()?.get(0)?, Some(&42));
 
         let mut read_only = DataChunk::create(&conn, &types, false)?;
         let mut vector = read_only.get_vector_at_mut::<i32>(0)?;
         assert!(!vector.is_writable());
         assert!(vector.set_size(1).is_err());
-        assert!(vector.write(0, Some(42)).is_err());
+        assert!(vector.writer().is_err());
         Ok(())
     }
 
@@ -699,8 +700,8 @@ mod tests {
             let mut result = result;
             result.set_size(vec.len())?;
 
-            for (index, value) in vec.iter()?.enumerate() {
-                result.write(index, value.copied())?;
+            for (index, value) in vec.reader()?.iter().enumerate() {
+                result.writer()?.set(index, value.copied())?;
             }
 
             Ok(())
@@ -723,7 +724,13 @@ mod tests {
 
         let mut values = Vec::new();
         while let Some(chunk) = query.next_chunk()? {
-            values.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|value| value.copied()));
+            values.extend(
+                chunk
+                    .get_vector_at::<i32>(0)?
+                    .reader()?
+                    .iter()
+                    .map(|value| value.copied()),
+            );
         }
         assert_eq!(values, vec![Some(1), Some(2), Some(3), Some(4)]);
 
@@ -739,17 +746,18 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[Vec::<i64>::logical_type(&conn)?], true)?;
         let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
         list.set_size(1)?;
-        list.write(0, Some(vec![Some(0), Some(0)]))?;
+        list.writer()?.set(0, Some(vec![Some(0), Some(0)]))?;
         list.children_mut()
             .unwrap()
             .get_vector_at_mut::<i64>(0)?
             .make_sequence(10, 1, 2)?;
 
-        let error = list.get(0).expect_err("sequence child must not read as NULL");
+        let error = list.reader().expect_err("sequence child must not read as NULL");
         assert!(error.to_string().contains("OTHER vectors must be flattened"));
-        assert!(list.iter().is_err());
+        assert!(list.reader().is_err());
         list.children_mut().unwrap().get_vector_at_mut::<i64>(0)?.flatten()?;
         let values = list
+            .reader()?
             .get(0)?
             .expect("non-NULL list")
             .iter()
@@ -773,7 +781,7 @@ mod tests {
         assert!(!shared.is_writable());
         assert!(std::ptr::eq(shared, chunk.get_vector_at::<i64>(1)?));
         chunk.get_vector_at_mut::<i64>(1)?.flatten()?;
-        assert_eq!(chunk.get_vector_at::<i64>(1)?.get(3)?, Some(&3));
+        assert_eq!(chunk.get_vector_at::<i64>(1)?.reader()?.get(3)?, Some(&3));
         Ok(())
     }
 

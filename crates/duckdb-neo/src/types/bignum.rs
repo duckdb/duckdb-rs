@@ -13,7 +13,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{HasDuckDBBytes, VectorElement, WritableVectorElement},
 };
 use std::fmt::Display;
 
@@ -72,6 +72,9 @@ impl ToValue for BigNum {
     }
 }
 
+impl HasDuckDBBytes for BigNum {}
+impl HasDuckDBBytes for BigNumValue {}
+
 // SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
 unsafe impl VectorElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
@@ -80,11 +83,15 @@ unsafe impl VectorElement for BigNum {
 
     type Ref<'a> = &'a BigNum;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const BigNum;
+        let data_ptr = vector.as_ptr() as *const BigNum;
         (unsafe { &*data_ptr.add(physical) }) as _
     }
 }
@@ -93,8 +100,13 @@ unsafe impl VectorElement for BigNum {
 unsafe impl WritableVectorElement for BigNum {
     type Write<'a> = &'a BigNum;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_bytes(index, value.map(BigNum::encoded))
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, value.map(BigNum::encoded)) }
     }
 }
 
@@ -144,7 +156,11 @@ unsafe impl VectorElement for BigNumValue {
 
     type Ref<'a> = &'a BigNum;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: 'a,
     {
@@ -157,11 +173,16 @@ unsafe impl VectorElement for BigNumValue {
 unsafe impl WritableVectorElement for BigNumValue {
     type Write<'a> = &'a BigNumValue;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         let encoded = value
             .map(|value| Value::encode_bignum(&value.magnitude, value.is_negative))
             .transpose()?;
-        vector.write_bytes(index, encoded.as_deref())
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_bytes(index, encoded.as_deref()) }
     }
 }
 
@@ -216,7 +237,7 @@ mod tests {
         let mut result = conn.query("SELECT -16909060::BIGNUM", Parameters::None)?;
         let chunk = result.next_chunk()?.unwrap();
         let vector = chunk.get_vector_at::<BigNum>(0)?;
-        let value = vector.get(0)?.unwrap();
+        let value = vector.reader()?.get(0)?.unwrap();
         assert_eq!(
             format!("{value:?}"),
             "BigNum(BigNumValue { is_negative: true, magnitude: [1, 2, 3, 4] })"

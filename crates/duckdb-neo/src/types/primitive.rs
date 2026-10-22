@@ -12,7 +12,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, WritableVectorElement},
+    vector::WritableVectorElement,
 };
 
 /// The bind-time `ANY` logical type used in function signatures.
@@ -105,14 +105,14 @@ macro_rules! declare_vector_element {
             type Ref<'a> = &'a $type;
 
             unsafe fn get<'a, U: $crate::vector::VectorElement>(
-                vector: &'a $crate::vector::Vector<'_, U>,
+                vector: &$crate::vector::VectorReader<'a, U>,
                 physical: usize,
                 _logical: usize,
             ) -> Self::Ref<'a>
             where
                 Self: Sized + 'a,
             {
-                let data_ptr = vector.view.as_ref().unwrap().as_ptr() as *const $type;
+                let data_ptr = vector.as_ptr() as *const $type;
                 unsafe { &*data_ptr.add(physical) }
             }
         }
@@ -140,8 +140,14 @@ macro_rules! declare_writable_vector_element {
         unsafe impl WritableVectorElement for $type {
             type Write<'a> = $type;
 
-            unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-                vector.write_raw(index, value)
+            #[inline(always)]
+            unsafe fn write(
+                vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+                index: usize,
+                value: Option<Self::Write<'_>>,
+            ) -> Result<()> {
+                // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+                unsafe { vector.write_internal(index, value) }
             }
         }
     };

@@ -105,10 +105,10 @@ fn test_replacement_scan() -> crate::Result<()> {
     )?;
     let chunk = query.next_chunk()?.unwrap();
     let bignum = chunk.get_vector_at::<BigNum>(0)?;
-    let max = bignum.get(1)?.expect("max BIGNUM row").decode()?;
+    let max = bignum.reader()?.get(1)?.expect("max BIGNUM row").decode()?;
     assert!(max.magnitude.len() > 1_000_000, "use_large_bignum was not applied");
     assert_eq!(
-        chunk.get_vector_at::<i64>(1)?.get(0)?,
+        chunk.get_vector_at::<i64>(1)?.reader()?.get(0)?,
         Some(&2),
         "use_large_enum was not applied"
     );
@@ -140,10 +140,10 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     id.set_size(2)?;
     is_active.set_size(2)?;
 
-    id.write(0, Some(10))?;
-    id.write(1, Some(20))?;
-    is_active.write(0, Some(true))?;
-    is_active.write(1, Some(false))?;
+    id.writer()?.set(0, Some(10))?;
+    id.writer()?.set(1, Some(20))?;
+    is_active.writer()?.set(0, Some(true))?;
+    is_active.writer()?.set(1, Some(false))?;
 
     let mut appender = collection.to_append()?;
     appender.append(&mut chunk)?;
@@ -164,12 +164,14 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
     assert_eq!(chunk.row_count()?, 2);
 
     let id = chunk.get_vector_at::<i32>(0)?;
+    let id_reader = id.reader()?;
     let is_active = chunk.get_vector_at::<bool>(1)?;
+    let is_active_reader = is_active.reader()?;
 
-    assert_eq!(id.get(0)?, Some(&10));
-    assert_eq!(id.get(1)?, Some(&20));
-    assert_eq!(is_active.get(0)?, Some(&true));
-    assert_eq!(is_active.get(1)?, Some(&false));
+    assert_eq!(id_reader.get(0)?, Some(&10));
+    assert_eq!(id_reader.get(1)?, Some(&20));
+    assert_eq!(is_active_reader.get(0)?, Some(&true));
+    assert_eq!(is_active_reader.get(1)?, Some(&false));
 
     assert!(query.next_chunk()?.is_none());
 
@@ -183,8 +185,8 @@ fn single_row_collection(conn: &crate::connection::Connection) -> Result<ColumnD
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
     is_active.set_size(1)?;
-    id.write(0, Some(1))?;
-    is_active.write(0, Some(true))?;
+    id.writer()?.set(0, Some(1))?;
+    is_active.writer()?.set(0, Some(true))?;
 
     let mut appender = ColumnDataCollection::new(conn, &logical_types)?.to_append()?;
     appender.append(&mut chunk)?;
@@ -198,8 +200,8 @@ fn invalid_column_count_collection(conn: &crate::connection::Connection) -> Resu
     let (mut id, mut is_active) = (id.cast::<i32>()?, is_active.cast::<bool>()?);
     id.set_size(1)?;
     is_active.set_size(1)?;
-    id.write(0, Some(1))?;
-    is_active.write(0, Some(true))?;
+    id.writer()?.set(0, Some(1))?;
+    is_active.writer()?.set(0, Some(true))?;
 
     let mut appender = ColumnDataCollection::new(conn, &[(logical_types[0].clone(), "id".to_string())])?.to_append()?;
     appender.append(&mut chunk)?;
@@ -280,6 +282,35 @@ fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
 }
 
 #[test]
+fn test_replacement_scan_cdc_borrowed_scan() -> crate::Result<()> {
+    struct InspectCollection;
+
+    impl ReplacementScanCallbacks for InspectCollection {
+        fn scan(&self, context: &Context, _name: &QualifiedName, replacement: ReplacementHandle<'_>) -> Result<()> {
+            let collection = replacement.collection("cdc").unwrap();
+            let mut scan = collection.to_scan(context)?;
+            let chunk = scan.next_chunk()?.unwrap();
+            assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&1));
+            assert!(scan.next_chunk()?.is_none());
+            replacement.set_reference(ReplacementType::ColumnDataCollection("cdc"))
+        }
+    }
+
+    let env = Environment::new()?;
+    let instance = env.open(StorageLocation::InMemory)?;
+    let conn = instance.connect()?;
+    ReplacementScanBuilder::new(InspectCollection)
+        .collection("cdc", single_row_collection(&conn)?)
+        .register(&conn)?;
+
+    let conn = Box::new(conn);
+    let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
+    let chunk = query.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&1));
+    Ok(())
+}
+
+#[test]
 fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
@@ -294,7 +325,7 @@ fn test_replacement_scan_cdc_outlives_connection_borrow() -> crate::Result<()> {
 
     let mut query = conn.query("SELECT * FROM cdc", Parameters::None)?;
     let chunk = query.next_chunk()?.unwrap();
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&1));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&1));
 
     Ok(())
 }

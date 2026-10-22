@@ -87,12 +87,22 @@ unsafe impl VectorElement for Union {
         children.get_untyped_vector_at(0)?.validate_as::<u8>().map(|()| true)
     }
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
+        let children = vector.children().expect("validated nested vector has children");
+        // SAFETY: The parent reader prepared the tag, which validate checked as u8.
+        let tag = unsafe {
+            crate::vector::VectorReader::from_prepared(children.cached_unchecked(0).cast_ref_unchecked::<u8>())
+        };
         UnionRow {
-            children: vector.children().expect("validated nested vector has children"),
+            children,
+            tag,
             logical: physical,
         }
     }
@@ -102,17 +112,15 @@ unsafe impl VectorElement for Union {
 #[derive(Debug)]
 pub struct UnionRow<'a> {
     children: &'a VectorCollection,
+    tag: crate::vector::VectorReader<'a, u8>,
     logical: usize,
 }
 
 impl<'a> UnionRow<'a> {
     /// Return the active union member index.
     pub fn member(&self) -> u8 {
-        *self
-            .children
-            .cached_unchecked(0)
-            .get_as_unchecked::<u8>(self.logical)
-            .unwrap()
+        // SAFETY: The tag reader was prepared with the parent and this row is in bounds.
+        unsafe { *self.tag.get_unchecked(self.logical).unwrap() }
     }
 
     /// Return a union member by index after validating its logical type.
@@ -130,7 +138,9 @@ impl<'a> UnionRow<'a> {
 
         self.children
             .cached_unchecked(child_index)
-            .get_as_checked::<T>(self.logical)
+            .cast_ref::<T>()?
+            .reader()?
+            .get(self.logical)
     }
 }
 
@@ -155,7 +165,7 @@ where
     }
 
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()> {
-        child.write_as::<T>(index, self.member)
+        child.writer()?.write_as::<T>(index, self.member)
     }
 }
 
@@ -191,7 +201,11 @@ impl<'a> UnionWriter<'a> {
 unsafe impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         let Some(value) = value else {
             // A union is a struct of tag and members; this nulls all of them.
             return vector.set_null_slow(index);
@@ -217,7 +231,6 @@ unsafe impl WritableVectorElement for Union {
         )?;
 
         let vector_len = vector.len();
-        vector.set_row_validity(index, true)?;
         let children = vector
             .children_collection_mut()
             .expect("validated nested vector has children");
@@ -228,7 +241,7 @@ unsafe impl WritableVectorElement for Union {
                 child.set_size(vector_len)?;
             }
             if i == 0 {
-                child.write_as::<u8>(index, Some(value.tag))?;
+                child.writer()?.write_as::<u8>(index, Some(value.tag))?;
             } else if i != member {
                 // Nested fixed-width rows need NULL descendants, which only the slow path sets.
                 let nested = matches!(
@@ -241,7 +254,8 @@ unsafe impl WritableVectorElement for Union {
                 if nested {
                     child.set_null_slow(index)?;
                 } else {
-                    child.set_row_validity(index, false)?;
+                    // SAFETY: The row is in bounds and these types need no descendant NULL updates.
+                    unsafe { child.writer()?.set_row_validity(index, false)? };
                 }
             }
         }
@@ -283,18 +297,19 @@ mod tests {
             let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
             vector.set_size(2)?;
             vector.write_value_slow(0, value)?;
-            vector.write(1, None)?;
+            vector.writer()?.set(1, None)?;
             for index in 0..2 {
                 let invalid = UnionWriter::set_value::<String>(0, Some("bad"));
-                assert!(vector.write(index, Some(invalid)).is_err());
+                assert!(vector.writer()?.set(index, Some(invalid)).is_err());
             }
         }
         let vector = chunk.get_vector_at::<Union>(0)?;
-        let row = vector.get(0)?.unwrap();
+        let vector_reader = vector.reader()?;
+        let row = vector_reader.get(0)?.unwrap();
         assert_eq!(row.member(), 1);
         assert_eq!(row.get::<i32>(0)?, None);
         assert_eq!(row.get::<String>(1)?, Some("duck"));
-        assert!(vector.get(1)?.is_none());
+        assert!(vector_reader.get(1)?.is_none());
         Ok(())
     }
 
@@ -306,7 +321,7 @@ mod tests {
             .query("SELECT union_value(x := 42)", Parameters::None)?
             .next_chunk()?
             .unwrap();
-        let row = chunk.get_vector_at::<Union>(0)?.get(0)?.unwrap();
+        let row = chunk.get_vector_at::<Union>(0)?.reader()?.get(0)?.unwrap();
         assert!(row.get::<u8>(usize::MAX).is_err());
         assert_eq!(row.get::<i32>(0)?, Some(&42));
         Ok(())

@@ -76,11 +76,11 @@ macro_rules! define_handle_column_data_collection {
         }
 
         pub(crate) trait $link {
-            fn $create(&mut self) -> $crate::Result<$name>;
+            fn $create(&self) -> $crate::Result<$name>;
         }
 
         impl $link for ColumnDataCollection<'_> {
-            fn $create(&mut self) -> $crate::Result<$name> {
+            fn $create(&self) -> $crate::Result<$name> {
                 $crate::check_api_call!($factory, $crate::raw::RawExt::raw(self), RET).map($name)
             }
         }

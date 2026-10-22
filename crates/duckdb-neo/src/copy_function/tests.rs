@@ -58,32 +58,33 @@ impl CopyToFunctionCallbacks for RapidCopy {
         }))
     }
 
-    fn batch<'ctx>(
+    fn batch(
         &self,
-        context: &'ctx Context,
+        context: &Context,
         _bind_data: &Self::BindData,
         _init_data: &Self::InitData,
-        input: ColumnDataCollection<'ctx>,
+        input: &ColumnDataCollection<'_>,
     ) -> crate::Result<Self::BatchData> {
-        let scanner = input.to_scan()?;
+        let mut scanner = input.to_scan(context)?;
         let mut result = Vec::new();
         let mut to_append = ColumnDataCollection::new(context, [i64::logical_type(context)?])?.to_append()?;
+        while let Some(mut chunk) = scanner.next_chunk()? {
+            to_append.append(&mut chunk)?;
+        }
 
         let mut data_chunk = DataChunk::create(&context, &[i64::logical_type(context)?], true)?;
         let mut vec = data_chunk.get_vector_at_mut::<i64>(0)?;
         vec.set_size(1)?;
-        vec.write(0, Some(10))?;
+        vec.writer()?.set(0, Some(10))?;
 
         to_append.append(&mut data_chunk)?;
 
-        let scanner = scanner.to_append()?.combine(to_append.to_normal())?;
-
-        let mut scanner = scanner.to_scan()?;
+        let mut scanner = to_append.to_scan(context)?;
 
         while let Some(chunk) = scanner.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
 
-            for item in in_vector.iter()?.flatten() {
+            for item in in_vector.reader()?.iter().flatten() {
                 let mapped_value = ((*item) as f64 * self.multiplier) as i32;
                 result.push(mapped_value);
             }
@@ -99,6 +100,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
         _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
+        _input: &ColumnDataCollection<'_>,
         batch_data: &mut Self::BatchData,
     ) -> crate::Result<()> {
         assert_eq!(batch_data.len(), 10 + 1, "Expected 11 rows in batch data");
@@ -175,9 +177,9 @@ pub fn test_copy_function() -> crate::Result<()> {
 
     let mut stats = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
-        let filenames = chunk.get_vector_at::<String>(0)?;
-        let counts = chunk.get_vector_at::<u64>(1)?;
-        let file_sizes = chunk.get_vector_at::<u64>(2)?;
+        let filenames = chunk.get_vector_at::<String>(0)?.reader()?;
+        let counts = chunk.get_vector_at::<u64>(1)?.reader()?;
+        let file_sizes = chunk.get_vector_at::<u64>(2)?.reader()?;
         for row in 0..chunk.row_count()? {
             stats.push((
                 filenames.get(row)?.unwrap().to_string(),
@@ -194,6 +196,115 @@ pub fn test_copy_function() -> crate::Result<()> {
     assert_eq!(stats, [("out.txt".to_string(), 11, output.len() as u64)]);
     fs::remove_file("out.txt").expect("Failed to remove COPY output");
 
+    Ok(())
+}
+
+#[test]
+fn test_copy_deferred_input() -> crate::Result<()> {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use crate::raw::RawExt;
+
+    struct DeferredCopy {
+        rows: Arc<Mutex<Vec<i64>>>,
+        batches: Arc<AtomicUsize>,
+        drops: Arc<AtomicUsize>,
+    }
+
+    struct DeferredBatch {
+        handle: usize,
+        rows: usize,
+        drops: Arc<AtomicUsize>,
+    }
+
+    impl Drop for DeferredBatch {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl CopyToFunctionCallbacks for DeferredCopy {
+        type BindData = ();
+        type InitData = ();
+        type BatchData = DeferredBatch;
+
+        fn bind(&self, _context: &Context, _info: &super::CopyToBindInfo) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn init(&self, _context: &Context, _bind_data: &(), _file_path: &str) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn batch(
+            &self,
+            _context: &Context,
+            _bind_data: &(),
+            _init_data: &(),
+            input: &ColumnDataCollection<'_>,
+        ) -> crate::Result<Self::BatchData> {
+            self.batches.fetch_add(1, Ordering::SeqCst);
+            Ok(DeferredBatch {
+                handle: input.raw() as usize,
+                rows: input.len()?,
+                drops: self.drops.clone(),
+            })
+        }
+
+        fn flush(
+            &self,
+            context: &Context,
+            _bind_data: &(),
+            _init_data: &(),
+            input: &ColumnDataCollection<'_>,
+            batch_data: &mut Self::BatchData,
+        ) -> crate::Result<()> {
+            assert_eq!(input.raw() as usize, batch_data.handle);
+            assert_eq!(input.len()?, batch_data.rows);
+            let mut scan = input.to_scan(context)?;
+            let mut rows = self.rows.lock().unwrap();
+            while let Some(chunk) = scan.next_chunk()? {
+                rows.extend(chunk.get_vector_at::<i64>(0)?.reader()?.iter().flatten().copied());
+            }
+            Ok(())
+        }
+
+        fn finalize(&self, _context: &Context, _bind_data: &(), _init_data: &()) -> crate::Result<()> {
+            Ok(())
+        }
+    }
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    conn.execute("SET threads = 4", Parameters::None)?;
+    let rows = Arc::new(Mutex::new(Vec::new()));
+    let batches = Arc::new(AtomicUsize::new(0));
+    let drops = Arc::new(AtomicUsize::new(0));
+    CopyFunctionBuilder::new(
+        "deferred_copy",
+        DeferredCopy {
+            rows: rows.clone(),
+            batches: batches.clone(),
+            drops: drops.clone(),
+        },
+    )
+    .register(&conn)?;
+    let dir = TempDir::new("copy_deferred_input");
+    conn.execute(
+        format!(
+            "COPY (SELECT i FROM range(4097) t(i) ORDER BY i) TO '{}' \
+             (FORMAT deferred_copy, BATCH_SIZE 128, USE_TMP_FILE FALSE)",
+            dir.join("out")
+        )
+        .as_str(),
+        Parameters::None,
+    )?;
+    assert_eq!(*rows.lock().unwrap(), (0..4097).collect::<Vec<i64>>());
+    assert!(batches.load(Ordering::SeqCst) > 1);
+    assert_eq!(drops.load(Ordering::SeqCst), batches.load(Ordering::SeqCst));
     Ok(())
 }
 
@@ -316,7 +427,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
         let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
-            vec.write(row, Some((*produced + row) as i64))?;
+            vec.writer()?.set(row, Some((*produced + row) as i64))?;
         }
 
         *produced += batch;
@@ -353,7 +464,7 @@ pub fn test_copy_from_function() -> crate::Result<()> {
     let mut result = conn.query(statement, Parameters::None).expect("Failed to query");
     while let Some(chunk) = result.next_chunk().expect("Failed to fetch chunk") {
         let column = chunk.get_vector_at::<i64>(0).expect("Failed to get column");
-        for item in column.iter().expect("Failed to iterate").flatten() {
+        for item in column.reader()?.iter().flatten() {
             values.push(*item);
         }
     }
@@ -395,18 +506,18 @@ impl CopyToFunctionCallbacks for EchoFormat {
         Ok(Mutex::new(FileBuilder::new(&fs, file_path)?.write().create().open()?))
     }
 
-    fn batch<'ctx>(
+    fn batch(
         &self,
-        _context: &'ctx Context,
+        context: &Context,
         _bind_data: &Self::BindData,
         _init_data: &Self::InitData,
-        input: ColumnDataCollection<'ctx>,
+        input: &ColumnDataCollection<'_>,
     ) -> crate::Result<Self::BatchData> {
         let mut result = Vec::new();
-        let mut scan = input.to_scan()?;
+        let mut scan = input.to_scan(context)?;
         while let Some(chunk) = scan.next_chunk()? {
             let in_vector = chunk.get_vector_at::<i64>(0)?;
-            result.extend(in_vector.iter()?.flatten().copied());
+            result.extend(in_vector.reader()?.iter().flatten().copied());
         }
         Ok(result)
     }
@@ -416,6 +527,7 @@ impl CopyToFunctionCallbacks for EchoFormat {
         _context: &Context,
         _bind_data: &Self::BindData,
         init_data: &Self::InitData,
+        _input: &ColumnDataCollection<'_>,
         batch_data: &mut Self::BatchData,
     ) -> crate::Result<()> {
         let file = init_data.lock().unwrap();
@@ -480,7 +592,7 @@ impl CopyFromFunctionCallbacks for EchoFormat {
         let mut vec = output.get_vector_at_mut::<i64>(0)?;
         vec.set_size(batch)?;
         for row in 0..batch {
-            vec.write(row, Some((*produced + row) as i64))?;
+            vec.writer()?.set(row, Some((*produced + row) as i64))?;
         }
 
         *produced += batch;

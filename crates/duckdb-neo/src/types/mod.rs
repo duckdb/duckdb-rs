@@ -68,7 +68,7 @@ pub use decimal::{
 pub use list::{List, ListIterator, ListRef};
 pub use map::{Map, MapRow, MapValue};
 pub use primitive::Any;
-pub use string::{BitValue, BlobValue};
+pub use string::{BitValue, BlobValue, UnsafeString};
 pub use structs::{Struct, StructRow, StructSchema, StructValue, StructWrite};
 pub use temporal::{
     DateValue, IntervalValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue,

@@ -91,7 +91,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
     ) -> crate::Result<()> {
         let vec = collection.get_vector_at::<i32>(0)?;
 
-        for (i, val) in vec.iter()?.enumerate() {
+        for (i, val) in vec.reader()?.iter().enumerate() {
             if let Some(val) = val {
                 states[i].push(*val);
             }
@@ -131,7 +131,7 @@ impl<T: Display + Send + Sync + 'static> AggregateCallbacks for BasicAggregate<T
                 bind_data.unwrap()[1],
                 self.item
             );
-            result.write(result_offset + index, Some(&to_write))?;
+            result.writer()?.set(result_offset + index, Some(&to_write))?;
         }
 
         Ok(())
@@ -162,7 +162,7 @@ pub fn basic_aggregate_test() -> crate::Result<()> {
     while let Some(chunk) = result.next_chunk()? {
         let vec = chunk.get_vector_at::<String>(0)?;
 
-        let res = vec.get(0)?;
+        let res = vec.reader()?.get(0)?;
 
         assert_eq!(res, Some("12345 + (1.2 + 3.4) - 0.0"));
     }
@@ -241,7 +241,7 @@ fn aggregate_test_groups() -> crate::Result<()> {
     while let Some(chunk) = result.next_chunk()? {
         let vec = chunk.get_vector_at::<String>(1)?;
 
-        for value in vec.iter()? {
+        for value in vec.reader()?.iter() {
             assert!(value.is_some());
 
             groups += 1;
@@ -365,7 +365,7 @@ impl AggregateCallbacks for PaddedSum {
         mut states: States<'_, Self::StateItem>,
     ) -> crate::Result<()> {
         let vec = collection.get_vector_at::<i32>(0)?;
-        for (i, val) in vec.iter()?.enumerate() {
+        for (i, val) in vec.reader()?.iter().enumerate() {
             states[i] += i64::from(*val.unwrap_or(&0));
         }
         Ok(())
@@ -392,7 +392,7 @@ impl AggregateCallbacks for PaddedSum {
     ) -> crate::Result<()> {
         let mut result = result.cast::<i64>()?;
         for (index, state) in states.iter().enumerate() {
-            result.write(result_offset + index, Some(**state))?;
+            result.writer()?.set(result_offset + index, Some(**state))?;
         }
         Ok(())
     }
@@ -424,8 +424,8 @@ fn aggregate_test_window_with_padded_state() -> crate::Result<()> {
 
     let mut rows = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
-        let total = chunk.get_vector_at::<i64>(0)?;
-        let running = chunk.get_vector_at::<i64>(1)?;
+        let total = chunk.get_vector_at::<i64>(0)?.reader()?;
+        let running = chunk.get_vector_at::<i64>(1)?.reader()?;
         for row in 0..total.len() {
             rows.push((*total.get(row)?.unwrap(), *running.get(row)?.unwrap()));
         }

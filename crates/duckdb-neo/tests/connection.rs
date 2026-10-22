@@ -26,7 +26,8 @@ fn test_send_between_threads() -> duckdb_neo::Result<()> {
     let chunk = result.next_chunk()?.expect("query should return a chunk");
     let values = chunk
         .get_vector_at::<i32>(0)?
-        .iter()?
+        .reader()?
+        .iter()
         .map(|value| value.copied())
         .collect::<Vec<_>>();
     assert_eq!(values, vec![Some(42)]);

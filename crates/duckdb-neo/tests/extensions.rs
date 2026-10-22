@@ -27,7 +27,7 @@ fn query_string(connection: &Connection, sql: &str) -> duckdb_neo::Result<Option
         .expect("query should return a chunk")
         .unwrap();
     let vector = chunk.get_vector_at::<String>(0)?;
-    Ok(vector.get(0)?.map(str::to_owned))
+    Ok(vector.reader()?.get(0)?.map(str::to_owned))
 }
 
 /// Load `name` and assert it came from the binary rather than an installed artifact.

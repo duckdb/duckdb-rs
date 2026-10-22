@@ -69,9 +69,9 @@ fn main() -> Result<()> {
     let mut ducks = Vec::new();
     let mut result = conn.query("FROM ducks ORDER BY id", Parameters::None)?;
     while let Some(chunk) = result.next_chunk()? {
-        let ids = chunk.get_vector_at::<i32>(0)?;
-        let names = chunk.get_vector_at::<String>(1)?;
-        for (id, name) in ids.iter()?.zip(names.iter()?) {
+        let ids = chunk.get_vector_at::<i32>(0)?.reader()?;
+        let names = chunk.get_vector_at::<String>(1)?.reader()?;
+        for (id, name) in ids.iter().zip(names.iter()) {
             ducks.push(Duck {
                 id: *id.expect("id is a primary key"),
                 name: name.unwrap_or_default().to_owned(),

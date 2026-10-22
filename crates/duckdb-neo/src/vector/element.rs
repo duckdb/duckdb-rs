@@ -1,6 +1,9 @@
 use crate::data_chunk::VectorCollection;
 use crate::logical_type::{LogicalType, LogicalTypeID};
-use crate::{Result, vector::Vector};
+use crate::{
+    Result,
+    vector::{VectorReader, VectorWriter},
+};
 
 /// Describes validation and decoding for a DuckDB logical type.
 ///
@@ -14,7 +17,7 @@ use crate::{Result, vector::Vector};
 /// A safe implementation is rejected:
 ///
 /// ```compile_fail,E0200
-/// # use duckdb_neo::{logical_type::LogicalTypeID, vector::{Vector, VectorElement}};
+/// # use duckdb_neo::{logical_type::LogicalTypeID, vector::{VectorReader, VectorElement}};
 /// struct Wide([u64; 4]);
 ///
 /// impl VectorElement for Wide {
@@ -22,7 +25,7 @@ use crate::{Result, vector::Vector};
 ///     type Internal = Wide;
 ///     type Ref<'a> = ();
 ///
-///     unsafe fn get<'a, U: VectorElement>(_: &'a Vector<'_, U>, _: usize, _: usize) -> Self::Ref<'a>
+///     unsafe fn get<'a, U: VectorElement>(_: &VectorReader<'a, U>, _: usize, _: usize) -> Self::Ref<'a>
 ///     where
 ///         Self: 'a,
 ///     {
@@ -33,7 +36,7 @@ pub unsafe trait VectorElement: Sized {
     /// The DuckDB logical type represented by this Rust type.
     const TYPE_ID: LogicalTypeID;
 
-    /// Physical entries exposed by [`VectorView::as_slice`](crate::vector::VectorView::as_slice).
+    /// Physical entries exposed by [`VectorReader::as_slice`](crate::vector::VectorReader::as_slice).
     /// Use `()` when the element does not expose a physical representation.
     type Internal;
 
@@ -51,24 +54,43 @@ pub unsafe trait VectorElement: Sized {
 
     /// Borrow a value at its physical and logical indexes.
     ///
-    /// Prefer [`Vector::get`] or [`Vector::iter`], which uphold these requirements.
+    /// Prefer [`VectorReader::get`](crate::vector::VectorReader::get) or
+    /// [`VectorReader::iter`](crate::vector::VectorReader::iter), which uphold these requirements.
     ///
     /// # Safety
     ///
-    /// - `vector` must have been validated as `Self`, and its children cached.
-    /// - `vector` must have a readable view.
-    /// - `logical` must be a row of `vector`, `physical` its physical index, and the row must not be `NULL`.
+    /// - `reader` must have been validated as `Self`, with its descendants prepared.
+    /// - `logical` must be a row of `reader`, `physical` its physical index, and the row must not be `NULL`.
     ///
     /// ```compile_fail,E0133
     /// # use duckdb_neo::vector::{Vector, VectorElement};
     /// fn read<'a>(vector: &'a Vector<'_, i8>) -> &'a i64 {
-    ///     <i64 as VectorElement>::get(vector, 10_000, 0)
+    ///     let reader = vector.reader().unwrap();
+    ///     <i64 as VectorElement>::get(&reader, 10_000, 0)
     /// }
     /// ```
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(reader: &VectorReader<'a, U>, physical: usize, logical: usize) -> Self::Ref<'a>
     where
         Self: 'a;
 }
+
+/// Marks vector elements backed by DuckDB's byte storage and arena.
+///
+/// Implemented for [`String`], [`UnsafeString`](crate::types::UnsafeString),
+/// [`BlobValue`](crate::types::BlobValue), [`BitValue`](crate::types::BitValue),
+/// [`BigNum`](crate::types::BigNum), and [`BigNumValue`](crate::types::BigNumValue).
+///
+/// Non-byte vectors do not expose an arena:
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn arena(vector: &mut Vector<'_, i32>) -> duckdb_neo::Result<()> {
+///     let _ = vector.writer()?.arena();
+///     Ok(())
+/// }
+/// ```
+pub trait HasDuckDBBytes: VectorElement {}
 
 /// Adds a supported output representation to a readable vector element.
 ///
@@ -82,21 +104,31 @@ pub unsafe trait WritableVectorElement: VectorElement {
     where
         Self: 'a;
 
-    /// Write one value into a writable vector.
+    /// Encode one value into a writable vector.
     ///
-    /// Prefer [`Vector::write`], which upholds this requirement.
+    /// [`VectorWriter::set`](crate::vector::VectorWriter::set) and
+    /// [`VectorWriter::set_unchecked`](crate::vector::VectorWriter::set_unchecked)
+    /// maintain the row's validity after
+    /// successful encoding. Nested NULL values must still propagate to descendants,
+    /// and value-API writers preserve cast nullness.
+    ///
+    /// Prefer [`VectorWriter::set`](crate::vector::VectorWriter::set), which upholds these requirements.
     ///
     /// # Safety
     ///
-    /// `vector` must be writable, see [`Vector::is_writable`].
+    /// - `index` must be less than [`VectorWriter::len`].
     ///
     /// ```compile_fail,E0133
     /// # use duckdb_neo::vector::{Vector, WritableVectorElement};
     /// fn write(vector: &mut Vector<'_, i32>) -> duckdb_neo::Result<()> {
-    ///     <i32 as WritableVectorElement>::write(vector, 0, Some(1))
+    ///     <i32 as WritableVectorElement>::write(&mut vector.writer()?, 0, Some(1))
     /// }
     /// ```
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()>;
+    unsafe fn write(
+        writer: &mut VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()>;
 }
 
 /// The element type has not been checked against the vector's logical type yet.
@@ -115,7 +147,11 @@ unsafe impl VectorElement for Unknown {
         Ok(true)
     }
 
-    unsafe fn get<'a, U: VectorElement>(_vector: &'a Vector<'_, U>, _physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        _reader: &VectorReader<'a, U>,
+        _physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: 'a,
     {

@@ -149,7 +149,7 @@ mod tests {
 
                 let vec = chunk.get_vector_at::<i32>(0).unwrap();
 
-                assert_eq!(vec.get(0).unwrap(), Some(&42));
+                assert_eq!(vec.reader().unwrap().get(0).unwrap(), Some(&42));
             }
 
             s2.send(()).unwrap();

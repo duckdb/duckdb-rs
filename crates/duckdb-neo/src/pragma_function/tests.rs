@@ -23,7 +23,7 @@ fn query_i32(conn: &Connection, sql: &str) -> Result<Vec<Option<i32>>> {
     let mut result = conn.query(sql, Parameters::None)?;
     let mut rows = Vec::new();
     while let Some(chunk) = result.next_chunk()? {
-        rows.extend(chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()));
+        rows.extend(chunk.get_vector_at::<i32>(0)?.reader()?.iter().map(|v| v.copied()));
     }
     Ok(rows)
 }

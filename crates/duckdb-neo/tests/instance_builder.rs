@@ -10,7 +10,7 @@ fn current_database(connection: &Connection) -> Result<Option<String>> {
         .query("SELECT current_database()", Parameters::None)?
         .next_chunk()?
         .unwrap();
-    Ok(chunk.get_vector_at::<String>(0)?.get(0)?.map(str::to_owned))
+    Ok(chunk.get_vector_at::<String>(0)?.reader()?.get(0)?.map(str::to_owned))
 }
 
 #[test]
@@ -26,7 +26,7 @@ fn new_creates_empty_instance() -> Result<()> {
         )?
         .next_chunk()?
         .unwrap();
-    assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&0));
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&0));
     assert!(
         connection
             .execute("CREATE TABLE example (id INTEGER)", Parameters::None)
@@ -171,7 +171,7 @@ fn multiple_attachments_share_instance() -> Result<()> {
         )?
         .next_chunk()?
         .unwrap();
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&252));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&252));
     drop(chunk);
     instance.set_default("extra")?;
     assert_eq!(current_database(&connection)?.as_deref(), Some("main2"));
@@ -222,7 +222,7 @@ fn attachment_supports_read_only_file() -> Result<()> {
         .query("SELECT id FROM analytics.example", Parameters::None)?
         .next_chunk()?
         .unwrap();
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
     let error = connection
         .execute("INSERT INTO analytics.example VALUES (43)", Parameters::None)
         .unwrap_err();
@@ -275,7 +275,7 @@ fn failed_attachment_preserves_instance_and_default() -> Result<()> {
         .query("SELECT id FROM example", Parameters::None)?
         .next_chunk()?
         .unwrap();
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
     Ok(())
 }
 

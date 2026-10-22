@@ -10,7 +10,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, WritableVectorElement},
+    vector::{VectorElement, WritableVectorElement},
 };
 
 /// A fixed-length array element marker; `[T; N]` is the owned form.
@@ -90,19 +90,27 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
         children.get_untyped_vector_at(0)?.validate_as::<T>().map(|()| true)
     }
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, physical: usize, _logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        _logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let child = vector
-            .children()
-            .expect("validated nested vector has children")
-            .cached_unchecked(0);
+        // SAFETY: Array<T>::validate checked the child as T.
+        let child = unsafe {
+            vector
+                .children()
+                .expect("validated nested vector has children")
+                .cached_unchecked(0)
+                .cast_ref_unchecked::<T>()
+        };
         ArrayRef {
-            offset: physical * vector.array_size(),
-            size: vector.array_size(),
-            child,
-            _marker: PhantomData,
+            offset: physical * vector.metadata().array_size(),
+            size: vector.metadata().array_size(),
+            // SAFETY: The parent reader prepared and validated every descendant.
+            child: unsafe { crate::vector::VectorReader::from_prepared(child) },
         }
     }
 }
@@ -114,8 +122,12 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
     where
         T: 'a;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        let array_size = vector.array_size();
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
+        let array_size = vector.metadata().array_size();
 
         if let Some(values) = &value
             && values.len() != array_size
@@ -126,8 +138,6 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
                 array_size
             )));
         }
-
-        vector.check_row_writable(index)?;
 
         let child_len = vector
             .len()
@@ -149,20 +159,20 @@ unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
         let offset = index
             .checked_mul(array_size)
             .ok_or_else(|| Error::invalid_input("Array child offset overflow"))?;
+        let mut writer = child.writer()?;
         for (child_index, value) in values.into_iter().enumerate() {
-            child.write(offset + child_index, value)?;
+            writer.set(offset + child_index, value)?;
         }
-        vector.set_row_validity(index, true)
+        Ok(())
     }
 }
 
 /// A borrowed array row backed by a contiguous range in its child vector.
 #[derive(Debug)]
-pub struct ArrayRef<'a, T> {
+pub struct ArrayRef<'a, T: VectorElement> {
     offset: usize,
     size: usize,
-    child: &'a Vector<'a, Unknown>,
-    _marker: PhantomData<T>,
+    child: crate::vector::VectorReader<'a, T>,
 }
 
 impl<'a, T: VectorElement> ArrayRef<'a, T> {
@@ -173,7 +183,6 @@ impl<'a, T: VectorElement> ArrayRef<'a, T> {
             offset: self.offset,
             length: self.size,
             index: 0,
-            _type: PhantomData,
         }
     }
 
@@ -199,12 +208,11 @@ impl<'a, T: VectorElement + 'a> IntoIterator for &ArrayRef<'a, T> {
 
 /// Traverses the child-vector range belonging to an [`ArrayRef`].
 #[derive(Debug)]
-pub struct ArrayIterator<'a, T> {
-    child: &'a Vector<'a, Unknown>,
+pub struct ArrayIterator<'a, T: VectorElement> {
+    child: crate::vector::VectorReader<'a, T>,
     offset: usize,
     length: usize,
     index: usize,
-    _type: PhantomData<T>,
 }
 
 impl<'a, T: VectorElement + 'a> Iterator for ArrayIterator<'a, T> {
@@ -218,7 +226,8 @@ impl<'a, T: VectorElement + 'a> Iterator for ArrayIterator<'a, T> {
         let logical = self.offset + self.index;
         self.index += 1;
 
-        Some(self.child.get_as_unchecked::<T>(logical))
+        // SAFETY: ArrayRef retains the parent's cached descendant views.
+        Some(unsafe { self.child.get_unchecked(logical) })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -264,7 +273,7 @@ mod tests {
             .next_chunk()?
             .unwrap();
         let vector = chunk.get_vector_at::<Array<i32>>(0)?;
-        let row = vector.get(0)?.unwrap();
+        let row = vector.reader()?.get(0)?.unwrap();
         assert_eq!(row.len(), 3);
         assert!(!row.is_empty());
         let mut iter = (&row).into_iter();
@@ -288,14 +297,14 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[<[i32; 2]>::logical_type(&conn)?], true)?;
         let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
         vector.set_size(1)?;
-        vector.write(0, Some(vec![Some(11), Some(12)]))?;
+        vector.writer()?.set(0, Some(vec![Some(11), Some(12)]))?;
         let child_len = vector.children().unwrap().get_untyped_vector_at(0)?.len();
 
-        let err = vector.write(1, Some(vec![Some(21), Some(22)])).unwrap_err();
+        let err = vector.writer()?.set(1, Some(vec![Some(21), Some(22)])).unwrap_err();
         assert!(err.to_string().contains("Vector index 1 is out of bounds for length 1"));
         assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), child_len);
         assert_eq!(
-            vector.get(0)?.unwrap().iter().collect::<Vec<_>>(),
+            vector.reader()?.get(0)?.unwrap().iter().collect::<Vec<_>>(),
             vec![Some(&11), Some(&12)]
         );
         Ok(())

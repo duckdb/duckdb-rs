@@ -6,11 +6,11 @@ use crate::{
     connection::FFILink,
     logical_type::{LogicalType, LogicalTypeID},
     value::Value,
-    vector::{Vector, VectorElement, WritableVectorElement},
+    vector::{VectorElement, WritableVectorElement},
 };
 
-/// [`Vector::get`]/[`Vector::iter`] read each row with one FFI call and an owned [`Value`] allocation.
-/// [`Vector::write`] accepts a [`Value`] that DuckDB casts to `VARIANT`.
+/// [`VectorReader::get`](crate::vector::VectorReader::get) reads each row through an owned [`Value`].
+/// [`VectorWriter::set`](crate::vector::VectorWriter::set) accepts a [`Value`] cast to `VARIANT`.
 #[derive(Debug)]
 pub struct Variant;
 
@@ -23,7 +23,11 @@ unsafe impl VectorElement for Variant {
 
     type Ref<'a> = Value;
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        _physical: usize,
+        logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -35,7 +39,11 @@ unsafe impl VectorElement for Variant {
 unsafe impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         match value {
             Some(value) => vector.write_value_slow(index, value),
             None => vector.set_null_slow(index),

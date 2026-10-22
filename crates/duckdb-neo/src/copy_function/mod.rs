@@ -1,17 +1,16 @@
 //! User-defined `COPY TO` and `COPY FROM` formats.
 //!
 //! Implement [`CopyToFunctionCallbacks`] to inspect input columns, initialize the
-//! destination, prepare each [`ColumnDataCollection`] as batch data, flush
-//! prepared batches, and finalize the output. Implement
+//! destination, prepare batch data, flush it alongside the retained input
+//! [`ColumnDataCollection`], and finalize the output. Implement
 //! [`CopyFromFunctionCallbacks`] to bind the file path and target columns,
 //! optionally set up shared and worker-local read state, and produce output
 //! chunks. A type may implement either trait, or both to support the format's
 //! name on both sides of `COPY`. Register with [`CopyFunctionBuilder`]; opt into
 //! reporting `RETURN_STATS` statistics with [`CopyToStatisticsCallbacks`].
 
-use std::{any::Any, collections::HashMap, num::NonZeroUsize};
+use std::{any::Any, collections::HashMap, marker::PhantomData, num::NonZeroUsize};
 
-use crate::connection::HasFactory;
 use crate::ffi_str::DuckDBStr;
 use crate::{
     Error, Result,
@@ -34,6 +33,12 @@ use crate::{
 struct CopyFunctionBindData<T> {
     data: T,
     logical_types: Vec<LogicalType>,
+}
+
+struct CopyFunctionBatchData<T> {
+    data: T,
+    // DuckDB retains the batch within its query; callbacks only borrow the collection.
+    input: ColumnDataCollection<'static>,
 }
 
 unsafe extern "C" fn bind_to_callback<T: CopyToFunctionCallbacks>(
@@ -105,26 +110,28 @@ unsafe extern "C" fn batch_to_callback<T: CopyToFunctionCallbacks>(
             let bind_data = unsafe { get_opaque_data_ref::<CopyFunctionBindData<T::BindData>>(bind_data) }.unwrap();
 
             let context = &unsafe { Context::from_raw(context) };
-            let factory = context.factory()?;
             let logical_types = bind_data.logical_types.clone();
 
             let collection = ColumnDataCollection {
                 handle: check_api_call!(ffi::duckdb_v2_copy_to_batch_take_input, info, RET)?,
                 logical_types,
-                factory,
                 column_names: None,
                 origin: None,
+                _marker: PhantomData,
             };
 
             let user_data = get_user_data!(ffi::duckdb_v2_copy_to_batch_get_user_data, info);
             let init_data = get_init_data!(ffi::duckdb_v2_copy_to_batch_get_init_data, info).unwrap();
 
-            let batch_data = T::batch(user_data, context, &bind_data.data, init_data, collection)?;
+            let batch_data = T::batch(user_data, context, &bind_data.data, init_data, &collection)?;
 
             check_api_call!(
                 ffi::duckdb_v2_copy_to_batch_set_batch_data,
                 info,
-                &mut into_opaque(batch_data)
+                &mut into_opaque(CopyFunctionBatchData {
+                    data: batch_data,
+                    input: collection,
+                })
             )
         },
         err,
@@ -202,8 +209,8 @@ unsafe extern "C" fn flush_to_callback<T: CopyToFunctionCallbacks>(
 
             let batch_data = check_api_call!(ffi::duckdb_v2_copy_to_flush_get_batch_data, info, RET)?;
 
-            // SAFETY: DuckDB flushes each batch once, exclusively borrowing its stored T::BatchData.
-            let batch_data = unsafe { get_opaque_data_ref_mut::<T::BatchData>(batch_data) }
+            // SAFETY: DuckDB flushes each batch once, exclusively borrowing its stored owner.
+            let batch_data = unsafe { get_opaque_data_ref_mut::<CopyFunctionBatchData<T::BatchData>>(batch_data) }
                 .ok_or_else(|| Error::api_error("COPY TO batch data not set"))?;
 
             T::flush(
@@ -211,7 +218,8 @@ unsafe extern "C" fn flush_to_callback<T: CopyToFunctionCallbacks>(
                 &unsafe { Context::from_raw(context) },
                 &bind_data.data,
                 init_data,
-                batch_data,
+                &batch_data.input,
+                &mut batch_data.data,
             )?;
 
             Ok(())
@@ -902,15 +910,24 @@ pub trait CopyToFunctionCallbacks: Send + Sync + 'static {
     /// **Initialize:** open the output path and create file-level state.
     fn init(&self, context: &Context, bind_data: &Self::BindData, file_path: &str) -> Result<Self::InitData>;
 
-    /// **Batch:** prepare one input collection for flushing.
+    /// **Batch:** prepare metadata or encoded data for one input collection.
     ///
-    /// `input` borrows `context`, so its rows must be copied out to be kept as batch data.
-    fn batch<'ctx>(
+    /// The input is retained until flushing finishes. Return `()` as batch data
+    /// to defer all processing to [`Self::flush`]. Scan it with this callback's
+    /// `context`; neither the reference nor its scan can escape the callback.
+    ///
+    /// ```compile_fail,E0507
+    /// # use duckdb_neo::column_data_collection::ColumnDataCollection;
+    /// fn take_input<'a>(input: &ColumnDataCollection<'a>) -> ColumnDataCollection<'a> {
+    ///     *input
+    /// }
+    /// ```
+    fn batch(
         &self,
-        context: &'ctx Context,
+        context: &Context,
         bind_data: &Self::BindData,
         init_data: &Self::InitData,
-        input: ColumnDataCollection<'ctx>,
+        input: &ColumnDataCollection<'_>,
     ) -> Result<Self::BatchData>;
 
     /// **Batch size:** choose the target number of rows per batch during planning.
@@ -923,11 +940,15 @@ pub trait CopyToFunctionCallbacks: Send + Sync + 'static {
     }
 
     /// **Flush:** write one prepared batch to the output.
+    ///
+    /// `input` is the same collection passed to [`Self::batch`]. Scan it with
+    /// this callback's `context` to process rows in DuckDB's flush order.
     fn flush(
         &self,
         context: &Context,
         bind_data: &Self::BindData,
         init_data: &Self::InitData,
+        input: &ColumnDataCollection<'_>,
         batch_data: &mut Self::BatchData,
     ) -> Result<()>;
 

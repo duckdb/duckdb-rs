@@ -30,7 +30,8 @@
 //! # let mut result = conn.query("SELECT 1::INTEGER", Parameters::None)?;
 //! # let chunk = result.next_chunk()?.expect("one result chunk");
 //! let vector = chunk.get_vector_at::<i32>(0)?;
-//! for value in vector.iter()? {
+//! let reader = vector.reader()?;
+//! for value in reader.iter() {
 //!     assert_eq!(value, Some(&1));
 //! }
 //! # Ok(())
@@ -43,12 +44,11 @@
 
 use std::marker::PhantomData;
 
+use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
 use crate::raw::RawExt;
 use crate::{
-    Result,
-    bytes::DuckDBBytes,
-    check_api_call,
+    Result, check_api_call,
     connection::HasFactory,
     data_chunk::{ChildrenMut, RowCount, VectorCollection},
     error::Error,
@@ -59,17 +59,18 @@ use crate::{
 };
 
 mod element;
+use duckdb_loadable_macros::{AsRaw, FromRaw};
 pub use element::*;
 
 /// Logical-type parameters read once per vector, so row access skips the FFI lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TypeParams {
+pub(crate) enum TypeMetadata {
     None,
     Array { size: usize },
     Decimal(DecimalSignature),
 }
 
-impl TypeParams {
+impl TypeMetadata {
     fn read(logical_type: &LogicalType) -> Result<Self> {
         Ok(match logical_type.id()? {
             LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
@@ -81,211 +82,113 @@ impl TypeParams {
             _ => Self::None,
         })
     }
-}
 
-/// Runtime view of a vector's storage kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StorageKind {
-    /// One physical slot per row.
-    Flat,
-    /// One physical slot shared by every row.
-    Constant,
-    /// A selection vector maps rows into a child vector.
-    Dictionary,
-    /// FSST / SEQUENCE / SHREDDED — must be flattened before reading.
-    Other,
-}
+    /// Elements per row of an `ARRAY` vector; 0 otherwise.
+    pub(crate) fn array_size(&self) -> usize {
+        match self {
+            TypeMetadata::Array { size } => *size,
+            _ => 0,
+        }
+    }
 
-impl StorageKind {
-    fn from_ffi(kind: ffi::DUCKDB_V2_VECTOR_TYPE) -> Self {
-        use ffi::DUCKDB_V2_VECTOR_TYPE::*;
-        match kind {
-            DUCKDB_V2_VECTOR_TYPE_FLAT => StorageKind::Flat,
-            DUCKDB_V2_VECTOR_TYPE_CONSTANT => StorageKind::Constant,
-            DUCKDB_V2_VECTOR_TYPE_DICTIONARY => StorageKind::Dictionary,
-            DUCKDB_V2_VECTOR_TYPE_OTHER => StorageKind::Other,
-            _ => StorageKind::Other,
+    #[cfg(feature = "rust_decimal")]
+    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
+    pub(crate) fn decimal_signature(&self) -> Option<DecimalSignature> {
+        match self {
+            TypeMetadata::Decimal(signature) => Some(*signature),
+            _ => None,
         }
     }
 }
+
+ffi_enum_redeclaration! {
+    pub enum StorageKind <- ffi::DUCKDB_V2_VECTOR_TYPE {
+    /// One physical slot per row.
+    Flat = DUCKDB_V2_VECTOR_TYPE_FLAT,
+    /// One physical slot shared by every row.
+    Constant = DUCKDB_V2_VECTOR_TYPE_CONSTANT,
+    /// A selection vector maps rows into a child vector.
+    Dictionary = DUCKDB_V2_VECTOR_TYPE_DICTIONARY,
+    /// FSST / SEQUENCE / SHREDDED — must be flattened before reading.
+    Other = DUCKDB_V2_VECTOR_TYPE_OTHER,
+    }
+}
+
+pub use crate::bytes::DuckDBBytes;
+
+/// A borrowed byte arena, valid until its vector is resized, flattened, or destroyed.
+#[derive(Debug, FromRaw, AsRaw)]
+pub struct Arena {
+    pub(crate) handle: ffi::duckdb_v2_arena_handle,
+}
+
+impl Arena {
+    /// Reserve uninitialized bytes in the arena.
+    #[inline]
+    pub fn allocate(&self, len: usize) -> Result<*mut u8> {
+        check_api_call!(ffi::duckdb_v2_arena_allocate, self.raw(), len as u64, RET)
+    }
+
+    /// Encode bytes, storing short values inline and copying longer values into this arena.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    pub unsafe fn add_bytes(&self, value: &[u8]) -> Result<DuckDBBytes> {
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { DuckDBBytes::new(self, value) }
+    }
+
+    /// Concatenate byte slices directly into inline storage or one arena allocation.
+    ///
+    /// No intermediate buffer is allocated. The combined length must fit in a `u32`.
+    /// This does not validate UTF-8 or other logical-type encodings.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    #[inline]
+    pub unsafe fn add_parts(&self, parts: &[&[u8]]) -> Result<DuckDBBytes> {
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { DuckDBBytes::from_parts(parts, || Ok(self)) }
+    }
+
+    /// Concatenate UTF-8 string slices into inline storage or one arena allocation.
+    ///
+    /// The combined byte length must fit in a `u32`.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    #[inline]
+    pub unsafe fn add_strings(&self, parts: &[&str]) -> Result<DuckDBBytes> {
+        let parts = parts.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
+
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { DuckDBBytes::from_parts(parts.as_slice(), || Ok(self)) }
+    }
+
+    /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.
+    ///
+    /// # Safety
+    /// The arena's storage must outlive every use of the returned value.
+    pub unsafe fn add_str(&self, value: &str) -> Result<DuckDBBytes> {
+        // SAFETY: The caller guarantees the arena's storage lifetime.
+        unsafe { self.add_bytes(value.as_bytes()) }
+    }
+}
+
+mod combined;
+mod reader;
+mod view;
+mod writer;
+
+#[doc(hidden)]
+pub use combined::VectorReaderTuple;
+pub use combined::{CombinedVectorIterator, EnumeratedCombinedVectorIterator};
+pub use reader::{Selection, VectorReader, VectorReaderIter};
+use view::VectorView;
+pub use writer::VectorWriter;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.
 pub const CONSTANT_SELECTION_LEN: usize = 2048;
-
-/// A typed, borrowed view over a vector's physical storage.
-///
-/// Maps logical row indices to physical positions, accounting for constant,
-/// dictionary, and selection-vector layouts.
-// `repr(C)` fixes the view's field layout; `T` only appears in its marker.
-#[repr(C)]
-#[derive(Debug)]
-pub struct VectorView<T> {
-    view: ffi::duckdb_v2_vector_view,
-    kind: StorageKind,
-    _marker: PhantomData<T>,
-}
-
-impl<T: VectorElement> VectorView<T> {
-    /// Map a logical row to its physical storage index.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `logical` is outside the view.
-    pub fn physical_index(&self, logical: usize) -> usize {
-        assert!(
-            logical < self.len(),
-            "logical index {logical} out of bounds for vector view of length {}",
-            self.len()
-        );
-
-        match self.kind {
-            StorageKind::Constant => 0,
-            StorageKind::Flat if self.view.sel.is_null() => logical,
-            StorageKind::Flat | StorageKind::Dictionary => unsafe { *self.view.sel.add(logical) as usize },
-            StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
-        }
-    }
-
-    /// Return whether the vector contains no logical rows.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Return the number of logical rows in the view.
-    pub fn len(&self) -> usize {
-        self.view.count as usize
-    }
-
-    fn physical_len(&self) -> usize {
-        match self.kind {
-            StorageKind::Flat => self.len(),
-            StorageKind::Constant => 1,
-            StorageKind::Dictionary => self
-                .selection()
-                .and_then(|selection| selection.iter().max())
-                .map_or(0, |index| *index as usize + 1),
-            StorageKind::Other => unreachable!("OTHER vectors have no readable view"),
-        }
-    }
-
-    fn is_null_physical(&self, physical: usize) -> bool {
-        if self.view.validity.is_null() {
-            false
-        } else {
-            unsafe { (*self.view.validity.add(physical / 64) & (1 << (physical % 64))) == 0 }
-        }
-    }
-
-    /// Return whether the logical row contains SQL `NULL`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `index` is outside the view.
-    pub fn is_null(&self, index: usize) -> bool {
-        let physical = self.physical_index(index);
-        self.is_null_physical(physical)
-    }
-
-    /// Return the vector's physical storage.
-    ///
-    /// Flat vectors contain one entry per logical row, constant vectors
-    /// contain one entry, and dictionary vectors use [`Self::selection`] to
-    /// map logical rows into this slice.
-    ///
-    /// # Safety
-    ///
-    /// Slices can return uninitialized memory for unselected or null entries.
-    /// The caller is responsible for ensuring that they read only initialized and valid entries using the [`Self::selection`] and [`Self::validity`] methods.
-    pub unsafe fn as_slice(&self) -> Option<&[T::Internal]> {
-        if self.view.data.is_null() {
-            None
-        } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.data as *const T::Internal, self.physical_len()) })
-        }
-    }
-
-    /// Return the vector's physical storage as mutable.
-    ///
-    /// Flat vectors contain one entry per logical row, constant vectors
-    /// contain one entry, and dictionary vectors use [`Self::selection`] to
-    /// map logical rows into this slice.
-    ///
-    /// # Safety
-    ///
-    /// As for [`Self::as_slice`], the caller must read only initialized and valid entries.
-    /// Every entry written must be a valid value of the vector's type whose out-of-line data,
-    /// such as a string's bytes, outlives the vector; do not copy such entries from another vector.
-    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
-        if self.view.data.is_null() {
-            None
-        } else {
-            Some(unsafe { std::slice::from_raw_parts_mut(self.view.data as *mut T::Internal, self.physical_len()) })
-        }
-    }
-
-    /// Return a pointer to the physical storage, or null when no data is exposed.
-    pub fn as_ptr(&self) -> *const T::Internal {
-        if self.view.data.is_null() {
-            std::ptr::null()
-        } else {
-            self.view.data as *const T::Internal
-        }
-    }
-
-    /// Return a mutable pointer to the physical storage, or null when no data is exposed.
-    pub fn as_mut_ptr(&mut self) -> *mut T::Internal {
-        if self.view.data.is_null() {
-            std::ptr::null_mut()
-        } else {
-            self.view.data as *mut T::Internal
-        }
-    }
-
-    /// Return the logical-to-physical row mapping, if DuckDB supplied one.
-    ///
-    /// A constant vector maps every row to slot 0, but its selection is DuckDB's
-    /// shared array of [`CONSTANT_SELECTION_LEN`] zeros, so it is cut to that length.
-    pub fn selection(&self) -> Option<&[u32]> {
-        if self.view.sel.is_null() {
-            None
-        } else {
-            let mut len = self.view.count as usize;
-            if self.kind == StorageKind::Constant {
-                len = len.min(CONSTANT_SELECTION_LEN);
-            }
-            Some(unsafe { std::slice::from_raw_parts(self.view.sel, len) })
-        }
-    }
-
-    /// Return the physical validity bitmask, or `None` when every entry is valid.
-    pub fn validity(&self) -> Option<&[u64]> {
-        if self.view.validity.is_null() {
-            None
-        } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.validity, self.physical_len().div_ceil(64)) })
-        }
-    }
-
-    /// Return the physical validity bitmask as a mutable slice, or `None` when every entry is valid.
-    pub fn validity_mut(&mut self) -> Option<&mut [u64]> {
-        if self.view.validity.is_null() {
-            None
-        } else {
-            Some(unsafe {
-                std::slice::from_raw_parts_mut(self.view.validity as *mut u64, self.physical_len().div_ceil(64))
-            })
-        }
-    }
-
-    /// Change only the element marker, preserving the existing storage view.
-    pub(crate) fn cast_owned<U: VectorElement>(self) -> VectorView<U> {
-        VectorView {
-            view: self.view,
-            kind: self.kind,
-            _marker: PhantomData,
-        }
-    }
-}
 
 /// How a [`Vector`] wrapper may touch the underlying DuckDB vector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -302,48 +205,70 @@ pub(crate) enum Access {
 ///
 /// Storage representation and writability are runtime properties. Casting only
 /// changes the logical element type and preserves the chunk lifetime.
+/// Read rows through [`Self::reader`] and write them through [`Self::writer`].
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn read(vector: &Vector<'_, i32>) {
+///     let _ = vector.get(0);
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// use duckdb_neo::vector::Vector;
+///
+/// fn write(vector: &mut Vector<'_, i32>) {
+///     let _ = vector.write(0, Some(42));
+/// }
+/// ```
 // `repr(C)` fixes field order; the nested `VectorView<T>` is also `repr(C)`.
 #[repr(C)]
 #[derive(Debug)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
+    pub(crate) view: Option<VectorView<T>>,
+    pub(crate) access: Access,
+
     logical_type: LogicalType,
     kind: StorageKind,
     len: usize,
-    pub(crate) view: Option<VectorView<T>>,
-    pub(crate) access: Access,
-    heap: Option<ffi::duckdb_v2_arena_handle>,
+    heap: Option<Arena>,
+    validity_writable: bool,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
-    params: TypeParams,
+    metadata: TypeMetadata,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
 
-impl<'a> Vector<'a, Unknown> {
+impl<'a, T: VectorElement> Vector<'a, T> {
     /// The handle must remain valid for the lifetime of the owning chunk.
     pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
         let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)
             .map(|handle| LogicalType { handle })?;
 
-        let vector_type: ffi::DUCKDB_V2_VECTOR_TYPE =
-            check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET)?;
+        let kind =
+            check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
+        let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
 
-        let len: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET)?;
-
-        let kind = StorageKind::from_ffi(vector_type);
         let view = Self::acquire_view(*handle, kind)?;
-        let params = TypeParams::read(&logical_type)?;
+        let params = TypeMetadata::read(&logical_type)?;
 
-        let child_count: ffi::idx_t = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET)?;
+        let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
-            child_handles.push(check_api_call!(ffi::duckdb_v2_vector_get_child, *handle, index, RET)?);
+            child_handles.push(check_api_call!(
+                ffi::duckdb_v2_vector_get_child,
+                *handle,
+                index as u64,
+                RET
+            )?);
         }
         let children =
             (!child_handles.is_empty()).then(|| VectorCollection::new(child_handles, access, RowCount::FirstVector));
 
-        Ok(Vector {
+        let vector = Self {
             handle: *handle,
             logical_type,
             kind,
@@ -351,13 +276,18 @@ impl<'a> Vector<'a, Unknown> {
             view,
             access,
             heap: None,
+            validity_writable: false,
             children,
-            params,
+            metadata: params,
             _chunk: PhantomData,
             _type: PhantomData,
-        })
+        };
+        vector.validate_as::<T>()?;
+        Ok(vector)
     }
+}
 
+impl<'a> Vector<'a, Unknown> {
     /// Validate and attach a logical element type.
     pub fn cast<T: VectorElement>(self) -> Result<Vector<'a, T>> {
         self.validate_as::<T>()?;
@@ -367,328 +297,19 @@ impl<'a> Vector<'a, Unknown> {
     /// Validate and attach a logical element type to a borrowed vector.
     pub fn cast_ref<T: VectorElement>(&self) -> Result<&Vector<'a, T>> {
         self.validate_as::<T>()?;
+        // SAFETY: T was validated above.
+        Ok(unsafe { self.cast_ref_unchecked() })
+    }
+
+    /// # Safety
+    /// This vector must have been validated as `T`.
+    pub(crate) unsafe fn cast_ref_unchecked<T: VectorElement>(&self) -> &Vector<'a, T> {
         // SAFETY: Both repr(C) wrappers differ only in markers, including inside Option<VectorView<T>>.
-        Ok(unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) })
+        unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) }
     }
 }
 
 impl<'a, T: VectorElement> Vector<'a, T> {
-    /// Borrow the readable storage view.
-    ///
-    /// Returns `None` for [`StorageKind::Other`] until the vector is
-    /// [`flatten`](Self::flatten)ed.
-    pub fn get_view(&self) -> Option<&VectorView<T>> {
-        self.view.as_ref()
-    }
-
-    fn acquire_view<U: VectorElement>(
-        handle: ffi::duckdb_v2_vector_handle,
-        kind: StorageKind,
-    ) -> Result<Option<VectorView<U>>> {
-        if kind == StorageKind::Other {
-            return Ok(None);
-        }
-
-        check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET).map(|view| {
-            Some(VectorView {
-                view,
-                kind,
-                _marker: PhantomData,
-            })
-        })
-    }
-
-    /// Refresh the vector's view and mutable buffers after a state change, e.g. set_size.
-    fn refresh_buffers(&mut self) -> Result<()> {
-        self.view = Self::acquire_view(self.handle, self.kind)?;
-        self.heap = None;
-        if let Some(children) = &mut self.children {
-            children.evict_all();
-        }
-        Ok(())
-    }
-
-    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'a, U> {
-        Vector {
-            handle: self.handle,
-            logical_type: self.logical_type,
-            kind: self.kind,
-            len: self.len,
-            view: self.view.map(|view| view.cast_owned::<U>()),
-            access: self.access,
-            heap: self.heap,
-            children: self.children,
-            params: self.params,
-            _chunk: self._chunk,
-            _type: PhantomData,
-        }
-    }
-
-    /// Replace this vector with every row of `source` cast to this vector's type, like SQL `CAST`.
-    ///
-    /// Fails if any row does not convert. The cast uses the cast functions and settings of `link`.
-    pub fn cast_rows<T2: VectorElement, C: HasFactory>(
-        self,
-        source: &Vector<'_, T2>,
-        link: &C,
-    ) -> Result<Vector<'a, T>> {
-        check_api_call!(
-            ffi::duckdb_v2_vector_cast,
-            link.factory()?.raw(),
-            source.handle,
-            self.handle,
-            ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_NORMAL,
-            RET,
-            std::ptr::null_mut()
-        )?;
-        Ok(Vector::from_handle(&self.handle, self.access)?.cast_unchecked())
-    }
-
-    /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
-    ///
-    /// Rows that do not convert become `NULL`. The returned error, if any, is the
-    /// conversion error of one such row.
-    pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(
-        self,
-        source: &Vector<'_, T2>,
-        link: &C,
-    ) -> Result<(Vector<'a, T>, Option<Error>)> {
-        let mut cast_err = std::ptr::null_mut();
-
-        check_api_call!(
-            ffi::duckdb_v2_vector_cast,
-            link.factory()?.raw(),
-            source.handle,
-            self.handle,
-            ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY,
-            RET,
-            &mut cast_err
-        )?;
-
-        let row_error = if cast_err.is_null() {
-            None
-        } else {
-            let error =
-                unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, &mut cast_err) };
-            Some(error)
-        };
-        Ok((
-            Vector::from_handle(&self.handle, self.access)?.cast_unchecked(),
-            row_error,
-        ))
-    }
-
-    /// Elements per row of an `ARRAY` vector; 0 otherwise.
-    pub(crate) fn array_size(&self) -> usize {
-        match self.params {
-            TypeParams::Array { size } => size,
-            _ => 0,
-        }
-    }
-
-    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
-    pub fn decimal_signature(&self) -> Option<DecimalSignature> {
-        match self.params {
-            TypeParams::Decimal(signature) => Some(signature),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
-        match U::validate(self.logical_type(), self.children.as_ref()) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(Error::invalid_input(format!(
-                "Vector logical type mismatch: expected {:?}, got {:?}",
-                U::TYPE_ID,
-                self.logical_type.to_text()?
-            ))),
-            Err(e) => Err(Error::invalid_input(format!(
-                "Vector logical type validation failed: expected {:?}, got {:?}: {}",
-                U::TYPE_ID,
-                self.logical_type.to_text()?,
-                e.message
-            ))),
-        }
-    }
-
-    /// Return whether a logical row is `NULL`.
-    pub fn is_null(&self, index: usize) -> Result<bool> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-
-        let view = self
-            .view
-            .as_ref()
-            .ok_or_else(|| Error::invalid_input("vector has no readable view"))?;
-
-        Ok(view.is_null(index))
-    }
-
-    /// # Safety
-    /// Reference without copying; source storage must outlive destination reads and remain unchanged.
-    pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
-        if self.access == Access::Shared {
-            return Err(not_exclusive());
-        }
-        check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
-
-        // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
-        // A write or resize would change storage the source wrapper still reads, so never stay writable.
-        Ok(Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked::<T2>())
-    }
-
-    pub(crate) fn get_as_unchecked<U: VectorElement>(&self, index: usize) -> Option<U::Ref<'_>> {
-        if index >= self.len {
-            return None;
-        }
-
-        let view = self.view.as_ref()?;
-
-        let physical = view.physical_index(index);
-
-        if view.is_null_physical(physical) {
-            None
-        } else {
-            // SAFETY: callers validated this vector as `U` and cached its children; the row is in bounds and valid.
-            Some(unsafe { U::get(self, physical, index) })
-        }
-    }
-
-    pub(crate) fn get_as_checked<U: VectorElement>(&self, index: usize) -> Result<Option<U::Ref<'_>>> {
-        self.validate_as::<U>()?;
-        // Otherwise an unreadable child, e.g. a SEQUENCE packed into a struct, would read as NULL.
-        if self.view.is_none() {
-            return Err(other_not_readable());
-        }
-        self.cache_children()?;
-        Ok(self.get_as_unchecked::<U>(index))
-    }
-
-    /// Check that `index` is a row `write_raw` can write.
-    pub(crate) fn check_row_writable(&self, index: usize) -> Result<()> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-        if self.kind != StorageKind::Flat {
-            return Err(not_flat());
-        }
-        Ok(())
-    }
-
-    pub(crate) fn write_raw<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
-        self.check_row_writable(index)?;
-
-        let is_valid = value.is_some();
-        if let Some(value) = value {
-            let view = self.view.as_mut().ok_or_else(not_writable)?;
-            let data = view.as_ptr() as *mut U;
-            unsafe {
-                data.add(index).write(value);
-            }
-        }
-        self.set_row_validity(index, is_valid)
-    }
-
-    pub(crate) fn set_row_validity(&mut self, index: usize, is_valid: bool) -> Result<()> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-        if self.kind != StorageKind::Flat {
-            return Err(not_flat());
-        }
-        let handle = self.handle;
-        let view = self.view.as_mut().ok_or_else(not_writable)?;
-        if is_valid && view.view.validity.is_null() {
-            return Ok(());
-        }
-        let validity = if view.view.validity.is_null() {
-            let validity: *mut u64 = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
-            view.view.validity = validity;
-            validity
-        } else {
-            view.view.validity as *mut u64
-        };
-
-        unsafe {
-            let mask = 1u64 << (index % 64);
-            let word = validity.add(index / 64);
-            if is_valid {
-                *word |= mask;
-            } else {
-                *word &= !mask;
-            }
-        }
-        Ok(())
-    }
-
-    fn heap(&mut self) -> Result<ffi::duckdb_v2_arena_handle> {
-        if let Some(handle) = self.heap {
-            return Ok(handle);
-        }
-        let handle = check_api_call!(ffi::duckdb_v2_vector_get_arena, self.handle, RET)?;
-        self.heap = Some(handle);
-        Ok(handle)
-    }
-
-    pub(crate) fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-        let value = match value {
-            None => None,
-            // SAFETY: the vector owns the arena and keeps the stored bytes alive.
-            Some(value) => Some(unsafe { DuckDBBytes::new(value, || self.heap())? }),
-        };
-        self.write_raw(index, value)
-    }
-
-    /// Materialize one row as an owned [`Value`].
-    ///
-    /// This is the slow path; prefer [`Self::get`] or [`Self::iter`] for typed
-    /// vector access.
-    pub fn get_value_slow(&self, index: usize) -> Result<Value> {
-        check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
-    }
-
-    /// Write one owned [`Value`] through DuckDB's generic value API.
-    ///
-    /// This is the slow path; prefer [`Self::write`] for typed vector access.
-    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
-        // DuckDB may allocate a validity mask or write nested values into the children.
-        self.refresh_buffers()
-    }
-
-    /// Set one row to `NULL` through DuckDB's generic value API.
-    ///
-    /// This is the slow path; prefer [`Self::write`] with `None`.
-    pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
-        self.refresh_buffers()
-    }
-
-    pub(crate) fn write_as<U: WritableVectorElement>(
-        &mut self,
-        index: usize,
-        value: Option<U::Write<'_>>,
-    ) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        self.validate_as::<U>()?;
-        // SAFETY: Validation checked U; the repr(C) wrappers differ only in their direct and nested markers.
-        let typed = unsafe { &mut *(self as *mut Vector<'_, T> as *mut Vector<'_, U>) };
-        // SAFETY: checked writable above.
-        unsafe { U::write(typed, index, value) }
-    }
-
     /// Read the current size from DuckDB, which may have changed through another wrapper.
     pub(crate) fn current_size(&self) -> Result<usize> {
         check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET).map(|len| len as usize)
@@ -722,6 +343,167 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Return the vector's child vectors, or `None` if it has no children.
     pub fn children(&self) -> Option<&VectorCollection> {
         self.children.as_ref()
+    }
+
+    /// Prepare exclusive write access without flattening or allocating a validity mask.
+    ///
+    /// Fails unless this is writable output with flat storage. Resize the vector
+    /// before acquiring its writer.
+    pub fn writer(&mut self) -> Result<VectorWriter<'_, 'a, T>> {
+        VectorWriter::new(self)
+    }
+
+    fn acquire_view<U: VectorElement>(
+        handle: ffi::duckdb_v2_vector_handle,
+        kind: StorageKind,
+    ) -> Result<Option<VectorView<U>>> {
+        if kind == StorageKind::Other {
+            return Ok(None);
+        }
+
+        check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET).map(|view| {
+            Some(VectorView {
+                view,
+                kind,
+                _marker: PhantomData,
+            })
+        })
+    }
+
+    /// Refresh the vector's view and mutable buffers after a state change, e.g. set_size.
+    fn refresh_buffers(&mut self) -> Result<()> {
+        self.view = Self::acquire_view(self.handle, self.kind)?;
+        self.heap = None;
+        self.validity_writable = false;
+        if let Some(children) = &mut self.children {
+            children.evict_all();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cast_unchecked<U: VectorElement>(self) -> Vector<'a, U> {
+        Vector {
+            handle: self.handle,
+            logical_type: self.logical_type,
+            kind: self.kind,
+            len: self.len,
+            view: self.view.map(|view| view.cast_owned::<U>()),
+            access: self.access,
+            heap: self.heap,
+            validity_writable: self.validity_writable,
+            children: self.children,
+            metadata: self.metadata,
+            _chunk: self._chunk,
+            _type: PhantomData,
+        }
+    }
+
+    /// Replace this vector with every row of `source` cast to this vector's type, like SQL `CAST`.
+    ///
+    /// Fails if any row does not convert. The cast uses the cast functions and settings of `link`.
+    pub fn cast_rows<T2: VectorElement, C: HasFactory>(
+        self,
+        source: &Vector<'_, T2>,
+        link: &C,
+    ) -> Result<Vector<'a, T>> {
+        check_api_call!(
+            ffi::duckdb_v2_vector_cast,
+            link.factory()?.raw(),
+            source.handle,
+            self.handle,
+            ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_NORMAL,
+            RET,
+            std::ptr::null_mut()
+        )?;
+        Self::from_handle(&self.handle, self.access)
+    }
+
+    /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
+    ///
+    /// Rows that do not convert become `NULL`. The returned error, if any, is the
+    /// conversion error of one such row.
+    pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(
+        self,
+        source: &Vector<'_, T2>,
+        link: &C,
+    ) -> Result<(Vector<'a, T>, Option<Error>)> {
+        let mut cast_err = std::ptr::null_mut();
+
+        check_api_call!(
+            ffi::duckdb_v2_vector_cast,
+            link.factory()?.raw(),
+            source.handle,
+            self.handle,
+            ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY,
+            RET,
+            &mut cast_err
+        )?;
+
+        let row_error = if cast_err.is_null() {
+            None
+        } else {
+            let error =
+                unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, &mut cast_err) };
+            Some(error)
+        };
+        Ok((Self::from_handle(&self.handle, self.access)?, row_error))
+    }
+
+    pub(crate) fn metadata(&self) -> TypeMetadata {
+        self.metadata
+    }
+
+    pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
+        match U::validate(self.logical_type(), self.children.as_ref()) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Error::invalid_input(format!(
+                "Vector logical type mismatch: expected {:?}, got {:?}",
+                U::TYPE_ID,
+                self.logical_type.to_text()?
+            ))),
+            Err(e) => Err(Error::invalid_input(format!(
+                "Vector logical type validation failed: expected {:?}, got {:?}: {}",
+                U::TYPE_ID,
+                self.logical_type.to_text()?,
+                e.message
+            ))),
+        }
+    }
+
+    /// # Safety
+    /// Reference without copying; source storage must outlive destination reads and remain unchanged.
+    pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
+        if self.access == Access::Shared {
+            return Err(not_exclusive());
+        }
+        check_api_call!(ffi::duckdb_v2_vector_reference, self.handle, source.handle)?;
+
+        // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
+        // A write or resize would change storage the source wrapper still reads, so never stay writable.
+        Vector::from_handle(&self.handle, Access::Exclusive)
+    }
+
+    /// Write one owned [`Value`] through DuckDB's generic value API.
+    ///
+    /// This is the slow path; prefer [`VectorWriter::set`] for typed vector access.
+    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
+        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
+        // DuckDB may allocate a validity mask or write nested values into the children.
+        self.refresh_buffers()
+    }
+
+    /// Set one row to `NULL` through DuckDB's generic value API.
+    ///
+    /// This is the slow path; prefer [`VectorWriter::set`] with `None`.
+    pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
+        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
+        self.refresh_buffers()
     }
 
     /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
@@ -771,7 +553,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
 
         // Flattening replaces the buffer and child vectors, so rebuild from the handle.
-        *self = Vector::from_handle(&self.handle, self.access)?.cast_unchecked();
+        *self = Self::from_handle(&self.handle, self.access)?;
         Ok(())
     }
 
@@ -816,7 +598,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, !value.is_null()?)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        let mut vector = Vector::from_handle(&self.handle, Access::Exclusive)?.cast_unchecked();
+        let mut vector = Self::from_handle(&self.handle, Access::Exclusive)?;
         vector.len = count;
         Ok(vector)
     }
@@ -848,74 +630,20 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 }
 
 impl<T: VectorElement> Vector<'_, T> {
-    /// Return the value at a logical row.
+    /// Prepare a storage-specific reader, caching descendant views once.
     ///
-    /// Returns `None` for a `NULL` row. Vectors with
-    /// [`StorageKind::Other`] return an error until flattened.
-    pub fn get(&self, index: usize) -> Result<Option<T::Ref<'_>>> {
-        if self.view.is_none() {
-            return Err(other_not_readable());
-        }
-        self.cache_children()?;
-        if index >= self.len {
-            return Err(out_of_bounds(index, self.len));
-        }
-        Ok(self.get_as_unchecked::<T>(index))
+    /// Returns an error for [`StorageKind::Other`]; flatten the vector explicitly first.
+    pub fn reader(&self) -> Result<VectorReader<'_, T>> {
+        VectorReader::new(self)
     }
 
-    /// Iterate over the vector after checking its readable state once.
-    pub fn iter(&self) -> Result<VectorIter<'_, '_, T>> {
-        if self.view.is_none() {
-            return Err(other_not_readable());
-        }
-        self.cache_children()?;
-
-        Ok(VectorIter { vector: self, index: 0 })
-    }
-}
-
-impl<T: WritableVectorElement> Vector<'_, T> {
-    /// Write a value at a logical row.
+    /// Materialize one row as an owned [`Value`].
     ///
-    /// The vector must be writable with flat storage, and `index` must be in
-    /// range. Pass `None` to write SQL `NULL`.
-    pub fn write(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        // SAFETY: checked writable above.
-        unsafe { T::write(self, index, value) }
+    /// This is the slow path; prefer [`VectorReader::get`] or [`VectorReader::iter`].
+    pub fn get_value_slow(&self, index: usize) -> Result<Value> {
+        check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
 }
-
-/// Iterates over the logical rows of a vector.
-#[derive(Debug)]
-pub struct VectorIter<'vector, 'a, T: VectorElement> {
-    vector: &'vector Vector<'a, T>,
-    index: usize,
-}
-
-impl<'vector, T: VectorElement + 'vector> Iterator for VectorIter<'vector, '_, T> {
-    type Item = Option<T::Ref<'vector>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.vector.len {
-            return None;
-        }
-        let value = self.vector.get_as_unchecked::<T>(self.index);
-        self.index += 1;
-        Some(value)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.vector.len - self.index;
-        (remaining, Some(remaining))
-    }
-}
-
-impl<T: VectorElement> ExactSizeIterator for VectorIter<'_, '_, T> {}
-
-impl<T: VectorElement> std::iter::FusedIterator for VectorIter<'_, '_, T> {}
 
 fn not_writable() -> Error {
     Error::invalid_input(

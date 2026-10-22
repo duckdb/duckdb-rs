@@ -162,7 +162,7 @@ mod tests {
 
         let mut result = conn.query("PRAGMA check_counts(1, 2, 3, named = 4, extra = 5)", Parameters::None)?;
         let chunk = result.next_chunk()?.expect("expected a result chunk");
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
         Ok(())
     }
 }

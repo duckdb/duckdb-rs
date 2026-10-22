@@ -140,7 +140,11 @@ unsafe impl VectorElement for Struct {
         ))
     }
 
-    unsafe fn get<'a, U: VectorElement>(vector: &'a Vector<'_, U>, _physical: usize, logical: usize) -> Self::Ref<'a>
+    unsafe fn get<'a, U: VectorElement>(
+        vector: &crate::vector::VectorReader<'a, U>,
+        _physical: usize,
+        logical: usize,
+    ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
@@ -173,7 +177,7 @@ where
     }
 
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()> {
-        child.write_as::<T>(index, self.value)
+        child.writer()?.write_as::<T>(index, self.value)
     }
 }
 
@@ -207,7 +211,11 @@ impl<'a> StructWrite<'a> {
 unsafe impl WritableVectorElement for Struct {
     type Write<'a> = StructWrite<'a>;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
         let Some(value) = value else {
             // DuckDB requires every descendant of a NULL struct row to be NULL; this recurses.
             return vector.set_null_slow(index);
@@ -220,7 +228,6 @@ unsafe impl WritableVectorElement for Struct {
             )));
         }
 
-        vector.check_row_writable(index)?;
         if let Some(children) = vector.children() {
             for (i, field) in value.fields.iter().enumerate() {
                 field.validate(children.get_untyped_vector_at(i)?)?;
@@ -237,7 +244,7 @@ unsafe impl WritableVectorElement for Struct {
                 field.write(child, index)?;
             }
         }
-        vector.set_row_validity(index, true)
+        Ok(())
     }
 }
 
@@ -257,7 +264,7 @@ impl<'a> StructRow<'a> {
             .filter(|children| index < children.col_count())
             .map(|children| children.cached_unchecked(index))
             .ok_or_else(|| Error::invalid_parameter(format!("Struct field index {} is out of bounds", index)))?;
-        child.get_as_checked::<T>(self.logical)
+        child.cast_ref::<T>()?.reader()?.get(self.logical)
     }
 
     /// Return a struct field by name after validating its logical type.
@@ -292,7 +299,7 @@ mod tests {
             .query("SELECT row(42, 'duck')", Parameters::None)?
             .next_chunk()?
             .unwrap();
-        let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+        let row = chunk.get_vector_at::<Struct>(0)?.reader()?.get(0)?.unwrap();
         assert_eq!(row.get_index::<i32>(0)?, Some(&42));
         assert_eq!(row.get_index::<String>(1)?, Some("duck"));
         assert!(row.get_index::<i32>(2).is_err());
@@ -301,12 +308,12 @@ mod tests {
         {
             let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
             vector.set_size(1)?;
-            vector.write(
+            vector.writer()?.set(
                 0,
                 Some(StructWrite::default().field::<i32>(Some(7)).field::<String>(None)),
             )?;
         }
-        let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+        let row = chunk.get_vector_at::<Struct>(0)?.reader()?.get(0)?.unwrap();
         assert_eq!(row.get_index::<i32>(0)?, Some(&7));
         assert_eq!(row.get_index::<String>(1)?, None);
         Ok(())
@@ -327,17 +334,18 @@ mod tests {
             let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
             vector.set_size(2)?;
             vector.write_value_slow(0, value)?;
-            vector.write(1, None)?;
+            vector.writer()?.set(1, None)?;
             for index in 0..2 {
                 let invalid = StructWrite::default().field::<i32>(Some(7)).field::<i32>(Some(8));
-                assert!(vector.write(index, Some(invalid)).is_err());
+                assert!(vector.writer()?.set(index, Some(invalid)).is_err());
             }
         }
         let vector = chunk.get_vector_at::<Struct>(0)?;
-        let row = vector.get(0)?.unwrap();
+        let vector_reader = vector.reader()?;
+        let row = vector_reader.get(0)?.unwrap();
         assert_eq!(row.get::<i32>("key")?, Some(&42));
         assert_eq!(row.get::<String>("value")?, Some("duck"));
-        assert!(vector.get(1)?.is_none());
+        assert!(vector_reader.get(1)?.is_none());
         Ok(())
     }
 
@@ -349,7 +357,7 @@ mod tests {
             .query("SELECT {'Key': 42}", Parameters::None)?
             .next_chunk()?
             .unwrap();
-        let row = chunk.get_vector_at::<Struct>(0)?.get(0)?.unwrap();
+        let row = chunk.get_vector_at::<Struct>(0)?.reader()?.get(0)?.unwrap();
         assert_eq!(row.get::<i32>("Key")?, Some(&42));
         assert_eq!(row.get::<i32>("KEY")?, Some(&42));
         assert_eq!(row.get::<i32>("key")?, Some(&42));

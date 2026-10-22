@@ -466,7 +466,7 @@ mod tests {
         assert_length_mismatches_rejected(ctx)?;
         let mut output = output;
         output.set_size(1)?;
-        output.write(0, Some(1))
+        output.writer()?.set(0, Some(1))
     });
 
     #[test]

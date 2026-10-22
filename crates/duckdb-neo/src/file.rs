@@ -576,7 +576,7 @@ mod tests {
             let mut chunk = DataChunk::create(&conn, [i32::logical_type(&conn)?], true)?;
             let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
             vector.set_size(1)?;
-            vector.write(0, Some(42))?;
+            vector.writer()?.set(0, Some(42))?;
             chunk.copy(&conn)?
         };
 
@@ -584,7 +584,7 @@ mod tests {
         drop(instance);
         assert_eq!(env.instance_count()?, 1);
         assert_eq!(copy.row_count()?, 1);
-        assert_eq!(copy.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(copy.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
         drop(copy);
         assert_eq!(env.instance_count()?, 0);
         Ok(())

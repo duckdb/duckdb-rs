@@ -16,7 +16,7 @@ use crate::{
     logical_type::{LogicalType, LogicalTypeID},
     raw::RawExt,
     value::{Value, ValueInput},
-    vector::{Vector, WritableVectorElement},
+    vector::WritableVectorElement,
 };
 
 macro_rules! declare_storage_value {
@@ -50,8 +50,9 @@ macro_rules! declare_storage_value {
         unsafe impl WritableVectorElement for $name {
             type Write<'a> = Self;
 
-            unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-                vector.write_raw(index, value)
+            unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, '_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+                unsafe { vector.write_internal(index, value) }
             }
         }
     };
@@ -233,8 +234,13 @@ declare_vector_element!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
 unsafe impl WritableVectorElement for IntervalValue {
     type Write<'a> = Self;
 
-    unsafe fn write(vector: &mut Vector<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
-        vector.write_raw(index, value)
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        index: usize,
+        value: Option<Self::Write<'_>>,
+    ) -> Result<()> {
+        // SAFETY: The caller guarantees a writable, flat, in-bounds row.
+        unsafe { vector.write_internal(index, value) }
     }
 }
 
@@ -548,7 +554,7 @@ mod external {
             let vec = chunk.get_vector_at::<DateValue>(0)?;
 
             assert_eq!(vec.len(), 1);
-            let chrono = Option::<::chrono::NaiveDate>::from(*vec.get(0)?.unwrap()).unwrap();
+            let chrono = Option::<::chrono::NaiveDate>::from(*vec.reader()?.get(0)?.unwrap()).unwrap();
 
             assert_eq!(chrono, ::chrono::NaiveDate::from_ymd_opt(1992, 9, 20).unwrap());
 
@@ -565,14 +571,14 @@ mod external {
                     conn.query("SELECT TIMESTAMP_NS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampNsValue>(0)?;
-                let timestamp = Option::<::chrono::NaiveDateTime>::from(*vec.get(0)?.unwrap()).unwrap();
+                let timestamp = Option::<::chrono::NaiveDateTime>::from(*vec.reader()?.get(0)?.unwrap()).unwrap();
                 assert_eq!(timestamp, naive("1992-09-20 11:30:00.123456789"));
             }
             {
                 let mut result = conn.query("SELECT TIMESTAMP '1992-09-20 11:30:00.123456789';", Parameters::None)?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let timestamp = Option::<::chrono::NaiveDateTime>::from(val).unwrap();
                 assert_eq!(timestamp, naive("1992-09-20 11:30:00.123456"));
             }
@@ -581,7 +587,7 @@ mod external {
                     conn.query("SELECT TIMESTAMP_MS '1992-09-20 11:30:00.123456789';", Parameters::None)?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampMsValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let timestamp = Option::<::chrono::NaiveDateTime>::from(val).unwrap();
                 assert_eq!(timestamp, naive("1992-09-20 11:30:00.123"));
             }
@@ -589,7 +595,7 @@ mod external {
                 let mut result = conn.query("SELECT TIMESTAMP_S '1992-09-20 11:30:00.123456789';", Parameters::None)?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampSecValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let timestamp = Option::<::chrono::NaiveDateTime>::from(val).unwrap();
                 assert_eq!(timestamp, naive("1992-09-20 11:30:00"));
             }
@@ -600,7 +606,7 @@ mod external {
                 )?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampTzValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let timestamp = Option::<::chrono::DateTime<::chrono::Utc>>::from(val).unwrap();
                 assert_eq!(
                     timestamp,
@@ -616,7 +622,7 @@ mod external {
                 )?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimestampTzValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let timestamp = Option::<::chrono::DateTime<::chrono::Utc>>::from(val).unwrap();
                 assert_eq!(
                     timestamp,
@@ -632,7 +638,8 @@ mod external {
                 )?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vector = chunk.get_vector_at::<TimestampTzNsValue>(0)?;
-                let timestamp = Option::<::chrono::DateTime<::chrono::Utc>>::from(*vector.get(0)?.unwrap()).unwrap();
+                let timestamp =
+                    Option::<::chrono::DateTime<::chrono::Utc>>::from(*vector.reader()?.get(0)?.unwrap()).unwrap();
                 assert_eq!(timestamp, naive("1992-09-20 11:30:00.123456789").and_utc());
             }
             Ok(())
@@ -665,31 +672,35 @@ mod external {
 
             for index in 0..2 {
                 let vector = chunk.get_vector_at::<TimestampNsValue>(index)?;
-                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.reader()?.get(0)?.unwrap()).is_none());
             }
             for index in 2..4 {
                 let vector = chunk.get_vector_at::<TimestampTzNsValue>(index)?;
-                assert!(Option::<::chrono::DateTime<::chrono::Utc>>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(
+                    Option::<::chrono::DateTime<::chrono::Utc>>::from(*vector.reader()?.get(0)?.unwrap()).is_none()
+                );
             }
             for index in 4..6 {
                 let vector = chunk.get_vector_at::<DateValue>(index)?;
-                assert!(Option::<::chrono::NaiveDate>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(Option::<::chrono::NaiveDate>::from(*vector.reader()?.get(0)?.unwrap()).is_none());
             }
             for index in 6..8 {
                 let vector = chunk.get_vector_at::<TimestampValue>(index)?;
-                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.reader()?.get(0)?.unwrap()).is_none());
             }
             for index in 8..10 {
                 let vector = chunk.get_vector_at::<TimestampSecValue>(index)?;
-                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.reader()?.get(0)?.unwrap()).is_none());
             }
             for index in 10..12 {
                 let vector = chunk.get_vector_at::<TimestampMsValue>(index)?;
-                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(Option::<::chrono::NaiveDateTime>::from(*vector.reader()?.get(0)?.unwrap()).is_none());
             }
             for index in 12..14 {
                 let vector = chunk.get_vector_at::<TimestampTzValue>(index)?;
-                assert!(Option::<::chrono::DateTime<::chrono::Utc>>::from(*vector.get(0)?.unwrap()).is_none());
+                assert!(
+                    Option::<::chrono::DateTime<::chrono::Utc>>::from(*vector.reader()?.get(0)?.unwrap()).is_none()
+                );
             }
 
             Ok(())
@@ -716,7 +727,7 @@ mod external {
                 let mut result = conn.query("SELECT TIME '1992-09-20 11:30:00.123456';", Parameters::None)?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimeValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let time = Option::<::chrono::NaiveTime>::from(val).unwrap();
                 assert_eq!(
                     time,
@@ -727,7 +738,7 @@ mod external {
                 let mut result = conn.query("SELECT '15:30:00.123456789'::TIME_NS;", Parameters::None)?;
                 let chunk = result.next_chunk()?.unwrap();
                 let vec = chunk.get_vector_at::<TimeNsValue>(0)?;
-                let val = *(vec.get(0)?.unwrap());
+                let val = *(vec.reader()?.get(0)?.unwrap());
                 let time = Option::<::chrono::NaiveTime>::from(val).unwrap();
                 assert_eq!(
                     time,
@@ -800,7 +811,7 @@ mod tests {
         let mut result = conn.query("SELECT TIMETZ '12:34:56+01:30';", Parameters::None)?;
         let chunk = result.next_chunk()?.unwrap();
         let vector = chunk.get_vector_at::<super::TimeTzValue>(0)?;
-        let value = *vector.get(0)?.unwrap();
+        let value = *vector.reader()?.get(0)?.unwrap();
         let micros = (12 * 3600 + 34 * 60 + 56) * 1_000_000;
         assert_eq!(value.micros(), micros);
         assert_eq!(value.offset_seconds(), 5400);
@@ -834,7 +845,7 @@ mod tests {
         )?;
         let chunk = result.next_chunk()?.unwrap();
         let vec = chunk.get_vector_at::<super::IntervalValue>(0)?;
-        let val = *(vec.get(0)?.unwrap());
+        let val = *(vec.reader()?.get(0)?.unwrap());
 
         assert_eq!(val.months, 14);
         assert_eq!(val.days, 3);

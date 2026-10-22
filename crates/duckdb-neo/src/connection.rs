@@ -427,13 +427,13 @@ mod tests {
             .query(format!("SELECT i + {} FROM owned_sql", 1), Parameters::None)?
             .next_chunk()?
             .unwrap();
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&8));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&8));
 
         let prepared = conn.prepare(String::from("SELECT $1::INTEGER"), true)?;
         for value in [42_i32, 84] {
             let mut result = prepared.execute(Parameters::positional(&[&value]))?;
             let chunk = result.next_chunk()?.unwrap();
-            assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&value));
+            assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&value));
             assert!(result.next_chunk()?.is_none());
         }
         assert!(prepared.reuses_plan()?);
@@ -451,7 +451,7 @@ mod tests {
             )?
             .next_chunk()?
             .unwrap();
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&10));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&10));
 
         conn.execute("SELECT $1", Parameters::positional(&[&(42_i32, "duck")]))?;
 
@@ -465,7 +465,7 @@ mod tests {
         while let Some(chunk) = result.next_chunk()? {
             let vector = chunk.get_vector_at::<i64>(0)?;
 
-            for value in vector.iter()? {
+            for value in vector.reader()?.iter() {
                 assert_eq!(value, Some(&(i as i64 * 5)));
                 i += 1;
             }
@@ -516,7 +516,7 @@ mod tests {
         let mut result = conn.query(statements, Parameters::None)?;
         let chunk = result.next_chunk()?.unwrap();
 
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
 
         Ok(())
     }
@@ -526,7 +526,7 @@ mod tests {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
         conn.interrupt_query()?;
         let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
         Ok(())
     }
 
@@ -572,7 +572,7 @@ mod tests {
                 let (value, _) = context.config()?.get_value("threads")?;
                 let mut output = output.cast::<i64>()?;
                 output.set_size(1)?;
-                output.write(0, i64::from_value(&value)?)
+                output.writer()?.set(0, i64::from_value(&value)?)
             }
         }
 
@@ -588,7 +588,7 @@ mod tests {
             .query("SELECT context_threads()", Parameters::None)?
             .next_chunk()?
             .unwrap();
-        assert_eq!(chunk.get_vector_at::<i64>(0)?.get(0)?, Some(&2));
+        assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&2));
         Ok(())
     }
 

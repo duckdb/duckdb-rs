@@ -53,7 +53,8 @@ impl ScalarCallbacks for ScalarWithData {
 
         let in_vector = input.get_vector_at::<i32>(0)?;
         let in_data = in_vector
-            .iter()?
+            .reader()?
+            .iter()
             .next()
             .expect("Expected at least one value in input vector")
             .expect("Expected input value to be non-null");
@@ -63,7 +64,7 @@ impl ScalarCallbacks for ScalarWithData {
         assert_eq!(bind_data, &[10, 20]);
         assert_eq!(*init_data, 30);
         output.set_size(1)?;
-        output.write(
+        output.writer()?.set(
             0,
             Some(self.base_data.iter().map(|x| x * in_data).sum::<i32>() + bind_data.iter().sum::<i32>() - *init_data),
         )?;
@@ -89,7 +90,7 @@ impl ScalarCallbacks for BasicScalarFunction {
         let mut output: Vector<'_, i32> = output.cast::<i32>()?;
 
         output.set_size(1)?;
-        output.write(0, Some(42))?;
+        output.writer()?.set(0, Some(42))?;
         Ok(())
     }
 }
@@ -135,7 +136,7 @@ fn test_scalar_bind_init_user_data() -> crate::Result<()> {
 
     let chunk = result.next_chunk()?.expect("expected a result chunk");
     assert_eq!(chunk.row_count()?, 1);
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&12));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&12));
     assert!(result.next_chunk()?.is_none());
 
     Ok(())
@@ -225,7 +226,7 @@ fn test_scalar_building() -> crate::Result<()> {
 
     let chunk = result.next_chunk()?.expect("expected a result chunk");
     assert_eq!(chunk.row_count()?, 1);
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
     assert!(result.next_chunk()?.is_none());
 
     Ok(())
@@ -262,8 +263,8 @@ fn test_scalar_property() -> crate::Result<()> {
     )?;
     let chunk = result.next_chunk()?.expect("expected a result chunk");
     assert_eq!(chunk.row_count()?, 1);
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
-    assert_eq!(chunk.get_vector_at::<i32>(1)?.get(0)?, None);
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
+    assert_eq!(chunk.get_vector_at::<i32>(1)?.reader()?.get(0)?, None);
     assert!(result.next_chunk()?.is_none());
 
     Ok(())
@@ -296,8 +297,8 @@ impl ScalarCallbacks for FoldProbe {
         let input = input.get_vector_at::<i32>(0)?;
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
-        for (i, value) in input.iter()?.enumerate() {
-            output.write(i, value.copied())?;
+        for (i, value) in input.reader()?.iter().enumerate() {
+            output.writer()?.set(i, value.copied())?;
         }
         Ok(())
     }
@@ -329,7 +330,7 @@ fn test_scalar_bind_unresolved_parameter() -> crate::Result<()> {
         .execute(Parameters::positional(&[&5_i32]))?
         .next_chunk()?
         .expect("expected a result chunk");
-    assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&5));
+    assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&5));
 
     // A literal argument still folds.
     folded.lock().unwrap().clear();
@@ -359,8 +360,8 @@ impl ScalarCallbacks for Identity {
         let input = input.get_vector_at::<i32>(0)?;
         let mut output = output.cast::<i32>()?;
         output.set_size(input.len())?;
-        for (i, value) in input.iter()?.enumerate() {
-            output.write(i, value.copied())?;
+        for (i, value) in input.reader()?.iter().enumerate() {
+            output.writer()?.set(i, value.copied())?;
         }
         Ok(())
     }
@@ -387,7 +388,12 @@ fn test_scalar_bind_does_not_fold_arguments() -> crate::Result<()> {
         Parameters::None,
     )?;
     let chunk = result.next_chunk()?.expect("expected a result chunk");
-    let values: Vec<_> = chunk.get_vector_at::<i32>(0)?.iter()?.map(|v| v.copied()).collect();
+    let values: Vec<_> = chunk
+        .get_vector_at::<i32>(0)?
+        .reader()?
+        .iter()
+        .map(|v| v.copied())
+        .collect();
     assert_eq!(values, vec![Some(0), Some(1), Some(2)]);
     Ok(())
 }
@@ -456,8 +462,8 @@ fn test_scalar_any_resolves_input_type_and_value() -> crate::Result<()> {
     let text = chunk.get_vector_at::<String>(1)?;
     assert_eq!(integer.logical_type(), &i32::logical_type(&conn)?);
     assert_eq!(text.logical_type(), &String::logical_type(&conn)?);
-    assert_eq!(integer.get(0)?, Some(&10));
-    assert_eq!(text.get(0)?, Some("duck"));
+    assert_eq!(integer.reader()?.get(0)?, Some(&10));
+    assert_eq!(text.reader()?.get(0)?, Some("duck"));
     assert!(query.next_chunk()?.is_none());
 
     Ok(())
@@ -527,7 +533,7 @@ impl ScalarCallbacks for OptionalLifecycle {
         let mut output = output.cast::<i32>()?;
         output.set_size(input.row_count()?)?;
         for i in 0..input.row_count()? {
-            output.write(i, Some(42))?;
+            output.writer()?.set(i, Some(42))?;
         }
         Ok(())
     }
@@ -562,7 +568,7 @@ fn test_scalar_optional_bind_and_init() -> Result<()> {
             .query(sql.as_str(), Parameters::None)?
             .next_chunk()?
             .expect("expected a result chunk");
-        assert_eq!(chunk.get_vector_at::<i32>(0)?.get(0)?, Some(&42));
+        assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));
     }
     Ok(())
 }
