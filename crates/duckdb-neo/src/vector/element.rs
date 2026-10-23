@@ -21,7 +21,7 @@ use crate::{
 /// struct Wide([u64; 4]);
 ///
 /// impl VectorElement for Wide {
-///     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER;
+///     const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
 ///     type Internal = Wide;
 ///     type Ref<'a> = ();
 ///
@@ -137,7 +137,7 @@ pub struct Unknown;
 
 // SAFETY: `Internal` is zero-sized and `get` reads nothing.
 unsafe impl VectorElement for Unknown {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNKNOWN;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Unknown;
 
     type Ref<'a> = ();
 

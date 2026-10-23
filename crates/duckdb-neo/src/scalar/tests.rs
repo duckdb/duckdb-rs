@@ -440,11 +440,11 @@ fn test_scalar_any_resolves_input_type_and_value() -> crate::Result<()> {
         SignatureBuilder::new()
             .param(FunctionParameter::with_type(
                 "input",
-                LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?,
+                LogicalType::create_from_id(&conn, LogicalTypeID::Any, Parameters::None)?,
             ))
             .return_type(LogicalType::create_from_id(
                 &conn,
-                LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY,
+                LogicalTypeID::Any,
                 Parameters::None,
             )?),
         DynamicResolve,
@@ -474,7 +474,7 @@ fn test_scalar_any_requires_resolver() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
-    let any = LogicalType::create_from_id(&conn, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)?;
+    let any = LogicalType::create_from_id(&conn, LogicalTypeID::Any, Parameters::None)?;
     let error = ScalarFunctionBuilder::new(
         "missing_resolver",
         SignatureBuilder::new()

@@ -73,12 +73,10 @@ pub(crate) enum TypeMetadata {
 impl TypeMetadata {
     fn read(logical_type: &LogicalType) -> Result<Self> {
         Ok(match logical_type.id()? {
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
+            LogicalTypeID::Array => Self::Array {
                 size: crate::types::array::array_size(logical_type)?,
             },
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL => {
-                Self::Decimal(DecimalSignature::from_logical_type(logical_type)?)
-            }
+            LogicalTypeID::Decimal => Self::Decimal(DecimalSignature::from_logical_type(logical_type)?),
             _ => Self::None,
         })
     }

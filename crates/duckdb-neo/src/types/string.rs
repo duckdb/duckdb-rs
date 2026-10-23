@@ -38,7 +38,7 @@ impl FromValue for String {
 
 impl DuckDBType for str {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Varchar, Parameters::None)
     }
 }
 
@@ -81,7 +81,7 @@ pub struct BlobValue(pub Vec<u8>);
 
 impl DuckDBType for BlobValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Blob, Parameters::None)
     }
 }
 
@@ -94,7 +94,7 @@ impl ToValue for BlobValue {
 impl FromValue for BlobValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB {
+        if logical_type.id()? != LogicalTypeID::Blob {
             return Err(Error::invalid_input(format!(
                 "Expected BLOB value, found {}",
                 logical_type.to_text()?
@@ -131,7 +131,7 @@ fn check_bit(bytes: &[u8]) -> Result<()> {
 
 impl DuckDBType for BitValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Bit, Parameters::None)
     }
 }
 
@@ -145,7 +145,7 @@ impl ToValue for BitValue {
 impl FromValue for BitValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT {
+        if logical_type.id()? != LogicalTypeID::Bit {
             return Err(Error::invalid_input(format!(
                 "Expected BIT value, found {}",
                 logical_type.to_text()?
@@ -163,7 +163,7 @@ impl HasDuckDBBytes for BitValue {}
 
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for BlobValue {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Blob;
 
     type Internal = DuckDBBytes;
 
@@ -184,7 +184,7 @@ unsafe impl VectorElement for BlobValue {
 
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for BitValue {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Bit;
 
     type Internal = DuckDBBytes;
 
@@ -207,7 +207,7 @@ unsafe impl VectorElement for BitValue {
 /// Panics when a VARCHAR row contains invalid UTF-8.
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for String {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
     type Internal = DuckDBBytes;
 
@@ -231,7 +231,7 @@ unsafe impl VectorElement for String {
 
 // SAFETY: Same storage as `String`; users of this marker must guarantee valid UTF-8.
 unsafe impl VectorElement for UnsafeString {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
     type Internal = DuckDBBytes;
 

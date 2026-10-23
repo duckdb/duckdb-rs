@@ -71,7 +71,7 @@ impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
 
 // SAFETY: members are read only through the child vectors, and `validate` checks the tag.
 unsafe impl VectorElement for Union {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
     type Ref<'a> = UnionRow<'a>;
 
     type Internal = Union;
@@ -246,10 +246,7 @@ unsafe impl WritableVectorElement for Union {
                 // Nested fixed-width rows need NULL descendants, which only the slow path sets.
                 let nested = matches!(
                     child.logical_type().id()?,
-                    LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT
-                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
-                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
-                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
+                    LogicalTypeID::Struct | LogicalTypeID::Tuple | LogicalTypeID::Union | LogicalTypeID::Array
                 );
                 if nested {
                     child.set_null_slow(index)?;

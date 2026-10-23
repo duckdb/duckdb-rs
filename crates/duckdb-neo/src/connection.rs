@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(
             conn.common_type(&[i16::logical_type(&conn)?, i32::logical_type(&conn)?])?
                 .id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+            LogicalTypeID::Integer
         );
 
         assert!(
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(
             conn.common_type(&[bool::logical_type(&conn)?, u64::logical_type(&conn)?])?
                 .id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT
+            LogicalTypeID::UBigInt
         );
 
         let common_text = |types: &[&str]| -> crate::Result<String> {

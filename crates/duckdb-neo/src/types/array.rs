@@ -39,7 +39,7 @@ impl<T: ToValue + DuckDBType, const N: usize> ToValue for [T; N] {
 impl<T: FromValue, const N: usize> FromValue for [Option<T>; N] {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY {
+        if logical_type.id()? != LogicalTypeID::Array {
             return Err(Error::invalid_input(format!(
                 "Expected ARRAY value, found {}",
                 logical_type.to_text()?
@@ -70,7 +70,7 @@ pub(crate) fn array_size(logical_type: &LogicalType) -> Result<usize> {
 
 // SAFETY: rows are read from the child, which `validate` checks as `T`.
 unsafe impl<T: VectorElement> VectorElement for Array<T> {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Array;
 
     type Ref<'a>
         = ArrayRef<'a, T>
@@ -257,10 +257,7 @@ mod tests {
         let conn = connection()?;
         let logical_type = <[i32; 3]>::logical_type(&conn)?;
         let (_, size) = logical_type.get_param(1)?;
-        assert_eq!(
-            size.logical_type()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
-        );
+        assert_eq!(size.logical_type()?.id()?, LogicalTypeID::BigInt);
         assert_eq!(array_size(&logical_type)?, 3);
         Ok(())
     }

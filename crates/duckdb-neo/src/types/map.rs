@@ -74,7 +74,7 @@ impl<K: ToValue + DuckDBType, V: ToValue + DuckDBType> ToValue for MapValue<K, V
 impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP {
+        if logical_type.id()? != LogicalTypeID::Map {
             return Err(Error::invalid_input(format!(
                 "Expected MAP value, found {}",
                 logical_type.to_text()?
@@ -106,7 +106,7 @@ impl<K: FromValue, V: FromValue> FromValue for MapValue<K, Option<V>> {
 
 // SAFETY: a MAP is stored as a LIST of STRUCT(key, value), and `validate` checks both fields.
 unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Map;
 
     type Ref<'a>
         = MapRow<'a, K, V>

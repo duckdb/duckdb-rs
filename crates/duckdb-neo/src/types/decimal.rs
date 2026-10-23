@@ -62,7 +62,7 @@ macro_rules! decimal_storage {
 
             // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
             unsafe impl VectorElement for $name {
-                const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
+                const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
                 type Internal = $type;
 
@@ -238,7 +238,7 @@ unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, S
 where
     Width<WIDTH>: DecimalWidth,
 {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
     type Internal = <Width<WIDTH> as DecimalWidth>::Storage;
 
@@ -361,7 +361,7 @@ impl DecimalSignature {
 
     /// Read the width and scale of a `DECIMAL` logical type.
     pub fn from_logical_type(logical_type: &LogicalType) -> Result<Self> {
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL {
+        if logical_type.id()? != LogicalTypeID::Decimal {
             return Err(Error::api_error("logical type is not DECIMAL"));
         }
         let param = |index| -> Result<u8> {

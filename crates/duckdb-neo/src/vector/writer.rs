@@ -277,7 +277,7 @@ impl<T: WritableVectorElement> VectorWriter<'_, '_, T> {
         // SAFETY: The writer guarantees flat, writable storage; the caller guarantees bounds.
         unsafe { T::write(self, index, value)? };
         // VARIANT's value API determines nullness after casting the supplied Value.
-        if T::TYPE_ID != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT {
+        if T::TYPE_ID != LogicalTypeID::Variant {
             unsafe { self.inner.set_validity_unchecked(index, is_valid)? };
         }
         Ok(())

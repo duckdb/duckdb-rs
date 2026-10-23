@@ -519,7 +519,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
 
     // SAFETY: Probe uses INTEGER's physical representation.
     unsafe impl VectorElement for Probe {
-        const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER;
+        const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
         type Internal = i32;
         type Ref<'a> = &'a i32;
 
@@ -2087,12 +2087,12 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         output.set_size(input.row_count()?)?;
         let vector = input.get_untyped_vector_at(0)?;
         let logical_type = vector.logical_type().id()?;
-        let integers = if logical_type == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER {
+        let integers = if logical_type == LogicalTypeID::Integer {
             Some(vector.cast_ref::<i32>()?.reader()?)
         } else {
             None
         };
-        let booleans = if logical_type == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN {
+        let booleans = if logical_type == LogicalTypeID::Boolean {
             Some(vector.cast_ref::<bool>()?.reader()?)
         } else {
             None

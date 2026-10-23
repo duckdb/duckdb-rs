@@ -24,7 +24,7 @@ pub type UHugeInt = ffi::duckdb_v2_uhugeint_t;
 
 impl DuckDBType for Any {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ANY, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Any, Parameters::None)
     }
 }
 
@@ -79,19 +79,19 @@ macro_rules! declare_primitive_type {
     };
 }
 
-declare_primitive_type!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN, Bool);
-declare_primitive_type!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT, UTinyInt);
-declare_primitive_type!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT, TinyInt);
-declare_primitive_type!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT, SmallInt);
-declare_primitive_type!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER, Int);
-declare_primitive_type!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT, BigInt);
-declare_primitive_type!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT, USmallInt);
-declare_primitive_type!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER, UInt);
-declare_primitive_type!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT, UBigInt);
-declare_primitive_type!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT, Float);
-declare_primitive_type!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE, Double);
-declare_primitive_type!(i128, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT, HugeInt);
-declare_primitive_type!(u128, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT, UHugeInt);
+declare_primitive_type!(bool, Boolean, Bool);
+declare_primitive_type!(u8, UTinyInt, UTinyInt);
+declare_primitive_type!(i8, TinyInt, TinyInt);
+declare_primitive_type!(i16, SmallInt, SmallInt);
+declare_primitive_type!(i32, Integer, Int);
+declare_primitive_type!(i64, BigInt, BigInt);
+declare_primitive_type!(u16, USmallInt, USmallInt);
+declare_primitive_type!(u32, UInteger, UInt);
+declare_primitive_type!(u64, UBigInt, UBigInt);
+declare_primitive_type!(f32, Float, Float);
+declare_primitive_type!(f64, Double, Double);
+declare_primitive_type!(i128, HugeInt, HugeInt);
+declare_primitive_type!(u128, UHugeInt, UHugeInt);
 
 /// Implements [`crate::vector::VectorElement`] for a type whose vector storage is itself.
 ///
@@ -123,19 +123,19 @@ macro_rules! declare_vector_element {
 }
 pub(crate) use declare_vector_element;
 
-declare_vector_element!(bool, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
-declare_vector_element!(u8, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT);
-declare_vector_element!(i8, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT);
-declare_vector_element!(i16, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT);
-declare_vector_element!(i32, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
-declare_vector_element!(i64, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
-declare_vector_element!(u16, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT);
-declare_vector_element!(u32, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
-declare_vector_element!(u64, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
-declare_vector_element!(f32, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
-declare_vector_element!(f64, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
-declare_vector_element!(HugeInt, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
-declare_vector_element!(UHugeInt, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
+declare_vector_element!(bool, Boolean);
+declare_vector_element!(u8, UTinyInt);
+declare_vector_element!(i8, TinyInt);
+declare_vector_element!(i16, SmallInt);
+declare_vector_element!(i32, Integer);
+declare_vector_element!(i64, BigInt);
+declare_vector_element!(u16, USmallInt);
+declare_vector_element!(u32, UInteger);
+declare_vector_element!(u64, UBigInt);
+declare_vector_element!(f32, Float);
+declare_vector_element!(f64, Double);
+declare_vector_element!(HugeInt, HugeInt);
+declare_vector_element!(UHugeInt, UHugeInt);
 
 macro_rules! declare_writable_vector_element {
     ($type:ty) => {

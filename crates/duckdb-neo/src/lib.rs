@@ -188,10 +188,7 @@ mod tests {
 
                 let type_id = vector.logical_type().id()?;
 
-                assert_eq!(
-                    type_id,
-                    ffi::DUCKDB_V2_LOGICAL_TYPE_ID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-                );
+                assert_eq!(type_id, logical_type::LogicalTypeID::Integer);
                 assert_eq!(vector.len(), 1);
 
                 let value = vector.reader()?.iter().next().unwrap();

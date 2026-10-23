@@ -54,7 +54,7 @@ fn test_table_function() -> Result<()> {
 
             let val = &arg.value;
 
-            assert_eq!(arg.logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+            assert_eq!(arg.logical_type.id()?, LogicalTypeID::Integer);
             assert_eq!(val.as_ref().unwrap().dbg_string()?, "10");
 
             bind_handle.add_result_column("out", &i32::logical_type(context)?)?;

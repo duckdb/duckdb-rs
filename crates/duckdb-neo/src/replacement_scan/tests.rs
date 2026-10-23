@@ -92,7 +92,7 @@ fn test_replacement_scan() -> crate::Result<()> {
 
     let chunk = query.next_chunk()?.unwrap();
 
-    assert!(chunk.get_vector_at::<i64>(0)?.logical_type().id()? == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+    assert!(chunk.get_vector_at::<i64>(0)?.logical_type().id()? == LogicalTypeID::BigInt);
 
     assert_eq!(chunk.row_count()?, 10 + 42);
 
@@ -158,8 +158,8 @@ fn test_replacement_scan_cdc() -> crate::Result<()> {
 
     let chunk = query.next_chunk()?.unwrap();
 
-    assert!(chunk.get_vector_at::<i32>(0)?.logical_type().id()? == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
-    assert!(chunk.get_vector_at::<bool>(1)?.logical_type().id()? == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
+    assert!(chunk.get_vector_at::<i32>(0)?.logical_type().id()? == LogicalTypeID::Integer);
+    assert!(chunk.get_vector_at::<bool>(1)?.logical_type().id()? == LogicalTypeID::Boolean);
 
     assert_eq!(chunk.row_count()?, 2);
 
