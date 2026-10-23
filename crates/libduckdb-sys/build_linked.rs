@@ -212,7 +212,7 @@ mod download_lib {
         /// The GitHub release matching the DuckDB version encoded in the crate
         /// version, used when there is no pin file.
         fn from_crate_version() -> Self {
-            let version = duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
+            let version = crate::build_version::duckdb_version_from_pkg_version(env!("CARGO_PKG_VERSION"));
             Self {
                 base_url: format!("https://github.com/duckdb/duckdb/releases/download/v{version}"),
                 version: format!("v{version}"),
@@ -338,20 +338,6 @@ mod download_lib {
         archive.unpack(destination)?;
         println!("cargo:warning=Extracted libduckdb to {}", destination.display());
         Ok(())
-    }
-
-    fn duckdb_version_from_pkg_version(pkg_version: &str) -> String {
-        // duckdb-rs uses 1.MAJOR_MINOR_PATCH.x, e.g. DuckDB 1.5.0 => duckdb-rs 1.10500.x.
-        let encoded = pkg_version
-            .split('.')
-            .nth(1)
-            .expect("CARGO_PKG_VERSION should use the documented 1.MAJOR_MINOR_PATCH.x format")
-            .parse::<u32>()
-            .expect("CARGO_PKG_VERSION should encode the DuckDB version as an integer in its second component");
-        let duckdb_major = encoded / 10_000;
-        let duckdb_minor = (encoded / 100) % 100;
-        let duckdb_patch = encoded % 100;
-        format!("{duckdb_major}.{duckdb_minor}.{duckdb_patch}")
     }
 
     fn http_client() -> ureq::Agent {

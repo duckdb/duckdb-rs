@@ -122,7 +122,9 @@ jobs:
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
-        run: cargo test -p duckdb --features extensions-full --lib extension::test --locked
+        run: |
+          cargo test -p libduckdb-sys --features extensions-full --lib build_version::tests --locked
+          cargo test -p duckdb --features extensions-full --lib extension::test --locked
 
   cmake:
     # Slow bundled C++ build; only start once the fast linked-mode tests pass.
@@ -195,6 +197,10 @@ jobs:
       - name: "libduckdb-sys: Check CMake without default features"
         if: runner.os == 'Linux'
         run: cargo check -p libduckdb-sys --no-default-features --features "bundled-cmake capi-v1" --locked
+
+      - name: "libduckdb-sys: Check CMake version metadata"
+        shell: bash
+        run: cargo test -p libduckdb-sys --features "$CMAKE_FEATURES" --lib build_version::tests --locked
 
       - name: "duckdb: Verify static linking with extension loading disabled"
         shell: bash

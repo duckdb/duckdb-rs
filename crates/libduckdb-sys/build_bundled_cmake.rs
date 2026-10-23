@@ -23,6 +23,7 @@ pub fn main(out_dir: &str) {
     }
 
     println!("cargo:rerun-if-changed={}", source_dir.display());
+    println!("cargo:rerun-if-env-changed=DUCKDB_VERSION");
     println!("cargo:rerun-if-env-changed=DUCKDB_EXTENSION_CONFIGS");
     println!("cargo:rerun-if-env-changed=DUCKDB_CMAKE_BUILD_TYPE");
     println!("cargo:rerun-if-env-changed=DUCKDB_DISABLE_UNITY");
@@ -51,6 +52,8 @@ pub fn main(out_dir: &str) {
         }
     }
 
+    let version = crate::build_version::cmake_version(env!("CARGO_PKG_VERSION"), env_var("DUCKDB_VERSION").as_deref());
+    cargo_warning(&format!("bundled-cmake DuckDB version: {version}"));
     let cmake_build_type = cmake_build_type();
     let generator = select_generator(out_dir);
     let mut config = cmake::Config::new(source_dir);
@@ -62,8 +65,10 @@ pub fn main(out_dir: &str) {
         config.define("CMAKE_MAKE_PROGRAM", make_program);
     }
     configure_macos_deployment_target(&mut config);
+    // Always overwrite the cached version, including when an override is removed.
     config
         .profile(&cmake_build_type)
+        .define("DUCKDB_EXPLICIT_VERSION", &version)
         .define("BUILD_UNITTESTS", "0")
         .define("BUILD_SHELL", "0")
         .define("CMAKE_INSTALL_LIBDIR", "lib")
@@ -96,7 +101,16 @@ pub fn main(out_dir: &str) {
     // Always set explicitly so the CMake cache does not keep a stale value when
     // the environment variable changes between builds.
     let disable_extension_load = env_flag_aliases(&["DUCKDB_DISABLE_EXTENSION_LOAD", "DISABLE_EXTENSION_LOAD"]);
-    config.define("DISABLE_EXTENSION_LOAD", if disable_extension_load { "1" } else { "0" });
+    config
+        .define("DISABLE_EXTENSION_LOAD", "0")
+        .define(
+            "ENABLE_EXTENSION_LOAD",
+            if disable_extension_load { "OFF" } else { "ON" },
+        )
+        .define(
+            "ENABLE_BUILTIN_HTTPLIB",
+            if disable_extension_load { "OFF" } else { "ON" },
+        );
 
     // Forward compiler launcher for sccache/ccache integration.
     for var in ["CMAKE_C_COMPILER_LAUNCHER", "CMAKE_CXX_COMPILER_LAUNCHER"] {
@@ -139,10 +153,19 @@ pub fn main(out_dir: &str) {
     validate_extension_libraries(&lib_dir, &cmake_build_type, &enabled_extensions);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Emit in dependents-before-dependencies order for single-pass linkers:
-    // loader → extensions → duckdb_static (which satisfies all core symbols).
-    let mut linked_extensions = vec!["core_functions"];
+    // loader → capabilities/extensions → duckdb_static (which satisfies all core symbols).
+    let capabilities: &[&str] = if disable_extension_load {
+        &[]
+    } else {
+        &["httplib", "loadable_extensions"]
+    };
+    let mut linked_extensions = capabilities.to_vec();
+    linked_extensions.push("core_functions");
     linked_extensions.extend(enabled_extensions.iter().copied());
     build_static_extension_loader(source_dir, out_dir, &linked_extensions);
+    for capability in capabilities {
+        link_static_library(&lib_dir, &cmake_build_type, &format!("duckdb_{capability}"));
+    }
     link_static_library(&lib_dir, &cmake_build_type, "core_functions_extension");
     for extension in enabled_extensions {
         link_static_library(&lib_dir, &cmake_build_type, &format!("{extension}_extension"));

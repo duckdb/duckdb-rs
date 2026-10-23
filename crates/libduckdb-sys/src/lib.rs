@@ -10,9 +10,11 @@ compile_error!("libduckdb-sys needs at least one of the `capi-v1` or `capi-v2` f
 /// Dependency-free Arrow C Data Interface structs used by DuckDB Arrow APIs.
 mod arrow_c_data;
 
-// Build-script helper mounted here so cargo test runs its unit tests.
+// Build-script helpers mounted here so cargo test runs their unit tests.
 #[cfg(test)]
 mod build_paths;
+#[cfg(test)]
+mod build_version;
 
 /// Bindings for DuckDB's v1 C API (`duckdb.h`, or `duckdb_extension.h` with the
 /// `loadable-extension` feature).
