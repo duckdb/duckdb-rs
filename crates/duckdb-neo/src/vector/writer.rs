@@ -285,39 +285,6 @@ impl<T: WritableVectorElement> VectorWriter<'_, '_, T> {
     }
 }
 
-impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
-    /// Borrow the vector's byte arena for raw string or binary encoding.
-    ///
-    /// Take [`Self::as_mut_ptr`] before borrowing the arena to fill data slots.
-    ///
-    /// ```compile_fail,E0599
-    /// use duckdb_neo::{Result, vector::Vector};
-    ///
-    /// fn arena(vector: &mut Vector<'_, i32>) -> Result<()> {
-    ///     let mut writer = vector.writer()?;
-    ///     let _ = writer.arena()?;
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn arena(&mut self) -> Result<&Arena> {
-        if self.inner.vector.heap.is_none() {
-            let handle = check_api_call!(ffi::duckdb_v2_vector_get_arena, self.inner.vector.handle, RET)?;
-            self.inner.vector.heap = Some(Arena { handle });
-        }
-        Ok(self.inner.vector.heap.as_ref().unwrap())
-    }
-
-    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        if let Some(value) = value {
-            let data = self.view().as_ptr().cast::<DuckDBBytes<'_>>().cast_mut();
-            let encoded = DuckDBBytes::from_parts(&[value], || self.arena())?;
-            // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
-            unsafe { data.add(index).write(encoded) };
-        }
-        Ok(())
-    }
-}
-
 impl<T: VectorElement> FlatWriter<'_, '_, T> {
     fn ensure_validity_writable(&mut self) -> Result<()> {
         if !self.vector.validity_writable {
@@ -346,6 +313,165 @@ impl<T: VectorElement> FlatWriter<'_, '_, T> {
                 *word &= !mask;
             }
         }
+        Ok(())
+    }
+}
+
+impl VectorWriter<'_, '_, String> {
+    /// Concatenate UTF-8 fragments into one row and update its validity.
+    ///
+    /// `None` writes SQL NULL; `Some(&[])` writes an empty string. The fragments
+    /// are copied directly into inline storage (up to 12 bytes) or one arena
+    /// allocation, without an intermediate buffer or UTF-8 validation pass.
+    /// Returns an error if `index` is out of bounds or the combined byte length
+    /// exceeds `u32::MAX`.
+    ///
+    /// ```
+    /// # use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}};
+    /// # fn main() -> Result<()> {
+    /// # let env = Environment::new()?;
+    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    /// let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    /// let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    /// vector.set_size(3)?;
+    /// {
+    ///     let mut writer = vector.writer()?;
+    ///     writer.set_parts(0, Some(&["hello", " ", "world"]))?;
+    ///     writer.set_parts(1, Some(&[]))?;
+    ///     writer.set_parts(2, None)?;
+    /// }
+    /// assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some("hello world"), Some(""), None]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// String fragments cannot bypass other logical types' encoders:
+    ///
+    /// ```compile_fail,E0599
+    /// use duckdb_neo::{Result, types::BitValue, vector::Vector};
+    ///
+    /// fn write(vector: &mut Vector<'_, BitValue>) -> Result<()> {
+    ///     vector.writer()?.set_parts(0, Some(&["not a BIT encoding"]))
+    /// }
+    /// ```
+    #[inline]
+    pub fn set_parts(&mut self, index: usize, parts: Option<&[&str]>) -> Result<()> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        if let Some(parts) = parts {
+            // SAFETY: The row is in bounds, and concatenated UTF-8 is valid VARCHAR storage.
+            unsafe { self.write_byte_parts(index, parts)? };
+        }
+        // SAFETY: Non-NULL rows are initialized; VARCHAR has no descendants.
+        unsafe { self.inner.set_validity_unchecked(index, parts.is_some()) }
+    }
+}
+
+impl VectorWriter<'_, '_, crate::types::UnsafeString> {
+    /// Concatenate UTF-8 fragments, as with [`VectorWriter::<String>::set_parts`].
+    #[inline]
+    pub fn set_parts(&mut self, index: usize, parts: Option<&[&str]>) -> Result<()> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        if let Some(parts) = parts {
+            // SAFETY: The row is in bounds, and concatenated UTF-8 is valid VARCHAR storage.
+            unsafe { self.write_byte_parts(index, parts)? };
+        }
+        // SAFETY: Non-NULL rows are initialized; VARCHAR has no descendants.
+        unsafe { self.inner.set_validity_unchecked(index, parts.is_some()) }
+    }
+}
+
+impl VectorWriter<'_, '_, crate::types::BlobValue> {
+    /// Concatenate byte fragments into one BLOB row and update its validity.
+    ///
+    /// `None` writes SQL NULL; `Some(&[])` writes an empty blob. Arbitrary bytes,
+    /// including embedded NULs and invalid UTF-8, are copied directly into inline
+    /// storage (up to 12 bytes) or one arena allocation, without an intermediate
+    /// buffer. Returns an error if `index` is out of bounds or the combined byte
+    /// length exceeds `u32::MAX`.
+    ///
+    /// ```
+    /// # use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::BlobValue};
+    /// # fn main() -> Result<()> {
+    /// # let env = Environment::new()?;
+    /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    /// let mut chunk = DataChunk::create(&conn, &[BlobValue::logical_type(&conn)?], true)?;
+    /// let mut vector = chunk.get_vector_at_mut::<BlobValue>(0)?;
+    /// vector.set_size(3)?;
+    /// {
+    ///     let mut writer = vector.writer()?;
+    ///     writer.set_parts(0, Some(&[b"header", b"\0\xff"]))?;
+    ///     writer.set_parts(1, Some(&[]))?;
+    ///     writer.set_parts(2, None)?;
+    /// }
+    /// assert_eq!(vector.reader()?.get(0)?, Some(b"header\0\xff".as_slice()));
+    /// assert_eq!(vector.reader()?.get(1)?, Some(b"".as_slice()));
+    /// assert_eq!(vector.reader()?.get(2)?, None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Byte fragments cannot bypass BIT's encoding validation:
+    ///
+    /// ```compile_fail,E0599
+    /// use duckdb_neo::{Result, types::BitValue, vector::Vector};
+    ///
+    /// fn write(vector: &mut Vector<'_, BitValue>) -> Result<()> {
+    ///     vector.writer()?.set_parts(0, Some(&[b"\xff"]))
+    /// }
+    /// ```
+    #[inline]
+    pub fn set_parts(&mut self, index: usize, parts: Option<&[&[u8]]>) -> Result<()> {
+        if index >= self.len() {
+            return Err(out_of_bounds(index, self.len()));
+        }
+        if let Some(parts) = parts {
+            // SAFETY: The row is in bounds, and arbitrary bytes are valid BLOB storage.
+            unsafe { self.write_byte_parts(index, parts)? };
+        }
+        // SAFETY: Non-NULL rows are initialized; BLOB has no descendants.
+        unsafe { self.inner.set_validity_unchecked(index, parts.is_some()) }
+    }
+}
+
+impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
+    /// Borrow the vector's byte arena for raw string or binary encoding.
+    ///
+    /// Take [`Self::as_mut_ptr`] before borrowing the arena to fill data slots.
+    ///
+    /// ```compile_fail,E0599
+    /// use duckdb_neo::{Result, vector::Vector};
+    ///
+    /// fn arena(vector: &mut Vector<'_, i32>) -> Result<()> {
+    ///     let mut writer = vector.writer()?;
+    ///     let _ = writer.arena()?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn arena(&mut self) -> Result<&Arena> {
+        if self.inner.vector.heap.is_none() {
+            let handle = check_api_call!(ffi::duckdb_v2_vector_get_arena, self.inner.vector.handle, RET)?;
+            self.inner.vector.heap = Some(Arena { handle });
+        }
+        Ok(self.inner.vector.heap.as_ref().unwrap())
+    }
+
+    pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
+        if let Some(value) = value {
+            // SAFETY: The caller guarantees the row's bounds and logical encoding.
+            unsafe { self.write_byte_parts(index, &[value])? };
+        }
+        Ok(())
+    }
+
+    unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
+        let data = self.view().as_ptr().cast::<DuckDBBytes<'_>>().cast_mut();
+        let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;
+        // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
+        unsafe { data.add(index).write(encoded) };
         Ok(())
     }
 }

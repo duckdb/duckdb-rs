@@ -5,7 +5,7 @@ use crate::{
     environment::{Environment, StorageLocation},
     scalar::ScalarFunctionBuilder,
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Array, DuckDBType, List, Struct, StructWrite, Variant},
+    types::{Array, BlobValue, DuckDBType, List, Struct, StructWrite, UnsafeString, Variant},
     value::Value,
     vector::{StorageKind, Unknown, VectorWriter},
 };
@@ -184,6 +184,73 @@ fn writer_encodes_raw_strings_in_its_own_arena() -> Result<()> {
         vector.reader()?.iter().collect::<Vec<_>>(),
         [Some("short"), None, Some("longer than DuckDB's inline string storage")]
     );
+    Ok(())
+}
+
+#[test]
+fn writer_sets_string_parts() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    let cases: &[Option<&[&str]>] = &[
+        Some(&[]),
+        Some(&["hello", " ", "world"]),
+        Some(&["1234", "", "56789012"]),
+        Some(&["a", "", "bc", "defghijklm"]),
+        Some(&["héllo", "\0", " 🦆"]),
+        None,
+    ];
+    vector.set_size(cases.len())?;
+    {
+        let mut writer = vector.writer()?;
+        assert!(writer.set_parts(cases.len(), None).is_err());
+        for (index, parts) in cases.iter().enumerate() {
+            writer.set_parts(index, *parts)?;
+        }
+    }
+    let reader = vector.reader()?;
+    for (index, parts) in cases.iter().enumerate() {
+        assert_eq!(reader.get(index)?, parts.map(|parts| parts.concat()).as_deref());
+    }
+    drop(vector);
+    let mut vector = chunk.get_vector_at_mut::<UnsafeString>(0)?;
+    vector.writer()?.set_parts(0, None)?;
+    assert_eq!(vector.reader()?.get(0)?, None);
+    vector.writer()?.set_parts(0, Some(&["hello", " again"]))?;
+    assert_eq!(vector.reader()?.get(0)?, Some("hello again"));
+    Ok(())
+}
+
+#[test]
+fn writer_sets_blob_parts() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[BlobValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<BlobValue>(0)?;
+    let cases: &[Option<&[&[u8]]>] = &[
+        Some(&[]),
+        Some(&[b"\xff", b"", b"\0\x80", b"binary"]),
+        Some(&[b"\xff\0\x80\x01", b"", b"12345678"]),
+        Some(&[b"\xff", b"", b"\0\x80", b"1234567890"]),
+        None,
+    ];
+    vector.set_size(cases.len())?;
+    {
+        let mut writer = vector.writer()?;
+        assert!(writer.set_parts(cases.len(), None).is_err());
+        for (index, parts) in cases.iter().enumerate() {
+            writer.set_parts(index, *parts)?;
+        }
+    }
+    let reader = vector.reader()?;
+    for (index, parts) in cases.iter().enumerate() {
+        assert_eq!(reader.get(index)?, parts.map(|parts| parts.concat()).as_deref());
+    }
+    vector.writer()?.set_parts(0, None)?;
+    assert_eq!(vector.reader()?.get(0)?, None);
+    vector.writer()?.set_parts(0, Some(&[b"\xff", b"\0"]))?;
+    assert_eq!(vector.reader()?.get(0)?, Some(b"\xff\0".as_slice()));
     Ok(())
 }
 

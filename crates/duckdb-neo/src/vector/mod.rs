@@ -134,7 +134,7 @@ impl Arena {
 
     /// Concatenate byte slices directly into inline storage or one arena allocation.
     ///
-    /// No intermediate buffer is allocated. The combined length must fit in a `u32`.
+    /// The combined length must fit in a `u32`.
     /// This does not validate UTF-8 or other logical-type encodings.
     #[inline]
     pub fn add_parts<'a>(&'a self, parts: &[&[u8]]) -> Result<DuckDBBytes<'a>> {
@@ -146,8 +146,7 @@ impl Arena {
     /// The combined byte length must fit in a `u32`.
     #[inline]
     pub fn add_strings<'a>(&'a self, parts: &[&str]) -> Result<DuckDBBytes<'a>> {
-        let parts = parts.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
-        DuckDBBytes::from_parts(parts.as_slice(), || Ok(self))
+        DuckDBBytes::from_parts(parts, || Ok(self))
     }
 
     /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.

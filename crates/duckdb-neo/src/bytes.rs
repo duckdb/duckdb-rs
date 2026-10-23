@@ -85,10 +85,15 @@ impl<'arena> DuckDBBytes<'arena> {
     }
 
     #[inline(always)]
-    pub(crate) fn from_parts(parts: &[&[u8]], arena: impl FnOnce() -> Result<&'arena Arena>) -> Result<Self> {
+    pub(crate) fn from_parts<P: AsRef<[u8]> + ?Sized>(
+        parts: &[&P],
+        arena: impl FnOnce() -> Result<&'arena Arena>,
+    ) -> Result<Self> {
         let length = parts
             .iter()
-            .try_fold(0u32, |length, part| length.checked_add(u32::try_from(part.len()).ok()?))
+            .try_fold(0u32, |length, part| {
+                length.checked_add(u32::try_from(part.as_ref().len()).ok()?)
+            })
             .ok_or_else(|| Error {
                 code: DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE,
                 message: format!("combined byte length exceeds the maximum of {} bytes", u32::MAX),
@@ -101,6 +106,7 @@ impl<'arena> DuckDBBytes<'arena> {
             };
             let mut offset = 0;
             for part in parts {
+                let part = part.as_ref();
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         part.as_ptr(),
@@ -119,6 +125,7 @@ impl<'arena> DuckDBBytes<'arena> {
             };
             let mut offset = 0;
             for part in parts {
+                let part = part.as_ref();
                 unsafe {
                     std::ptr::copy_nonoverlapping(part.as_ptr(), pointer.ptr.cast::<u8>().add(offset), part.len());
                 }
