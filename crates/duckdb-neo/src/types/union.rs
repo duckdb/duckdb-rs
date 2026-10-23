@@ -74,7 +74,7 @@ unsafe impl VectorElement for Union {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
     type Ref<'a> = UnionRow<'a>;
 
-    type Internal = Union;
+    type Internal<'a> = Union;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {

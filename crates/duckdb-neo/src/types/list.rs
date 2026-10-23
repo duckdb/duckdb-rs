@@ -74,7 +74,7 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
     where
         L: 'a;
 
-    type Internal = List<L>;
+    type Internal<'a> = List<L>;
 
     const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
 

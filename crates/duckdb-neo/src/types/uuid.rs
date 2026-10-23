@@ -64,7 +64,7 @@ impl FromValue for UuidValueRaw {
 unsafe impl VectorElement for UuidValueRaw {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-    type Internal = HugeInt;
+    type Internal<'a> = HugeInt;
 
     type Ref<'a>
         = &'a UuidValueRaw
@@ -174,7 +174,7 @@ mod external {
     unsafe impl VectorElement for Uuid {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-        type Internal = UuidValueRaw;
+        type Internal<'a> = UuidValueRaw;
 
         type Ref<'a> = Uuid;
 

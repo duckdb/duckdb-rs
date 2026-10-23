@@ -11,7 +11,7 @@ use crate::{
 ///
 /// Vector accessors trust the implementation:
 ///
-/// - `Internal` must match DuckDB's physical layout for every logical type `validate` accepts.
+/// - `Internal<'a>` must match DuckDB's physical layout for every lifetime and logical type `validate` accepts.
 /// - `get` must only read within the vector's view and the children `validate` checked.
 ///
 /// A safe implementation is rejected:
@@ -22,7 +22,7 @@ use crate::{
 ///
 /// impl VectorElement for Wide {
 ///     const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
-///     type Internal = Wide;
+///     type Internal<'a> = Wide;
 ///     type Ref<'a> = ();
 ///
 ///     unsafe fn get<'a, U: VectorElement>(_: &VectorReader<'a, U>, _: usize, _: usize) -> Self::Ref<'a>
@@ -38,7 +38,8 @@ pub unsafe trait VectorElement: Sized {
 
     /// Physical entries exposed by [`VectorReader::as_slice`](crate::vector::VectorReader::as_slice).
     /// Use `()` when the element does not expose a physical representation.
-    type Internal;
+    /// The lifetime bounds any storage referenced by an entry.
+    type Internal<'a>;
 
     /// The borrowed or owned value returned for one vector row.
     type Ref<'a>
@@ -141,7 +142,7 @@ unsafe impl VectorElement for Unknown {
 
     type Ref<'a> = ();
 
-    type Internal = ();
+    type Internal<'a> = ();
 
     fn validate(_other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         Ok(true)

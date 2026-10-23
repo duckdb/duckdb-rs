@@ -19,7 +19,7 @@ unsafe impl VectorElement for Variant {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Variant;
 
     /// VARIANT has no fixed physical layout; rows use the per-cell value API.
-    type Internal = ();
+    type Internal<'a> = ();
 
     type Ref<'a> = Value;
 

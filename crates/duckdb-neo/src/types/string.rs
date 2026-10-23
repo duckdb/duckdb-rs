@@ -165,7 +165,7 @@ impl HasDuckDBBytes for BitValue {}
 unsafe impl VectorElement for BlobValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Blob;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a [u8];
 
@@ -177,7 +177,7 @@ unsafe impl VectorElement for BlobValue {
     where
         Self: 'a,
     {
-        let data_ptr = vector.as_ptr() as *const DuckDBBytes;
+        let data_ptr = vector.as_ptr() as *const DuckDBBytes<'a>;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
@@ -186,7 +186,7 @@ unsafe impl VectorElement for BlobValue {
 unsafe impl VectorElement for BitValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Bit;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a [u8];
 
@@ -198,7 +198,7 @@ unsafe impl VectorElement for BitValue {
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.as_ptr() as *const DuckDBBytes;
+        let data_ptr = vector.as_ptr() as *const DuckDBBytes<'a>;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
@@ -209,7 +209,7 @@ unsafe impl VectorElement for BitValue {
 unsafe impl VectorElement for String {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a str;
 
@@ -233,7 +233,7 @@ unsafe impl VectorElement for String {
 unsafe impl VectorElement for UnsafeString {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a str;
 

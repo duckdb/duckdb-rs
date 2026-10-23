@@ -103,7 +103,7 @@ macro_rules! declare_vector_element {
         unsafe impl $crate::vector::VectorElement for $type {
             const TYPE_ID: $crate::logical_type::LogicalTypeID = $crate::logical_type::LogicalTypeID::$type_id;
 
-            type Internal = $type;
+            type Internal<'a> = $type;
 
             type Ref<'a> = &'a $type;
 

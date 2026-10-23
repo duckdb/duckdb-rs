@@ -55,20 +55,20 @@ impl<T: VectorElement> VectorView<T> {
     /// Every entry in the returned slice must be initialized, including unselected and NULL slots.
     /// Read only entries that are valid for the vector's logical type. Use [`Self::as_ptr`]
     /// when the buffer contains uninitialized slots.
-    pub unsafe fn as_slice(&self) -> Option<&[T::Internal]> {
+    pub unsafe fn as_slice(&self) -> Option<&[T::Internal<'_>]> {
         if self.view.data.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.data as *const T::Internal, self.physical_len()) })
+            Some(unsafe { std::slice::from_raw_parts(self.as_ptr(), self.physical_len()) })
         }
     }
 
     /// Return a pointer to the physical storage, or null when no data is exposed.
-    pub fn as_ptr(&self) -> *const T::Internal {
+    pub fn as_ptr<'data>(&self) -> *const T::Internal<'data> {
         if self.view.data.is_null() {
             std::ptr::null()
         } else {
-            self.view.data as *const T::Internal
+            self.view.data as *const T::Internal<'data>
         }
     }
 

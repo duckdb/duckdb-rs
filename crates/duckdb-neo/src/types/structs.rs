@@ -131,7 +131,7 @@ unsafe impl VectorElement for Struct {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Struct;
     type Ref<'a> = StructRow<'a>;
 
-    type Internal = Struct;
+    type Internal<'a> = Struct;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         Ok(matches!(other.id()?, LogicalTypeID::Struct | LogicalTypeID::Tuple))

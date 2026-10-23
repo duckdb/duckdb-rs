@@ -89,8 +89,9 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
     /// Writing through this pointer does not change validity. Only access rows
     /// within [`Self::len`], using the physical representation of the logical
     /// type. Typed writes may replace storage; reacquire the pointer afterwards.
-    pub fn as_mut_ptr(&mut self) -> *mut T::Internal {
-        self.view().as_ptr() as *mut T::Internal
+    /// The caller chooses `'data` and must uphold it when dereferencing the pointer.
+    pub fn as_mut_ptr<'data>(&mut self) -> *mut T::Internal<'data> {
+        self.view().as_ptr() as *mut T::Internal<'data>
     }
 
     /// Borrow mutable physical storage, or `None` when no data is exposed.
@@ -114,7 +115,7 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
     ///     Ok(())
     /// }
     /// ```
-    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal]> {
+    pub unsafe fn as_slice_mut(&mut self) -> Option<&mut [T::Internal<'_>]> {
         let len = self.len();
         let data = self.as_mut_ptr();
         if data.is_null() {
@@ -307,13 +308,13 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
     }
 
     pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
-        let encoded = match value {
-            None => None,
-            // SAFETY: The vector owns the arena for every subsequent read.
-            Some(value) => Some(unsafe { DuckDBBytes::from_parts(&[value], || self.arena())? }),
-        };
-        // SAFETY: The caller guarantees the row is in bounds and bytes match its logical type.
-        unsafe { self.write_internal(index, encoded) }
+        if let Some(value) = value {
+            let data = self.view().as_ptr().cast::<DuckDBBytes<'_>>().cast_mut();
+            let encoded = DuckDBBytes::from_parts(&[value], || self.arena())?;
+            // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
+            unsafe { data.add(index).write(encoded) };
+        }
+        Ok(())
     }
 }
 

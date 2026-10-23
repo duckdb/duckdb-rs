@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     Result,
     error::{DuckDBError, Error},
@@ -12,21 +14,60 @@ use crate::{
 /// alive while the bytes are accessed.
 ///
 /// Use [`Arena::add_bytes`] or [`Arena::add_str`] to encode values for a vector's arena.
-/// Raw construction also requires an explicit lifetime guarantee:
+/// Construction borrows the arena, not the input:
 ///
-/// ```compile_fail,E0133
+/// ```
 /// use duckdb_neo::vector::{Arena, DuckDBBytes};
 ///
-/// fn encode(arena: &Arena) -> duckdb_neo::Result<DuckDBBytes> {
+/// fn encode(arena: &Arena) -> duckdb_neo::Result<DuckDBBytes<'_>> {
 ///     DuckDBBytes::new(arena, b"value")
 /// }
 /// ```
+///
+/// The encoded value cannot outlive its arena:
+///
+/// ```compile_fail
+/// use duckdb_neo::vector::{Arena, DuckDBBytes};
+///
+/// fn escape(arena: &Arena) -> duckdb_neo::Result<DuckDBBytes<'static>> {
+///     DuckDBBytes::new(arena, b"a value stored in the arena")
+/// }
+/// ```
+///
+/// Borrowed bytes prevent resizing the owning vector:
+///
+/// ```compile_fail,E0499
+/// use duckdb_neo::{Result, vector::Vector};
+///
+/// fn resize(vector: &mut Vector<'_, String>) -> Result<()> {
+///     let mut writer = vector.writer()?;
+///     let bytes = writer.arena()?.add_str("a value stored in the arena")?;
+///     vector.set_size(10)?;
+///     assert_eq!(bytes.get_data(), b"a value stored in the arena");
+///     Ok(())
+/// }
+/// ```
+///
+/// Nor can the writer replace storage while bytes are borrowed:
+///
+/// ```compile_fail,E0499
+/// use duckdb_neo::{Result, vector::Vector};
+///
+/// fn overwrite(vector: &mut Vector<'_, String>) -> Result<()> {
+///     let mut writer = vector.writer()?;
+///     let bytes = writer.arena()?.add_str("a value stored in the arena")?;
+///     writer.set(0, Some("replacement"))?;
+///     assert_eq!(bytes.get_data(), b"a value stored in the arena");
+///     Ok(())
+/// }
+/// ```
 #[repr(transparent)]
-pub struct DuckDBBytes {
+pub struct DuckDBBytes<'arena> {
     data: ffi::duckdb_v2_bytes,
+    _marker: PhantomData<&'arena ()>,
 }
 
-impl std::fmt::Debug for DuckDBBytes {
+impl std::fmt::Debug for DuckDBBytes<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DuckDBBytes")
             .field("size", &self.size())
@@ -37,22 +78,14 @@ impl std::fmt::Debug for DuckDBBytes {
 type DuckDBV2BytesUnion = ffi::duckdb_v2_bytes__bindgen_ty_1;
 type DuckDBV2BytesPointer = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_1;
 type DuckDBV2BytesInlined = ffi::duckdb_v2_bytes__bindgen_ty_1__bindgen_ty_2;
-impl DuckDBBytes {
+impl<'arena> DuckDBBytes<'arena> {
     /// Encode bytes in DuckDB's internal representation, copying long values into `arena`.
-    ///
-    /// # Safety
-    /// The arena's storage must remain alive and unchanged for every use of the returned value.
-    /// Resizing, flattening, or destroying its vector may invalidate that storage.
-    pub unsafe fn new(arena: &Arena, value: &[u8]) -> Result<Self> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { Self::from_parts(&[value], || Ok(arena)) }
+    pub fn new(arena: &'arena Arena, value: &[u8]) -> Result<Self> {
+        Self::from_parts(&[value], || Ok(arena))
     }
 
     #[inline(always)]
-    pub(crate) unsafe fn from_parts<'arena>(
-        parts: &[&[u8]],
-        arena: impl FnOnce() -> Result<&'arena Arena>,
-    ) -> Result<Self> {
+    pub(crate) fn from_parts(parts: &[&[u8]], arena: impl FnOnce() -> Result<&'arena Arena>) -> Result<Self> {
         let length = parts
             .iter()
             .try_fold(0u32, |length, part| length.checked_add(u32::try_from(part.len()).ok()?))
@@ -99,6 +132,7 @@ impl DuckDBBytes {
         };
         Ok(Self {
             data: ffi::duckdb_v2_bytes { value: encoded },
+            _marker: PhantomData,
         })
     }
 
@@ -146,6 +180,28 @@ mod tests {
     }
 
     #[test]
+    fn constructors_copy_their_inputs() -> Result<()> {
+        with_arena(|arena| {
+            for expected in ["", "héllo", "a longer string with 🦆"] {
+                let values = {
+                    let input = expected.to_owned();
+                    [
+                        DuckDBBytes::new(arena, input.as_bytes())?,
+                        arena.add_bytes(input.as_bytes())?,
+                        arena.add_str(&input)?,
+                        arena.add_strings(&["", &input, ""])?,
+                    ]
+                };
+                for value in values {
+                    assert_eq!(value.size(), expected.len());
+                    assert_eq!(value.get_data(), expected.as_bytes());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    #[test]
     fn parts_match_concatenation_and_prefix() -> Result<()> {
         with_arena(|arena| {
             let cases: &[&[&[u8]]] = &[
@@ -160,8 +216,7 @@ mod tests {
             ];
             for parts in cases {
                 let expected = parts.concat();
-                // SAFETY: Every encoded value is read before the arena can change.
-                let encoded = unsafe { arena.add_parts(parts)? };
+                let encoded = arena.add_parts(parts)?;
                 assert_eq!(encoded.size(), expected.len());
                 assert_eq!(encoded.get_data(), expected);
                 if expected.len() > ffi::DUCKDB_V2_BYTES_INLINE_LENGTH as usize {
@@ -179,8 +234,7 @@ mod tests {
             let encoded = {
                 let first = String::from("temporary input ");
                 let second = String::from("and suffix");
-                // SAFETY: The returned bytes belong to the arena, not the temporary inputs.
-                unsafe { arena.add_parts(&[first.as_bytes(), second.as_bytes()])? }
+                arena.add_parts(&[first.as_bytes(), second.as_bytes()])?
             };
             assert_eq!(encoded.get_data(), b"temporary input and suffix");
             Ok(())
@@ -192,8 +246,7 @@ mod tests {
         with_arena(|arena| {
             let fragment = vec![0u8; 1024 * 1024];
             let parts = vec![fragment.as_slice(); 4096];
-            // SAFETY: The value, if accepted, would be read within the arena's lifetime.
-            let error = unsafe { arena.add_parts(&parts) }.expect_err("4 GiB exceeds the encoded length");
+            let error = arena.add_parts(&parts).expect_err("4 GiB exceeds the encoded length");
             assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE);
             Ok(())
         })

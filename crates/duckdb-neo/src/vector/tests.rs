@@ -354,8 +354,7 @@ fn vector_writer_arena_writes_binary_bytes() -> crate::Result<()> {
             // SAFETY: Each slot is in bounds and its BLOB bytes belong to this vector.
             unsafe { data.add(index).write(arena.add_bytes(value)?) };
         }
-        // SAFETY: The returned bytes remain in this vector's arena until all reads finish.
-        let value = unsafe { super::DuckDBBytes::new(arena, b"direct constructor")? };
+        let value = super::DuckDBBytes::new(arena, b"direct constructor")?;
         assert_eq!(value.get_data(), b"direct constructor");
     }
     let reader = vector.reader()?;
@@ -442,8 +441,7 @@ fn vector_byte_backed_types_expose_arenas() -> crate::Result<()> {
         // SAFETY: The empty vector has no row initialization or descendant requirements.
         assert!(unsafe { writer.validity_mut() }.unwrap().is_empty());
         let arena = writer.arena()?;
-        // SAFETY: The encoded value is read before the vector or its arena can change.
-        let bytes = unsafe { arena.add_bytes(b"encoded storage")? };
+        let bytes = arena.add_bytes(b"encoded storage")?;
         assert_eq!(bytes.get_data(), b"encoded storage");
         Ok(())
     }
@@ -520,7 +518,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
     // SAFETY: Probe uses INTEGER's physical representation.
     unsafe impl VectorElement for Probe {
         const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
-        type Internal = i32;
+        type Internal<'a> = i32;
         type Ref<'a> = &'a i32;
 
         unsafe fn get<'a, U: VectorElement>(

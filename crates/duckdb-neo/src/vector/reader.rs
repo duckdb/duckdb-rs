@@ -66,7 +66,7 @@ impl Selection<'_> {
 /// ```
 pub struct VectorReader<'vec, T: VectorElement> {
     vector: &'vec Vector<'vec, T>,
-    data: *const T::Internal,
+    data: *const std::ffi::c_void,
     storage: ReaderStorage<'vec>,
 }
 
@@ -174,7 +174,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         };
         Self {
             vector,
-            data: view.as_ptr(),
+            data: view.view.data,
             storage,
         }
     }
@@ -204,8 +204,8 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// [`Self::validity`] before reading a slot. The pointer is invalidated when
     /// the vector is resized, reshaped, or destroyed.
     #[inline(always)]
-    pub fn as_ptr(&self) -> *const T::Internal {
-        self.data
+    pub fn as_ptr(&self) -> *const T::Internal<'vec> {
+        self.data.cast()
     }
 
     /// Borrow physical storage, or `None` when no data is exposed.
@@ -215,7 +215,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// including any intervening unselected slots.
     ///
     /// # Safety
-    /// Every exposed slot must be initialized as `T::Internal`, including NULL
+    /// Every exposed slot must be initialized as `T::Internal<'vec>`, including NULL
     /// and unselected slots. Use [`Self::as_ptr`] to read only known-valid slots.
     ///
     /// ```compile_fail,E0133
@@ -225,7 +225,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     ///     let _ = reader.as_slice();
     /// }
     /// ```
-    pub unsafe fn as_slice(&self) -> Option<&'vec [T::Internal]> {
+    pub unsafe fn as_slice(&self) -> Option<&'vec [T::Internal<'vec>]> {
         // SAFETY: The caller guarantees all physical slots are initialized.
         unsafe { self.view().as_slice() }
     }

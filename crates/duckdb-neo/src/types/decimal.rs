@@ -64,7 +64,7 @@ macro_rules! decimal_storage {
             unsafe impl VectorElement for $name {
                 const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-                type Internal = $type;
+                type Internal<'a> = $type;
 
                 type Ref<'a> = &'a $name;
 
@@ -240,7 +240,7 @@ where
 {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-    type Internal = <Width<WIDTH> as DecimalWidth>::Storage;
+    type Internal<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
 
     type Ref<'a> = &'a Self;
 

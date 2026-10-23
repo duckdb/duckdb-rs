@@ -63,7 +63,7 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
     // The storage integer depends on the column's width.
-    type Internal = ();
+    type Internal<'a> = ();
 
     type Ref<'a> = rust_decimal::Decimal;
 

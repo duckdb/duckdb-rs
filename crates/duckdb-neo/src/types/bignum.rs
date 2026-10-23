@@ -79,7 +79,7 @@ impl HasDuckDBBytes for BigNumValue {}
 unsafe impl VectorElement for BigNum {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal = BigNum;
+    type Internal<'a> = BigNum;
 
     type Ref<'a> = &'a BigNum;
 
@@ -152,7 +152,7 @@ impl FromValue for BigNumValue {
 unsafe impl VectorElement for BigNumValue {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal = BigNum;
+    type Internal<'a> = BigNum;
 
     type Ref<'a> = &'a BigNum;
 

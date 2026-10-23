@@ -77,7 +77,7 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
     where
         T: 'a;
 
-    type Internal = ();
+    type Internal<'a> = ();
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {

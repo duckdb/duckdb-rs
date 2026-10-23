@@ -128,48 +128,31 @@ impl Arena {
     }
 
     /// Encode bytes, storing short values inline and copying longer values into this arena.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
-    pub unsafe fn add_bytes(&self, value: &[u8]) -> Result<DuckDBBytes> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { DuckDBBytes::new(self, value) }
+    pub fn add_bytes<'a>(&'a self, value: &[u8]) -> Result<DuckDBBytes<'a>> {
+        DuckDBBytes::new(self, value)
     }
 
     /// Concatenate byte slices directly into inline storage or one arena allocation.
     ///
     /// No intermediate buffer is allocated. The combined length must fit in a `u32`.
     /// This does not validate UTF-8 or other logical-type encodings.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
     #[inline]
-    pub unsafe fn add_parts(&self, parts: &[&[u8]]) -> Result<DuckDBBytes> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { DuckDBBytes::from_parts(parts, || Ok(self)) }
+    pub fn add_parts<'a>(&'a self, parts: &[&[u8]]) -> Result<DuckDBBytes<'a>> {
+        DuckDBBytes::from_parts(parts, || Ok(self))
     }
 
     /// Concatenate UTF-8 string slices into inline storage or one arena allocation.
     ///
     /// The combined byte length must fit in a `u32`.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
     #[inline]
-    pub unsafe fn add_strings(&self, parts: &[&str]) -> Result<DuckDBBytes> {
+    pub fn add_strings<'a>(&'a self, parts: &[&str]) -> Result<DuckDBBytes<'a>> {
         let parts = parts.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
-
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { DuckDBBytes::from_parts(parts.as_slice(), || Ok(self)) }
+        DuckDBBytes::from_parts(parts.as_slice(), || Ok(self))
     }
 
     /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
-    pub unsafe fn add_str(&self, value: &str) -> Result<DuckDBBytes> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { self.add_bytes(value.as_bytes()) }
+    pub fn add_str<'a>(&'a self, value: &str) -> Result<DuckDBBytes<'a>> {
+        self.add_bytes(value.as_bytes())
     }
 }
 
