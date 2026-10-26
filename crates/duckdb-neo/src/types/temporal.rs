@@ -62,7 +62,7 @@ declare_storage_value!(
     "Days since 1970-01-01 represented as a DuckDB `DATE`.",
     DateValue,
     i32,
-    DUCKDB_V2_LOGICAL_TYPE_ID_DATE,
+    Date,
     Date,
     ffi::duckdb_v2_value_get_date,
     Hash,
@@ -73,7 +73,7 @@ declare_storage_value!(
     "Microseconds since midnight represented as a DuckDB `TIME`.",
     TimeValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIME,
+    Time,
     Time,
     ffi::duckdb_v2_value_get_time,
     Hash,
@@ -84,7 +84,7 @@ declare_storage_value!(
     "Nanoseconds since midnight represented as a DuckDB `TIME_NS`.",
     TimeNsValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS,
+    TimeNs,
     TimeNs,
     ffi::duckdb_v2_value_get_time_ns,
     Hash,
@@ -95,7 +95,7 @@ declare_storage_value!(
     "Packed `TIME_TZ`: microseconds in the high 40 bits, reverse-ordered UTC offset in the low 24.",
     TimeTzValue,
     u64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ,
+    TimeTz,
     TimeTz,
     ffi::duckdb_v2_value_get_time_tz
 );
@@ -103,7 +103,7 @@ declare_storage_value!(
     "Microseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP`.",
     TimestampValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP,
+    Timestamp,
     Timestamp,
     ffi::duckdb_v2_value_get_timestamp,
     Hash,
@@ -114,7 +114,7 @@ declare_storage_value!(
     "Seconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_SEC`.",
     TimestampSecValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC,
+    TimestampSec,
     TimestampSec,
     ffi::duckdb_v2_value_get_timestamp_sec,
     Hash,
@@ -125,7 +125,7 @@ declare_storage_value!(
     "Milliseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_MS`.",
     TimestampMsValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS,
+    TimestampMs,
     TimestampMs,
     ffi::duckdb_v2_value_get_timestamp_ms,
     Hash,
@@ -136,7 +136,7 @@ declare_storage_value!(
     "Nanoseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_NS`.",
     TimestampNsValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS,
+    TimestampNs,
     TimestampNs,
     ffi::duckdb_v2_value_get_timestamp_ns,
     Hash,
@@ -147,7 +147,7 @@ declare_storage_value!(
     "UTC microseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_TZ`.",
     TimestampTzValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ,
+    TimestampTz,
     TimestampTz,
     ffi::duckdb_v2_value_get_timestamp_tz,
     Hash,
@@ -158,7 +158,7 @@ declare_storage_value!(
     "UTC nanoseconds since 1970-01-01 represented as a DuckDB `TIMESTAMP_TZ_NS`.",
     TimestampTzNsValue,
     i64,
-    DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS,
+    TimestampTzNs,
     TimestampTzNs,
     ffi::duckdb_v2_value_get_timestamp_tz_ns,
     Hash,
@@ -204,7 +204,7 @@ pub struct IntervalValue {
 
 impl DuckDBType for IntervalValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Interval, Parameters::None)
     }
 }
 
@@ -228,7 +228,7 @@ impl FromValue for IntervalValue {
     }
 }
 
-declare_vector_element!(IntervalValue, DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL);
+declare_vector_element!(IntervalValue, Interval);
 
 // SAFETY: every field combination is a valid `INTERVAL`.
 unsafe impl WritableVectorElement for IntervalValue {

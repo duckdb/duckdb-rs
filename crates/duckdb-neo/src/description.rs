@@ -182,20 +182,14 @@ mod tests {
 
         assert!(!id_col.has_default()?);
         assert!(!id_col.has_generated()?);
-        assert_eq!(
-            id_col.logical_type()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-        );
+        assert_eq!(id_col.logical_type()?.id()?, LogicalTypeID::Integer);
         assert_eq!(id_col.name()?, "id");
 
         let name = &columns[1];
 
         assert!(name.has_default()?);
         assert!(!name.has_generated()?);
-        assert_eq!(
-            name.logical_type()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
-        );
+        assert_eq!(name.logical_type()?.id()?, LogicalTypeID::Varchar);
         assert_eq!(name.name()?, "name");
 
         let td = &columns[2];

@@ -18,6 +18,7 @@ use crate::{
         PushdownData, TableClaimBatchCallbacks, TableFilterPushdownCallbacks, TableFunctionBuilder,
         TableFunctionCallbacks, TablePartitionInfo, TablePartitioningCallbacks,
     },
+    types::HugeInt,
 };
 
 #[test]
@@ -53,7 +54,7 @@ fn test_table_function() -> Result<()> {
 
             let val = &arg.value;
 
-            assert_eq!(arg.logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+            assert_eq!(arg.logical_type.id()?, LogicalTypeID::Integer);
             assert_eq!(val.as_ref().unwrap().dbg_string()?, "10");
 
             bind_handle.add_result_column("out", &i32::logical_type(context)?)?;
@@ -433,10 +434,13 @@ fn test_table_function_partitioning() -> Result<()> {
 
     while let Some(chunk) = result.next_chunk()? {
         let parts = chunk.get_vector_at::<i32>(0)?.reader()?;
-        let sums = chunk.get_vector_at::<i128>(1)?.reader()?;
+        let sums = chunk.get_vector_at::<HugeInt>(1)?.reader()?;
 
         for row in 0..parts.len() {
-            rows.push((*parts.get(row)?.unwrap(), *sums.get(row)?.unwrap()));
+            rows.push((
+                *parts.get(row)?.unwrap(),
+                crate::value::from_hugeint(*sums.get(row)?.unwrap()),
+            ));
         }
     }
 

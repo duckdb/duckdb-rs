@@ -34,10 +34,7 @@ impl CopyToFunctionCallbacks for RapidCopy {
     fn bind(&self, _context: &Context, column_info: &super::CopyToBindInfo) -> crate::Result<Self::BindData> {
         assert_eq!(column_info.len()?, 1);
         assert_eq!(column_info.get_column(0)?.0, "i");
-        assert_eq!(
-            column_info.get_column(0)?.1.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
-        );
+        assert_eq!(column_info.get_column(0)?.1.id()?, LogicalTypeID::BigInt);
 
         Ok(10)
     }
@@ -381,10 +378,7 @@ impl CopyFromFunctionCallbacks for RangeSource {
     ) -> crate::Result<(Self::BindData, Option<CopyFromCardinality>)> {
         assert_eq!(bind_info.column_count()?, 1);
         assert_eq!(bind_info.get_column(0)?.0, "i");
-        assert_eq!(
-            bind_info.get_column(0)?.1.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT
-        );
+        assert_eq!(bind_info.get_column(0)?.1.id()?, LogicalTypeID::BigInt);
 
         Ok((
             (),

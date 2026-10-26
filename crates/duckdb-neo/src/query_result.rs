@@ -586,7 +586,7 @@ mod tests {
 
         let result = conn.query("SELECT * FROM range(3)", Parameters::None)?;
         let error = result.to_text(0, 0, 0, 2, 0).unwrap_err();
-        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(error.code, DuckDBError::InputInvalid);
 
         let chunk = conn.query("SELECT 42", Parameters::None)?.next_chunk()?.unwrap();
         assert_eq!(chunk.get_vector_at::<i32>(0)?.reader()?.get(0)?, Some(&42));

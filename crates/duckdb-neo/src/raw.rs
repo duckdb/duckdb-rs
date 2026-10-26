@@ -107,7 +107,7 @@ mod tests {
         let raw = unsafe { logical_type.get_raw() };
         std::mem::forget(logical_type);
         let logical_type = unsafe { LogicalType::from_raw(raw) };
-        assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
+        assert_eq!(logical_type.id()?, LogicalTypeID::BigInt);
 
         let collection = ColumnDataCollection::new(&conn, [i64::logical_type(&conn)?])?;
         assert!(!unsafe { collection.get_raw() }.is_null());

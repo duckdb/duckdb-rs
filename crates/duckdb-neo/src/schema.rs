@@ -33,7 +33,7 @@ use crate::{AsRaw, DropHandle, FromRaw, Result, check_api_call, logical_type::Lo
 /// assert_eq!(name, "answer");
 /// assert_eq!(
 ///     logical_type.id()?,
-///     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+///     LogicalTypeID::Integer
 /// );
 /// # Ok(())
 /// # }

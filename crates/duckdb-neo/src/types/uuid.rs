@@ -10,6 +10,7 @@
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::ffi;
+use crate::types::HugeInt;
 use crate::vector::VectorElement;
 use crate::{
     Parameters, Result, check_api_call,
@@ -42,7 +43,7 @@ impl UuidValueRaw {
 
 impl DuckDBType for UuidValueRaw {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Uuid, Parameters::None)
     }
 }
 
@@ -61,9 +62,9 @@ impl FromValue for UuidValueRaw {
 
 // SAFETY: `UuidValueRaw` has the size and bit layout of DuckDB's UUID storage.
 unsafe impl VectorElement for UuidValueRaw {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-    type Internal = ffi::duckdb_v2_hugeint_t;
+    type Internal<'a> = HugeInt;
 
     type Ref<'a>
         = &'a UuidValueRaw
@@ -171,9 +172,9 @@ mod external {
 
     // SAFETY: same storage as `UuidValueRaw`.
     unsafe impl VectorElement for Uuid {
-        const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UUID;
+        const TYPE_ID: LogicalTypeID = LogicalTypeID::Uuid;
 
-        type Internal = UuidValueRaw;
+        type Internal<'a> = UuidValueRaw;
 
         type Ref<'a> = Uuid;
 
