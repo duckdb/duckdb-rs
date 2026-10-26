@@ -482,9 +482,9 @@ mod tests {
 
         for sql in ["", "  ;  ", "SELECT 1; SELECT 2"] {
             let error = conn.execute(sql, Parameters::None).unwrap_err();
-            assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+            assert_eq!(error.code, DuckDBError::InputInvalid);
             let error = conn.query(sql, Parameters::None).unwrap_err();
-            assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+            assert_eq!(error.code, DuckDBError::InputInvalid);
         }
         assert!(conn.parse("SELECT '\0'").is_err());
 
@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(
             conn.common_type(&[i16::logical_type(&conn)?, i32::logical_type(&conn)?])?
                 .id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+            LogicalTypeID::Integer
         );
 
         assert!(
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(
             conn.common_type(&[bool::logical_type(&conn)?, u64::logical_type(&conn)?])?
                 .id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT
+            LogicalTypeID::UBigInt
         );
 
         let common_text = |types: &[&str]| -> crate::Result<String> {
@@ -671,9 +671,9 @@ mod tests {
         assert_eq!(common_text(&["VARCHAR"])?, "VARCHAR");
 
         let error = conn.common_type(&[]).unwrap_err();
-        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(error.code, DuckDBError::InputInvalid);
         let error = common_text(&["INTEGER[]", "INTEGER"]).unwrap_err();
-        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_QUERY_NOT_IMPLEMENTED);
+        assert_eq!(error.code, DuckDBError::QueryNotImplemented);
 
         Ok(())
     }

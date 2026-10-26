@@ -96,7 +96,7 @@ fn vector_decimal_mismatch_reports_parameters() -> crate::Result<()> {
 }
 
 #[test]
-fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
+fn vector_writer_allocates_validity_mask() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
@@ -104,7 +104,7 @@ fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
     vector.set_size(1)?;
     assert!(vector.reader().unwrap().validity().is_none());
     vector.writer()?.set(0, Some(42))?;
-    assert!(vector.reader().unwrap().validity().is_none());
+    assert!(vector.reader().unwrap().validity().is_some());
     assert_eq!(vector.reader()?.get(0)?, Some(&42));
     vector.writer()?.set(0, None)?;
     assert!(vector.reader().unwrap().validity().is_some());
@@ -125,31 +125,27 @@ fn vector_writer_unchecked_updates_validity_after_reshape() -> crate::Result<()>
         // SAFETY: The writable flat vector has 65 rows.
         unsafe { vector.writer()?.set_unchecked(index, Some(index as i32))? };
     }
-    assert!(vector.reader()?.validity().is_none());
+    assert!(vector.reader()?.validity().is_some());
     // SAFETY: Both rows are within the writable flat vector.
     unsafe {
         vector.writer()?.set_unchecked(0, None)?;
         vector.writer()?.set_unchecked(64, None)?;
     }
-    assert!(vector.validity_writable);
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, None);
     assert_eq!(reader.get(64)?, None);
     vector.set_size(4097)?;
-    assert!(!vector.validity_writable);
     // SAFETY: Resizing retained writable flat storage; all indices are in bounds.
     unsafe {
         vector.writer()?.set_unchecked(0, Some(42))?;
         vector.writer()?.set_unchecked(64, Some(64))?;
         vector.writer()?.set_unchecked(4096, None)?;
     }
-    assert!(vector.validity_writable);
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, Some(&42));
     assert_eq!(reader.get(64)?, Some(&64));
     assert_eq!(reader.get(4096)?, None);
     vector.write_value_slow(0, Value::null(&conn, &i32::logical_type(&conn)?)?)?;
-    assert!(!vector.validity_writable);
     // SAFETY: The value write preserved the writable flat row.
     unsafe { vector.writer()?.set_unchecked(0, Some(7))? };
     assert_eq!(vector.reader()?.get(0)?, Some(&7));
@@ -240,7 +236,14 @@ fn vector_writer_initializes_and_preserves_validity_mask() -> crate::Result<()> 
     for index in 0..vector.len() {
         vector.writer()?.set(index, Some(index as i32))?;
     }
-    assert!(vector.reader()?.validity().is_none());
+    assert!(
+        vector
+            .reader()?
+            .validity()
+            .unwrap()
+            .iter()
+            .all(|word| *word == u64::MAX)
+    );
 
     {
         let mut view = vector.writer()?;
@@ -354,8 +357,7 @@ fn vector_writer_arena_writes_binary_bytes() -> crate::Result<()> {
             // SAFETY: Each slot is in bounds and its BLOB bytes belong to this vector.
             unsafe { data.add(index).write(arena.add_bytes(value)?) };
         }
-        // SAFETY: The returned bytes remain in this vector's arena until all reads finish.
-        let value = unsafe { super::DuckDBBytes::new(arena, b"direct constructor")? };
+        let value = super::DuckDBBytes::new(arena, b"direct constructor")?;
         assert_eq!(value.get_data(), b"direct constructor");
     }
     let reader = vector.reader()?;
@@ -442,8 +444,7 @@ fn vector_byte_backed_types_expose_arenas() -> crate::Result<()> {
         // SAFETY: The empty vector has no row initialization or descendant requirements.
         assert!(unsafe { writer.validity_mut() }.unwrap().is_empty());
         let arena = writer.arena()?;
-        // SAFETY: The encoded value is read before the vector or its arena can change.
-        let bytes = unsafe { arena.add_bytes(b"encoded storage")? };
+        let bytes = arena.add_bytes(b"encoded storage")?;
         assert_eq!(bytes.get_data(), b"encoded storage");
         Ok(())
     }
@@ -519,8 +520,8 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
 
     // SAFETY: Probe uses INTEGER's physical representation.
     unsafe impl VectorElement for Probe {
-        const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER;
-        type Internal = i32;
+        const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
+        type Internal<'a> = i32;
         type Ref<'a> = &'a i32;
 
         unsafe fn get<'a, U: VectorElement>(
@@ -566,7 +567,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
                 .message,
             "element writer called"
         );
-        assert!(vector.reader()?.validity().is_none());
+        assert_eq!(vector.reader()?.validity().unwrap(), [u64::MAX]);
         for index in [1, usize::MAX] {
             for value in [Some(()), None] {
                 let err = vector.writer()?.set(index, value).unwrap_err();
@@ -1356,10 +1357,7 @@ pub fn test_vector_union() -> crate::Result<()> {
     let last = reader.next().unwrap().unwrap();
     assert_eq!(last.get::<String>(1)?, Some("three"));
     // The wrong member type must be rejected.
-    assert_eq!(
-        last.get::<i32>(1).unwrap_err().code,
-        DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID
-    );
+    assert_eq!(last.get::<i32>(1).unwrap_err().code, DuckDBError::InputInvalid);
     Ok(())
 }
 
@@ -1704,6 +1702,50 @@ pub fn vector_test_bignum() -> crate::Result<()> {
 }
 
 #[test]
+fn vector_hugeint_ffi_storage() -> crate::Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+    macro_rules! assert_hugeint_storage {
+        ($primitive:ty, $storage:ident, $inputs:expr) => {{
+            let inputs: &[$primitive] = &$inputs;
+            let mut output = DataChunk::create(&conn, &[<$primitive>::logical_type(&conn)?], true)?;
+            let mut vector = output.get_vector_at_mut::<crate::ffi::$storage>(0)?;
+            vector.set_size(inputs.len() + 1)?;
+
+            for (index, &input) in inputs.iter().enumerate() {
+                let expected = crate::ffi::$storage {
+                    lower: input as u64,
+                    upper: (input >> 64) as _,
+                };
+                let mut result = conn.query("SELECT $1", Parameters::positional(&[&input]))?;
+                let chunk = result.next_chunk()?.unwrap();
+                let source = chunk.get_vector_at::<crate::ffi::$storage>(0)?;
+                let reader = source.reader()?;
+                let raw = reader.get(0)?.unwrap();
+                assert_eq!((raw.lower, raw.upper), (expected.lower, expected.upper));
+
+                vector.writer()?.set(index, Some(expected))?;
+                let raw = vector.reader()?.get(index)?.unwrap();
+                assert_eq!((raw.lower, raw.upper), (expected.lower, expected.upper));
+                assert_eq!(vector.get_value_slow(index)?.get::<$primitive>()?, Some(input));
+            }
+            vector.writer()?.set(inputs.len(), None)?;
+            assert!(vector.reader()?.get(inputs.len())?.is_none());
+            assert!(vector.get_value_slow(inputs.len())?.is_null()?);
+        }};
+    }
+
+    assert_hugeint_storage!(
+        i128,
+        duckdb_v2_hugeint_t,
+        [i128::MIN, -(1i128 << 64) - 1, -1, 0, (1i128 << 64) + 1, i128::MAX]
+    );
+    assert_hugeint_storage!(u128, duckdb_v2_uhugeint_t, [0, 1, (1u128 << 64) + 1, u128::MAX]);
+    Ok(())
+}
+
+#[test]
 pub fn vector_value_types() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
@@ -2043,12 +2085,12 @@ pub fn test_vector_set_value() -> crate::Result<()> {
         output.set_size(input.row_count()?)?;
         let vector = input.get_untyped_vector_at(0)?;
         let logical_type = vector.logical_type().id()?;
-        let integers = if logical_type == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER {
+        let integers = if logical_type == LogicalTypeID::Integer {
             Some(vector.cast_ref::<i32>()?.reader()?)
         } else {
             None
         };
-        let booleans = if logical_type == LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN {
+        let booleans = if logical_type == LogicalTypeID::Boolean {
             Some(vector.cast_ref::<bool>()?.reader()?)
         } else {
             None
@@ -2885,7 +2927,7 @@ fn test_vector_cast_fails() -> crate::Result<()> {
             Parameters::Positional(&[&vec![Some("10"), Some("abc"), None]]),
         )
         .unwrap_err();
-    assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION);
+    assert_eq!(error.code, DuckDBError::TypeConversion);
     assert!(
         error.message.contains("Could not convert string 'abc' to INT64"),
         "{error}"

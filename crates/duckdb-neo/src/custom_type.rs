@@ -91,7 +91,7 @@ mod tests {
         let temperature = LogicalType::from_text(&conn, "TEMPERATURE")?;
 
         assert_eq!(temperature.to_text()?, "TEMPERATURE");
-        assert_eq!(temperature.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
+        assert_eq!(temperature.id()?, LogicalTypeID::Integer);
 
         Ok(())
     }

@@ -73,12 +73,10 @@ pub(crate) enum TypeMetadata {
 impl TypeMetadata {
     fn read(logical_type: &LogicalType) -> Result<Self> {
         Ok(match logical_type.id()? {
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY => Self::Array {
+            LogicalTypeID::Array => Self::Array {
                 size: crate::types::array::array_size(logical_type)?,
             },
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL => {
-                Self::Decimal(DecimalSignature::from_logical_type(logical_type)?)
-            }
+            LogicalTypeID::Decimal => Self::Decimal(DecimalSignature::from_logical_type(logical_type)?),
             _ => Self::None,
         })
     }
@@ -130,48 +128,30 @@ impl Arena {
     }
 
     /// Encode bytes, storing short values inline and copying longer values into this arena.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
-    pub unsafe fn add_bytes(&self, value: &[u8]) -> Result<DuckDBBytes> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { DuckDBBytes::new(self, value) }
+    pub fn add_bytes<'a>(&'a self, value: &[u8]) -> Result<DuckDBBytes<'a>> {
+        DuckDBBytes::new(self, value)
     }
 
     /// Concatenate byte slices directly into inline storage or one arena allocation.
     ///
-    /// No intermediate buffer is allocated. The combined length must fit in a `u32`.
+    /// The combined length must fit in a `u32`.
     /// This does not validate UTF-8 or other logical-type encodings.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
     #[inline]
-    pub unsafe fn add_parts(&self, parts: &[&[u8]]) -> Result<DuckDBBytes> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { DuckDBBytes::from_parts(parts, || Ok(self)) }
+    pub fn add_parts<'a>(&'a self, parts: &[&[u8]]) -> Result<DuckDBBytes<'a>> {
+        DuckDBBytes::from_parts(parts, || Ok(self))
     }
 
     /// Concatenate UTF-8 string slices into inline storage or one arena allocation.
     ///
     /// The combined byte length must fit in a `u32`.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
     #[inline]
-    pub unsafe fn add_strings(&self, parts: &[&str]) -> Result<DuckDBBytes> {
-        let parts = parts.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
-
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { DuckDBBytes::from_parts(parts.as_slice(), || Ok(self)) }
+    pub fn add_strings<'a>(&'a self, parts: &[&str]) -> Result<DuckDBBytes<'a>> {
+        DuckDBBytes::from_parts(parts, || Ok(self))
     }
 
     /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.
-    ///
-    /// # Safety
-    /// The arena's storage must outlive every use of the returned value.
-    pub unsafe fn add_str(&self, value: &str) -> Result<DuckDBBytes> {
-        // SAFETY: The caller guarantees the arena's storage lifetime.
-        unsafe { self.add_bytes(value.as_bytes()) }
+    pub fn add_str<'a>(&'a self, value: &str) -> Result<DuckDBBytes<'a>> {
+        self.add_bytes(value.as_bytes())
     }
 }
 
@@ -234,7 +214,6 @@ pub struct Vector<'a, T: VectorElement> {
     kind: StorageKind,
     len: usize,
     heap: Option<Arena>,
-    validity_writable: bool,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     metadata: TypeMetadata,
@@ -276,7 +255,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             view,
             access,
             heap: None,
-            validity_writable: false,
             children,
             metadata: params,
             _chunk: PhantomData,
@@ -345,7 +323,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.children.as_ref()
     }
 
-    /// Prepare exclusive write access without flattening or allocating a validity mask.
+    /// Prepare exclusive write access and allocate a writable validity mask.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
     /// before acquiring its writer.
@@ -374,7 +352,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
         self.heap = None;
-        self.validity_writable = false;
         if let Some(children) = &mut self.children {
             children.evict_all();
         }
@@ -390,7 +367,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             view: self.view.map(|view| view.cast_owned::<U>()),
             access: self.access,
             heap: self.heap,
-            validity_writable: self.validity_writable,
             children: self.children,
             metadata: self.metadata,
             _chunk: self._chunk,
@@ -442,8 +418,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         let row_error = if cast_err.is_null() {
             None
         } else {
-            let error =
-                unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, &mut cast_err) };
+            let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
             Some(error)
         };
         Ok((Self::from_handle(&self.handle, self.access)?, row_error))

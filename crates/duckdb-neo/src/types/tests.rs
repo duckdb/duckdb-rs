@@ -33,10 +33,7 @@ fn test_i32_to_value() -> crate::Result<()> {
 
     let value = 42_i32.value(&conn)?;
 
-    assert_eq!(
-        value.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-    );
+    assert_eq!(value.logical_type()?.id()?, LogicalTypeID::Integer);
     assert_eq!(value.dbg_string()?, "42");
 
     Ok(())
@@ -58,19 +55,19 @@ fn test_primitive_logical_types() -> crate::Result<()> {
         };
     }
 
-    assert_primitive!(bool, true, DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN);
-    assert_primitive!(u8, 1, DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT);
-    assert_primitive!(i8, 1, DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT);
-    assert_primitive!(i16, 1, DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT);
-    assert_primitive!(i32, 1, DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER);
-    assert_primitive!(i64, 1, DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT);
-    assert_primitive!(u16, 1, DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT);
-    assert_primitive!(u32, 1, DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER);
-    assert_primitive!(u64, 1, DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT);
-    assert_primitive!(f32, 1.0, DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT);
-    assert_primitive!(f64, 1.0, DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE);
-    assert_primitive!(i128, 1, DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT);
-    assert_primitive!(u128, 1, DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT);
+    assert_primitive!(bool, true, Boolean);
+    assert_primitive!(u8, 1, UTinyInt);
+    assert_primitive!(i8, 1, TinyInt);
+    assert_primitive!(i16, 1, SmallInt);
+    assert_primitive!(i32, 1, Integer);
+    assert_primitive!(i64, 1, BigInt);
+    assert_primitive!(u16, 1, USmallInt);
+    assert_primitive!(u32, 1, UInteger);
+    assert_primitive!(u64, 1, UBigInt);
+    assert_primitive!(f32, 1.0, Float);
+    assert_primitive!(f64, 1.0, Double);
+    assert_primitive!(i128, 1, HugeInt);
+    assert_primitive!(u128, 1, UHugeInt);
 
     Ok(())
 }
@@ -90,33 +87,30 @@ fn test_remaining_value_creators() -> crate::Result<()> {
         };
     }
 
-    assert_type!(BlobValue([0_u8, 1, 2].into()), DUCKDB_V2_LOGICAL_TYPE_ID_BLOB);
-    assert_type!(BitValue([0_u8, 0b1010_1010].into()), DUCKDB_V2_LOGICAL_TYPE_ID_BIT);
-    assert_type!(DateValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_DATE);
-    assert_type!(TimeValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME);
-    assert_type!(TimeNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS);
-    assert_type!(TimeTzValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ);
-    assert_type!(TimestampValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP);
-    assert_type!(TimestampSecValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC);
-    assert_type!(TimestampMsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS);
-    assert_type!(TimestampNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS);
-    assert_type!(TimestampTzValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ);
-    assert_type!(TimestampTzNsValue(1), DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS);
+    assert_type!(BlobValue([0_u8, 1, 2].into()), Blob);
+    assert_type!(BitValue([0_u8, 0b1010_1010].into()), Bit);
+    assert_type!(DateValue(1), Date);
+    assert_type!(TimeValue(1), Time);
+    assert_type!(TimeNsValue(1), TimeNs);
+    assert_type!(TimeTzValue(1), TimeTz);
+    assert_type!(TimestampValue(1), Timestamp);
+    assert_type!(TimestampSecValue(1), TimestampSec);
+    assert_type!(TimestampMsValue(1), TimestampMs);
+    assert_type!(TimestampNsValue(1), TimestampNs);
+    assert_type!(TimestampTzValue(1), TimestampTz);
+    assert_type!(TimestampTzNsValue(1), TimestampTzNs);
     assert_type!(
         IntervalValue {
             months: 1,
             days: 2,
             micros: 3,
         },
-        DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL
+        Interval
     );
-    assert_type!(UuidValueRaw(0), DUCKDB_V2_LOGICAL_TYPE_ID_UUID);
+    assert_type!(UuidValueRaw(0), Uuid);
 
     let tuple = (42_i32, "duck").value(&conn)?;
-    assert_eq!(
-        tuple.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
-    );
+    assert_eq!(tuple.logical_type()?.id()?, LogicalTypeID::Tuple);
     assert_eq!(tuple.dbg_string()?, "(42, duck)");
     assert_eq!(().value(&conn)?.dbg_string()?, "()");
 
@@ -134,10 +128,7 @@ fn test_binary_value_creators() -> crate::Result<()> {
     let conn = instance.connect()?;
 
     let empty_blob = BlobValue(Vec::<u8>::new()).value(&conn)?;
-    assert_eq!(
-        empty_blob.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB
-    );
+    assert_eq!(empty_blob.logical_type()?.id()?, LogicalTypeID::Blob);
 
     let blob = BlobValue([0_u8, 1, 255].into()).value(&conn)?;
     assert_eq!(blob.dbg_string()?, "\\x00\\x01\\xFF");
@@ -209,10 +200,7 @@ fn test_uuid_and_tuple_value_creators() -> crate::Result<()> {
     let null = Value::null(&conn, &logical_type)?;
     drop(logical_type);
     assert!(null.is_null()?);
-    assert_eq!(
-        null.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-    );
+    assert_eq!(null.logical_type()?.id()?, LogicalTypeID::Integer);
 
     Ok(())
 }
@@ -340,20 +328,14 @@ fn test_nullable_and_type_value_getters() -> crate::Result<()> {
 
     let null = i32::null_value(&conn)?;
     assert_eq!(null.get::<i32>()?, None);
-    assert_eq!(
-        null.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-    );
+    assert_eq!(null.logical_type()?.id()?, LogicalTypeID::Integer);
 
     let optional_null = Option::<i32>::None.value(&conn)?;
     assert_eq!(optional_null.get::<i32>()?, None);
 
     let integer = i32::logical_type(&conn)?;
     let type_value = integer.value(&conn)?;
-    assert_eq!(
-        type_value.get::<LogicalType>()?.unwrap().id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-    );
+    assert_eq!(type_value.get::<LogicalType>()?.unwrap().id()?, LogicalTypeID::Integer);
 
     Ok(())
 }
@@ -368,10 +350,10 @@ fn test_list_to_value() -> crate::Result<()> {
     let value = values.value(&conn)?;
     let logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
 
-    assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST);
+    assert_eq!(logical_type.id()?, LogicalTypeID::List);
     assert_eq!(
         logical_type.get_param(0)?.1.type_value_get_inner()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+        LogicalTypeID::Integer
     );
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
 
@@ -388,7 +370,7 @@ fn test_array_to_value() -> crate::Result<()> {
     let value = values.value(&conn)?;
     let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
 
-    assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY);
+    assert_eq!(logical_type.id()?, LogicalTypeID::Array);
     assert_eq!(logical_type.to_text()?, "INTEGER[3]");
     assert_eq!(value.dbg_string()?, "[1, NULL, 3]");
 
@@ -478,17 +460,11 @@ fn test_complex_values() -> crate::Result<()> {
     assert!(wrong_type.value(&conn).is_err());
 
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
-    assert_eq!(
-        union.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
-    );
+    assert_eq!(union.logical_type()?.id()?, LogicalTypeID::Union);
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;
-    assert_eq!(
-        variant.logical_type()?.id()?,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT
-    );
+    assert_eq!(variant.logical_type()?.id()?, LogicalTypeID::Variant);
 
     Ok(())
 }

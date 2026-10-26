@@ -58,7 +58,7 @@ macro_rules! declare_bignum_type {
     ($type:ty) => {
         impl DuckDBType for $type {
             fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-                link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM, Parameters::None)
+                link.logical_type_create_from_id(LogicalTypeID::BigNum, Parameters::None)
             }
         }
     };
@@ -77,9 +77,9 @@ impl HasDuckDBBytes for BigNumValue {}
 
 // SAFETY: `BigNum` matches DuckDB's string storage for `BIGNUM`.
 unsafe impl VectorElement for BigNum {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal = BigNum;
+    type Internal<'a> = BigNum;
 
     type Ref<'a> = &'a BigNum;
 
@@ -133,7 +133,7 @@ impl ToValue for BigNumValue {
 impl FromValue for BigNumValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM {
+        if logical_type.id()? != LogicalTypeID::BigNum {
             return Err(Error::invalid_input(format!(
                 "Expected BIGNUM value, found {}",
                 logical_type.to_text()?
@@ -150,9 +150,9 @@ impl FromValue for BigNumValue {
 // TODO: Review if needed..
 // SAFETY: same storage as `BigNum`.
 unsafe impl VectorElement for BigNumValue {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::BigNum;
 
-    type Internal = BigNum;
+    type Internal<'a> = BigNum;
 
     type Ref<'a> = &'a BigNum;
 

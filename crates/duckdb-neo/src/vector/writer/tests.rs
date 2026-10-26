@@ -5,13 +5,13 @@ use crate::{
     environment::{Environment, StorageLocation},
     scalar::ScalarFunctionBuilder,
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Array, DuckDBType, List, Struct, StructWrite, Variant},
+    types::{Array, BlobValue, DuckDBType, List, Struct, StructWrite, UncheckedString, Variant},
     value::Value,
     vector::{StorageKind, Unknown, VectorWriter},
 };
 
 #[test]
-fn writer_sets_values_and_preserves_lazy_validity() -> Result<()> {
+fn writer_sets_values_with_preallocated_validity() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
@@ -21,18 +21,19 @@ fn writer_sets_values_and_preserves_lazy_validity() -> Result<()> {
         let mut writer: VectorWriter<'_, '_, i32> = vector.writer()?;
         assert_eq!(writer.len(), 2);
         assert!(!writer.is_empty());
-        assert!(writer.validity().is_none());
+        let validity = unsafe { writer.validity_mut() }.unwrap().as_ptr();
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0], u64::MAX);
         assert!(writer.set(2, Some(99)).is_err());
         assert!(writer.set(usize::MAX, None).is_err());
-        assert!(writer.validity().is_none());
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap().as_ptr(), validity);
         writer.set(0, Some(42))?;
         // SAFETY: Row one is within the writer's two rows.
         unsafe { writer.set_unchecked(1, Some(7))? };
-        assert!(writer.validity().is_none());
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap().as_ptr(), validity);
         writer.set(0, None)?;
-        assert_eq!(writer.validity().unwrap()[0] & 1, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
         writer.set(0, Some(43))?;
-        assert_eq!(writer.validity().unwrap()[0] & 1, 1);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 1);
     }
     assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&43), Some(&7)]);
     Ok(())
@@ -76,7 +77,7 @@ fn writer_raw_data_and_manual_validity_cover_word_boundaries() -> Result<()> {
                 for index in 0..count {
                     data.add(index).write(index as i32);
                 }
-                assert!(writer.validity().unwrap().iter().all(|word| *word == 0));
+                assert!(writer.validity_mut().unwrap().iter().all(|word| *word == 0));
                 let mask = writer.validity_mut()?;
                 assert_eq!(mask.len(), count.div_ceil(64));
                 for index in 0..count {
@@ -115,7 +116,7 @@ fn writer_mutable_slice_preserves_validity() -> Result<()> {
         writer.set(1, None)?;
         // SAFETY: Every physical slot was initialized before clearing validity.
         unsafe { writer.as_slice_mut() }.unwrap().copy_from_slice(&[10, 20, 30]);
-        assert_eq!(writer.validity().unwrap()[0] & 2, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 2, 0);
     }
     assert_eq!(
         vector.reader()?.iter().collect::<Vec<_>>(),
@@ -188,6 +189,73 @@ fn writer_encodes_raw_strings_in_its_own_arena() -> Result<()> {
 }
 
 #[test]
+fn writer_sets_string_parts() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[String::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<String>(0)?;
+    let cases: &[Option<&[&str]>] = &[
+        Some(&[]),
+        Some(&["hello", " ", "world"]),
+        Some(&["1234", "", "56789012"]),
+        Some(&["a", "", "bc", "defghijklm"]),
+        Some(&["héllo", "\0", " 🦆"]),
+        None,
+    ];
+    vector.set_size(cases.len())?;
+    {
+        let mut writer = vector.writer()?;
+        assert!(writer.set_parts(cases.len(), None).is_err());
+        for (index, parts) in cases.iter().enumerate() {
+            writer.set_parts(index, *parts)?;
+        }
+    }
+    let reader = vector.reader()?;
+    for (index, parts) in cases.iter().enumerate() {
+        assert_eq!(reader.get(index)?, parts.map(|parts| parts.concat()).as_deref());
+    }
+    drop(vector);
+    let mut vector = chunk.get_vector_at_mut::<UncheckedString>(0)?;
+    vector.writer()?.set_parts(0, None)?;
+    assert_eq!(vector.reader()?.get(0)?, None);
+    vector.writer()?.set_parts(0, Some(&["hello", " again"]))?;
+    assert_eq!(vector.reader()?.get(0)?, Some("hello again"));
+    Ok(())
+}
+
+#[test]
+fn writer_sets_blob_parts() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[BlobValue::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<BlobValue>(0)?;
+    let cases: &[Option<&[&[u8]]>] = &[
+        Some(&[]),
+        Some(&[b"\xff", b"", b"\0\x80", b"binary"]),
+        Some(&[b"\xff\0\x80\x01", b"", b"12345678"]),
+        Some(&[b"\xff", b"", b"\0\x80", b"1234567890"]),
+        None,
+    ];
+    vector.set_size(cases.len())?;
+    {
+        let mut writer = vector.writer()?;
+        assert!(writer.set_parts(cases.len(), None).is_err());
+        for (index, parts) in cases.iter().enumerate() {
+            writer.set_parts(index, *parts)?;
+        }
+    }
+    let reader = vector.reader()?;
+    for (index, parts) in cases.iter().enumerate() {
+        assert_eq!(reader.get(index)?, parts.map(|parts| parts.concat()).as_deref());
+    }
+    vector.writer()?.set_parts(0, None)?;
+    assert_eq!(vector.reader()?.get(0)?, None);
+    vector.writer()?.set_parts(0, Some(&[b"\xff", b"\0"]))?;
+    assert_eq!(vector.reader()?.get(0)?, Some(b"\xff\0".as_slice()));
+    Ok(())
+}
+
+#[test]
 fn writer_reuses_nested_children_across_growth() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
@@ -224,12 +292,12 @@ fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
         writer.set(0, Some(vec![Some(1), Some(2)]))?;
         writer.set(1, None)?;
         // SAFETY: This observes the initialized mask without changing its bits.
-        assert_eq!(unsafe { writer.validity_mut()? }[0] & 3, 1);
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 1);
         writer.set(1, Some(vec![Some(3), Some(4)]))?;
         writer.set(0, None)?;
         // SAFETY: The rows and descendants were initialized by typed writes.
         unsafe { writer.set_row_validity(1, true)? };
-        assert_eq!(writer.validity().unwrap()[0] & 3, 2);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 2);
     }
     let reader = vector.reader()?;
     assert!(reader.get(0)?.is_none());
@@ -256,7 +324,7 @@ fn writer_struct_nulls_propagate_to_children() -> Result<()> {
         let mut writer = vector.writer()?;
         writer.set(0, Some(StructWrite::default().field::<i32>(Some(42))))?;
         writer.set(0, None)?;
-        assert_eq!(writer.validity().unwrap()[0] & 1, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
     }
     assert!(vector.reader()?.get(0)?.is_none());
     assert_eq!(
@@ -282,8 +350,36 @@ fn writer_value_api_preserves_cast_nullness_and_refreshes_validity() -> Result<(
         writer.set(0, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
         writer.set(1, Some(7_i32.value(&conn)?))?;
         // SAFETY: This observes the refreshed mask without changing its bits.
-        assert_eq!(unsafe { writer.validity_mut()? }[0] & 3, 2);
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
+    assert!(vector.reader()?.is_null(0)?);
+    assert!(!vector.reader()?.is_null(1)?);
+    Ok(())
+}
+
+#[test]
+fn writer_retyped_slow_writes_refresh_cached_validity() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Variant::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Unknown>(0)?;
+    vector.set_size(2)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.write_as::<Variant>(0, Some(42_i32.value(&conn)?))?;
+        writer.write_as::<Variant>(1, None)?;
+        assert_eq!(
+            writer.inner.validity.cast_const(),
+            unsafe { writer.validity_mut() }.unwrap().as_ptr()
+        );
+        // SAFETY: Row zero contains an initialized VARIANT value with no NULL descendants to update.
+        unsafe { writer.set_row_validity(0, false)? };
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 0);
+        writer.write_as::<Variant>(1, Some(7_i32.value(&conn)?))?;
+        // SAFETY: This observes the refreshed mask without changing its bits.
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
+    }
+    let vector = vector.cast::<Variant>()?;
     assert!(vector.reader()?.is_null(0)?);
     assert!(!vector.reader()?.is_null(1)?);
     Ok(())

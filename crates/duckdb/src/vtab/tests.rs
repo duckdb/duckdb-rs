@@ -108,6 +108,41 @@ impl VTab for HelloWithNamedVTab {
     }
 }
 
+struct ConfigOptionVTab;
+impl VTab for ConfigOptionVTab {
+    type InitData = HelloInitData;
+    type BindData = HelloBindData;
+
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+        bind.add_result_column("column0", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+        // A known session/config option resolves to a value during bind.
+        let memory_limit = bind
+            .get_config_option("memory_limit")
+            .expect("memory_limit config option should be set")
+            .to_string();
+        Ok(HelloBindData { name: memory_limit })
+    }
+
+    fn init(init_info: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
+        HelloVTab::init(init_info)
+    }
+
+    fn func(func: &TableFunctionInfo<Self>, output: &mut DataChunkHandle) -> Result<(), Box<dyn Error>> {
+        let init_data = func.get_init_data();
+        let bind_data = func.get_bind_data();
+
+        if init_data.done.swap(true, Ordering::Relaxed) {
+            output.set_len(0);
+        } else {
+            let vector = output.flat_vector(0);
+            let result = CString::new(bind_data.name.clone())?;
+            vector.insert(0, result);
+            output.set_len(1);
+        }
+        Ok(())
+    }
+}
+
 struct PanickingVTab<const STAGE: u8>;
 
 struct PanickingVTabBindData {
@@ -361,6 +396,29 @@ fn test_named_table_function() -> Result<(), Box<dyn Error>> {
         <(String,)>::try_from(row)
     })?;
     assert_eq!(val, ("Hello duckdb".to_string(),));
+
+    Ok(())
+}
+
+#[test]
+fn test_bind_info_get_config_option() -> Result<(), Box<dyn Error>> {
+    let conn = Connection::open_in_memory()?;
+    conn.execute("SET memory_limit = '512MB'", [])?;
+    conn.register_table_function::<ConfigOptionVTab>("config_option")?;
+
+    // The bind stage reads `memory_limit` via BindInfo::get_config_option and
+    // surfaces it as the single output column. DuckDB normalizes the value to a
+    // human-readable byte string (e.g. "512.0 MiB"). Only the positive path is
+    // exercised: looking up an unregistered option name aborts the process in
+    // debug builds (DuckDB raises an uncatchable internal error), so a `None`-path
+    // assertion on an unknown name is unsafe to include here.
+    let val = conn.query_row("select * from config_option()", [], |row| <(String,)>::try_from(row))?;
+    assert!(!val.0.is_empty(), "memory_limit value should not be empty");
+    assert!(
+        val.0.ends_with('B') && val.0.starts_with(|c: char| c.is_ascii_digit()),
+        "unexpected memory_limit value: {}",
+        val.0
+    );
 
     Ok(())
 }

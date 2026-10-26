@@ -60,10 +60,10 @@ fn signature(metadata: crate::vector::TypeMetadata) -> DecimalSignature {
 /// Panics if a stored value exceeds `rust_decimal`'s 96-bit mantissa.
 // SAFETY: `get` reads the storage integer DuckDB uses for the vector's width.
 unsafe impl VectorElement for rust_decimal::Decimal {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
     // The storage integer depends on the column's width.
-    type Internal = ();
+    type Internal<'a> = ();
 
     type Ref<'a> = rust_decimal::Decimal;
 

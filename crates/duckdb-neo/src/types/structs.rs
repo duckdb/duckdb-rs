@@ -128,16 +128,13 @@ impl<S: StructSchema> ToValue for StructValue<'_, S> {
 
 // SAFETY: fields are read only through the child vectors, with their own checks.
 unsafe impl VectorElement for Struct {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Struct;
     type Ref<'a> = StructRow<'a>;
 
-    type Internal = Struct;
+    type Internal<'a> = Struct;
 
     fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
-        Ok(matches!(
-            other.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
-        ))
+        Ok(matches!(other.id()?, LogicalTypeID::Struct | LogicalTypeID::Tuple))
     }
 
     unsafe fn get<'a, U: VectorElement>(
