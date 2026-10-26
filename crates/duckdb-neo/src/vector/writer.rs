@@ -262,7 +262,7 @@ impl<T: WritableVectorElement> VectorWriter<'_, '_, T> {
     ///
     /// Nested NULLs propagate to descendants. Logical value checks, such as
     /// decimal range and array length, remain enforced.
-    #[inline]
+    #[inline(always)]
     pub fn set(&mut self, index: usize, value: Option<T::Write<'_>>) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
@@ -351,7 +351,7 @@ impl VectorWriter<'_, '_, String> {
     ///     vector.writer()?.set_parts(0, Some(&["not a BIT encoding"]))
     /// }
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn set_parts(&mut self, index: usize, parts: Option<&[&str]>) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
@@ -368,7 +368,7 @@ impl VectorWriter<'_, '_, String> {
 
 impl VectorWriter<'_, '_, crate::types::UncheckedString> {
     /// Concatenate UTF-8 fragments, as with [`VectorWriter::<String>::set_parts`].
-    #[inline]
+    #[inline(always)]
     pub fn set_parts(&mut self, index: usize, parts: Option<&[&str]>) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
@@ -422,7 +422,7 @@ impl VectorWriter<'_, '_, crate::types::BlobValue> {
     ///     vector.writer()?.set_parts(0, Some(&[b"\xff"]))
     /// }
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn set_parts(&mut self, index: usize, parts: Option<&[&[u8]]>) -> Result<()> {
         if index >= self.len() {
             return Err(out_of_bounds(index, self.len()));
@@ -468,7 +468,7 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
         let data = self.view().as_ptr().cast::<DuckDBBytes<'_>>().cast_mut();
         let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;

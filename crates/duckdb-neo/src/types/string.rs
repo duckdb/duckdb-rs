@@ -269,6 +269,7 @@ unsafe impl WritableVectorElement for UncheckedString {
 unsafe impl WritableVectorElement for String {
     type Write<'a> = &'a str;
 
+    #[inline(always)]
     unsafe fn write(
         vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
         index: usize,
