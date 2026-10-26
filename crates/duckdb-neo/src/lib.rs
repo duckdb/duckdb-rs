@@ -243,8 +243,11 @@ mod tests {
 
     #[test]
     fn test_library_version() -> crate::Result<()> {
-        let version = library_version()?;
-        assert!(!version.is_empty(), "Library version should not be empty");
+        let expected = include_str!("../../libduckdb-sys/.duckdb-release")
+            .lines()
+            .find_map(|line| line.strip_prefix("DUCKDB_RELEASE_VERSION="))
+            .expect("release pin must specify DUCKDB_RELEASE_VERSION");
+        assert_eq!(library_version()?, expected);
 
         Ok(())
     }
