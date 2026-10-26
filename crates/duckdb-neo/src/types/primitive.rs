@@ -49,6 +49,8 @@ declare_primitive_from_value!(u32, ffi::duckdb_v2_value_get_uint);
 declare_primitive_from_value!(u64, ffi::duckdb_v2_value_get_ubigint);
 declare_primitive_from_value!(f32, ffi::duckdb_v2_value_get_float);
 declare_primitive_from_value!(f64, ffi::duckdb_v2_value_get_double);
+declare_primitive_from_value!(HugeInt, ffi::duckdb_v2_value_get_hugeint);
+declare_primitive_from_value!(UHugeInt, ffi::duckdb_v2_value_get_uhugeint);
 
 impl FromValue for i128 {
     fn _get_inner(value: &Value) -> Result<Self> {
@@ -65,6 +67,9 @@ impl FromValue for u128 {
 
 macro_rules! declare_primitive_type {
     ($type:ty, $type_id:ident, $input:ident) => {
+        declare_primitive_type!($type, $type_id, $input, std::convert::identity);
+    };
+    ($type:ty, $type_id:ident, $input:ident, $convert:path) => {
         impl DuckDBType for $type {
             fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
                 link.logical_type_create_from_id(LogicalTypeID::$type_id, Parameters::None)
@@ -73,7 +78,7 @@ macro_rules! declare_primitive_type {
 
         impl ToValue for $type {
             fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
-                link.create_value(ValueInput::$input(*self))
+                link.create_value(ValueInput::$input($convert(*self)))
             }
         }
     };
@@ -90,8 +95,10 @@ declare_primitive_type!(u32, UInteger, UInt);
 declare_primitive_type!(u64, UBigInt, UBigInt);
 declare_primitive_type!(f32, Float, Float);
 declare_primitive_type!(f64, Double, Double);
-declare_primitive_type!(i128, HugeInt, HugeInt);
-declare_primitive_type!(u128, UHugeInt, UHugeInt);
+declare_primitive_type!(HugeInt, HugeInt, HugeInt);
+declare_primitive_type!(UHugeInt, UHugeInt, UHugeInt);
+declare_primitive_type!(i128, HugeInt, HugeInt, crate::value::hugeint);
+declare_primitive_type!(u128, UHugeInt, UHugeInt, crate::value::uhugeint);
 
 /// Implements [`crate::vector::VectorElement`] for a type whose vector storage is itself.
 ///

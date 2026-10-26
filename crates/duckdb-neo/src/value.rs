@@ -1,6 +1,6 @@
 //! Owned DuckDB values and their typed payloads.
 
-use crate::types::HugeInt;
+use crate::types::{HugeInt, UHugeInt};
 use crate::{DropHandle, Factory, ffi};
 
 use crate::{
@@ -57,8 +57,8 @@ pub enum ValueInput<'a> {
     UBigInt(u64),
     Float(f32),
     Double(f64),
-    HugeInt(i128),
-    UHugeInt(u128),
+    HugeInt(HugeInt),
+    UHugeInt(UHugeInt),
     Varchar(&'a str),
     Blob(&'a [u8]),
     Type(&'a LogicalType),
@@ -120,7 +120,7 @@ fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {
     values.iter().map(|value| value.handle).collect()
 }
 
-fn hugeint(value: i128) -> HugeInt {
+pub(crate) fn hugeint(value: i128) -> HugeInt {
     HugeInt {
         lower: value as u64,
         upper: (value >> 64) as i64,
@@ -131,7 +131,7 @@ pub(crate) fn from_hugeint(value: HugeInt) -> i128 {
     (i128::from(value.upper) << 64) | i128::from(value.lower)
 }
 
-fn uhugeint(value: u128) -> ffi::duckdb_v2_uhugeint_t {
+pub(crate) fn uhugeint(value: u128) -> UHugeInt {
     ffi::duckdb_v2_uhugeint_t {
         lower: value as u64,
         upper: (value >> 64) as u64,
@@ -162,10 +162,10 @@ pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> 
         ValueInput::Float(value) => create_value!(ffi::duckdb_v2_value_create_float, factory.raw(), value),
         ValueInput::Double(value) => create_value!(ffi::duckdb_v2_value_create_double, factory.raw(), value),
         ValueInput::HugeInt(value) => {
-            create_value!(ffi::duckdb_v2_value_create_hugeint, factory.raw(), &hugeint(value))
+            create_value!(ffi::duckdb_v2_value_create_hugeint, factory.raw(), &value)
         }
         ValueInput::UHugeInt(value) => {
-            create_value!(ffi::duckdb_v2_value_create_uhugeint, factory.raw(), &uhugeint(value))
+            create_value!(ffi::duckdb_v2_value_create_uhugeint, factory.raw(), &value)
         }
         ValueInput::Varchar(value) => create_value!(ffi::duckdb_v2_value_create_varchar, factory.raw(), &value.into()),
         ValueInput::Blob(value) => create_value!(
