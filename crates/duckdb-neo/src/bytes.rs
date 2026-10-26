@@ -95,7 +95,7 @@ impl<'arena> DuckDBBytes<'arena> {
                 length.checked_add(u32::try_from(part.as_ref().len()).ok()?)
             })
             .ok_or_else(|| Error {
-                code: DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE,
+                code: DuckDBError::InputOutOfRange,
                 message: format!("combined byte length exceeds the maximum of {} bytes", u32::MAX),
             })?;
 
@@ -254,7 +254,7 @@ mod tests {
             let fragment = vec![0u8; 1024 * 1024];
             let parts = vec![fragment.as_slice(); 4096];
             let error = arena.add_parts(&parts).expect_err("4 GiB exceeds the encoded length");
-            assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE);
+            assert_eq!(error.code, DuckDBError::InputOutOfRange);
             Ok(())
         })
     }

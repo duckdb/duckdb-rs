@@ -295,7 +295,7 @@ mod tests {
 
             let error = query.next_chunk().err().unwrap();
 
-            assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERRUPT);
+            assert_eq!(error.code, DuckDBError::RuntimeInterrupt);
         });
 
         receiver.recv().unwrap();

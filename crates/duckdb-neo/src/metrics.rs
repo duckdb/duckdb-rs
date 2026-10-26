@@ -164,9 +164,9 @@ mod tests {
             assert_eq!(by_name.dbg_string()?, value.dbg_string()?, "{name}");
         }
         let error = root.get_by_index(count).unwrap_err();
-        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE);
+        assert_eq!(error.code, DuckDBError::InputOutOfRange);
         let error = root.child(1).unwrap_err();
-        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE);
+        assert_eq!(error.code, DuckDBError::InputOutOfRange);
 
         // Operator nodes remain accessible below the result collector.
         let mut node = root.child(0)?;
@@ -181,7 +181,7 @@ mod tests {
         // Metrics are unavailable while a query result is still live.
         let result = conn.query("SELECT * FROM range(1000)", Parameters::None)?;
         let error = conn.query_metrics().unwrap_err();
-        assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_RESOURCE_IN_USE);
+        assert_eq!(error.code, DuckDBError::ResourceInUse);
         drop(result);
 
         // Later queries leave an earlier snapshot unchanged.

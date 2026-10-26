@@ -448,7 +448,7 @@ mod tests {
             children: &two,
         });
         let err = result.expect_err("STRUCT length mismatch must be rejected");
-        assert_eq!(err.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, crate::error::DuckDBError::InputInvalid);
         assert_eq!(err.message, "STRUCT names and children: lengths differ (1 vs 2)");
 
         let result = link.create_value(ValueInput::Map {
@@ -458,7 +458,7 @@ mod tests {
             values: &one,
         });
         let err = result.expect_err("MAP length mismatch must be rejected");
-        assert_eq!(err.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, crate::error::DuckDBError::InputInvalid);
         assert_eq!(err.message, "MAP keys and values: lengths differ (2 vs 1)");
         Ok(())
     }
@@ -521,20 +521,20 @@ mod tests {
         let list = vec![1_i32, 2].value(&conn)?;
         for index in [2, usize::MAX] {
             let err = list.get_child(index).expect_err("out-of-range child must fail");
-            assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+            assert_eq!(err.code, DuckDBError::InputInvalid);
             assert!(err.message.contains("child index out of range"), "{err}");
         }
         let scalar = 42_i32.value(&conn)?;
         let err = scalar.get_child(0).expect_err("scalar has no children");
-        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, DuckDBError::InputInvalid);
         let err = scalar.get::<super::LogicalType>().expect_err("integer is not TYPE");
-        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, DuckDBError::InputInvalid);
         assert!(err.message.contains("TYPE"), "{err}");
 
         let text = "not an integer".value(&conn)?;
         let target = i32::logical_type(&conn)?;
         let err = text.cast(&conn, &target).expect_err("invalid integer cast must fail");
-        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, DuckDBError::InputInvalid);
         assert!(err.message.contains("Failed to cast value"), "{err}");
         assert!(err.message.contains("not an integer"), "{err}");
         assert_eq!(text.get::<String>()?.as_deref(), Some("not an integer"));

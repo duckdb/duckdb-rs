@@ -418,8 +418,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         let row_error = if cast_err.is_null() {
             None
         } else {
-            let error =
-                unsafe { Error::from_code_and_handle(DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION, &mut cast_err) };
+            let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
             Some(error)
         };
         Ok((Self::from_handle(&self.handle, self.access)?, row_error))

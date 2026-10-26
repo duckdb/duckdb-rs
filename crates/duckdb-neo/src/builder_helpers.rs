@@ -1,6 +1,6 @@
 use crate::{
     Result,
-    error::{Error, check_api_call_no_err},
+    error::{DuckDBError, Error, check_api_call_no_err},
     ffi,
     ffi_str::DuckDBStr,
 };
@@ -105,10 +105,10 @@ pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Erro
         return;
     }
     let code = match error.code {
-        ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE => ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_API,
-        code => code,
+        crate::error::DuckDBError::None => DuckDBError::Api,
+        code => code.into(),
     };
-    let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, code);
+    let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, code.into());
     let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, &(&error.message).into());
 }
 
@@ -327,15 +327,15 @@ mod tests {
         unsafe { crate::ffi::duckdb_v2_validate_utf8(&crate::ffi_str::bytes_arg(b"\xff"), &mut handle) };
         assert!(!handle.is_null());
         let error = crate::Error {
-            code: crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE,
+            code: crate::error::DuckDBError::None,
             message: "callback error".to_owned(),
         };
         super::set_error(&mut handle, &error);
-        let mut code = crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE;
+        let mut code = crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE;
         super::check_api_call_no_err!(crate::ffi::duckdb_v2_error_info_get_code, handle, &mut code)?;
         // SAFETY: this test transfers ownership of the live error handle.
         let error = unsafe { crate::Error::from_code_and_handle(code, &mut handle) };
-        assert_eq!(error.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_API);
+        assert_eq!(error.code, crate::error::DuckDBError::Api);
         assert_eq!(error.message, "callback error");
         Ok(())
     }

@@ -274,9 +274,7 @@ fn test_replacement_scan_cdc_name_count_mismatch() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    assert!(
-        invalid_column_count_collection(&conn).is_err_and(|e| e.code == DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID)
-    );
+    assert!(invalid_column_count_collection(&conn).is_err_and(|e| e.code == DuckDBError::InputInvalid));
 
     Ok(())
 }

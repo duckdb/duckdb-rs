@@ -1357,10 +1357,7 @@ pub fn test_vector_union() -> crate::Result<()> {
     let last = reader.next().unwrap().unwrap();
     assert_eq!(last.get::<String>(1)?, Some("three"));
     // The wrong member type must be rejected.
-    assert_eq!(
-        last.get::<i32>(1).unwrap_err().code,
-        DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID
-    );
+    assert_eq!(last.get::<i32>(1).unwrap_err().code, DuckDBError::InputInvalid);
     Ok(())
 }
 
@@ -2930,7 +2927,7 @@ fn test_vector_cast_fails() -> crate::Result<()> {
             Parameters::Positional(&[&vec![Some("10"), Some("abc"), None]]),
         )
         .unwrap_err();
-    assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_TYPE_CONVERSION);
+    assert_eq!(error.code, DuckDBError::TypeConversion);
     assert!(
         error.message.contains("Could not convert string 'abc' to INT64"),
         "{error}"
