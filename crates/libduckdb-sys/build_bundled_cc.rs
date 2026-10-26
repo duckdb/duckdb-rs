@@ -121,8 +121,7 @@ pub fn main(out_dir: &str) {
 
     println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
-    // Inside libduckdb.a nothing references the autoregister object, so the linker would drop it
-    // and linked extensions would never register. Link it whole-archive, before libduckdb.
+    // Keep the constructor even though Rust code does not reference it directly.
     if cpp_files.remove(STATIC_EXTENSION_AUTOREGISTER) {
         build_static_extension_autoregister(out_dir);
     }
