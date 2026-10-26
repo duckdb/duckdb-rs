@@ -3,9 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(not(feature = "bundled"))]
+#[cfg(not(feature = "bundled-cmake"))]
 #[path = "src/build_paths.rs"]
 mod build_paths;
+#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+#[path = "src/bundled_sources.rs"]
+mod bundled_sources;
 
 /// Tells whether we're building for Windows. This is more suitable than a plain
 /// `cfg!(windows)`, since the latter does not properly handle cross-compilation
