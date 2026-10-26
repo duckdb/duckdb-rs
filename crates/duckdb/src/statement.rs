@@ -143,15 +143,15 @@ impl Statement<'_> {
     /// # use duckdb::{Result, Connection};
     /// # use arrow::record_batch::RecordBatch;
     /// fn get_arrow_data(conn: &Connection) -> Result<Vec<RecordBatch>> {
-    ///     Ok(conn.prepare("SELECT * FROM test")?.stream_arrow([])?.collect())
+    ///     conn.prepare("SELECT * FROM test")?.stream_arrow([])?.collect()
     /// }
     /// ```
     ///
     /// # Failure
     ///
-    /// Same failure modes as [`query_arrow`](Self::query_arrow). In addition,
-    /// the returned iterator panics if fetching or Arrow conversion fails
-    /// after execution has started.
+    /// Same failure modes as [`query_arrow`](Self::query_arrow). Fetch and
+    /// Arrow conversion errors after execution has started are yielded as
+    /// [`Err`] items.
     #[inline]
     pub fn stream_arrow<P: Params>(&mut self, params: P) -> Result<ArrowStream<'_>> {
         params.__bind_in(self)?;
@@ -1656,7 +1656,7 @@ mod test {
         let db = Connection::open_in_memory()?;
         let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?;
         let mut stream = stmt.stream_arrow([])?;
-        let batches = stream.by_ref().collect::<Vec<_>>();
+        let batches = stream.by_ref().collect::<Result<Vec<_>>>()?;
 
         assert!(batches.len() > 1);
         assert_eq!(3000, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
@@ -1686,7 +1686,7 @@ mod test {
     fn test_stream_arrow_with_params() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) WHERE i < ? ORDER BY i")?;
-        let batches = stmt.stream_arrow([2500_i64])?.collect::<Vec<_>>();
+        let batches = stmt.stream_arrow([2500_i64])?.collect::<Result<Vec<_>>>()?;
 
         assert!(batches.len() > 1);
         assert_eq!(2500, batches.iter().map(|batch| batch.num_rows()).sum::<usize>());
@@ -1753,7 +1753,7 @@ mod test {
         check_uuid_arrow_schemas(|stmt| {
             let stream = stmt.stream_arrow([])?;
             let schema = stream.get_schema();
-            let batch = stream.into_iter().next().expect("expected one batch");
+            let batch = stream.into_iter().next().expect("expected one batch")?;
             Ok((schema, batch))
         })
     }
@@ -1821,7 +1821,7 @@ mod test {
         let mut stmt = db.prepare("SELECT i FROM range(3000) AS t(i) ORDER BY i")?;
 
         {
-            let batches = stmt.stream_arrow([])?.collect::<Vec<_>>();
+            let batches = stmt.stream_arrow([])?.collect::<Result<Vec<_>>>()?;
             assert_range_batches(&batches);
         }
 
@@ -1831,7 +1831,7 @@ mod test {
         }
 
         {
-            let batches = stmt.stream_arrow([])?.collect::<Vec<_>>();
+            let batches = stmt.stream_arrow([])?.collect::<Result<Vec<_>>>()?;
             assert_range_batches(&batches);
         }
 
