@@ -21,19 +21,19 @@ fn writer_sets_values_with_preallocated_validity() -> Result<()> {
         let mut writer: VectorWriter<'_, '_, i32> = vector.writer()?;
         assert_eq!(writer.len(), 2);
         assert!(!writer.is_empty());
-        let validity = writer.validity().unwrap().as_ptr();
-        assert_eq!(writer.validity().unwrap()[0], u64::MAX);
+        let validity = unsafe { writer.validity_mut() }.unwrap().as_ptr();
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0], u64::MAX);
         assert!(writer.set(2, Some(99)).is_err());
         assert!(writer.set(usize::MAX, None).is_err());
-        assert_eq!(writer.validity().unwrap().as_ptr(), validity);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap().as_ptr(), validity);
         writer.set(0, Some(42))?;
         // SAFETY: Row one is within the writer's two rows.
         unsafe { writer.set_unchecked(1, Some(7))? };
-        assert_eq!(writer.validity().unwrap().as_ptr(), validity);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap().as_ptr(), validity);
         writer.set(0, None)?;
-        assert_eq!(writer.validity().unwrap()[0] & 1, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
         writer.set(0, Some(43))?;
-        assert_eq!(writer.validity().unwrap()[0] & 1, 1);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 1);
     }
     assert_eq!(vector.reader()?.iter().collect::<Vec<_>>(), [Some(&43), Some(&7)]);
     Ok(())
@@ -77,8 +77,8 @@ fn writer_raw_data_and_manual_validity_cover_word_boundaries() -> Result<()> {
                 for index in 0..count {
                     data.add(index).write(index as i32);
                 }
-                assert!(writer.validity().unwrap().iter().all(|word| *word == 0));
-                let mask = writer.validity_mut()?;
+                assert!(unsafe { writer.validity_mut() }.unwrap().iter().all(|word| *word == 0));
+                let mask = unsafe { writer.validity_mut()? };
                 assert_eq!(mask.len(), count.div_ceil(64));
                 for index in 0..count {
                     if index % 7 != 0 {
@@ -116,7 +116,7 @@ fn writer_mutable_slice_preserves_validity() -> Result<()> {
         writer.set(1, None)?;
         // SAFETY: Every physical slot was initialized before clearing validity.
         unsafe { writer.as_slice_mut() }.unwrap().copy_from_slice(&[10, 20, 30]);
-        assert_eq!(writer.validity().unwrap()[0] & 2, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 2, 0);
     }
     assert_eq!(
         vector.reader()?.iter().collect::<Vec<_>>(),
@@ -292,12 +292,12 @@ fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
         writer.set(0, Some(vec![Some(1), Some(2)]))?;
         writer.set(1, None)?;
         // SAFETY: This observes the initialized mask without changing its bits.
-        assert_eq!(unsafe { writer.validity_mut()? }[0] & 3, 1);
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 1);
         writer.set(1, Some(vec![Some(3), Some(4)]))?;
         writer.set(0, None)?;
         // SAFETY: The rows and descendants were initialized by typed writes.
         unsafe { writer.set_row_validity(1, true)? };
-        assert_eq!(writer.validity().unwrap()[0] & 3, 2);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 2);
     }
     let reader = vector.reader()?;
     assert!(reader.get(0)?.is_none());
@@ -324,7 +324,7 @@ fn writer_struct_nulls_propagate_to_children() -> Result<()> {
         let mut writer = vector.writer()?;
         writer.set(0, Some(StructWrite::default().field::<i32>(Some(42))))?;
         writer.set(0, None)?;
-        assert_eq!(writer.validity().unwrap()[0] & 1, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
     }
     assert!(vector.reader()?.get(0)?.is_none());
     assert_eq!(
@@ -350,7 +350,7 @@ fn writer_value_api_preserves_cast_nullness_and_refreshes_validity() -> Result<(
         writer.set(0, Some(Value::null(&conn, &i32::logical_type(&conn)?)?))?;
         writer.set(1, Some(7_i32.value(&conn)?))?;
         // SAFETY: This observes the refreshed mask without changing its bits.
-        assert_eq!(unsafe { writer.validity_mut()? }[0] & 3, 2);
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
     assert!(vector.reader()?.is_null(0)?);
     assert!(!vector.reader()?.is_null(1)?);
@@ -368,13 +368,16 @@ fn writer_retyped_slow_writes_refresh_cached_validity() -> Result<()> {
         let mut writer = vector.writer()?;
         writer.write_as::<Variant>(0, Some(42_i32.value(&conn)?))?;
         writer.write_as::<Variant>(1, None)?;
-        assert_eq!(writer.inner.validity.cast_const(), writer.validity().unwrap().as_ptr());
+        assert_eq!(
+            writer.inner.validity.cast_const(),
+            unsafe { writer.validity_mut() }.unwrap().as_ptr()
+        );
         // SAFETY: Row zero contains an initialized VARIANT value with no NULL descendants to update.
         unsafe { writer.set_row_validity(0, false)? };
-        assert_eq!(writer.validity().unwrap()[0] & 3, 0);
+        assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 0);
         writer.write_as::<Variant>(1, Some(7_i32.value(&conn)?))?;
         // SAFETY: This observes the refreshed mask without changing its bits.
-        assert_eq!(unsafe { writer.validity_mut()? }[0] & 3, 2);
+        assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
     let vector = vector.cast::<Variant>()?;
     assert!(vector.reader()?.is_null(0)?);

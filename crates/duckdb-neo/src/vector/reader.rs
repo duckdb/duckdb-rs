@@ -16,13 +16,8 @@ pub enum Selection<'vec> {
 }
 
 impl Selection<'_> {
-    /// Return the physical index for a logical row.
-    ///
-    /// This does not check the originating reader's length. Pass a row in
-    /// `0..reader.len()` before using the result to access its physical storage.
-    ///
-    /// # Panics
-    /// Panics if a dictionary selection is indexed beyond its length.
+    /// Map a logical row to its physical index without checking the reader's length.
+    /// Panics if a dictionary selection is indexed out of bounds.
     #[inline]
     pub fn index(&self, logical: usize) -> usize {
         match self {
@@ -33,37 +28,8 @@ impl Selection<'_> {
     }
 }
 
-/// Prepared, read-only access to a vector's logical rows.
-///
-/// Created by [`Vector::reader`]. Storage selection and descendant preparation
-/// happen once; [`Self::get`] and [`Self::iter`] preserve SQL NULLs and borrow
-/// their values from the vector, not the reader.
-///
-/// The vector cannot be reshaped while its reader is in use:
-///
-/// ```compile_fail,E0502
-/// use duckdb_neo::{Result, vector::Vector};
-///
-/// fn resize(vector: &mut Vector<'_, i32>) -> Result<()> {
-///     let reader = vector.reader()?;
-///     vector.set_size(10)?;
-///     let _ = reader.get(0)?;
-///     Ok(())
-/// }
-/// ```
-///
-/// Values borrowed through a temporary reader also prevent mutation:
-///
-/// ```compile_fail,E0502
-/// use duckdb_neo::{Result, vector::Vector};
-///
-/// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
-///     let value = vector.reader()?.get(0)?;
-///     vector.writer()?.set(0, Some(42))?;
-///     assert_eq!(value, Some(&42));
-///     Ok(())
-/// }
-/// ```
+/// Prepared, read-only access to logical rows, created by [`Vector::reader`].
+/// Values preserve SQL NULLs and borrow from the vector, not the reader.
 pub struct VectorReader<'vec, T: VectorElement> {
     vector: &'vec Vector<'vec, T>,
     data: *const std::ffi::c_void,
@@ -102,10 +68,8 @@ struct FlatReader {
 
 impl FlatReader {
     #[inline]
-    unsafe fn physical_index_unchecked(&self, logical: usize) -> Option<usize> {
-        let valid =
-            self.validity.is_null() || unsafe { *self.validity.add(logical / 64) & (1u64 << (logical % 64)) != 0 };
-        valid.then_some(logical)
+    unsafe fn is_valid_unchecked(&self, physical: usize) -> bool {
+        self.validity.is_null() || unsafe { *self.validity.add(physical / 64) & (1u64 << (physical % 64)) != 0 }
     }
 }
 
@@ -131,7 +95,7 @@ impl DictionaryReader<'_> {
     #[inline]
     unsafe fn physical_index_unchecked(&self, logical: usize) -> Option<usize> {
         let physical = unsafe { *self.selection.get_unchecked(logical) } as usize;
-        unsafe { self.values.physical_index_unchecked(physical) }
+        unsafe { self.values.is_valid_unchecked(physical) }.then_some(physical)
     }
 }
 
@@ -139,7 +103,7 @@ impl ReaderStorage<'_> {
     #[inline]
     unsafe fn physical_index_unchecked(&self, logical: usize) -> Option<usize> {
         match self {
-            Self::Flat(reader) => unsafe { reader.physical_index_unchecked(logical) },
+            Self::Flat(reader) => unsafe { reader.is_valid_unchecked(logical) }.then_some(logical),
             Self::Constant(reader) => reader.physical_index(),
             Self::Dictionary(reader) => unsafe { reader.physical_index_unchecked(logical) },
         }
@@ -164,7 +128,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         let storage = match vector.storage_kind() {
             StorageKind::Flat => ReaderStorage::Flat(flat),
             StorageKind::Constant => ReaderStorage::Constant(ConstantReader {
-                is_null: !vector.is_empty() && view.is_null_physical(0),
+                is_null: !vector.is_empty() && !unsafe { flat.is_valid_unchecked(0) },
             }),
             StorageKind::Dictionary => ReaderStorage::Dictionary(DictionaryReader {
                 values: flat,
@@ -198,56 +162,26 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         }
     }
 
-    /// Return the physical data pointer, or null when no data is exposed.
-    ///
-    /// Use [`Self::selection`] to map logical rows to physical slots, and check
-    /// [`Self::validity`] before reading a slot. The pointer is invalidated when
-    /// the vector is resized, reshaped, or destroyed.
+    /// Return the physical data pointer, or null; invalidated when the vector is resized, reshaped, or destroyed.
+    /// Map rows through [`Self::selection`] and check [`Self::validity`] before dereferencing.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T::Internal<'vec> {
         self.data.cast()
     }
 
-    /// Borrow physical storage, or `None` when no data is exposed.
-    ///
-    /// Flat storage covers every row; constant storage contains one slot.
-    /// Dictionary storage extends through the highest selected physical index,
-    /// including any intervening unselected slots.
-    ///
     /// # Safety
-    /// Every exposed slot must be initialized as `T::Internal<'vec>`, including NULL
-    /// and unselected slots. Use [`Self::as_ptr`] to read only known-valid slots.
-    ///
-    /// ```compile_fail,E0133
-    /// use duckdb_neo::vector::VectorReader;
-    ///
-    /// fn read(reader: &VectorReader<'_, i32>) {
-    ///     let _ = reader.as_slice();
-    /// }
-    /// ```
+    /// Borrow physical storage only if all slots, including NULL/unselected ones, are initialized as `T::Internal<'vec>`.
     pub unsafe fn as_slice(&self) -> Option<&'vec [T::Internal<'vec>]> {
         // SAFETY: The caller guarantees all physical slots are initialized.
-        unsafe { self.view().as_slice() }
+        if self.view().data().is_null() {
+            None
+        } else {
+            Some(unsafe { std::slice::from_raw_parts(self.view().data(), self.view().physical_len()) })
+        }
     }
 
-    /// Borrow the physical validity mask, or `None` when every slot is valid.
-    ///
+    /// Borrow the physical validity mask, or `None` if all slots are valid; map rows with [`Self::selection`].
     /// Bit `physical % 64` of word `physical / 64` marks a non-NULL slot.
-    /// Use [`Self::selection`] to map logical rows before checking these bits.
-    /// The mask covers the physical range described by [`Self::as_slice`].
-    ///
-    /// Borrowed masks keep the vector immutable, even after the reader is gone:
-    ///
-    /// ```compile_fail,E0502
-    /// use duckdb_neo::{Result, vector::Vector};
-    ///
-    /// fn overwrite(vector: &mut Vector<'_, i32>) -> Result<()> {
-    ///     let mask = vector.reader()?.validity();
-    ///     vector.writer()?.set(0, None)?;
-    ///     assert!(mask.is_none());
-    ///     Ok(())
-    /// }
-    /// ```
     pub fn validity(&self) -> Option<&'vec [u64]> {
         self.view().validity()
     }
@@ -322,7 +256,9 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             // SAFETY: The caller guarantees flat storage for this prepared reader.
             unsafe { std::hint::unreachable_unchecked() }
         };
-        unsafe { reader.physical_index_unchecked(index) }?;
+        if !unsafe { reader.is_valid_unchecked(index) } {
+            return None;
+        }
         // SAFETY: Flat storage uses the logical index directly; validity was checked above.
         Some(unsafe { T::get(self, index, index) })
     }

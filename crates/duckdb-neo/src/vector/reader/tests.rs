@@ -1,4 +1,4 @@
-use super::{ReaderStorage, VectorReader};
+use super::{DictionaryReader, FlatReader, ReaderStorage, VectorReader};
 use crate::{
     Parameters, Result, ToValue,
     builder_helpers::scalar_callback,
@@ -32,6 +32,39 @@ fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {
 }
 
 #[test]
+fn physical_validity_is_independent_of_logical_selection() {
+    let all_valid = FlatReader {
+        validity: std::ptr::null(),
+    };
+    for physical in [0, 63, 64, 127] {
+        // SAFETY: A missing mask marks every physical slot valid.
+        assert!(unsafe { all_valid.is_valid_unchecked(physical) });
+    }
+
+    let validity = [1u64 << 63, 1];
+    let flat = FlatReader {
+        validity: validity.as_ptr(),
+    };
+    for (physical, expected) in [(0, false), (63, true), (64, true), (65, false), (127, false)] {
+        // SAFETY: Both mask words remain live, and every index is in bounds.
+        assert_eq!(unsafe { flat.is_valid_unchecked(physical) }, expected);
+    }
+
+    let selection = [64, 0, 63, 127];
+    let dictionary = DictionaryReader {
+        values: flat,
+        selection: &selection,
+    };
+    let storage = ReaderStorage::Flat(flat);
+    for (logical, expected) in [Some(64), None, Some(63), None].into_iter().enumerate() {
+        // SAFETY: Every selected physical index is covered by the mask.
+        assert_eq!(unsafe { dictionary.physical_index_unchecked(logical) }, expected);
+        let physical = selection[logical] as usize;
+        assert_eq!(unsafe { storage.physical_index_unchecked(physical) }, expected);
+    }
+}
+
+#[test]
 fn selection_maps_logical_to_physical_indices() {
     assert_eq!(Selection::Identity.index(123), 123);
     assert_eq!(Selection::Constant.index(usize::MAX), 0);
@@ -60,7 +93,7 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
-    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().as_ptr());
+    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
     assert!(reader.validity().unwrap().iter().all(|word| *word == u64::MAX));
     // SAFETY: Every physical slot was initialized above.
     let values = unsafe { vector.reader()?.as_slice() }.unwrap();
@@ -173,7 +206,7 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             assert_eq!(reader.is_empty(), count == 0);
             assert_eq!(reader.selection(), Selection::Constant);
             assert_eq!(reader.selection().index(usize::MAX), 0);
-            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().as_ptr());
+            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
             assert!(reader.validity().is_none_or(|mask| mask.len() == 1));
             if let Some(value) = expected {
                 // SAFETY: The non-NULL constant has one initialized physical slot.
@@ -258,7 +291,7 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
         };
         let view = vector.view.as_ref().unwrap();
         assert_eq!(selection, view.selection().unwrap());
-        assert_eq!(reader.as_ptr(), view.as_ptr());
+        assert_eq!(reader.as_ptr(), view.data());
         assert_eq!(reader.validity(), view.validity());
         assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
         assert_eq!(reader.get(0)?, Some(&i32::MAX));
