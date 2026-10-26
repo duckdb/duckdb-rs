@@ -66,9 +66,9 @@ impl ToValue for String {
 /// Every non-NULL row read through this marker must contain valid UTF-8.
 /// Invalid UTF-8 causes undefined behavior. Use [`String`] for checked reads.
 #[derive(Debug)]
-pub struct UnsafeString;
+pub struct UncheckedString;
 
-impl DuckDBType for UnsafeString {
+impl DuckDBType for UncheckedString {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         str::logical_type(link)
     }
@@ -157,7 +157,7 @@ impl FromValue for BitValue {
 }
 
 impl HasDuckDBBytes for String {}
-impl HasDuckDBBytes for UnsafeString {}
+impl HasDuckDBBytes for UncheckedString {}
 impl HasDuckDBBytes for BlobValue {}
 impl HasDuckDBBytes for BitValue {}
 
@@ -230,7 +230,7 @@ unsafe impl VectorElement for String {
 }
 
 // SAFETY: Same storage as `String`; users of this marker must guarantee valid UTF-8.
-unsafe impl VectorElement for UnsafeString {
+unsafe impl VectorElement for UncheckedString {
     const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
     type Internal<'a> = DuckDBBytes<'a>;
@@ -252,7 +252,7 @@ unsafe impl VectorElement for UnsafeString {
 }
 
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
-unsafe impl WritableVectorElement for UnsafeString {
+unsafe impl WritableVectorElement for UncheckedString {
     type Write<'a> = &'a str;
 
     unsafe fn write(
@@ -336,8 +336,8 @@ mod tests {
     fn unsafe_string_vector_reads_and_writes_valid_utf8() -> Result<()> {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
-        let mut chunk = DataChunk::create(&conn, &[UnsafeString::logical_type(&conn)?], true)?;
-        let mut vector = chunk.get_vector_at_mut::<UnsafeString>(0)?;
+        let mut chunk = DataChunk::create(&conn, &[UncheckedString::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<UncheckedString>(0)?;
         let values = [
             Some(""),
             Some("héllo"),

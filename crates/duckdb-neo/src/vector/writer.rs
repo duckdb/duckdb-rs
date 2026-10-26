@@ -286,6 +286,7 @@ impl<T: WritableVectorElement> VectorWriter<'_, '_, T> {
 }
 
 impl<T: VectorElement> FlatWriter<'_, '_, T> {
+    #[inline]
     fn ensure_validity_writable(&mut self) -> Result<()> {
         if !self.vector.validity_writable {
             let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, self.vector.handle, RET)?;
@@ -368,7 +369,7 @@ impl VectorWriter<'_, '_, String> {
     }
 }
 
-impl VectorWriter<'_, '_, crate::types::UnsafeString> {
+impl VectorWriter<'_, '_, crate::types::UncheckedString> {
     /// Concatenate UTF-8 fragments, as with [`VectorWriter::<String>::set_parts`].
     #[inline]
     pub fn set_parts(&mut self, index: usize, parts: Option<&[&str]>) -> Result<()> {
@@ -459,6 +460,7 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
         Ok(self.inner.vector.heap.as_ref().unwrap())
     }
 
+    #[inline]
     pub(crate) unsafe fn write_bytes(&mut self, index: usize, value: Option<&[u8]>) -> Result<()> {
         if let Some(value) = value {
             // SAFETY: The caller guarantees the row's bounds and logical encoding.
@@ -467,6 +469,7 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
         Ok(())
     }
 
+    #[inline]
     unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
         let data = self.view().as_ptr().cast::<DuckDBBytes<'_>>().cast_mut();
         let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;

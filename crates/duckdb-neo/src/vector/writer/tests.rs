@@ -5,7 +5,7 @@ use crate::{
     environment::{Environment, StorageLocation},
     scalar::ScalarFunctionBuilder,
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Array, BlobValue, DuckDBType, List, Struct, StructWrite, UnsafeString, Variant},
+    types::{Array, BlobValue, DuckDBType, List, Struct, StructWrite, UncheckedString, Variant},
     value::Value,
     vector::{StorageKind, Unknown, VectorWriter},
 };
@@ -214,7 +214,7 @@ fn writer_sets_string_parts() -> Result<()> {
         assert_eq!(reader.get(index)?, parts.map(|parts| parts.concat()).as_deref());
     }
     drop(vector);
-    let mut vector = chunk.get_vector_at_mut::<UnsafeString>(0)?;
+    let mut vector = chunk.get_vector_at_mut::<UncheckedString>(0)?;
     vector.writer()?.set_parts(0, None)?;
     assert_eq!(vector.reader()?.get(0)?, None);
     vector.writer()?.set_parts(0, Some(&["hello", " again"]))?;
