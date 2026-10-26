@@ -13,7 +13,7 @@ use crate::{
 
 fn validate_tuple(value: &Value, expected_len: usize) -> Result<()> {
     let logical_type = value.logical_type()?;
-    if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE {
+    if logical_type.id()? != LogicalTypeID::Tuple {
         return Err(Error::invalid_input(format!(
             "Expected TUPLE value, found {}",
             logical_type.to_text()?

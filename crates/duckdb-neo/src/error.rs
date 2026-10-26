@@ -7,10 +7,65 @@
 
 use std::fmt;
 
-use crate::ffi;
+use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
-/// [`DuckDBError`] contains the error codes provided by the DuckDB C API.
-pub type DuckDBError = ffi::DUCKDB_V2_ERROR;
+ffi_enum_redeclaration! {
+    /// Error codes returned by the DuckDB C API.
+    pub enum DuckDBError <- ffi::DUCKDB_V2_ERROR {
+        /// The operation succeeded.
+        None = DUCKDB_V2_ERROR_NONE,
+        Api = DUCKDB_V2_ERROR_API,
+        IoFileNotFound = DUCKDB_V2_ERROR_IO_FILE_NOT_FOUND,
+        IoReadFailure = DUCKDB_V2_ERROR_IO_READ_FAILURE,
+        IoEof = DUCKDB_V2_ERROR_IO_EOF,
+        IoGeneral = DUCKDB_V2_ERROR_IO_GENERAL,
+        IoNetwork = DUCKDB_V2_ERROR_IO_NETWORK,
+        IoHttp = DUCKDB_V2_ERROR_IO_HTTP,
+        InputInvalid = DUCKDB_V2_ERROR_INPUT_INVALID,
+        InputParameterInvalid = DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
+        InputOutOfRange = DUCKDB_V2_ERROR_INPUT_OUT_OF_RANGE,
+        InputObjectSize = DUCKDB_V2_ERROR_INPUT_OBJECT_SIZE,
+        /// Metadata is available only after stepping the expanding statement.
+        InputMetadataDeferred = DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED,
+        ResourceInUse = DUCKDB_V2_ERROR_RESOURCE_IN_USE,
+        ResourceOutOfMemory = DUCKDB_V2_ERROR_RESOURCE_OUT_OF_MEMORY,
+        ResourceConnection = DUCKDB_V2_ERROR_RESOURCE_CONNECTION,
+        ResourceDependency = DUCKDB_V2_ERROR_RESOURCE_DEPENDENCY,
+        ResourceMissingExtension = DUCKDB_V2_ERROR_RESOURCE_MISSING_EXTENSION,
+        ResourceAutoload = DUCKDB_V2_ERROR_RESOURCE_AUTOLOAD,
+        TypeConversion = DUCKDB_V2_ERROR_TYPE_CONVERSION,
+        TypeUnknown = DUCKDB_V2_ERROR_TYPE_UNKNOWN,
+        TypeInvalid = DUCKDB_V2_ERROR_TYPE_INVALID,
+        TypeMismatch = DUCKDB_V2_ERROR_TYPE_MISMATCH,
+        TypeDecimal = DUCKDB_V2_ERROR_TYPE_DECIMAL,
+        TypeDivideByZero = DUCKDB_V2_ERROR_TYPE_DIVIDE_BY_ZERO,
+        QueryParser = DUCKDB_V2_ERROR_QUERY_PARSER,
+        QuerySyntax = DUCKDB_V2_ERROR_QUERY_SYNTAX,
+        QueryBinder = DUCKDB_V2_ERROR_QUERY_BINDER,
+        QueryPlanner = DUCKDB_V2_ERROR_QUERY_PLANNER,
+        QueryOptimizer = DUCKDB_V2_ERROR_QUERY_OPTIMIZER,
+        QueryExpression = DUCKDB_V2_ERROR_QUERY_EXPRESSION,
+        QueryExecutor = DUCKDB_V2_ERROR_QUERY_EXECUTOR,
+        QueryScheduler = DUCKDB_V2_ERROR_QUERY_SCHEDULER,
+        QueryNotImplemented = DUCKDB_V2_ERROR_QUERY_NOT_IMPLEMENTED,
+        QueryParameterNotResolved = DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED,
+        QueryParameterNotAllowed = DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_ALLOWED,
+        DatabaseCatalog = DUCKDB_V2_ERROR_DATABASE_CATALOG,
+        DatabaseTransaction = DUCKDB_V2_ERROR_DATABASE_TRANSACTION,
+        DatabaseConstraint = DUCKDB_V2_ERROR_DATABASE_CONSTRAINT,
+        DatabaseIndex = DUCKDB_V2_ERROR_DATABASE_INDEX,
+        DatabaseSequence = DUCKDB_V2_ERROR_DATABASE_SEQUENCE,
+        DatabaseStatistics = DUCKDB_V2_ERROR_DATABASE_STATISTICS,
+        DatabaseSerialization = DUCKDB_V2_ERROR_DATABASE_SERIALIZATION,
+        ConfigurationSettings = DUCKDB_V2_ERROR_CONFIGURATION_SETTINGS,
+        ConfigurationInvalid = DUCKDB_V2_ERROR_CONFIGURATION_INVALID,
+        ConfigurationPermission = DUCKDB_V2_ERROR_CONFIGURATION_PERMISSION,
+        RuntimeInternal = DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
+        RuntimeFatal = DUCKDB_V2_ERROR_RUNTIME_FATAL,
+        RuntimeInterrupt = DUCKDB_V2_ERROR_RUNTIME_INTERRUPT,
+        RuntimeNullPointer = DUCKDB_V2_ERROR_RUNTIME_NULL_POINTER,
+    }
+}
 
 /// [`Error`] is a representation of an error returned by the DuckDB C API.
 ///
@@ -19,7 +74,7 @@ pub type DuckDBError = ffi::DUCKDB_V2_ERROR;
 /// This struct is used extensively in the crate to represent errors returned by the DuckDB C API.
 #[derive(Debug, Clone)]
 pub struct Error {
-    /// The raw `DUCKDB_V2_ERROR`.
+    /// The error code returned by DuckDB.
     pub code: DuckDBError,
     /// Human-readable message, empty if the API provided none.
     pub message: String,
@@ -41,14 +96,15 @@ impl Error {
     /// # Safety
     /// `handle` must be null or an owned live error handle.
     pub(crate) unsafe fn from_code_and_handle(
-        code: DuckDBError,
+        code: ffi::DUCKDB_V2_ERROR,
         handle: &mut ffi::duckdb_v2_error_info_handle,
     ) -> Self {
         let mut message = String::new();
         if !handle.is_null() {
             let mut text = ffi::duckdb_v2_str::default();
             // SAFETY: the caller supplies a live error handle.
-            if unsafe { ffi::duckdb_v2_error_info_get_text(*handle, &mut text) } == DuckDBError::DUCKDB_V2_ERROR_NONE
+            if unsafe { ffi::duckdb_v2_error_info_get_text(*handle, &mut text) }
+                == ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE
                 && !text.ptr.is_null()
                 && text.len > 0
             {
@@ -59,13 +115,16 @@ impl Error {
             // SAFETY: the caller transfers ownership of this live handle.
             unsafe { ffi::duckdb_v2_error_info_destroy(handle) };
         }
-        Error { code, message }
+        match code.try_into() {
+            Ok(code) => Error { code, message },
+            Err(error) => error,
+        }
     }
 
     /// Create an API-classified error with a human-readable message.
     pub fn api_error(message: impl Into<String>) -> Self {
         Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_API,
+            code: DuckDBError::Api,
             message: message.into(),
         }
     }
@@ -73,7 +132,7 @@ impl Error {
     /// Create an error for invalid caller-supplied input.
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID,
+            code: DuckDBError::InputInvalid,
             message: message.into(),
         }
     }
@@ -81,7 +140,7 @@ impl Error {
     /// Create an error for an invalid caller-supplied parameter, such as an out-of-range index.
     pub fn invalid_parameter(message: impl Into<String>) -> Self {
         Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_INPUT_PARAMETER_INVALID,
+            code: DuckDBError::InputParameterInvalid,
             message: message.into(),
         }
     }
@@ -90,7 +149,7 @@ impl Error {
     /// DuckDB describes this as an internal failure, including for callback panics.
     pub fn internal(message: impl Into<String>) -> Self {
         Error {
-            code: DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERNAL,
+            code: DuckDBError::RuntimeInternal,
             message: message.into(),
         }
     }
@@ -115,8 +174,11 @@ macro_rules! check_api_call_no_err {
                 let code = $call($($arg,)*);
 
                 match code {
-                    $crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE => Ok(()),
-                    _ => Err($crate::error::Error { code, message: String::new() }),
+                    $crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE => Ok(()),
+                    _ => Err(match code.try_into() {
+                        Ok(code) => $crate::error::Error { code, message: String::new() },
+                        Err(error) => error,
+                    }),
                 }
             }
         }
@@ -177,7 +239,7 @@ macro_rules! check_api_call {
         let mut err: $crate::ffi::duckdb_v2_error_info_handle = std::ptr::null_mut();
         unsafe {
             let code = $call($($b,)* &mut err);
-            if code != $crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE {
+            if code != $crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE {
                 let error = $crate::error::Error::from_code_and_handle(code, &mut err);
                 Err(error)
             } else {
@@ -192,7 +254,7 @@ macro_rules! check_api_call {
         let mut __out = std::mem::MaybeUninit::uninit();
         unsafe {
             let code = $call($($b,)* __out.as_mut_ptr(), $($a,)* &mut err);
-            if code != $crate::error::DuckDBError::DUCKDB_V2_ERROR_NONE {
+            if code != $crate::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE {
                 let error = $crate::error::Error::from_code_and_handle(code, &mut err);
                 Err(error)
             } else {
@@ -301,7 +363,7 @@ mod tests {
     fn test_from_null_error_handle() {
         let mut handle = std::ptr::null_mut();
         // SAFETY: a null error handle is allowed.
-        let error = unsafe { super::Error::from_code_and_handle(super::DuckDBError::DUCKDB_V2_ERROR_API, &mut handle) };
+        let error = unsafe { super::Error::from_code_and_handle(super::DuckDBError::Api.into(), &mut handle) };
         assert!(handle.is_null());
         assert!(error.message.is_empty());
         assert_eq!(error.to_string(), "DuckDB error (code 1)");
@@ -313,13 +375,13 @@ mod tests {
             let mut handle = std::ptr::null_mut();
             // SAFETY: the byte argument and output slot are valid for this call.
             let code = unsafe { crate::ffi::duckdb_v2_validate_utf8(&crate::ffi_str::bytes_arg(b"\xff"), &mut handle) };
-            assert_ne!(code, super::DuckDBError::DUCKDB_V2_ERROR_NONE);
+            assert_ne!(code, super::DuckDBError::None.into());
             assert!(!handle.is_null());
             super::check_api_call_no_err!(crate::ffi::duckdb_v2_error_info_set_text, handle, &message.into())?;
             // SAFETY: this test owns the live error handle.
             let error = unsafe { super::Error::from_code_and_handle(code, &mut handle) };
             assert!(handle.is_null());
-            assert_eq!(error.code, code);
+            assert_eq!(error.code, code.try_into()?);
             assert_eq!(error.message, message);
         }
         Ok(())
@@ -328,7 +390,7 @@ mod tests {
     #[test]
     pub fn test_error_to_string() -> crate::Result<()> {
         let err = crate::error::Error {
-            code: crate::error::DuckDBError::DUCKDB_V2_ERROR_API,
+            code: crate::error::DuckDBError::Api,
             message: "Test error".to_string(),
         };
 

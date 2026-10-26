@@ -72,8 +72,7 @@ impl<'a> BindArguments<'a> {
             Err(e)
                 if matches!(
                     e.code,
-                    DuckDBError::DUCKDB_V2_ERROR_QUERY_BINDER
-                        | DuckDBError::DUCKDB_V2_ERROR_QUERY_PARAMETER_NOT_RESOLVED
+                    DuckDBError::QueryBinder | DuckDBError::QueryParameterNotResolved
                 ) =>
             {
                 Ok(None)

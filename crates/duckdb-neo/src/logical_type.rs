@@ -1,6 +1,6 @@
 //! Construct and inspect DuckDB logical types.
 
-use crate::ffi::DUCKDB_V2_LOGICAL_TYPE_ID;
+pub use crate::enums::LogicalTypeID;
 
 use crate::connection::HasFactory;
 use crate::ffi_str::DuckDBStr;
@@ -8,9 +8,6 @@ use crate::{
     AsRaw, DropHandle, FromRaw, Parameters, Result, check_api_call, check_api_call_string, connection::FFILink, ffi,
     qualified_name::QualifiedName, raw::RawExt, value::Value,
 };
-
-/// DuckDB's logical type identifier.
-pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 
 /// An owned DuckDB logical type.
 ///
@@ -34,7 +31,7 @@ pub type LogicalTypeID = DUCKDB_V2_LOGICAL_TYPE_ID;
 ///
 /// assert_eq!(
 ///     logical_type.id()?,
-///     LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP
+///     LogicalTypeID::Map
 /// );
 /// assert_eq!(logical_type.param_count()?, 2);
 /// # Ok(())
@@ -86,7 +83,7 @@ impl LogicalType {
             check_api_call!(
                 ffi::duckdb_v2_factory_create_type_from_id,
                 link.factory()?.raw(),
-                type_id,
+                type_id.into(),
                 names,
                 values,
                 count,
@@ -139,7 +136,7 @@ impl LogicalType {
 
     /// Return the logical type ID.
     pub fn id(&self) -> Result<LogicalTypeID> {
-        check_api_call!(ffi::duckdb_v2_logical_type_get_id, self.handle, RET)
+        check_api_call!(ffi::duckdb_v2_logical_type_get_id, self.handle, RET)?.try_into()
     }
 
     /// Return the alias or canonical type name.
@@ -284,12 +281,7 @@ mod test {
             "INTEGER"
         );
         assert_eq!(
-            LogicalType::create_from_id(
-                &conn,
-                LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER,
-                Parameters::None
-            )?
-            .name()?,
+            LogicalType::create_from_id(&conn, LogicalTypeID::Integer, Parameters::None)?.name()?,
             "INTEGER"
         );
         Ok(())
@@ -309,11 +301,11 @@ mod test {
         assert_eq!(ltype.param_count()?, 2);
         assert_eq!(
             ltype.get_param(0)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+            LogicalTypeID::Integer
         );
         assert_eq!(
             ltype.get_param(1)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
+            LogicalTypeID::Varchar
         );
 
         Ok(())
@@ -327,20 +319,17 @@ mod test {
         let text_type = Value::from_logical_type(&conn, &String::logical_type(&conn)?)?;
         let ltype = LogicalType::create_from_id(
             &conn,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT,
+            LogicalTypeID::Struct,
             Parameters::named(&[("id", &int_type), ("label", &text_type)]),
         )?;
 
-        assert_eq!(ltype.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT);
+        assert_eq!(ltype.id()?, LogicalTypeID::Struct);
         let params = ltype.get_params()?;
         assert_eq!(
             params.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(),
             ["id", "label"]
         );
-        assert_eq!(
-            params[1].1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
-        );
+        assert_eq!(params[1].1.type_value_get_inner()?.id()?, LogicalTypeID::Varchar);
 
         Ok(())
     }
@@ -357,15 +346,15 @@ mod test {
 
         assert_eq!(alias_ltype.name()?, "my_map");
         assert_eq!(alias_ltype.param_count()?, 2);
-        assert_eq!(alias_ltype.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP);
+        assert_eq!(alias_ltype.id()?, LogicalTypeID::Map);
 
         assert_eq!(
             alias_ltype.get_param(0)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
+            LogicalTypeID::Integer
         );
         assert_eq!(
             alias_ltype.get_param(1)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
+            LogicalTypeID::Varchar
         );
 
         Ok(())
@@ -381,18 +370,9 @@ mod test {
 
         assert_eq!(lt.name()?, "UNION");
         assert_eq!(lt.param_count()?, 3);
-        assert_eq!(
-            lt.get_param(0)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR
-        );
-        assert_eq!(
-            lt.get_param(1)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-        );
-        assert_eq!(
-            lt.get_param(2)?.1.type_value_get_inner()?.id()?,
-            LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT
-        );
+        assert_eq!(lt.get_param(0)?.1.type_value_get_inner()?.id()?, LogicalTypeID::Varchar);
+        assert_eq!(lt.get_param(1)?.1.type_value_get_inner()?.id()?, LogicalTypeID::Integer);
+        assert_eq!(lt.get_param(2)?.1.type_value_get_inner()?.id()?, LogicalTypeID::TinyInt);
 
         Ok(())
     }

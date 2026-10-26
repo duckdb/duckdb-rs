@@ -51,6 +51,24 @@ mod test {
         Ok(())
     }
 
+    #[cfg(feature = "bundled-cmake")]
+    #[test]
+    #[ignore = "requires external extension loading to be enabled at build time"]
+    fn test_external_extension_load() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("missing.duckdb_extension");
+        let connection = Connection::open_in_memory()?;
+        let error = connection
+            .execute_batch(&format!("LOAD '{}';", path.to_string_lossy().replace('\'', "''")))
+            .expect_err("missing extension should not load")
+            .to_string();
+        assert!(
+            error.contains("not found"),
+            "expected a missing file error, got: {error}"
+        );
+        Ok(())
+    }
+
     #[cfg(feature = "httpfs")]
     #[test]
     fn test_extension_httpfs() -> Result<(), Box<dyn std::error::Error>> {

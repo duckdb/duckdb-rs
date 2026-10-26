@@ -155,7 +155,7 @@ impl Config<'_> {
     pub fn try_get_value(&self, name: &str) -> Result<Option<(Value, SettingScope)>> {
         match self.get_value(name) {
             Ok(value) => Ok(Some(value)),
-            Err(error) if error.code == ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_INPUT_INVALID => Ok(None),
+            Err(error) if error.code == crate::error::DuckDBError::InputInvalid => Ok(None),
             Err(error) => Err(error),
         }
     }

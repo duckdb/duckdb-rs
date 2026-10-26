@@ -117,7 +117,7 @@ pub(crate) fn derive_drop_handle(input: syn::DeriveInput) -> TokenStream {
                 // SAFETY: the wrapper owns the handle, and nothing uses it after drop.
                 let code = unsafe { #destroy(&mut self.#member) };
                 assert!(
-                    code == ::duckdb_neo::error::DuckDBError::DUCKDB_V2_ERROR_NONE,
+                    code == ::duckdb_neo::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE,
                     "Failed to destroy {}: {:?}",
                     stringify!(#name),
                     code,

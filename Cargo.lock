@@ -890,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "duckdb-neo"
-version = "1.20000.0"
+version = "0.20000.0"
 dependencies = [
  "arrow-array",
  "chrono",

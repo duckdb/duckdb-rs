@@ -3,6 +3,62 @@
 use crate::{builder_helpers::ffi_enum_redeclaration, ffi};
 
 ffi_enum_redeclaration! {
+    /// DuckDB's logical type identifier, independent of type parameters and aliases.
+    pub enum LogicalTypeID <- ffi::DUCKDB_V2_LOGICAL_TYPE_ID {
+        /// Invalid or unset type.
+        Invalid = DUCKDB_V2_LOGICAL_TYPE_ID_INVALID,
+        /// The type of a NULL constant.
+        SqlNull = DUCKDB_V2_LOGICAL_TYPE_ID_SQLNULL,
+        /// An unresolved parameter's type.
+        Unknown = DUCKDB_V2_LOGICAL_TYPE_ID_UNKNOWN,
+        /// A function-signature wildcard accepting any type.
+        Any = DUCKDB_V2_LOGICAL_TYPE_ID_ANY,
+        /// A logical type carried as a value.
+        Type = DUCKDB_V2_LOGICAL_TYPE_ID_TYPE,
+        Boolean = DUCKDB_V2_LOGICAL_TYPE_ID_BOOLEAN,
+        TinyInt = DUCKDB_V2_LOGICAL_TYPE_ID_TINYINT,
+        SmallInt = DUCKDB_V2_LOGICAL_TYPE_ID_SMALLINT,
+        Integer = DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER,
+        BigInt = DUCKDB_V2_LOGICAL_TYPE_ID_BIGINT,
+        Date = DUCKDB_V2_LOGICAL_TYPE_ID_DATE,
+        Time = DUCKDB_V2_LOGICAL_TYPE_ID_TIME,
+        TimestampSec = DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_SEC,
+        TimestampMs = DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_MS,
+        Timestamp = DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP,
+        TimestampNs = DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_NS,
+        Decimal = DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL,
+        Float = DUCKDB_V2_LOGICAL_TYPE_ID_FLOAT,
+        Double = DUCKDB_V2_LOGICAL_TYPE_ID_DOUBLE,
+        Varchar = DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR,
+        Blob = DUCKDB_V2_LOGICAL_TYPE_ID_BLOB,
+        Interval = DUCKDB_V2_LOGICAL_TYPE_ID_INTERVAL,
+        UTinyInt = DUCKDB_V2_LOGICAL_TYPE_ID_UTINYINT,
+        USmallInt = DUCKDB_V2_LOGICAL_TYPE_ID_USMALLINT,
+        UInteger = DUCKDB_V2_LOGICAL_TYPE_ID_UINTEGER,
+        UBigInt = DUCKDB_V2_LOGICAL_TYPE_ID_UBIGINT,
+        TimestampTz = DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ,
+        TimestampTzNs = DUCKDB_V2_LOGICAL_TYPE_ID_TIMESTAMP_TZ_NS,
+        TimeTz = DUCKDB_V2_LOGICAL_TYPE_ID_TIME_TZ,
+        TimeNs = DUCKDB_V2_LOGICAL_TYPE_ID_TIME_NS,
+        Bit = DUCKDB_V2_LOGICAL_TYPE_ID_BIT,
+        BigNum = DUCKDB_V2_LOGICAL_TYPE_ID_BIGNUM,
+        UHugeInt = DUCKDB_V2_LOGICAL_TYPE_ID_UHUGEINT,
+        HugeInt = DUCKDB_V2_LOGICAL_TYPE_ID_HUGEINT,
+        Uuid = DUCKDB_V2_LOGICAL_TYPE_ID_UUID,
+        Geometry = DUCKDB_V2_LOGICAL_TYPE_ID_GEOMETRY,
+        Struct = DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT,
+        List = DUCKDB_V2_LOGICAL_TYPE_ID_LIST,
+        Map = DUCKDB_V2_LOGICAL_TYPE_ID_MAP,
+        Enum = DUCKDB_V2_LOGICAL_TYPE_ID_ENUM,
+        Union = DUCKDB_V2_LOGICAL_TYPE_ID_UNION,
+        Array = DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY,
+        Variant = DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT,
+        /// An unnamed struct with positional fields.
+        Tuple = DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE,
+    }
+}
+
+ffi_enum_redeclaration! {
     /// The lexical class of a token, as reported by [`SqlTokenIterator`](crate::tokens::SqlTokenIterator).
     pub enum TokenType <- ffi::DUCKDB_V2_TOKEN_TYPE {
         /// FFI failure sentinel; [`SqlTokenIterator`](crate::tokens::SqlTokenIterator) returns an error instead.
@@ -188,6 +244,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_logical_type_id_round_trip() -> crate::Result<()> {
+        use LogicalTypeID::*;
+
+        for id in [
+            Invalid,
+            SqlNull,
+            Unknown,
+            Any,
+            Type,
+            Boolean,
+            TinyInt,
+            SmallInt,
+            Integer,
+            BigInt,
+            Date,
+            Time,
+            TimestampSec,
+            TimestampMs,
+            Timestamp,
+            TimestampNs,
+            Decimal,
+            Float,
+            Double,
+            Varchar,
+            Blob,
+            Interval,
+            UTinyInt,
+            USmallInt,
+            UInteger,
+            UBigInt,
+            TimestampTz,
+            TimestampTzNs,
+            TimeTz,
+            TimeNs,
+            Bit,
+            BigNum,
+            UHugeInt,
+            HugeInt,
+            Uuid,
+            Geometry,
+            Struct,
+            List,
+            Map,
+            Enum,
+            Union,
+            Array,
+            Variant,
+            Tuple,
+        ] {
+            let raw = ffi::DUCKDB_V2_LOGICAL_TYPE_ID::from(id);
+            assert_eq!(id as u32, raw as u32);
+            assert_eq!(LogicalTypeID::try_from(raw)?, id);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_logical_type_id_rejects_ffi_sentinel() {
+        let error =
+            LogicalTypeID::try_from(ffi::DUCKDB_V2_LOGICAL_TYPE_ID::DUCKDB_V2_LOGICAL_TYPE_ID_MAX_ENUM).unwrap_err();
+        assert!(error.to_string().contains("Unknown LogicalTypeID"));
+    }
+
+    #[test]
     fn test_push_combinable() {
         assert_eq!(
             ffi::DUCKDB_V2_FUNCTION_PROPERTY_VALUE::from(FunctionPropertyCollation::PushCombinable),
@@ -199,6 +319,7 @@ mod tests {
     fn test_property_traits() {
         fn assert_traits<T: Copy + Eq + std::hash::Hash>() {}
 
+        assert_traits::<LogicalTypeID>();
         assert_traits::<FunctionPropertyStability>();
         assert_traits::<FunctionPropertyCollation>();
         assert_traits::<FunctionProperty>();

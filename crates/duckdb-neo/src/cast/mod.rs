@@ -59,10 +59,7 @@ fn validate_cast_type<T: VectorElement>(logical_type: &LogicalType) -> Result<()
     // Nested layouts need child vectors, which are only available during execution.
     if !matches!(
         T::TYPE_ID,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST
-            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
-            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP
-            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
+        LogicalTypeID::List | LogicalTypeID::Array | LogicalTypeID::Map | LogicalTypeID::Union
     ) && !T::validate(logical_type, None)?
     {
         return Err(Error::invalid_input(format!(

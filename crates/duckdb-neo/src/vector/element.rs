@@ -11,7 +11,7 @@ use crate::{
 ///
 /// Vector accessors trust the implementation:
 ///
-/// - `Internal` must match DuckDB's physical layout for every logical type `validate` accepts.
+/// - `Internal<'a>` must match DuckDB's physical layout for every lifetime and logical type `validate` accepts.
 /// - `get` must only read within the vector's view and the children `validate` checked.
 ///
 /// A safe implementation is rejected:
@@ -21,8 +21,8 @@ use crate::{
 /// struct Wide([u64; 4]);
 ///
 /// impl VectorElement for Wide {
-///     const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER;
-///     type Internal = Wide;
+///     const TYPE_ID: LogicalTypeID = LogicalTypeID::Integer;
+///     type Internal<'a> = Wide;
 ///     type Ref<'a> = ();
 ///
 ///     unsafe fn get<'a, U: VectorElement>(_: &VectorReader<'a, U>, _: usize, _: usize) -> Self::Ref<'a>
@@ -38,7 +38,8 @@ pub unsafe trait VectorElement: Sized {
 
     /// Physical entries exposed by [`VectorReader::as_slice`](crate::vector::VectorReader::as_slice).
     /// Use `()` when the element does not expose a physical representation.
-    type Internal;
+    /// The lifetime bounds any storage referenced by an entry.
+    type Internal<'a>;
 
     /// The borrowed or owned value returned for one vector row.
     type Ref<'a>
@@ -76,7 +77,7 @@ pub unsafe trait VectorElement: Sized {
 
 /// Marks vector elements backed by DuckDB's byte storage and arena.
 ///
-/// Implemented for [`String`], [`UnsafeString`](crate::types::UnsafeString),
+/// Implemented for [`String`], [`UncheckedString`](crate::types::UncheckedString),
 /// [`BlobValue`](crate::types::BlobValue), [`BitValue`](crate::types::BitValue),
 /// [`BigNum`](crate::types::BigNum), and [`BigNumValue`](crate::types::BigNumValue).
 ///
@@ -137,11 +138,11 @@ pub struct Unknown;
 
 // SAFETY: `Internal` is zero-sized and `get` reads nothing.
 unsafe impl VectorElement for Unknown {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNKNOWN;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Unknown;
 
     type Ref<'a> = ();
 
-    type Internal = ();
+    type Internal<'a> = ();
 
     fn validate(_other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
         Ok(true)

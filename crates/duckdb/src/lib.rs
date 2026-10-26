@@ -1551,7 +1551,7 @@ mod test {
         db.execute_batch("CREATE MACRO test_func() AS TABLE SELECT * FROM test_data;")?;
 
         let mut stmt = db.prepare("CALL test_func()")?;
-        let rbs: Vec<RecordBatch> = stmt.stream_arrow([])?.collect();
+        let rbs: Vec<RecordBatch> = stmt.stream_arrow([])?.collect::<Result<Vec<_>>>()?;
 
         // Verify we got results
         assert!(!rbs.is_empty(), "Expected at least one record batch");
@@ -1560,6 +1560,67 @@ mod test {
 
         let id_column = rbs[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();
         assert_eq!(id_column.value(0), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_arrow_error_during_streaming() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // We want to specifically test the case where streaming starts successfully,
+        // then an error occurs during a later fetch. A deterministic way to trigger
+        // this is to interrupt the connection mid-stream.
+        let db_interrupt = db.interrupt_handle();
+
+        let mut stmt = db.prepare("SELECT i FROM range(1000000000) t(i)")?;
+        let mut stream = stmt.stream_arrow([])?;
+
+        // Fetch at least one batch to ensure the stream has started.
+        let first = stream.next().expect("Expected at least one batch from stream");
+        assert!(first.is_ok(), "Expected first batch to be Ok, got: {first:?}");
+
+        // Interrupt the connection, then the next fetch should return an error (not end-of-stream).
+        db_interrupt.interrupt();
+
+        let err = stream
+            .next()
+            .expect("Expected an error after interrupt")
+            .expect_err("Expected streaming error after interrupt, got Ok batch");
+        assert!(
+            err.to_string().contains("INTERRUPT"),
+            "Expected interrupt error, got: {err}"
+        );
+
+        // The stream is exhausted after an error, and the schema is still available.
+        assert!(stream.next().is_none());
+        assert_eq!(stream.get_schema().fields().len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_arrow_successful_completion() -> Result<()> {
+        let db = checked_memory_handle();
+
+        // Create a table with valid data
+        db.execute_batch(
+            "CREATE TABLE test_data(value INTEGER);
+             INSERT INTO test_data SELECT i FROM range(100) AS t(i);",
+        )?;
+
+        let mut stmt = db.prepare("SELECT value FROM test_data")?;
+        let mut stream = stmt.stream_arrow([])?;
+
+        // Collect results - all should be successful
+        let batches = stream.by_ref().collect::<Result<Vec<_>>>()?;
+
+        // Verify we got all 100 rows
+        let total_rows: usize = batches.iter().map(|rb| rb.num_rows()).sum();
+        assert_eq!(total_rows, 100);
+
+        // Verify the iterator is fused: exhausted stream yields None
+        assert!(stream.next().is_none());
 
         Ok(())
     }
