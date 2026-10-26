@@ -214,7 +214,6 @@ pub struct Vector<'a, T: VectorElement> {
     kind: StorageKind,
     len: usize,
     heap: Option<Arena>,
-    validity_writable: bool,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     metadata: TypeMetadata,
@@ -256,7 +255,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             view,
             access,
             heap: None,
-            validity_writable: false,
             children,
             metadata: params,
             _chunk: PhantomData,
@@ -325,7 +323,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.children.as_ref()
     }
 
-    /// Prepare exclusive write access without flattening or allocating a validity mask.
+    /// Prepare exclusive write access and allocate a writable validity mask.
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
     /// before acquiring its writer.
@@ -354,7 +352,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     fn refresh_buffers(&mut self) -> Result<()> {
         self.view = Self::acquire_view(self.handle, self.kind)?;
         self.heap = None;
-        self.validity_writable = false;
         if let Some(children) = &mut self.children {
             children.evict_all();
         }
@@ -370,7 +367,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             view: self.view.map(|view| view.cast_owned::<U>()),
             access: self.access,
             heap: self.heap,
-            validity_writable: self.validity_writable,
             children: self.children,
             metadata: self.metadata,
             _chunk: self._chunk,

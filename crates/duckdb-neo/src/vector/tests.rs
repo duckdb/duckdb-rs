@@ -96,7 +96,7 @@ fn vector_decimal_mismatch_reports_parameters() -> crate::Result<()> {
 }
 
 #[test]
-fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
+fn vector_writer_allocates_validity_mask() -> crate::Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
@@ -104,7 +104,7 @@ fn vector_valid_write_preserves_absent_validity_mask() -> crate::Result<()> {
     vector.set_size(1)?;
     assert!(vector.reader().unwrap().validity().is_none());
     vector.writer()?.set(0, Some(42))?;
-    assert!(vector.reader().unwrap().validity().is_none());
+    assert!(vector.reader().unwrap().validity().is_some());
     assert_eq!(vector.reader()?.get(0)?, Some(&42));
     vector.writer()?.set(0, None)?;
     assert!(vector.reader().unwrap().validity().is_some());
@@ -125,31 +125,27 @@ fn vector_writer_unchecked_updates_validity_after_reshape() -> crate::Result<()>
         // SAFETY: The writable flat vector has 65 rows.
         unsafe { vector.writer()?.set_unchecked(index, Some(index as i32))? };
     }
-    assert!(vector.reader()?.validity().is_none());
+    assert!(vector.reader()?.validity().is_some());
     // SAFETY: Both rows are within the writable flat vector.
     unsafe {
         vector.writer()?.set_unchecked(0, None)?;
         vector.writer()?.set_unchecked(64, None)?;
     }
-    assert!(vector.validity_writable);
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, None);
     assert_eq!(reader.get(64)?, None);
     vector.set_size(4097)?;
-    assert!(!vector.validity_writable);
     // SAFETY: Resizing retained writable flat storage; all indices are in bounds.
     unsafe {
         vector.writer()?.set_unchecked(0, Some(42))?;
         vector.writer()?.set_unchecked(64, Some(64))?;
         vector.writer()?.set_unchecked(4096, None)?;
     }
-    assert!(vector.validity_writable);
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?, Some(&42));
     assert_eq!(reader.get(64)?, Some(&64));
     assert_eq!(reader.get(4096)?, None);
     vector.write_value_slow(0, Value::null(&conn, &i32::logical_type(&conn)?)?)?;
-    assert!(!vector.validity_writable);
     // SAFETY: The value write preserved the writable flat row.
     unsafe { vector.writer()?.set_unchecked(0, Some(7))? };
     assert_eq!(vector.reader()?.get(0)?, Some(&7));
@@ -240,7 +236,14 @@ fn vector_writer_initializes_and_preserves_validity_mask() -> crate::Result<()> 
     for index in 0..vector.len() {
         vector.writer()?.set(index, Some(index as i32))?;
     }
-    assert!(vector.reader()?.validity().is_none());
+    assert!(
+        vector
+            .reader()?
+            .validity()
+            .unwrap()
+            .iter()
+            .all(|word| *word == u64::MAX)
+    );
 
     {
         let mut view = vector.writer()?;
@@ -564,7 +567,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
                 .message,
             "element writer called"
         );
-        assert!(vector.reader()?.validity().is_none());
+        assert_eq!(vector.reader()?.validity().unwrap(), [u64::MAX]);
         for index in [1, usize::MAX] {
             for value in [Some(()), None] {
                 let err = vector.writer()?.set(index, value).unwrap_err();
