@@ -1,6 +1,6 @@
 //! `VARCHAR`, `BLOB`, and `BIT` byte-oriented logical types.
 //!
-//! [`str`], [`String`], and [`UnsafeString`] represent `VARCHAR`;
+//! [`str`], [`String`], and [`UncheckedString`] represent `VARCHAR`;
 //! [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
 //! All share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 

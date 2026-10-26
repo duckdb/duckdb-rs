@@ -77,8 +77,8 @@ fn writer_raw_data_and_manual_validity_cover_word_boundaries() -> Result<()> {
                 for index in 0..count {
                     data.add(index).write(index as i32);
                 }
-                assert!(unsafe { writer.validity_mut() }.unwrap().iter().all(|word| *word == 0));
-                let mask = unsafe { writer.validity_mut()? };
+                assert!(writer.validity_mut().unwrap().iter().all(|word| *word == 0));
+                let mask = writer.validity_mut()?;
                 assert_eq!(mask.len(), count.div_ceil(64));
                 for index in 0..count {
                     if index % 7 != 0 {

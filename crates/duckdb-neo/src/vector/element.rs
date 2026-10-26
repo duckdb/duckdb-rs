@@ -77,7 +77,7 @@ pub unsafe trait VectorElement: Sized {
 
 /// Marks vector elements backed by DuckDB's byte storage and arena.
 ///
-/// Implemented for [`String`], [`UnsafeString`](crate::types::UnsafeString),
+/// Implemented for [`String`], [`UncheckedString`](crate::types::UncheckedString),
 /// [`BlobValue`](crate::types::BlobValue), [`BitValue`](crate::types::BitValue),
 /// [`BigNum`](crate::types::BigNum), and [`BigNumValue`](crate::types::BigNumValue).
 ///

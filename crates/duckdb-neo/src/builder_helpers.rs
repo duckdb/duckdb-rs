@@ -106,7 +106,7 @@ pub(crate) fn set_error(err: *mut ffi::duckdb_v2_error_info_handle, error: &Erro
     }
     let code = match error.code {
         crate::error::DuckDBError::None => DuckDBError::Api,
-        code => code.into(),
+        code => code,
     };
     let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_code, *err, code.into());
     let _ = check_api_call_no_err!(ffi::duckdb_v2_error_info_set_text, *err, &(&error.message).into());
