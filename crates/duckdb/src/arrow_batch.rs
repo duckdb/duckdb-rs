@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use super::{
     Result, Statement,
     arrow::{datatypes::SchemaRef, record_batch::RecordBatch},
@@ -54,23 +56,21 @@ impl<'stmt> Iterator for Arrow<'stmt> {
 /// items instead of panicking. After an error the iterator is exhausted.
 #[must_use = "Arrow stream is lazy and will not fetch data unless consumed"]
 pub struct ArrowStream<'stmt> {
-    pub(crate) stmt: Option<&'stmt Statement<'stmt>>,
+    stmt: &'stmt Statement<'stmt>,
+    done: bool,
 }
 
 #[allow(clippy::needless_lifetimes)]
 impl<'stmt> ArrowStream<'stmt> {
     #[inline]
     pub(crate) fn new(stmt: &'stmt Statement<'stmt>) -> Self {
-        ArrowStream { stmt: Some(stmt) }
+        ArrowStream { stmt, done: false }
     }
 
     /// Return the Arrow schema reported by DuckDB after execution.
     #[inline]
     pub fn get_schema(&self) -> SchemaRef {
-        self.stmt
-            .expect("Arrow stream always holds a statement")
-            .stmt
-            .schema()
+        self.stmt.stmt.schema()
     }
 }
 
@@ -79,15 +79,21 @@ impl<'stmt> Iterator for ArrowStream<'stmt> {
     type Item = Result<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let stmt = self.stmt?;
-        match stmt.step() {
+        if self.done {
+            return None;
+        }
+        match self.stmt.step() {
             Ok(Some(array)) => Some(Ok(RecordBatch::from(&array))),
-            Ok(None) => None,
+            Ok(None) => {
+                self.done = true;
+                None
+            }
             Err(e) => {
-                // Clear the statement to prevent further iteration after error
-                self.stmt = None;
+                self.done = true;
                 Some(Err(e))
             }
         }
     }
 }
+
+impl FusedIterator for ArrowStream<'_> {}

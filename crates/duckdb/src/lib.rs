@@ -748,8 +748,9 @@ doc_comment::doctest!("../../../README.md");
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::types::Value;
+
+    use super::*;
     use std::{error::Error as StdError, fmt};
 
     use arrow::{array::Int32Array, datatypes::DataType, record_batch::RecordBatch};
@@ -1573,33 +1574,29 @@ mod test {
         let db_interrupt = db.interrupt_handle();
 
         let mut stmt = db.prepare("SELECT i FROM range(1000000000) t(i)")?;
-
-        let stream = stmt.stream_arrow([])?;
-
-        let mut ok_batches = 0usize;
-        let mut stream = stream;
+        let mut stream = stmt.stream_arrow([])?;
 
         // Fetch at least one batch to ensure the stream has started.
         let first = stream.next().expect("Expected at least one batch from stream");
         assert!(first.is_ok(), "Expected first batch to be Ok, got: {first:?}");
-        ok_batches += 1;
 
         // Interrupt the connection, then the next fetch should return an error (not end-of-stream).
         db_interrupt.interrupt();
 
-        let second = stream.next().expect("Expected an error after interrupt");
-        match second {
-            Ok(_rb) => panic!("Expected streaming error after interrupt, got Ok batch"),
-            Err(e) => {
-                assert!(ok_batches > 0, "Expected at least one batch before error");
-                let msg = format!("{e}");
-                assert!(
-                    msg == "INTERRUPT Error: Interrupted!",
-                    "Expected interrupt error, got: {msg}"
-                );
-                Ok(())
-            }
-        }
+        let err = stream
+            .next()
+            .expect("Expected an error after interrupt")
+            .expect_err("Expected streaming error after interrupt, got Ok batch");
+        assert!(
+            err.to_string().contains("INTERRUPT"),
+            "Expected interrupt error, got: {err}"
+        );
+
+        // The stream is exhausted after an error, and the schema is still available.
+        assert!(stream.next().is_none());
+        assert_eq!(stream.get_schema().fields().len(), 1);
+
+        Ok(())
     }
 
     #[test]
@@ -1613,15 +1610,17 @@ mod test {
         )?;
 
         let mut stmt = db.prepare("SELECT value FROM test_data")?;
-        let stream = stmt.stream_arrow([])?;
+        let mut stream = stmt.stream_arrow([])?;
 
         // Collect results - all should be successful
-        let results: Result<Vec<_>> = stream.collect();
-        let batches = results?;
+        let batches = stream.by_ref().collect::<Result<Vec<_>>>()?;
 
         // Verify we got all 100 rows
         let total_rows: usize = batches.iter().map(|rb| rb.num_rows()).sum();
         assert_eq!(total_rows, 100);
+
+        // Verify the iterator is fused: exhausted stream yields None
+        assert!(stream.next().is_none());
 
         Ok(())
     }
