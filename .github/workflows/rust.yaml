@@ -122,7 +122,9 @@ jobs:
         env:
           CC: "sccache cc"
           CXX: "sccache c++"
-        run: cargo test -p duckdb --features extensions-full --lib extension::test --locked
+        run: |
+          cargo test -p duckdb --features extensions-full --lib extension::test --locked
+          cargo test -p duckdb-neo --features bundled --locked
 
   cmake:
     # Slow bundled C++ build; only start once the fast linked-mode tests pass.
