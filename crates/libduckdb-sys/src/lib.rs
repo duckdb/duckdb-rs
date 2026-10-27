@@ -4,6 +4,16 @@
 #![allow(deref_nullptr)]
 #![allow(improper_ctypes)]
 
+// Keep the loader reachable before GNU ld scans the separate constructor archive.
+#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+#[used]
+static STATIC_EXTENSION_LOADER: unsafe extern "C" fn() -> std::ffi::c_int = {
+    unsafe extern "C" {
+        fn duckdb_register_static_extensions() -> std::ffi::c_int;
+    }
+    duckdb_register_static_extensions
+};
+
 #[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
 compile_error!("libduckdb-sys needs at least one of the `capi-v1` or `capi-v2` features");
 

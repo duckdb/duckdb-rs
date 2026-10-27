@@ -2,6 +2,33 @@
 mod test {
     use crate::{Connection, Result};
 
+    #[cfg(feature = "bundled")]
+    #[test]
+    fn test_bundled_extensions_registered() -> Result<()> {
+        let config = crate::Config::default()
+            .with("autoinstall_known_extensions", "false")?
+            .with("autoload_known_extensions", "false")?;
+        let connection = Connection::open_in_memory_with_flags(config)?;
+        let extensions = [
+            "core_functions",
+            #[cfg(feature = "json")]
+            "json",
+            #[cfg(feature = "parquet")]
+            "parquet",
+        ];
+        for extension in extensions {
+            connection.execute_batch(&format!("LOAD {extension};"))?;
+            let is_builtin = connection.query_row(
+                "SELECT installed AND loaded AND install_mode = 'STATICALLY_LINKED' AND install_path = '(BUILT-IN)' \
+                 FROM duckdb_extensions() WHERE extension_name = ?",
+                [extension],
+                |row| row.get::<_, bool>(0),
+            )?;
+            assert!(is_builtin, "{extension} should be statically linked");
+        }
+        Ok(())
+    }
+
     // https://duckdb.org/docs/current/data/json/overview
     #[cfg(feature = "json")]
     #[test]
