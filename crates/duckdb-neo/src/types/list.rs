@@ -1,5 +1,6 @@
-//! [`List`] is a borrowed-vector `LIST` element; [`Vec<T>`] is its owned scalar form.
-//! `Vec<u8>` maps to `UTINYINT[]`; use [`super::BlobValue`] for `BLOB`.
+//! [`List`] exposes native child write inputs; [`Vec<T>`] reads and writes owned Rust lists.
+//! `Vec<T>` supplies non-NULL elements, while `Vec<Option<T>>` also accepts NULL elements.
+//! Both readers preserve element NULLs. `Vec<u8>` maps to `UTINYINT[]`; use [`super::BlobValue`] for `BLOB`.
 
 use std::marker::PhantomData;
 
@@ -11,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{VectorElement, WritableVectorElement},
+    vector::{OwnedVectorElement, VectorElement, WritableVectorElement},
 };
 
 /// A physical list entry parameterized by its child element type.
@@ -67,6 +68,83 @@ impl<T: FromValue> FromValue for Vec<Option<T>> {
     }
 }
 
+impl<T: FromValue> FromValue for Vec<T> {
+    fn _get_inner(value: &Value) -> Result<Self> {
+        Vec::<Option<T>>::_get_inner(value)?
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| value.ok_or_else(|| Error::invalid_input(format!("LIST element {index} is NULL"))))
+            .collect()
+    }
+}
+
+// SAFETY: Vec uses the same vector layout and validated child schema as List.
+unsafe impl<T: VectorElement> VectorElement for Vec<T> {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
+    type Internal<'a> = List<T>;
+    type Ref<'a>
+        = ListRef<'a, T>
+    where
+        T: 'a;
+
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
+        List::<T>::validate(other, children)
+    }
+
+    unsafe fn get<'a, U: VectorElement>(
+        reader: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        logical: usize,
+    ) -> Self::Ref<'a>
+    where
+        Self: 'a,
+    {
+        unsafe { List::<T>::get(reader, physical, logical) }
+    }
+}
+
+// SAFETY: entries cover initialized child rows; each element writer maintains its validity.
+unsafe impl<T: OwnedVectorElement> WritableVectorElement for Vec<T> {
+    type Write<'a> = Self;
+
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<Self>,
+    ) -> Result<()> {
+        let Some(values) = value else { return Ok(()) };
+        let len = values.len();
+        let child = vector
+            .children_collection_mut()
+            .expect("validated list has a child")
+            .cached_mut::<T>(0)?;
+        let offset = child.current_size()?;
+        child.set_size(
+            offset
+                .checked_add(len)
+                .ok_or_else(|| Error::invalid_input("List child length overflow"))?,
+        )?;
+        {
+            let mut writer = child.writer()?;
+            for (index, value) in values.into_iter().enumerate() {
+                // SAFETY: the appended range is in bounds and validated as T.
+                unsafe { T::write_owned(&mut writer, offset + index, Some(value))? };
+            }
+        }
+        // SAFETY: the parent row is in bounds and the entry covers initialized child rows.
+        unsafe {
+            vector.write_internal(
+                index,
+                Some(List::<T> {
+                    offset: offset as u64,
+                    length: len as u64,
+                    _marker: PhantomData,
+                }),
+            )
+        }
+    }
+}
+
 // SAFETY: `List` matches DuckDB's list entry, and `validate` checks the child as `L`.
 unsafe impl<L: VectorElement> VectorElement for List<L> {
     type Ref<'a>
@@ -109,13 +187,10 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
 
 // SAFETY: the entry covers child rows appended through the child's own `write`.
 unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
-    type Write<'a>
-        = Vec<Option<T::Write<'a>>>
-    where
-        T: 'a;
+    type Write<'a> = Vec<Option<T::Write<'a>>>;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

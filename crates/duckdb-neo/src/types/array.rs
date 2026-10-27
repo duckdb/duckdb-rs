@@ -1,4 +1,7 @@
 //! The fixed-length `ARRAY` logical type.
+//!
+//! `[T; N]` writes owned arrays and validates their length when attached to a vector.
+//! Use `[Option<T>; N]` for nullable elements; readers preserve element NULLs for either form.
 
 use std::marker::PhantomData;
 
@@ -10,7 +13,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{VectorElement, WritableVectorElement},
+    vector::{OwnedVectorElement, VectorElement, WritableVectorElement},
 };
 
 /// A fixed-length array element marker; `[T; N]` is the owned form.
@@ -57,6 +60,84 @@ impl<T: FromValue, const N: usize> FromValue for [Option<T>; N] {
         Ok(values
             .try_into()
             .unwrap_or_else(|_| unreachable!("checked exactly N children")))
+    }
+}
+
+impl<T: FromValue, const N: usize> FromValue for [T; N] {
+    fn _get_inner(value: &Value) -> Result<Self> {
+        let values = <[Option<T>; N]>::_get_inner(value)?
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| value.ok_or_else(|| Error::invalid_input(format!("ARRAY element {index} is NULL"))))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(values
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("checked exactly N elements")))
+    }
+}
+
+// SAFETY: the marker layout matches Array, and validation also checks the fixed length.
+unsafe impl<T: VectorElement, const N: usize> VectorElement for [T; N] {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Array;
+    type Internal<'a> = ();
+    type Ref<'a>
+        = ArrayRef<'a, T>
+    where
+        T: 'a;
+
+    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
+        Ok(Array::<T>::validate(other, children)? && array_size(other)? == N)
+    }
+
+    unsafe fn get<'a, U: VectorElement>(
+        reader: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        logical: usize,
+    ) -> Self::Ref<'a>
+    where
+        Self: 'a,
+    {
+        unsafe { Array::<T>::get(reader, physical, logical) }
+    }
+}
+
+// SAFETY: validation fixes the length; element writers initialize values and propagate NULLs.
+unsafe impl<T: OwnedVectorElement, const N: usize> WritableVectorElement for [T; N] {
+    type Write<'a> = Self;
+
+    unsafe fn write(
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<Self>,
+    ) -> Result<()> {
+        let len = vector
+            .len()
+            .checked_mul(N)
+            .ok_or_else(|| Error::invalid_input("Array child length overflow"))?;
+        let child = vector
+            .children_collection_mut()
+            .expect("validated array has a child")
+            .cached_mut::<T>(0)?;
+        if child.len() != len {
+            child.set_size(len)?;
+        }
+        let mut writer = child.writer()?;
+        let offset = index * N;
+        match value {
+            Some(values) => {
+                for (index, value) in values.into_iter().enumerate() {
+                    // SAFETY: the validated parent row covers N in-bounds child rows.
+                    unsafe { T::write_owned(&mut writer, offset + index, Some(value))? };
+                }
+            }
+            None => {
+                for index in 0..N {
+                    // SAFETY: a NULL array must also null each of its in-bounds elements.
+                    unsafe { T::write_owned(&mut writer, offset + index, None)? };
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -109,13 +190,10 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
 
 // SAFETY: rows are written through the child's own `write`.
 unsafe impl<T: WritableVectorElement> WritableVectorElement for Array<T> {
-    type Write<'a>
-        = Vec<Option<T::Write<'a>>>
-    where
-        T: 'a;
+    type Write<'a> = Vec<Option<T::Write<'a>>>;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

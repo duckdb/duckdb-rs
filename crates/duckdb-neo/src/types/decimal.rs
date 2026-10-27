@@ -88,7 +88,7 @@ macro_rules! decimal_storage {
             unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
-                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, '_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
                     unsafe { vector.write_internal(index, value) }
                 }
@@ -276,7 +276,7 @@ where
     type Write<'a> = Self;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

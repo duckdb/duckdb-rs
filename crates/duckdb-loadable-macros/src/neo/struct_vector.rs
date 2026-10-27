@@ -1,128 +1,77 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::struct_fields::{StructFields, bounded_generics, fresh_type_ident};
+use super::struct_fields::{StructFields, bounded_generics, fresh_type_ident, option_inner_type};
 
-struct Projection {
-    ident: syn::Ident,
-    lifetime: syn::Lifetime,
-    generics: syn::Generics,
-    declaration: TokenStream,
-    marker_init: TokenStream,
+fn row_lifetime(input: &syn::DeriveInput) -> syn::Lifetime {
+    let mut name = "__duckdb_row".to_owned();
+    while input.generics.lifetimes().any(|param| param.lifetime.ident == name) {
+        name.push('_');
+    }
+    syn::Lifetime::new(&format!("'{name}"), input.ident.span())
 }
 
-fn projection(
-    input: &syn::DeriveInput,
-    fields: &StructFields<'_>,
-    types: &[&syn::Type],
-    bound: &syn::Path,
-    associated: &str,
-) -> Projection {
+pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
+    let fields = StructFields::new(input, "AsVectorElement")?;
+    let types = fields
+        .types
+        .iter()
+        .map(|ty| option_inner_type(ty).unwrap_or(ty))
+        .collect::<Vec<_>>();
+    let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
     let ident = &input.ident;
-    let projected_ident = format_ident!("{ident}{associated}");
-    let associated_ident = format_ident!("{associated}");
+    let ref_ident = format_ident!("{ident}Ref");
+    let lifetime = row_lifetime(input);
     let vis = &input.vis;
     let field_idents = &fields.idents;
     let field_names = &fields.names;
     let field_vis = fields.fields.iter().map(|field| &field.vis);
-    let mut lifetime_name = "__duckdb_row".to_owned();
-    while input
-        .generics
-        .lifetimes()
-        .any(|param| param.lifetime.ident == lifetime_name)
-    {
-        lifetime_name.push('_');
-    }
-    let lifetime = syn::Lifetime::new(&format!("'{lifetime_name}"), ident.span());
-    let mut generics = bounded_generics(input, types, bound);
-    generics.params.insert(0, syn::parse_quote!(#lifetime));
-    for ty in types {
-        generics
+    let indexes = (0..types.len()).collect::<Vec<_>>();
+    let count = types.len();
+    let reader_type = fresh_type_ident(input, "__DuckDBVector");
+    let generics = bounded_generics(input, &types, &bound);
+    let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
+    let mut ref_generics = generics.clone();
+    ref_generics.params.insert(0, syn::parse_quote!(#lifetime));
+    for ty in &types {
+        ref_generics
             .make_where_clause()
             .predicates
             .push(syn::parse_quote!(#ty: #lifetime));
     }
-    let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
+    let (_, ref_type_generics, ref_where_clause) = ref_generics.split_for_impl();
+    let mut debug_generics = ref_generics.clone();
+    for ty in &types {
+        debug_generics.make_where_clause().predicates.push(syn::parse_quote!(
+            <#ty as #bound>::Ref<#lifetime>: ::core::fmt::Debug
+        ));
+    }
+    let (debug_impl_generics, _, debug_where_clause) = debug_generics.split_for_impl();
     let marker = fields.fields.is_empty().then(|| {
         quote! {
             __duckdb_marker: ::core::marker::PhantomData<&#lifetime ()>,
         }
     });
-    let marker_init = if fields.fields.is_empty() {
-        quote! { __duckdb_marker: ::core::marker::PhantomData, }
-    } else {
-        TokenStream::new()
-    };
-    let mut debug_generics = generics.clone();
-    for ty in types {
-        debug_generics.make_where_clause().predicates.push(syn::parse_quote!(
-            <#ty as #bound>::#associated_ident<#lifetime>: ::core::fmt::Debug
-        ));
-    }
-    let (debug_impl_generics, _, debug_where_clause) = debug_generics.split_for_impl();
-    let default = (associated == "Write").then(|| {
+    let marker_init = fields.fields.is_empty().then(|| {
         quote! {
-            impl #impl_generics ::core::default::Default for #projected_ident #type_generics #where_clause {
-                fn default() -> Self {
-                    Self {
-                        #(#field_idents: ::core::option::Option::None,)*
-                        #marker_init
-                    }
-                }
-            }
+            __duckdb_marker: ::core::marker::PhantomData,
         }
     });
-    let declaration = quote! {
-        #[doc = concat!("Projected ", #associated, " fields of [`", stringify!(#ident), "`].")]
-        #vis struct #projected_ident #generics #where_clause {
-            #(#field_vis #field_idents: ::core::option::Option<
-                <#types as #bound>::#associated_ident<#lifetime>
-            >,)*
+
+    Ok(quote! {
+        #[doc = concat!("Borrowed, nullable fields of [`", stringify!(#ident), "`].")]
+        #vis struct #ref_ident #ref_generics #ref_where_clause {
+            #(#field_vis #field_idents: ::core::option::Option<<#types as #bound>::Ref<#lifetime>>,)*
             #marker
         }
 
-        impl #debug_impl_generics ::core::fmt::Debug for #projected_ident #type_generics #debug_where_clause {
+        impl #debug_impl_generics ::core::fmt::Debug for #ref_ident #ref_type_generics #debug_where_clause {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.debug_struct(stringify!(#projected_ident))
+                f.debug_struct(stringify!(#ref_ident))
                     #(.field(#field_names, &self.#field_idents))*
                     .finish()
             }
         }
-        #default
-    };
-    Projection {
-        ident: projected_ident,
-        lifetime,
-        generics,
-        declaration,
-        marker_init,
-    }
-}
-
-pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    let fields = StructFields::new(input, "AsVectorElement")?;
-    let types = fields.optional_types("AsVectorElement")?;
-    let bound = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
-    let projected = projection(input, &fields, &types, &bound, "Ref");
-    let Projection {
-        ident: ref_ident,
-        lifetime,
-        declaration,
-        marker_init,
-        ..
-    } = &projected;
-    let field_idents = &fields.idents;
-    let field_names = &fields.names;
-    let indexes = (0..types.len()).collect::<Vec<_>>();
-    let count = types.len();
-    let ident = &input.ident;
-    let reader_type = fresh_type_ident(input, "__DuckDBVector");
-    let generics = bounded_generics(input, &types, &bound);
-    let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-    let (_, ref_type_generics, _) = projected.generics.split_for_impl();
-
-    Ok(quote! {
-        #declaration
 
         // SAFETY: validation checks the ordered child schema; reads use only those prepared children.
         unsafe impl #impl_generics #bound for #ident #type_generics #where_clause {
@@ -170,53 +119,53 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
 
 pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let fields = StructFields::new(input, "AsWritableVectorElement")?;
-    let types = fields.optional_types("AsWritableVectorElement")?;
-    let bound = syn::parse_quote!(::duckdb_neo::vector::WritableVectorElement);
-    let projected = projection(input, &fields, &types, &bound, "Write");
-    let Projection {
-        ident: write_ident,
-        lifetime,
-        declaration,
-        ..
-    } = &projected;
-    let field_idents = &fields.idents;
-    let field_names = &fields.names;
+    let types = fields
+        .types
+        .iter()
+        .map(|ty| option_inner_type(ty).unwrap_or(ty))
+        .collect::<Vec<_>>();
+    let values = fields.fields.iter().map(|field| {
+        let ident = field.ident.as_ref().unwrap();
+        if option_inner_type(&field.ty).is_some() {
+            quote!(value.#ident)
+        } else {
+            quote!(::core::option::Option::Some(value.#ident))
+        }
+    });
     let indexes = (0..types.len()).collect::<Vec<_>>();
     let ident = &input.ident;
-    let mut generics = bounded_generics(input, &types, &bound);
+    let lifetime = row_lifetime(input);
+    let mut generics = bounded_generics(
+        input,
+        &types,
+        &syn::parse_quote!(::duckdb_neo::vector::OwnedVectorElement),
+    );
     generics
         .make_where_clause()
         .predicates
         .push(syn::parse_quote!(Self: ::duckdb_neo::vector::VectorElement));
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-    let (_, write_type_generics, _) = projected.generics.split_for_impl();
-    let write_fields = quote! {
-        // SAFETY: the parent validated every child, and the caller guarantees row bounds.
-        #(unsafe { writer.write_child_unchecked::<#types>(#indexes, index, value.#field_idents)? };)*
-    };
 
     Ok(quote! {
-        #declaration
-
-        // SAFETY: fields use their typed child writers, and NULL rows recursively null descendants.
-        unsafe impl #impl_generics #bound for #ident #type_generics #where_clause {
-            type Write<#lifetime> = #write_ident #write_type_generics where Self: #lifetime;
-
-            fn prepare(writer: &mut ::duckdb_neo::vector::VectorWriter<'_, '_, Self>) -> ::duckdb_neo::Result<()> {
-                writer.validate_struct_fields(&[#(#field_names),*])?;
-                #(writer.validate_child::<#types>(#indexes)?;)*
-                Ok(())
-            }
+        // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
+        unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
+            type Write<#lifetime> = Self;
 
             unsafe fn write(
-                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, '_, Self>,
+                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: usize,
-                value: ::core::option::Option<Self::Write<'_>>,
+                value: ::core::option::Option<Self>,
             ) -> ::duckdb_neo::Result<()> {
-                let Some(value) = value else {
-                    return writer.set_null_slow(index);
-                };
-                #write_fields
+                match value {
+                    Some(value) => {
+                        // SAFETY: validation checked every child, and the caller guarantees row bounds.
+                        #(unsafe { writer.write_child_owned_unchecked::<#types>(#indexes, index, #values)? };)*
+                    }
+                    None => {
+                        // SAFETY: a NULL struct must also null each of its validated children.
+                        #(unsafe { writer.write_child_owned_unchecked::<#types>(#indexes, index, None)? };)*
+                    }
+                }
                 Ok(())
             }
         }
@@ -228,7 +177,7 @@ mod tests {
     use super::{as_vector_element, as_writable_vector_element};
 
     #[test]
-    fn vector_derives_require_optional_named_fields() {
+    fn vector_derives_require_named_fields() {
         type Derive = fn(&syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
         let derives: [(&str, Derive); 2] = [
             ("AsVectorElement", as_vector_element),
@@ -254,17 +203,25 @@ mod tests {
                 );
             }
         }
-        for (name, derive) in derives {
-            assert_eq!(
-                derive(&syn::parse_quote!(
-                    struct Required {
-                        value: i32,
-                    }
-                ))
-                .unwrap_err()
-                .to_string(),
-                format!("{name} fields must be Option<T>")
-            );
-        }
+    }
+
+    #[test]
+    fn writer_uses_self_and_accepts_required_fields() {
+        let input = syn::parse_quote!(
+            struct Row {
+                required: String,
+                optional: Option<i32>,
+            }
+        );
+        let output = syn::parse2::<syn::File>(as_writable_vector_element(&input).unwrap()).unwrap();
+        assert_eq!(output.items.len(), 1);
+        let syn::Item::Impl(implementation) = &output.items[0] else {
+            panic!("expected writer implementation")
+        };
+        let syn::ImplItem::Type(write) = &implementation.items[0] else {
+            panic!("expected write input type")
+        };
+        assert_eq!(write.ty, syn::parse_quote!(Self));
+        syn::parse2::<syn::File>(as_vector_element(&input).unwrap()).unwrap();
     }
 }

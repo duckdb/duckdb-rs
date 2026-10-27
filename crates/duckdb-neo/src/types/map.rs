@@ -159,14 +159,10 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
 
 // SAFETY: the entry covers child rows written through the fields' own `write`.
 unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
-    type Write<'a>
-        = HashMap<K::Write<'a>, Option<V::Write<'a>>>
-    where
-        K: 'a,
-        V: 'a;
+    type Write<'a> = HashMap<K::Write<'a>, Option<V::Write<'a>>>;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

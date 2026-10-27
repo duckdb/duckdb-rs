@@ -44,6 +44,7 @@ use crate::{Result, connection::FFILink, logical_type::LogicalType, value::Value
 
 mod bignum;
 mod decimal;
+mod option;
 mod primitive;
 mod string;
 mod temporal;

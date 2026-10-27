@@ -40,7 +40,7 @@ unsafe impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

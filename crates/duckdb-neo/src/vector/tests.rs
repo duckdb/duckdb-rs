@@ -542,7 +542,7 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
         type Write<'a> = ();
 
         unsafe fn write(
-            _vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+            _vector: &mut crate::vector::VectorWriter<'_, Self>,
             _index: usize,
             _value: Option<()>,
         ) -> crate::Result<()> {
@@ -576,8 +576,8 @@ fn vector_write_checks_rows_before_dispatch() -> crate::Result<()> {
         }
     }
     {
-        let mut vector = chunk.get_vector_at_mut::<super::Unknown>(0)?;
-        let err = vector.writer()?.write_as::<Probe>(1, Some(())).unwrap_err();
+        let mut vector = chunk.get_vector_at_mut::<super::Unknown>(0)?.cast::<Probe>()?;
+        let err = vector.writer()?.set(1, Some(())).unwrap_err();
         assert!(err.message.contains("out of bounds"), "{}", err.message);
     }
     chunk
@@ -609,7 +609,6 @@ fn vector_byte_writes_check_bounds_before_allocating() -> crate::Result<()> {
     let value = "long enough to require an arena allocation";
     for index in [1, usize::MAX] {
         assert!(vector.writer()?.set(index, Some(value)).is_err());
-        assert!(vector.writer()?.write_as::<String>(index, Some(value)).is_err());
         assert!(vector.writer()?.set(index, None).is_err());
         assert!(vector.heap.is_none());
         assert_eq!(vector.reader()?.get(0)?, None);

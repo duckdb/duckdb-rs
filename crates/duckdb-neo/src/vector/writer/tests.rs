@@ -18,7 +18,7 @@ fn writer_sets_values_with_preallocated_validity() -> Result<()> {
     let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
     vector.set_size(2)?;
     {
-        let mut writer: VectorWriter<'_, '_, i32> = vector.writer()?;
+        let mut writer: VectorWriter<'_, i32> = vector.writer()?;
         assert_eq!(writer.len(), 2);
         assert!(!writer.is_empty());
         let validity = unsafe { writer.validity_mut() }.unwrap().as_ptr();
@@ -358,28 +358,27 @@ fn writer_value_api_preserves_cast_nullness_and_refreshes_validity() -> Result<(
 }
 
 #[test]
-fn writer_retyped_slow_writes_refresh_cached_validity() -> Result<()> {
+fn writer_cast_slow_writes_refresh_cached_validity() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[Variant::logical_type(&conn)?], true)?;
-    let mut vector = chunk.get_vector_at_mut::<Unknown>(0)?;
+    let mut vector = chunk.get_vector_at_mut::<Unknown>(0)?.cast::<Variant>()?;
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
-        writer.write_as::<Variant>(0, Some(42_i32.value(&conn)?))?;
-        writer.write_as::<Variant>(1, None)?;
+        writer.set(0, Some(42_i32.value(&conn)?))?;
+        writer.set(1, None)?;
         assert_eq!(
-            writer.inner.validity.cast_const(),
+            writer.validity.cast_const(),
             unsafe { writer.validity_mut() }.unwrap().as_ptr()
         );
         // SAFETY: Row zero contains an initialized VARIANT value with no NULL descendants to update.
         unsafe { writer.set_row_validity(0, false)? };
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 3, 0);
-        writer.write_as::<Variant>(1, Some(7_i32.value(&conn)?))?;
+        writer.set(1, Some(7_i32.value(&conn)?))?;
         // SAFETY: This observes the refreshed mask without changing its bits.
         assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 2);
     }
-    let vector = vector.cast::<Variant>()?;
     assert!(vector.reader()?.is_null(0)?);
     assert!(!vector.reader()?.is_null(1)?);
     Ok(())

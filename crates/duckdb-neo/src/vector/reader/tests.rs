@@ -8,7 +8,7 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     types::{DuckDBType, List, Struct},
     value::Value,
-    vector::{Selection, StorageKind},
+    vector::{Selection, StorageKind, VectorElement},
 };
 
 fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {

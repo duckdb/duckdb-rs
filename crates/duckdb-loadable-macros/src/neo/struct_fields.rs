@@ -34,16 +34,6 @@ impl<'a> StructFields<'a> {
             names,
         })
     }
-
-    pub fn optional_types(&self, derive: &str) -> syn::Result<Vec<&'a syn::Type>> {
-        self.types
-            .iter()
-            .map(|ty| {
-                option_inner_type(ty)
-                    .ok_or_else(|| syn::Error::new_spanned(ty, format!("{derive} fields must be Option<T>")))
-            })
-            .collect()
-    }
 }
 
 pub(super) fn bounded_generics(input: &syn::DeriveInput, types: &[&syn::Type], bound: &syn::Path) -> syn::Generics {

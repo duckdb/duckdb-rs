@@ -217,8 +217,8 @@ pub fn as_from_value(input: TokenStream) -> TokenStream {
 
 /// Derive `VectorElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
 ///
-/// Every field must be `Option<T>` with `T: VectorElement`. The generated reference
-/// has the same field visibility and `Option<T::Ref<'a>>` fields. STRUCT names
+/// Fields may be `T` or `Option<T>`, with `T: VectorElement`. The generated reference
+/// has the same field visibility and nullable `Option<T::Ref<'a>>` fields. STRUCT names
 /// (case-insensitive), order, and child types must match; whole-row NULLs remain separate.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsVectorElement)]
@@ -226,10 +226,13 @@ pub fn as_vector_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_vector_element)
 }
 
-/// Derive `WritableVectorElement` and a `NameWrite<'a>` input for a named struct `Name`.
+/// Derive `WritableVectorElement` with the named struct itself as its write input.
 ///
-/// Requires `VectorElement` and `Option<T>` fields with `T: WritableVectorElement`.
-/// The generated input has `Option<T::Write<'a>>` fields and defaults them to NULL.
+/// Requires `VectorElement` and `T` or `Option<T>` fields with `T: OwnedVectorElement`.
+/// Plain fields write non-NULL values; optional fields preserve NULL. Passing `None` as the
+/// entire input nulls every child without requiring `Default` or a separate write struct.
+/// A custom unsafe `VectorElement` implementation must validate the complete named field layout;
+/// derive `AsVectorElement` to generate that validation. Writes do not revalidate the schema.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsWritableVectorElement)]
 pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
@@ -238,8 +241,9 @@ pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
 
 /// Derive `DuckDBType`, `ToValue`, `FromValue`, `VectorElement`, and `WritableVectorElement` together.
 ///
-/// Requires a named struct with `Option<T>` fields, with each `T` supporting all five traits.
-/// Generates the same `NameRef<'a>` and `NameWrite<'a>` as the individual vector derives.
+/// Requires a named struct whose fields support the corresponding value and vector traits.
+/// Generates `NameRef<'a>` for borrowed reads; writes consume `Name` directly. Plain and
+/// optional fields, owned strings, vectors, fixed arrays, and nested structs are supported.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDB)]
 pub fn as_duckdb(input: TokenStream) -> TokenStream {

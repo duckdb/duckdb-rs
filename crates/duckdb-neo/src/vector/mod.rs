@@ -529,15 +529,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(())
     }
 
-    fn set_not_writable(&mut self) {
-        self.access = Access::Exclusive;
-        if let Some(children) = &mut self.children
-            && children.access == Access::Writable
-        {
-            children.access = Access::Exclusive;
-        }
-    }
-
     /// Set the number of logical rows on writable output.
     pub fn set_size(&mut self, len: usize) -> Result<()> {
         if !self.is_writable() {
@@ -599,6 +590,15 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.refresh_buffers()?;
         Ok(self)
     }
+
+    fn set_not_writable(&mut self) {
+        self.access = Access::Exclusive;
+        if let Some(children) = &mut self.children
+            && children.access == Access::Writable
+        {
+            children.access = Access::Exclusive;
+        }
+    }
 }
 
 impl<'a, T: VectorElement> Vector<'a, T> {
@@ -606,7 +606,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     ///
     /// Fails unless this is writable output with flat storage. Resize the vector
     /// before acquiring its writer.
-    pub fn writer(&mut self) -> Result<VectorWriter<'_, 'a, T>> {
+    pub fn writer(&mut self) -> Result<VectorWriter<'_, T>> {
         VectorWriter::new(self)
     }
 }

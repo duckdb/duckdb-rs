@@ -89,7 +89,7 @@ unsafe impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -196,7 +196,7 @@ mod external {
         type Write<'a> = Uuid;
 
         unsafe fn write(
-            vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+            vector: &mut crate::vector::VectorWriter<'_, Self>,
             index: usize,
             value: Option<Self::Write<'_>>,
         ) -> Result<()> {

@@ -211,7 +211,7 @@ unsafe impl WritableVectorElement for Struct {
     type Write<'a> = StructWrite<'a>;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

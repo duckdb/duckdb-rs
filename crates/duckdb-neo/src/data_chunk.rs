@@ -167,7 +167,7 @@ impl VectorCollection {
     ///
     /// The wrapper is only validated as `T` when built, so callers must use the
     /// same `T` for an index; nested writers do, since the parent's type fixes it.
-    pub(crate) fn cached_mut<T: VectorElement>(&mut self, index: usize) -> Result<&mut Vector<'static, T>> {
+    pub(crate) fn cached_mut<T: VectorElement>(&mut self, index: usize) -> Result<&mut Vector<'_, T>> {
         // Writes through the wrapper may evict its own children.
         self.complete.set(false);
         let slot = &mut self.cache[index];
@@ -177,7 +177,21 @@ impl VectorCollection {
         }
         let vector = slot.get_mut().expect("view was just cached");
         // SAFETY: The repr(C) wrappers differ only in direct and nested markers; the vector was validated as T.
-        Ok(unsafe { &mut *(vector as *mut Vector<'static, Unknown> as *mut Vector<'static, T>) })
+        Ok(unsafe { &mut *(vector as *mut Vector<'_, Unknown> as *mut Vector<'_, T>) })
+    }
+
+    pub(crate) fn cached_iter_mut(&mut self) -> Result<impl Iterator<Item = &mut Vector<'_, Unknown>>> {
+        self.complete.set(false);
+        for (slot, handle) in self.cache.iter_mut().zip(&self.handles) {
+            if slot.get().is_none_or(|vector| vector.access != self.access) {
+                *slot = OnceCell::from(Vector::from_handle(handle, self.access)?);
+            }
+        }
+        Ok(self.cache.iter_mut().map(|slot| {
+            let vector = slot.get_mut().expect("vector views are cached before writes");
+            // SAFETY: only the phantom chunk lifetime is shortened to this collection's borrow.
+            unsafe { &mut *(vector as *mut Vector<'static, Unknown>).cast::<Vector<'_, Unknown>>() }
+        }))
     }
 
     /// Drop the cached view of `index`, which a mutable wrapper may reshape.

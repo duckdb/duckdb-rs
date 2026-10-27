@@ -181,8 +181,6 @@ mod tests {
                 "FromValue",
                 "Debug",
                 "VectorElement",
-                "Debug",
-                "Default",
                 "WritableVectorElement"
             ]
         );
@@ -204,9 +202,6 @@ mod tests {
                 value: i32,
             }
         );
-        assert_eq!(
-            as_duckdb(&input).unwrap_err().to_string(),
-            "AsVectorElement fields must be Option<T>"
-        );
+        assert!(as_duckdb(&input).is_ok());
     }
 }
