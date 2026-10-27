@@ -1,8 +1,7 @@
 //! Owned DuckDB values and their typed payloads.
 
 use crate::connection::HasFactory;
-use crate::types::DuckDBType;
-use crate::types::{GeometryValue, HugeInt, UHugeInt};
+use crate::types::{HugeInt, UHugeInt};
 use crate::{DropHandle, Factory, ffi};
 
 use crate::{
