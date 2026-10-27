@@ -285,6 +285,11 @@ impl<'a> Vector<'a, Unknown> {
         // SAFETY: Both repr(C) wrappers differ only in markers, including inside Option<VectorView<T>>.
         unsafe { &*(self as *const Vector<'a, Unknown> as *const Vector<'a, T>) }
     }
+
+    pub(crate) unsafe fn cast_ref_unchecked_mut<T: VectorElement>(&mut self) -> &mut Vector<'a, T> {
+        // SAFETY: Both repr(C) wrappers differ only in markers, including inside Option<VectorView<T>>.
+        unsafe { &mut *(self as *mut Vector<'a, Unknown> as *mut Vector<'a, T>) }
+    }
 }
 
 impl<'a, T: VectorElement> Vector<'a, T> {
@@ -316,19 +321,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Return whether this vector is writable output that was borrowed mutably.
     pub fn is_writable(&self) -> bool {
         self.access == Access::Writable
-    }
-
-    /// Return the vector's child vectors, or `None` if it has no children.
-    pub fn children(&self) -> Option<&VectorCollection> {
-        self.children.as_ref()
-    }
-
-    /// Prepare exclusive write access and allocate a writable validity mask.
-    ///
-    /// Fails unless this is writable output with flat storage. Resize the vector
-    /// before acquiring its writer.
-    pub fn writer(&mut self) -> Result<VectorWriter<'_, 'a, T>> {
-        VectorWriter::new(self)
     }
 
     fn acquire_view<U: VectorElement>(
@@ -481,6 +473,11 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.refresh_buffers()
     }
 
+    /// Return the vector's child vectors, or `None` if it has no children.
+    pub fn children(&self) -> Option<&VectorCollection> {
+        self.children.as_ref()
+    }
+
     /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
     ///
     /// Children get at most the access of this vector. The children cannot be
@@ -601,6 +598,16 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.set_not_writable();
         self.refresh_buffers()?;
         Ok(self)
+    }
+}
+
+impl<'a, T: VectorElement> Vector<'a, T> {
+    /// Prepare exclusive write access and allocate a writable validity mask.
+    ///
+    /// Fails unless this is writable output with flat storage. Resize the vector
+    /// before acquiring its writer.
+    pub fn writer(&mut self) -> Result<VectorWriter<'_, 'a, T>> {
+        VectorWriter::new(self)
     }
 }
 

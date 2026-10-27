@@ -94,7 +94,7 @@ pub use libduckdb_sys::v2 as ffi;
 
 pub(crate) use duckdb_loadable_macros::DropHandle;
 pub use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
-pub use duckdb_loadable_macros::{AsRaw, FromRaw};
+pub use duckdb_loadable_macros::{AsDuckDB, AsRaw, FromRaw};
 pub use error::Error;
 pub use parameter::{Parameters, QueryParameter};
 pub use raw::{AsRaw, FromRaw};

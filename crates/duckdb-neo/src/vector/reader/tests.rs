@@ -53,7 +53,7 @@ fn physical_validity_is_independent_of_logical_selection() {
     let selection = [64, 0, 63, 127];
     let dictionary = DictionaryReader {
         values: flat,
-        selection: &selection,
+        selection: selection.as_ptr(),
     };
     let storage = ReaderStorage::Flat(flat);
     for (logical, expected) in [Some(64), None, Some(63), None].into_iter().enumerate() {

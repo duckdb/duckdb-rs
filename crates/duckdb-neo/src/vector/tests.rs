@@ -2096,9 +2096,9 @@ pub fn test_vector_set_value() -> crate::Result<()> {
             None
         };
         for index in 0..vector.len() {
-            let value = if let Some(reader) = integers {
+            let value = if let Some(reader) = &integers {
                 reader.get(index)?.map(|value| value.value(ctx)).transpose()?
-            } else if let Some(reader) = booleans {
+            } else if let Some(reader) = &booleans {
                 reader.get(index)?.map(|value| value.value(ctx)).transpose()?
             } else {
                 None

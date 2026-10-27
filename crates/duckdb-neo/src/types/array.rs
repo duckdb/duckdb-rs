@@ -98,19 +98,11 @@ unsafe impl<T: VectorElement> VectorElement for Array<T> {
     where
         Self: Sized + 'a,
     {
-        // SAFETY: Array<T>::validate checked the child as T.
-        let child = unsafe {
-            vector
-                .children()
-                .expect("validated nested vector has children")
-                .cached_unchecked(0)
-                .cast_ref_unchecked::<T>()
-        };
         ArrayRef {
             offset: physical * vector.metadata().array_size(),
             size: vector.metadata().array_size(),
-            // SAFETY: The parent reader prepared and validated every descendant.
-            child: unsafe { crate::vector::VectorReader::from_prepared(child) },
+            // SAFETY: Array<T>::validate checked the prepared child as T.
+            child: unsafe { vector.child_reader::<T>(0) },
         }
     }
 }
@@ -179,7 +171,7 @@ impl<'a, T: VectorElement> ArrayRef<'a, T> {
     /// Iterate over the array's values.
     pub fn iter(&self) -> ArrayIterator<'a, T> {
         ArrayIterator {
-            child: self.child,
+            child: self.child.clone(),
             offset: self.offset,
             length: self.size,
             index: 0,

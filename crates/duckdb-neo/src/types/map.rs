@@ -145,19 +145,9 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         let data_ptr = vector.as_ptr() as *const ffi::duckdb_v2_list_entry;
         let list = unsafe { &*data_ptr.add(physical) };
 
-        let children = vector
-            .children()
-            .expect("validated nested vector has children")
-            .cached_unchecked(0)
-            .children()
-            .expect("validated map entries have key and value children");
-        // SAFETY: Map<K, V>::validate checked both fields.
-        let (keys, values) = unsafe {
-            (
-                crate::vector::VectorReader::from_prepared(children.cached_unchecked(0).cast_ref_unchecked::<K>()),
-                crate::vector::VectorReader::from_prepared(children.cached_unchecked(1).cast_ref_unchecked::<V>()),
-            )
-        };
+        // SAFETY: Map<K, V>::validate checked the entries and both fields.
+        let entries = unsafe { vector.child_reader::<crate::vector::Unknown>(0) };
+        let (keys, values) = unsafe { (entries.child_reader::<K>(0), entries.child_reader::<V>(1)) };
         MapRow {
             keys,
             values,
@@ -275,7 +265,7 @@ impl<'a, K: VectorElement + 'a, V: VectorElement + 'a> MapRow<'a, K, V> {
 
     /// Iterate over the map's `(key, value)` entries in storage order.
     pub fn iter(&self) -> impl Iterator<Item = (Option<K::Ref<'a>>, Option<V::Ref<'a>>)> + use<'a, K, V> {
-        let (keys, values) = (self.keys, self.values);
+        let (keys, values) = (self.keys.clone(), self.values.clone());
         // SAFETY: The parent reader cached all descendant views before constructing this row.
         (self.offset..self.offset + self.length)
             .map(move |logical| unsafe { (keys.get_unchecked(logical), values.get_unchecked(logical)) })

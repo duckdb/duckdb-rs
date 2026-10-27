@@ -97,9 +97,7 @@ unsafe impl VectorElement for Union {
     {
         let children = vector.children().expect("validated nested vector has children");
         // SAFETY: The parent reader prepared the tag, which validate checked as u8.
-        let tag = unsafe {
-            crate::vector::VectorReader::from_prepared(children.cached_unchecked(0).cast_ref_unchecked::<u8>())
-        };
+        let tag = unsafe { vector.child_reader::<u8>(0) };
         UnionRow {
             children,
             tag,

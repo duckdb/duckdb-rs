@@ -7,6 +7,50 @@ use crate::{
 
 /// Describes validation and decoding for a DuckDB logical type.
 ///
+/// Named struct readers can be derived when every field is `Option<T>`.
+/// Use `AsDuckDB` to also derive logical types, owned value conversions, and typed writes:
+///
+/// ```
+/// use duckdb_neo::{AsDuckDB, Result, vector::Vector};
+///
+/// #[derive(AsDuckDB)]
+/// struct Record {
+///     id: Option<i32>,
+/// }
+///
+/// fn id<'a>(vector: &'a Vector<'_, Record>) -> Result<Option<&'a i32>> {
+///     Ok(vector.reader()?.get(0)?.and_then(|row| row.id))
+/// }
+/// ```
+///
+/// Non-optional fields are rejected with a compiler diagnostic:
+///
+/// ```compile_fail
+/// #[derive(duckdb_neo::AsDuckDB)]
+/// struct Record {
+///     id: i32,
+/// }
+/// ```
+///
+/// Derived rows borrow the vector and prevent mutation while in use:
+///
+/// ```compile_fail,E0502
+/// use duckdb_loadable_macros::AsVectorElement;
+/// use duckdb_neo::{Result, vector::Vector};
+///
+/// #[derive(AsVectorElement)]
+/// struct Record {
+///     id: Option<i32>,
+/// }
+///
+/// fn resize(vector: &mut Vector<'_, Record>) -> Result<()> {
+///     let row = vector.reader()?.get(0)?.unwrap();
+///     vector.set_size(10)?;
+///     let _ = row.id;
+///     Ok(())
+/// }
+/// ```
+///
 /// # Safety
 ///
 /// Vector accessors trust the implementation:
@@ -95,6 +139,40 @@ pub trait HasDuckDBBytes: VectorElement {}
 
 /// Adds a supported output representation to a readable vector element.
 ///
+/// `AsDuckDB` also generates a `RecordWrite<'a>` with each field's native write type:
+///
+/// ```
+/// use duckdb_neo::{AsDuckDB, Result, vector::Vector};
+///
+/// #[derive(AsDuckDB)]
+/// struct Record {
+///     name: Option<String>,
+///     value: Option<i32>,
+/// }
+///
+/// fn write(vector: &mut Vector<'_, Record>) -> Result<()> {
+///     vector.writer()?.set(0, Some(RecordWrite { name: Some("duck"), value: Some(42) }))
+/// }
+/// ```
+///
+/// `RecordWrite::default()` makes every field NULL; passing `None` to the writer
+/// makes the whole struct NULL, recursively nulling its descendants.
+/// Write inputs cannot outlive borrowed field data:
+///
+/// ```compile_fail,E0515
+/// use duckdb_neo::AsDuckDB;
+///
+/// #[derive(AsDuckDB)]
+/// struct Record {
+///     name: Option<String>,
+/// }
+///
+/// fn dangling<'a>() -> RecordWrite<'a> {
+///     let name = String::from("duck");
+///     RecordWrite { name: Some(&name) }
+/// }
+/// ```
+///
 /// # Safety
 ///
 /// `write` must only write valid values of the vector's logical type, since
@@ -104,6 +182,11 @@ pub unsafe trait WritableVectorElement: VectorElement {
     type Write<'a>
     where
         Self: 'a;
+
+    /// Validate the typed output representation once before the first write.
+    fn prepare(_writer: &mut VectorWriter<'_, '_, Self>) -> Result<()> {
+        Ok(())
+    }
 
     /// Encode one value into a writable vector.
     ///

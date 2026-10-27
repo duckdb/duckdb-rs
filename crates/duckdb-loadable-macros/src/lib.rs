@@ -186,3 +186,71 @@ pub fn derive_from_raw(input: TokenStream) -> TokenStream {
 pub fn derive_drop_handle(input: TokenStream) -> TokenStream {
     neo::derive_drop_handle(parse_macro_input!(input as syn::DeriveInput))
 }
+
+/// Derive `DuckDBType` for a struct with named fields.
+///
+/// Each field must implement `DuckDBType`; field names and order define the SQL `STRUCT` type.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsDuckDBType)]
+pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_duckdb_type)
+}
+
+/// Derive `ToValue` for a struct with named fields.
+///
+/// Each field must implement `ToValue`; field names and order define the SQL `STRUCT` value.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsToValue)]
+pub fn as_to_value(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_to_value)
+}
+
+/// Derive `FromValue` for a struct with named fields.
+///
+/// Fields are matched case-insensitively by name; missing or extra fields are errors.
+/// `Option<T>` fields preserve SQL NULL; other fields reject it. Field types must support `FromValue`.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsFromValue)]
+pub fn as_from_value(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_from_value)
+}
+
+/// Derive `VectorElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
+///
+/// Every field must be `Option<T>` with `T: VectorElement`. The generated reference
+/// has the same field visibility and `Option<T::Ref<'a>>` fields. STRUCT names
+/// (case-insensitive), order, and child types must match; whole-row NULLs remain separate.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsVectorElement)]
+pub fn as_vector_element(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_vector_element)
+}
+
+/// Derive `WritableVectorElement` and a `NameWrite<'a>` input for a named struct `Name`.
+///
+/// Requires `VectorElement` and `Option<T>` fields with `T: WritableVectorElement`.
+/// The generated input has `Option<T::Write<'a>>` fields and defaults them to NULL.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsWritableVectorElement)]
+pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_writable_vector_element)
+}
+
+/// Derive `DuckDBType`, `ToValue`, `FromValue`, `VectorElement`, and `WritableVectorElement` together.
+///
+/// Requires a named struct with `Option<T>` fields, with each `T` supporting all five traits.
+/// Generates the same `NameRef<'a>` and `NameWrite<'a>` as the individual vector derives.
+#[cfg(feature = "neo")]
+#[proc_macro_derive(AsDuckDB)]
+pub fn as_duckdb(input: TokenStream) -> TokenStream {
+    expand_neo_derive(input, neo::as_duckdb)
+}
+
+#[cfg(feature = "neo")]
+fn expand_neo_derive(
+    input: TokenStream,
+    expand: fn(&syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>,
+) -> TokenStream {
+    let input = parse_macro_input!(input as syn::DeriveInput);
+    expand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}

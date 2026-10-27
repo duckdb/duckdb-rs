@@ -102,15 +102,7 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
         ListRef {
             list,
             // SAFETY: List<L>::validate checked the child as L.
-            child: unsafe {
-                crate::vector::VectorReader::from_prepared(
-                    vector
-                        .children()
-                        .expect("validated nested vector has children")
-                        .cached_unchecked(0)
-                        .cast_ref_unchecked::<L>(),
-                )
-            },
+            child: unsafe { vector.child_reader::<L>(0) },
         }
     }
 }
@@ -179,7 +171,7 @@ impl<'a, T: VectorElement> ListRef<'a, T> {
     /// Iterate over the list's values.
     pub fn iter(&self) -> ListIterator<'a, T> {
         ListIterator {
-            child: self.child,
+            child: self.child.clone(),
             offset: self.list.offset as usize,
             length: self.list.length as usize,
             index: 0,
