@@ -71,7 +71,9 @@ impl<'writer, 'chunk, T: VectorElement> VectorWriter<'writer, 'chunk, T> {
         }
         let view = vector.view.as_mut().ok_or_else(not_flat)?;
         let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, vector.handle, RET)?;
+        let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, vector.handle, RET)?;
         view.view.validity = validity;
+        view.view.data = data;
         Ok(Self {
             inner: FlatWriter { vector, validity },
         })
@@ -397,6 +399,7 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, '_, T> {
     unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
         let data = self.view().data().cast::<DuckDBBytes<'_>>().cast_mut();
         let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;
+
         // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
         unsafe { data.add(index).write(encoded) };
         Ok(())

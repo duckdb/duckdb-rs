@@ -44,6 +44,7 @@ use crate::{Result, connection::FFILink, logical_type::LogicalType, value::Value
 
 mod bignum;
 mod decimal;
+mod geometry;
 mod primitive;
 mod string;
 mod temporal;
@@ -65,6 +66,7 @@ pub use decimal::{
     Decimal, DecimalContainer, DecimalSignature, DecimalValue, DecimalWidth, HugeDecimal, LongDecimal,
     MAX_DECIMAL_WIDTH, ShortDecimal, Width, WordDecimal,
 };
+pub use geometry::GeometryValue;
 pub use list::{List, ListIterator, ListRef};
 pub use map::{Map, MapRow, MapValue};
 pub use primitive::Any;

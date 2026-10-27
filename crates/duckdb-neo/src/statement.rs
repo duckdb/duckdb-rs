@@ -86,7 +86,7 @@ impl Statements {
         let query_str =
             std::ffi::CString::new(sql.as_ref()).map_err(|_| Error::invalid_input("SQL string contains a NUL byte"))?;
 
-        check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), RET)
+        check_api_call!(ffi::duckdb_v2_parse_sql, conn.raw(), query_str.as_ptr(), true, RET)
             .map(|handle| Statements { handle })
     }
 }

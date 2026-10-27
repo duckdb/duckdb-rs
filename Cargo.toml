@@ -39,6 +39,7 @@ doc-comment = "0.3"
 fallible-iterator = "0.3"
 fallible-streaming-iterator = "0.1"
 flate2 = "1.0"
+geozero = { version = "0.15.1", default-features = false }
 hashlink = "0.10"
 libc = "0.2"
 num = { version = "0.4", default-features = false }
