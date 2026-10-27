@@ -22,7 +22,7 @@ rust-version = { workspace = true }
 
 [features]
 default = ["capi-v1", "vcpkg", "pkg-config", "download-lib"]
-bundled = ["cc"]
+bundled = ["cc", "dep:sha2"]
 # Warning: experimental feature
 bundled-cmake = ["bundled", "dep:cmake", "dep:which", "parquet"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
@@ -59,6 +59,7 @@ prettyplease = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true, optional = true }
 syn = { workspace = true, optional = true }
 tar = { workspace = true }
 ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
