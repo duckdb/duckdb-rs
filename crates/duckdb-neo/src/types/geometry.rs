@@ -28,7 +28,7 @@ impl ToValue for GeometryValue {
 
 impl FromValue for GeometryValue {
     fn _get_inner(value: &Value) -> Result<Self> {
-        let blob = check_api_call!(ffi::duckdb_v2_value_get_blob, value.raw(), RET)?;
+        let blob = check_api_call!(ffi::duckdb_v2_value_get_geometry, value.raw(), RET)?;
 
         let bytes = DuckDBStr::from_raw(blob).as_bytes().unwrap().to_vec();
         Ok(GeometryValue(bytes))
@@ -142,14 +142,18 @@ mod tests {
 
             assert!(col.len() == 7);
 
-            for row in col.reader()?.iter() {
+            for (i, row) in col.reader()?.iter().enumerate() {
                 let item = wkb::reader::read_wkb(row.unwrap()).unwrap();
 
-                if let GeometryType::Point(p) = item.as_type() {
-                    dbg!("POINT", p, p.to_point());
-                    assert_eq!(p.to_point().x_y(), (30.0, 10.0))
-                } else {
-                    panic!("")
+                match (i, item.as_type()) {
+                    (0, GeometryType::Point(p)) => assert_eq!(p.to_point().x_y(), (30.0, 10.0)),
+                    (1, GeometryType::LineString(ls)) => assert_eq!(ls.size(), 57),
+                    (2, GeometryType::Polygon(poly)) => assert_eq!(poly.size(), 93),
+                    (3, GeometryType::MultiPoint(mp)) => assert_eq!(mp.size(), 93),
+                    (4, GeometryType::MultiLineString(mls)) => assert_eq!(mls.size(), 123),
+                    (5, GeometryType::MultiPolygon(mpoly)) => assert_eq!(mpoly.size(), 179),
+                    (6, GeometryType::GeometryCollection(gc)) => assert_eq!(gc.size(), 164),
+                    _ => panic!("unexpected geometry type for row {i}"),
                 }
             }
         }
@@ -258,23 +262,31 @@ mod tests {
 
             // Bound values arrive as BLOB: the v2 C API has no GEOMETRY value constructor.
             let mut query = conn.query(
-                "SELECT ST_GeomFromWKB($1)::VARCHAR = $2::GEOMETRY::VARCHAR",
+                "SELECT ST_GeomFromWKB($1::BLOB)::VARCHAR = $2::GEOMETRY::VARCHAR",
                 Parameters::Positional(&[geometry, wkt]),
             )?;
             let chunk = query.next_chunk()?.unwrap();
             assert_eq!(chunk.get_vector_at::<bool>(0)?.reader()?.get(0)?, Some(&true), "{wkt}");
         }
 
+        dbg!("HERE");
+
         let mut chunk = DataChunk::create(&conn, [GeometryValue::logical_type(&conn)?], true)?;
+        dbg!("HERE");
+
         let mut vector = chunk.get_vector_at_mut::<GeometryValue>(0)?;
         vector.set_size(geometries.len() + 1)?;
         {
             let mut writer = vector.writer()?;
+            dbg!("HERE");
             for (i, geometry) in geometries.iter().enumerate() {
+                dbg!("HERE", geometry);
                 writer.set(i, Some(geometry))?;
             }
             writer.set(geometries.len(), None)?;
         }
+
+        dbg!("HERE");
 
         let actual = vector
             .reader()?

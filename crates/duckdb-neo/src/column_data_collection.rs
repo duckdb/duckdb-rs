@@ -568,6 +568,9 @@ mod test {
         id.writer()?.set(0, Some(10))?;
         id.writer()?.set(1, None)?;
 
+        is_active.writer()?.set(0, Some(false))?;
+        is_active.writer()?.set(1, None)?;
+
         let mut collection = collection.to_append()?;
 
         collection.append(&mut chunk)?;

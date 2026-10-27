@@ -1,6 +1,8 @@
 //! Owned DuckDB values and their typed payloads.
 
-use crate::types::{HugeInt, UHugeInt};
+use crate::connection::HasFactory;
+use crate::types::DuckDBType;
+use crate::types::{GeometryValue, HugeInt, UHugeInt};
 use crate::{DropHandle, Factory, ffi};
 
 use crate::{
@@ -175,7 +177,7 @@ pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> 
             &crate::ffi_str::bytes_arg(value)
         ),
         ValueInput::Geometry(value) => create_value!(
-            ffi::duckdb_v2_value_create_blob,
+            ffi::duckdb_v2_value_create_geometry,
             factory.raw(),
             &crate::ffi_str::bytes_arg(value)
         ),
@@ -298,7 +300,7 @@ impl Value {
     }
 
     /// Cast a value using a connection or callback context's registered casts.
-    pub fn cast<C: FFILink + ?Sized>(&self, link: &C, target_type: &LogicalType) -> Result<Value> {
+    pub fn cast<C: HasFactory + ?Sized>(&self, link: &C, target_type: &LogicalType) -> Result<Value> {
         check_api_call!(
             ffi::duckdb_v2_value_cast,
             link.factory()?.raw(),
