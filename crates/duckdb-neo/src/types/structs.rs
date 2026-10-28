@@ -115,6 +115,7 @@ mod tests {
         data_chunk::DataChunk,
         enums::LogicalTypeID,
         environment::{Environment, StorageLocation},
+        types::List,
         vector::Unknown,
     };
 
@@ -150,10 +151,12 @@ mod tests {
     mod derived_types {
         use duckdb_loadable_macros::{AsDuckDBType, AsFromValue, AsToValue};
 
+        use crate::types::List;
+
         #[derive(Debug, AsDuckDBType, AsToValue)]
         pub struct Nested {
             pub record: super::Tester,
-            pub values: std::vec::Vec<Option<i32>>,
+            pub values: List<i32>,
             pub pair: (i32, std::string::String),
         }
 
@@ -169,7 +172,7 @@ mod tests {
         #[derive(Debug, PartialEq, AsDuckDBType, AsFromValue, AsToValue)]
         pub struct Decoded {
             pub record: Option<super::Tester>,
-            pub values: std::option::Option<std::vec::Vec<Option<i32>>>,
+            pub values: std::option::Option<List<i32>>,
             pub pair: Option<(Option<i32>, Option<std::string::String>)>,
         }
 
@@ -194,7 +197,7 @@ mod tests {
         assert_eq!(lt.get_param(1)?.0, "values");
         assert_eq!(
             lt.get_param(1)?.1.type_value_get_inner()?,
-            <Vec<Option<i32>> as DuckDBType>::logical_type(&conn)?
+            <List<i32> as DuckDBType>::logical_type(&conn)?
         );
         assert_eq!(lt.get_param(2)?.0, "pair");
         assert_eq!(
@@ -213,7 +216,7 @@ mod tests {
                 name: "duck".to_owned(),
                 value: 42,
             },
-            values: vec![Some(7), None, Some(9)],
+            values: List(vec![Some(7), None, Some(9)]),
             pair: (3, "tuple".to_owned()),
         };
         let value = input.value(&conn)?;
@@ -227,10 +230,7 @@ mod tests {
             Some("duck".to_owned())
         );
         assert_eq!(value.get_child(0)?.get_child(1)?.get::<i32>()?, Some(42));
-        assert_eq!(
-            value.get_child(1)?.get::<Vec<Option<i32>>>()?,
-            Some(input.values.clone())
-        );
+        assert_eq!(value.get_child(1)?.get::<List<i32>>()?, Some(input.values.clone()));
         assert_eq!(
             value.get_child(2)?.get::<(Option<i32>, Option<String>)>()?,
             Some((Some(3), Some("tuple".to_owned())))
@@ -281,7 +281,7 @@ mod tests {
                 name: "duck".to_owned(),
                 value: 42,
             }),
-            values: Some(vec![Some(7), None]),
+            values: Some(List(vec![Some(7), None])),
             pair: Some((None, Some("tuple".to_owned()))),
         };
         assert_eq!(input.value(&conn)?.get::<derived_types::Decoded>()?, Some(input));

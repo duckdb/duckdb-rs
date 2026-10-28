@@ -102,6 +102,8 @@ pub struct VectorCollection {
     cache: Vec<OnceCell<Vector<'static, Unknown>>>,
     /// Whether every view, including nested children, is cached.
     complete: Cell<bool>,
+    /// Next unwritten `LIST` element per vector, shared by all of its wrappers.
+    child_offsets: Box<[Cell<usize>]>,
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
@@ -118,13 +120,26 @@ pub(crate) enum RowCount {
 impl VectorCollection {
     pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
         let cache = handles.iter().map(|_| OnceCell::new()).collect();
+        let child_offsets = handles.iter().map(|_| Cell::new(0)).collect();
         Self {
             handles,
             access,
             rows,
             cache,
             complete: Cell::new(false),
+            child_offsets,
         }
+    }
+
+    fn wrap<T: VectorElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
+        let vector = Vector::from_handle(&self.handles[index], access)?;
+        // SAFETY: wrappers either borrow this collection or are cached inside it.
+        Ok(unsafe { vector.with_child_offset(&self.child_offsets[index]) })
+    }
+
+    /// Restart every `LIST` offset, e.g. after the chunk was cleared.
+    pub(crate) fn reset_child_offsets(&self) {
+        self.child_offsets.iter().for_each(|offset| offset.set(0));
     }
 
     fn cached(&self, index: usize) -> Result<&Vector<'_, Unknown>> {
@@ -132,7 +147,7 @@ impl VectorCollection {
         if let Some(vector) = slot.get() {
             return Ok(vector);
         }
-        let _ = slot.set(Vector::from_handle(&self.handles[index], Access::Shared)?);
+        let _ = slot.set(self.wrap(index, Access::Shared)?);
         Ok(slot.get().expect("view was just cached"))
     }
 
@@ -170,21 +185,26 @@ impl VectorCollection {
     pub(crate) fn cached_mut<T: VectorElement>(&mut self, index: usize) -> Result<&mut Vector<'_, T>> {
         // Writes through the wrapper may evict its own children.
         self.complete.set(false);
-        let slot = &mut self.cache[index];
-        if slot.get().is_none_or(|vector| vector.access != self.access) {
-            let vector = Vector::<T>::from_handle(&self.handles[index], self.access)?.cast_unchecked();
-            *slot = OnceCell::from(vector);
+        if self.cache[index]
+            .get()
+            .is_none_or(|vector| vector.access != self.access)
+        {
+            let vector = self.wrap::<T>(index, self.access)?.cast_unchecked();
+            self.cache[index] = OnceCell::from(vector);
         }
-        let vector = slot.get_mut().expect("view was just cached");
+        let vector = self.cache[index].get_mut().expect("view was just cached");
         // SAFETY: The repr(C) wrappers differ only in direct and nested markers; the vector was validated as T.
         Ok(unsafe { &mut *(vector as *mut Vector<'_, Unknown> as *mut Vector<'_, T>) })
     }
 
     pub(crate) fn cached_iter_mut(&mut self) -> Result<impl Iterator<Item = &mut Vector<'_, Unknown>>> {
         self.complete.set(false);
-        for (slot, handle) in self.cache.iter_mut().zip(&self.handles) {
-            if slot.get().is_none_or(|vector| vector.access != self.access) {
-                *slot = OnceCell::from(Vector::from_handle(handle, self.access)?);
+        for index in 0..self.cache.len() {
+            if self.cache[index]
+                .get()
+                .is_none_or(|vector| vector.access != self.access)
+            {
+                self.cache[index] = OnceCell::from(self.wrap(index, self.access)?);
             }
         }
         Ok(self.cache.iter_mut().map(|slot| {
@@ -232,7 +252,7 @@ impl VectorCollection {
     pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
         self.check_index(index);
         self.evict(index);
-        Vector::from_handle(&self.handles[index], self.access)
+        self.wrap(index, self.access)
     }
 
     /// Return a read-only view of the vector at `index`, narrowed to `T`.
@@ -258,7 +278,7 @@ impl VectorCollection {
     pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
         self.check_index(index);
         self.evict(index);
-        Vector::from_handle(&self.handles[index], self.access)
+        self.wrap(index, self.access)
     }
 
     /// Return the vectors at distinct `indices`, borrowed mutably at the same time.
@@ -276,7 +296,7 @@ impl VectorCollection {
         for index in indices {
             self.evict(index);
         }
-        collect_array(indices.map(|index| Vector::from_handle(&self.handles[index], self.access)))
+        collect_array(indices.map(|index| self.wrap(index, self.access)))
     }
 
     /// Return the number of vectors, which is the column count.
@@ -621,6 +641,7 @@ impl<'a> DataChunk<'a> {
     /// Reset the row count to zero and drop cached views, preserving writability.
     pub fn clear(&mut self) -> Result<()> {
         self.evict_cached();
+        self.chunk.vectors.reset_child_offsets();
         check_api_call!(ffi::duckdb_v2_data_chunk_clear, self.handle)
     }
 }
@@ -757,10 +778,12 @@ mod tests {
 
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
-        let mut chunk = DataChunk::create(&conn, &[Vec::<i64>::logical_type(&conn)?], true)?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i64>::logical_type(&conn)?], true)?;
         let mut list = chunk.get_vector_at_mut::<List<i64>>(0)?;
         list.set_size(1)?;
-        list.writer()?.set(0, Some(vec![Some(0), Some(0)]))?;
+        // SAFETY: the row below writes both elements.
+        unsafe { list.set_child_size(2)? };
+        list.writer()?.set(0, Some(List(vec![Some(0), Some(0)])))?;
         list.children_mut()
             .unwrap()
             .get_vector_at_mut::<i64>(0)?

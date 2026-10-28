@@ -258,18 +258,21 @@ fn writer_sets_blob_parts() -> Result<()> {
 }
 
 #[test]
-fn writer_reuses_nested_children_across_growth() -> Result<()> {
+fn writer_reuses_nested_children_across_rows() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let mut chunk = DataChunk::create(&conn, &[Vec::<Option<i32>>::logical_type(&conn)?], true)?;
+    let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
     vector.set_size(3)?;
+    // SAFETY: the writes below use all 5003 elements; rewriting row 0 takes a new range.
+    unsafe { vector.set_child_size(5003)? };
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(vec![Some(1), None]))?;
+        writer.set(0, Some(List(vec![Some(1), None])))?;
         writer.set(1, None)?;
         writer.set(2, Some((0..5000).map(Some).collect()))?;
-        writer.set(0, Some(vec![Some(42)]))?;
+        writer.set(0, Some(List(vec![Some(42)])))?;
+        assert_eq!(writer.child_offset(), 5003);
     }
     let reader = vector.reader()?;
     assert_eq!(reader.get(0)?.unwrap().iter().collect::<Vec<_>>(), [Some(&42)]);
@@ -477,5 +480,27 @@ fn writer_reuses_validity_until_buffers_change() -> Result<()> {
     // Read through DuckDB, since a stale pointer would also be cached in this wrapper's view.
     assert!(vector.get_value_slow(4999)?.is_null()?);
     assert_eq!(vector.get_value_slow(1)?.get::<i32>()?, Some(7));
+    Ok(())
+}
+
+#[test]
+fn writer_typed_writes_follow_slow_writes() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(3)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.set(0, Some(1))?;
+        writer.set_null_slow(1)?;
+        writer.write_value_slow(2, 3_i32.value(&conn)?)?;
+        // Slow writes refresh the cached buffers that typed writes use.
+        writer.set(1, Some(2))?;
+        writer.set(0, Some(4))?;
+    }
+    for (index, expected) in [4, 2, 3].into_iter().enumerate() {
+        assert_eq!(vector.get_value_slow(index)?.get::<i32>()?, Some(expected));
+    }
     Ok(())
 }

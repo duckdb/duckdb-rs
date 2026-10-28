@@ -341,9 +341,9 @@ fn test_list_to_value() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let values = vec![Some(1_i32), None, Some(3_i32)];
+    let values = List(vec![Some(1_i32), None, Some(3_i32)]);
     let value = values.value(&conn)?;
-    let logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
+    let logical_type = List::<i32>::logical_type(&conn)?;
 
     assert_eq!(logical_type.id()?, LogicalTypeID::List);
     assert_eq!(
@@ -378,8 +378,8 @@ fn test_nested_value_getters() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let list = vec![Some(1_i32), None, Some(3_i32)];
-    assert_eq!(list.value(&conn)?.get::<Vec<Option<i32>>>()?, Some(list));
+    let list = List(vec![Some(1_i32), None, Some(3_i32)]);
+    assert_eq!(list.value(&conn)?.get::<List<i32>>()?, Some(list));
 
     let array = [Some(1_i32), None, Some(3_i32)];
     assert_eq!(array.value(&conn)?.get::<[Option<i32>; 3]>()?, Some(array));
@@ -405,8 +405,8 @@ fn test_nested_value_getters() -> crate::Result<()> {
     );
     assert_eq!(().value(&conn)?.get::<()>()?, Some(()));
 
-    let null_list = Option::<Vec<Option<i32>>>::None.value(&conn)?;
-    assert_eq!(null_list.get::<Vec<Option<i32>>>()?, None);
+    let null_list = Option::<List<i32>>::None.value(&conn)?;
+    assert_eq!(null_list.get::<List<i32>>()?, None);
 
     Ok(())
 }

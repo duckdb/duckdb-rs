@@ -18,14 +18,14 @@ use crate::{
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{environment::Environment, environment::StorageLocation, ToValue};
+/// use duckdb_neo::{environment::Environment, environment::StorageLocation, types::List, ToValue};
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let instance = env.open(StorageLocation::InMemory)?;
 /// let conn = instance.connect()?;
 ///
-/// let value = vec![Some(1_i32), None].value(&conn)?;
+/// let value = List(vec![Some(1_i32), None]).value(&conn)?;
 ///
 /// assert_eq!(value.child_count()?, 2);
 /// assert!(value.get_child(1)?.is_null()?);
@@ -434,7 +434,7 @@ mod tests {
         error::DuckDBError,
         scalar::ScalarFunctionBuilder,
         signature::{FunctionParameter, SignatureBuilder},
-        types::{BigNumValue, DuckDBType},
+        types::{BigNumValue, DuckDBType, List},
         value::ValueInput,
     };
 
@@ -492,12 +492,12 @@ mod tests {
     #[test]
     fn test_typed_null_list() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-        let logical_type = Vec::<i32>::logical_type(&conn)?;
+        let logical_type = List::<i32>::logical_type(&conn)?;
         let value = super::Value::null(&conn, &logical_type)?;
         assert!(value.is_null()?);
         assert_eq!(value.child_count()?, 0);
         assert_eq!(value.logical_type()?.to_text()?, "INTEGER[]");
-        assert!(value.get::<Vec<Option<i32>>>()?.is_none());
+        assert!(value.get::<List<i32>>()?.is_none());
         Ok(())
     }
 
@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn test_value_error_paths() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-        let list = vec![1_i32, 2].value(&conn)?;
+        let list = List(vec![Some(1_i32), Some(2)]).value(&conn)?;
         for index in [2, usize::MAX] {
             let err = list.get_child(index).expect_err("out-of-range child must fail");
             assert_eq!(err.code, DuckDBError::InputInvalid);
@@ -591,7 +591,7 @@ mod tests {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
-        let value = vec![
+        let value = List(vec![
             None,
             Some(BigNumValue {
                 is_negative: true,
@@ -601,7 +601,7 @@ mod tests {
                 is_negative: false,
                 magnitude: vec![5, 6, 7, 8],
             }),
-        ]
+        ])
         .value(&conn)?;
 
         assert_eq!(value.dbg_string()?, "[NULL, -16909060, 84281096]");

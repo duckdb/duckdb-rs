@@ -1,8 +1,8 @@
-//! [`List`] exposes native child write inputs; [`Vec<T>`] reads and writes owned Rust lists.
-//! `Vec<T>` supplies non-NULL elements, while `Vec<Option<T>>` also accepts NULL elements.
-//! Both readers preserve element NULLs. `Vec<u8>` maps to `UTINYINT[]`; use [`super::BlobValue`] for `BLOB`.
-
-use std::marker::PhantomData;
+//! The `LIST` logical type.
+//!
+//! [`List<T>`] holds a row's elements, each `None` for SQL NULL; vectors of `List<T>`
+//! read rows as [`ListRef`]. Writes never resize the element child: size it once with
+//! [`Vector::set_child_size`], then every write takes the next elements, in any row order.
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
@@ -12,19 +12,18 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{OwnedVectorElement, VectorElement, WritableVectorElement},
+    vector::{OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
-/// A physical list entry parameterized by its child element type.
+/// DuckDB's physical list entry: a range of elements in the child vector.
 #[repr(C)]
-#[derive(Debug)]
-pub struct List<L> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListIndex {
     pub(crate) offset: u64,
     pub(crate) length: u64,
-    pub(crate) _marker: PhantomData<L>,
 }
 
-impl<L> List<L> {
+impl ListIndex {
     /// Return the starting index in the child vector.
     pub fn offset(&self) -> u64 {
         self.offset
@@ -36,16 +35,36 @@ impl<L> List<L> {
     }
 }
 
-impl<T: DuckDBType> DuckDBType for Vec<T> {
+/// An owned `LIST` row; each `None` element is SQL NULL.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct List<T>(pub Vec<Option<T>>);
+
+impl<T> From<Vec<Option<T>>> for List<T> {
+    fn from(values: Vec<Option<T>>) -> Self {
+        Self(values)
+    }
+}
+
+impl<T> FromIterator<Option<T>> for List<T> {
+    fn from_iter<I: IntoIterator<Item = Option<T>>>(values: I) -> Self {
+        Self(values.into_iter().collect())
+    }
+}
+
+impl<T: DuckDBType> DuckDBType for List<T> {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         let child_type = Value::from_logical_type(link, &T::logical_type(link)?)?;
         link.logical_type_create("LIST", Parameters::positional(&[&child_type]))
     }
 }
 
-impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
+impl<T: ToValue + DuckDBType> ToValue for List<T> {
     fn value<C: FFILink + ?Sized>(&self, link: &C) -> Result<Value> {
-        let children = self.iter().map(|value| value.value(link)).collect::<Result<Vec<_>>>()?;
+        let children = self
+            .0
+            .iter()
+            .map(|value| value.value(link))
+            .collect::<Result<Vec<_>>>()?;
         let child_type = T::logical_type(link)?;
         link.create_value(ValueInput::List {
             child_type: &child_type,
@@ -54,7 +73,7 @@ impl<T: ToValue + DuckDBType> ToValue for Vec<T> {
     }
 }
 
-impl<T: FromValue> FromValue for Vec<Option<T>> {
+impl<T: FromValue> FromValue for List<T> {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
         if logical_type.id()? != LogicalTypeID::List {
@@ -64,112 +83,23 @@ impl<T: FromValue> FromValue for Vec<Option<T>> {
             )));
         }
 
-        value.children()?.iter().map(T::from_value).collect::<Result<Vec<_>>>()
+        value
+            .children()?
+            .iter()
+            .map(T::from_value)
+            .collect::<Result<_>>()
+            .map(List)
     }
 }
 
-impl<T: FromValue> FromValue for Vec<T> {
-    fn _get_inner(value: &Value) -> Result<Self> {
-        Vec::<Option<T>>::_get_inner(value)?
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| value.ok_or_else(|| Error::invalid_input(format!("LIST element {index} is NULL"))))
-            .collect()
-    }
-}
-
-// SAFETY: Vec uses the same vector layout and validated child schema as List.
-unsafe impl<T: VectorElement> VectorElement for Vec<T> {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
-    type Internal<'a> = List<T>;
+// SAFETY: `ListIndex` matches DuckDB's list entry, and `validate` checks the child as `T`.
+unsafe impl<T: VectorElement> VectorElement for List<T> {
     type Ref<'a>
         = ListRef<'a, T>
     where
         T: 'a;
 
-    fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
-        List::<T>::validate(other, children)
-    }
-
-    unsafe fn get<'a, U: VectorElement>(
-        reader: &crate::vector::VectorReader<'a, U>,
-        physical: usize,
-        logical: usize,
-    ) -> Self::Ref<'a>
-    where
-        Self: 'a,
-    {
-        unsafe { List::<T>::get(reader, physical, logical) }
-    }
-}
-
-// SAFETY: entries cover initialized child rows; each element writer maintains its validity.
-unsafe impl<T: OwnedVectorElement> WritableVectorElement for Vec<T> {
-    type Write<'a> = Self;
-
-    unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<Self>,
-    ) -> Result<()> {
-        unsafe { Self::write_ref(vector, index, value.as_ref()) }
-    }
-}
-
-// SAFETY: entries cover initialized child rows; each element writer maintains its validity.
-unsafe impl<T: OwnedVectorElement> OwnedVectorElement for Vec<T> {
-    unsafe fn write_ref(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<&Self>,
-    ) -> Result<()> {
-        let Some(values) = value else {
-            // SAFETY: the caller guarantees an in-bounds row.
-            unsafe { vector.set_validity_unchecked(index, false) };
-            return Ok(());
-        };
-        let len = values.len();
-        let child = vector
-            .children_collection_mut()
-            .expect("validated list has a child")
-            .cached_mut::<T>(0)?;
-        let offset = child.current_size()?;
-        child.set_size(
-            offset
-                .checked_add(len)
-                .ok_or_else(|| Error::invalid_input("List child length overflow"))?,
-        )?;
-        {
-            let mut writer = child.writer()?;
-            for (index, value) in values.iter().enumerate() {
-                // SAFETY: the appended range is in bounds and validated as T.
-                unsafe { T::write_ref(&mut writer, offset + index, Some(value))? };
-            }
-        }
-        // SAFETY: the parent row is in bounds and the entry covers initialized child rows.
-        unsafe {
-            vector.write_internal(
-                index,
-                Some(List::<T> {
-                    offset: offset as u64,
-                    length: len as u64,
-                    _marker: PhantomData,
-                }),
-            )?;
-            vector.set_validity_unchecked(index, true);
-        }
-        Ok(())
-    }
-}
-
-// SAFETY: `List` matches DuckDB's list entry, and `validate` checks the child as `L`.
-unsafe impl<L: VectorElement> VectorElement for List<L> {
-    type Ref<'a>
-        = ListRef<'a, L>
-    where
-        L: 'a;
-
-    type Internal<'a> = List<L>;
+    type Internal<'a> = ListIndex;
 
     const TYPE_ID: LogicalTypeID = LogicalTypeID::List;
 
@@ -181,7 +111,7 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
         let Some(children) = children.filter(|children| children.col_count() == 1) else {
             return Err(Error::invalid_input("List vector must have exactly one child"));
         };
-        children.get_untyped_vector_at(0)?.validate_as::<L>().map(|()| true)
+        children.get_untyped_vector_at(0)?.validate_as::<T>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(
@@ -192,65 +122,139 @@ unsafe impl<L: VectorElement> VectorElement for List<L> {
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.as_ptr() as *const List<L>;
+        let data_ptr = vector.as_ptr() as *const ListIndex;
         let list = unsafe { &*data_ptr.add(physical) };
         ListRef {
             list,
-            // SAFETY: List<L>::validate checked the child as L.
-            child: unsafe { vector.child_reader::<L>(0) },
+            // SAFETY: List<T>::validate checked the child as T.
+            child: unsafe { vector.child_reader::<T>(0) },
         }
     }
 }
 
-// SAFETY: the entry covers child rows appended through the child's own `write`.
+impl<T: VectorElement> Vector<'_, List<T>> {
+    /// Size the element child to exactly `elements` and restart writes at its first element.
+    ///
+    /// # Safety
+    /// Before DuckDB reads this vector, writes through it must initialize every element below
+    /// `elements`, since DuckDB treats the whole child as part of the list.
+    pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
+        self.children_mut()
+            .expect("validated list has a child")
+            .get_untyped_vector_at_mut(0)?
+            .set_size(elements)?;
+        self.child_offset_cell().set(0);
+        Ok(())
+    }
+
+    /// Return the first element the next list write uses.
+    pub fn child_offset(&self) -> usize {
+        self.child_offset_cell().get()
+    }
+
+    /// Continue list writes at `offset`, e.g. with a new wrapper for a partially written vector.
+    ///
+    /// Moving backwards makes later writes replace elements of rows that were already written.
+    pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
+        let size = self
+            .children()
+            .expect("validated list has a child")
+            .get_untyped_vector_at(0)?
+            .len();
+        if offset > size {
+            return Err(Error::invalid_parameter(format!(
+                "LIST child offset {offset} is past its {size} elements"
+            )));
+        }
+        self.child_offset_cell().set(offset);
+        Ok(())
+    }
+}
+
+impl<T: VectorElement> VectorWriter<'_, List<T>> {
+    /// Return the first element the next list write uses.
+    pub fn child_offset(&self) -> usize {
+        self.child_offset_cell().get()
+    }
+}
+
+/// # Safety
+/// `index` must be in bounds, and the child must be validated as `T`.
+#[inline]
+unsafe fn write_list<T: VectorElement, V>(
+    vector: &mut VectorWriter<'_, List<T>>,
+    index: usize,
+    values: Option<impl ExactSizeIterator<Item = V>>,
+    mut write: impl FnMut(&mut VectorWriter<'_, T>, usize, V) -> Result<()>,
+) -> Result<()> {
+    let Some(values) = values else { return Ok(()) };
+    let len = values.len();
+    let offset = vector.child_offset_cell().get();
+    // SAFETY: the caller guarantees that the child was validated as T.
+    let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
+    let size = child.len();
+    let end = offset.checked_add(len).filter(|end| *end <= size).ok_or_else(|| {
+        Error::invalid_input(format!(
+            "LIST row needs {len} elements, but only {} of {size} remain; size the child with set_child_size",
+            size - offset.min(size)
+        ))
+    })?;
+    for (element, value) in (offset..end).zip(values) {
+        write(child, element, value)?;
+    }
+    vector.child_offset_cell().set(end);
+    // SAFETY: the caller guarantees an in-bounds row, and the entry covers the elements just written.
+    unsafe {
+        vector.write_internal(
+            index,
+            Some(ListIndex {
+                offset: offset as u64,
+                length: len as u64,
+            }),
+        )
+    }
+}
+
+// SAFETY: entries only cover elements written through the child's own writer.
 unsafe impl<T: WritableVectorElement> WritableVectorElement for List<T> {
-    type Write<'a> = Vec<Option<T::Write<'a>>>;
+    type Write<'a> = List<T::Write<'a>>;
 
-    unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
-        let Some(values) = value else {
-            // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-            return unsafe { vector.write_internal::<List<T>>(index, None) };
-        };
-
-        let len = values.len();
-        let child = vector
-            .children_collection_mut()
-            .expect("validated nested vector has children")
-            .cached_mut::<T>(0)?;
-
-        let result = (|| {
-            // Append after the child's elements, including any written through another wrapper.
-            let offset = child.current_size()?;
-            child.set_size(offset + len)?;
-            let mut writer = child.writer()?;
-            for (child_index, value) in values.into_iter().enumerate() {
-                writer.set(offset + child_index, value)?;
-            }
-            Ok(offset)
-        })();
-        let offset = result?;
-        // SAFETY: The caller validated the parent row; the entry covers the appended children.
+    #[inline]
+    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
         unsafe {
-            vector.write_internal::<List<T>>(
+            write_list(
+                vector,
                 index,
-                Some(List {
-                    offset: offset as u64,
-                    length: len as u64,
-                    _marker: PhantomData,
-                }),
+                value.map(|value| value.0.into_iter()),
+                |child, element, value| child.set_unchecked(element, value),
             )
         }
+    }
+}
+
+// SAFETY: entries only cover elements written through the child's own writer.
+unsafe impl<T: OwnedVectorElement> OwnedVectorElement for List<T> {
+    #[inline]
+    unsafe fn write_ref(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self>) -> Result<()> {
+        // SAFETY: the caller guarantees an in-bounds row; validation checked the child as T.
+        unsafe {
+            write_list(
+                vector,
+                index,
+                value.map(|value| value.0.iter()),
+                |child, element, value| T::write_ref(child, element, value.as_ref()),
+            )?;
+            vector.set_validity_unchecked(index, value.is_some());
+        }
+        Ok(())
     }
 }
 
 /// A borrowed list row backed by a range in its child vector.
 #[derive(Debug)]
 pub struct ListRef<'a, T: VectorElement> {
-    list: &'a List<T>,
+    list: &'a ListIndex,
     child: crate::vector::VectorReader<'a, T>,
 }
 
@@ -335,15 +339,27 @@ impl<'a, T: VectorElement + 'a> std::iter::FusedIterator for ListIterator<'a, T>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::environment::{Environment, StorageLocation};
+    use crate::{
+        connection::Connection,
+        data_chunk::DataChunk,
+        environment::{Environment, StorageLocation},
+    };
+
+    fn connection() -> Result<Connection> {
+        Environment::new()?.open(StorageLocation::InMemory)?.connect()
+    }
+
+    fn entries(vector: &Vector<'_, List<i32>>) -> Result<Vec<Option<Vec<Option<i32>>>>> {
+        Ok(vector
+            .reader()?
+            .iter()
+            .map(|row| row.map(|row| row.iter().map(|value| value.copied()).collect()))
+            .collect())
+    }
 
     #[test]
     fn list_entry_accessors() {
-        let entry = List::<i32> {
-            offset: 7,
-            length: 3,
-            _marker: PhantomData,
-        };
+        let entry = ListIndex { offset: 7, length: 3 };
         assert_eq!(entry.offset(), 7);
         assert_eq!(entry.length(), 3);
     }
@@ -381,6 +397,111 @@ mod tests {
         assert_eq!(empty.get(0), None);
         assert_eq!(empty.iter().len(), 0);
         assert_eq!(empty.iter().next(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn list_rows_take_elements_in_write_order() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(3)?;
+        // SAFETY: the rows below write all three elements.
+        unsafe { vector.set_child_size(3)? };
+        {
+            let mut writer = vector.writer()?;
+            writer.set(2, Some(List(vec![Some(1), Some(2)])))?;
+            writer.set(1, None)?;
+            writer.set(0, Some(List(vec![None])))?;
+        }
+        assert_eq!(
+            entries(&vector)?,
+            [Some(vec![None]), None, Some(vec![Some(1), Some(2)])]
+        );
+        let reader = vector.reader()?;
+        assert_eq!(reader.get(2)?.unwrap().list.offset(), 0);
+        assert_eq!(reader.get(0)?.unwrap().list.offset(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn list_rows_that_do_not_fit_write_nothing() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(2)?;
+        let error = vector.writer()?.set(0, Some(List(vec![Some(1)]))).unwrap_err();
+        assert!(error.message.contains("only 0 of 0 remain"), "{error}");
+        // SAFETY: the rows below write all three elements.
+        unsafe { vector.set_child_size(3)? };
+        {
+            let mut writer = vector.writer()?;
+            writer.set(0, Some(List(vec![Some(1), Some(2)])))?;
+            let error = writer.set(1, Some(List(vec![Some(3), Some(4)]))).unwrap_err();
+            assert!(
+                error.message.contains("needs 2 elements, but only 1 of 3 remain"),
+                "{error}"
+            );
+            assert_eq!(writer.child_offset(), 2);
+            writer.set(1, Some(List(vec![Some(3)])))?;
+            assert!(writer.set(0, Some(List(vec![Some(5)]))).is_err());
+            // Empty lists need no elements.
+            writer.set(0, Some(List(vec![])))?;
+        }
+        assert_eq!(entries(&vector)?, [Some(vec![]), Some(vec![Some(3)])]);
+        Ok(())
+    }
+
+    #[test]
+    fn list_writes_borrow_owned_elements() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<String>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<String>>(0)?;
+        vector.set_size(2)?;
+        let rows = [
+            Some(List(vec![
+                Some("a string longer than the inline storage".to_owned()),
+                None,
+            ])),
+            Some(List(vec![Some("b".to_owned())])),
+        ];
+        // SAFETY: the rows below write all three elements.
+        unsafe { vector.set_child_size(3)? };
+        {
+            let mut writer = vector.writer()?;
+            for (index, row) in rows.iter().enumerate() {
+                writer.set_ref(index, row.as_ref())?;
+            }
+        }
+        for (index, row) in rows.iter().enumerate() {
+            assert_eq!(
+                vector.get_value_slow(index)?.get::<List<String>>()?.as_ref(),
+                row.as_ref()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn list_child_offset_moves_within_the_child() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+        vector.set_size(2)?;
+        // SAFETY: row 0 writes both elements; rewinding then rewrites them for row 1.
+        unsafe { vector.set_child_size(2)? };
+        vector.writer()?.set(0, Some(List(vec![Some(1), Some(2)])))?;
+        assert!(vector.set_child_offset(3).is_err());
+        vector.set_child_offset(0)?;
+        vector.writer()?.set(1, Some(List(vec![Some(7), Some(8)])))?;
+        // Both rows now share the rewritten range.
+        assert_eq!(
+            entries(&vector)?,
+            [Some(vec![Some(7), Some(8)]), Some(vec![Some(7), Some(8)])]
+        );
+        drop(vector);
+        chunk.clear()?;
+        assert_eq!(chunk.get_vector_at_mut::<List<i32>>(0)?.child_offset(), 0);
         Ok(())
     }
 }

@@ -4,7 +4,7 @@ use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
     Arena, DuckDBBytes, HasDuckDBBytes, OwnedVectorElement, StorageKind, TypeMetadata, Unknown, Vector, VectorElement,
-    VectorView, WritableVectorElement, not_flat, not_writable, out_of_bounds,
+    WritableVectorElement, not_flat, not_writable, out_of_bounds,
 };
 
 /// Exclusive access to a writable flat vector.
@@ -69,6 +69,7 @@ use super::{
 pub struct VectorWriter<'writer, T: VectorElement> {
     vector: NonNull<Vector<'writer, T>>,
     validity: *mut u64,
+    data: *mut std::ffi::c_void,
     child_writers: Option<Vec<VectorWriter<'writer, Unknown>>>,
     _borrow: PhantomData<&'writer mut T>,
 }
@@ -89,9 +90,11 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
             return Err(not_flat());
         }
         let validity = borrowed.writable_validity()?;
+        let data = borrowed.view.as_ref().ok_or_else(not_flat)?.view.data.cast_mut();
         Ok(Self {
             vector,
             validity,
+            data,
             child_writers: None,
             _borrow: PhantomData,
         })
@@ -154,7 +157,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     }
 
     #[inline]
-    unsafe fn child_writer_unchecked<U: VectorElement + 'writer>(
+    pub(crate) unsafe fn child_writer_unchecked<U: VectorElement + 'writer>(
         &mut self,
         child_index: usize,
     ) -> Result<&mut VectorWriter<'writer, U>> {
@@ -189,7 +192,7 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     /// type. Typed writes may replace storage; reacquire the pointer afterwards.
     /// The caller chooses `'data` and must uphold it when dereferencing the pointer.
     pub fn as_mut_ptr<'data>(&mut self) -> *mut T::Internal<'data> {
-        self.view().data() as *mut T::Internal<'data>
+        self.data.cast()
     }
 
     /// Borrow mutable physical storage, or `None` when no data is exposed.
@@ -295,24 +298,28 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         self.vector().children()
     }
 
+    pub(crate) fn child_offset_cell(&self) -> &std::cell::Cell<usize> {
+        self.vector().child_offset_cell()
+    }
+
     pub(crate) fn children_collection_mut(&mut self) -> Option<&mut crate::data_chunk::VectorCollection> {
         self.vector_mut().children_collection_mut()
     }
 
     pub(crate) fn set_null_slow(&mut self, index: usize) -> Result<()> {
         self.vector_mut().set_null_slow(index)?;
-        self.refresh_validity()
+        self.refresh_buffers()
     }
 
     pub(crate) fn write_value_slow(&mut self, index: usize, value: crate::value::Value) -> Result<()> {
         self.vector_mut().write_value_slow(index, value)?;
-        self.refresh_validity()
+        self.refresh_buffers()
     }
 
     #[inline(always)]
     pub(crate) unsafe fn write_internal<U>(&mut self, index: usize, value: Option<U>) -> Result<()> {
         if let Some(value) = value {
-            let data = self.view().data() as *mut U;
+            let data = self.data.cast::<U>();
             // SAFETY: The caller guarantees the row's bounds and physical representation.
             unsafe { data.add(index).write(value) };
         }
@@ -328,10 +335,6 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         self.child_writers = None;
         // SAFETY: cached descendant pointers are gone before borrowing the vector for mutation.
         unsafe { self.vector.as_mut() }
-    }
-
-    fn view(&self) -> &VectorView<T> {
-        self.vector().view.as_ref().expect("writer has a flat view")
     }
 }
 
@@ -384,8 +387,12 @@ impl<T: OwnedVectorElement> VectorWriter<'_, T> {
 
 impl<T: VectorElement> VectorWriter<'_, T> {
     #[inline]
-    fn refresh_validity(&mut self) -> Result<()> {
-        self.validity = self.vector_mut().writable_validity()?;
+    fn refresh_buffers(&mut self) -> Result<()> {
+        let vector = self.vector_mut();
+        let validity = vector.writable_validity()?;
+        let data = vector.view.as_ref().ok_or_else(not_flat)?.view.data.cast_mut();
+        self.validity = validity;
+        self.data = data;
         Ok(())
     }
 
@@ -491,7 +498,7 @@ impl<T: HasDuckDBBytes> VectorWriter<'_, T> {
 
     #[inline(always)]
     unsafe fn write_byte_parts<P: AsRef<[u8]> + ?Sized>(&mut self, index: usize, parts: &[&P]) -> Result<()> {
-        let data = self.view().data().cast::<DuckDBBytes<'_>>().cast_mut();
+        let data = self.data.cast::<DuckDBBytes<'_>>();
         let encoded = DuckDBBytes::from_parts(parts, || self.arena())?;
         // SAFETY: The row is in bounds, and the bytes belong to this vector's arena.
         unsafe { data.add(index).write(encoded) };

@@ -42,7 +42,7 @@
 //! own borrowed row representation: scalars yield references, while nested
 //! values yield zero-copy handles into their child vectors.
 
-use std::marker::PhantomData;
+use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
 
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
@@ -61,6 +61,16 @@ use crate::{
 mod element;
 use duckdb_loadable_macros::{AsRaw, FromRaw};
 pub use element::*;
+
+/// The next unwritten `LIST` element of a vector.
+///
+/// Wrappers created by a [`VectorCollection`] share its cell, so the offset survives evicted
+/// views and new wrappers for the same vector.
+#[derive(Debug)]
+enum ChildOffset {
+    Owned(Cell<usize>),
+    Collection(NonNull<Cell<usize>>),
+}
 
 /// Logical-type parameters read once per vector, so row access skips the FFI lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,6 +232,7 @@ pub struct Vector<'a, T: VectorElement> {
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     metadata: TypeMetadata,
+    child_offset: ChildOffset,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -262,6 +273,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             heap: None,
             children,
             metadata: params,
+            child_offset: ChildOffset::Owned(Cell::new(0)),
             _chunk: PhantomData,
             _type: PhantomData,
         };
@@ -393,6 +405,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             heap: self.heap,
             children: self.children,
             metadata: self.metadata,
+            child_offset: self.child_offset,
             _chunk: self._chunk,
             _type: PhantomData,
         }
@@ -450,6 +463,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     pub(crate) fn metadata(&self) -> TypeMetadata {
         self.metadata
+    }
+
+    pub(crate) fn child_offset_cell(&self) -> &Cell<usize> {
+        match &self.child_offset {
+            ChildOffset::Owned(cell) => cell,
+            // SAFETY: the collection owning the cell outlives every wrapper it creates.
+            ChildOffset::Collection(cell) => unsafe { cell.as_ref() },
+        }
+    }
+
+    /// Share the offset of the collection slot this wrapper was created for.
+    ///
+    /// # Safety
+    /// `cell` must outlive this wrapper.
+    pub(crate) unsafe fn with_child_offset(mut self, cell: &Cell<usize>) -> Self {
+        self.child_offset = ChildOffset::Collection(NonNull::from(cell));
+        self
     }
 
     pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
@@ -515,7 +545,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// # fn main() -> duckdb_neo::Result<()> {
     /// # let env = Environment::new()?;
     /// # let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    /// let types = [Vec::<Option<String>>::logical_type(&conn)?, Vec::<Option<i64>>::logical_type(&conn)?];
+    /// let types = [List::<String>::logical_type(&conn)?, List::<i64>::logical_type(&conn)?];
     /// let mut chunk = DataChunk::create(&conn, &types, true)?;
     /// let [mut a, mut b] = chunk.get_vector_array_mut([0, 1])?;
     /// std::mem::swap(&mut *a.children_mut().unwrap(), &mut *b.children_mut().unwrap());

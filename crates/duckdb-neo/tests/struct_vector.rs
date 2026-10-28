@@ -7,6 +7,7 @@ use duckdb_neo::{
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
+    types::{Array, List},
     vector::{StorageKind, Unknown, Vector},
 };
 
@@ -20,7 +21,7 @@ struct Row {
 #[allow(dead_code)]
 struct Nested {
     row: Option<Row>,
-    items: Option<Vec<Option<i32>>>,
+    items: Option<List<i32>>,
 }
 
 #[derive(Debug, PartialEq, AsDuckDB)]
@@ -39,10 +40,10 @@ struct AllNested {
 #[derive(Debug, AsDuckDB)]
 struct Empty {}
 
-#[derive(Debug, AsVectorElement, AsWritableVectorElement)]
+#[derive(Debug, AsVectorElement)]
 #[allow(dead_code)]
 struct Fixed {
-    values: Option<[Option<i32>; 2]>,
+    values: Option<Array<i32>>,
 }
 
 #[test]
@@ -55,11 +56,10 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     #[derive(Debug, PartialEq, AsDuckDB)]
     struct Record {
         primary: Point,
-        others: Vec<Option<Point>>,
-        labels: Vec<String>,
-        nullable_labels: Vec<Option<String>>,
-        fixed: [Option<String>; 2],
-        matrix: Vec<Option<Vec<i32>>>,
+        others: List<Point>,
+        labels: List<String>,
+        nullable_labels: List<String>,
+        matrix: List<List<i32>>,
         optional: Option<i64>,
     }
     fn accepts_self<T: for<'a> duckdb_neo::vector::WritableVectorElement<Write<'a> = T>>() {}
@@ -69,23 +69,39 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
             name: "owned nested string".to_owned(),
             value: 42,
         },
-        others: vec![
+        others: List(vec![
             Some(Point {
                 name: "child".to_owned(),
                 value: 7,
             }),
             None,
-        ],
-        labels: vec!["first owned label".to_owned(), "second".to_owned()],
-        nullable_labels: vec![None, Some("nullable".to_owned())],
-        fixed: [Some("fixed string".to_owned()), None],
-        matrix: vec![Some(vec![1, 2]), None, Some(vec![])],
+        ]),
+        labels: List(vec![Some("first owned label".to_owned()), Some("second".to_owned())]),
+        nullable_labels: List(vec![None, Some("nullable".to_owned())]),
+        matrix: List(vec![Some(List(vec![Some(1), Some(2)])), None, Some(List(vec![]))]),
         optional: None,
     };
     let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
     let mut chunk = DataChunk::create(&conn, &[Record::logical_type(&conn)?], true)?;
     let mut vector = chunk.get_vector_at_mut::<Record>(0)?;
     vector.set_size(3)?;
+    {
+        // Each record uses 2 + 2 + 2 + 3 list elements and 2 inner matrix elements; two are written.
+        let mut children = vector.children_mut().unwrap();
+        // SAFETY: the two records written below use every element.
+        unsafe {
+            children.get_vector_at_mut::<List<Point>>(1)?.set_child_size(4)?;
+            children.get_vector_at_mut::<List<String>>(2)?.set_child_size(4)?;
+            children.get_vector_at_mut::<List<String>>(3)?.set_child_size(4)?;
+            let mut matrix = children.get_vector_at_mut::<List<List<i32>>>(4)?;
+            matrix.set_child_size(6)?;
+            matrix
+                .children_mut()
+                .unwrap()
+                .get_vector_at_mut::<List<i32>>(0)?
+                .set_child_size(4)?;
+        }
+    }
     {
         let mut writer = vector.writer()?;
         writer.set(2, None)?;
@@ -107,10 +123,6 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
         row.nullable_labels.unwrap().iter().collect::<Vec<_>>(),
         [None, Some("nullable")]
     );
-    assert_eq!(
-        row.fixed.unwrap().iter().collect::<Vec<_>>(),
-        [Some("fixed string"), None]
-    );
     let matrix = row.matrix.unwrap();
     assert_eq!(
         matrix.get(0).unwrap().unwrap().iter().collect::<Vec<_>>(),
@@ -122,12 +134,9 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     assert!(vector.reader()?.get(1)?.is_none());
     assert!(vector.reader()?.get(2)?.is_none());
     assert_eq!(vector.get_value_slow(0)?.get::<Record>()?, Some(record()));
-    let fixed = vector.children().unwrap().get_vector_at::<[Option<String>; 2]>(4)?;
-    assert!(fixed.reader()?.get(1)?.is_none());
-    let elements = fixed.children().unwrap().get_vector_at::<String>(0)?;
-    for index in 2..6 {
-        assert!(elements.reader()?.get(index)?.is_none());
-    }
+    let labels = vector.children().unwrap().get_vector_at::<List<String>>(2)?;
+    assert!(labels.reader()?.get(1)?.is_none());
+    assert_eq!(labels.child_offset(), 4);
     Ok(())
 }
 
@@ -399,6 +408,14 @@ fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
     let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
     let mut vector = chunk.get_vector_at_mut::<Nested>(0)?;
     vector.set_size(1)?;
+    // SAFETY: rows 0 and 2 below write all five elements.
+    unsafe {
+        vector
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<List<i32>>(1)?
+            .set_child_size(5)?
+    };
     vector.writer()?.set(
         0,
         Some(Nested {
@@ -406,9 +423,10 @@ fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
                 name: Some("nested".to_owned()),
                 value: Some(9),
             }),
-            items: Some(vec![Some(4), None, Some(8)]),
+            items: Some(List(vec![Some(4), None, Some(8)])),
         }),
     )?;
+    // Resizing the parent drops its cached child views, but not the list offset.
     vector.set_size(3)?;
     {
         let mut writer = vector.writer()?;
@@ -417,7 +435,7 @@ fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
             2,
             Some(Nested {
                 row: None,
-                items: Some(vec![]),
+                items: Some(List(vec![Some(5), Some(6)])),
             }),
         )?;
     }
@@ -432,7 +450,7 @@ fn derived_writer_supports_nested_fields_and_growth() -> Result<()> {
     assert!(vector.reader()?.get(1)?.is_none());
     let row = vector.reader()?.get(2)?.unwrap();
     assert!(row.row.is_none());
-    assert!(row.items.unwrap().is_empty());
+    assert_eq!(row.items.unwrap().iter().collect::<Vec<_>>(), [Some(&5), Some(&6)]);
     let inner = vector.children().unwrap().get_vector_at::<Row>(0)?;
     for index in [1, 2] {
         assert!(inner.reader()?.get(index)?.is_none());
@@ -539,32 +557,16 @@ fn derived_writer_uses_custom_vector_validation() -> Result<()> {
 }
 
 #[test]
-fn derived_writer_checks_fixed_array_schema() -> Result<()> {
+fn derived_reader_supports_array_fields() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let logical_type = LogicalType::from_text(&conn, "STRUCT(values INTEGER[2])")?;
-    let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
-    let mut vector = chunk.get_vector_at_mut::<Fixed>(0)?;
-    vector.set_size(1)?;
-    vector.writer()?.set(
-        0,
-        Some(Fixed {
-            values: Some([Some(1), Some(2)]),
-        }),
-    )?;
-    let wrong_type = LogicalType::from_text(&conn, "STRUCT(values INTEGER[3])")?;
-    let mut wrong = DataChunk::create(&conn, &[wrong_type], true)?;
-    assert!(wrong.get_vector_at_mut::<Fixed>(0).is_err());
+    let chunk = conn
+        .query("SELECT {'values': [1, NULL]::INTEGER[2]}", Parameters::None)?
+        .next_chunk()?
+        .unwrap();
+    let vector = chunk.get_vector_at::<Fixed>(0)?;
     let row = vector.reader()?.get(0)?.unwrap();
-    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&1), Some(&2)]);
-    vector.writer()?.set(
-        0,
-        Some(Fixed {
-            values: Some([Some(3), Some(4)]),
-        }),
-    )?;
-    let row = vector.reader()?.get(0)?.unwrap();
-    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&3), Some(&4)]);
+    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
     Ok(())
 }
 

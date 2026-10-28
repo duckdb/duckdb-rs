@@ -398,7 +398,7 @@ mod tests {
         environment::{Environment, StorageLocation},
         error::DuckDBError,
         logical_type::{LogicalType, LogicalTypeID},
-        types::DuckDBType,
+        types::{DuckDBType, List},
     };
 
     #[test]
@@ -649,7 +649,7 @@ mod tests {
         );
 
         assert!(
-            conn.common_type(&[<Vec<i16>>::logical_type(&conn)?, i32::logical_type(&conn)?])
+            conn.common_type(&[List::<i16>::logical_type(&conn)?, i32::logical_type(&conn)?])
                 .is_err(),
         );
 

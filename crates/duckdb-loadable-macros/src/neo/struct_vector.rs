@@ -198,6 +198,7 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
         unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
             type Write<#lifetime> = Self;
 
+            #[inline]
             unsafe fn write(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: ::core::primitive::usize,
@@ -216,6 +217,7 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
 
         // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
         unsafe impl #impl_generics ::duckdb_neo::vector::OwnedVectorElement for #ident #type_generics #where_clause {
+            #[inline]
             unsafe fn write_ref(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
                 index: ::core::primitive::usize,

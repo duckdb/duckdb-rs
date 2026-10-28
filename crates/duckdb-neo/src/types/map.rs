@@ -114,7 +114,7 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
         K: 'a,
         V: 'a;
 
-    type Internal<'a> = super::List<()>;
+    type Internal<'a> = super::ListIndex;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {

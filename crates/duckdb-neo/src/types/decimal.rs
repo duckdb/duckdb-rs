@@ -437,6 +437,7 @@ mod tests {
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        types::List,
     };
 
     #[test]
@@ -499,7 +500,7 @@ mod tests {
             Parameters::positional(&[
                 &Some(decimal),
                 &None::<Decimal<4, 1>>,
-                &vec![Decimal::<5, 2>::new(12_345)],
+                &List(vec![Some(Decimal::<5, 2>::new(12_345))]),
             ]),
         )?;
         let chunk = result.next_chunk()?.expect("query returned no rows");
