@@ -1,8 +1,8 @@
 //! The `LIST` logical type.
 //!
 //! [`List<T>`] holds a row's elements, each `None` for SQL NULL; vectors of `List<T>`
-//! read rows as [`ListRef`]. Writes never resize the element child: size it once with
-//! [`Vector::set_child_size`], then every write takes the next elements, in any row order.
+//! read rows as [`ListRef`]. Writes never resize the element child; [`List`] describes
+//! how to size it.
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{
@@ -36,6 +36,42 @@ impl ListIndex {
 }
 
 /// An owned `LIST` row; each `None` element is SQL NULL.
+///
+/// # Writing `LIST` vectors
+///
+/// Writes never resize the element child. Size it with [`Vector::set_child_size`]; each row
+/// write then takes the next unwritten elements, in any row order, and fails without taking
+/// any when too few remain. Nested `LIST`s and `MAP`s keep their own offsets, so size each level.
+///
+/// DuckDB reads the whole child, so every element below its size must be written before the
+/// vector is read. When the total is unknown, size for an upper bound, write the rows, then trim
+/// to [`Vector::child_offset`] with another `set_child_size` call, which keeps written elements.
+/// A failed row write takes no elements, but skipping ahead with [`Vector::set_child_offset`]
+/// leaves a gap that must be written or trimmed away.
+///
+/// ```
+/// use duckdb_neo::{DuckDBType, Result, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List};
+///
+/// # fn main() -> Result<()> {
+/// let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+/// let mut chunk = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+/// let mut vector = chunk.get_vector_at_mut::<List<i32>>(0)?;
+/// vector.set_size(2)?;
+/// // SAFETY: the vector is trimmed to the written elements before it is read.
+/// unsafe { vector.set_child_size(16)? };
+/// {
+///     let mut writer = vector.writer()?;
+///     writer.set(0, Some(List(vec![Some(1), Some(2)])))?;
+///     writer.set(1, Some(List(vec![Some(3)])))?;
+/// }
+/// let written = vector.child_offset();
+/// // SAFETY: every element below `written` was written above.
+/// unsafe { vector.set_child_size(written)? };
+/// assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 3);
+/// assert_eq!(vector.get_value_slow(1)?.get::<List<i32>>()?, Some(List(vec![Some(3)])));
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct List<T>(pub Vec<Option<T>>);
 
@@ -136,8 +172,8 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     /// Size the element child to exactly `elements` and restart writes at its first element.
     ///
     /// # Safety
-    /// Before DuckDB reads this vector, writes through it must initialize every element below
-    /// `elements`, since DuckDB treats the whole child as part of the list.
+    /// Every element below `elements` must be written before DuckDB reads this vector; see
+    /// [`List`] for sizing to an upper bound and trimming.
     pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
         // SAFETY: the caller upholds the initialization contract.
         unsafe { self.size_appended_child(elements) }

@@ -130,26 +130,6 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         Ok(())
     }
 
-    /// Write a previously validated child through its cached writer state.
-    ///
-    /// # Safety
-    /// `child_index` must name a child validated as `U`, and `index` must be in bounds
-    /// for that child. Child types must stay fixed for this writer's lifetime.
-    #[doc(hidden)]
-    #[inline]
-    pub unsafe fn write_child_unchecked<U: WritableVectorElement + 'writer>(
-        &mut self,
-        child_index: usize,
-        index: usize,
-        value: Option<U::Write<'_>>,
-    ) -> Result<()> {
-        // SAFETY: the caller guarantees the child's type and row bounds.
-        unsafe {
-            self.child_writer_unchecked::<U>(child_index)?
-                .set_unchecked(index, value)
-        }
-    }
-
     /// Write a borrowed field through its cached child writer.
     ///
     /// # Safety

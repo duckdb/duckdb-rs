@@ -42,7 +42,12 @@
 //! own borrowed row representation: scalars yield references, while nested
 //! values yield zero-copy handles into their child vectors.
 
-use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    marker::PhantomData,
+    rc::Rc,
+};
 
 use crate::builder_helpers::ffi_enum_redeclaration;
 use crate::error::DuckDBError;
@@ -62,14 +67,23 @@ mod element;
 use duckdb_loadable_macros::{AsRaw, FromRaw};
 pub use element::*;
 
-/// The next unwritten `LIST` element of a vector.
+/// The next unwritten child element of every `LIST` and `MAP` vector in one wrapper tree.
 ///
-/// Wrappers created by a [`VectorCollection`] share its cell, so the offset survives evicted
-/// views and new wrappers for the same vector.
-#[derive(Debug)]
-enum ChildOffset {
-    Owned(Cell<usize>),
-    Collection(NonNull<Cell<usize>>),
+/// The root wrapper (a chunk, a callback's inputs, or a standalone vector) owns the store, and
+/// every descendant shares it. Offsets are keyed by handle, which DuckDB keeps stable for a
+/// vector until its parent's storage is replaced, so they survive evicted and rebuilt wrappers.
+#[derive(Debug, Default)]
+pub(crate) struct ChildOffsets(RefCell<HashMap<ffi::duckdb_v2_vector_handle, Rc<Cell<usize>>>>);
+
+impl ChildOffsets {
+    fn cell(&self, handle: ffi::duckdb_v2_vector_handle) -> Rc<Cell<usize>> {
+        self.0.borrow_mut().entry(handle).or_default().clone()
+    }
+
+    /// Restart every offset, e.g. after the chunk was cleared.
+    pub(crate) fn reset(&self) {
+        self.0.borrow().values().for_each(|offset| offset.set(0));
+    }
 }
 
 /// Logical-type parameters read once per vector, so row access skips the FFI lookup.
@@ -82,6 +96,8 @@ pub(crate) enum TypeMetadata {
     Decimal(DecimalSignature),
     /// `STRUCT` or `TUPLE`, whose fields share the parent's row count.
     Struct,
+    /// `LIST` or `MAP`, whose rows take consecutive elements of the child.
+    List,
 }
 
 impl TypeMetadata {
@@ -92,6 +108,7 @@ impl TypeMetadata {
             },
             LogicalTypeID::Decimal => Self::Decimal(DecimalSignature::from_logical_type(logical_type)?),
             LogicalTypeID::Struct | LogicalTypeID::Tuple => Self::Struct,
+            LogicalTypeID::List | LogicalTypeID::Map => Self::List,
             _ => Self::None,
         })
     }
@@ -224,7 +241,10 @@ pub struct Vector<'a, T: VectorElement> {
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
     metadata: TypeMetadata,
-    child_offset: ChildOffset,
+    /// The store of the wrapper tree, shared with children and rebuilt wrappers.
+    offsets: Rc<ChildOffsets>,
+    /// This vector's entry in `offsets`; `None` unless it is a `LIST` or `MAP`.
+    child_offset: Option<Rc<Cell<usize>>>,
     _chunk: PhantomData<&'a ()>,
     _type: PhantomData<T>,
 }
@@ -232,6 +252,15 @@ pub struct Vector<'a, T: VectorElement> {
 impl<'a, T: VectorElement> Vector<'a, T> {
     /// The handle must remain valid for the lifetime of the owning chunk.
     pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
+        Self::from_handle_in(handle, access, &Rc::default())
+    }
+
+    /// Wrap a handle of the wrapper tree that owns `offsets`.
+    pub(crate) fn from_handle_in(
+        handle: &ffi::duckdb_v2_vector_handle,
+        access: Access,
+        offsets: &Rc<ChildOffsets>,
+    ) -> Result<Self> {
         let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, *handle, RET)
             .map(|handle| LogicalType { handle })?;
 
@@ -252,8 +281,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
                 RET
             )?);
         }
-        let children =
-            (!child_handles.is_empty()).then(|| VectorCollection::new(child_handles, access, RowCount::FirstVector));
+        let children = (!child_handles.is_empty())
+            .then(|| VectorCollection::with_offsets(child_handles, access, RowCount::FirstVector, offsets.clone()));
 
         let vector = Self {
             handle: *handle,
@@ -265,7 +294,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             heap: None,
             children,
             metadata: params,
-            child_offset: ChildOffset::Owned(Cell::new(0)),
+            offsets: offsets.clone(),
+            child_offset: (params == TypeMetadata::List).then(|| offsets.cell(*handle)),
             _chunk: PhantomData,
             _type: PhantomData,
         };
@@ -392,6 +422,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             heap: self.heap,
             children: self.children,
             metadata: self.metadata,
+            offsets: self.offsets,
             child_offset: self.child_offset,
             _chunk: self._chunk,
             _type: PhantomData,
@@ -415,7 +446,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             RET,
             std::ptr::null_mut()
         )?;
-        Self::from_handle(&self.handle, self.access)
+        Self::from_handle_in(&self.handle, self.access, &self.offsets)
     }
 
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
@@ -445,7 +476,10 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
             Some(error)
         };
-        Ok((Self::from_handle(&self.handle, self.access)?, row_error))
+        Ok((
+            Self::from_handle_in(&self.handle, self.access, &self.offsets)?,
+            row_error,
+        ))
     }
 
     pub(crate) fn metadata(&self) -> TypeMetadata {
@@ -481,20 +515,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     }
 
     pub(crate) fn child_offset_cell(&self) -> &Cell<usize> {
-        match &self.child_offset {
-            ChildOffset::Owned(cell) => cell,
-            // SAFETY: the collection owning the cell outlives every wrapper it creates.
-            ChildOffset::Collection(cell) => unsafe { cell.as_ref() },
-        }
-    }
-
-    /// Share the offset of the collection slot this wrapper was created for.
-    ///
-    /// # Safety
-    /// `cell` must outlive this wrapper.
-    pub(crate) unsafe fn with_child_offset(mut self, cell: &Cell<usize>) -> Self {
-        self.child_offset = ChildOffset::Collection(NonNull::from(cell));
-        self
+        self.child_offset
+            .as_deref()
+            .expect("LIST and MAP vectors track their child offset")
     }
 
     pub(crate) fn validate_as<U: VectorElement>(&self) -> Result<()> {
@@ -524,7 +547,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
         // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
         // A write or resize would change storage the source wrapper still reads, so never stay writable.
-        Vector::from_handle(&self.handle, Access::Exclusive)
+        Vector::from_handle_in(&self.handle, Access::Exclusive, &self.offsets)
     }
 
     /// Write one owned [`Value`] through DuckDB's generic value API.
@@ -597,7 +620,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
 
         // Flattening replaces the buffer and child vectors, so rebuild from the handle.
-        *self = Self::from_handle(&self.handle, self.access)?;
+        *self = Self::from_handle_in(&self.handle, self.access, &self.offsets)?;
         Ok(())
     }
 
@@ -642,7 +665,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, !value.is_null()?)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        let mut vector = Self::from_handle(&self.handle, Access::Exclusive)?;
+        let mut vector = Self::from_handle_in(&self.handle, Access::Exclusive, &self.offsets)?;
         vector.len = count;
         Ok(vector)
     }

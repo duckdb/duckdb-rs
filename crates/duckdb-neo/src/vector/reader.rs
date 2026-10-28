@@ -240,13 +240,10 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         Some(unsafe { U::get(child, physical, logical) })
     }
 
-    /// Borrow a prepared child's reader state after validating its type externally.
-    ///
     /// # Safety
     /// `child_index` must name a child validated as `U`.
-    #[doc(hidden)]
     #[inline(always)]
-    pub unsafe fn child_reader<U: VectorElement>(&self, child_index: usize) -> VectorReader<'vec, U> {
+    pub(crate) unsafe fn child_reader<U: VectorElement>(&self, child_index: usize) -> VectorReader<'vec, U> {
         let reader = self.cached_child_reader(child_index);
         VectorReader {
             // SAFETY: the caller guarantees that the child has type U.

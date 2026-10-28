@@ -19,7 +19,9 @@ use crate::{
 /// Reads and writes `MAP` vectors with key type `K` and value type `V`.
 ///
 /// Rows are written from a `HashMap`, in its iteration order. Like a `LIST`, the entries
-/// child is sized once with [`Vector::set_child_size`]; each row takes the next entries.
+/// child is sized with [`Vector::set_child_size`] and each row takes the next entries; the
+/// [`List`](super::List) docs describe the initialization contract and trimming to
+/// [`Vector::child_offset`].
 #[derive(Debug)]
 pub struct Map<K, V>(PhantomData<(K, V)>);
 
@@ -162,8 +164,8 @@ impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
     /// Size the entries child to exactly `entries` and restart writes at its first entry.
     ///
     /// # Safety
-    /// Before DuckDB reads this vector, writes through it must initialize every entry below
-    /// `entries`, since DuckDB treats the whole child as part of the map.
+    /// Every entry below `entries` must be written before DuckDB reads this vector; see
+    /// [`List`](super::List) for sizing to an upper bound and trimming.
     pub unsafe fn set_child_size(&mut self, entries: usize) -> Result<()> {
         // SAFETY: the caller upholds the initialization contract.
         unsafe { self.size_appended_child(entries) }

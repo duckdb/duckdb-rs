@@ -2,6 +2,7 @@
 
 use std::cell::{Cell, OnceCell};
 use std::ops::Deref;
+use std::rc::Rc;
 
 use duckdb_loadable_macros::AsRaw;
 
@@ -10,7 +11,7 @@ use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{InstanceKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
-use crate::vector::{Access, VectorElement};
+use crate::vector::{Access, ChildOffsets, VectorElement};
 use crate::{
     Result, check_api_call,
     raw::RawExt,
@@ -102,8 +103,8 @@ pub struct VectorCollection {
     cache: Vec<OnceCell<Vector<'static, Unknown>>>,
     /// Whether every view, including nested children, is cached.
     complete: Cell<bool>,
-    /// Next unwritten `LIST` element per vector, shared by all of its wrappers.
-    child_offsets: Box<[Cell<usize>]>,
+    /// Next unwritten child element of every `LIST` and `MAP` in this tree, shared with nested collections.
+    offsets: Rc<ChildOffsets>,
 }
 
 /// Where a [`VectorCollection`] reads its row count from.
@@ -119,27 +120,33 @@ pub(crate) enum RowCount {
 
 impl VectorCollection {
     pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
+        Self::with_offsets(handles, access, rows, Rc::default())
+    }
+
+    pub(crate) fn with_offsets(
+        handles: Vec<ffi::duckdb_v2_vector_handle>,
+        access: Access,
+        rows: RowCount,
+        offsets: Rc<ChildOffsets>,
+    ) -> Self {
         let cache = handles.iter().map(|_| OnceCell::new()).collect();
-        let child_offsets = handles.iter().map(|_| Cell::new(0)).collect();
         Self {
             handles,
             access,
             rows,
             cache,
             complete: Cell::new(false),
-            child_offsets,
+            offsets,
         }
     }
 
     fn wrap<T: VectorElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
-        let vector = Vector::from_handle(&self.handles[index], access)?;
-        // SAFETY: wrappers either borrow this collection or are cached inside it.
-        Ok(unsafe { vector.with_child_offset(&self.child_offsets[index]) })
+        Vector::from_handle_in(&self.handles[index], access, &self.offsets)
     }
 
-    /// Restart every `LIST` offset, e.g. after the chunk was cleared.
+    /// Restart every `LIST` and `MAP` offset in this tree, e.g. after the chunk was cleared.
     pub(crate) fn reset_child_offsets(&self) {
-        self.child_offsets.iter().for_each(|offset| offset.set(0));
+        self.offsets.reset();
     }
 
     fn cached(&self, index: usize) -> Result<&Vector<'_, Unknown>> {

@@ -812,3 +812,93 @@ fn set_ref_writes_borrowed_rows_without_moving_them() -> Result<()> {
     assert_eq!(names.reader()?.get(3)?, None);
     Ok(())
 }
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Matrix {
+    items: List<i32>,
+    matrix: List<List<i32>>,
+}
+
+fn matrix(items: &[i32], inner: &[i32]) -> Matrix {
+    Matrix {
+        items: items.iter().copied().map(Some).collect(),
+        matrix: List(vec![Some(inner.iter().copied().map(Some).collect())]),
+    }
+}
+
+/// Size the item and inner matrix children for `rows` rows of two elements each.
+fn size_matrix_children(vector: &mut Vector<'_, Matrix>, rows: usize) -> Result<()> {
+    let mut children = vector.children_mut().unwrap();
+    // SAFETY: each test writes `rows` rows of two items and one two-element matrix row.
+    unsafe {
+        children.get_vector_at_mut::<List<i32>>(0)?.set_child_size(2 * rows)?;
+        let mut matrix = children.get_vector_at_mut::<List<List<i32>>>(1)?;
+        matrix.set_child_size(rows)?;
+        matrix
+            .children_mut()
+            .unwrap()
+            .get_vector_at_mut::<List<i32>>(0)?
+            .set_child_size(2 * rows)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_list_offsets_survive_new_parent_wrappers() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Matrix::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
+        vector.set_size(3)?;
+        size_matrix_children(&mut vector, 3)?;
+        vector.writer()?.set(0, Some(matrix(&[1, 2], &[3, 4])))?;
+        // Resizing evicts every cached descendant wrapper.
+        vector.set_size(3)?;
+        vector.writer()?.set(1, Some(matrix(&[5, 6], &[7, 8])))?;
+    }
+    {
+        let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
+        let children = vector.children().unwrap();
+        assert_eq!(children.get_vector_at::<List<i32>>(0)?.child_offset(), 4);
+        let inner = children.get_vector_at::<List<List<i32>>>(1)?;
+        assert_eq!(inner.child_offset(), 2);
+        assert_eq!(
+            inner.children().unwrap().get_vector_at::<List<i32>>(0)?.child_offset(),
+            4
+        );
+        vector.writer()?.set(2, Some(matrix(&[9, 10], &[11, 12])))?;
+    }
+    let vector = chunk.get_vector_at::<Matrix>(0)?;
+    for (index, (items, inner)) in [([1, 2], [3, 4]), ([5, 6], [7, 8]), ([9, 10], [11, 12])]
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(
+            vector.get_value_slow(index)?.get::<Matrix>()?,
+            Some(matrix(&items, &inner)),
+            "row {index}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn clearing_a_chunk_restarts_nested_list_offsets() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Matrix::logical_type(&conn)?], true)?;
+    {
+        let mut vector = chunk.get_vector_at_mut::<Matrix>(0)?;
+        vector.set_size(1)?;
+        size_matrix_children(&mut vector, 1)?;
+        vector.writer()?.set(0, Some(matrix(&[1, 2], &[3, 4])))?;
+    }
+    chunk.clear()?;
+    let vector = chunk.get_vector_at_mut::<Matrix>(0)?;
+    let inner = vector.children().unwrap().get_vector_at::<List<List<i32>>>(1)?;
+    assert_eq!(inner.child_offset(), 0);
+    assert_eq!(
+        inner.children().unwrap().get_vector_at::<List<i32>>(0)?.child_offset(),
+        0
+    );
+    Ok(())
+}
