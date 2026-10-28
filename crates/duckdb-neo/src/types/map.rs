@@ -12,13 +12,14 @@ use crate::{
     error::Error,
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
-    types::Struct,
     value::{Value, ValueInput},
-    vector::{VectorElement, WritableVectorElement},
+    vector::{Unknown, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// Reads and writes `MAP` vectors with key type `K` and value type `V`.
-/// Rows are written from a `HashMap`, in its iteration order.
+///
+/// Rows are written from a `HashMap`, in its iteration order. Like a `LIST`, the entries
+/// child is sized once with [`Vector::set_child_size`]; each row takes the next entries.
 #[derive(Debug)]
 pub struct Map<K, V>(PhantomData<(K, V)>);
 
@@ -157,53 +158,67 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
     }
 }
 
-// SAFETY: the entry covers child rows written through the fields' own `write`.
+impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
+    /// Size the entries child to exactly `entries` and restart writes at its first entry.
+    ///
+    /// # Safety
+    /// Before DuckDB reads this vector, writes through it must initialize every entry below
+    /// `entries`, since DuckDB treats the whole child as part of the map.
+    pub unsafe fn set_child_size(&mut self, entries: usize) -> Result<()> {
+        // SAFETY: the caller upholds the initialization contract.
+        unsafe { self.size_appended_child(entries) }
+    }
+
+    /// Return the first entry the next map write uses.
+    pub fn child_offset(&self) -> usize {
+        self.child_offset_cell().get()
+    }
+
+    /// Continue map writes at `offset`, e.g. with a new wrapper for a partially written vector.
+    ///
+    /// Moving backwards makes later writes replace entries of rows that were already written.
+    pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
+        self.move_appended_child_offset(offset)
+    }
+}
+
+impl<K: VectorElement, V: VectorElement> VectorWriter<'_, Map<K, V>> {
+    /// Return the first entry the next map write uses.
+    pub fn child_offset(&self) -> usize {
+        self.child_offset_cell().get()
+    }
+}
+
+// SAFETY: entries only cover keys and values written through the fields' own writers.
 unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorElement for Map<K, V> {
     type Write<'a> = HashMap<K::Write<'a>, Option<V::Write<'a>>>;
 
-    unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
-        index: usize,
-        value: Option<Self::Write<'_>>,
-    ) -> Result<()> {
-        let Some(value) = value else {
-            // SAFETY: The caller guarantees a writable, flat, in-bounds row.
-            return unsafe { vector.write_internal::<ffi::duckdb_v2_list_entry>(index, None) };
-        };
-
+    #[inline]
+    unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+        let Some(value) = value else { return Ok(()) };
         let len = value.len();
-        // Write one child at a time, so only one child wrapper is borrowed.
-        let (keys, values): (Vec<_>, Vec<_>) = value.into_iter().unzip();
-        let entries = vector
-            .children_collection_mut()
-            .expect("validated nested vector has children")
-            .cached_mut::<Struct>(0)?;
-
-        let result = (|| {
-            // Append after the entries, including any written through another wrapper.
-            let offset = entries.current_size()?;
-            entries.set_size(offset + len)?;
-            let fields = entries
-                .children_collection_mut()
-                .expect("validated map entries have key and value children");
-
-            {
-                let mut writer = fields.cached_mut::<K>(0)?.writer()?;
-                for (child_index, key) in keys.into_iter().enumerate() {
-                    writer.set(offset + child_index, Some(key))?;
-                }
+        let offset = vector.child_offset_cell().get();
+        // SAFETY: Map<K, V>::validate checked the STRUCT(key, value) entries and both fields.
+        let entries = unsafe { vector.child_writer_unchecked::<Unknown>(0)? };
+        let size = entries.len();
+        let end = offset.checked_add(len).filter(|end| *end <= size).ok_or_else(|| {
+            Error::invalid_input(format!(
+                "MAP row needs {len} entries, but only {} of {size} remain; size the child with set_child_size",
+                size - offset.min(size)
+            ))
+        })?;
+        for (entry, (key, value)) in (offset..end).zip(value) {
+            // SAFETY: the entry is in bounds, and the fields have one row per entry.
+            unsafe {
+                entries
+                    .child_writer_unchecked::<K>(0)?
+                    .set_unchecked(entry, Some(key))?;
+                entries.child_writer_unchecked::<V>(1)?.set_unchecked(entry, value)?;
+                entries.set_validity_unchecked(entry, true);
             }
-            {
-                let mut writer = fields.cached_mut::<V>(1)?.writer()?;
-                for (child_index, value) in values.into_iter().enumerate() {
-                    writer.set(offset + child_index, value)?;
-                }
-            }
-            Ok(offset)
-        })();
-
-        let offset = result?;
-        // SAFETY: The caller validated the parent row; the entry covers the appended children.
+        }
+        vector.child_offset_cell().set(end);
+        // SAFETY: the caller guarantees an in-bounds row, and the entry covers the entries just written.
         unsafe {
             vector.write_internal(
                 index,
@@ -319,6 +334,8 @@ mod tests {
         {
             let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
             maps.set_size(3)?;
+            // SAFETY: row 0 writes both entries; the others write none.
+            unsafe { maps.set_child_size(2)? };
             maps.writer()?.set(0, Some(HashMap::from([(1, None), (2, Some(20))])))?;
             maps.writer()?.set(1, Some(HashMap::new()))?;
             maps.writer()?.set(2, None)?;
@@ -349,6 +366,8 @@ mod tests {
         {
             let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
             maps.set_size(2)?;
+            // SAFETY: row 0 writes all three entries.
+            unsafe { maps.set_child_size(3)? };
             maps.writer()?
                 .set(0, Some(HashMap::from([(1, None), (2, Some(20)), (3, Some(30))])))?;
             maps.writer()?.set(1, Some(HashMap::new()))?;
@@ -404,6 +423,42 @@ mod tests {
             .collect();
         assert_eq!(keys, [vec![Some(&1), Some(&2)], vec![Some(&3)]]);
         assert_eq!(row.values(), [Some(&10), None]);
+        Ok(())
+    }
+
+    #[test]
+    fn map_rows_take_entries_in_write_order() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, String>::logical_type(&conn)?], true)?;
+        let mut maps = chunk.get_vector_at_mut::<Map<i32, String>>(0)?;
+        maps.set_size(2)?;
+        let error = maps.writer()?.set(0, Some(HashMap::from([(1, None)]))).unwrap_err();
+        assert!(error.message.contains("only 0 of 0 remain"), "{error}");
+        // SAFETY: the rows below write all three entries.
+        unsafe { maps.set_child_size(3)? };
+        {
+            let mut writer = maps.writer()?;
+            writer.set(1, Some(HashMap::from([(1, Some("one")), (2, None)])))?;
+            let error = writer
+                .set(0, Some(HashMap::from([(3, Some("three")), (4, None)])))
+                .unwrap_err();
+            assert!(
+                error
+                    .message
+                    .contains("MAP row needs 2 entries, but only 1 of 3 remain"),
+                "{error}"
+            );
+            assert_eq!(writer.child_offset(), 2);
+            writer.set(0, Some(HashMap::from([(3, Some("three"))])))?;
+        }
+        let reader = maps.reader()?;
+        let row = reader.get(0)?.unwrap();
+        assert_eq!(row.offset, 2);
+        assert_eq!(row.get(&3), Some(Some("three")));
+        let row = reader.get(1)?.unwrap();
+        assert_eq!(row.offset, 0);
+        assert_eq!((row.get(&1), row.get(&2)), (Some(Some("one")), Some(None)));
         Ok(())
     }
 }

@@ -285,20 +285,19 @@ fn writer_reuses_nested_children_across_rows() -> Result<()> {
 fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let mut chunk = DataChunk::create(&conn, &[<[i32; 2]>::logical_type(&conn)?], true)?;
-    let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
+    let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2>::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Array<i32, 2>>(0)?;
     vector.set_size(2)?;
     {
         let mut writer = vector.writer()?;
         assert!(writer.as_mut_ptr().is_null());
         // SAFETY: ARRAY values have no parent data slots.
         assert!(unsafe { writer.as_slice_mut() }.is_none());
-        assert!(writer.set(0, Some(vec![Some(1)])).is_err());
-        writer.set(0, Some(vec![Some(1), Some(2)]))?;
+        writer.set(0, Some(Array([Some(1), Some(2)])))?;
         writer.set(1, None)?;
         // SAFETY: This observes the initialized mask without changing its bits.
         assert_eq!(unsafe { writer.validity_mut() }?[0] & 3, 1);
-        writer.set(1, Some(vec![Some(3), Some(4)]))?;
+        writer.set(1, Some(Array([Some(3), Some(4)])))?;
         writer.set(0, None)?;
         // SAFETY: The rows and descendants were initialized by typed writes.
         unsafe { writer.set_row_validity(1, true)? };

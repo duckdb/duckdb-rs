@@ -40,10 +40,10 @@ struct AllNested {
 #[derive(Debug, AsDuckDB)]
 struct Empty {}
 
-#[derive(Debug, AsVectorElement)]
+#[derive(Debug, AsVectorElement, AsWritableVectorElement)]
 #[allow(dead_code)]
 struct Fixed {
-    values: Option<Array<i32>>,
+    values: Option<Array<i32, 2>>,
 }
 
 #[test]
@@ -59,6 +59,7 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
         others: List<Point>,
         labels: List<String>,
         nullable_labels: List<String>,
+        fixed: Array<String, 2>,
         matrix: List<List<i32>>,
         optional: Option<i64>,
     }
@@ -78,6 +79,7 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
         ]),
         labels: List(vec![Some("first owned label".to_owned()), Some("second".to_owned())]),
         nullable_labels: List(vec![None, Some("nullable".to_owned())]),
+        fixed: Array([Some("fixed string".to_owned()), None]),
         matrix: List(vec![Some(List(vec![Some(1), Some(2)])), None, Some(List(vec![]))]),
         optional: None,
     };
@@ -93,7 +95,7 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
             children.get_vector_at_mut::<List<Point>>(1)?.set_child_size(4)?;
             children.get_vector_at_mut::<List<String>>(2)?.set_child_size(4)?;
             children.get_vector_at_mut::<List<String>>(3)?.set_child_size(4)?;
-            let mut matrix = children.get_vector_at_mut::<List<List<i32>>>(4)?;
+            let mut matrix = children.get_vector_at_mut::<List<List<i32>>>(5)?;
             matrix.set_child_size(6)?;
             matrix
                 .children_mut()
@@ -123,6 +125,10 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
         row.nullable_labels.unwrap().iter().collect::<Vec<_>>(),
         [None, Some("nullable")]
     );
+    assert_eq!(
+        row.fixed.unwrap().iter().collect::<Vec<_>>(),
+        [Some("fixed string"), None]
+    );
     let matrix = row.matrix.unwrap();
     assert_eq!(
         matrix.get(0).unwrap().unwrap().iter().collect::<Vec<_>>(),
@@ -137,6 +143,13 @@ fn owned_struct_fields_roundtrip_without_a_write_projection() -> Result<()> {
     let labels = vector.children().unwrap().get_vector_at::<List<String>>(2)?;
     assert!(labels.reader()?.get(1)?.is_none());
     assert_eq!(labels.child_offset(), 4);
+    // NULL records null their arrays' elements too.
+    let fixed = vector.children().unwrap().get_vector_at::<Array<String, 2>>(4)?;
+    assert!(fixed.reader()?.get(1)?.is_none());
+    let elements = fixed.children().unwrap().get_vector_at::<String>(0)?;
+    for index in 2..6 {
+        assert!(elements.reader()?.get(index)?.is_none());
+    }
     Ok(())
 }
 
@@ -557,15 +570,43 @@ fn derived_writer_uses_custom_vector_validation() -> Result<()> {
 }
 
 #[test]
-fn derived_reader_supports_array_fields() -> Result<()> {
+fn derived_writer_checks_fixed_array_schema() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let logical_type = LogicalType::from_text(&conn, "STRUCT(values INTEGER[2])")?;
+    let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Fixed>(0)?;
+    vector.set_size(2)?;
+    vector.writer()?.set(
+        0,
+        Some(Fixed {
+            values: Some(Array([Some(1), Some(2)])),
+        }),
+    )?;
+    let wrong_type = LogicalType::from_text(&conn, "STRUCT(values INTEGER[3])")?;
+    let mut wrong = DataChunk::create(&conn, &[wrong_type], true)?;
+    assert!(wrong.get_vector_at_mut::<Fixed>(0).is_err());
+    let row = vector.reader()?.get(0)?.unwrap();
+    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&1), Some(&2)]);
+    {
+        // Arrays have a fixed child, so rows can be rewritten in place.
+        let mut writer = vector.writer()?;
+        writer.set(
+            0,
+            Some(Fixed {
+                values: Some(Array([Some(3), None])),
+            }),
+        )?;
+        writer.set(1, Some(Fixed { values: None }))?;
+    }
+    let row = vector.reader()?.get(0)?.unwrap();
+    assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&3), None]);
+    assert!(vector.reader()?.get(1)?.unwrap().values.is_none());
     let chunk = conn
         .query("SELECT {'values': [1, NULL]::INTEGER[2]}", Parameters::None)?
         .next_chunk()?
         .unwrap();
-    let vector = chunk.get_vector_at::<Fixed>(0)?;
-    let row = vector.reader()?.get(0)?.unwrap();
+    let row = chunk.get_vector_at::<Fixed>(0)?.reader()?.get(0)?.unwrap();
     assert_eq!(row.values.unwrap().iter().collect::<Vec<_>>(), [Some(&1), None]);
     Ok(())
 }

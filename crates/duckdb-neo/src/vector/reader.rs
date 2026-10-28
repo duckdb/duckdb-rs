@@ -283,6 +283,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         self.vector.view.as_ref().expect("reader has a readable view")
     }
 
+    #[cfg(feature = "rust_decimal")]
     pub(crate) fn metadata(&self) -> super::TypeMetadata {
         self.vector.metadata()
     }

@@ -96,14 +96,6 @@ impl TypeMetadata {
         })
     }
 
-    /// Elements per row of an `ARRAY` vector; 0 otherwise.
-    pub(crate) fn array_size(&self) -> usize {
-        match self {
-            TypeMetadata::Array { size } => *size,
-            _ => 0,
-        }
-    }
-
     #[cfg(feature = "rust_decimal")]
     /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
     pub(crate) fn decimal_signature(&self) -> Option<DecimalSignature> {
@@ -310,11 +302,6 @@ impl<'a> Vector<'a, Unknown> {
 }
 
 impl<'a, T: VectorElement> Vector<'a, T> {
-    /// Read the current size from DuckDB, which may have changed through another wrapper.
-    pub(crate) fn current_size(&self) -> Result<usize> {
-        check_api_call!(ffi::duckdb_v2_vector_get_size, self.handle, RET).map(|len| len as usize)
-    }
-
     /// Return the number of logical rows.
     pub fn len(&self) -> usize {
         self.len
@@ -463,6 +450,34 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     pub(crate) fn metadata(&self) -> TypeMetadata {
         self.metadata
+    }
+
+    /// Size the first child of a `LIST` or `MAP` and restart appends at its first row.
+    ///
+    /// # Safety
+    /// Writes must initialize every child row below `size` before DuckDB reads the vector.
+    pub(crate) unsafe fn size_appended_child(&mut self, size: usize) -> Result<()> {
+        self.children_mut()
+            .expect("validated nested vector has a child")
+            .get_untyped_vector_at_mut(0)?
+            .set_size(size)?;
+        self.child_offset_cell().set(0);
+        Ok(())
+    }
+
+    pub(crate) fn move_appended_child_offset(&mut self, offset: usize) -> Result<()> {
+        let size = self
+            .children()
+            .expect("validated nested vector has a child")
+            .get_untyped_vector_at(0)?
+            .len();
+        if offset > size {
+            return Err(Error::invalid_parameter(format!(
+                "child offset {offset} is past its {size} rows"
+            )));
+        }
+        self.child_offset_cell().set(offset);
+        Ok(())
     }
 
     pub(crate) fn child_offset_cell(&self) -> &Cell<usize> {

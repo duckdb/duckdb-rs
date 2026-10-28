@@ -361,9 +361,9 @@ fn test_array_to_value() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let values = [Some(1_i32), None, Some(3_i32)];
+    let values = Array([Some(1_i32), None, Some(3_i32)]);
     let value = values.value(&conn)?;
-    let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
+    let logical_type = Array::<i32, 3>::logical_type(&conn)?;
 
     assert_eq!(logical_type.id()?, LogicalTypeID::Array);
     assert_eq!(logical_type.to_text()?, "INTEGER[3]");
@@ -381,9 +381,9 @@ fn test_nested_value_getters() -> crate::Result<()> {
     let list = List(vec![Some(1_i32), None, Some(3_i32)]);
     assert_eq!(list.value(&conn)?.get::<List<i32>>()?, Some(list));
 
-    let array = [Some(1_i32), None, Some(3_i32)];
-    assert_eq!(array.value(&conn)?.get::<[Option<i32>; 3]>()?, Some(array));
-    assert!(array.value(&conn)?.get::<[Option<i32>; 2]>().is_err());
+    let array = Array([Some(1_i32), None, Some(3_i32)]);
+    assert!(array.value(&conn)?.get::<Array<i32, 2>>().is_err());
+    assert_eq!(array.value(&conn)?.get::<Array<i32, 3>>()?, Some(array));
 
     let map = MapValue {
         entries: vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)],

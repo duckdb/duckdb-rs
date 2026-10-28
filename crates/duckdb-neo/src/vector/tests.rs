@@ -660,6 +660,8 @@ fn vector_nested_writes_check_bounds_before_appending() -> crate::Result<()> {
     let mut maps = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
     let mut map = maps.get_vector_at_mut::<Map<i32, i32>>(0)?;
     map.set_size(1)?;
+    // SAFETY: the first row writes the only entry.
+    unsafe { map.set_child_size(1)? };
     map.writer()?.set(0, Some(HashMap::from([(1, Some(42))])))?;
     let child_len = map.children().unwrap().row_count()?;
     for index in [1, usize::MAX] {
@@ -782,6 +784,8 @@ scalar_callback!(
         .collect();
     let mut result = result;
     result.set_size(total_len)?;
+    // SAFETY: every row below writes one entry.
+    unsafe { result.set_child_size(rows.len())? };
     for (index, (key, value)) in rows.iter().enumerate() {
         result.writer()?.set(
             index,
@@ -1324,7 +1328,7 @@ pub fn test_vector_array() -> crate::Result<()> {
         .next_chunk()?
         .unwrap();
 
-    let vector = res.get_vector_at::<Array<i32>>(0)?;
+    let vector = res.get_vector_at::<Array<i32, 3>>(0)?;
     let vector_reader = vector.reader()?;
     let mut reader = vector_reader.iter();
 
@@ -1947,13 +1951,13 @@ pub fn vector_writable_value_types() -> crate::Result<()> {
         "12345678901234567890"
     );
 
-    let mut chunk = DataChunk::create(&conn, &[<[i32; 3]>::logical_type(&conn)?], true)?;
-    let mut vector = chunk.get_vector_at_mut::<Array<i32>>(0)?;
+    let mut chunk = DataChunk::create(&conn, &[Array::<i32, 3>::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Array<i32, 3>>(0)?;
     vector.set_size(2)?;
     vector.writer()?.set(1, None)?;
     assert_eq!(vector.children().unwrap().get_untyped_vector_at(0)?.len(), 6);
-    assert!(vector.writer()?.set(0, Some(vec![Some(1), Some(2)])).is_err());
-    vector.writer()?.set(0, Some(vec![Some(1), None, Some(3)]))?;
+    // The element count is part of the type, so only full rows can be written.
+    vector.writer()?.set(0, Some(Array([Some(1), None, Some(3)])))?;
     let reader = vector.reader()?;
     assert_eq!(
         reader
@@ -2618,7 +2622,7 @@ fn test_slow_writes_reject_read_only_input() -> crate::Result<()> {
 }
 
 scalar_callback!(ArraySumScalar, i32, |input, output, _ctx, _user_data| {
-    let array = input.get_vector_at::<Array<i32>>(1)?;
+    let array = input.get_vector_at::<Array<i32, 3>>(1)?;
     let mut output = output;
     output.set_size(array.len())?;
 
@@ -2640,7 +2644,7 @@ fn test_array_reads_use_type_size() -> crate::Result<()> {
         "arr_sum",
         SignatureBuilder::new()
             .param(FunctionParameter::new::<i64>("row"))
-            .param(FunctionParameter::new::<[i32; 3]>("arr"))
+            .param(FunctionParameter::new::<Array<i32, 3>>("arr"))
             .return_type(i32::logical_type(&conn)?),
         ArraySumScalar,
     )
@@ -2705,14 +2709,16 @@ fn test_list_offset_and_map_writes_persist_across_wrappers() -> crate::Result<()
     {
         let mut first = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
         first.set_size(2)?;
+        // SAFETY: the two rows below write all three entries.
+        unsafe { first.set_child_size(3)? };
         first
             .writer()?
             .set(0, Some(HashMap::from([(1, Some(10)), (2, Some(20))])))?;
     }
-    map_chunk
-        .get_vector_at_mut::<Map<i32, i32>>(0)?
-        .writer()?
-        .set(1, Some(HashMap::from([(3, Some(30))])))?;
+    let mut second = map_chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
+    assert_eq!(second.child_offset(), 2);
+    second.writer()?.set(1, Some(HashMap::from([(3, Some(30))])))?;
+    drop(second);
 
     let maps = map_chunk.get_vector_at::<Map<i32, i32>>(0)?;
     let mut rows = maps.reader()?.iter();
@@ -2771,7 +2777,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
     let mut chunk = DataChunk::create(
         &conn,
         &[
-            <[i32; 1]>::logical_type(&conn)?,
+            Array::<i32, 1>::logical_type(&conn)?,
             TestStruct::logical_type(&conn)?,
             List::<i32>::logical_type(&conn)?,
         ],
@@ -2779,12 +2785,12 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
     )?;
     {
         let [array, structs, list] = chunk.get_vector_array_mut([0, 1, 2])?;
-        let mut array = array.cast::<Array<i32>>()?;
+        let mut array = array.cast::<Array<i32, 1>>()?;
         let mut structs = structs.cast::<TestStruct>()?;
         let mut list = list.cast::<List<i32>>()?;
         array.set_size(1)?;
         structs.set_size(1)?;
-        array.writer()?.set(0, Some(vec![Some(3)]))?;
+        array.writer()?.set(0, Some(Array([Some(3)])))?;
         structs.writer()?.set(
             0,
             Some(TestStruct {
@@ -2800,7 +2806,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         // Growing the parents evicted the cached child views, so fresh views see the new size.
         assert_eq!(array.children().unwrap().get_untyped_vector_at(0)?.len(), 3000);
         assert_eq!(structs.children().unwrap().get_untyped_vector_at(0)?.len(), 3000);
-        array.writer()?.set(2999, Some(vec![Some(4)]))?;
+        array.writer()?.set(2999, Some(Array([Some(4)])))?;
         structs.writer()?.set(
             2999,
             Some(TestStruct {

@@ -101,13 +101,23 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     }
 
     fn prepare_children(&mut self) -> Result<()> {
-        let len = self.len();
-        let align_fields = self.metadata() == TypeMetadata::Struct;
+        // STRUCT fields have one row per parent row, and ARRAY children a fixed count per row.
+        let child_len = match self.metadata() {
+            TypeMetadata::Struct => Some(self.len()),
+            TypeMetadata::Array { size } => Some(
+                self.len()
+                    .checked_mul(size)
+                    .ok_or_else(|| crate::Error::invalid_input("Array child length overflow"))?,
+            ),
+            _ => None,
+        };
         let prepared = match self.vector_mut().children_collection_mut() {
             Some(children) => children
                 .cached_iter_mut()?
                 .map(|child| {
-                    if align_fields && child.len() != len {
+                    if let Some(len) = child_len
+                        && child.len() != len
+                    {
                         child.set_size(len)?;
                     }
                     // SAFETY: the iterator yields disjoint children, invalidated before any reshaping.

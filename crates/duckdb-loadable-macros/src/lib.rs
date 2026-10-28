@@ -247,7 +247,7 @@ pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
 ///
 /// Requires a named struct whose fields support the corresponding value and vector traits.
 /// Generates `NameRef<'a>` for borrowed reads; writes take `Name` or `&Name`. Plain and
-/// optional fields, owned strings, `List<T>` fields, and nested structs are supported.
+/// optional fields, owned strings, `List<T>` and `Array<T, N>` fields, and nested structs are supported.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDB)]
 pub fn as_duckdb(input: TokenStream) -> TokenStream {

@@ -139,12 +139,8 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     /// Before DuckDB reads this vector, writes through it must initialize every element below
     /// `elements`, since DuckDB treats the whole child as part of the list.
     pub unsafe fn set_child_size(&mut self, elements: usize) -> Result<()> {
-        self.children_mut()
-            .expect("validated list has a child")
-            .get_untyped_vector_at_mut(0)?
-            .set_size(elements)?;
-        self.child_offset_cell().set(0);
-        Ok(())
+        // SAFETY: the caller upholds the initialization contract.
+        unsafe { self.size_appended_child(elements) }
     }
 
     /// Return the first element the next list write uses.
@@ -156,18 +152,7 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     ///
     /// Moving backwards makes later writes replace elements of rows that were already written.
     pub fn set_child_offset(&mut self, offset: usize) -> Result<()> {
-        let size = self
-            .children()
-            .expect("validated list has a child")
-            .get_untyped_vector_at(0)?
-            .len();
-        if offset > size {
-            return Err(Error::invalid_parameter(format!(
-                "LIST child offset {offset} is past its {size} elements"
-            )));
-        }
-        self.child_offset_cell().set(offset);
-        Ok(())
+        self.move_appended_child_offset(offset)
     }
 }
 
