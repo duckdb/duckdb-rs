@@ -83,11 +83,19 @@ impl FromSql for NaiveDateTime {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value {
             ValueRef::Timestamp(tu, t) => {
+                // Floor division keeps the sub-second part non-negative for
+                // timestamps before 1970-01-01.
                 let (secs, nsecs) = match tu {
                     TimeUnit::Second => (t, 0),
-                    TimeUnit::Millisecond => (t / 1000, (t % 1000) * 1_000_000),
-                    TimeUnit::Microsecond => (t / 1_000_000, (t % 1_000_000) * 1000),
-                    TimeUnit::Nanosecond => (t / 1_000_000_000, t % 1_000_000_000),
+                    TimeUnit::Millisecond => {
+                        let (secs, millis) = t.div_mod_floor(&1000);
+                        (secs, millis * 1_000_000)
+                    }
+                    TimeUnit::Microsecond => {
+                        let (secs, micros) = t.div_mod_floor(&1_000_000);
+                        (secs, micros * 1000)
+                    }
+                    TimeUnit::Nanosecond => t.div_mod_floor(&NANOS_PER_SECOND),
                 };
                 Ok(DateTime::from_timestamp(secs, nsecs as u32).unwrap().naive_utc())
             }
@@ -267,6 +275,21 @@ mod test {
         )?; // "YYYY-MM-DD HH:MM:SS"
         let hms: NaiveDateTime = db.query_row("SELECT b FROM foo", [], |r| r.get(0))?;
         assert_eq!(dt, hms);
+        Ok(())
+    }
+
+    #[test]
+    fn test_naive_date_time_before_epoch() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let expected = NaiveDateTime::parse_from_str("1969-12-31 23:59:59.5", "%F %T%.f").unwrap();
+        for ty in ["TIMESTAMP_MS", "TIMESTAMP", "TIMESTAMP_NS"] {
+            let sql = format!("SELECT '1969-12-31 23:59:59.5'::{ty}");
+            let v: NaiveDateTime = db.query_row(&sql, [], |r| r.get(0))?;
+            assert_eq!(expected, v, "{ty}");
+        }
+
+        let utc: DateTime<Utc> = db.query_row("SELECT TIMESTAMP '1900-01-01 00:00:00.000001'", [], |r| r.get(0))?;
+        assert_eq!("1900-01-01 00:00:00.000001 UTC", utc.to_string());
         Ok(())
     }
 
