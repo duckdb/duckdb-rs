@@ -1,18 +1,32 @@
 //! The `STRUCT` logical type.
+//!
+//! Named Rust structs map to `STRUCT` through `#[derive(AsDuckDB)]`, which generates typed
+//! values, borrowed vector rows, and vector writes. [`Struct`] is the untyped fallback.
 
-use crate::{enums::LogicalTypeID, vector::VectorElement};
+use crate::{
+    Result, data_chunk::VectorCollection, enums::LogicalTypeID, logical_type::LogicalType, vector::VectorElement,
+};
 
-/// Reads `STRUCT` and `TUPLE` vectors as child fields.
+/// Accepts any `STRUCT` or `TUPLE` vector without checking its fields.
+///
+/// Rows only report NULLs. Derive `AsDuckDB` for typed fields, or use
+/// [`Vector::get_value_slow`](crate::vector::Vector::get_value_slow) and
+/// [`Vector::write_value_slow`](crate::vector::Vector::write_value_slow) when the schema is only known at runtime.
 #[derive(Debug)]
 pub struct Struct;
 
+// SAFETY: there is no physical row data, and `get` reads nothing.
 unsafe impl VectorElement for Struct {
-    const TYPE_ID: crate::enums::LogicalTypeID = LogicalTypeID::Struct;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Struct;
     type Ref<'a>
         = ()
     where
         Self: 'a;
     type Internal<'a> = ();
+
+    fn validate(other: &LogicalType, _children: Option<&VectorCollection>) -> Result<bool> {
+        Ok(matches!(other.id()?, LogicalTypeID::Struct | LogicalTypeID::Tuple))
+    }
 
     unsafe fn get<'a, U: VectorElement>(
         _reader: &crate::vector::VectorReader<'a, U>,
@@ -22,7 +36,72 @@ unsafe impl VectorElement for Struct {
     where
         Self: 'a,
     {
-        return ();
+    }
+}
+
+/// Runtime support for the struct derives in `duckdb-loadable-macros`; not a stable API.
+pub mod derive_support {
+    use crate::{
+        Error, Result, data_chunk::VectorCollection, logical_type::LogicalType, logical_type::LogicalTypeID,
+        value::Value, vector::VectorElement,
+    };
+
+    /// Check that `value` is a `STRUCT` with `expected` fields and return their names.
+    pub fn value_field_names(value: &Value, expected: usize) -> Result<Vec<String>> {
+        let logical_type = value.logical_type()?;
+        if logical_type.id()? != LogicalTypeID::Struct {
+            return Err(Error::invalid_input(format!(
+                "Expected STRUCT value, found {}",
+                logical_type.to_text()?
+            )));
+        }
+        let fields = logical_type.get_params()?;
+        if fields.len() != expected {
+            return Err(Error::invalid_input(format!(
+                "STRUCT has {} fields, expected {expected}",
+                fields.len()
+            )));
+        }
+        Ok(fields.into_iter().map(|(name, _)| name).collect())
+    }
+
+    /// Return the child value of field `name`, preferring an exact match over a case-insensitive one.
+    pub fn value_field(value: &Value, names: &[String], name: &str) -> Result<Value> {
+        let index = names
+            .iter()
+            .position(|field| field == name)
+            .or_else(|| names.iter().position(|field| field.eq_ignore_ascii_case(name)))
+            .ok_or_else(|| Error::invalid_input(format!("STRUCT field '{name}' is missing")))?;
+        value.get_child(index)
+    }
+
+    /// Reject a SQL NULL for a field whose Rust type is not optional.
+    pub fn required<T>(value: Option<T>, name: &str) -> Result<T> {
+        value.ok_or_else(|| Error::invalid_input(format!("STRUCT field '{name}' is NULL")))
+    }
+
+    /// Check that a vector type is a `STRUCT` with `count` fields and child vectors.
+    pub fn validate_layout(other: &LogicalType, children: Option<&VectorCollection>, count: usize) -> Result<bool> {
+        Ok(other.id()? == LogicalTypeID::Struct
+            && other.param_count()? == count
+            && children.map_or(0, VectorCollection::col_count) == count)
+    }
+
+    /// Check the name (case-insensitively) and child vector of the field at `index`.
+    pub fn validate_field<T: VectorElement>(
+        other: &LogicalType,
+        children: Option<&VectorCollection>,
+        index: usize,
+        name: &str,
+    ) -> Result<bool> {
+        let Some(children) = children.filter(|children| index < children.col_count()) else {
+            return Ok(false);
+        };
+        if !other.get_param(index)?.0.eq_ignore_ascii_case(name) {
+            return Ok(false);
+        }
+        let child = children.get_untyped_vector_at(index)?;
+        T::validate(child.logical_type(), child.children())
     }
 }
 
@@ -33,6 +112,7 @@ mod tests {
     use super::*;
     use crate::{
         DuckDBType, Parameters, Result, ToValue,
+        data_chunk::DataChunk,
         enums::LogicalTypeID,
         environment::{Environment, StorageLocation},
         vector::Unknown,
@@ -104,9 +184,6 @@ mod tests {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let lt = <derived_types::Nested as DuckDBType>::logical_type(&conn)?;
-
-        dbg!(&lt.to_string());
-
         assert_eq!(lt.id()?, LogicalTypeID::Struct);
         assert_eq!(lt.param_count()?, 3);
         assert_eq!(lt.get_param(0)?.0, "record");
@@ -294,6 +371,131 @@ mod tests {
                 .get::<Tester>()
                 .is_err()
         );
+        Ok(())
+    }
+
+    #[derive(Debug, PartialEq, crate::AsDuckDB)]
+    struct Entry {
+        key: i32,
+        value: String,
+    }
+
+    #[derive(Debug, crate::AsDuckDB)]
+    struct IntegerEntry {
+        key: i32,
+        value: i32,
+    }
+
+    #[derive(Debug, PartialEq, crate::AsDuckDB)]
+    struct KeyOnly {
+        key: i32,
+    }
+
+    #[derive(Debug, PartialEq, crate::AsDuckDB)]
+    struct EmptyRow {}
+
+    #[test]
+    fn struct_marker_supports_tuple_vectors() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let chunk = conn
+            .query("SELECT row(42, 'duck')", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        let vector = chunk.get_vector_at::<Struct>(0)?;
+        assert!(vector.reader()?.get(0)?.is_some());
+        assert_eq!(
+            vector.get_value_slow(0)?.get::<(Option<i32>, Option<String>)>()?,
+            Some((Some(42), Some("duck".to_owned())))
+        );
+        assert!(chunk.get_vector_at::<Entry>(0).is_err());
+
+        let mut chunk = DataChunk::create(&conn, &[<(i32, String) as DuckDBType>::logical_type(&conn)?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+            vector.set_size(2)?;
+            vector.write_value_slow(0, (7_i32, Option::<String>::None).value(&conn)?)?;
+            vector.set_null_slow(1)?;
+        }
+        let vector = chunk.get_vector_at::<Struct>(0)?;
+        assert_eq!(
+            vector.get_value_slow(0)?.get::<(Option<i32>, Option<String>)>()?,
+            Some((Some(7), None))
+        );
+        assert!(vector.reader()?.get(1)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn struct_type_mismatch_preserves_row() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        let value = conn
+            .query("SELECT {'key': 42, 'value': 'duck'}", Parameters::None)?
+            .next_chunk()?
+            .unwrap()
+            .get_vector_at::<Struct>(0)?
+            .get_value_slow(0)?;
+        let mut chunk = DataChunk::create(&conn, &[value.logical_type()?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+            vector.set_size(2)?;
+            vector.write_value_slow(0, value)?;
+            vector.set_null_slow(1)?;
+        }
+        assert!(chunk.get_vector_at_mut::<IntegerEntry>(0).is_err());
+        assert!(chunk.get_vector_at_mut::<Unknown>(0)?.cast::<IntegerEntry>().is_err());
+        let vector = chunk.get_vector_at::<Entry>(0)?;
+        let reader = vector.reader()?;
+        let row = reader.get(0)?.unwrap();
+        assert_eq!(row.key, Some(&42));
+        assert_eq!(row.value, Some("duck"));
+        assert!(reader.get(1)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn struct_field_names_are_case_insensitive() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        for sql in ["SELECT {'Key': 42}", "SELECT {'KEY': 42}", "SELECT {'key': 42}"] {
+            let chunk = conn.query(sql, Parameters::None)?.next_chunk()?.unwrap();
+            let vector = chunk.get_vector_at::<KeyOnly>(0)?;
+            assert_eq!(vector.reader()?.get(0)?.unwrap().key, Some(&42), "{sql}");
+            assert_eq!(
+                vector.get_value_slow(0)?.get::<KeyOnly>()?,
+                Some(KeyOnly { key: 42 }),
+                "{sql}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_struct_read_and_write() -> Result<()> {
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+
+        let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
+        let vector = chunk.get_vector_at::<Struct>(0)?;
+        assert!(vector.children().is_none());
+        assert!(vector.reader()?.get(0)?.is_some());
+        assert_eq!(vector.get_value_slow(0)?.get::<EmptyRow>()?, Some(EmptyRow {}));
+        assert!(chunk.get_vector_at::<EmptyRow>(0)?.reader()?.get(0)?.is_some());
+        assert!(chunk.get_vector_at::<KeyOnly>(0).is_err());
+
+        let mut chunk = DataChunk::create(&conn, &[EmptyRow::logical_type(&conn)?], true)?;
+        {
+            let mut vector = chunk.get_vector_at_mut::<EmptyRow>(0)?;
+            vector.set_size(2)?;
+            let mut writer = vector.writer()?;
+            writer.set(0, Some(EmptyRow {}))?;
+            writer.set(1, None)?;
+        }
+        let vector = chunk.get_vector_at::<Struct>(0)?;
+        let reader = vector.reader()?;
+        assert!(reader.get(0)?.is_some());
+        assert!(reader.get(1)?.is_none());
         Ok(())
     }
 }

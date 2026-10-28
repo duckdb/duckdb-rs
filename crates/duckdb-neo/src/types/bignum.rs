@@ -186,14 +186,14 @@ unsafe impl WritableVectorElement for BigNumValue {
     }
 }
 
-// SAFETY: the native writer encodes and copies the value before it is dropped.
+// SAFETY: the native writer encodes the borrowed value and copies it into the vector's arena.
 unsafe impl crate::vector::OwnedVectorElement for BigNumValue {
-    unsafe fn write_owned(
+    unsafe fn write_ref(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self>,
+        value: Option<&Self>,
     ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.as_ref()) }
+        unsafe { writer.set_unchecked(index, value) }
     }
 }
 

@@ -84,6 +84,8 @@ unsafe impl VectorElement for UuidValueRaw {
     }
 }
 
+crate::vector::owned_by_copy!(UuidValueRaw);
+
 // SAFETY: every `i128` is a valid UUID.
 unsafe impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
@@ -190,6 +192,8 @@ mod external {
             Self::from(*unsafe { UuidValueRaw::get(vector, physical, logical) })
         }
     }
+
+    crate::vector::owned_by_copy!(Uuid);
 
     // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
     unsafe impl WritableVectorElement for Uuid {

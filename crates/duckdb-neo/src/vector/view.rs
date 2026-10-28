@@ -15,6 +15,8 @@ use crate::{
 pub(crate) struct VectorView<T> {
     pub(crate) view: ffi::duckdb_v2_vector_view,
     pub(crate) kind: StorageKind,
+    /// Whether `view.validity` is DuckDB's writable mask rather than the read-only view.
+    pub(crate) validity_writable: bool,
     pub(crate) _marker: PhantomData<T>,
 }
 
@@ -73,6 +75,7 @@ impl<T: VectorElement> VectorView<T> {
         VectorView {
             view: self.view,
             kind: self.kind,
+            validity_writable: self.validity_writable,
             _marker: PhantomData,
         }
     }

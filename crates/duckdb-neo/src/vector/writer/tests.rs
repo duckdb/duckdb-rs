@@ -453,3 +453,29 @@ fn writer_rejects_native_input_layouts() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn writer_reuses_validity_until_buffers_change() -> Result<()> {
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<i32>(0)?;
+    vector.set_size(2)?;
+    let first = {
+        let mut writer = vector.writer()?;
+        writer.set(0, None)?;
+        writer.validity
+    };
+    assert_eq!(vector.writer()?.validity, first);
+    // Growing past the chunk capacity replaces the mask, so the next writer must reacquire it.
+    vector.set_size(5000)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.set(4999, None)?;
+        writer.set(1, Some(7))?;
+    }
+    // Read through DuckDB, since a stale pointer would also be cached in this wrapper's view.
+    assert!(vector.get_value_slow(4999)?.is_null()?);
+    assert_eq!(vector.get_value_slow(1)?.get::<i32>()?, Some(7));
+    Ok(())
+}

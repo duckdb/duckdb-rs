@@ -110,6 +110,17 @@ unsafe impl<T: OwnedVectorElement, const N: usize> WritableVectorElement for [T;
         index: usize,
         value: Option<Self>,
     ) -> Result<()> {
+        unsafe { Self::write_ref(vector, index, value.as_ref()) }
+    }
+}
+
+// SAFETY: validation fixes the length; element writers initialize values and propagate NULLs.
+unsafe impl<T: OwnedVectorElement, const N: usize> OwnedVectorElement for [T; N] {
+    unsafe fn write_ref(
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
         let len = vector
             .len()
             .checked_mul(N)
@@ -125,18 +136,21 @@ unsafe impl<T: OwnedVectorElement, const N: usize> WritableVectorElement for [T;
         let offset = index * N;
         match value {
             Some(values) => {
-                for (index, value) in values.into_iter().enumerate() {
+                for (index, value) in values.iter().enumerate() {
                     // SAFETY: the validated parent row covers N in-bounds child rows.
-                    unsafe { T::write_owned(&mut writer, offset + index, Some(value))? };
+                    unsafe { T::write_ref(&mut writer, offset + index, Some(value))? };
                 }
             }
             None => {
                 for index in 0..N {
                     // SAFETY: a NULL array must also null each of its in-bounds elements.
-                    unsafe { T::write_owned(&mut writer, offset + index, None)? };
+                    unsafe { T::write_ref(&mut writer, offset + index, None)? };
                 }
             }
         }
+        drop(writer);
+        // SAFETY: the caller guarantees an in-bounds row, whose elements were written above.
+        unsafe { vector.set_validity_unchecked(index, value.is_some()) };
         Ok(())
     }
 }

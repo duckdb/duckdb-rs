@@ -29,7 +29,7 @@ unsafe impl<T: VectorElement> VectorElement for Option<T> {
 // SAFETY: flattening optional inputs preserves SQL NULLs; T maintains the underlying validity.
 unsafe impl<T: OwnedVectorElement> OwnedVectorElement for Option<T> {
     #[inline]
-    unsafe fn write_owned(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self>) -> Result<()> {
-        unsafe { T::write_owned(writer.cast_unchecked::<T>(), index, value.flatten()) }
+    unsafe fn write_ref(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self>) -> Result<()> {
+        unsafe { T::write_ref(writer.cast_unchecked::<T>(), index, value.and_then(Option::as_ref)) }
     }
 }

@@ -14,7 +14,7 @@ pub(crate) fn as_duckdb_type(input: &syn::DeriveInput) -> syn::Result<TokenStrea
 
     Ok(quote! {
         impl #impl_generics ::duckdb_neo::DuckDBType for #ident #type_generics #where_clause {
-            fn logical_type<#link_type: ::duckdb_neo::connection::FFILink + ?Sized>(
+            fn logical_type<#link_type: ::duckdb_neo::connection::FFILink + ?::core::marker::Sized>(
                 link: &#link_type,
             ) -> ::duckdb_neo::Result<::duckdb_neo::logical_type::LogicalType> {
                 link.logical_type_create(
@@ -39,7 +39,7 @@ pub(crate) fn as_to_value(input: &syn::DeriveInput) -> syn::Result<TokenStream> 
 
     Ok(quote! {
         impl #impl_generics ::duckdb_neo::ToValue for #ident #type_generics #where_clause {
-            fn value<#link_type: ::duckdb_neo::connection::FFILink + ?Sized>(
+            fn value<#link_type: ::duckdb_neo::connection::FFILink + ?::core::marker::Sized>(
                 &self,
                 link: &#link_type,
             ) -> ::duckdb_neo::Result<::duckdb_neo::value::Value> {
@@ -61,53 +61,30 @@ pub(crate) fn as_from_value(input: &syn::DeriveInput) -> syn::Result<TokenStream
         .collect::<Vec<_>>();
     let generics = bounded_generics(input, &decoded_types, &syn::parse_quote!(::duckdb_neo::FromValue));
     let mut initializers = Vec::new();
-    for field in fields.fields {
+    for (field, name) in fields.fields.iter().zip(&fields.names) {
         let ident = field.ident.as_ref().unwrap();
-        let name = ident.to_string();
         let optional_type = option_inner_type(&field.ty);
         let decoded_type = optional_type.unwrap_or(&field.ty);
-        let decode = quote!(<#decoded_type as ::duckdb_neo::FromValue>::from_value(&child)?);
+        let decode = quote! {
+            <#decoded_type as ::duckdb_neo::FromValue>::from_value(
+                &::duckdb_neo::__derive::value_field(value, &names, #name)?
+            )?
+        };
         let decode = if optional_type.is_some() {
             decode
         } else {
-            quote::quote! {
-                #decode.ok_or_else(|| ::duckdb_neo::Error::invalid_input(
-                    ::std::format!("STRUCT field '{}' is NULL", #name)
-                ))?
-            }
+            quote!(::duckdb_neo::__derive::required(#decode, #name)?)
         };
-        initializers.push(quote::quote! {
-            #ident: {
-                let index = names.iter().position(|name| name == #name)
-                    .or_else(|| names.iter().position(|name| name.eq_ignore_ascii_case(#name)))
-                    .ok_or_else(|| ::duckdb_neo::Error::invalid_input(
-                        ::std::format!("STRUCT field '{}' is missing", #name)
-                    ))?;
-                let child = value.get_child(index)?;
-                #decode
-            }
-        });
+        initializers.push(quote!(#ident: #decode));
     }
     let ident = &input.ident;
     let field_count = fields.fields.len();
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-    Ok(quote::quote! {
+    Ok(quote! {
         impl #impl_generics ::duckdb_neo::FromValue for #ident #type_generics #where_clause {
             fn _get_inner(value: &::duckdb_neo::value::Value) -> ::duckdb_neo::Result<Self> {
-                let logical_type = value.logical_type()?;
-                if logical_type.id()? != ::duckdb_neo::logical_type::LogicalTypeID::Struct {
-                    return Err(::duckdb_neo::Error::invalid_input(::std::format!(
-                        "Expected STRUCT value, found {}", logical_type.to_text()?
-                    )));
-                }
-                let fields = logical_type.get_params()?;
-                if fields.len() != #field_count {
-                    return Err(::duckdb_neo::Error::invalid_input(::std::format!(
-                        "STRUCT has {} fields, expected {}", fields.len(), #field_count
-                    )));
-                }
-                let names = fields.into_iter().map(|(name, _)| name).collect::<::std::vec::Vec<_>>();
-                Ok(Self { #(#initializers),* })
+                let names = ::duckdb_neo::__derive::value_field_names(value, #field_count)?;
+                ::core::result::Result::Ok(Self { #(#initializers),* })
             }
         }
     })

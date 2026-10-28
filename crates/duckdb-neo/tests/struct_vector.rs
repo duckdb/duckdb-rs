@@ -275,6 +275,65 @@ fn umbrella_derive_roundtrips_values_and_reads_vectors() -> Result<()> {
 }
 
 #[test]
+fn derived_struct_raw_identifiers_roundtrip() -> Result<()> {
+    #[derive(Debug, PartialEq, AsDuckDB)]
+    struct Keyword {
+        r#type: i32,
+        r#match: Option<String>,
+    }
+
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let logical_type = Keyword::logical_type(&conn)?;
+    assert_eq!(logical_type.get_param(0)?.0, "type");
+    assert_eq!(logical_type.get_param(1)?.0, "match");
+    let input = Keyword {
+        r#type: 42,
+        r#match: Some("duck".to_owned()),
+    };
+    let value = input.value(&conn)?;
+    assert_eq!(value.logical_type()?, logical_type);
+    assert_eq!(value.get::<Keyword>()?.as_ref(), Some(&input));
+
+    for sql in [
+        "SELECT {'type': 42, 'match': 'duck'}",
+        "SELECT {'TYPE': 42, 'MATCH': 'duck'}",
+    ] {
+        let chunk = conn.query(sql, Parameters::None)?.next_chunk()?.unwrap();
+        let vector = chunk.get_vector_at::<Keyword>(0)?;
+        let row = vector.reader()?.get(0)?.unwrap();
+        assert_eq!(row.r#type, Some(&42));
+        assert_eq!(row.r#match, Some("duck"));
+        assert_eq!(vector.get_value_slow(0)?.get::<Keyword>()?.as_ref(), Some(&input));
+    }
+
+    let mut chunk = DataChunk::create(&conn, &[logical_type], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Keyword>(0)?;
+    vector.set_size(2)?;
+    {
+        let mut writer = vector.writer()?;
+        writer.set(0, Some(input))?;
+        writer.set(
+            1,
+            Some(Keyword {
+                r#type: 7,
+                r#match: None,
+            }),
+        )?;
+    }
+    let row = vector.reader()?.get(0)?.unwrap();
+    assert_eq!(row.r#type, Some(&42));
+    assert_eq!(row.r#match, Some("duck"));
+    assert_eq!(
+        vector.get_value_slow(1)?.get::<Keyword>()?,
+        Some(Keyword {
+            r#type: 7,
+            r#match: None
+        })
+    );
+    Ok(())
+}
+
+#[test]
 fn derived_writer_preserves_nulls_and_copies_strings() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
@@ -632,5 +691,81 @@ fn derived_vector_rejects_invalid_schemas() -> Result<()> {
         .next_chunk()?
         .unwrap();
     assert!(chunk.get_vector_at::<Nested>(0).is_err());
+    Ok(())
+}
+
+#[test]
+fn derived_refs_implement_standard_traits_when_fields_do() -> Result<()> {
+    fn assert_traits<T: Clone + Copy + PartialEq + Eq + std::hash::Hash + std::fmt::Debug>() {}
+    assert_traits::<RowRef<'static>>();
+    assert_traits::<AllNestedRef<'static>>();
+    assert_traits::<GenericRef<'static, i32>>();
+    assert_traits::<EmptyRef<'static>>();
+
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let chunk = conn
+        .query(
+            "SELECT {'row': {'name': 'duck', 'value': 42}}, {'row': {'name': 'duck', 'value': 42}},
+                    {'row': {'name': NULL::VARCHAR, 'value': 42}}",
+            Parameters::None,
+        )?
+        .next_chunk()?
+        .unwrap();
+    let [first, second, third] = [0, 1, 2].map(|index| chunk.get_vector_at::<AllNested>(index).unwrap());
+    let first = first.reader()?.get(0)?.unwrap();
+    let second = second.reader()?.get(0)?.unwrap();
+    let third = third.reader()?.get(0)?.unwrap();
+    let copy = first;
+    #[allow(clippy::clone_on_copy)]
+    let clone = first.clone();
+    assert_eq!(copy, clone);
+    assert_eq!(first, second);
+    assert_ne!(first, third);
+    assert_eq!(
+        first.row,
+        Some(RowRef {
+            name: Some("duck"),
+            value: Some(&42),
+        })
+    );
+    let rows = std::collections::HashSet::from([first, second, third]);
+    assert_eq!(rows.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn set_ref_writes_borrowed_rows_without_moving_them() -> Result<()> {
+    let rows = [
+        Row {
+            name: Some("a string longer than the inline storage".to_owned()),
+            value: Some(1),
+        },
+        Row {
+            name: None,
+            value: Some(2),
+        },
+    ];
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Row::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Row>(0)?;
+    vector.set_size(4)?;
+    {
+        let mut writer = vector.writer()?;
+        for (index, row) in rows.iter().enumerate() {
+            writer.set_ref(index, Some(row))?;
+        }
+        writer.set_ref(2, Some(&rows[0]))?;
+        writer.set_ref(3, None)?;
+        assert!(writer.set_ref(4, Some(&rows[0])).is_err());
+    }
+    for (index, expected) in [0, 1, 0].into_iter().enumerate() {
+        assert_eq!(
+            vector.get_value_slow(index)?.get::<Row>()?.as_ref(),
+            Some(&rows[expected])
+        );
+    }
+    assert!(vector.reader()?.get(3)?.is_none());
+    let names = vector.children().unwrap().get_vector_at::<String>(0)?;
+    assert_eq!(names.reader()?.get(3)?, None);
     Ok(())
 }

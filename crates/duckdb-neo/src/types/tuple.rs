@@ -1,5 +1,6 @@
 //! Rust tuples of arity 0–8 map to `TUPLE`; reads use `(Option<A>, …)` and reject `STRUCT` values.
-//! Typed vectors use [`super::Struct`] with [`super::StructRow::get_index`] for positional fields.
+//! Vectors have no typed tuple element yet: [`super::Struct`] accepts `TUPLE` vectors, and
+//! [`crate::vector::Vector::get_value_slow`] reads their rows as tuples.
 
 use super::{DuckDBType, FromValue, ToValue};
 use crate::{

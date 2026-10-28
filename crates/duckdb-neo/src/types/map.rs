@@ -121,19 +121,17 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
             return Ok(false);
         }
 
-        let struct_children = children
-            .ok_or(Error::invalid_input("MAP is missing its internal struct"))
-            .and_then(|x| x.get_untyped_vector_at(0))
-            .and_then(|x| Ok(x.children()))?
-            .ok_or(Error::invalid_input("Map->Struct is missing it's children"))?;
-
         // MAP stores its entries as one STRUCT(key, value) child.
+        let fields = children
+            .filter(|children| children.col_count() == 1)
+            .map(|children| children.get_untyped_vector_at(0))
+            .transpose()?
+            .and_then(|entries| entries.children())
+            .filter(|fields| fields.col_count() == 2)
+            .ok_or_else(|| Error::invalid_input("Map vector must have one STRUCT(key, value) child"))?;
 
-        struct_children.get_untyped_vector_at(0)?.validate_as::<K>()?;
-        struct_children
-            .get_untyped_vector_at(1)?
-            .validate_as::<V>()
-            .map(|()| true)
+        fields.get_untyped_vector_at(0)?.validate_as::<K>()?;
+        fields.get_untyped_vector_at(1)?.validate_as::<V>().map(|()| true)
     }
 
     unsafe fn get<'a, U: VectorElement>(

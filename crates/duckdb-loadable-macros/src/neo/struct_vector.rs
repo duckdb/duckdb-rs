@@ -11,6 +11,21 @@ fn row_lifetime(input: &syn::DeriveInput) -> syn::Lifetime {
     syn::Lifetime::new(&format!("'{name}"), input.ident.span())
 }
 
+fn ref_bounded_generics(
+    generics: &syn::Generics,
+    types: &[&syn::Type],
+    lifetime: &syn::Lifetime,
+    bound: TokenStream,
+) -> syn::Generics {
+    let mut generics = generics.clone();
+    for ty in types {
+        generics.make_where_clause().predicates.push(syn::parse_quote!(
+            <#ty as ::duckdb_neo::vector::VectorElement>::Ref<#lifetime>: #bound
+        ));
+    }
+    generics
+}
+
 pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let fields = StructFields::new(input, "AsVectorElement")?;
     let types = fields
@@ -21,6 +36,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
     let bound: syn::Path = syn::parse_quote!(::duckdb_neo::vector::VectorElement);
     let ident = &input.ident;
     let ref_ident = format_ident!("{ident}Ref");
+    let ref_doc = format!("Borrowed, nullable fields of [`{ident}`].");
     let lifetime = row_lifetime(input);
     let vis = &input.vis;
     let field_idents = &fields.idents;
@@ -29,6 +45,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
     let indexes = (0..types.len()).collect::<Vec<_>>();
     let count = types.len();
     let reader_type = fresh_type_ident(input, "__DuckDBVector");
+    let hasher_type = fresh_type_ident(input, "__DuckDBHasher");
     let generics = bounded_generics(input, &types, &bound);
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
     let mut ref_generics = generics.clone();
@@ -40,13 +57,19 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
             .push(syn::parse_quote!(#ty: #lifetime));
     }
     let (_, ref_type_generics, ref_where_clause) = ref_generics.split_for_impl();
-    let mut debug_generics = ref_generics.clone();
-    for ty in &types {
-        debug_generics.make_where_clause().predicates.push(syn::parse_quote!(
-            <#ty as #bound>::Ref<#lifetime>: ::core::fmt::Debug
-        ));
-    }
+    let ref_impl = |bound: TokenStream| ref_bounded_generics(&ref_generics, &types, &lifetime, bound);
+    let debug_generics = ref_impl(quote!(::core::fmt::Debug));
     let (debug_impl_generics, _, debug_where_clause) = debug_generics.split_for_impl();
+    let clone_generics = ref_impl(quote!(::core::clone::Clone));
+    let (clone_impl_generics, _, clone_where_clause) = clone_generics.split_for_impl();
+    let copy_generics = ref_impl(quote!(::core::marker::Copy));
+    let (copy_impl_generics, _, copy_where_clause) = copy_generics.split_for_impl();
+    let eq_generics = ref_impl(quote!(::core::cmp::PartialEq));
+    let (eq_impl_generics, _, eq_where_clause) = eq_generics.split_for_impl();
+    let total_eq_generics = ref_impl(quote!(::core::cmp::Eq));
+    let (total_eq_impl_generics, _, total_eq_where_clause) = total_eq_generics.split_for_impl();
+    let hash_generics = ref_impl(quote!(::core::hash::Hash));
+    let (hash_impl_generics, _, hash_where_clause) = hash_generics.split_for_impl();
     let marker = fields.fields.is_empty().then(|| {
         quote! {
             __duckdb_marker: ::core::marker::PhantomData<&#lifetime ()>,
@@ -57,9 +80,14 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
             __duckdb_marker: ::core::marker::PhantomData,
         }
     });
+    let fields_eq = if fields.fields.is_empty() {
+        quote!(true)
+    } else {
+        quote!(#(::core::cmp::PartialEq::eq(&self.#field_idents, &other.#field_idents))&&*)
+    };
 
     Ok(quote! {
-        #[doc = concat!("Borrowed, nullable fields of [`", stringify!(#ident), "`].")]
+        #[doc = #ref_doc]
         #vis struct #ref_ident #ref_generics #ref_where_clause {
             #(#field_vis #field_idents: ::core::option::Option<<#types as #bound>::Ref<#lifetime>>,)*
             #marker
@@ -67,9 +95,34 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
 
         impl #debug_impl_generics ::core::fmt::Debug for #ref_ident #ref_type_generics #debug_where_clause {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.debug_struct(stringify!(#ref_ident))
+                f.debug_struct(::core::stringify!(#ref_ident))
                     #(.field(#field_names, &self.#field_idents))*
                     .finish()
+            }
+        }
+
+        impl #clone_impl_generics ::core::clone::Clone for #ref_ident #ref_type_generics #clone_where_clause {
+            fn clone(&self) -> Self {
+                Self {
+                    #(#field_idents: ::core::clone::Clone::clone(&self.#field_idents),)*
+                    #marker_init
+                }
+            }
+        }
+
+        impl #copy_impl_generics ::core::marker::Copy for #ref_ident #ref_type_generics #copy_where_clause {}
+
+        impl #eq_impl_generics ::core::cmp::PartialEq for #ref_ident #ref_type_generics #eq_where_clause {
+            fn eq(&self, other: &Self) -> ::core::primitive::bool {
+                #fields_eq
+            }
+        }
+
+        impl #total_eq_impl_generics ::core::cmp::Eq for #ref_ident #ref_type_generics #total_eq_where_clause {}
+
+        impl #hash_impl_generics ::core::hash::Hash for #ref_ident #ref_type_generics #hash_where_clause {
+            fn hash<#hasher_type: ::core::hash::Hasher>(&self, state: &mut #hasher_type) {
+                #(::core::hash::Hash::hash(&self.#field_idents, state);)*
             }
         }
 
@@ -83,28 +136,22 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
             fn validate(
                 other: &::duckdb_neo::logical_type::LogicalType,
                 children: ::core::option::Option<&::duckdb_neo::data_chunk::VectorCollection>,
-            ) -> ::duckdb_neo::Result<bool> {
-                if other.id()? != Self::TYPE_ID || other.param_count()? != #count
-                    || children.map_or(0, |children| children.col_count()) != #count
-                {
-                    return Ok(false);
+            ) -> ::duckdb_neo::Result<::core::primitive::bool> {
+                if !::duckdb_neo::__derive::validate_layout(other, children, #count)? {
+                    return ::core::result::Result::Ok(false);
                 }
                 #(
-                    if !other.get_param(#indexes)?.0.eq_ignore_ascii_case(#field_names) {
-                        return Ok(false);
-                    }
-                    let child = children.expect("validated struct has children").get_untyped_vector_at(#indexes)?;
-                    if !<#types as #bound>::validate(child.logical_type(), child.children())? {
-                        return Ok(false);
+                    if !::duckdb_neo::__derive::validate_field::<#types>(other, children, #indexes, #field_names)? {
+                        return ::core::result::Result::Ok(false);
                     }
                 )*
-                Ok(true)
+                ::core::result::Result::Ok(true)
             }
 
             unsafe fn get<#lifetime, #reader_type: #bound>(
                 reader: &::duckdb_neo::vector::VectorReader<#lifetime, #reader_type>,
-                _physical: usize,
-                logical: usize,
+                _physical: ::core::primitive::usize,
+                logical: ::core::primitive::usize,
             ) -> Self::Ref<#lifetime>
             where Self: #lifetime {
                 #ref_ident {
@@ -127,9 +174,9 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
     let values = fields.fields.iter().map(|field| {
         let ident = field.ident.as_ref().unwrap();
         if option_inner_type(&field.ty).is_some() {
-            quote!(value.#ident)
+            quote!(::core::option::Option::as_ref(&value.#ident))
         } else {
-            quote!(::core::option::Option::Some(value.#ident))
+            quote!(::core::option::Option::Some(&value.#ident))
         }
     });
     let indexes = (0..types.len()).collect::<Vec<_>>();
@@ -147,26 +194,47 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
     Ok(quote! {
-        // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
+        // SAFETY: rows are written through the validated `OwnedVectorElement` implementation below.
         unsafe impl #impl_generics ::duckdb_neo::vector::WritableVectorElement for #ident #type_generics #where_clause {
             type Write<#lifetime> = Self;
 
             unsafe fn write(
                 writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
-                index: usize,
+                index: ::core::primitive::usize,
                 value: ::core::option::Option<Self>,
             ) -> ::duckdb_neo::Result<()> {
+                // SAFETY: the caller guarantees row bounds.
+                unsafe {
+                    <Self as ::duckdb_neo::vector::OwnedVectorElement>::write_ref(
+                        writer,
+                        index,
+                        ::core::option::Option::as_ref(&value),
+                    )
+                }
+            }
+        }
+
+        // SAFETY: VectorElement::validate establishes the field layout; child writers maintain NULL validity.
+        unsafe impl #impl_generics ::duckdb_neo::vector::OwnedVectorElement for #ident #type_generics #where_clause {
+            unsafe fn write_ref(
+                writer: &mut ::duckdb_neo::vector::VectorWriter<'_, Self>,
+                index: ::core::primitive::usize,
+                value: ::core::option::Option<&Self>,
+            ) -> ::duckdb_neo::Result<()> {
                 match value {
-                    Some(value) => {
+                    ::core::option::Option::Some(value) => {
                         // SAFETY: validation checked every child, and the caller guarantees row bounds.
-                        #(unsafe { writer.write_child_owned_unchecked::<#types>(#indexes, index, #values)? };)*
+                        #(unsafe { writer.write_child_ref_unchecked::<#types>(#indexes, index, #values)? };)*
                     }
-                    None => {
+                    ::core::option::Option::None => {
                         // SAFETY: a NULL struct must also null each of its validated children.
-                        #(unsafe { writer.write_child_owned_unchecked::<#types>(#indexes, index, None)? };)*
+                        #(unsafe {
+                            writer.write_child_ref_unchecked::<#types>(#indexes, index, ::core::option::Option::None)?
+                        };)*
                     }
                 }
-                Ok(())
+                // SAFETY: every child of this row was written above.
+                unsafe { writer.set_row_validity(index, ::core::option::Option::is_some(&value)) }
             }
         }
     })
@@ -214,7 +282,7 @@ mod tests {
             }
         );
         let output = syn::parse2::<syn::File>(as_writable_vector_element(&input).unwrap()).unwrap();
-        assert_eq!(output.items.len(), 1);
+        assert_eq!(output.items.len(), 2);
         let syn::Item::Impl(implementation) = &output.items[0] else {
             panic!("expected writer implementation")
         };

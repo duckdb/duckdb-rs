@@ -5,6 +5,12 @@ use super::*;
 
 struct TestUnion;
 
+#[derive(crate::AsDuckDB)]
+struct TestStruct {
+    id: i32,
+    name: String,
+}
+
 impl UnionSchema for TestUnion {
     fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
         Ok(vec![
@@ -428,6 +434,14 @@ fn test_complex_values() -> crate::Result<()> {
     }
     .value(&conn)?;
     assert_eq!(map.dbg_string()?, "{a=1, b=2}");
+
+    let struct_value = TestStruct {
+        id: 42,
+        name: "duck".to_string(),
+    }
+    .value(&conn)?;
+    assert_eq!(struct_value.dbg_string()?, "{'id': 42, 'name': duck}");
+    assert_eq!(struct_value.logical_type()?, TestStruct::logical_type(&conn)?);
 
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(union.logical_type()?.id()?, LogicalTypeID::Union);

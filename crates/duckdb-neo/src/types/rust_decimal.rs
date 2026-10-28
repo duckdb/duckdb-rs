@@ -96,6 +96,8 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     }
 }
 
+crate::vector::owned_by_copy!(rust_decimal::Decimal);
+
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
 // SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
 unsafe impl WritableVectorElement for rust_decimal::Decimal {

@@ -100,6 +100,9 @@ pub use parameter::{Parameters, QueryParameter};
 pub use raw::{AsRaw, FromRaw};
 pub use types::{DuckDBType, FromValue, ToValue};
 
+#[doc(hidden)]
+pub use types::structs::derive_support as __derive;
+
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
 ///
 ///     let result: duckdb_neo::Result<()> = Err(duckdb_neo::Error::invalid_input("invalid"));

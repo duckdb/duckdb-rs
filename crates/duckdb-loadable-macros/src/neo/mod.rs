@@ -180,8 +180,14 @@ mod tests {
                 "ToValue",
                 "FromValue",
                 "Debug",
+                "Clone",
+                "Copy",
+                "PartialEq",
+                "Eq",
+                "Hash",
                 "VectorElement",
-                "WritableVectorElement"
+                "WritableVectorElement",
+                "OwnedVectorElement"
             ]
         );
     }

@@ -93,6 +93,8 @@ macro_rules! decimal_storage {
                     unsafe { vector.write_internal(index, value) }
                 }
             }
+
+            crate::vector::owned_by_copy!($name);
         )+
     };
 }
@@ -282,6 +284,21 @@ where
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_internal(index, value) }
+    }
+}
+
+// SAFETY: the native writer receives a copy and maintains its validity.
+unsafe impl<const WIDTH: u8, const SCALE: u8> crate::vector::OwnedVectorElement for Decimal<WIDTH, SCALE>
+where
+    Width<WIDTH>: DecimalWidth,
+{
+    #[inline]
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value.copied()) }
     }
 }
 

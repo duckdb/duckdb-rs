@@ -154,8 +154,9 @@ pub trait HasDuckDBBytes: VectorElement {}
 ///
 /// `Option<T>` fields preserve NULLs; plain fields write non-NULL values. Passing
 /// `None` to the writer nulls the whole struct and its descendants, without requiring
-/// `Default`. Owned strings and containers are moved, not cloned. Write inputs with
-/// borrowed fields cannot outlive their data:
+/// `Default`. Fields are written by reference, so
+/// [`VectorWriter::set_ref`](crate::vector::VectorWriter::set_ref) writes a borrowed row
+/// without moving or cloning it. Write inputs with borrowed fields cannot outlive their data:
 ///
 /// ```compile_fail,E0515
 /// use duckdb_loadable_macros::{AsVectorElement, AsWritableVectorElement};
@@ -203,32 +204,39 @@ pub unsafe trait WritableVectorElement: VectorElement {
     unsafe fn write(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()>;
 }
 
-/// Writes owned Rust fields without constructing an intermediate DuckDB value.
+/// Writes a borrowed Rust value without constructing an intermediate DuckDB value.
 ///
-/// Types whose native write input is `Self` implement this automatically. Types
-/// such as `String` borrow their native input for the duration of the write.
+/// DuckDB copies strings and nested data into the vector, so writers never need ownership:
+/// [`VectorWriter::set_ref`](crate::vector::VectorWriter::set_ref) writes from a borrow.
 ///
 /// # Safety
 /// Implementations must uphold `VectorElement::validate`, initialize non-NULL
 /// values, and update validity, including NULL descendants of nested values.
 pub unsafe trait OwnedVectorElement: VectorElement {
-    /// Write an owned value and its validity into an already-validated row.
+    /// Write a borrowed value and its validity into an already-validated row.
     ///
     /// # Safety
     /// `index` must be less than `writer.len()`.
-    unsafe fn write_owned(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self>) -> Result<()>;
+    unsafe fn write_ref(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<&Self>) -> Result<()>;
 }
 
-// SAFETY: the native writer accepts the same value and maintains its validity.
-unsafe impl<T> OwnedVectorElement for T
-where
-    T: for<'a> WritableVectorElement<Write<'a> = T>,
-{
-    #[inline]
-    unsafe fn write_owned(writer: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self>) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value) }
-    }
+/// Implement [`OwnedVectorElement`] for `Copy` types whose native write input is the value itself.
+macro_rules! owned_by_copy {
+    ($($type:ty),* $(,)?) => {$(
+        // SAFETY: the native writer receives a copy and maintains its validity.
+        unsafe impl $crate::vector::OwnedVectorElement for $type {
+            #[inline]
+            unsafe fn write_ref(
+                writer: &mut $crate::vector::VectorWriter<'_, Self>,
+                index: usize,
+                value: Option<&Self>,
+            ) -> $crate::Result<()> {
+                unsafe { writer.set_unchecked(index, value.copied()) }
+            }
+        }
+    )*};
 }
+pub(crate) use owned_by_copy;
 
 /// The element type has not been checked against the vector's logical type yet.
 #[derive(Debug, Clone)]

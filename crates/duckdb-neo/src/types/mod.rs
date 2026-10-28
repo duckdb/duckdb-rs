@@ -19,6 +19,10 @@
 //! family module is private; its public types, including the borrowed row,
 //! iterator, and writer types of nested families, are re-exported below.
 //!
+//! Named Rust structs map to `STRUCT` through [`crate::AsDuckDB`], which derives
+//! the value conversions, a borrowed `NameRef` row, and vector writes. [`Struct`]
+//! accepts any `STRUCT` or `TUPLE` vector when the schema is only known at runtime.
+//!
 //! ```
 //! use duckdb_neo::types::{
 //!     ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow, UnionRow, UnionWriter,
@@ -54,7 +58,7 @@ mod variant;
 pub(crate) mod array;
 mod list;
 mod map;
-mod structs;
+pub(crate) mod structs;
 mod union;
 
 pub use self::uuid::UuidValueRaw;

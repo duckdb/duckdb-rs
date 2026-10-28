@@ -311,15 +311,15 @@ unsafe impl WritableVectorElement for BitValue {
     }
 }
 
-// SAFETY: the native VARCHAR writer copies the borrowed string before its owner is dropped.
+// SAFETY: the native VARCHAR writer copies the borrowed string into the vector's arena.
 unsafe impl crate::vector::OwnedVectorElement for String {
     #[inline]
-    unsafe fn write_owned(
+    unsafe fn write_ref(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self>,
+        value: Option<&Self>,
     ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.as_deref()) }
+        unsafe { writer.set_unchecked(index, value.map(String::as_str)) }
     }
 }
 
@@ -359,25 +359,27 @@ unsafe impl WritableVectorElement for &str {
     }
 }
 
-// SAFETY: the native BLOB writer copies bytes before their owner is dropped.
+crate::vector::owned_by_copy!(&str);
+
+// SAFETY: the native BLOB writer copies bytes into the vector's arena.
 unsafe impl crate::vector::OwnedVectorElement for BlobValue {
-    unsafe fn write_owned(
+    unsafe fn write_ref(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self>,
+        value: Option<&Self>,
     ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.as_ref().map(|value| value.0.as_slice())) }
+        unsafe { writer.set_unchecked(index, value.map(|value| value.0.as_slice())) }
     }
 }
 
-// SAFETY: the native BIT writer validates and copies bytes before their owner is dropped.
+// SAFETY: the native BIT writer validates and copies bytes into the vector's arena.
 unsafe impl crate::vector::OwnedVectorElement for BitValue {
-    unsafe fn write_owned(
+    unsafe fn write_ref(
         writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
-        value: Option<Self>,
+        value: Option<&Self>,
     ) -> Result<()> {
-        unsafe { writer.set_unchecked(index, value.as_ref().map(|value| value.0.as_slice())) }
+        unsafe { writer.set_unchecked(index, value.map(|value| value.0.as_slice())) }
     }
 }
 

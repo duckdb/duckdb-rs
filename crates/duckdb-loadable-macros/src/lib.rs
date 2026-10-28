@@ -190,6 +190,7 @@ pub fn derive_drop_handle(input: TokenStream) -> TokenStream {
 /// Derive `DuckDBType` for a struct with named fields.
 ///
 /// Each field must implement `DuckDBType`; field names and order define the SQL `STRUCT` type.
+/// Raw identifiers drop their `r#` prefix, and names that differ only in case are rejected.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDBType)]
 pub fn as_duckdb_type(input: TokenStream) -> TokenStream {
@@ -207,8 +208,8 @@ pub fn as_to_value(input: TokenStream) -> TokenStream {
 
 /// Derive `FromValue` for a struct with named fields.
 ///
-/// Fields are matched case-insensitively by name; missing or extra fields are errors.
-/// `Option<T>` fields preserve SQL NULL; other fields reject it. Field types must support `FromValue`.
+/// Fields are matched by name in any order, preferring exact over case-insensitive matches;
+/// missing or extra fields are errors. `Option<T>` fields preserve SQL NULL; other fields reject it.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsFromValue)]
 pub fn as_from_value(input: TokenStream) -> TokenStream {
@@ -218,16 +219,19 @@ pub fn as_from_value(input: TokenStream) -> TokenStream {
 /// Derive `VectorElement` and a borrowed `NameRef<'a>` for a named struct `Name`.
 ///
 /// Fields may be `T` or `Option<T>`, with `T: VectorElement`. The generated reference
-/// has the same field visibility and nullable `Option<T::Ref<'a>>` fields. STRUCT names
-/// (case-insensitive), order, and child types must match; whole-row NULLs remain separate.
+/// has the same field visibility and nullable `Option<T::Ref<'a>>` fields. Unlike `AsFromValue`,
+/// STRUCT fields are matched by position: names (case-insensitive), order, and child types must
+/// match. Whole-row NULLs remain separate. `NameRef` implements `Debug`, `Clone`, `Copy`,
+/// `PartialEq`, `Eq`, and `Hash` whenever every field's borrowed form does.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsVectorElement)]
 pub fn as_vector_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_vector_element)
 }
 
-/// Derive `WritableVectorElement` with the named struct itself as its write input.
+/// Derive `WritableVectorElement` and `OwnedVectorElement` for a named struct.
 ///
+/// `set` takes the struct by value and `set_ref` borrows it; both write each field by reference.
 /// Requires `VectorElement` and `T` or `Option<T>` fields with `T: OwnedVectorElement`.
 /// Plain fields write non-NULL values; optional fields preserve NULL. Passing `None` as the
 /// entire input nulls every child without requiring `Default` or a separate write struct.
@@ -239,10 +243,10 @@ pub fn as_writable_vector_element(input: TokenStream) -> TokenStream {
     expand_neo_derive(input, neo::as_writable_vector_element)
 }
 
-/// Derive `DuckDBType`, `ToValue`, `FromValue`, `VectorElement`, and `WritableVectorElement` together.
+/// Derive `DuckDBType`, `ToValue`, `FromValue`, and the vector element traits together.
 ///
 /// Requires a named struct whose fields support the corresponding value and vector traits.
-/// Generates `NameRef<'a>` for borrowed reads; writes consume `Name` directly. Plain and
+/// Generates `NameRef<'a>` for borrowed reads; writes take `Name` or `&Name`. Plain and
 /// optional fields, owned strings, vectors, fixed arrays, and nested structs are supported.
 #[cfg(feature = "neo")]
 #[proc_macro_derive(AsDuckDB)]

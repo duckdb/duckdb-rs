@@ -160,6 +160,8 @@ macro_rules! declare_writable_vector_element {
                 unsafe { vector.write_internal(index, value) }
             }
         }
+
+        crate::vector::owned_by_copy!($type);
     };
 }
 

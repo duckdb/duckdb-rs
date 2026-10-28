@@ -66,8 +66,12 @@ pub use element::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TypeMetadata {
     None,
-    Array { size: usize },
+    Array {
+        size: usize,
+    },
     Decimal(DecimalSignature),
+    /// `STRUCT` or `TUPLE`, whose fields share the parent's row count.
+    Struct,
 }
 
 impl TypeMetadata {
@@ -77,6 +81,7 @@ impl TypeMetadata {
                 size: crate::types::array::array_size(logical_type)?,
             },
             LogicalTypeID::Decimal => Self::Decimal(DecimalSignature::from_logical_type(logical_type)?),
+            LogicalTypeID::Struct | LogicalTypeID::Tuple => Self::Struct,
             _ => Self::None,
         })
     }
@@ -323,6 +328,19 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.access == Access::Writable
     }
 
+    /// Return the vector's child vectors, or `None` if it has no children.
+    pub fn children(&self) -> Option<&VectorCollection> {
+        self.children.as_ref()
+    }
+
+    /// Prepare exclusive write access and allocate a writable validity mask.
+    ///
+    /// Fails unless this is writable output with flat storage. Resize the vector
+    /// before acquiring its writer.
+    pub fn writer(&mut self) -> Result<VectorWriter<'_, T>> {
+        VectorWriter::new(self)
+    }
+
     fn acquire_view<U: VectorElement>(
         handle: ffi::duckdb_v2_vector_handle,
         kind: StorageKind,
@@ -335,9 +353,23 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             Some(VectorView {
                 view,
                 kind,
+                validity_writable: false,
                 _marker: PhantomData,
             })
         })
+    }
+
+    /// Return the writable validity mask, allocating it on first use.
+    ///
+    /// The pointer is cached in the view, which every buffer-replacing operation reacquires.
+    pub(crate) fn writable_validity(&mut self) -> Result<*mut u64> {
+        let handle = self.handle;
+        let view = self.view.as_mut().ok_or_else(not_flat)?;
+        if !view.validity_writable {
+            view.view.validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
+            view.validity_writable = true;
+        }
+        Ok(view.view.validity.cast_mut())
     }
 
     /// Refresh the vector's view and mutable buffers after a state change, e.g. set_size.
@@ -473,11 +505,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.refresh_buffers()
     }
 
-    /// Return the vector's child vectors, or `None` if it has no children.
-    pub fn children(&self) -> Option<&VectorCollection> {
-        self.children.as_ref()
-    }
-
     /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
     ///
     /// Children get at most the access of this vector. The children cannot be
@@ -527,6 +554,15 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         // Flattening replaces the buffer and child vectors, so rebuild from the handle.
         *self = Self::from_handle(&self.handle, self.access)?;
         Ok(())
+    }
+
+    fn set_not_writable(&mut self) {
+        self.access = Access::Exclusive;
+        if let Some(children) = &mut self.children
+            && children.access == Access::Writable
+        {
+            children.access = Access::Exclusive;
+        }
     }
 
     /// Set the number of logical rows on writable output.
@@ -589,25 +625,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.set_not_writable();
         self.refresh_buffers()?;
         Ok(self)
-    }
-
-    fn set_not_writable(&mut self) {
-        self.access = Access::Exclusive;
-        if let Some(children) = &mut self.children
-            && children.access == Access::Writable
-        {
-            children.access = Access::Exclusive;
-        }
-    }
-}
-
-impl<'a, T: VectorElement> Vector<'a, T> {
-    /// Prepare exclusive write access and allocate a writable validity mask.
-    ///
-    /// Fails unless this is writable output with flat storage. Resize the vector
-    /// before acquiring its writer.
-    pub fn writer(&mut self) -> Result<VectorWriter<'_, T>> {
-        VectorWriter::new(self)
     }
 }
 

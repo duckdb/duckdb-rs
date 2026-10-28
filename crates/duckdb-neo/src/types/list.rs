@@ -112,7 +112,22 @@ unsafe impl<T: OwnedVectorElement> WritableVectorElement for Vec<T> {
         index: usize,
         value: Option<Self>,
     ) -> Result<()> {
-        let Some(values) = value else { return Ok(()) };
+        unsafe { Self::write_ref(vector, index, value.as_ref()) }
+    }
+}
+
+// SAFETY: entries cover initialized child rows; each element writer maintains its validity.
+unsafe impl<T: OwnedVectorElement> OwnedVectorElement for Vec<T> {
+    unsafe fn write_ref(
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        let Some(values) = value else {
+            // SAFETY: the caller guarantees an in-bounds row.
+            unsafe { vector.set_validity_unchecked(index, false) };
+            return Ok(());
+        };
         let len = values.len();
         let child = vector
             .children_collection_mut()
@@ -126,9 +141,9 @@ unsafe impl<T: OwnedVectorElement> WritableVectorElement for Vec<T> {
         )?;
         {
             let mut writer = child.writer()?;
-            for (index, value) in values.into_iter().enumerate() {
+            for (index, value) in values.iter().enumerate() {
                 // SAFETY: the appended range is in bounds and validated as T.
-                unsafe { T::write_owned(&mut writer, offset + index, Some(value))? };
+                unsafe { T::write_ref(&mut writer, offset + index, Some(value))? };
             }
         }
         // SAFETY: the parent row is in bounds and the entry covers initialized child rows.
@@ -140,8 +155,10 @@ unsafe impl<T: OwnedVectorElement> WritableVectorElement for Vec<T> {
                     length: len as u64,
                     _marker: PhantomData,
                 }),
-            )
+            )?;
+            vector.set_validity_unchecked(index, true);
         }
+        Ok(())
     }
 }
 

@@ -55,6 +55,8 @@ macro_rules! declare_storage_value {
                 unsafe { vector.write_internal(index, value) }
             }
         }
+
+        crate::vector::owned_by_copy!($name);
     };
 }
 
@@ -229,6 +231,7 @@ impl FromValue for IntervalValue {
 }
 
 declare_vector_element!(IntervalValue, Interval);
+crate::vector::owned_by_copy!(IntervalValue);
 
 // SAFETY: every field combination is a valid `INTERVAL`.
 unsafe impl WritableVectorElement for IntervalValue {
