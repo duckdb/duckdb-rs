@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.20000.0"
+version = "1.20000.1"
 authors = ["DuckDB Labs and contributors", "wangfenjin <wangfenj@gmail.com>"]
 repository = "https://github.com/duckdb/duckdb-rs"
 homepage = "https://github.com/duckdb/duckdb-rs"
@@ -21,10 +21,10 @@ edition = "2024"
 rust-version = "1.88"
 
 [workspace.dependencies]
-duckdb = { version = "=1.20000.0", path = "crates/duckdb" }
-duckdb-loadable-macros = { version = "=1.20000.0", path = "crates/duckdb-loadable-macros" }
-duckdb-neo = { version = "=0.20000.0", path = "crates/duckdb-neo" }
-libduckdb-sys = { version = "=1.20000.0", path = "crates/libduckdb-sys", default-features = false }
+duckdb = { version = "=1.20000.1", path = "crates/duckdb" }
+duckdb-loadable-macros = { version = "=1.20000.1", path = "crates/duckdb-loadable-macros" }
+duckdb-neo = { version = "=0.20000.1", path = "crates/duckdb-neo" }
+libduckdb-sys = { version = "=1.20000.1", path = "crates/libduckdb-sys", default-features = false }
 
 arrow = { version = "60", default-features = false }
 arrow-array = { version = "60", default-features = false }
