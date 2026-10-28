@@ -67,7 +67,7 @@ jobs:
           git reset --hard "${base_sha}"
           echo "name=${branch_name}" >> "${GITHUB_OUTPUT}"
 
-      - name: Bump the pin
+      - name: Determine release inputs
         id: bump
         env:
           DUCKDB_SHA: ${{ inputs.duckdb-sha }}
@@ -84,20 +84,33 @@ jobs:
           }
           short_sha="${DUCKDB_SHA:0:10}"
           release_url="https://duckdb-staging.duckdb.org/${short_sha}/${DUCKDB_VERSION}/duckdb/duckdb/github_release"
-          sed -i "s|^DUCKDB_RELEASE_COMMIT=.*|DUCKDB_RELEASE_COMMIT=${DUCKDB_SHA}|" "${PIN_FILE}"
-          sed -i "s|^DUCKDB_RELEASE_URL=.*|DUCKDB_RELEASE_URL=${release_url}|" "${PIN_FILE}"
-          sed -i "s|^DUCKDB_RELEASE_VERSION=.*|DUCKDB_RELEASE_VERSION=${DUCKDB_VERSION}|" "${PIN_FILE}"
-          git diff --exit-code "${PIN_FILE}" && { echo "::notice::Pin already up to date"; }
+          echo "release_url=${release_url}" >> "${GITHUB_OUTPUT}"
           echo "artifact_release=${short_sha}/${DUCKDB_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache: false
 
-      # Vendor the pinned commit so the bundled sources and pregenerated
-      # bindings land in the same PR as the pin (needs python3 and libclang).
-      - name: Sync bundled DuckDB sources and bindings to the pin
-        run: ./upgrade.sh --sync
+      # Keep the pin, bundled sources, and pregenerated bindings together.
+      - name: Update the core pin, sources, and bindings
+        env:
+          DUCKDB_SHA: ${{ inputs.duckdb-sha }}
+          DUCKDB_VERSION: ${{ inputs.duckdb-version }}
+          DUCKDB_RELEASE_URL: ${{ steps.bump.outputs.release_url }}
+        run: |
+          python3 -B - <<'PY'
+          import os
+          import upgrade
+
+          root = upgrade.WORKSPACE_DIR
+          raise SystemExit(upgrade.main([
+              upgrade.current_crate_version(root / "Cargo.toml"),
+              upgrade.current_crate_version(root / "crates/duckdb-neo/Cargo.toml"),
+              "--core-commit", os.environ["DUCKDB_SHA"],
+              "--core-url", os.environ["DUCKDB_RELEASE_URL"],
+              "--core-version", os.environ["DUCKDB_VERSION"],
+          ]))
+          PY
 
       - name: Determine PR action
         id: gh_pr_command
@@ -133,7 +146,7 @@ jobs:
           git commit -m "Bump pinned DuckDB release to ${ARTIFACT_RELEASE}"
           git push --force origin "${BRANCH_NAME}"
           {
-            echo "Update the pinned DuckDB staging release used by linked-mode builds, and vendor the same commit into the bundled sources and pregenerated bindings (\`./upgrade.sh --sync\`):"
+            echo "Update the pinned DuckDB staging release used by linked-mode builds, and vendor the same commit into the bundled sources and pregenerated bindings (\`upgrade.py\`):"
             echo "- Target branch: ${TARGET_BRANCH}"
             echo "- Release line: ${RELEASE_LINE}"
             echo "- Release: ${ARTIFACT_RELEASE}"
