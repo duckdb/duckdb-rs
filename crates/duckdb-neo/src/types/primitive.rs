@@ -152,7 +152,7 @@ macro_rules! declare_writable_vector_element {
 
             #[inline(always)]
             unsafe fn write(
-                vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+                vector: &mut crate::vector::VectorWriter<'_, Self>,
                 index: usize,
                 value: Option<Self::Write<'_>>,
             ) -> Result<()> {
@@ -160,6 +160,8 @@ macro_rules! declare_writable_vector_element {
                 unsafe { vector.write_internal(index, value) }
             }
         }
+
+        crate::vector::owned_by_copy!($type);
     };
 }
 

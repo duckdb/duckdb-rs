@@ -84,12 +84,14 @@ unsafe impl VectorElement for UuidValueRaw {
     }
 }
 
+crate::vector::owned_by_copy!(UuidValueRaw);
+
 // SAFETY: every `i128` is a valid UUID.
 unsafe impl WritableVectorElement for UuidValueRaw {
     type Write<'a> = Self;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -191,12 +193,14 @@ mod external {
         }
     }
 
+    crate::vector::owned_by_copy!(Uuid);
+
     // SAFETY: every `Uuid` converts to a valid `UuidValueRaw`.
     unsafe impl WritableVectorElement for Uuid {
         type Write<'a> = Uuid;
 
         unsafe fn write(
-            vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+            vector: &mut crate::vector::VectorWriter<'_, Self>,
             index: usize,
             value: Option<Self::Write<'_>>,
         ) -> Result<()> {

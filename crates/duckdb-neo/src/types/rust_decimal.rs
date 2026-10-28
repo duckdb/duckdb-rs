@@ -96,13 +96,15 @@ unsafe impl VectorElement for rust_decimal::Decimal {
     }
 }
 
+crate::vector::owned_by_copy!(rust_decimal::Decimal);
+
 /// Rescales to the column's scale; fails instead of rounding or overflowing.
 // SAFETY: `write` checks the digit range and writes the storage integer for the vector's width.
 unsafe impl WritableVectorElement for rust_decimal::Decimal {
     type Write<'a> = rust_decimal::Decimal;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {

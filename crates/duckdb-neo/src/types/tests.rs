@@ -3,18 +3,13 @@ use crate::logical_type::LogicalTypeID;
 
 use super::*;
 
-struct TestStruct;
-
-impl StructSchema for TestStruct {
-    fn fields<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![
-            ("id", i32::logical_type(link)?),
-            ("name", String::logical_type(link)?),
-        ])
-    }
-}
-
 struct TestUnion;
+
+#[derive(crate::AsDuckDB)]
+struct TestStruct {
+    id: i32,
+    name: String,
+}
 
 impl UnionSchema for TestUnion {
     fn members<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
@@ -346,9 +341,9 @@ fn test_list_to_value() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let values = vec![Some(1_i32), None, Some(3_i32)];
+    let values = List(vec![Some(1_i32), None, Some(3_i32)]);
     let value = values.value(&conn)?;
-    let logical_type = Vec::<Option<i32>>::logical_type(&conn)?;
+    let logical_type = List::<i32>::logical_type(&conn)?;
 
     assert_eq!(logical_type.id()?, LogicalTypeID::List);
     assert_eq!(
@@ -366,9 +361,9 @@ fn test_array_to_value() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let values = [Some(1_i32), None, Some(3_i32)];
+    let values = Array([Some(1_i32), None, Some(3_i32)]);
     let value = values.value(&conn)?;
-    let logical_type = <[Option<i32>; 3]>::logical_type(&conn)?;
+    let logical_type = Array::<i32, 3>::logical_type(&conn)?;
 
     assert_eq!(logical_type.id()?, LogicalTypeID::Array);
     assert_eq!(logical_type.to_text()?, "INTEGER[3]");
@@ -383,12 +378,12 @@ fn test_nested_value_getters() -> crate::Result<()> {
     let instance = env.open(StorageLocation::InMemory)?;
     let conn = instance.connect()?;
 
-    let list = vec![Some(1_i32), None, Some(3_i32)];
-    assert_eq!(list.value(&conn)?.get::<Vec<Option<i32>>>()?, Some(list));
+    let list = List(vec![Some(1_i32), None, Some(3_i32)]);
+    assert_eq!(list.value(&conn)?.get::<List<i32>>()?, Some(list));
 
-    let array = [Some(1_i32), None, Some(3_i32)];
-    assert_eq!(array.value(&conn)?.get::<[Option<i32>; 3]>()?, Some(array));
-    assert!(array.value(&conn)?.get::<[Option<i32>; 2]>().is_err());
+    let array = Array([Some(1_i32), None, Some(3_i32)]);
+    assert!(array.value(&conn)?.get::<Array<i32, 2>>().is_err());
+    assert_eq!(array.value(&conn)?.get::<Array<i32, 3>>()?, Some(array));
 
     let map = MapValue {
         entries: vec![("a".to_string(), Some(1_i32)), ("b".to_string(), None)],
@@ -410,8 +405,8 @@ fn test_nested_value_getters() -> crate::Result<()> {
     );
     assert_eq!(().value(&conn)?.get::<()>()?, Some(()));
 
-    let null_list = Option::<Vec<Option<i32>>>::None.value(&conn)?;
-    assert_eq!(null_list.get::<Vec<Option<i32>>>()?, None);
+    let null_list = Option::<List<i32>>::None.value(&conn)?;
+    assert_eq!(null_list.get::<List<i32>>()?, None);
 
     Ok(())
 }
@@ -440,24 +435,13 @@ fn test_complex_values() -> crate::Result<()> {
     .value(&conn)?;
     assert_eq!(map.dbg_string()?, "{a=1, b=2}");
 
-    let struct_value = StructValue::<TestStruct>::new()
-        .field(42_i32)
-        .field("duck".to_string())
-        .value(&conn)?;
+    let struct_value = TestStruct {
+        id: 42,
+        name: "duck".to_string(),
+    }
+    .value(&conn)?;
     assert_eq!(struct_value.dbg_string()?, "{'id': 42, 'name': duck}");
-
-    // The field count must match the schema.
-    let too_many = StructValue::<TestStruct>::new()
-        .field(1_i32)
-        .field(2_i32)
-        .field(3_i32)
-        .field(4_i32);
-    assert!(too_many.value(&conn).is_err());
-    assert!(StructValue::<TestStruct>::new().value(&conn).is_err());
-
-    // Field types must match the schema, not just the count.
-    let wrong_type = StructValue::<TestStruct>::new().field(1_i32).field(2_i32);
-    assert!(wrong_type.value(&conn).is_err());
+    assert_eq!(struct_value.logical_type()?, TestStruct::logical_type(&conn)?);
 
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(union.logical_type()?.id()?, LogicalTypeID::Union);
@@ -465,44 +449,6 @@ fn test_complex_values() -> crate::Result<()> {
 
     let variant = VariantValue(42_i32).value(&conn)?;
     assert_eq!(variant.logical_type()?.id()?, LogicalTypeID::Variant);
-
-    Ok(())
-}
-
-struct EmptyStruct;
-
-impl StructSchema for EmptyStruct {
-    fn fields<C: FFILink + ?Sized>(_link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
-        Ok(Vec::new())
-    }
-}
-
-#[test]
-fn test_empty_struct_read_and_write() -> crate::Result<()> {
-    use crate::{data_chunk::DataChunk, parameter::Parameters};
-
-    let env = Environment::new()?;
-    let conn = env.open(StorageLocation::InMemory)?.connect()?;
-
-    let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
-    let vector = chunk.get_vector_at::<Struct>(0)?;
-    assert!(vector.children().is_none());
-    let row = vector.reader()?.get(0)?.unwrap();
-    assert!(row.get::<i32>("x").unwrap_err().message.contains("not found"));
-
-    let mut chunk = DataChunk::create(&conn, &[StructValue::<EmptyStruct>::logical_type(&conn)?], true)?;
-    {
-        let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
-        vector.set_size(2)?;
-        vector.writer()?.set(0, Some(structs::StructWrite::default()))?;
-        vector.writer()?.set(1, None)?;
-        let extra = structs::StructWrite::default().field::<i32>(Some(1));
-        assert!(vector.writer()?.set(0, Some(extra)).is_err());
-    }
-    let vector = chunk.get_vector_at::<Struct>(0)?;
-    let vector_reader = vector.reader()?;
-    assert!(vector_reader.get(0)?.is_some());
-    assert!(vector_reader.get(1)?.is_none());
 
     Ok(())
 }

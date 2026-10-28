@@ -101,7 +101,7 @@ unsafe impl WritableVectorElement for BigNum {
     type Write<'a> = &'a BigNum;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -174,7 +174,7 @@ unsafe impl WritableVectorElement for BigNumValue {
     type Write<'a> = &'a BigNumValue;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -183,6 +183,17 @@ unsafe impl WritableVectorElement for BigNumValue {
             .transpose()?;
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, encoded.as_deref()) }
+    }
+}
+
+// SAFETY: the native writer encodes the borrowed value and copies it into the vector's arena.
+unsafe impl crate::vector::OwnedVectorElement for BigNumValue {
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value) }
     }
 }
 

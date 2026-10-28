@@ -88,11 +88,13 @@ macro_rules! decimal_storage {
             unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
-                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, '_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
                     unsafe { vector.write_internal(index, value) }
                 }
             }
+
+            crate::vector::owned_by_copy!($name);
         )+
     };
 }
@@ -276,12 +278,27 @@ where
     type Write<'a> = Self;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_internal(index, value) }
+    }
+}
+
+// SAFETY: the native writer receives a copy and maintains its validity.
+unsafe impl<const WIDTH: u8, const SCALE: u8> crate::vector::OwnedVectorElement for Decimal<WIDTH, SCALE>
+where
+    Width<WIDTH>: DecimalWidth,
+{
+    #[inline]
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value.copied()) }
     }
 }
 
@@ -420,6 +437,7 @@ mod tests {
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        types::List,
     };
 
     #[test]
@@ -482,7 +500,7 @@ mod tests {
             Parameters::positional(&[
                 &Some(decimal),
                 &None::<Decimal<4, 1>>,
-                &vec![Decimal::<5, 2>::new(12_345)],
+                &List(vec![Some(Decimal::<5, 2>::new(12_345))]),
             ]),
         )?;
         let chunk = result.next_chunk()?.expect("query returned no rows");

@@ -1,3 +1,5 @@
+use duckdb_loadable_macros::AsDuckDB;
+
 use super::{DictionaryReader, FlatReader, ReaderStorage, VectorReader};
 use crate::{
     Parameters, Result, ToValue,
@@ -6,7 +8,7 @@ use crate::{
     environment::{Environment, StorageLocation},
     scalar::ScalarFunctionBuilder,
     signature::{FunctionParameter, SignatureBuilder},
-    types::{DuckDBType, List, Struct},
+    types::{DuckDBType, List},
     value::Value,
     vector::{Selection, StorageKind},
 };
@@ -53,7 +55,7 @@ fn physical_validity_is_independent_of_logical_selection() {
     let selection = [64, 0, 63, 127];
     let dictionary = DictionaryReader {
         values: flat,
-        selection: &selection,
+        selection: selection.as_ptr(),
     };
     let storage = ReaderStorage::Flat(flat);
     for (logical, expected) in [Some(64), None, Some(63), None].into_iter().enumerate() {
@@ -226,6 +228,11 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, AsDuckDB)]
+struct ParamStruct {
+    value: i32,
+}
+
 #[test]
 fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
     let env = Environment::new()?;
@@ -248,13 +255,13 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
         .collect::<Vec<_>>();
     assert_eq!(values, [vec![Some(1), None], vec![Some(3)]]);
 
-    let vector = chunk.get_vector_at::<Struct>(2)?;
+    let vector = chunk.get_vector_at::<ParamStruct>(2)?;
     let reader = vector.reader()?;
     assert!(reader.as_ptr().is_null());
     // SAFETY: STRUCT has no physical data slots to initialize.
     assert!(unsafe { reader.as_slice() }.is_none());
     let row = reader.get(0)?.unwrap();
-    assert_eq!(row.get::<i32>("value")?, Some(&42));
+    assert_eq!(row.value, Some(&42));
     Ok(())
 }
 
