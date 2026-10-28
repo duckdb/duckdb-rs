@@ -95,9 +95,9 @@ fn combined_iterator_rejects_mismatched_lengths() -> Result<()> {
         second.set_size(right)?;
         let a = first.reader()?;
         let b = second.reader()?;
-        let error = CombinedVectorIterator::new((a, b)).unwrap_err();
+        let error = CombinedVectorIterator::new((a.clone(), b.clone())).unwrap_err();
         assert!(error.message.contains("column 2"), "{}", error.message);
-        let error = CombinedVectorIterator::new((a, a, b)).unwrap_err();
+        let error = CombinedVectorIterator::new((a.clone(), a, b)).unwrap_err();
         assert!(error.message.contains("column 3"), "{}", error.message);
     }
     first.set_size(3)?;
@@ -153,10 +153,23 @@ fn combined_iterator_supports_one_and_twelve_columns() -> Result<()> {
         .next_chunk()?
         .unwrap();
     let r = chunk.get_vector_at::<i32>(0)?.reader()?;
-    assert_eq!(CombinedVectorIterator::new((r,))?.next(), Some((Some(&7),)));
-    let row = CombinedVectorIterator::new((r, r, r, r, r, r, r, r, r, r, r, r))?
-        .next()
-        .unwrap();
+    assert_eq!(CombinedVectorIterator::new((r.clone(),))?.next(), Some((Some(&7),)));
+    let row = CombinedVectorIterator::new((
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r.clone(),
+        r,
+    ))?
+    .next()
+    .unwrap();
     assert_eq!(
         [
             row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9, row.10, row.11
@@ -295,7 +308,7 @@ scalar_callback!(CombinedProbe, i32, |input, output, ctx, _user_data| {
     let constant = scratch
         .get_vector_at_mut::<i32>(0)?
         .make_constant(9_i32.value(ctx)?, reader.len())?;
-    let rows = CombinedVectorIterator::new((reader, constant.reader()?, reader))?;
+    let rows = CombinedVectorIterator::new((reader.clone(), constant.reader()?, reader))?;
     let mut output = output;
     output.set_size(rows.len())?;
     let mut writer = output.writer()?;

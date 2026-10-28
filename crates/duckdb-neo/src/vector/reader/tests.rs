@@ -1,4 +1,6 @@
-use super::{ReaderStorage, VectorReader};
+use duckdb_loadable_macros::AsDuckDB;
+
+use super::{DictionaryReader, FlatReader, ReaderStorage, VectorReader};
 use crate::{
     Parameters, Result, ToValue,
     builder_helpers::scalar_callback,
@@ -6,7 +8,7 @@ use crate::{
     environment::{Environment, StorageLocation},
     scalar::ScalarFunctionBuilder,
     signature::{FunctionParameter, SignatureBuilder},
-    types::{DuckDBType, List, Struct},
+    types::{DuckDBType, List},
     value::Value,
     vector::{Selection, StorageKind},
 };
@@ -29,6 +31,39 @@ fn assert_physical_reads(reader: &VectorReader<'_, i32>) -> Result<()> {
         assert_eq!(value, reader.get(logical)?.copied());
     }
     Ok(())
+}
+
+#[test]
+fn physical_validity_is_independent_of_logical_selection() {
+    let all_valid = FlatReader {
+        validity: std::ptr::null(),
+    };
+    for physical in [0, 63, 64, 127] {
+        // SAFETY: A missing mask marks every physical slot valid.
+        assert!(unsafe { all_valid.is_valid_unchecked(physical) });
+    }
+
+    let validity = [1u64 << 63, 1];
+    let flat = FlatReader {
+        validity: validity.as_ptr(),
+    };
+    for (physical, expected) in [(0, false), (63, true), (64, true), (65, false), (127, false)] {
+        // SAFETY: Both mask words remain live, and every index is in bounds.
+        assert_eq!(unsafe { flat.is_valid_unchecked(physical) }, expected);
+    }
+
+    let selection = [64, 0, 63, 127];
+    let dictionary = DictionaryReader {
+        values: flat,
+        selection: selection.as_ptr(),
+    };
+    let storage = ReaderStorage::Flat(flat);
+    for (logical, expected) in [Some(64), None, Some(63), None].into_iter().enumerate() {
+        // SAFETY: Every selected physical index is covered by the mask.
+        assert_eq!(unsafe { dictionary.physical_index_unchecked(logical) }, expected);
+        let physical = selection[logical] as usize;
+        assert_eq!(unsafe { storage.physical_index_unchecked(physical) }, expected);
+    }
 }
 
 #[test]
@@ -60,8 +95,8 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
-    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().as_ptr());
-    assert!(reader.validity().is_none());
+    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
+    assert!(reader.validity().unwrap().iter().all(|word| *word == u64::MAX));
     // SAFETY: Every physical slot was initialized above.
     let values = unsafe { vector.reader()?.as_slice() }.unwrap();
     assert_eq!(values, (0..130).collect::<Vec<i32>>());
@@ -173,7 +208,7 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             assert_eq!(reader.is_empty(), count == 0);
             assert_eq!(reader.selection(), Selection::Constant);
             assert_eq!(reader.selection().index(usize::MAX), 0);
-            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().as_ptr());
+            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
             assert!(reader.validity().is_none_or(|mask| mask.len() == 1));
             if let Some(value) = expected {
                 // SAFETY: The non-NULL constant has one initialized physical slot.
@@ -191,6 +226,11 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(Debug, AsDuckDB)]
+struct ParamStruct {
+    value: i32,
 }
 
 #[test]
@@ -215,13 +255,13 @@ fn reader_values_borrow_the_vector_not_the_reader() -> Result<()> {
         .collect::<Vec<_>>();
     assert_eq!(values, [vec![Some(1), None], vec![Some(3)]]);
 
-    let vector = chunk.get_vector_at::<Struct>(2)?;
+    let vector = chunk.get_vector_at::<ParamStruct>(2)?;
     let reader = vector.reader()?;
     assert!(reader.as_ptr().is_null());
     // SAFETY: STRUCT has no physical data slots to initialize.
     assert!(unsafe { reader.as_slice() }.is_none());
     let row = reader.get(0)?.unwrap();
-    assert_eq!(row.get::<i32>("value")?, Some(&42));
+    assert_eq!(row.value, Some(&42));
     Ok(())
 }
 
@@ -258,7 +298,7 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
         };
         let view = vector.view.as_ref().unwrap();
         assert_eq!(selection, view.selection().unwrap());
-        assert_eq!(reader.as_ptr(), view.as_ptr());
+        assert_eq!(reader.as_ptr(), view.data());
         assert_eq!(reader.validity(), view.validity());
         assert_eq!(reader.iter().collect::<Vec<_>>(), [Some(&i32::MAX), None]);
         assert_eq!(reader.get(0)?, Some(&i32::MAX));

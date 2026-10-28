@@ -1,5 +1,6 @@
 //! Owned DuckDB values and their typed payloads.
 
+use crate::types::{HugeInt, UHugeInt};
 use crate::{DropHandle, Factory, ffi};
 
 use crate::{
@@ -17,14 +18,14 @@ use crate::{
 ///
 /// # Example
 /// ```
-/// use duckdb_neo::{environment::Environment, environment::StorageLocation, ToValue};
+/// use duckdb_neo::{environment::Environment, environment::StorageLocation, types::List, ToValue};
 ///
 /// # fn main() -> duckdb_neo::Result<()> {
 /// let env = Environment::new()?;
 /// let instance = env.open(StorageLocation::InMemory)?;
 /// let conn = instance.connect()?;
 ///
-/// let value = vec![Some(1_i32), None].value(&conn)?;
+/// let value = List(vec![Some(1_i32), None]).value(&conn)?;
 ///
 /// assert_eq!(value.child_count()?, 2);
 /// assert!(value.get_child(1)?.is_null()?);
@@ -56,8 +57,8 @@ pub enum ValueInput<'a> {
     UBigInt(u64),
     Float(f32),
     Double(f64),
-    HugeInt(i128),
-    UHugeInt(u128),
+    HugeInt(HugeInt),
+    UHugeInt(UHugeInt),
     Varchar(&'a str),
     Blob(&'a [u8]),
     Type(&'a LogicalType),
@@ -119,18 +120,18 @@ fn value_handles(values: &[Value]) -> Vec<ffi::duckdb_v2_value_handle> {
     values.iter().map(|value| value.handle).collect()
 }
 
-fn hugeint(value: i128) -> ffi::duckdb_v2_hugeint_t {
-    ffi::duckdb_v2_hugeint_t {
+pub(crate) fn hugeint(value: i128) -> HugeInt {
+    HugeInt {
         lower: value as u64,
         upper: (value >> 64) as i64,
     }
 }
 
-pub(crate) fn from_hugeint(value: ffi::duckdb_v2_hugeint_t) -> i128 {
+pub(crate) fn from_hugeint(value: HugeInt) -> i128 {
     (i128::from(value.upper) << 64) | i128::from(value.lower)
 }
 
-fn uhugeint(value: u128) -> ffi::duckdb_v2_uhugeint_t {
+pub(crate) fn uhugeint(value: u128) -> UHugeInt {
     ffi::duckdb_v2_uhugeint_t {
         lower: value as u64,
         upper: (value >> 64) as u64,
@@ -161,10 +162,10 @@ pub(crate) fn create(factory: &Factory, input: ValueInput<'_>) -> Result<Value> 
         ValueInput::Float(value) => create_value!(ffi::duckdb_v2_value_create_float, factory.raw(), value),
         ValueInput::Double(value) => create_value!(ffi::duckdb_v2_value_create_double, factory.raw(), value),
         ValueInput::HugeInt(value) => {
-            create_value!(ffi::duckdb_v2_value_create_hugeint, factory.raw(), &hugeint(value))
+            create_value!(ffi::duckdb_v2_value_create_hugeint, factory.raw(), &value)
         }
         ValueInput::UHugeInt(value) => {
-            create_value!(ffi::duckdb_v2_value_create_uhugeint, factory.raw(), &uhugeint(value))
+            create_value!(ffi::duckdb_v2_value_create_uhugeint, factory.raw(), &value)
         }
         ValueInput::Varchar(value) => create_value!(ffi::duckdb_v2_value_create_varchar, factory.raw(), &value.into()),
         ValueInput::Blob(value) => create_value!(
@@ -433,7 +434,7 @@ mod tests {
         error::DuckDBError,
         scalar::ScalarFunctionBuilder,
         signature::{FunctionParameter, SignatureBuilder},
-        types::{BigNumValue, DuckDBType},
+        types::{BigNumValue, DuckDBType, List},
         value::ValueInput,
     };
 
@@ -447,7 +448,7 @@ mod tests {
             children: &two,
         });
         let err = result.expect_err("STRUCT length mismatch must be rejected");
-        assert_eq!(err.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, crate::error::DuckDBError::InputInvalid);
         assert_eq!(err.message, "STRUCT names and children: lengths differ (1 vs 2)");
 
         let result = link.create_value(ValueInput::Map {
@@ -457,7 +458,7 @@ mod tests {
             values: &one,
         });
         let err = result.expect_err("MAP length mismatch must be rejected");
-        assert_eq!(err.code, crate::error::DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, crate::error::DuckDBError::InputInvalid);
         assert_eq!(err.message, "MAP keys and values: lengths differ (2 vs 1)");
         Ok(())
     }
@@ -491,12 +492,12 @@ mod tests {
     #[test]
     fn test_typed_null_list() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-        let logical_type = Vec::<i32>::logical_type(&conn)?;
+        let logical_type = List::<i32>::logical_type(&conn)?;
         let value = super::Value::null(&conn, &logical_type)?;
         assert!(value.is_null()?);
         assert_eq!(value.child_count()?, 0);
         assert_eq!(value.logical_type()?.to_text()?, "INTEGER[]");
-        assert!(value.get::<Vec<Option<i32>>>()?.is_none());
+        assert!(value.get::<List<i32>>()?.is_none());
         Ok(())
     }
 
@@ -517,23 +518,23 @@ mod tests {
     #[test]
     fn test_value_error_paths() -> crate::Result<()> {
         let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
-        let list = vec![1_i32, 2].value(&conn)?;
+        let list = List(vec![Some(1_i32), Some(2)]).value(&conn)?;
         for index in [2, usize::MAX] {
             let err = list.get_child(index).expect_err("out-of-range child must fail");
-            assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+            assert_eq!(err.code, DuckDBError::InputInvalid);
             assert!(err.message.contains("child index out of range"), "{err}");
         }
         let scalar = 42_i32.value(&conn)?;
         let err = scalar.get_child(0).expect_err("scalar has no children");
-        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, DuckDBError::InputInvalid);
         let err = scalar.get::<super::LogicalType>().expect_err("integer is not TYPE");
-        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, DuckDBError::InputInvalid);
         assert!(err.message.contains("TYPE"), "{err}");
 
         let text = "not an integer".value(&conn)?;
         let target = i32::logical_type(&conn)?;
         let err = text.cast(&conn, &target).expect_err("invalid integer cast must fail");
-        assert_eq!(err.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+        assert_eq!(err.code, DuckDBError::InputInvalid);
         assert!(err.message.contains("Failed to cast value"), "{err}");
         assert!(err.message.contains("not an integer"), "{err}");
         assert_eq!(text.get::<String>()?.as_deref(), Some("not an integer"));
@@ -590,7 +591,7 @@ mod tests {
         let env = Environment::new()?;
         let instance = env.open(StorageLocation::InMemory)?;
         let conn = instance.connect()?;
-        let value = vec![
+        let value = List(vec![
             None,
             Some(BigNumValue {
                 is_negative: true,
@@ -600,7 +601,7 @@ mod tests {
                 is_negative: false,
                 magnitude: vec![5, 6, 7, 8],
             }),
-        ]
+        ])
         .value(&conn)?;
 
         assert_eq!(value.dbg_string()?, "[NULL, -16909060, 84281096]");

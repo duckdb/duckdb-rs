@@ -15,6 +15,8 @@ use crate::{
 pub(crate) struct VectorView<T> {
     pub(crate) view: ffi::duckdb_v2_vector_view,
     pub(crate) kind: StorageKind,
+    /// Whether `view.validity` is DuckDB's writable mask rather than the read-only view.
+    pub(crate) validity_writable: bool,
     pub(crate) _marker: PhantomData<T>,
 }
 
@@ -24,7 +26,9 @@ impl<T: VectorElement> VectorView<T> {
         self.view.count as usize
     }
 
-    fn physical_len(&self) -> usize {
+    /// Return the physical storage span, including unselected dictionary slots.
+    /// Flat uses the row count, constant uses one slot, and dictionary ends at its highest selected index.
+    pub fn physical_len(&self) -> usize {
         match self.kind {
             StorageKind::Flat => self.len(),
             StorageKind::Constant => 1,
@@ -36,40 +40,9 @@ impl<T: VectorElement> VectorView<T> {
         }
     }
 
-    pub(crate) fn is_null_physical(&self, physical: usize) -> bool {
-        if self.view.validity.is_null() {
-            false
-        } else {
-            unsafe { (*self.view.validity.add(physical / 64) & (1 << (physical % 64))) == 0 }
-        }
-    }
-
-    /// Return the vector's physical storage.
-    ///
-    /// Flat vectors contain one entry per logical row, constant vectors
-    /// contain one entry, and dictionary vectors use [`Self::selection`] to
-    /// map logical rows into this slice.
-    ///
-    /// # Safety
-    ///
-    /// Every entry in the returned slice must be initialized, including unselected and NULL slots.
-    /// Read only entries that are valid for the vector's logical type. Use [`Self::as_ptr`]
-    /// when the buffer contains uninitialized slots.
-    pub unsafe fn as_slice(&self) -> Option<&[T::Internal]> {
-        if self.view.data.is_null() {
-            None
-        } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view.data as *const T::Internal, self.physical_len()) })
-        }
-    }
-
     /// Return a pointer to the physical storage, or null when no data is exposed.
-    pub fn as_ptr(&self) -> *const T::Internal {
-        if self.view.data.is_null() {
-            std::ptr::null()
-        } else {
-            self.view.data as *const T::Internal
-        }
+    pub fn data<'data>(&self) -> *const T::Internal<'data> {
+        self.view.data.cast()
     }
 
     /// Return the logical-to-physical row mapping, if DuckDB supplied one.
@@ -102,6 +75,7 @@ impl<T: VectorElement> VectorView<T> {
         VectorView {
             view: self.view,
             kind: self.kind,
+            validity_writable: self.validity_writable,
             _marker: PhantomData,
         }
     }

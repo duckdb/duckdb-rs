@@ -289,7 +289,7 @@ fn test_active_stream_outlives_registration() -> Result<(), Box<dyn Error>> {
 
     drop(reg);
 
-    assert_eq!(stream.collect::<Vec<_>>(), vec![example_record_batch()]);
+    assert_eq!(stream.collect::<Result<Vec<_>, _>>()?, vec![example_record_batch()]);
     Ok(())
 }
 

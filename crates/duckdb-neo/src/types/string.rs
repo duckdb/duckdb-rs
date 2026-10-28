@@ -1,6 +1,6 @@
 //! `VARCHAR`, `BLOB`, and `BIT` byte-oriented logical types.
 //!
-//! [`str`], [`String`], and [`UnsafeString`] represent `VARCHAR`;
+//! [`str`], [`String`], and [`UncheckedString`] represent `VARCHAR`;
 //! [`BlobValue`] and [`BitValue`] wrap `BLOB` and `BIT` payloads.
 //! All share DuckDB's [`crate::bytes::DuckDBBytes`] wire representation.
 
@@ -38,7 +38,7 @@ impl FromValue for String {
 
 impl DuckDBType for str {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Varchar, Parameters::None)
     }
 }
 
@@ -66,9 +66,9 @@ impl ToValue for String {
 /// Every non-NULL row read through this marker must contain valid UTF-8.
 /// Invalid UTF-8 causes undefined behavior. Use [`String`] for checked reads.
 #[derive(Debug)]
-pub struct UnsafeString;
+pub struct UncheckedString;
 
-impl DuckDBType for UnsafeString {
+impl DuckDBType for UncheckedString {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
         str::logical_type(link)
     }
@@ -81,7 +81,7 @@ pub struct BlobValue(pub Vec<u8>);
 
 impl DuckDBType for BlobValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Blob, Parameters::None)
     }
 }
 
@@ -94,7 +94,7 @@ impl ToValue for BlobValue {
 impl FromValue for BlobValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB {
+        if logical_type.id()? != LogicalTypeID::Blob {
             return Err(Error::invalid_input(format!(
                 "Expected BLOB value, found {}",
                 logical_type.to_text()?
@@ -131,7 +131,7 @@ fn check_bit(bytes: &[u8]) -> Result<()> {
 
 impl DuckDBType for BitValue {
     fn logical_type<C: FFILink + ?Sized>(link: &C) -> Result<LogicalType> {
-        link.logical_type_create_from_id(LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT, Parameters::None)
+        link.logical_type_create_from_id(LogicalTypeID::Bit, Parameters::None)
     }
 }
 
@@ -145,7 +145,7 @@ impl ToValue for BitValue {
 impl FromValue for BitValue {
     fn _get_inner(value: &Value) -> Result<Self> {
         let logical_type = value.logical_type()?;
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT {
+        if logical_type.id()? != LogicalTypeID::Bit {
             return Err(Error::invalid_input(format!(
                 "Expected BIT value, found {}",
                 logical_type.to_text()?
@@ -157,15 +157,15 @@ impl FromValue for BitValue {
 }
 
 impl HasDuckDBBytes for String {}
-impl HasDuckDBBytes for UnsafeString {}
+impl HasDuckDBBytes for UncheckedString {}
 impl HasDuckDBBytes for BlobValue {}
 impl HasDuckDBBytes for BitValue {}
 
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for BlobValue {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BLOB;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Blob;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a [u8];
 
@@ -177,16 +177,16 @@ unsafe impl VectorElement for BlobValue {
     where
         Self: 'a,
     {
-        let data_ptr = vector.as_ptr() as *const DuckDBBytes;
+        let data_ptr = vector.as_ptr() as *const DuckDBBytes<'a>;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
 
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for BitValue {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_BIT;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Bit;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a [u8];
 
@@ -198,7 +198,7 @@ unsafe impl VectorElement for BitValue {
     where
         Self: Sized + 'a,
     {
-        let data_ptr = vector.as_ptr() as *const DuckDBBytes;
+        let data_ptr = vector.as_ptr() as *const DuckDBBytes<'a>;
         unsafe { &*data_ptr.add(physical) }.get_data()
     }
 }
@@ -207,9 +207,9 @@ unsafe impl VectorElement for BitValue {
 /// Panics when a VARCHAR row contains invalid UTF-8.
 // SAFETY: `DuckDBBytes` matches DuckDB's string storage.
 unsafe impl VectorElement for String {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a str;
 
@@ -230,10 +230,10 @@ unsafe impl VectorElement for String {
 }
 
 // SAFETY: Same storage as `String`; users of this marker must guarantee valid UTF-8.
-unsafe impl VectorElement for UnsafeString {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARCHAR;
+unsafe impl VectorElement for UncheckedString {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
 
-    type Internal = DuckDBBytes;
+    type Internal<'a> = DuckDBBytes<'a>;
 
     type Ref<'a> = &'a str;
 
@@ -252,11 +252,11 @@ unsafe impl VectorElement for UnsafeString {
 }
 
 // SAFETY: `&str` is valid UTF-8, and `write_bytes` stores it in the vector's arena.
-unsafe impl WritableVectorElement for UnsafeString {
+unsafe impl WritableVectorElement for UncheckedString {
     type Write<'a> = &'a str;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -269,8 +269,9 @@ unsafe impl WritableVectorElement for UnsafeString {
 unsafe impl WritableVectorElement for String {
     type Write<'a> = &'a str;
 
+    #[inline(always)]
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -284,7 +285,7 @@ unsafe impl WritableVectorElement for BlobValue {
     type Write<'a> = &'a [u8];
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -298,7 +299,7 @@ unsafe impl WritableVectorElement for BitValue {
     type Write<'a> = &'a [u8];
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<&[u8]>,
     ) -> Result<()> {
@@ -307,6 +308,78 @@ unsafe impl WritableVectorElement for BitValue {
         }
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_bytes(index, value) }
+    }
+}
+
+// SAFETY: the native VARCHAR writer copies the borrowed string into the vector's arena.
+unsafe impl crate::vector::OwnedVectorElement for String {
+    #[inline]
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value.map(String::as_str)) }
+    }
+}
+
+// SAFETY: borrowed strings use the same VARCHAR layout and decoding as String.
+unsafe impl VectorElement for &str {
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Varchar;
+    type Internal<'a> = DuckDBBytes<'a>;
+    type Ref<'a>
+        = &'a str
+    where
+        Self: 'a;
+
+    unsafe fn get<'a, U: VectorElement>(
+        reader: &crate::vector::VectorReader<'a, U>,
+        physical: usize,
+        logical: usize,
+    ) -> Self::Ref<'a>
+    where
+        Self: 'a,
+    {
+        unsafe { String::get(reader, physical, logical) }
+    }
+}
+
+impl HasDuckDBBytes for &str {}
+
+// SAFETY: input strings are UTF-8 and are copied into the vector's arena.
+unsafe impl WritableVectorElement for &str {
+    type Write<'a> = Self;
+
+    unsafe fn write(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<Self>,
+    ) -> Result<()> {
+        unsafe { writer.write_bytes(index, value.map(str::as_bytes)) }
+    }
+}
+
+crate::vector::owned_by_copy!(&str);
+
+// SAFETY: the native BLOB writer copies bytes into the vector's arena.
+unsafe impl crate::vector::OwnedVectorElement for BlobValue {
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value.map(|value| value.0.as_slice())) }
+    }
+}
+
+// SAFETY: the native BIT writer validates and copies bytes into the vector's arena.
+unsafe impl crate::vector::OwnedVectorElement for BitValue {
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value.map(|value| value.0.as_slice())) }
     }
 }
 
@@ -336,8 +409,8 @@ mod tests {
     fn unsafe_string_vector_reads_and_writes_valid_utf8() -> Result<()> {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
-        let mut chunk = DataChunk::create(&conn, &[UnsafeString::logical_type(&conn)?], true)?;
-        let mut vector = chunk.get_vector_at_mut::<UnsafeString>(0)?;
+        let mut chunk = DataChunk::create(&conn, &[UncheckedString::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<UncheckedString>(0)?;
         let values = [
             Some(""),
             Some("héllo"),

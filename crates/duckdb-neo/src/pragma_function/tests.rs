@@ -150,7 +150,7 @@ fn test_pragma_callback_errors() -> Result<()> {
 
     PragmaFunctionBuilder::query("rs_failing", SignatureBuilder::new(), Failing).register(&conn)?;
     let error = conn.execute("PRAGMA rs_failing", Parameters::None).unwrap_err();
-    assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_INPUT_INVALID);
+    assert_eq!(error.code, DuckDBError::InputInvalid);
     assert!(error.message.contains("the query pragma failed"), "{error}");
 
     PragmaFunctionBuilder::exec("rs_panicking", SignatureBuilder::new(), Panicking).register(&conn)?;

@@ -3,7 +3,7 @@
 //! Cargo uses `<build-dir>/[<triple>/]<profile>/build/<pkg>-<hash>/out`, or
 //! `.../build/<pkg>/<hash>/out` with the newer build-dir layout. This is an
 //! implementation detail, so these helpers return `None` for unrecognized
-//! layouts. The download root is one level above the profile directory so
+//! layouts. Cache roots are one level above the profile directory so
 //! debug and release builds share a cache.
 
 use std::path::{Path, PathBuf};
@@ -30,14 +30,27 @@ fn is_unit_hash(name: &str) -> bool {
     name.len() == 16 && name.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-#[cfg_attr(not(feature = "download-lib"), allow(dead_code))]
+#[cfg_attr(any(feature = "bundled", not(feature = "download-lib")), allow(dead_code))]
 pub(crate) fn download_root(out_dir: &Path) -> Option<PathBuf> {
     Some(profile_dir(out_dir)?.parent()?.join("duckdb-download"))
+}
+
+#[cfg_attr(not(all(feature = "bundled", not(feature = "bundled-cmake"))), allow(dead_code))]
+pub(crate) fn sources_root(out_dir: &Path) -> Option<PathBuf> {
+    Some(profile_dir(out_dir)?.parent()?.join("duckdb-sources"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sources_follow_cross_target_and_separate_build_dirs() {
+        for root in ["/workspace/build-dir", "/workspace/target/x86_64-unknown-linux-gnu"] {
+            let out_dir = Path::new(root).join("debug/build/libduckdb-sys-1234567890abcdef/out");
+            assert_eq!(sources_root(&out_dir), Some(Path::new(root).join("duckdb-sources")));
+        }
+    }
 
     #[test]
     fn resolves_paths_from_default_out_dir() {

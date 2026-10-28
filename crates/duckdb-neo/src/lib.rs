@@ -93,11 +93,15 @@ use connection::Factory;
 pub use libduckdb_sys::v2 as ffi;
 
 pub(crate) use duckdb_loadable_macros::DropHandle;
-pub use duckdb_loadable_macros::{AsRaw, FromRaw};
+pub use duckdb_loadable_macros::duckdb_entrypoint_c_api_v2;
+pub use duckdb_loadable_macros::{AsDuckDB, AsRaw, FromRaw};
 pub use error::Error;
 pub use parameter::{Parameters, QueryParameter};
 pub use raw::{AsRaw, FromRaw};
 pub use types::{DuckDBType, FromValue, ToValue};
+
+#[doc(hidden)]
+pub use types::structs::derive_support as __derive;
 
 /// This result type is used extensively throughout the crate to represent the result of (FFI) operations that can fail.
 ///
@@ -188,10 +192,7 @@ mod tests {
 
                 let type_id = vector.logical_type().id()?;
 
-                assert_eq!(
-                    type_id,
-                    ffi::DUCKDB_V2_LOGICAL_TYPE_ID::DUCKDB_V2_LOGICAL_TYPE_ID_INTEGER
-                );
+                assert_eq!(type_id, logical_type::LogicalTypeID::Integer);
                 assert_eq!(vector.len(), 1);
 
                 let value = vector.reader()?.iter().next().unwrap();
@@ -245,8 +246,11 @@ mod tests {
 
     #[test]
     fn test_library_version() -> crate::Result<()> {
-        let version = library_version()?;
-        assert!(!version.is_empty(), "Library version should not be empty");
+        let expected = include_str!("../../libduckdb-sys/.duckdb-release")
+            .lines()
+            .find_map(|line| line.strip_prefix("DUCKDB_RELEASE_VERSION="))
+            .expect("release pin must specify DUCKDB_RELEASE_VERSION");
+        assert_eq!(library_version()?, expected);
 
         Ok(())
     }
@@ -298,7 +302,7 @@ mod tests {
 
             let error = query.next_chunk().err().unwrap();
 
-            assert_eq!(error.code, DuckDBError::DUCKDB_V2_ERROR_RUNTIME_INTERRUPT);
+            assert_eq!(error.code, DuckDBError::RuntimeInterrupt);
         });
 
         receiver.recv().unwrap();

@@ -2,6 +2,33 @@
 mod test {
     use crate::{Connection, Result};
 
+    #[cfg(feature = "bundled")]
+    #[test]
+    fn test_bundled_extensions_registered() -> Result<()> {
+        let config = crate::Config::default()
+            .with("autoinstall_known_extensions", "false")?
+            .with("autoload_known_extensions", "false")?;
+        let connection = Connection::open_in_memory_with_flags(config)?;
+        let extensions = [
+            "core_functions",
+            #[cfg(feature = "json")]
+            "json",
+            #[cfg(feature = "parquet")]
+            "parquet",
+        ];
+        for extension in extensions {
+            connection.execute_batch(&format!("LOAD {extension};"))?;
+            let is_builtin = connection.query_row(
+                "SELECT installed AND loaded AND install_mode = 'STATICALLY_LINKED' AND install_path = '(BUILT-IN)' \
+                 FROM duckdb_extensions() WHERE extension_name = ?",
+                [extension],
+                |row| row.get::<_, bool>(0),
+            )?;
+            assert!(is_builtin, "{extension} should be statically linked");
+        }
+        Ok(())
+    }
+
     // https://duckdb.org/docs/current/data/json/overview
     #[cfg(feature = "json")]
     #[test]
@@ -48,6 +75,24 @@ mod test {
             )?
         );
         assert!(db.query_row::<bool, _, _>("SELECT length(icu_sort_key('Ş', 'ro')) > 0;", [], |r| r.get(0))?);
+        Ok(())
+    }
+
+    #[cfg(feature = "bundled-cmake")]
+    #[test]
+    #[ignore = "requires external extension loading to be enabled at build time"]
+    fn test_external_extension_load() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("missing.duckdb_extension");
+        let connection = Connection::open_in_memory()?;
+        let error = connection
+            .execute_batch(&format!("LOAD '{}';", path.to_string_lossy().replace('\'', "''")))
+            .expect_err("missing extension should not load")
+            .to_string();
+        assert!(
+            error.contains("not found"),
+            "expected a missing file error, got: {error}"
+        );
         Ok(())
     }
 

@@ -482,7 +482,7 @@ mod test {
 
         {
             let mut stmt = db.prepare_cached(sql)?;
-            let batches = stmt.stream_arrow([])?.collect::<Vec<_>>();
+            let batches = stmt.stream_arrow([])?.collect::<Result<Vec<_>>>()?;
             assert_eq!(1, batches.len());
 
             let values = batches[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();

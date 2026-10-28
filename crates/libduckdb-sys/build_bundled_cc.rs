@@ -42,31 +42,13 @@ fn extension_enabled(extension: &str) -> bool {
         || (extension == "json" && cfg!(feature = "json"))
 }
 
-fn untar_archive(out_dir: &str) {
-    let path = "duckdb.tar.gz";
-
-    let tar_gz = std::fs::File::open(path).expect("archive file");
-    let tar = flate2::read::GzDecoder::new(tar_gz);
-    let mut archive = tar::Archive::new(tar);
-    // These archives are generated for reproducibility, not source mtimes.
-    // Skipping mtime restoration also avoids Windows SetFileTime failures on
-    // filesystems such as FAT32, which cannot represent Unix epoch mtimes.
-    archive.set_preserve_mtime(false);
-    archive.unpack(out_dir).expect("archive");
-}
-
 const STATIC_EXTENSION_AUTOREGISTER: &str = "duckdb/extension/loader/static_extension_autoregister.cpp";
 
-fn build_static_extension_autoregister(out_dir: &str) {
+fn build_static_extension_autoregister(source_root: &Path, out_dir: &str) {
     let lib_name = "duckdb_static_extension_autoregister";
     // The upstream file has no global symbols, which makes ranlib warn about an empty table of contents.
-    let wrapper = Path::new(out_dir).join("static_extension_autoregister_rs.cpp");
-    std::fs::write(
-        &wrapper,
-        "#include \"static_extension_autoregister.cpp\"\nextern \"C\" int duckdb_rs_static_extension_autoregister = 1;\n",
-    )
-    .expect("writing static extension autoregister wrapper");
-    let source_dir = Path::new(out_dir).join(STATIC_EXTENSION_AUTOREGISTER);
+    let wrapper = source_root.join(crate::bundled_sources::AUTOREGISTER_WRAPPER);
+    let source_dir = source_root.join(STATIC_EXTENSION_AUTOREGISTER);
     cc::Build::new()
         .cpp(true)
         .file(&wrapper)
@@ -79,9 +61,10 @@ fn build_static_extension_autoregister(out_dir: &str) {
 }
 
 pub fn main(out_dir: &str) {
-    untar_archive(out_dir);
+    let source_root = crate::bundled_sources::unpack(Path::new("duckdb.tar.gz"), Path::new(out_dir))
+        .expect("unpacking bundled DuckDB sources");
 
-    let include_path = Path::new(out_dir).join("duckdb/src/include");
+    let include_path = source_root.join("duckdb/src/include");
     write_bindings(&include_path, out_dir);
 
     // Publish the include directory so downstream crates that compile
@@ -91,7 +74,7 @@ pub fn main(out_dir: &str) {
     // the package manifest.
     println!("cargo:include={}", include_path.display());
 
-    let manifest_file = std::fs::File::open(format!("{out_dir}/duckdb/manifest.json")).expect("manifest file");
+    let manifest_file = std::fs::File::open(source_root.join("duckdb/manifest.json")).expect("manifest file");
     let manifest: Manifest = serde_json::from_reader(manifest_file).expect("reading manifest file");
 
     let mut cpp_files = HashSet::new();
@@ -121,18 +104,19 @@ pub fn main(out_dir: &str) {
 
     println!("cargo:rerun-if-changed=duckdb.tar.gz");
 
-    // Inside libduckdb.a nothing references the autoregister object, so the linker would drop it
-    // and linked extensions would never register. Link it whole-archive, before libduckdb.
+    // Keep the constructor even though Rust code does not reference it directly.
     if cpp_files.remove(STATIC_EXTENSION_AUTOREGISTER) {
-        build_static_extension_autoregister(out_dir);
+        build_static_extension_autoregister(&source_root, out_dir);
     }
 
-    cfg.include("duckdb");
-    cfg.includes(include_dirs.iter().map(|dir| format!("{out_dir}/duckdb/{dir}")));
+    let mut include_dirs: Vec<_> = include_dirs.into_iter().collect();
+    include_dirs.sort();
+    cfg.include(source_root.join("duckdb"));
+    cfg.includes(include_dirs.iter().map(|dir| source_root.join("duckdb").join(dir)));
 
     let mut cpp_files_vec: Vec<String> = cpp_files.into_iter().collect();
     cpp_files_vec.sort();
-    for f in cpp_files_vec.into_iter().map(|file| format!("{out_dir}/{file}")) {
+    for f in cpp_files_vec.into_iter().map(|file| source_root.join(file)) {
         cfg.file(f);
     }
 

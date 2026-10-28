@@ -71,10 +71,10 @@ impl<S: UnionSchema, T: ToValue> ToValue for UnionValue<S, T> {
 
 // SAFETY: members are read only through the child vectors, and `validate` checks the tag.
 unsafe impl VectorElement for Union {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Union;
     type Ref<'a> = UnionRow<'a>;
 
-    type Internal = Union;
+    type Internal<'a> = Union;
 
     fn validate(other: &LogicalType, children: Option<&VectorCollection>) -> Result<bool> {
         if other.id()? != Self::TYPE_ID {
@@ -97,9 +97,7 @@ unsafe impl VectorElement for Union {
     {
         let children = vector.children().expect("validated nested vector has children");
         // SAFETY: The parent reader prepared the tag, which validate checked as u8.
-        let tag = unsafe {
-            crate::vector::VectorReader::from_prepared(children.cached_unchecked(0).cast_ref_unchecked::<u8>())
-        };
+        let tag = unsafe { vector.child_reader::<u8>(0) };
         UnionRow {
             children,
             tag,
@@ -165,7 +163,10 @@ where
     }
 
     fn write(self: Box<Self>, child: &mut Vector<'_, Unknown>, index: usize) -> Result<()> {
-        child.writer()?.write_as::<T>(index, self.member)
+        // SAFETY: The member's type was validated before writing any children.
+        unsafe { child.cast_ref_unchecked_mut::<T>() }
+            .writer()?
+            .set(index, self.member)
     }
 }
 
@@ -202,7 +203,7 @@ unsafe impl WritableVectorElement for Union {
     type Write<'a> = UnionWriter<'a>;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -241,15 +242,15 @@ unsafe impl WritableVectorElement for Union {
                 child.set_size(vector_len)?;
             }
             if i == 0 {
-                child.writer()?.write_as::<u8>(index, Some(value.tag))?;
+                // SAFETY: Union::validate checks that the tag child is a u8 vector.
+                unsafe { child.cast_ref_unchecked_mut::<u8>() }
+                    .writer()?
+                    .set(index, Some(value.tag))?;
             } else if i != member {
                 // Nested fixed-width rows need NULL descendants, which only the slow path sets.
                 let nested = matches!(
                     child.logical_type().id()?,
-                    LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_STRUCT
-                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_TUPLE
-                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
-                        | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
+                    LogicalTypeID::Struct | LogicalTypeID::Tuple | LogicalTypeID::Union | LogicalTypeID::Array
                 );
                 if nested {
                     child.set_null_slow(index)?;

@@ -59,10 +59,12 @@ fn validate_cast_type<T: VectorElement>(logical_type: &LogicalType) -> Result<()
     // Nested layouts need child vectors, which are only available during execution.
     if !matches!(
         T::TYPE_ID,
-        LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_LIST
-            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_ARRAY
-            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_MAP
-            | LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_UNION
+        LogicalTypeID::List
+            | LogicalTypeID::Array
+            | LogicalTypeID::Map
+            | LogicalTypeID::Union
+            | LogicalTypeID::Struct
+            | LogicalTypeID::Tuple
     ) && !T::validate(logical_type, None)?
     {
         return Err(Error::invalid_input(format!(
@@ -217,6 +219,32 @@ mod tests {
             }
             Ok(())
         }
+    }
+
+    #[test]
+    fn test_cast_accepts_derived_struct_layout() -> crate::Result<()> {
+        #[derive(Debug, crate::AsDuckDB)]
+        struct Derived {
+            value: Option<i32>,
+        }
+
+        let env = Environment::new()?;
+        let conn = env.open(StorageLocation::InMemory)?.connect()?;
+        super::validate_cast_type::<Derived>(&Derived::logical_type(&conn)?)?;
+        let chunk = conn
+            .query("SELECT {'value': 42}", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        assert_eq!(
+            chunk.get_vector_at::<Derived>(0)?.reader()?.get(0)?.unwrap().value,
+            Some(&42)
+        );
+        let chunk = conn
+            .query("SELECT {'value': 'wrong'}", Parameters::None)?
+            .next_chunk()?
+            .unwrap();
+        assert!(chunk.get_vector_at::<Derived>(0).is_err());
+        Ok(())
     }
 
     #[test]

@@ -62,9 +62,9 @@ macro_rules! decimal_storage {
 
             // SAFETY: `validate` accepts only the widths DuckDB stores as `$type`.
             unsafe impl VectorElement for $name {
-                const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
+                const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-                type Internal = $type;
+                type Internal<'a> = $type;
 
                 type Ref<'a> = &'a $name;
 
@@ -88,11 +88,13 @@ macro_rules! decimal_storage {
             unsafe impl WritableVectorElement for $name {
                 type Write<'a> = $name;
 
-                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, '_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
+                unsafe fn write(vector: &mut crate::vector::VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
                     // SAFETY: The caller guarantees a writable, flat, in-bounds row.
                     unsafe { vector.write_internal(index, value) }
                 }
             }
+
+            crate::vector::owned_by_copy!($name);
         )+
     };
 }
@@ -238,9 +240,9 @@ unsafe impl<const WIDTH: u8, const SCALE: u8> VectorElement for Decimal<WIDTH, S
 where
     Width<WIDTH>: DecimalWidth,
 {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Decimal;
 
-    type Internal = <Width<WIDTH> as DecimalWidth>::Storage;
+    type Internal<'a> = <Width<WIDTH> as DecimalWidth>::Storage;
 
     type Ref<'a> = &'a Self;
 
@@ -276,12 +278,27 @@ where
     type Write<'a> = Self;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
         // SAFETY: The caller guarantees a writable, flat, in-bounds row.
         unsafe { vector.write_internal(index, value) }
+    }
+}
+
+// SAFETY: the native writer receives a copy and maintains its validity.
+unsafe impl<const WIDTH: u8, const SCALE: u8> crate::vector::OwnedVectorElement for Decimal<WIDTH, SCALE>
+where
+    Width<WIDTH>: DecimalWidth,
+{
+    #[inline]
+    unsafe fn write_ref(
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
+        index: usize,
+        value: Option<&Self>,
+    ) -> Result<()> {
+        unsafe { writer.set_unchecked(index, value.copied()) }
     }
 }
 
@@ -361,7 +378,7 @@ impl DecimalSignature {
 
     /// Read the width and scale of a `DECIMAL` logical type.
     pub fn from_logical_type(logical_type: &LogicalType) -> Result<Self> {
-        if logical_type.id()? != LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_DECIMAL {
+        if logical_type.id()? != LogicalTypeID::Decimal {
             return Err(Error::api_error("logical type is not DECIMAL"));
         }
         let param = |index| -> Result<u8> {
@@ -420,6 +437,7 @@ mod tests {
     use crate::{
         data_chunk::DataChunk,
         environment::{Environment, StorageLocation},
+        types::List,
     };
 
     #[test]
@@ -482,7 +500,7 @@ mod tests {
             Parameters::positional(&[
                 &Some(decimal),
                 &None::<Decimal<4, 1>>,
-                &vec![Decimal::<5, 2>::new(12_345)],
+                &List(vec![Some(Decimal::<5, 2>::new(12_345))]),
             ]),
         )?;
         let chunk = result.next_chunk()?.expect("query returned no rows");

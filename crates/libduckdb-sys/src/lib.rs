@@ -4,15 +4,27 @@
 #![allow(deref_nullptr)]
 #![allow(improper_ctypes)]
 
+// Keep the loader reachable before GNU ld scans the separate constructor archive.
+#[cfg(all(feature = "bundled", not(feature = "bundled-cmake")))]
+#[used]
+static STATIC_EXTENSION_LOADER: unsafe extern "C" fn() -> std::ffi::c_int = {
+    unsafe extern "C" {
+        fn duckdb_register_static_extensions() -> std::ffi::c_int;
+    }
+    duckdb_register_static_extensions
+};
+
 #[cfg(not(any(feature = "capi-v1", feature = "capi-v2")))]
 compile_error!("libduckdb-sys needs at least one of the `capi-v1` or `capi-v2` features");
 
 /// Dependency-free Arrow C Data Interface structs used by DuckDB Arrow APIs.
 mod arrow_c_data;
 
-// Build-script helper mounted here so cargo test runs its unit tests.
+// Build-script helpers mounted here so cargo test runs their unit tests.
 #[cfg(test)]
 mod build_paths;
+#[cfg(test)]
+mod build_version;
 
 /// Bindings for DuckDB's v1 C API (`duckdb.h`, or `duckdb_extension.h` with the
 /// `loadable-extension` feature).

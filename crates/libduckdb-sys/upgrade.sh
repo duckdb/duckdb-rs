@@ -102,7 +102,7 @@ else
 fi
 git checkout "$DUCKDB_TARGET"
 cd "$SCRIPT_DIR"
-python3 "$SCRIPT_DIR/update_sources.py"
+DUCKDB_VERSION="$DUCKDB_VERSION" python3 "$SCRIPT_DIR/update_sources.py"
 
 regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version.rs" bindgen.rs buildtime_bindgen capi-v1
 regenerate_bindings "$SCRIPT_DIR/src/bindgen_bundled_version_loadable.rs" bindgen.rs buildtime_bindgen capi-v1 loadable-extension

@@ -1,11 +1,32 @@
-//! Derives for `duckdb-neo`'s raw handle traits.
+//! Derives for `duckdb-neo`'s value, vector, and raw handle traits.
 
 use proc_macro::TokenStream;
 use syn::spanned::Spanned;
 
 mod entrypoint;
+mod struct_fields;
+mod struct_value;
+mod struct_vector;
 
 pub use entrypoint::parse;
+pub(crate) use struct_value::{as_duckdb_type, as_from_value, as_to_value};
+pub(crate) use struct_vector::{as_vector_element, as_writable_vector_element};
+
+pub(crate) fn as_duckdb(input: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    struct_fields::StructFields::new(input, "AsDuckDB")?;
+    let logical_type = as_duckdb_type(input)?;
+    let to_value = as_to_value(input)?;
+    let from_value = as_from_value(input)?;
+    let vector_element = as_vector_element(input)?;
+    let writable_vector_element = as_writable_vector_element(input)?;
+    Ok(quote::quote! {
+        #logical_type
+        #to_value
+        #from_value
+        #vector_element
+        #writable_vector_element
+    })
+}
 
 /// Pick the handle field: the one marked `#[raw]`, the only field, or the field named `handle`.
 fn raw_handle_field(input: &syn::DeriveInput) -> syn::Result<(syn::Member, &syn::Type, &syn::Fields)> {
@@ -117,7 +138,7 @@ pub(crate) fn derive_drop_handle(input: syn::DeriveInput) -> TokenStream {
                 // SAFETY: the wrapper owns the handle, and nothing uses it after drop.
                 let code = unsafe { #destroy(&mut self.#member) };
                 assert!(
-                    code == ::duckdb_neo::error::DuckDBError::DUCKDB_V2_ERROR_NONE,
+                    code == ::duckdb_neo::ffi::DUCKDB_V2_ERROR::DUCKDB_V2_ERROR_NONE,
                     "Failed to destroy {}: {:?}",
                     stringify!(#name),
                     code,
@@ -126,4 +147,67 @@ pub(crate) fn derive_drop_handle(input: syn::DeriveInput) -> TokenStream {
         }
     }
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::as_duckdb;
+
+    #[test]
+    fn umbrella_derive_emits_all_implementations() {
+        let input = syn::parse_quote!(
+            struct Record {
+                value: Option<i32>,
+            }
+        );
+        let output = syn::parse2::<syn::File>(as_duckdb(&input).unwrap()).unwrap();
+        let traits = output
+            .items
+            .iter()
+            .filter_map(|item| {
+                let syn::Item::Impl(item) = item else {
+                    return None;
+                };
+                item.trait_
+                    .as_ref()
+                    .map(|(_, path, _)| path.segments.last().unwrap().ident.to_string())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            traits,
+            [
+                "DuckDBType",
+                "ToValue",
+                "FromValue",
+                "Debug",
+                "Clone",
+                "Copy",
+                "PartialEq",
+                "Eq",
+                "Hash",
+                "VectorElement",
+                "WritableVectorElement",
+                "OwnedVectorElement"
+            ]
+        );
+    }
+
+    #[test]
+    fn umbrella_derive_rejects_invalid_input() {
+        let input = syn::parse_quote!(
+            enum Invalid {
+                Value,
+            }
+        );
+        assert_eq!(
+            as_duckdb(&input).unwrap_err().to_string(),
+            "AsDuckDB requires a struct with named fields"
+        );
+        let input = syn::parse_quote!(
+            struct Required {
+                value: i32,
+            }
+        );
+        assert!(as_duckdb(&input).is_ok());
+    }
 }

@@ -16,10 +16,10 @@ pub struct Variant;
 
 // SAFETY: rows are read only through DuckDB's value API.
 unsafe impl VectorElement for Variant {
-    const TYPE_ID: LogicalTypeID = LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT;
+    const TYPE_ID: LogicalTypeID = LogicalTypeID::Variant;
 
     /// VARIANT has no fixed physical layout; rows use the per-cell value API.
-    type Internal = ();
+    type Internal<'a> = ();
 
     type Ref<'a> = Value;
 
@@ -40,7 +40,7 @@ unsafe impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, '_, Self>,
+        vector: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
@@ -84,7 +84,7 @@ mod tests {
         let env = Environment::new()?;
         let conn = env.open(StorageLocation::InMemory)?.connect()?;
         let logical_type = Variant::logical_type(&conn)?;
-        assert_eq!(logical_type.id()?, LogicalTypeID::DUCKDB_V2_LOGICAL_TYPE_ID_VARIANT);
+        assert_eq!(logical_type.id()?, LogicalTypeID::Variant);
         assert_eq!(
             logical_type.to_text()?,
             VariantValue::<i32>::logical_type(&conn)?.to_text()?
