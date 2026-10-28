@@ -291,10 +291,6 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         self.vector.children()
     }
 
-    pub(crate) fn logical_type(&self) -> &'vec crate::logical_type::LogicalType {
-        self.vector.logical_type()
-    }
-
     pub(crate) fn get_value_slow(&self, index: usize) -> Result<crate::value::Value> {
         self.vector.get_value_slow(index)
     }

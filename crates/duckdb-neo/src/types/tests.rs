@@ -3,17 +3,6 @@ use crate::logical_type::LogicalTypeID;
 
 use super::*;
 
-struct TestStruct;
-
-impl StructSchema for TestStruct {
-    fn fields<C: FFILink + ?Sized>(link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![
-            ("id", i32::logical_type(link)?),
-            ("name", String::logical_type(link)?),
-        ])
-    }
-}
-
 struct TestUnion;
 
 impl UnionSchema for TestUnion {
@@ -440,69 +429,12 @@ fn test_complex_values() -> crate::Result<()> {
     .value(&conn)?;
     assert_eq!(map.dbg_string()?, "{a=1, b=2}");
 
-    let struct_value = StructValue::<TestStruct>::new()
-        .field(42_i32)
-        .field("duck".to_string())
-        .value(&conn)?;
-    assert_eq!(struct_value.dbg_string()?, "{'id': 42, 'name': duck}");
-
-    // The field count must match the schema.
-    let too_many = StructValue::<TestStruct>::new()
-        .field(1_i32)
-        .field(2_i32)
-        .field(3_i32)
-        .field(4_i32);
-    assert!(too_many.value(&conn).is_err());
-    assert!(StructValue::<TestStruct>::new().value(&conn).is_err());
-
-    // Field types must match the schema, not just the count.
-    let wrong_type = StructValue::<TestStruct>::new().field(1_i32).field(2_i32);
-    assert!(wrong_type.value(&conn).is_err());
-
     let union = UnionValue::<TestUnion, _>::new(42_i32).value(&conn)?;
     assert_eq!(union.logical_type()?.id()?, LogicalTypeID::Union);
     assert_eq!(union.child_count()?, 2);
 
     let variant = VariantValue(42_i32).value(&conn)?;
     assert_eq!(variant.logical_type()?.id()?, LogicalTypeID::Variant);
-
-    Ok(())
-}
-
-struct EmptyStruct;
-
-impl StructSchema for EmptyStruct {
-    fn fields<C: FFILink + ?Sized>(_link: &C) -> Result<Vec<(&'static str, LogicalType)>> {
-        Ok(Vec::new())
-    }
-}
-
-#[test]
-fn test_empty_struct_read_and_write() -> crate::Result<()> {
-    use crate::{data_chunk::DataChunk, parameter::Parameters};
-
-    let env = Environment::new()?;
-    let conn = env.open(StorageLocation::InMemory)?.connect()?;
-
-    let chunk = conn.query("SELECT {}", Parameters::None)?.next_chunk()?.unwrap();
-    let vector = chunk.get_vector_at::<Struct>(0)?;
-    assert!(vector.children().is_none());
-    let row = vector.reader()?.get(0)?.unwrap();
-    assert!(row.get::<i32>("x").unwrap_err().message.contains("not found"));
-
-    let mut chunk = DataChunk::create(&conn, &[StructValue::<EmptyStruct>::logical_type(&conn)?], true)?;
-    {
-        let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
-        vector.set_size(2)?;
-        vector.writer()?.set(0, Some(structs::StructWrite::default()))?;
-        vector.writer()?.set(1, None)?;
-        let extra = structs::StructWrite::default().field::<i32>(Some(1));
-        assert!(vector.writer()?.set(0, Some(extra)).is_err());
-    }
-    let vector = chunk.get_vector_at::<Struct>(0)?;
-    let vector_reader = vector.reader()?;
-    assert!(vector_reader.get(0)?.is_some());
-    assert!(vector_reader.get(1)?.is_none());
 
     Ok(())
 }

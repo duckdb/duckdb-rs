@@ -21,7 +21,7 @@
 //!
 //! ```
 //! use duckdb_neo::types::{
-//!     ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow, StructRow, StructWrite, UnionRow, UnionWriter,
+//!     ArrayIterator, ArrayRef, ListIterator, ListRef, MapRow, UnionRow, UnionWriter,
 //! };
 //!
 //! fn array_items<'a>(row: ArrayRef<'a, i32>) -> ArrayIterator<'a, i32> {
@@ -31,12 +31,10 @@
 //!     row.iter()
 //! }
 //! fn map_row(_row: MapRow<'_, i32, i32>) {}
-//! fn struct_row(_row: StructRow<'_>) {}
 //! fn union_member(row: UnionRow<'_>) -> u8 {
 //!     row.member()
 //! }
 //!
-//! let _row: StructWrite<'_> = StructWrite::default().field::<i32>(Some(1));
 //! let _row: UnionWriter<'_> = UnionWriter::set_value::<i32>(0, Some(2));
 //! ```
 
@@ -71,7 +69,7 @@ pub use map::{Map, MapRow, MapValue};
 pub use primitive::Any;
 pub use primitive::{HugeInt, UHugeInt};
 pub use string::{BitValue, BlobValue, UncheckedString};
-pub use structs::{Struct, StructRow, StructSchema, StructValue, StructWrite};
+pub use structs::Struct;
 pub use temporal::{
     DateValue, IntervalValue, TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue,
     TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,

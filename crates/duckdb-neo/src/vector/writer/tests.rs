@@ -1,3 +1,5 @@
+use duckdb_loadable_macros::AsDuckDB;
+
 use crate::{
     Parameters, Result, ToValue,
     builder_helpers::scalar_callback,
@@ -5,7 +7,7 @@ use crate::{
     environment::{Environment, StorageLocation},
     scalar::ScalarFunctionBuilder,
     signature::{FunctionParameter, SignatureBuilder},
-    types::{Array, BlobValue, DuckDBType, List, Struct, StructWrite, UncheckedString, Variant},
+    types::{Array, BlobValue, DuckDBType, List, UncheckedString, Variant},
     value::Value,
     vector::{StorageKind, Unknown, VectorWriter},
 };
@@ -310,19 +312,24 @@ fn writer_nested_nulls_refresh_buffers_and_null_descendants() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, AsDuckDB)]
+struct NullStruct {
+    n: i32,
+}
+
 #[test]
 fn writer_struct_nulls_propagate_to_children() -> Result<()> {
     let env = Environment::new()?;
     let conn = env.open(StorageLocation::InMemory)?.connect()?;
     let mut result = conn.query("SELECT {'n': 42} AS value", Parameters::None)?;
     let source = result.next_chunk()?.unwrap();
-    let ty = source.get_vector_at::<Struct>(0)?.logical_type();
+    let ty = source.get_vector_at::<NullStruct>(0)?.logical_type();
     let mut chunk = DataChunk::create(&conn, std::slice::from_ref(ty), true)?;
-    let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
+    let mut vector = chunk.get_vector_at_mut::<NullStruct>(0)?;
     vector.set_size(1)?;
     {
         let mut writer = vector.writer()?;
-        writer.set(0, Some(StructWrite::default().field::<i32>(Some(42))))?;
+        writer.set(0, Some(NullStruct { n: 42 }))?;
         writer.set(0, None)?;
         assert_eq!(unsafe { writer.validity_mut() }.unwrap()[0] & 1, 0);
     }

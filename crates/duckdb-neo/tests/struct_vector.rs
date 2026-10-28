@@ -7,7 +7,6 @@ use duckdb_neo::{
     logical_type::LogicalType,
     scalar::{ScalarCallbacks, ScalarFunctionBuilder},
     signature::{FunctionParameter, SignatureBuilder},
-    types::Struct,
     vector::{StorageKind, Unknown, Vector},
 };
 
@@ -555,11 +554,7 @@ fn derived_vector_preserves_nulls_and_borrows_fields() -> Result<()> {
     let first: RowRef<'_> = vector.reader()?.get(0)?.unwrap();
     assert_eq!(first.name, Some("duck"));
     assert_eq!(first.value, Some(&0));
-    let untyped = chunk.get_vector_at::<Struct>(0)?.reader()?.get(0)?.unwrap();
-    assert_eq!(
-        first.name.unwrap().as_ptr(),
-        untyped.get::<String>("name")?.unwrap().as_ptr()
-    );
+
     let second = vector.reader()?.get(1)?.unwrap();
     assert_eq!(second.name, None);
     assert_eq!(second.value, Some(&1));
@@ -637,24 +632,5 @@ fn derived_vector_rejects_invalid_schemas() -> Result<()> {
         .next_chunk()?
         .unwrap();
     assert!(chunk.get_vector_at::<Nested>(0).is_err());
-    Ok(())
-}
-
-#[test]
-fn derived_vector_reads_empty_structs() -> Result<()> {
-    let env = Environment::new()?;
-    let conn = env.open(StorageLocation::InMemory)?.connect()?;
-    let mut chunk = duckdb_neo::data_chunk::DataChunk::create(&conn, &[Empty::logical_type(&conn)?], true)?;
-    {
-        let mut vector = chunk.get_vector_at_mut::<Struct>(0)?;
-        vector.set_size(2)?;
-        vector
-            .writer()?
-            .set(0, Some(duckdb_neo::types::StructWrite::default()))?;
-        vector.writer()?.set(1, None)?;
-    }
-    let vector = chunk.get_vector_at::<Empty>(0)?;
-    assert!(vector.reader()?.get(0)?.is_some());
-    assert!(vector.reader()?.get(1)?.is_none());
     Ok(())
 }

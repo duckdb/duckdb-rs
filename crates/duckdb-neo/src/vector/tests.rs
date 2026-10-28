@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use duckdb_loadable_macros::AsDuckDB;
+
 use crate::logical_type::LogicalTypeID;
 use crate::scalar::ScalarFunctionBuilder;
-use crate::types::{Any, StructValue};
+use crate::types::Any;
 use crate::{
     Parameters, ToValue,
     builder_helpers::scalar_callback,
@@ -15,10 +17,9 @@ use crate::{
     signature::{FunctionParameter, SignatureBuilder},
     types::{
         Array, BigNum, BigNumValue, BitValue, BlobValue, DateValue, DecimalSignature, DecimalValue, DuckDBType,
-        IntervalValue, List, ListRef, LongDecimal, Map, MapValue, ShortDecimal, Struct, StructSchema, StructWrite,
-        TimeNsValue, TimeTzValue, TimeValue, TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue,
-        TimestampTzValue, TimestampValue, Union, UnionSchema, UnionValue, UnionWriter, UuidValueRaw, Variant,
-        WordDecimal,
+        IntervalValue, List, ListRef, LongDecimal, Map, MapValue, ShortDecimal, TimeNsValue, TimeTzValue, TimeValue,
+        TimestampMsValue, TimestampNsValue, TimestampSecValue, TimestampTzNsValue, TimestampTzValue, TimestampValue,
+        Union, UnionSchema, UnionValue, UnionWriter, UuidValueRaw, Variant, WordDecimal,
     },
     value::Value,
     vector::StorageKind,
@@ -51,6 +52,13 @@ fn vector_from_handle_rejects_type_mismatches() -> crate::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, AsDuckDB)]
+struct DynamicStruct {
+    value: i32,
+    empty: i32,
+    items: Vec<i32>,
+}
+
 #[test]
 fn vector_dynamic_fields_validate_before_reading() -> crate::Result<()> {
     let env = Environment::new()?;
@@ -64,14 +72,11 @@ fn vector_dynamic_fields_validate_before_reading() -> crate::Result<()> {
         .next_chunk()?
         .expect("one result chunk");
 
-    let row = chunk.get_vector_at::<Struct>(0)?.reader()?.get(0)?.unwrap();
-    assert_eq!(row.get::<i32>("value")?, Some(&42));
-    assert!(row.get::<String>("value").is_err());
-    assert_eq!(row.get::<i32>("empty")?, None);
-    assert!(row.get::<String>("empty").is_err());
-    let items = row.get::<List<i32>>("items")?.unwrap();
+    let row = chunk.get_vector_at::<DynamicStruct>(0)?.reader()?.get(0)?.unwrap();
+    assert_eq!(row.value, Some(&42));
+    assert_eq!(row.empty, None);
+    let items = row.items.unwrap();
     assert_eq!(items.iter().collect::<Vec<_>>(), [Some(&1), None]);
-    assert!(row.get::<List<String>>("items").is_err());
 
     let row = chunk.get_vector_at::<Union>(1)?.reader()?.get(0)?.unwrap();
     assert_eq!(row.member(), 0);
@@ -695,15 +700,10 @@ fn vector_unknown_cast_accepts_scalar_and_nested_types() -> crate::Result<()> {
     Ok(())
 }
 
-struct TestStruct;
-
-impl StructSchema for TestStruct {
-    fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![
-            ("key", i32::logical_type(link)?),
-            ("value", String::logical_type(link)?),
-        ])
-    }
+#[derive(Debug, crate::AsDuckDB)]
+struct TestStruct {
+    key: i32,
+    value: String,
 }
 
 struct TestUnion;
@@ -809,64 +809,15 @@ scalar_callback!(UnionScalar, Union, |input, output, _ctx, _user_data| {
     Ok(())
 });
 
-scalar_callback!(StructScalar, Struct, |input, output, _ctx, _user_data| {
-    let keys = input.get_vector_at::<i32>(0)?;
-    let values = input.get_vector_at::<String>(1)?;
-    let rows: Vec<_> = keys
-        .reader()?
-        .iter()
-        .zip(values.reader()?.iter())
-        .map(|(key, value)| (*key.unwrap(), value.unwrap().to_string()))
-        .collect();
-    let mut output = output;
-    output.set_size(rows.len())?;
-    for (index, (key, value)) in rows.iter().enumerate() {
-        output.writer()?.set(
-            index,
-            Some(
-                StructWrite::default()
-                    .field::<i32>(Some(*key))
-                    .field::<String>(Some(value)),
-            ),
-        )?;
-    }
-    for (row, (key, value)) in output.reader()?.iter().zip(rows) {
-        let row = row.unwrap();
-        assert_eq!(row.get::<i32>("key")?, Some(&key));
-        assert_eq!(row.get::<String>("value")?, Some(value.as_str()));
-    }
-    Ok(())
-});
-
-struct SequenceStruct;
-
-impl StructSchema for SequenceStruct {
-    fn fields<C: FFILink + ?Sized>(link: &C) -> crate::Result<Vec<(&'static str, LogicalType)>> {
-        Ok(vec![("key", i64::logical_type(link)?)])
-    }
-}
-
-scalar_callback!(StructKeyScalar, i64, |input, output, _ctx, _user_data| {
-    let structs = input.get_vector_at::<Struct>(0)?;
-    let mut output = output;
-    output.set_size(structs.len())?;
-    for (index, row) in structs.reader()?.iter().enumerate() {
-        let key = row.map(|row| row.get::<i64>("key")).transpose()?.flatten();
-        output.writer()?.set(index, key.copied())?;
-    }
-    Ok(())
-});
-
 // Writes a NULL row whenever the key is NULL.
-scalar_callback!(NullableStructScalar, Struct, |input, output, _ctx, _user_data| {
+scalar_callback!(NullableStructScalar, TestStruct, |input, output, _ctx, _user_data| {
     let keys = input.get_vector_at::<i32>(0)?;
     let mut output = output;
     output.set_size(keys.len())?;
     for (index, key) in keys.reader()?.iter().enumerate() {
-        let row = key.map(|key| {
-            StructWrite::default()
-                .field::<i32>(Some(*key))
-                .field::<String>(Some("x"))
+        let row = key.map(|key| TestStruct {
+            key: *key,
+            value: "x".into(),
         });
         output.writer()?.set(index, row)?;
     }
@@ -885,6 +836,11 @@ scalar_callback!(NullableUnionScalar, Union, |input, output, _ctx, _user_data| {
     Ok(())
 });
 
+#[derive(Debug, AsDuckDB)]
+struct SmallStruct {
+    x: String,
+}
+
 // Odd keys pick the INTEGER member, even keys the STRUCT member.
 scalar_callback!(StructMemberUnionScalar, Union, |input, output, _ctx, _user_data| {
     let keys = input.get_vector_at::<i32>(0)?;
@@ -895,7 +851,7 @@ scalar_callback!(StructMemberUnionScalar, Union, |input, output, _ctx, _user_dat
         let row = if key % 2 == 1 {
             UnionWriter::set_value::<i32>(0, Some(key))
         } else {
-            UnionWriter::set_value::<Struct>(1, Some(StructWrite::default().field::<String>(Some("even"))))
+            UnionWriter::set_value::<SmallStruct>(1, Some(SmallStruct { x: "even".into() }))
         };
         output.writer()?.set(index, Some(row))?;
     }
@@ -1255,6 +1211,12 @@ fn test_vector_list() -> crate::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, crate::AsDuckDB)]
+struct KeyStruct {
+    key1: Option<String>,
+    key2: Option<i32>,
+}
+
 #[test]
 fn test_vector_struct() -> crate::Result<()> {
     let env = Environment::new()?;
@@ -1269,18 +1231,18 @@ fn test_vector_struct() -> crate::Result<()> {
         .next_chunk()?
         .unwrap();
 
-    let vector = res.get_vector_at::<Struct>(0)?;
+    let vector = res.get_vector_at::<KeyStruct>(0)?;
 
     let mut reader = vector.reader()?.iter();
 
     let row = reader.next().unwrap().unwrap();
 
-    assert_eq!(row.get::<String>("key1")?, Some("value1"));
-    assert_eq!(row.get::<i32>("key2")?, Some(&42));
+    assert_eq!(row.key1, Some("value1"));
+    assert_eq!(row.key2, Some(&42));
 
     let row = reader.next().unwrap().unwrap();
-    assert_eq!(row.get::<String>("key1")?, None);
-    assert_eq!(row.get::<i32>("key2")?, None);
+    assert_eq!(row.key1, None);
+    assert_eq!(row.key2, None);
     assert!(reader.next().is_none());
     Ok(())
 }
@@ -1523,41 +1485,6 @@ pub fn vector_union_write() -> crate::Result<()> {
 }
 
 #[test]
-pub fn vector_struct_write() -> crate::Result<()> {
-    let env = Environment::new()?;
-    let instance = env.open(StorageLocation::InMemory)?;
-    let conn = instance.connect()?;
-
-    let struct_type = StructValue::<TestStruct>::logical_type(&conn)?;
-
-    ScalarFunctionBuilder::new(
-        "to_struct",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<i32>("key"))
-            .param(FunctionParameter::new::<String>("value"))
-            .return_type(struct_type),
-        StructScalar,
-    )
-    .register(&conn)?;
-
-    let statement = conn
-        .parse("SELECT to_struct(unnest([1, 2]), unnest(['A', 'B']))")?
-        .next()
-        .unwrap()?;
-    let mut result = conn.query(statement, Parameters::None)?;
-    let mut chunk_count = 0;
-    while let Some(chunk) = result.next_chunk()? {
-        chunk_count += 1;
-        let vector = chunk.get_vector_at::<Struct>(0)?;
-        let rows: Vec<_> = vector.reader()?.iter().collect();
-        assert_eq!(rows[0].as_ref().unwrap().get::<i32>("key")?, Some(&1));
-        assert_eq!(rows[1].as_ref().unwrap().get::<String>("value")?, Some("B"));
-    }
-    assert_eq!(chunk_count, 1);
-    Ok(())
-}
-
-#[test]
 pub fn vector_nested_null_write() -> crate::Result<()> {
     let env = Environment::new()?;
     let instance = env.open(StorageLocation::InMemory)?;
@@ -1568,7 +1495,7 @@ pub fn vector_nested_null_write() -> crate::Result<()> {
         "to_struct_or_null",
         SignatureBuilder::new()
             .param(key())
-            .return_type(StructValue::<TestStruct>::logical_type(&conn)?),
+            .return_type(TestStruct::logical_type(&conn)?),
         NullableStructScalar,
     )
     .register(&conn)?;
@@ -1637,28 +1564,6 @@ pub fn vector_union_inactive_struct_member_is_null() -> crate::Result<()> {
     let chunk = result.next_chunk()?.unwrap();
     assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&0));
     assert_eq!(chunk.get_vector_at::<i64>(1)?.reader()?.get(0)?, Some(&2500));
-    Ok(())
-}
-
-#[test]
-pub fn vector_struct_unreadable_child() -> crate::Result<()> {
-    let env = Environment::new()?;
-    let instance = env.open(StorageLocation::InMemory)?;
-    let conn = instance.connect()?;
-
-    ScalarFunctionBuilder::new(
-        "struct_key",
-        SignatureBuilder::new()
-            .param(FunctionParameter::new::<StructValue<'_, SequenceStruct>>("s"))
-            .return_type(i64::logical_type(&conn)?),
-        StructKeyScalar,
-    )
-    .register(&conn)?;
-
-    // struct_pack keeps range()'s SEQUENCE child, which must not read as NULL.
-    let mut result = conn.query("SELECT struct_key({'key': i}) FROM range(3) t(i)", Parameters::None)?;
-    let err = result.next_chunk().expect_err("unflattened child must be rejected");
-    assert!(err.message.contains("OTHER vectors must be flattened before reading"));
     Ok(())
 }
 
@@ -2735,7 +2640,7 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         &conn,
         &[
             <[i32; 1]>::logical_type(&conn)?,
-            StructValue::<TestStruct>::logical_type(&conn)?,
+            TestStruct::logical_type(&conn)?,
             Vec::<Option<i32>>::logical_type(&conn)?,
         ],
         true,
@@ -2743,18 +2648,21 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
     {
         let [array, structs, list] = chunk.get_vector_array_mut([0, 1, 2])?;
         let mut array = array.cast::<Array<i32>>()?;
-        let mut structs = structs.cast::<Struct>()?;
+        let mut structs = structs.cast::<TestStruct>()?;
         let mut list = list.cast::<List<i32>>()?;
         array.set_size(1)?;
         structs.set_size(1)?;
         array.writer()?.set(0, Some(vec![Some(3)]))?;
         structs.writer()?.set(
             0,
-            Some(StructWrite::default().field::<i32>(Some(7)).field::<String>(Some("a"))),
+            Some(TestStruct {
+                key: 7,
+                value: "a".into(),
+            }),
         )?;
         // Reads cache the child views, which growing the parent must invalidate.
         assert_eq!(array.reader()?.get(0)?.unwrap().iter().next(), Some(Some(&3)));
-        assert_eq!(structs.reader()?.get(0)?.unwrap().get::<i32>("key")?, Some(&7));
+        assert_eq!(structs.reader()?.get(0)?.unwrap().key, Some(&7));
         array.set_size(3000)?;
         structs.set_size(3000)?;
         // Growing the parents evicted the cached child views, so fresh views see the new size.
@@ -2763,10 +2671,13 @@ fn test_nested_children_survive_reallocation() -> crate::Result<()> {
         array.writer()?.set(2999, Some(vec![Some(4)]))?;
         structs.writer()?.set(
             2999,
-            Some(StructWrite::default().field::<i32>(Some(8)).field::<String>(Some("b"))),
+            Some(TestStruct {
+                key: 8,
+                value: "b".into(),
+            }),
         )?;
         assert_eq!(array.reader()?.get(2999)?.unwrap().iter().next(), Some(Some(&4)));
-        assert_eq!(structs.reader()?.get(2999)?.unwrap().get::<i32>("key")?, Some(&8));
+        assert_eq!(structs.reader()?.get(2999)?.unwrap().key, Some(&8));
         list.set_size(1)?;
         list.writer()?.set(0, Some((0..5000).map(Some).collect()))?;
     }
