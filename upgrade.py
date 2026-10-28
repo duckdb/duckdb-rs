@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -12,15 +17,29 @@ WORKSPACE_DIR = Path(__file__).resolve().parent
 RELEASE_PIN_FILE = Path("crates/libduckdb-sys/.duckdb-release")
 CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
 VERSION_PATTERN = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+BINDING_VARIANTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("bindgen_bundled_version.rs", "bindgen.rs", ("capi-v1",)),
+    (
+        "bindgen_bundled_version_loadable.rs",
+        "bindgen.rs",
+        ("capi-v1", "loadable-extension"),
+    ),
+    ("bindgen_bundled_version_v2.rs", "bindgen_v2.rs", ("capi-v2",)),
+    (
+        "bindgen_bundled_version_loadable_v2.rs",
+        "bindgen_v2.rs",
+        ("capi-v2", "loadable-extension-v2"),
+    ),
+)
 
 
-def crate_version(value):
+def crate_version(value: str) -> str:
     if not re.fullmatch(VERSION_PATTERN, value):
         raise argparse.ArgumentTypeError("expected MAJOR.MINOR.PATCH (e.g. 1.20000.0)")
     return value
 
 
-def core_version(value):
+def core_version(value: str) -> str:
     identifier = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
     prerelease = rf"(?:-{identifier}(?:\.{identifier})*)?"
     metadata = r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
@@ -31,7 +50,7 @@ def core_version(value):
     return f"v{value.removeprefix('v')}"
 
 
-def core_commit(value):
+def core_commit(value: str) -> str:
     if not re.fullmatch(r"[0-9a-fA-F]{40}", value):
         raise argparse.ArgumentTypeError(
             "expected a full 40-character hexadecimal commit"
@@ -39,7 +58,7 @@ def core_commit(value):
     return value.lower()
 
 
-def core_url(value):
+def core_url(value: str) -> str:
     error = argparse.ArgumentTypeError(
         "expected an HTTP(S) directory URL without credentials, query, or fragment"
     )
@@ -62,7 +81,7 @@ def core_url(value):
     return value.rstrip("/")
 
 
-def parse_args(argv=None):
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bump the duckdb crates and regenerate bundled DuckDB sources and bindings.",
         epilog="Supply all three core options together to update the pin, sources, and bindings; omit them to update only crate versions.",
@@ -109,7 +128,7 @@ def parse_args(argv=None):
     return args
 
 
-def current_crate_version(path):
+def current_crate_version(path: Path) -> str:
     manifest = tomllib.loads(path.read_text(encoding="utf-8"))
     package = (
         manifest["workspace"]["package"]
@@ -119,12 +138,12 @@ def current_crate_version(path):
     return crate_version(package["version"])
 
 
-def crate_version_to_core_version(version):
+def crate_version_to_core_version(version: str) -> str:
     encoded = int(version.split(".")[1])
     return f"v{encoded // 10000}.{encoded // 100 % 100}.{encoded % 100}"
 
 
-def read_release_pin(root):
+def read_release_pin(root: Path) -> dict[str, str]:
     path = root / RELEASE_PIN_FILE
     if not path.exists():
         return {}
@@ -135,7 +154,7 @@ def read_release_pin(root):
     )
 
 
-def update_release_pin(root, args):
+def update_release_pin(root: Path, args: argparse.Namespace) -> None:
     path = root / RELEASE_PIN_FILE
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     values = {
@@ -145,9 +164,7 @@ def update_release_pin(root, args):
     }
     for key, value in values.items():
         line = f"{key}={value}"
-        text, count = re.subn(
-            rf"(?m)^{key}=[^\n]*$", lambda match, line=line: line, text
-        )
+        text, count = re.subn(rf"(?m)^{key}=[^\n]*$", line.replace("\\", r"\\"), text)
         if not count:
             if text and not text.endswith("\n"):
                 text += "\n"
@@ -155,14 +172,14 @@ def update_release_pin(root, args):
     path.write_text(text, encoding="utf-8")
 
 
-def replace_version(text, name, version, count=0):
+def replace_version(text: str, name: str, version: str, count: int = 0) -> str:
     pattern = rf'(?m)^([ \t]*{re.escape(name)}[ \t]*=[ \t]*(?:\{{[^\n]*?\bversion[ \t]*=[ \t]*)?"[=~^]?)[^"\n]+(")'
     return re.sub(
         pattern, lambda match: f"{match[1]}{version}{match[2]}", text, count=count
     )
 
 
-def update_crate_versions(root, version, neo_version):
+def update_crate_versions(root: Path, version: str, neo_version: str) -> None:
     subprocess.run(
         ["cargo", "metadata", "--format-version", "1"],
         cwd=root,
@@ -208,7 +225,109 @@ def update_crate_versions(root, version, neo_version):
     )
 
 
-def upgrade(args, root):
+def cargo_target_dir(root: Path) -> Path:
+    result = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+        cwd=root,
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    return Path(json.loads(result.stdout)["target_directory"])
+
+
+def regenerate_bindings(
+    root: Path,
+    target_dir: Path,
+    output_name: str,
+    generated_name: str,
+    features: Sequence[str],
+) -> None:
+    sys_dir = root / "crates/libduckdb-sys"
+    for name in ("bindgen.rs", "bindgen_v2.rs"):
+        for path in target_dir.glob(f"**/libduckdb-sys-*/out/{name}"):
+            if path.is_file():
+                path.unlink()
+
+    print(f"Regenerate {output_name}", flush=True)
+    subprocess.run(
+        [
+            "cargo",
+            "check",
+            "-p",
+            "libduckdb-sys",
+            "--no-default-features",
+            "--features",
+            ",".join(("buildtime_bindgen", *features)),
+        ],
+        cwd=root,
+        check=True,
+        env={
+            **os.environ,
+            "DUCKDB_LIB_DIR": str(sys_dir / "duckdb"),
+            "DUCKDB_INCLUDE_DIR": str(sys_dir / "duckdb/src/include"),
+        },
+    )
+
+    generated = [
+        path
+        for path in target_dir.glob(f"**/libduckdb-sys-*/out/{generated_name}")
+        if path.is_file()
+    ]
+    if len(generated) != 1:
+        raise ValueError(
+            f"Expected one generated {generated_name} in {target_dir}, found {len(generated)}"
+        )
+
+    output = sys_dir / "src" / output_name
+    fd, temp_name = tempfile.mkstemp(dir=output.parent, prefix=f".{output.name}.")
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        shutil.copy(generated[0], temp_path)
+        temp_path.replace(output)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def regenerate_bundled_sources(root: Path, commit: str, version: str) -> None:
+    sys_dir = root / "crates/libduckdb-sys"
+    sources = sys_dir / "duckdb-sources"
+    subprocess.run(
+        [
+            "git",
+            "submodule",
+            "update",
+            "--init",
+            "--checkout",
+            "--",
+            "crates/libduckdb-sys/duckdb-sources",
+        ],
+        cwd=root,
+        check=True,
+    )
+    try:
+        subprocess.run(["git", "fetch", "origin", commit], cwd=sources, check=True)
+    except subprocess.CalledProcessError as error:
+        raise ValueError(
+            f"Failed to fetch DuckDB commit {commit} from origin. "
+            "Ensure the commit is reachable from an advertised remote ref."
+        ) from error
+    subprocess.run(["git", "checkout", "--detach", commit], cwd=sources, check=True)
+    subprocess.run(
+        [sys.executable, str(sys_dir / "update_sources.py")],
+        cwd=sys_dir,
+        check=True,
+        env={**os.environ, "DUCKDB_VERSION": version},
+    )
+
+    target_dir = cargo_target_dir(root)
+    for output, generated, features in BINDING_VARIANTS:
+        regenerate_bindings(root, target_dir, output, generated, features)
+    print("Finished regenerating bundled DuckDB sources and bindings (tests not run)")
+
+
+def upgrade(args: argparse.Namespace, root: Path) -> None:
     current = current_crate_version(root / "Cargo.toml")
     current_neo = current_crate_version(root / "crates/duckdb-neo/Cargo.toml")
     if args.core_commit:
@@ -231,20 +350,10 @@ def upgrade(args, root):
         rf"{re.escape(current_core)}(?![0-9A-Za-z.+-])", args.core_version, text
     )
     workflow.write_text(text, encoding="utf-8")
-    subprocess.run(
-        [
-            "bash",
-            "crates/libduckdb-sys/upgrade.sh",
-            args.core_version,
-            "--sha",
-            args.core_commit,
-        ],
-        cwd=root,
-        check=True,
-    )
+    regenerate_bundled_sources(root, args.core_commit, args.core_version)
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         upgrade(args, WORKSPACE_DIR)

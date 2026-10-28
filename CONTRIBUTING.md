@@ -213,9 +213,10 @@ supply **all three** named options together:
 
 The script updates crate versions, exact workspace dependency pins, README
 `Cargo.toml` examples, and `Cargo.lock`. With the core options, it also updates
-`.duckdb-release` and workflow DuckDB version references, then calls
-`./crates/libduckdb-sys/upgrade.sh` to regenerate sources and bindings from the
-specified commit. Supply libraries built from that same commit, and keep the
+`.duckdb-release` and workflow DuckDB version references, then checks out the
+specified commit and regenerates sources and all four binding variants.
+Source packaging still uses `crates/libduckdb-sys/update_sources.py`.
+Supply libraries built from that same commit, and keep the
 encoded DuckDB version in each crate version consistent with the core version.
 Use the current crate versions to change only the core build.
 
