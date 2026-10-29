@@ -1,5 +1,5 @@
 # Pinned DuckDB build for libduckdb-sys. Single source of truth for which
-# DuckDB the crates target. Used by the build script, upgrade.py and CI.
+# DuckDB the crates target. Used by the build script, scripts/upgrade.py and CI.
 #
 # Linked-mode builds (no `bundled` feature, no DUCKDB_LIB_DIR) download
 #   <DUCKDB_RELEASE_URL>/duckdb-shared-libs-<platform>.tar.gz
@@ -7,7 +7,7 @@
 # DUCKDB_DOWNLOAD_LIB=0, or force the download with DUCKDB_DOWNLOAD_LIB=1.
 #
 # DUCKDB_RELEASE_COMMIT  Full hash of the DuckDB commit the libraries were
-#                        built from. `upgrade.py` vendors this commit when
+#                        built from. `scripts/upgrade.py` vendors this commit when
 #                        the three core options are supplied together, keeping
 #                        bundled sources and bindings aligned with the download.
 # DUCKDB_RELEASE_URL     Directory holding the per-platform tarballs. For
@@ -22,7 +22,7 @@
 #
 # Updated by the `Create Release Version PR` workflow, which DuckDB's release
 # dispatcher (duckdb/duckdb-workflow-trigger, `core_ready` hook) invokes with
-# the commit and version of each new build. Use `upgrade.py` with --core-commit,
+# the commit and version of each new build. Use `scripts/upgrade.py` with --core-commit,
 # --core-url, and --core-version together to update the pin and bundled files.
 
 DUCKDB_RELEASE_COMMIT=d54cbbe3df17e8e5ce68312f483b4155836112aa

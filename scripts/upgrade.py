@@ -18,7 +18,7 @@ from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlsplit
 
-WORKSPACE_DIR = Path(__file__).resolve().parent
+WORKSPACE_DIR = Path(__file__).resolve().parents[1]
 RELEASE_PIN_FILE = Path("crates/libduckdb-sys/.duckdb-release")
 CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
 EXTENSIONS = ("core_functions", "parquet", "json")

@@ -100,7 +100,7 @@ jobs:
         run: |
           python3 -B - <<'PY'
           import os
-          import upgrade
+          from scripts import upgrade
 
           root = upgrade.WORKSPACE_DIR
           raise SystemExit(upgrade.main([
@@ -146,7 +146,7 @@ jobs:
           git commit -m "Bump pinned DuckDB release to ${ARTIFACT_RELEASE}"
           git push --force origin "${BRANCH_NAME}"
           {
-            echo "Update the pinned DuckDB staging release used by linked-mode builds, and vendor the same commit into the bundled sources and pregenerated bindings (\`upgrade.py\`):"
+            echo "Update the pinned DuckDB staging release used by linked-mode builds, and vendor the same commit into the bundled sources and pregenerated bindings (\`scripts/upgrade.py\`):"
             echo "- Target branch: ${TARGET_BRANCH}"
             echo "- Release line: ${RELEASE_LINE}"
             echo "- Release: ${ARTIFACT_RELEASE}"

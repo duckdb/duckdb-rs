@@ -131,7 +131,7 @@ To test an upstream DuckDB C API change before it is tagged, supply its full com
 
 ```shell
 cd ~/github/duckdb-rs
-./upgrade.py 1.20000.0 0.20000.0 \
+./scripts/upgrade.py 1.20000.0 0.20000.0 \
   --core-commit <COMMIT_SHA> --core-url <RELEASE_URL> --core-version <CORE_VERSION>
 ```
 
@@ -182,22 +182,22 @@ Install a nightly Rust toolchain first if necessary. `RUSTFLAGS` does not instru
 Which DuckDB the crates target is pinned in
 `crates/libduckdb-sys/.duckdb-release` (`DUCKDB_RELEASE_COMMIT`,
 `DUCKDB_RELEASE_URL` and `DUCKDB_RELEASE_VERSION`). Linked-mode builds download
-the prebuilt libraries from that URL. `upgrade.py` updates the pin and vendors
+the prebuilt libraries from that URL. `scripts/upgrade.py` updates the pin and vendors
 the same commit into the bundled sources when given the three core options.
 
 Normally the pin moves on its own: DuckDB's release dispatcher
 (`duckdb/duckdb-workflow-trigger`, `core_ready` hook) invokes the
 `Create Release Version PR` workflow with the commit and version of each new
-build. The workflow calls `upgrade.py` and opens a PR. The `Nightly` workflow
+build. The workflow calls `scripts/upgrade.py` and opens a PR. The `Nightly` workflow
 is dispatched the same way and tests bundled and downloaded backends against
 that build.
 
-The top-level script requires Python 3.11 or newer. Supply the duckdb-rs and
+The upgrade script requires Python 3.11 or newer. Supply the duckdb-rs and
 duckdb-neo versions as positional arguments. To change DuckDB core as well,
 supply **all three** named options together:
 
 ```shell
-./upgrade.py 1.20100.0 0.20100.0 \
+./scripts/upgrade.py 1.20100.0 0.20100.0 \
   --core-commit <COMMIT_SHA> \
   --core-url https://install.duckdb.org/v2.1.0 \
   --core-version v2.1.0
@@ -223,7 +223,7 @@ Omit all three core options for a crate-only release. This leaves the core
 pin, workflow version references, sources, and bindings unchanged:
 
 ```shell
-./upgrade.py 1.20000.1 0.20000.1
+./scripts/upgrade.py 1.20000.1 0.20000.1
 ```
 
 The script does not run tests; validate the `bundled`, `bundled-cmake`, and linked

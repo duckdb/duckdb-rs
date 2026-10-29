@@ -102,7 +102,7 @@ jobs:
         run: |
           python3 -B - <<'PY'
           import os
-          import upgrade
+          from scripts import upgrade
 
           root = upgrade.WORKSPACE_DIR
           raise SystemExit(upgrade.main([
