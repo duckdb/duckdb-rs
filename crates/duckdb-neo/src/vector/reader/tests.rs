@@ -95,7 +95,6 @@ fn reader_exposes_flat_data_and_physical_validity() -> Result<()> {
     }
     let reader = vector.reader()?;
     assert_eq!(reader.selection(), Selection::Identity);
-    assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
     assert!(reader.validity().unwrap().iter().all(|word| *word == u64::MAX));
     // SAFETY: Every physical slot was initialized above.
     let values = unsafe { vector.reader()?.as_slice() }.unwrap();
@@ -208,7 +207,6 @@ fn constant_reader_does_not_index_the_shared_selection() -> Result<()> {
             assert_eq!(reader.is_empty(), count == 0);
             assert_eq!(reader.selection(), Selection::Constant);
             assert_eq!(reader.selection().index(usize::MAX), 0);
-            assert_eq!(reader.as_ptr(), vector.view.as_ref().unwrap().data());
             assert!(reader.validity().is_none_or(|mask| mask.len() == 1));
             if let Some(value) = expected {
                 // SAFETY: The non-NULL constant has one initialized physical slot.
@@ -296,7 +294,9 @@ scalar_callback!(ReaderProbe, i32, |input, output, _ctx, _user_data| {
         let Selection::Dictionary(selection) = reader.selection() else {
             panic!("dictionary reader must expose its selection");
         };
-        let view = vector.view.as_ref().unwrap();
+        let reader = vector.reader()?;
+
+        let view = reader.view();
         assert_eq!(selection, view.selection().unwrap());
         assert_eq!(reader.as_ptr(), view.data());
         assert_eq!(reader.validity(), view.validity());

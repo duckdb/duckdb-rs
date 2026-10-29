@@ -228,10 +228,9 @@ pub(crate) enum Access {
 /// ```
 // `repr(C)` fixes field order; the nested `VectorView<T>` is also `repr(C)`.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, AsRaw)]
 pub struct Vector<'a, T: VectorElement> {
     pub(crate) handle: ffi::duckdb_v2_vector_handle,
-    pub(crate) view: Option<VectorView<T>>,
     pub(crate) access: Access,
 
     logical_type: LogicalType,
@@ -268,7 +267,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
 
-        let view = Self::acquire_view(*handle, kind)?;
         let params = TypeMetadata::read(&logical_type)?;
 
         let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
@@ -289,7 +287,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             logical_type,
             kind,
             len: len as usize,
-            view,
             access,
             heap: None,
             children,
@@ -357,53 +354,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.access == Access::Writable
     }
 
-    /// Return the vector's child vectors, or `None` if it has no children.
-    pub fn children(&self) -> Option<&VectorCollection> {
-        self.children.as_ref()
-    }
-
-    /// Prepare exclusive write access and allocate a writable validity mask.
-    ///
-    /// Fails unless this is writable output with flat storage. Resize the vector
-    /// before acquiring its writer.
-    pub fn writer(&mut self) -> Result<VectorWriter<'_, T>> {
-        VectorWriter::new(self)
-    }
-
-    fn acquire_view<U: VectorElement>(
-        handle: ffi::duckdb_v2_vector_handle,
-        kind: StorageKind,
-    ) -> Result<Option<VectorView<U>>> {
-        if kind == StorageKind::Other {
-            return Ok(None);
-        }
-
-        check_api_call!(ffi::duckdb_v2_vector_get_view, handle, RET).map(|view| {
-            Some(VectorView {
-                view,
-                kind,
-                validity_writable: false,
-                _marker: PhantomData,
-            })
-        })
-    }
-
-    /// Return the writable validity mask, allocating it on first use.
-    ///
-    /// The pointer is cached in the view, which every buffer-replacing operation reacquires.
-    pub(crate) fn writable_validity(&mut self) -> Result<*mut u64> {
-        let handle = self.handle;
-        let view = self.view.as_mut().ok_or_else(not_flat)?;
-        if !view.validity_writable {
-            view.view.validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, handle, RET)?;
-            view.validity_writable = true;
-        }
-        Ok(view.view.validity.cast_mut())
-    }
-
     /// Refresh the vector's view and mutable buffers after a state change, e.g. set_size.
     fn refresh_buffers(&mut self) -> Result<()> {
-        self.view = Self::acquire_view(self.handle, self.kind)?;
         self.heap = None;
         if let Some(children) = &mut self.children {
             children.evict_all();
@@ -417,7 +369,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             logical_type: self.logical_type,
             kind: self.kind,
             len: self.len,
-            view: self.view.map(|view| view.cast_owned::<U>()),
             access: self.access,
             heap: self.heap,
             children: self.children,
@@ -432,12 +383,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `CAST`.
     ///
     /// Fails if any row does not convert. The cast uses the cast functions and settings of `link`.
-    pub fn cast_rows<T2: VectorElement, C: HasFactory>(
-        self,
-        source: &Vector<'_, T2>,
-        link: &C,
-    ) -> Result<Vector<'a, T>> {
-        check_api_call!(
+    pub fn cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
+        let _out_converted = check_api_call!(
             ffi::duckdb_v2_vector_cast,
             link.factory()?.raw(),
             source.handle,
@@ -446,18 +393,15 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             RET,
             std::ptr::null_mut()
         )?;
-        Self::from_handle_in(&self.handle, self.access, &self.offsets)
+
+        Ok(())
     }
 
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
     ///
     /// Rows that do not convert become `NULL`. The returned error, if any, is the
     /// conversion error of one such row.
-    pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(
-        self,
-        source: &Vector<'_, T2>,
-        link: &C,
-    ) -> Result<(Vector<'a, T>, Option<Error>)> {
+    pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
         let mut cast_err = std::ptr::null_mut();
 
         check_api_call!(
@@ -470,16 +414,12 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             &mut cast_err
         )?;
 
-        let row_error = if cast_err.is_null() {
-            None
+        if cast_err.is_null() {
+            Ok(())
         } else {
             let error = unsafe { Error::from_code_and_handle(DuckDBError::TypeConversion.into(), &mut cast_err) };
-            Some(error)
-        };
-        Ok((
-            Self::from_handle_in(&self.handle, self.access, &self.offsets)?,
-            row_error,
-        ))
+            Err(error)
+        }
     }
 
     pub(crate) fn metadata(&self) -> TypeMetadata {
@@ -550,27 +490,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Vector::from_handle_in(&self.handle, Access::Exclusive, &self.offsets)
     }
 
-    /// Write one owned [`Value`] through DuckDB's generic value API.
-    ///
-    /// This is the slow path; prefer [`VectorWriter::set`] for typed vector access.
-    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
-        // DuckDB may allocate a validity mask or write nested values into the children.
-        self.refresh_buffers()
-    }
-
-    /// Set one row to `NULL` through DuckDB's generic value API.
-    ///
-    /// This is the slow path; prefer [`VectorWriter::set`] with `None`.
-    pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
-        if !self.is_writable() {
-            return Err(not_writable());
-        }
-        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
-        self.refresh_buffers()
+    /// Return the vector's child vectors, or `None` if it has no children.
+    pub fn children(&self) -> Option<&VectorCollection> {
+        self.children.as_ref()
     }
 
     /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
@@ -693,6 +615,39 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.set_not_writable();
         self.refresh_buffers()?;
         Ok(self)
+    }
+}
+
+impl<T: VectorElement> Vector<'_, T> {
+    /// Prepare exclusive write access and allocate a writable validity mask.
+    ///
+    /// Fails unless this is writable output with flat storage. Resize the vector
+    /// before acquiring its writer.
+    pub fn writer(&mut self) -> Result<VectorWriter<'_, T>> {
+        VectorWriter::new(self)
+    }
+
+    /// Write one owned [`Value`] through DuckDB's generic value API.
+    ///
+    /// This is the slow path; prefer [`VectorWriter::set`] for typed vector access.
+    pub fn write_value_slow(&mut self, index: usize, value: Value) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
+        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
+        // DuckDB may allocate a validity mask or write nested values into the children.
+        self.refresh_buffers()
+    }
+
+    /// Set one row to `NULL` through DuckDB's generic value API.
+    ///
+    /// This is the slow path; prefer [`VectorWriter::set`] with `None`.
+    pub fn set_null_slow(&mut self, index: usize) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
+        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
+        self.refresh_buffers()
     }
 }
 

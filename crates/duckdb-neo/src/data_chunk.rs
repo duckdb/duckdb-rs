@@ -165,9 +165,6 @@ impl VectorCollection {
         }
         for index in 0..self.handles.len() {
             let vector = self.cached(index)?;
-            if vector.view.is_none() {
-                return Err(crate::vector::other_not_readable());
-            }
             if let Some(children) = vector.children() {
                 children.cache_all()?;
             }

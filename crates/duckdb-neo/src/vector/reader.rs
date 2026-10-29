@@ -1,8 +1,8 @@
-use std::{ops::Range, rc::Rc};
-
-use crate::Result;
+use std::{marker::PhantomData, ops::Range, rc::Rc};
 
 use super::{StorageKind, Vector, VectorElement, VectorView, other_not_readable, out_of_bounds};
+use crate::ffi;
+use crate::{Result, error::check_api_call, raw::RawExt};
 
 /// Maps logical row indices to physical data and validity positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +32,7 @@ impl Selection<'_> {
 /// Values preserve SQL NULLs and borrow from the vector, not the reader.
 pub struct VectorReader<'vec, T: VectorElement> {
     vector: &'vec Vector<'vec, T>,
-    data: *const std::ffi::c_void,
+    view: VectorView<T>,
     storage: ReaderStorage,
     child_readers: Option<Rc<[VectorReader<'vec, super::Unknown>]>>,
 }
@@ -41,7 +41,7 @@ impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VectorReader")
             .field("len", &self.len())
-            .field("data", &self.data.cast::<()>())
+            .field("data", &self.view.data().cast::<()>())
             .field("storage", &self.storage)
             .finish()
     }
@@ -52,7 +52,7 @@ impl<T: VectorElement> Clone for VectorReader<'_, T> {
     fn clone(&self) -> Self {
         Self {
             vector: self.vector,
-            data: self.data,
+            view: self.view.clone(),
             storage: self.storage,
             child_readers: self.child_readers.clone(),
         }
@@ -116,17 +116,31 @@ impl ReaderStorage {
 }
 
 impl<'vec, T: VectorElement> VectorReader<'vec, T> {
+    fn acquire_view<U: VectorElement>(vector: &'vec Vector<'vec, U>) -> Result<Option<VectorView<U>>> {
+        if vector.storage_kind() == StorageKind::Other {
+            return Ok(None);
+        }
+
+        check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET).map(|view| {
+            Some(VectorView {
+                view,
+                kind: vector.storage_kind(),
+                _marker: PhantomData,
+            })
+        })
+    }
+
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
-        if vector.view.is_none() {
+        let view = Self::acquire_view(vector)?;
+        if view.is_none() {
             return Err(other_not_readable());
         }
         vector.cache_children()?;
         // SAFETY: The vector and all descendants have readable, cached views.
-        Ok(unsafe { Self::from_prepared(vector) })
+        unsafe { Self::from_prepared(vector, view.unwrap()) }
     }
 
-    pub(crate) unsafe fn from_prepared(vector: &'vec Vector<'vec, T>) -> Self {
-        let view = vector.view.as_ref().expect("prepared vector has a readable view");
+    pub(crate) unsafe fn from_prepared(vector: &'vec Vector<'vec, T>, view: VectorView<T>) -> Result<Self> {
         let flat = FlatReader {
             validity: view.view.validity,
         };
@@ -141,20 +155,26 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             }),
             StorageKind::Other => unreachable!("prepared vector has a readable storage kind"),
         };
-        Self {
+
+        let child_readers = if let Some(children) = vector.children() {
+            let mut child_readers = Vec::with_capacity(children.col_count());
+            for i in 0..children.col_count() {
+                let vec = children.cached_unchecked(i);
+                let view = Self::acquire_view(vec)?.ok_or(crate::vector::other_not_readable())?;
+
+                child_readers.push(unsafe { VectorReader::from_prepared(vec, view)? });
+            }
+            Some(child_readers.into())
+        } else {
+            None
+        };
+
+        Ok(Self {
             vector,
-            data: view.view.data,
             storage,
-            child_readers: vector.children().map(|children| {
-                (0..children.col_count())
-                    .map(|index| {
-                        // SAFETY: construction prepared every descendant view.
-                        unsafe { VectorReader::from_prepared(children.cached_unchecked(index)) }
-                    })
-                    .collect::<Vec<_>>()
-                    .into()
-            }),
-        }
+            view,
+            child_readers,
+        })
     }
 
     /// Return the number of logical rows.
@@ -180,7 +200,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// Map rows through [`Self::selection`] and check [`Self::validity`] before dereferencing.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T::Internal<'vec> {
-        self.data.cast()
+        self.view().data().cast()
     }
 
     /// # Safety
@@ -196,12 +216,12 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
 
     /// Borrow the physical validity mask, or `None` if all slots are valid; map rows with [`Self::selection`].
     /// Bit `physical % 64` of word `physical / 64` marks a non-NULL slot.
-    pub fn validity(&self) -> Option<&'vec [u64]> {
+    pub fn validity(&self) -> Option<&[u64]> {
         self.view().validity()
     }
 
     /// Return the logical-to-physical mapping without materializing a buffer.
-    pub fn selection(&self) -> Selection<'vec> {
+    pub fn selection<'a>(&'a self) -> Selection<'a> {
         match self.storage {
             ReaderStorage::Flat(_) => Selection::Identity,
             ReaderStorage::Constant(_) => Selection::Constant,
@@ -248,7 +268,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         VectorReader {
             // SAFETY: the caller guarantees that the child has type U.
             vector: unsafe { reader.vector.cast_ref_unchecked::<U>() },
-            data: reader.data,
+            view: reader.view().cast_owned::<U>(),
             storage: reader.storage,
             child_readers: reader.child_readers.clone(),
         }
@@ -276,8 +296,8 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         }
     }
 
-    fn view(&self) -> &'vec VectorView<T> {
-        self.vector.view.as_ref().expect("reader has a readable view")
+    pub fn view(&self) -> &VectorView<T> {
+        &self.view
     }
 
     #[cfg(feature = "rust_decimal")]

@@ -12,12 +12,21 @@ use crate::{
 // `repr(C)` fixes the view's field layout; `T` only appears in its marker.
 #[repr(C)]
 #[derive(Debug)]
-pub(crate) struct VectorView<T> {
+pub struct VectorView<T> {
     pub(crate) view: ffi::duckdb_v2_vector_view,
     pub(crate) kind: StorageKind,
     /// Whether `view.validity` is DuckDB's writable mask rather than the read-only view.
-    pub(crate) validity_writable: bool,
     pub(crate) _marker: PhantomData<T>,
+}
+
+impl<T> Clone for VectorView<T> {
+    fn clone(&self) -> Self {
+        VectorView {
+            view: self.view,
+            kind: self.kind,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<T: VectorElement> VectorView<T> {
@@ -71,11 +80,10 @@ impl<T: VectorElement> VectorView<T> {
     }
 
     /// Change only the element marker, preserving the existing storage view.
-    pub(crate) fn cast_owned<U: VectorElement>(self) -> VectorView<U> {
+    pub(crate) fn cast_owned<U: VectorElement>(&self) -> VectorView<U> {
         VectorView {
             view: self.view,
             kind: self.kind,
-            validity_writable: self.validity_writable,
             _marker: PhantomData,
         }
     }

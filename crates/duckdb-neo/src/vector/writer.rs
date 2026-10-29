@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
+use crate::raw::RawExt;
 use crate::{Result, check_api_call, ffi, logical_type::LogicalTypeID};
 
 use super::{
@@ -89,8 +90,10 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
         if borrowed.storage_kind() != StorageKind::Flat {
             return Err(not_flat());
         }
-        let validity = borrowed.writable_validity()?;
-        let data = borrowed.view.as_ref().ok_or_else(not_flat)?.view.data.cast_mut();
+
+        let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, borrowed.raw(), RET)?;
+        let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, borrowed.raw(), RET)?;
+
         Ok(Self {
             vector,
             validity,
@@ -378,11 +381,12 @@ impl<T: OwnedVectorElement> VectorWriter<'_, T> {
 impl<T: VectorElement> VectorWriter<'_, T> {
     #[inline]
     fn refresh_buffers(&mut self) -> Result<()> {
-        let vector = self.vector_mut();
-        let validity = vector.writable_validity()?;
-        let data = vector.view.as_ref().ok_or_else(not_flat)?.view.data.cast_mut();
-        self.validity = validity;
-        self.data = data;
+        self.validity = check_api_call!(
+            ffi::duckdb_v2_vector_flat_get_validity_mutable,
+            self.vector().raw(),
+            RET
+        )?;
+        self.data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, self.vector().raw(), RET)?;
         Ok(())
     }
 
