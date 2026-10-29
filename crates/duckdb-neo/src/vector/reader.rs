@@ -1,6 +1,6 @@
-use std::{marker::PhantomData, ops::Range, rc::Rc};
+use std::{cell::OnceCell, ops::Range, rc::Rc};
 
-use super::{StorageKind, Vector, VectorElement, VectorView, other_not_readable, out_of_bounds};
+use super::{StorageKind, Unknown, Vector, VectorElement, other_not_readable, out_of_bounds};
 use crate::ffi;
 use crate::{Result, error::check_api_call, raw::RawExt};
 
@@ -30,9 +30,10 @@ impl Selection<'_> {
 
 /// Prepared, read-only access to logical rows, created by [`Vector::reader`].
 /// Values preserve SQL NULLs and borrow from the vector, not the reader.
+#[repr(C)]
 pub struct VectorReader<'vec, T: VectorElement> {
     pub(crate) vector: &'vec Vector<'vec, T>,
-    view: VectorView<T>,
+    view: ffi::duckdb_v2_vector_view,
     storage: ReaderStorage,
     child_readers: Option<Rc<[VectorReader<'vec, super::Unknown>]>>,
 }
@@ -41,7 +42,7 @@ impl<T: VectorElement> std::fmt::Debug for VectorReader<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VectorReader")
             .field("len", &self.len())
-            .field("data", &self.view.data().cast::<()>())
+            .field("data", &self.view.data.cast::<()>())
             .field("storage", &self.storage)
             .finish()
     }
@@ -53,32 +54,30 @@ impl<T: VectorElement> Clone for VectorReader<'_, T> {
         Self {
             vector: self.vector,
             view: self.view.clone(),
-            storage: self.storage,
+            storage: self.storage.clone(),
             child_readers: self.child_readers.clone(),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum ReaderStorage {
-    Flat(FlatReader),
-    Constant(ConstantReader),
+    Flat,
     Dictionary(DictionaryReader),
+    Constant(ConstantReader),
 }
 
-#[derive(Debug, Clone, Copy)]
-struct FlatReader {
-    validity: *const u64,
-}
+#[derive(Debug, Clone)]
+struct FlatReader {}
 
 impl FlatReader {
     #[inline]
-    unsafe fn is_valid_unchecked(&self, physical: usize) -> bool {
-        self.validity.is_null() || unsafe { *self.validity.add(physical / 64) & (1u64 << (physical % 64)) != 0 }
+    unsafe fn is_valid_unchecked(validity: *const u64, physical: usize) -> bool {
+        validity.is_null() || unsafe { *validity.add(physical / 64) & (1u64 << (physical % 64)) != 0 }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ConstantReader {
     is_null: bool,
 }
@@ -90,44 +89,54 @@ impl ConstantReader {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct DictionaryReader {
-    values: FlatReader,
-    selection: *const u32,
+    len: OnceCell<u32>,
 }
 
 impl DictionaryReader {
     #[inline]
-    unsafe fn physical_index_unchecked(&self, logical: usize) -> Option<usize> {
-        let physical = unsafe { *self.selection.add(logical) } as usize;
-        unsafe { self.values.is_valid_unchecked(physical) }.then_some(physical)
+    unsafe fn physical_index_unchecked(validity: *const u64, selection: *const u32, logical: usize) -> Option<usize> {
+        let physical = unsafe { *selection.add(logical) } as usize;
+        unsafe { FlatReader::is_valid_unchecked(validity, physical) }.then_some(physical)
     }
 }
 
 impl ReaderStorage {
     #[inline]
-    unsafe fn physical_index_unchecked(&self, logical: usize) -> Option<usize> {
+    unsafe fn physical_index_unchecked(&self, view: ffi::duckdb_v2_vector_view, index: usize) -> Option<usize> {
         match self {
-            Self::Flat(reader) => unsafe { reader.is_valid_unchecked(logical) }.then_some(logical),
+            Self::Flat => unsafe { FlatReader::is_valid_unchecked(view.validity, index) }.then_some(index),
+            Self::Dictionary(_) => unsafe {
+                DictionaryReader::physical_index_unchecked(view.validity, view.sel, index)
+            },
             Self::Constant(reader) => reader.physical_index(),
-            Self::Dictionary(reader) => unsafe { reader.physical_index_unchecked(logical) },
+        }
+    }
+
+    /// Return the physical storage span, including unselected dictionary slots.
+    /// Flat uses the row count, constant uses one slot, and dictionary ends at its highest selected index.
+    pub fn physical_len(&self, view: ffi::duckdb_v2_vector_view) -> usize {
+        match self {
+            Self::Flat => view.count as usize,
+            Self::Constant(_) => 1,
+            Self::Dictionary(dict) => *dict.len.get_or_init(|| {
+                unsafe { std::slice::from_raw_parts(view.sel, view.count as usize) }
+                    .iter()
+                    .max()
+                    .map_or(0, |v| *v as u32 + 1)
+            }) as usize,
         }
     }
 }
 
 impl<'vec, T: VectorElement> VectorReader<'vec, T> {
-    fn acquire_view<U: VectorElement>(vector: &'vec Vector<'vec, U>) -> Result<Option<VectorView<U>>> {
+    fn acquire_view<U: VectorElement>(vector: &'vec Vector<'vec, U>) -> Result<Option<ffi::duckdb_v2_vector_view>> {
         if vector.storage_kind() == StorageKind::Other {
             return Ok(None);
         }
 
-        check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET).map(|view| {
-            Some(VectorView {
-                view,
-                kind: vector.storage_kind(),
-                _marker: PhantomData,
-            })
-        })
+        check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET).map(|view| Some(view))
     }
 
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
@@ -140,18 +149,15 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         unsafe { Self::from_prepared(vector, view.unwrap()) }
     }
 
-    pub(crate) unsafe fn from_prepared(vector: &'vec Vector<'vec, T>, view: VectorView<T>) -> Result<Self> {
-        let flat = FlatReader {
-            validity: view.view.validity,
-        };
+    pub(crate) unsafe fn from_prepared(
+        vector: &'vec Vector<'vec, T>,
+        view: ffi::duckdb_v2_vector_view,
+    ) -> Result<Self> {
         let storage = match vector.storage_kind() {
-            StorageKind::Flat => ReaderStorage::Flat(flat),
+            StorageKind::Flat => ReaderStorage::Flat,
+            StorageKind::Dictionary => ReaderStorage::Dictionary(DictionaryReader { len: OnceCell::new() }),
             StorageKind::Constant => ReaderStorage::Constant(ConstantReader {
-                is_null: !vector.is_empty() && !unsafe { flat.is_valid_unchecked(0) },
-            }),
-            StorageKind::Dictionary => ReaderStorage::Dictionary(DictionaryReader {
-                values: flat,
-                selection: view.selection().expect("prepared dictionary has a selection").as_ptr(),
+                is_null: !vector.is_empty() && !unsafe { FlatReader::is_valid_unchecked(view.validity, 0) },
             }),
             StorageKind::Other => unreachable!("prepared vector has a readable storage kind"),
         };
@@ -177,6 +183,10 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         })
     }
 
+    pub fn vector(&self) -> &Vector<'vec, T> {
+        self.vector
+    }
+
     /// Return the number of logical rows.
     pub fn len(&self) -> usize {
         self.vector.len()
@@ -187,46 +197,50 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         self.len() == 0
     }
 
-    /// Return the storage representation selected when the reader was created.
-    pub fn storage_kind(&self) -> StorageKind {
-        match self.storage {
-            ReaderStorage::Flat(_) => StorageKind::Flat,
-            ReaderStorage::Constant(_) => StorageKind::Constant,
-            ReaderStorage::Dictionary(_) => StorageKind::Dictionary,
-        }
-    }
-
     /// Return the physical data pointer, or null; invalidated when the vector is resized, reshaped, or destroyed.
     /// Map rows through [`Self::selection`] and check [`Self::validity`] before dereferencing.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T::Internal<'vec> {
-        self.view().data().cast()
+        self.view.data.cast()
     }
 
     /// # Safety
     /// Borrow physical storage only if all slots, including NULL/unselected ones, are initialized as `T::Internal<'vec>`.
     pub unsafe fn as_slice(&self) -> Option<&'vec [T::Internal<'vec>]> {
         // SAFETY: The caller guarantees all physical slots are initialized.
-        if self.view().data().is_null() {
+        if self.view.data.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(self.view().data(), self.view().physical_len()) })
+            Some(unsafe { std::slice::from_raw_parts(self.view.data.cast(), self.storage.physical_len(self.view)) })
         }
     }
 
     /// Borrow the physical validity mask, or `None` if all slots are valid; map rows with [`Self::selection`].
     /// Bit `physical % 64` of word `physical / 64` marks a non-NULL slot.
     pub fn validity(&self) -> Option<&[u64]> {
-        self.view().validity()
+        if self.view.validity.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::slice::from_raw_parts(self.view.validity, self.storage.physical_len(self.view).div_ceil(64))
+            })
+        }
     }
 
     /// Return the logical-to-physical mapping without materializing a buffer.
     pub fn selection<'a>(&'a self) -> Selection<'a> {
         match self.storage {
-            ReaderStorage::Flat(_) => Selection::Identity,
+            ReaderStorage::Flat => Selection::Identity,
             ReaderStorage::Constant(_) => Selection::Constant,
             ReaderStorage::Dictionary(_) => {
-                Selection::Dictionary(self.view().selection().expect("prepared dictionary has a selection"))
+                let selection = if self.view.sel.is_null() {
+                    None
+                } else {
+                    let len = self.view.count as usize;
+                    Some(unsafe { std::slice::from_raw_parts(self.view.sel, len) })
+                };
+
+                Selection::Dictionary(selection.expect("prepared dictionary has a selection"))
             }
         }
     }
@@ -249,32 +263,34 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     /// prepared, and `logical` must be within the child's logical rows.
     #[doc(hidden)]
     #[inline(always)]
-    pub unsafe fn get_child_unchecked<U: VectorElement>(
+    pub unsafe fn get_child_value_unchecked<U: VectorElement>(
         &self,
         child_index: usize,
         logical: usize,
     ) -> Option<U::Ref<'vec>> {
-        let child = self.cached_child_reader(child_index);
         // SAFETY: the caller guarantees the child type and logical row bounds.
-        let physical = unsafe { child.storage.physical_index_unchecked(logical) }?;
-        Some(unsafe { U::get(child, physical, logical) })
+        unsafe { self.child_reader_ref::<U>(child_index).get_unchecked(logical) }
     }
 
     /// # Safety
-    /// `child_index` must name a child validated as `U`.
+    /// `index` must name a child validated as `U`.
     #[inline(always)]
-    pub(crate) unsafe fn child_reader<U: VectorElement>(&self, child_index: usize) -> VectorReader<'vec, U> {
-        let reader = self.cached_child_reader(child_index);
-        VectorReader {
-            // SAFETY: the caller guarantees that the child has type U.
-            vector: unsafe { reader.vector.cast_ref_unchecked::<U>() },
-            view: reader.view().cast_owned::<U>(),
-            storage: reader.storage,
-            child_readers: reader.child_readers.clone(),
-        }
+    pub(crate) unsafe fn child_reader<U: VectorElement>(&self, index: usize) -> VectorReader<'vec, U> {
+        // SAFETY: the caller guarantees that the child has type U.
+        unsafe { self.child_reader_ref::<U>(index) }.clone()
     }
 
-    fn cached_child_reader(&self, index: usize) -> &VectorReader<'vec, super::Unknown> {
+    /// Borrow a cached child without cloning; the reference borrows this reader, not just its vector.
+    /// # Safety
+    /// `index` must name a child validated as `U`.
+    #[inline(always)]
+    pub(crate) unsafe fn child_reader_ref<U: VectorElement>(&self, index: usize) -> &VectorReader<'vec, U> {
+        let reader = self.cached_child_reader(index);
+        // SAFETY: both readers are repr(C); their vector references differ only in Vector's type marker.
+        unsafe { &*(reader as *const VectorReader<'vec, Unknown>).cast::<VectorReader<'vec, U>>() }
+    }
+
+    fn cached_child_reader(&self, index: usize) -> &VectorReader<'vec, Unknown> {
         &self.child_readers.as_ref().expect("child readers are prepared")[index]
     }
 
@@ -285,7 +301,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             return Err(out_of_bounds(index, self.len()));
         }
         // SAFETY: The index is within the prepared vector's logical rows.
-        Ok(unsafe { self.storage.physical_index_unchecked(index) }.is_none())
+        Ok(unsafe { self.storage.physical_index_unchecked(self.view, index) }.is_none())
     }
 
     /// Iterate over logical rows without repeating reader preparation.
@@ -296,24 +312,20 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         }
     }
 
-    pub fn view(&self) -> &VectorView<T> {
-        &self.view
-    }
-
     #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
-        let physical = unsafe { self.storage.physical_index_unchecked(index) }?;
+        let physical = unsafe { self.storage.physical_index_unchecked(self.view, index) }?;
         // SAFETY: The reader is typed, its descendants are prepared, and the row is valid.
         Some(unsafe { T::get(self, physical, index) })
     }
 
     #[inline(always)]
     pub(crate) unsafe fn get_flat_unchecked(&self, index: usize) -> Option<T::Ref<'vec>> {
-        let ReaderStorage::Flat(reader) = &self.storage else {
+        let ReaderStorage::Flat = &self.storage else {
             // SAFETY: The caller guarantees flat storage for this prepared reader.
             unsafe { std::hint::unreachable_unchecked() }
         };
-        if !unsafe { reader.is_valid_unchecked(index) } {
+        if !unsafe { FlatReader::is_valid_unchecked(self.view.validity, index) } {
             return None;
         }
         // SAFETY: Flat storage uses the logical index directly; validity was checked above.

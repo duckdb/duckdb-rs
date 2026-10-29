@@ -103,14 +103,12 @@ pub use crate::{arena::Arena, bytes::DuckDBBytes};
 
 mod combined;
 mod reader;
-mod view;
 mod writer;
 
 #[doc(hidden)]
 pub use combined::VectorReaderTuple;
 pub use combined::{CombinedVectorIterator, EnumeratedCombinedVectorIterator};
 pub use reader::{Selection, VectorReader, VectorReaderIter};
-use view::VectorView;
 pub use writer::VectorWriter;
 
 /// The length of DuckDB's shared constant-vector selection, `STANDARD_VECTOR_SIZE`.

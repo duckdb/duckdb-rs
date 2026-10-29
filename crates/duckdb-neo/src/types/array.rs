@@ -324,6 +324,33 @@ mod tests {
     }
 
     #[test]
+    fn nested_array_rows_outlive_their_readers_and_iterators() -> Result<()> {
+        let conn = connection()?;
+        let chunk = conn
+            .query(
+                "SELECT [['a string longer than the inline storage', NULL], ['tail', 'end']]::VARCHAR[2][2]",
+                Parameters::None,
+            )?
+            .next_chunk()?
+            .unwrap();
+        let vector = chunk.get_vector_at::<Array<Array<String, 2>, 2>>(0)?;
+        let row = {
+            let reader = vector.reader()?;
+            reader.get(0)?.unwrap()
+        };
+        let inner = row.iter().next().unwrap().unwrap();
+        drop(row);
+        let mut iter = inner.iter();
+        drop(inner);
+        let text = iter.next().unwrap().unwrap();
+        assert_eq!(iter.next(), Some(None));
+        assert_eq!(iter.next(), None);
+        drop(iter);
+        assert_eq!(text, "a string longer than the inline storage");
+        Ok(())
+    }
+
+    #[test]
     fn array_write_checks_parent_bounds() -> Result<()> {
         let conn = connection()?;
         let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2>::logical_type(&conn)?], true)?;

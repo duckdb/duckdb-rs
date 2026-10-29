@@ -156,7 +156,7 @@ pub(crate) fn as_vector_element(input: &syn::DeriveInput) -> syn::Result<TokenSt
             where Self: #lifetime {
                 #ref_ident {
                     // SAFETY: validation checked every child, and the reader prepared their views.
-                    #(#field_idents: unsafe { reader.get_child_unchecked::<#types>(#indexes, logical) },)*
+                    #(#field_idents: unsafe { reader.get_child_value_unchecked::<#types>(#indexes, logical) },)*
                     #marker_init
                 }
             }
