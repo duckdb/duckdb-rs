@@ -2750,7 +2750,7 @@ fn test_children_follow_parent() -> crate::Result<()> {
             .children_mut()
             .unwrap()
             .get_vector_at_mut::<i32>(0)?
-            .set_size(1)
+            .writer()
             .is_err()
     );
 
@@ -2999,5 +2999,47 @@ fn test_vector_cast_fails() -> crate::Result<()> {
         "{error}"
     );
 
+    Ok(())
+}
+
+#[test]
+fn test_list_output_child_starts_empty_in_every_callback() -> crate::Result<()> {
+    static ENTRY_CHILD: std::sync::Mutex<Vec<(usize, usize)>> = std::sync::Mutex::new(Vec::new());
+    scalar_callback!(Pair, List<i32>, |input, output, _ctx, _user_data| {
+        let input = input.get_vector_at::<i32>(0)?;
+        let mut output = output;
+        let child_len = output.children().unwrap().get_untyped_vector_at(0)?.len();
+        ENTRY_CHILD.lock().unwrap().push((child_len, output.child_offset()));
+        output.set_size(input.len())?;
+        // SAFETY: every row writes two elements.
+        unsafe { output.set_child_size(2 * input.len())? };
+        let mut writer = output.writer()?;
+        for (row, value) in input.reader()?.iter().enumerate() {
+            writer.set(row, value.map(|value| List(vec![Some(*value), Some(*value)])))?;
+        }
+        Ok(())
+    });
+
+    let env = Environment::new()?;
+    let conn = env.open(StorageLocation::InMemory)?.connect()?;
+    conn.config()?
+        .set_text("threads", "1", crate::connection::SettingScope::Default)?;
+    ScalarFunctionBuilder::new(
+        "pair",
+        SignatureBuilder::new()
+            .param(FunctionParameter::new::<i32>("x"))
+            .return_type(List::<i32>::logical_type(&conn)?),
+        Pair,
+    )
+    .register(&conn)?;
+    let mut result = conn.query(
+        "SELECT sum(list_sum(pair(i::INTEGER)))::BIGINT FROM range(10000) t(i)",
+        Parameters::None,
+    )?;
+    let chunk = result.next_chunk()?.unwrap();
+    assert_eq!(chunk.get_vector_at::<i64>(0)?.reader()?.get(0)?, Some(&99_990_000));
+    let entries = ENTRY_CHILD.lock().unwrap().clone();
+    assert!(entries.len() > 1);
+    assert!(entries.iter().all(|&entry| entry == (0, 0)), "{entries:?}");
     Ok(())
 }

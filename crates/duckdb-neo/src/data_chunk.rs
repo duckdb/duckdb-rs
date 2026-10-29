@@ -11,7 +11,7 @@ use crate::error::check_api_call_no_err;
 use crate::ffi;
 use crate::links::{InstanceKeepAlive, KeepAlive};
 use crate::logical_type::LogicalType;
-use crate::vector::{Access, ChildOffsets, VectorElement};
+use crate::vector::{Access, ChildOffsets, ChildVector, VectorElement};
 use crate::{
     Result, check_api_call,
     raw::RawExt,
@@ -120,10 +120,18 @@ pub(crate) enum RowCount {
 
 impl VectorCollection {
     pub(crate) fn new(handles: Vec<ffi::duckdb_v2_vector_handle>, access: Access, rows: RowCount) -> Self {
-        Self::with_offsets(handles, access, rows, Rc::default())
+        Self::build(handles, access, rows, Rc::default())
     }
 
-    pub(crate) fn with_offsets(
+    pub(crate) fn children(
+        handles: Vec<ffi::duckdb_v2_vector_handle>,
+        access: Access,
+        offsets: Rc<ChildOffsets>,
+    ) -> Self {
+        Self::build(handles, access, RowCount::FirstVector, offsets)
+    }
+
+    fn build(
         handles: Vec<ffi::duckdb_v2_vector_handle>,
         access: Access,
         rows: RowCount,
@@ -327,8 +335,8 @@ impl VectorCollection {
     /// Wrap the callback's input vectors in a [`DataChunk`] without copying.
     ///
     /// The chunk's vectors reference the input's storage, so the chunk borrows
-    /// this collection and cannot outlive the callback. It is writable only when
-    /// the input is. Use [`DataChunkRef::copy`] to keep the data longer.
+    /// this collection, cannot outlive the callback, and is read-only.
+    /// Use [`DataChunkRef::copy`] to keep or change the data.
     pub fn to_data_chunk<'a, C: HasFactory + 'a>(&'a mut self, link: &'a C) -> crate::Result<DataChunk<'a>> {
         let mut logical_types = Vec::with_capacity(self.col_count());
         for index in 0..self.col_count() {
@@ -347,7 +355,7 @@ impl VectorCollection {
             type_handles.len() as u64,
             RET
         )?;
-        let chunk: DataChunk<'a> = DataChunk::new(handle, self.access == Access::Writable)?;
+        let chunk: DataChunk<'a> = DataChunk::new(handle, false)?;
 
         for (i, handle) in self.handles.iter().enumerate() {
             let chunk_handle = chunk.get_vector_handle_at(i);
@@ -376,18 +384,21 @@ impl Deref for ChildrenMut<'_> {
 
 impl ChildrenMut<'_> {
     /// See [`VectorCollection::get_untyped_vector_at_mut`].
-    pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<Vector<'_, Unknown>> {
-        self.0.get_untyped_vector_at_mut(index)
+    pub fn get_untyped_vector_at_mut(&mut self, index: usize) -> Result<ChildVector<'_, Unknown>> {
+        self.0.get_untyped_vector_at_mut(index).map(ChildVector)
     }
 
     /// See [`VectorCollection::get_vector_at_mut`].
-    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<Vector<'_, T>> {
-        self.0.get_vector_at_mut(index)
+    pub fn get_vector_at_mut<T: VectorElement>(&mut self, index: usize) -> Result<ChildVector<'_, T>> {
+        self.0.get_vector_at_mut(index).map(ChildVector)
     }
 
     /// See [`VectorCollection::get_vector_array_mut`].
-    pub fn get_vector_array_mut<const N: usize>(&mut self, indices: [usize; N]) -> Result<[Vector<'_, Unknown>; N]> {
-        self.0.get_vector_array_mut(indices)
+    pub fn get_vector_array_mut<const N: usize>(
+        &mut self,
+        indices: [usize; N],
+    ) -> Result<[ChildVector<'_, Unknown>; N]> {
+        Ok(self.0.get_vector_array_mut(indices)?.map(ChildVector))
     }
 
     /// See [`VectorCollection::to_data_chunk`].
@@ -788,10 +799,12 @@ mod tests {
         // SAFETY: the row below writes both elements.
         unsafe { list.set_child_size(2)? };
         list.writer()?.set(0, Some(List(vec![Some(0), Some(0)])))?;
-        list.children_mut()
-            .unwrap()
-            .get_vector_at_mut::<i64>(0)?
-            .make_sequence(10, 1, 2)?;
+        {
+            let mut children = list.children_mut().unwrap();
+            let child = children.get_vector_at_mut::<i64>(0)?;
+            // DuckDB can hand out OTHER children, e.g. FSST fields; the safe API cannot make one.
+            crate::check_api_call!(crate::ffi::duckdb_v2_vector_make_sequence, child.handle, 10, 1, 2)?;
+        }
 
         let error = list.reader().expect_err("sequence child must not read as NULL");
         assert!(error.to_string().contains("OTHER vectors must be flattened"));

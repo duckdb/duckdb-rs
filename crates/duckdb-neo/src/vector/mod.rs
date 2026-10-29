@@ -55,7 +55,7 @@ use crate::raw::RawExt;
 use crate::{
     Result, check_api_call,
     connection::HasFactory,
-    data_chunk::{ChildrenMut, RowCount, VectorCollection},
+    data_chunk::{ChildrenMut, VectorCollection},
     error::Error,
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
@@ -72,12 +72,18 @@ pub use element::*;
 /// The root wrapper (a chunk, a callback's inputs, or a standalone vector) owns the store, and
 /// every descendant shares it. Offsets are keyed by handle, which DuckDB keeps stable for a
 /// vector until its parent's storage is replaced, so they survive evicted and rebuilt wrappers.
+/// An offset starts at the child's size when first seen, so writes never replace elements that
+/// DuckDB or another wrapper tree wrote.
 #[derive(Debug, Default)]
 pub(crate) struct ChildOffsets(RefCell<HashMap<ffi::duckdb_v2_vector_handle, Rc<Cell<usize>>>>);
 
 impl ChildOffsets {
-    fn cell(&self, handle: ffi::duckdb_v2_vector_handle) -> Rc<Cell<usize>> {
-        self.0.borrow_mut().entry(handle).or_default().clone()
+    fn cell(&self, handle: ffi::duckdb_v2_vector_handle, child_len: usize) -> Rc<Cell<usize>> {
+        self.0
+            .borrow_mut()
+            .entry(handle)
+            .or_insert_with(|| Rc::new(Cell::new(child_len)))
+            .clone()
     }
 
     /// Restart every offset, e.g. after the chunk was cleared.
@@ -101,9 +107,12 @@ ffi_enum_redeclaration! {
 
 pub use crate::{arena::Arena, bytes::DuckDBBytes};
 
+mod child;
 mod combined;
 mod reader;
 mod writer;
+
+pub use child::ChildVector;
 
 #[doc(hidden)]
 pub use combined::VectorReaderTuple;
@@ -187,9 +196,6 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
 
-        let child_offset =
-            matches!(logical_type.id()?, LogicalTypeID::List | LogicalTypeID::Map).then(|| offsets.cell(*handle));
-
         let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);
         for index in 0..child_count {
@@ -200,8 +206,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
                 RET
             )?);
         }
-        let children = (!child_handles.is_empty())
-            .then(|| VectorCollection::with_offsets(child_handles, access, RowCount::FirstVector, offsets.clone()));
+
+        let child_offset = match (logical_type.id()?, child_handles.first()) {
+            (LogicalTypeID::List | LogicalTypeID::Map, Some(child)) => Some(offsets.cell(*handle, vector_len(*child)?)),
+            _ => None,
+        };
+        let children =
+            (!child_handles.is_empty()).then(|| VectorCollection::children(child_handles, access, offsets.clone()));
 
         let vector = Self {
             handle: *handle,
@@ -305,7 +316,10 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     ///
     /// Fails if any row does not convert. The cast uses the cast functions and settings of `link`.
     pub fn cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
-        let _out_converted = check_api_call!(
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
+        let result = check_api_call!(
             ffi::duckdb_v2_vector_cast,
             link.factory()?.raw(),
             source.handle,
@@ -313,9 +327,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_NORMAL,
             RET,
             std::ptr::null_mut()
-        )?;
-
-        Ok(())
+        );
+        self.sync_child_offsets()?;
+        result.map(|_converted| ())
     }
 
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `TRY_CAST`.
@@ -323,9 +337,12 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Rows that do not convert become `NULL`. The returned error, if any, is the
     /// conversion error of one such row.
     pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
+        if !self.is_writable() {
+            return Err(not_writable());
+        }
         let mut cast_err = std::ptr::null_mut();
 
-        check_api_call!(
+        let result = check_api_call!(
             ffi::duckdb_v2_vector_cast,
             link.factory()?.raw(),
             source.handle,
@@ -333,7 +350,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             ffi::DUCKDB_V2_CAST_MODE::DUCKDB_V2_CAST_MODE_TRY,
             RET,
             &mut cast_err
-        )?;
+        );
+        self.sync_child_offsets()?;
+        result?;
 
         if cast_err.is_null() {
             Ok(())
@@ -352,17 +371,50 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         Ok(*self.decimal.get_or_init(|| signature))
     }
 
-    /// Size the first child of a `LIST` or `MAP` and restart appends at its first row.
+    /// Size the first child of a `LIST` or `MAP`, keeping appends at the current offset.
     ///
     /// # Safety
-    /// Writes must initialize every child row below `size` before DuckDB reads the vector.
+    /// Writes must initialize every child row below `size` before DuckDB reads the vector, and
+    /// written rows must not use child rows at or above `size`.
     pub(crate) unsafe fn size_appended_child(&mut self, size: usize) -> Result<()> {
         self.children_mut()
             .expect("validated nested vector has a child")
+            .0
             .get_untyped_vector_at_mut(0)?
             .set_size(size)?;
-        self.child_offset_cell().set(0);
+        let offset = self.child_offset_cell();
+        offset.set(offset.get().min(size));
         Ok(())
+    }
+
+    fn visit_child_offsets(&self, mut visit: impl FnMut(&Cell<usize>, usize) -> Result<()>) -> Result<()> {
+        fn walk(
+            offsets: &ChildOffsets,
+            handle: ffi::duckdb_v2_vector_handle,
+            visit: &mut dyn FnMut(&Cell<usize>, usize) -> Result<()>,
+        ) -> Result<()> {
+            let logical_type = check_api_call!(ffi::duckdb_v2_vector_get_logical_type, handle, RET)
+                .map(|handle| LogicalType { handle })?;
+            let appends = matches!(logical_type.id()?, LogicalTypeID::List | LogicalTypeID::Map);
+            let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, handle, RET)?;
+            for index in 0..child_count {
+                let child = check_api_call!(ffi::duckdb_v2_vector_get_child, handle, index, RET)?;
+                if appends && index == 0 {
+                    let len = vector_len(child)?;
+                    visit(&offsets.cell(handle, len), len)?;
+                }
+                walk(offsets, child, visit)?;
+            }
+            Ok(())
+        }
+        walk(&self.offsets, self.handle, &mut visit)
+    }
+
+    fn sync_child_offsets(&self) -> Result<()> {
+        self.visit_child_offsets(|offset, len| {
+            offset.set(len);
+            Ok(())
+        })
     }
 
     pub(crate) fn move_appended_child_offset(&mut self, offset: usize) -> Result<()> {
@@ -421,10 +473,11 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.children.as_ref()
     }
 
-    /// Return the vector's child vectors for reshaping or writing, or `None` if it has no children.
+    /// Return the vector's child vectors for writing or flattening, or `None` if it has no children.
     ///
-    /// Children get at most the access of this vector. The children cannot be
-    /// swapped with another vector's, since readers trust their validated types:
+    /// Children get at most the access of this vector and are borrowed as [`ChildVector`]s,
+    /// which keep the shape the parent gives them. The children cannot be swapped with
+    /// another vector's, since readers trust their validated types:
     ///
     /// ```compile_fail,E0596
     /// # use duckdb_neo::{DuckDBType, data_chunk::DataChunk, environment::{Environment, StorageLocation}, types::List};
@@ -486,10 +539,20 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        check_api_call!(ffi::duckdb_v2_vector_set_size, self.handle, len as u64)?;
-        self.len = len;
+        let result = check_api_call!(ffi::duckdb_v2_vector_set_size, self.handle, len as u64);
 
-        self.refresh_buffers()
+        self.refresh_buffers()?;
+
+        match result {
+            Ok(()) => {
+                self.len = len;
+                Ok(())
+            }
+            Err(e) => {
+                self.len = 0;
+                Err(e)
+            }
+        }
     }
 
     /// Turn writable output into a constant vector, returning the rebuilt vector.
@@ -560,9 +623,18 @@ impl<T: VectorElement> Vector<'_, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,)?;
+        // DuckDB appends nested elements after each child's end, which would skip reserved elements.
+        self.visit_child_offsets(|offset, len| match len.checked_sub(offset.get()) {
+            Some(unwritten @ 1..) => Err(Error::invalid_input(format!(
+                "write_value_slow would append after {unwritten} unwritten LIST or MAP child elements; write them or trim the child with set_child_size first"
+            ))),
+            _ => Ok(()),
+        })?;
+        let result = check_api_call!(ffi::duckdb_v2_vector_set_value, self.handle, index as u64, value.handle,);
+        self.sync_child_offsets()?;
         // DuckDB may allocate a validity mask or write nested values into the children.
-        self.refresh_buffers()
+        self.refresh_buffers()?;
+        result
     }
 
     /// Set one row to `NULL` through DuckDB's generic value API.
@@ -591,6 +663,10 @@ impl<T: VectorElement> Vector<'_, T> {
     pub fn get_value_slow(&self, index: usize) -> Result<Value> {
         check_api_call!(ffi::duckdb_v2_vector_get_value, self.handle, index as u64, RET).map(|handle| Value { handle })
     }
+}
+
+fn vector_len(handle: ffi::duckdb_v2_vector_handle) -> Result<usize> {
+    check_api_call!(ffi::duckdb_v2_vector_get_size, handle, RET).map(|len| len as usize)
 }
 
 fn not_writable() -> Error {

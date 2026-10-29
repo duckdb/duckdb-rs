@@ -902,3 +902,70 @@ fn clearing_a_chunk_restarts_nested_list_offsets() -> Result<()> {
     );
     Ok(())
 }
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Wide {
+    x: Option<i64>,
+}
+
+#[derive(Debug, PartialEq, AsDuckDB)]
+struct Outer {
+    inner: Option<Wide>,
+}
+
+#[test]
+fn struct_fields_allow_writes_and_flattening() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Outer::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Outer>(0)?;
+    vector.set_size(2)?;
+    vector.writer()?.set(1, None)?;
+    {
+        let mut children = vector.children_mut().unwrap();
+        let [inner] = children.get_vector_array_mut([0])?;
+        let mut inner = inner.cast::<Wide>()?;
+        inner.flatten()?;
+        inner.writer()?.set(0, Some(Wide { x: Some(1) }))?;
+        let mut fields = inner.children_mut().unwrap();
+        let mut x = fields.get_vector_at_mut::<i64>(0)?;
+        x.write_value_slow(0, 7_i64.value(&conn)?)?;
+        x.set_null_slow(1)?;
+    }
+    let reader = vector.reader()?;
+    let row = reader.get(0)?.unwrap();
+    assert_eq!(row.inner.unwrap().x, Some(&7));
+    assert!(reader.get(1)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn chunks_over_children_are_read_only() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut chunk = DataChunk::create(&conn, &[Wide::logical_type(&conn)?], true)?;
+    let mut vector = chunk.get_vector_at_mut::<Wide>(0)?;
+    vector.set_size(1)?;
+    vector.writer()?.set(0, Some(Wide { x: Some(42) }))?;
+    {
+        let mut children = vector.children_mut().unwrap();
+        let mut fields = children.to_data_chunk(&conn)?;
+        let mut x = fields.get_vector_at_mut::<i64>(0)?;
+        assert!(!x.is_writable());
+        assert!(x.set_size(0).is_err());
+        assert!(x.writer().is_err());
+        assert_eq!(x.reader()?.get(0)?, Some(&42));
+    }
+    assert_eq!(vector.reader()?.get(0)?.unwrap().x, Some(&42));
+    Ok(())
+}
+
+#[test]
+fn casts_need_writable_output() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut source = conn.query("SELECT 1::BIGINT", Parameters::None)?;
+    let source = source.next_chunk()?.unwrap();
+    let source = source.get_vector_at::<i64>(0)?;
+    let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], false)?;
+    assert!(chunk.get_vector_at_mut::<i32>(0)?.cast_rows(source, &conn).is_err());
+    assert!(chunk.get_vector_at_mut::<i32>(0)?.try_cast_rows(source, &conn).is_err());
+    Ok(())
+}

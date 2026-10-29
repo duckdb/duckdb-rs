@@ -162,11 +162,12 @@ unsafe impl<K: VectorElement, V: VectorElement> VectorElement for Map<K, V> {
 }
 
 impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
-    /// Size the entries child to exactly `entries` and restart writes at its first entry.
+    /// Size the entries child to exactly `entries`; writes continue at [`Self::child_offset`],
+    /// capped at the new size.
     ///
     /// # Safety
-    /// Every entry below `entries` must be written before DuckDB reads this vector; see
-    /// [`List`](super::List) for sizing to an upper bound and trimming.
+    /// Every entry below `entries` must be written before DuckDB reads this vector, and no written
+    /// row may use an entry at or above it; see [`List`](super::List) for sizing to an upper bound and trimming.
     pub unsafe fn set_child_size(&mut self, entries: usize) -> Result<()> {
         // SAFETY: the caller upholds the initialization contract.
         unsafe { self.size_appended_child(entries) }
@@ -337,6 +338,24 @@ mod tests {
         assert_eq!(value, collected);
         assert_eq!(value.entries, [(2, "b"), (1, "a")]);
         assert_eq!(MapValue::<i32, &str>::default(), MapValue::from(vec![]));
+    }
+
+    #[test]
+    fn map_typed_writes_continue_after_slow_writes() -> Result<()> {
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let mut chunk = DataChunk::create(&conn, &[MapValue::<i32, i32>::logical_type(&conn)?], true)?;
+        let mut maps = chunk.get_vector_at_mut::<Map<i32, i32>>(0)?;
+        maps.set_size(2)?;
+        maps.write_value_slow(0, MapValue::from(vec![(1, 10), (2, 20)]).value(&conn)?)?;
+        assert_eq!(maps.child_offset(), 2);
+        // SAFETY: row 1 writes the only new entry.
+        unsafe { maps.set_child_size(3)? };
+        maps.writer()?.set(1, Some(HashMap::from([(3, Some(30))])))?;
+        let reader = maps.reader()?;
+        let row = reader.get(0)?.unwrap();
+        assert_eq!((row.get(&1), row.get(&2)), (Some(Some(&10)), Some(Some(&20))));
+        assert_eq!(reader.get(1)?.unwrap().get(&3), Some(Some(&30)));
+        Ok(())
     }
 
     #[test]
