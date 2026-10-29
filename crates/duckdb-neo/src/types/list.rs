@@ -624,7 +624,8 @@ mod tests {
         let mut chunk = DataChunk::create(&conn, &[List::<i64>::logical_type(&conn)?], true)?;
         let mut target = chunk.get_vector_at_mut::<List<i64>>(0)?;
         target.set_size(2)?;
-        target.cast_rows(source, &conn)?;
+        // SAFETY: the widening cast gives the target its own storage, and the source is not changed.
+        unsafe { target.cast_rows(source, &conn)? };
         let mut target = chunk.get_vector_at_mut::<List<i64>>(0)?;
         assert_eq!(target.child_offset(), 3);
         // SAFETY: row 1 writes the only new element.

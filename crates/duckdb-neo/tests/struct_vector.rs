@@ -965,7 +965,41 @@ fn casts_need_writable_output() -> Result<()> {
     let source = source.next_chunk()?.unwrap();
     let source = source.get_vector_at::<i64>(0)?;
     let mut chunk = DataChunk::create(&conn, &[i32::logical_type(&conn)?], false)?;
-    assert!(chunk.get_vector_at_mut::<i32>(0)?.cast_rows(source, &conn).is_err());
-    assert!(chunk.get_vector_at_mut::<i32>(0)?.try_cast_rows(source, &conn).is_err());
+    // SAFETY: the casts fail before touching either vector.
+    unsafe {
+        assert!(chunk.get_vector_at_mut::<i32>(0)?.cast_rows(source, &conn).is_err());
+        assert!(chunk.get_vector_at_mut::<i32>(0)?.try_cast_rows(source, &conn).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn casts_convert_every_row() -> Result<()> {
+    let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+    let mut source = DataChunk::create(&conn, &[List::<i32>::logical_type(&conn)?], true)?;
+    let mut src = source.get_vector_at_mut::<List<i32>>(0)?;
+    src.set_size(5000)?;
+    // SAFETY: every row below writes two elements.
+    unsafe { src.set_child_size(10_000)? };
+    {
+        let mut writer = src.writer()?;
+        for row in 0..5000 {
+            let value = (row % 7 != 0).then_some(row as i32);
+            writer.set(row, Some(List(vec![value, Some(-1)])))?;
+        }
+    }
+    for target_type in [List::<i32>::logical_type(&conn)?, List::<i64>::logical_type(&conn)?] {
+        let mut target = DataChunk::create(&conn, &[target_type], true)?;
+        // SAFETY: neither vector is written or resized after the cast.
+        unsafe { target.get_vector_at_mut::<Unknown>(0)?.cast_rows(&src, &conn)? };
+        let dst = target.get_vector_at_mut::<Unknown>(0)?;
+        assert_eq!(dst.len(), 5000);
+        for row in [0, 1, 2047, 2048, 4999] {
+            assert_eq!(
+                dst.get_value_slow(row)?.get::<List<i64>>()?,
+                Some(List(vec![(row % 7 != 0).then_some(row as i64), Some(-1)]))
+            );
+        }
+    }
     Ok(())
 }

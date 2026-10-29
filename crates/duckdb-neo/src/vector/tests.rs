@@ -2921,7 +2921,8 @@ scalar_callback!(CopyOver, i64, |input, result, ctx, _ud| {
     let vec = input.get_vector_at::<String>(0)?;
     let has_bad_row = vec.reader()?.iter().any(|row| row == Some("abc"));
 
-    match result.try_cast_rows(vec, ctx) {
+    // SAFETY: the callback input and output are not changed after the cast.
+    match unsafe { result.try_cast_rows(vec, ctx) } {
         Ok(_) => {}
         Err(e) => {
             if e.code == DuckDBError::TypeConversion {
@@ -2968,7 +2969,8 @@ fn test_vector_cast() -> crate::Result<()> {
 
 scalar_callback!(CopyOverStrict, i64, |input, result, ctx, _ud| {
     let vec = input.get_vector_at::<String>(0)?;
-    result.cast_rows(vec, ctx)?;
+    // SAFETY: the callback input and output are not changed after the cast.
+    unsafe { result.cast_rows(vec, ctx)? };
     Ok(())
 });
 

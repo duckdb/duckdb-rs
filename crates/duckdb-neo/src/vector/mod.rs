@@ -315,7 +315,11 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     /// Replace this vector with every row of `source` cast to this vector's type, like SQL `CAST`.
     ///
     /// Fails if any row does not convert. The cast uses the cast functions and settings of `link`.
-    pub fn cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
+    ///
+    /// # Safety
+    /// The cast can leave this vector sharing storage with `source`, e.g. for same-type or
+    /// reinterpreting casts. Neither may be written or resized, through any wrapper, while the other is read.
+    pub unsafe fn cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -336,7 +340,14 @@ impl<'a, T: VectorElement> Vector<'a, T> {
     ///
     /// Rows that do not convert become `NULL`. The returned error, if any, is the
     /// conversion error of one such row.
-    pub fn try_cast_rows<T2: VectorElement, C: HasFactory>(self, source: &Vector<'_, T2>, link: &C) -> Result<()> {
+    ///
+    /// # Safety
+    /// As for [`Self::cast_rows`].
+    pub unsafe fn try_cast_rows<T2: VectorElement, C: HasFactory>(
+        self,
+        source: &Vector<'_, T2>,
+        link: &C,
+    ) -> Result<()> {
         if !self.is_writable() {
             return Err(not_writable());
         }
@@ -457,6 +468,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
     /// # Safety
     /// Reference without copying; source storage must outlive destination reads and remain unchanged.
+    /// Neither vector may be written or resized, through any wrapper, while the other is read.
     pub unsafe fn reference<T2: VectorElement>(self, source: &Vector<'_, T2>) -> Result<Vector<'a, T2>> {
         if self.access == Access::Shared {
             return Err(not_exclusive());
