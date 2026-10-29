@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{OwnedVectorElement, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, OwnedVectorElement, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// An owned `ARRAY` row of exactly `N` elements; each `None` element is SQL NULL.
@@ -125,6 +125,16 @@ unsafe impl<T: VectorElement, const N: usize> VectorElement for Array<T, N> {
             // SAFETY: Array<T, N>::validate checked the prepared child as T.
             child: unsafe { vector.child_reader::<T>(0) },
         }
+    }
+}
+
+// SAFETY: every ARRAY row owns exactly `N` child elements.
+unsafe impl<T: VectorElement, const N: usize> HasChildren for Array<T, N> {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        writer
+            .len()
+            .checked_mul(N)
+            .ok_or_else(|| Error::invalid_input("Array child length overflow"))
     }
 }
 

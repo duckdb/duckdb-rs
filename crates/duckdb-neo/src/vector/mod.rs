@@ -43,7 +43,7 @@
 //! values yield zero-copy handles into their child vectors.
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     collections::HashMap,
     marker::PhantomData,
     rc::Rc,
@@ -64,7 +64,7 @@ use crate::{
 };
 
 mod element;
-use duckdb_loadable_macros::{AsRaw, FromRaw};
+use duckdb_loadable_macros::AsRaw;
 pub use element::*;
 
 /// The next unwritten child element of every `LIST` and `MAP` vector in one wrapper tree.
@@ -86,43 +86,6 @@ impl ChildOffsets {
     }
 }
 
-/// Logical-type parameters read once per vector, so row access skips the FFI lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TypeMetadata {
-    None,
-    Array {
-        size: usize,
-    },
-    Decimal(DecimalSignature),
-    /// `STRUCT` or `TUPLE`, whose fields share the parent's row count.
-    Struct,
-    /// `LIST` or `MAP`, whose rows take consecutive elements of the child.
-    List,
-}
-
-impl TypeMetadata {
-    fn read(logical_type: &LogicalType) -> Result<Self> {
-        Ok(match logical_type.id()? {
-            LogicalTypeID::Array => Self::Array {
-                size: crate::types::array::array_size(logical_type)?,
-            },
-            LogicalTypeID::Decimal => Self::Decimal(DecimalSignature::from_logical_type(logical_type)?),
-            LogicalTypeID::Struct | LogicalTypeID::Tuple => Self::Struct,
-            LogicalTypeID::List | LogicalTypeID::Map => Self::List,
-            _ => Self::None,
-        })
-    }
-
-    #[cfg(feature = "rust_decimal")]
-    /// The width and scale of a `DECIMAL` vector, read once when the vector was created.
-    pub(crate) fn decimal_signature(&self) -> Option<DecimalSignature> {
-        match self {
-            TypeMetadata::Decimal(signature) => Some(*signature),
-            _ => None,
-        }
-    }
-}
-
 ffi_enum_redeclaration! {
     pub enum StorageKind <- ffi::DUCKDB_V2_VECTOR_TYPE {
     /// One physical slot per row.
@@ -136,48 +99,7 @@ ffi_enum_redeclaration! {
     }
 }
 
-pub use crate::bytes::DuckDBBytes;
-
-/// A borrowed byte arena, valid until its vector is resized, flattened, or destroyed.
-#[derive(Debug, FromRaw, AsRaw)]
-pub struct Arena {
-    pub(crate) handle: ffi::duckdb_v2_arena_handle,
-}
-
-impl Arena {
-    /// Reserve uninitialized bytes in the arena.
-    #[inline]
-    pub fn allocate(&self, len: usize) -> Result<*mut u8> {
-        check_api_call!(ffi::duckdb_v2_arena_allocate, self.raw(), len as u64, RET)
-    }
-
-    /// Encode bytes, storing short values inline and copying longer values into this arena.
-    pub fn add_bytes<'a>(&'a self, value: &[u8]) -> Result<DuckDBBytes<'a>> {
-        DuckDBBytes::new(self, value)
-    }
-
-    /// Concatenate byte slices directly into inline storage or one arena allocation.
-    ///
-    /// The combined length must fit in a `u32`.
-    /// This does not validate UTF-8 or other logical-type encodings.
-    #[inline]
-    pub fn add_parts<'a>(&'a self, parts: &[&[u8]]) -> Result<DuckDBBytes<'a>> {
-        DuckDBBytes::from_parts(parts, || Ok(self))
-    }
-
-    /// Concatenate UTF-8 string slices into inline storage or one arena allocation.
-    ///
-    /// The combined byte length must fit in a `u32`.
-    #[inline]
-    pub fn add_strings<'a>(&'a self, parts: &[&str]) -> Result<DuckDBBytes<'a>> {
-        DuckDBBytes::from_parts(parts, || Ok(self))
-    }
-
-    /// Encode UTF-8 text, storing short values inline and copying longer values into this arena.
-    pub fn add_str<'a>(&'a self, value: &str) -> Result<DuckDBBytes<'a>> {
-        self.add_bytes(value.as_bytes())
-    }
-}
+pub use crate::{arena::Arena, bytes::DuckDBBytes};
 
 mod combined;
 mod reader;
@@ -239,7 +161,7 @@ pub struct Vector<'a, T: VectorElement> {
     heap: Option<Arena>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
-    metadata: TypeMetadata,
+    decimal: OnceCell<DecimalSignature>,
     /// The store of the wrapper tree, shared with children and rebuilt wrappers.
     offsets: Rc<ChildOffsets>,
     /// This vector's entry in `offsets`; `None` unless it is a `LIST` or `MAP`.
@@ -267,7 +189,8 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             check_api_call!(ffi::duckdb_v2_vector_get_vector_type, *handle, RET).map(StorageKind::try_from)??;
         let len = check_api_call!(ffi::duckdb_v2_vector_get_size, *handle, RET).map(|x| x as usize)?;
 
-        let params = TypeMetadata::read(&logical_type)?;
+        let child_offset =
+            matches!(logical_type.id()?, LogicalTypeID::List | LogicalTypeID::Map).then(|| offsets.cell(*handle));
 
         let child_count = check_api_call!(ffi::duckdb_v2_vector_get_child_count, *handle, RET).map(|x| x as usize)?;
         let mut child_handles = Vec::with_capacity(child_count as usize);
@@ -286,13 +209,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             handle: *handle,
             logical_type,
             kind,
-            len: len as usize,
+            len,
             access,
             heap: None,
             children,
-            metadata: params,
+            decimal: OnceCell::new(),
             offsets: offsets.clone(),
-            child_offset: (params == TypeMetadata::List).then(|| offsets.cell(*handle)),
+            child_offset,
             _chunk: PhantomData,
             _type: PhantomData,
         };
@@ -372,7 +295,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             access: self.access,
             heap: self.heap,
             children: self.children,
-            metadata: self.metadata,
+            decimal: self.decimal,
             offsets: self.offsets,
             child_offset: self.child_offset,
             _chunk: self._chunk,
@@ -422,8 +345,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
     }
 
-    pub(crate) fn metadata(&self) -> TypeMetadata {
-        self.metadata
+    #[cfg(feature = "rust_decimal")]
+    pub(crate) fn decimal_signature(&self) -> Result<DecimalSignature> {
+        if let Some(signature) = self.decimal.get() {
+            return Ok(*signature);
+        }
+        let signature = DecimalSignature::from_logical_type(&self.logical_type)?;
+        Ok(*self.decimal.get_or_init(|| signature))
     }
 
     /// Size the first child of a `LIST` or `MAP` and restart appends at its first row.

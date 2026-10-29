@@ -134,6 +134,15 @@ pub unsafe trait VectorElement: Sized {
 /// ```
 pub trait HasDuckDBBytes: VectorElement {}
 
+/// Sizes the children of a nested vector before typed child writes.
+///
+/// # Safety
+/// `child_len` must return a size that covers every child row written for the parent's rows.
+pub unsafe trait HasChildren: VectorElement {
+    /// Return the size every child of `writer` needs.
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize>;
+}
+
 /// Adds a supported output representation to a readable vector element.
 ///
 /// `AsDuckDB` uses the struct itself as the write input, without a separate projection:

@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     logical_type::{LogicalType, LogicalTypeID},
     value::{Value, ValueInput},
-    vector::{OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, OwnedVectorElement, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// DuckDB's physical list entry: a range of elements in the child vector.
@@ -168,6 +168,18 @@ unsafe impl<T: VectorElement> VectorElement for List<T> {
     }
 }
 
+// SAFETY: LIST rows use only elements below the child size set by `set_child_size`.
+unsafe impl<T: VectorElement> HasChildren for List<T> {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        Ok(writer
+            .vector()
+            .children()
+            .expect("validated LIST vector has a child")
+            .get_untyped_vector_at(0)?
+            .len())
+    }
+}
+
 impl<T: VectorElement> Vector<'_, List<T>> {
     /// Size the element child to exactly `elements` and restart writes at its first element.
     ///
@@ -180,6 +192,7 @@ impl<T: VectorElement> Vector<'_, List<T>> {
     }
 
     /// Return the first element the next list write uses.
+    /// TODO REMOVE
     pub fn child_offset(&self) -> usize {
         self.child_offset_cell().get()
     }
@@ -195,7 +208,7 @@ impl<T: VectorElement> Vector<'_, List<T>> {
 impl<T: VectorElement> VectorWriter<'_, List<T>> {
     /// Return the first element the next list write uses.
     pub fn child_offset(&self) -> usize {
-        self.child_offset_cell().get()
+        self.vector().child_offset_cell().get()
     }
 }
 
@@ -203,16 +216,16 @@ impl<T: VectorElement> VectorWriter<'_, List<T>> {
 /// `index` must be in bounds, and the child must be validated as `T`.
 #[inline]
 unsafe fn write_list<T: VectorElement, V>(
-    vector: &mut VectorWriter<'_, List<T>>,
+    writer: &mut VectorWriter<'_, List<T>>,
     index: usize,
     values: Option<impl ExactSizeIterator<Item = V>>,
     mut write: impl FnMut(&mut VectorWriter<'_, T>, usize, V) -> Result<()>,
 ) -> Result<()> {
     let Some(values) = values else { return Ok(()) };
     let len = values.len();
-    let offset = vector.child_offset_cell().get();
+    let offset = writer.vector().child_offset_cell().get();
     // SAFETY: the caller guarantees that the child was validated as T.
-    let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
+    let child = unsafe { writer.child_writer_unchecked::<T>(0)? };
     let size = child.len();
     let end = offset.checked_add(len).filter(|end| *end <= size).ok_or_else(|| {
         Error::invalid_input(format!(
@@ -223,10 +236,10 @@ unsafe fn write_list<T: VectorElement, V>(
     for (element, value) in (offset..end).zip(values) {
         write(child, element, value)?;
     }
-    vector.child_offset_cell().set(end);
+    writer.vector().child_offset_cell().set(end);
     // SAFETY: the caller guarantees an in-bounds row, and the entry covers the elements just written.
     unsafe {
-        vector.write_internal(
+        writer.write_internal(
             index,
             Some(ListIndex {
                 offset: offset as u64,

@@ -239,6 +239,15 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
                 unsafe { writer.set_row_validity(index, ::core::option::Option::is_some(&value)) }
             }
         }
+
+        // SAFETY: every STRUCT field has one row per parent row.
+        unsafe impl #impl_generics ::duckdb_neo::vector::HasChildren for #ident #type_generics #where_clause {
+            fn child_len(
+                writer: &::duckdb_neo::vector::VectorWriter<'_, Self>,
+            ) -> ::duckdb_neo::Result<::core::primitive::usize> {
+                ::core::result::Result::Ok(writer.len())
+            }
+        }
     })
 }
 
@@ -284,7 +293,7 @@ mod tests {
             }
         );
         let output = syn::parse2::<syn::File>(as_writable_vector_element(&input).unwrap()).unwrap();
-        assert_eq!(output.items.len(), 2);
+        assert_eq!(output.items.len(), 3);
         let syn::Item::Impl(implementation) = &output.items[0] else {
             panic!("expected writer implementation")
         };

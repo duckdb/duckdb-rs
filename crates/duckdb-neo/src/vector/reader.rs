@@ -31,7 +31,7 @@ impl Selection<'_> {
 /// Prepared, read-only access to logical rows, created by [`Vector::reader`].
 /// Values preserve SQL NULLs and borrow from the vector, not the reader.
 pub struct VectorReader<'vec, T: VectorElement> {
-    vector: &'vec Vector<'vec, T>,
+    pub(crate) vector: &'vec Vector<'vec, T>,
     view: VectorView<T>,
     storage: ReaderStorage,
     child_readers: Option<Rc<[VectorReader<'vec, super::Unknown>]>>,
@@ -298,19 +298,6 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
 
     pub fn view(&self) -> &VectorView<T> {
         &self.view
-    }
-
-    #[cfg(feature = "rust_decimal")]
-    pub(crate) fn metadata(&self) -> super::TypeMetadata {
-        self.vector.metadata()
-    }
-
-    pub(crate) fn children(&self) -> Option<&'vec crate::data_chunk::VectorCollection> {
-        self.vector.children()
-    }
-
-    pub(crate) fn get_value_slow(&self, index: usize) -> Result<crate::value::Value> {
-        self.vector.get_value_slow(index)
     }
 
     #[inline(always)]

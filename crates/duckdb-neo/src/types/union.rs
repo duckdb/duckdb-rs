@@ -88,16 +88,16 @@ unsafe impl VectorElement for Union {
     }
 
     unsafe fn get<'a, U: VectorElement>(
-        vector: &crate::vector::VectorReader<'a, U>,
+        reader: &crate::vector::VectorReader<'a, U>,
         physical: usize,
         _logical: usize,
     ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        let children = vector.children().expect("validated nested vector has children");
+        let children = reader.vector.children().expect("validated nested vector has children");
         // SAFETY: The parent reader prepared the tag, which validate checked as u8.
-        let tag = unsafe { vector.child_reader::<u8>(0) };
+        let tag = unsafe { reader.child_reader::<u8>(0) };
         UnionRow {
             children,
             tag,
@@ -213,6 +213,7 @@ unsafe impl WritableVectorElement for Union {
         };
 
         let member_count = vector
+            .vector()
             .children()
             .map_or(0, VectorCollection::col_count)
             .saturating_sub(1);
@@ -226,6 +227,7 @@ unsafe impl WritableVectorElement for Union {
         let member = 1 + value.tag as usize;
         value.value.validate(
             vector
+                .vector()
                 .children()
                 .ok_or_else(|| Error::invalid_input("Union vector is missing its member children"))?
                 .get_untyped_vector_at(member)?,
@@ -233,6 +235,7 @@ unsafe impl WritableVectorElement for Union {
 
         let vector_len = vector.len();
         let children = vector
+            .vector_mut()
             .children_collection_mut()
             .expect("validated nested vector has children");
 

@@ -50,6 +50,7 @@ pub(crate) mod ffi_str;
 pub(crate) mod parameter;
 
 pub mod aggregate;
+pub mod arena;
 pub mod arrow;
 pub mod bind_arguments;
 pub mod cast;

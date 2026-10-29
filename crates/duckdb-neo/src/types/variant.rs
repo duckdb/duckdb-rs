@@ -24,14 +24,14 @@ unsafe impl VectorElement for Variant {
     type Ref<'a> = Value;
 
     unsafe fn get<'a, U: VectorElement>(
-        vector: &crate::vector::VectorReader<'a, U>,
+        reader: &crate::vector::VectorReader<'a, U>,
         _physical: usize,
         logical: usize,
     ) -> Self::Ref<'a>
     where
         Self: Sized + 'a,
     {
-        vector.get_value_slow(logical).unwrap()
+        reader.vector.get_value_slow(logical).unwrap()
     }
 }
 
@@ -40,13 +40,13 @@ unsafe impl WritableVectorElement for Variant {
     type Write<'a> = Value;
 
     unsafe fn write(
-        vector: &mut crate::vector::VectorWriter<'_, Self>,
+        writer: &mut crate::vector::VectorWriter<'_, Self>,
         index: usize,
         value: Option<Self::Write<'_>>,
     ) -> Result<()> {
         match value {
-            Some(value) => vector.write_value_slow(index, value),
-            None => vector.set_null_slow(index),
+            Some(value) => writer.write_value_slow(index, value),
+            None => writer.set_null_slow(index),
         }
     }
 }

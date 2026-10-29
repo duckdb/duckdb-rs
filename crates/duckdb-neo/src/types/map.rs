@@ -12,8 +12,9 @@ use crate::{
     error::Error,
     ffi,
     logical_type::{LogicalType, LogicalTypeID},
+    types::Struct,
     value::{Value, ValueInput},
-    vector::{Unknown, Vector, VectorElement, VectorWriter, WritableVectorElement},
+    vector::{HasChildren, Vector, VectorElement, VectorWriter, WritableVectorElement},
 };
 
 /// Reads and writes `MAP` vectors with key type `K` and value type `V`.
@@ -187,7 +188,19 @@ impl<K: VectorElement, V: VectorElement> Vector<'_, Map<K, V>> {
 impl<K: VectorElement, V: VectorElement> VectorWriter<'_, Map<K, V>> {
     /// Return the first entry the next map write uses.
     pub fn child_offset(&self) -> usize {
-        self.child_offset_cell().get()
+        self.vector().child_offset_cell().get()
+    }
+}
+
+// SAFETY: MAP rows use only entries below the child size set by `set_child_size`.
+unsafe impl<K: VectorElement, V: VectorElement> HasChildren for Map<K, V> {
+    fn child_len(writer: &VectorWriter<'_, Self>) -> Result<usize> {
+        Ok(writer
+            .vector()
+            .children()
+            .expect("validated MAP vector has entries")
+            .get_untyped_vector_at(0)?
+            .len())
     }
 }
 
@@ -199,9 +212,9 @@ unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorEl
     unsafe fn write(vector: &mut VectorWriter<'_, Self>, index: usize, value: Option<Self::Write<'_>>) -> Result<()> {
         let Some(value) = value else { return Ok(()) };
         let len = value.len();
-        let offset = vector.child_offset_cell().get();
+        let offset = vector.vector().child_offset_cell().get();
         // SAFETY: Map<K, V>::validate checked the STRUCT(key, value) entries and both fields.
-        let entries = unsafe { vector.child_writer_unchecked::<Unknown>(0)? };
+        let entries = unsafe { vector.child_writer_unchecked::<Struct>(0)? };
         let size = entries.len();
         let end = offset.checked_add(len).filter(|end| *end <= size).ok_or_else(|| {
             Error::invalid_input(format!(
@@ -219,7 +232,7 @@ unsafe impl<K: WritableVectorElement, V: WritableVectorElement> WritableVectorEl
                 entries.set_validity_unchecked(entry, true);
             }
         }
-        vector.child_offset_cell().set(end);
+        vector.vector().child_offset_cell().set(end);
         // SAFETY: the caller guarantees an in-bounds row, and the entry covers the entries just written.
         unsafe {
             vector.write_internal(
