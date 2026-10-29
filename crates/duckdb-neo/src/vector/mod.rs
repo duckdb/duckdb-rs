@@ -540,19 +540,13 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             return Err(not_writable());
         }
         let result = check_api_call!(ffi::duckdb_v2_vector_set_size, self.handle, len as u64);
-
+        // A failed reservation can still replace buffers, and keeps DuckDB's size.
         self.refresh_buffers()?;
-
-        match result {
-            Ok(()) => {
-                self.len = len;
-                Ok(())
-            }
-            Err(e) => {
-                self.len = 0;
-                Err(e)
-            }
-        }
+        self.len = match result {
+            Ok(()) => len,
+            Err(_) => vector_len(self.handle)?,
+        };
+        result
     }
 
     /// Turn writable output into a constant vector, returning the rebuilt vector.
@@ -644,8 +638,9 @@ impl<T: VectorElement> Vector<'_, T> {
         if !self.is_writable() {
             return Err(not_writable());
         }
-        check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64)?;
-        self.refresh_buffers()
+        let result = check_api_call!(ffi::duckdb_v2_vector_set_null, self.handle, index as u64);
+        self.refresh_buffers()?;
+        result
     }
 }
 

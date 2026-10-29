@@ -225,13 +225,15 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
     }
 
     pub(crate) fn set_null_slow(&mut self, index: usize) -> Result<()> {
-        self.vector_mut().set_null_slow(index)?;
-        self.refresh_buffers()
+        let result = self.vector_mut().set_null_slow(index);
+        self.refresh_buffers()?;
+        result
     }
 
     pub(crate) fn write_value_slow(&mut self, index: usize, value: crate::value::Value) -> Result<()> {
-        self.vector_mut().write_value_slow(index, value)?;
-        self.refresh_buffers()
+        let result = self.vector_mut().write_value_slow(index, value);
+        self.refresh_buffers()?;
+        result
     }
 
     #[inline(always)]

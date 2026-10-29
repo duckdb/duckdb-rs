@@ -436,4 +436,21 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn failed_resize_keeps_the_vector_usable() -> Result<()> {
+        let conn = connection()?;
+        let mut chunk = DataChunk::create(&conn, &[Array::<i32, 2048>::logical_type(&conn)?], true)?;
+        let mut vector = chunk.get_vector_at_mut::<Array<i32, 2048>>(0)?;
+        vector.set_size(1)?;
+        vector.writer()?.set(0, Some(Array([Some(1); 2048])))?;
+        // DuckDB grows the parent validity before the child reservation fails.
+        assert!(vector.set_size(1 << 25).is_err());
+        assert_eq!(vector.len(), 1);
+        vector.writer()?.set(0, None)?;
+        assert!(vector.reader()?.get(0)?.is_none());
+        vector.writer()?.set(0, Some(Array([Some(2); 2048])))?;
+        assert_eq!(vector.reader()?.get(0)?.unwrap().iter().nth(2047), Some(Some(&2)));
+        Ok(())
+    }
 }
