@@ -1,21 +1,31 @@
 #!/usr/bin/env python3
 
 import argparse
+import gzip
+import importlib
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
+from types import ModuleType
 from urllib.parse import urlsplit
 
 WORKSPACE_DIR = Path(__file__).resolve().parent
 RELEASE_PIN_FILE = Path("crates/libduckdb-sys/.duckdb-release")
 CRATES = ("duckdb", "libduckdb-sys", "duckdb-loadable-macros")
+EXTENSIONS = ("core_functions", "parquet", "json")
+# The cc backend cannot compile jemalloc's C sources as C++.
+EXCLUDED_THIRD_PARTY = ("third_party/jemalloc",)
+# A reproducible timestamp that Windows archive tools can restore.
+ARCHIVE_MTIME = 946684800
 VERSION_PATTERN = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
 BINDING_VARIANTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("bindgen_bundled_version.rs", "bindgen.rs", ("capi-v1",)),
@@ -290,6 +300,189 @@ def regenerate_bindings(
         temp_path.unlink(missing_ok=True)
 
 
+def is_excluded(path: str) -> bool:
+    normalized = Path(path).as_posix()
+    return any(f"/{excluded}" in f"/{normalized}" for excluded in EXCLUDED_THIRD_PARTY)
+
+
+def get_sources(
+    package_build: ModuleType,
+    sys_dir: Path,
+    extensions: Sequence[str],
+    default_linked_extensions: Sequence[str] | None = None,
+) -> tuple[set[str], set[str]]:
+    kwargs = {}
+    if default_linked_extensions is not None:
+        kwargs["default_linked_extensions"] = default_linked_extensions
+    loader = sys_dir / "duckdb-sources/generated_extension_loader_package_build.cpp"
+    try:
+        source_list, include_list, _ = package_build.build_package(
+            str(sys_dir / "duckdb"), extensions, False, **kwargs
+        )
+    finally:
+        loader.unlink(missing_ok=True)
+
+    prefix = f"{sys_dir.as_posix()}/"
+    sources = {path.removeprefix(prefix) for path in source_list}
+    return (
+        {path for path in sources if not is_excluded(path)},
+        {path for path in include_list if not is_excluded(path)},
+    )
+
+
+def package_sources(root: Path, version: str) -> None:
+    sys_dir = (root / "crates/libduckdb-sys").resolve()
+    target = sys_dir / "duckdb"
+    scripts_dir = sys_dir / "duckdb-sources/scripts"
+    if not (scripts_dir / "package_build.py").is_file():
+        raise FileNotFoundError(
+            f"Missing DuckDB packaging script: {scripts_dir / 'package_build.py'}"
+        )
+
+    # Upstream packaging mutates cwd, import paths, and extension module caches.
+    cwd = Path.cwd()
+    import_paths = sys.path[:]
+    previous_version = os.environ.get("DUCKDB_VERSION")
+    module_names = (
+        "package_build",
+        "amalgamation",
+        "python_helpers",
+        *(f"{name}_config" for name in EXTENSIONS),
+    )
+    modules = {name: sys.modules.pop(name, None) for name in module_names}
+    try:
+        os.chdir(sys_dir)
+        sys.path[:0] = [
+            str(scripts_dir),
+            *(str(sys_dir / "duckdb-sources/extension" / name) for name in EXTENSIONS),
+        ]
+        os.environ["DUCKDB_VERSION"] = version
+        importlib.invalidate_caches()
+        package_build = importlib.import_module("package_build")
+        amalgamation = importlib.import_module("amalgamation")
+        amalgamation.compile_directories[:] = [
+            os.path.normpath(path) for path in amalgamation.compile_directories
+        ]
+
+        try:
+            shutil.rmtree(target)
+        except FileNotFoundError:
+            pass
+        target.mkdir()
+        base_sources, base_includes = get_sources(package_build, sys_dir, [])
+        extension_sources = {}
+        for extension in EXTENSIONS:
+            sources, includes = get_sources(package_build, sys_dir, [extension])
+            extension_sources[extension] = {
+                "cpp_files": sorted(sources - base_sources),
+                "include_dirs": sorted(includes - base_includes),
+            }
+
+        # Cargo feature defines select which of the packaged extensions to link.
+        get_sources(package_build, sys_dir, EXTENSIONS, default_linked_extensions=[])
+        manifest = {
+            "base": {
+                "cpp_files": sorted(base_sources),
+                "include_dirs": sorted(base_includes),
+            },
+            "extensions": extension_sources,
+        }
+        for excluded in EXCLUDED_THIRD_PARTY:
+            shutil.rmtree(target / excluded, ignore_errors=True)
+        with (target / "manifest.json").open(
+            "w", encoding="utf-8", newline="\n"
+        ) as file:
+            json.dump(manifest, file, indent=2, sort_keys=True)
+            file.write("\n")
+    finally:
+        os.chdir(cwd)
+        sys.path[:] = import_paths
+        if previous_version is None:
+            os.environ.pop("DUCKDB_VERSION", None)
+        else:
+            os.environ["DUCKDB_VERSION"] = previous_version
+        for name, module in modules.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+    replace_archive_if_changed(target, sys_dir / "duckdb.tar.gz")
+
+
+def iter_archive_paths(root: Path) -> Iterator[Path]:
+    yield root
+    for dirpath, dirnames, filenames in os.walk(root):
+        directory = Path(dirpath)
+        dirnames.sort()
+        filenames.sort()
+        for dirname in dirnames:
+            yield directory / dirname
+        for filename in filenames:
+            yield directory / filename
+
+
+def normalized_tarinfo(path: Path, base_dir: Path) -> tarfile.TarInfo:
+    tarinfo = tarfile.TarInfo(path.relative_to(base_dir).as_posix())
+    tarinfo.uid = 0
+    tarinfo.gid = 0
+    tarinfo.uname = ""
+    tarinfo.gname = ""
+    tarinfo.mtime = ARCHIVE_MTIME
+    tarinfo.pax_headers = {}
+    if path.is_symlink():
+        tarinfo.type = tarfile.SYMTYPE
+        tarinfo.mode = 0o777
+        tarinfo.linkname = str(path.readlink())
+    elif path.is_dir():
+        tarinfo.type = tarfile.DIRTYPE
+        tarinfo.mode = 0o755
+    elif path.is_file():
+        tarinfo.type = tarfile.REGTYPE
+        tarinfo.mode = 0o644
+        tarinfo.size = path.stat().st_size
+    else:
+        filemode = stat.filemode(path.lstat().st_mode)
+        raise RuntimeError(f"unsupported archive entry type: {path} ({filemode})")
+    return tarinfo
+
+
+def write_archive_to(target: Path, archive_path: Path) -> None:
+    with (
+        archive_path.open("wb") as archive_file,
+        gzip.GzipFile(
+            filename="", mode="wb", fileobj=archive_file, mtime=0
+        ) as gzip_file,
+        tarfile.open(fileobj=gzip_file, mode="w", format=tarfile.PAX_FORMAT) as tar,
+    ):
+        for path in iter_archive_paths(target):
+            tarinfo = normalized_tarinfo(path, target.parent)
+            if tarinfo.isfile():
+                with path.open("rb") as file:
+                    tar.addfile(tarinfo, file)
+            else:
+                tar.addfile(tarinfo)
+
+
+def replace_archive_if_changed(target: Path, archive_path: Path) -> None:
+    fd, temp_name = tempfile.mkstemp(
+        dir=archive_path.parent, prefix=f".{archive_path.name}."
+    )
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        write_archive_to(target, temp_path)
+        # Cargo uses timestamps to detect changes to bundled sources.
+        if (
+            archive_path.exists()
+            and temp_path.read_bytes() == archive_path.read_bytes()
+        ):
+            return
+        temp_path.replace(archive_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 def regenerate_bundled_sources(root: Path, commit: str, version: str) -> None:
     sys_dir = root / "crates/libduckdb-sys"
     sources = sys_dir / "duckdb-sources"
@@ -314,12 +507,7 @@ def regenerate_bundled_sources(root: Path, commit: str, version: str) -> None:
             "Ensure the commit is reachable from an advertised remote ref."
         ) from error
     subprocess.run(["git", "checkout", "--detach", commit], cwd=sources, check=True)
-    subprocess.run(
-        [sys.executable, str(sys_dir / "update_sources.py")],
-        cwd=sys_dir,
-        check=True,
-        env={**os.environ, "DUCKDB_VERSION": version},
-    )
+    package_sources(root, version)
 
     target_dir = cargo_target_dir(root)
     for output, generated, features in BINDING_VARIANTS:
@@ -360,6 +548,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         OSError,
         ValueError,
+        ImportError,
+        RuntimeError,
+        tarfile.TarError,
         argparse.ArgumentTypeError,
         subprocess.CalledProcessError,
     ) as error:
