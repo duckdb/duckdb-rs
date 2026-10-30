@@ -1817,6 +1817,46 @@ unsafe extern "C" {
     #[doc = " Destroys a schema handle.\n\n Frees the handle along with the names and types it owns. On success the slot is set to null. Safe to call on an\n already-null slot.\n\n history:\n - unstable: v2.0.0\n\n @param schema The schema handle to destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_schema_destroy(schema: *mut duckdb_v2_schema_handle) -> DUCKDB_V2_ERROR;
 }
+#[doc = " A borrowed opaque handle to the statistics of an expression or a column. A stats callback receives it for the result\n it describes and for each of its arguments; it is valid only for the duration of that callback.\n\n The statistics of an argument are read-only, and the setters fail on them. The statistics of the result start out\n unknown, with every kind of value possible, and the callback narrows them through the setters. A callback that leaves\n the result unchanged tells the engine nothing."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_stats {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the statistics of an expression or a column. A stats callback receives it for the result\n it describes and for each of its arguments; it is valid only for the duration of that callback.\n\n The statistics of an argument are read-only, and the setters fail on them. The statistics of the result start out\n unknown, with every kind of value possible, and the callback narrows them through the setters. A callback that leaves\n the result unchanged tells the engine nothing."]
+pub type duckdb_v2_stats_handle = *mut _duckdb_v2_stats;
+unsafe extern "C" {
+    #[doc = " Returns whether the values described can include NULL.\n\n False guarantees that every value is non-NULL.\n\n history:\n - stable: v2.0.0\n\n @param stats The statistics to read.\n @param out Receives true if a value can be NULL, false if none can.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_stats_can_have_null(
+        stats: duckdb_v2_stats_handle,
+        out: *mut bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns whether the values described can include a valid, non-NULL value.\n\n False guarantees that every value is NULL. When both this and `duckdb_v2_stats_can_have_null()` are false, there are\n no values at all.\n\n history:\n - stable: v2.0.0\n\n @param stats The statistics to read.\n @param out Receives true if a value can be non-NULL, false if none can.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_stats_can_have_valid(
+        stats: duckdb_v2_stats_handle,
+        out: *mut bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets whether the values described can include NULL.\n\n Setting false is a guarantee the engine relies on: a NULL among the values then produces wrong query results. Setting\n true is always safe. Fails with `ERROR_INPUT_INVALID` on read-only statistics, such as those of an argument.\n\n history:\n - stable: v2.0.0\n\n @param stats The statistics to modify.\n @param value True if a value can be NULL, false if none can.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_stats_set_can_have_null(
+        stats: duckdb_v2_stats_handle,
+        value: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets whether the values described can include a valid, non-NULL value.\n\n Setting false is a guarantee the engine relies on: a non-NULL value among the values then produces wrong query\n results. Setting true is always safe. Fails with `ERROR_INPUT_INVALID` on read-only statistics, such as those of an\n argument.\n\n history:\n - stable: v2.0.0\n\n @param stats The statistics to modify.\n @param value True if a value can be non-NULL, false if none can.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_stats_set_can_have_valid(
+        stats: duckdb_v2_stats_handle,
+        value: bool,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
 #[repr(u32)]
 #[non_exhaustive]
 #[doc = "! The lexical class of a token."]
@@ -1898,6 +1938,14 @@ pub struct _duckdb_v2_aggregate_function_bind_info {
 }
 #[doc = " A borrowed opaque handle to the result of an aggregate function's \"bind\" phase. The \"bind\" callback receives this\n handle next to a `duckdb_v2_function_bind_info_handle`, which gives access to the arguments, the user data and the\n bind data, and can use it to set the return type of the call site being bound."]
 pub type duckdb_v2_aggregate_function_bind_info_handle = *mut _duckdb_v2_aggregate_function_bind_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_aggregate_function_stats_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+pub type duckdb_v2_aggregate_function_stats_info_handle = *mut _duckdb_v2_aggregate_function_stats_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to an aggregate function during the state sizing \"size\" phase. The\n \"size\" callback receives this handle and must use it to report the size of a single aggregate state in bytes."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1950,6 +1998,13 @@ pub type duckdb_v2_aggregate_function_bind_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_function_bind_info_handle,
         result: duckdb_v2_aggregate_function_bind_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_aggregate_function_stats_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -2077,6 +2132,14 @@ unsafe extern "C" {
     pub fn duckdb_v2_aggregate_function_set_destroy_callback(
         function: duckdb_v2_aggregate_function_handle,
         callback: duckdb_v2_aggregate_function_destroy_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets the optional stats callback of the aggregate function.\n\n The stats callback is invoked during query optimization for each call site of the function, after it has been bound.\n Through its `duckdb_v2_aggregate_function_stats_info_handle` it reads the statistics of the arguments and narrows the\n statistics of the result, which the engine then uses to simplify the query. A function without a stats callback gives\n the engine no statistics for its result.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the stats callback of.\n @param callback The stats callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_aggregate_function_set_stats_callback(
+        function: duckdb_v2_aggregate_function_handle,
+        callback: duckdb_v2_aggregate_function_stats_callback_fn,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -2313,6 +2376,50 @@ unsafe extern "C" {
     pub fn duckdb_v2_aggregate_function_destroy_get_states(
         info: duckdb_v2_aggregate_function_destroy_info_handle,
         states: *mut *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the user data set via `duckdb_v2_aggregate_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_aggregate_function_stats_get_user_data(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the bind data set by the function's bind callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param data Receives the bind data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_aggregate_function_stats_get_bind_data(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns how many arguments the call site has, split into the four parts of the argument list.\n\n The parts and their order are those the bind callback saw through `duckdb_v2_function_bind_get_arg_count()`, and the\n arguments are at the same indices. Valid indices for `duckdb_v2_aggregate_function_stats_get_arg_stats()` are [0, the\n sum of the four counts). Every out-parameter may be NULL, in which case nothing is written to it.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param positional_fixed Optional. Receives the number of positional-only and standard parameters.\n @param positional_variadic Optional. Receives the number of arguments `*args` received, 0 when the signature has\n none.\n @param named_fixed Optional. Receives the number of named-only parameters.\n @param named_variadic Optional. Receives the number of arguments `**kwargs` received, 0 when the signature has none.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_aggregate_function_stats_get_arg_count(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the statistics of the argument at the given index.\n\n The index is the one the bind callback used for the argument. The statistics are read-only. Fails if the index is out\n of bounds. Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param index The index of the argument.\n @param stats Receives the borrowed, read-only statistics of the argument.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_aggregate_function_stats_get_arg_stats(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        index: idx_t,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the statistics of the call site's result, for the callback to narrow.\n\n The statistics start out unknown, with every kind of value possible. They describe every result the aggregate\n produces, including the result of a group with no input rows, such as an ungrouped aggregate over an empty table.\n Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param stats Receives the borrowed, writable statistics of the call site's result.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_aggregate_function_stats_get_result_stats(
+        info: duckdb_v2_aggregate_function_stats_info_handle,
+        stats: *mut duckdb_v2_stats_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -4289,6 +4396,14 @@ pub struct _duckdb_v2_scalar_function_exec_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the execution \"exec\" phase. The \"exec\"\n callback receives this handle and can use it to e.g. access the input argument vectors, retrieve the number of rows\n to process, and write results to the output vector."]
 pub type duckdb_v2_scalar_function_exec_info_handle = *mut _duckdb_v2_scalar_function_exec_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_scalar_function_stats_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a scalar function during the \"stats\" phase of query\n optimization. The \"stats\" callback receives this handle and can use it to read the statistics of the arguments of the\n call site and narrow the statistics of its result."]
+pub type duckdb_v2_scalar_function_stats_info_handle = *mut _duckdb_v2_scalar_function_stats_info;
 pub type duckdb_v2_scalar_function_resolve_types_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_function_bind_info_handle,
@@ -4315,6 +4430,13 @@ pub type duckdb_v2_scalar_function_init_callback_fn = ::std::option::Option<
 pub type duckdb_v2_scalar_function_exec_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_scalar_function_exec_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_scalar_function_stats_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_scalar_function_stats_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -4397,6 +4519,14 @@ unsafe extern "C" {
     pub fn duckdb_v2_scalar_function_set_exec_callback(
         function: duckdb_v2_scalar_function_handle,
         callback: duckdb_v2_scalar_function_exec_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets the optional stats callback of the scalar function.\n\n The stats callback is invoked during query optimization for each call site of the function, after it has been bound.\n Through its `duckdb_v2_scalar_function_stats_info_handle` it reads the statistics of the arguments and narrows the\n statistics of the result, which the engine then uses to simplify the query. A function without a stats callback gives\n the engine no statistics for its result.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the stats callback of.\n @param callback The stats callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_set_stats_callback(
+        function: duckdb_v2_scalar_function_handle,
+        callback: duckdb_v2_scalar_function_stats_callback_fn,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -4501,6 +4631,50 @@ unsafe extern "C" {
     ) -> DUCKDB_V2_ERROR;
 }
 unsafe extern "C" {
+    #[doc = " Retrieves the user data set via `duckdb_v2_scalar_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_stats_get_user_data(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the bind data set by the function's bind callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param data Receives the bind data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_stats_get_bind_data(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns how many arguments the call site has, split into the four parts of the argument list.\n\n The parts and their order are those the bind callback saw through `duckdb_v2_function_bind_get_arg_count()`, and the\n arguments are at the same indices. Valid indices for `duckdb_v2_scalar_function_stats_get_arg_stats()` are [0, the\n sum of the four counts). Every out-parameter may be NULL, in which case nothing is written to it.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param positional_fixed Optional. Receives the number of positional-only and standard parameters.\n @param positional_variadic Optional. Receives the number of arguments `*args` received, 0 when the signature has\n none.\n @param named_fixed Optional. Receives the number of named-only parameters.\n @param named_variadic Optional. Receives the number of arguments `**kwargs` received, 0 when the signature has none.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_stats_get_arg_count(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        positional_fixed: *mut idx_t,
+        positional_variadic: *mut idx_t,
+        named_fixed: *mut idx_t,
+        named_variadic: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the statistics of the argument at the given index.\n\n The index is the one the bind callback used for the argument. The statistics are read-only. Fails if the index is out\n of bounds. Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param index The index of the argument.\n @param stats Receives the borrowed, read-only statistics of the argument.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_stats_get_arg_stats(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        index: idx_t,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the statistics of the call site's result, for the callback to narrow.\n\n The statistics start out unknown, with every kind of value possible. Borrowed; valid only for the duration of the\n callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param stats Receives the borrowed, writable statistics of the call site's result.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_scalar_function_stats_get_result_stats(
+        info: duckdb_v2_scalar_function_stats_info_handle,
+        stats: *mut duckdb_v2_stats_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
     #[doc = " Registers the scalar function, making it available for use in SQL queries.\n\n The function is registered on the connection's database, visible to every connection, in the connection's\n transaction: inside an explicit transaction, it is invisible to other connections until the transaction commits, and\n a rollback undoes it. Registration requires a name, an exec callback, and a signature with a complete return type; an\n ANY return type is accepted only together with a resolve types callback that sets the concrete type per call site.\n The scalar function must have been created through a factory of the same database. The caller still owns the handle\n after registration and must destroy it with `duckdb_v2_scalar_function_destroy()`, which does not affect the\n registered function.\n\n history:\n - unstable: v2.0.0\n\n @param conn The connection to register on.\n @param function The scalar function to register.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_connection_register_scalar_function(
         conn: duckdb_v2_connection_handle,
@@ -4579,10 +4753,11 @@ pub struct _duckdb_v2_statement_iterator {
 #[doc = " An opaque, owned handle to an iterator over the statements of a SQL string, produced by parse_sql. Destroy it via\n statement_iterator_destroy; statements it already yielded are independently owned and unaffected."]
 pub type duckdb_v2_statement_iterator_handle = *mut _duckdb_v2_statement_iterator;
 unsafe extern "C" {
-    #[doc = " Parses a SQL string into an iterator over its statements.\n\n Parses and nothing more: no binding, no catalog access, no transaction. The connection supplies the parser options\n and parser extensions, and is not otherwise touched. Statements are raw parser output; statement-level rewrites\n happen inside statement_execute. The SQL string is copied, so the caller may free it once this call returns. An input\n with no statements — empty, whitespace, or separators only — yields an iterator that is immediately exhausted.\n\n history:\n - unstable: v2.0.0\n\n @param conn The connection supplying the parser configuration.\n @param sql Null-terminated SQL string; may contain any number of statements.\n @param out_iterator Receives the new iterator handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
+    #[doc = " Parses a SQL string into an iterator over its statements.\n\n Parses and nothing more: no binding and no catalog access. The connection supplies the parser options and parser\n extensions. With apply_invalidation_policy, a parse error invalidates the connection's active transaction according\n to the transaction invalidation policy, like an error from running the statement would; pass that when the statements\n are parsed to be run. Without it, a parse error leaves the transaction usable, for callers that only inspect the\n statements, for example with `duckdb_v2_statement_bind()`. Statements are raw parser output; statement-level rewrites\n happen inside statement_execute. The SQL string is copied, so the caller may free it once this call returns. An input\n with no statements — empty, whitespace, or separators only — yields an iterator that is immediately exhausted.\n\n history:\n - unstable: v2.0.0\n\n @param conn The connection supplying the parser configuration.\n @param sql Null-terminated SQL string; may contain any number of statements.\n @param apply_invalidation_policy Whether a parse error invalidates the active transaction, according to the\n transaction invalidation policy.\n @param out_iterator Receives the new iterator handle.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via error_info_destroy.\n @return DUCKDB_V2_ERROR"]
     pub fn duckdb_v2_parse_sql(
         conn: duckdb_v2_connection_handle,
         sql: *const ::std::os::raw::c_char,
+        apply_invalidation_policy: bool,
         out_iterator: *mut duckdb_v2_statement_iterator_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
@@ -5132,6 +5307,14 @@ pub struct _duckdb_v2_table_function_partition_data_info {
 }
 #[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"partition data\" phase. The engine\n invokes the callback on the worker thread that just produced a batch of rows, once per batch, only when a downstream\n operator needs to know the batch's ordering position, the values of a set of partitioning columns, or both; the\n handle reports which of those were actually requested and receives the answer."]
 pub type duckdb_v2_table_function_partition_data_info_handle = *mut _duckdb_v2_table_function_partition_data_info;
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"stats\" phase of query\n optimization. The engine invokes the callback once per column the query reads, and the callback can use the handle to\n narrow the statistics of that column."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _duckdb_v2_table_function_stats_info {
+    pub internal_ptr: *mut ::std::os::raw::c_void,
+}
+#[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"stats\" phase of query\n optimization. The engine invokes the callback once per column the query reads, and the callback can use the handle to\n narrow the statistics of that column."]
+pub type duckdb_v2_table_function_stats_info_handle = *mut _duckdb_v2_table_function_stats_info;
 #[doc = " A borrowed opaque handle to the arguments supplied to a table function during the \"partitioning\" phase of query\n optimization. The engine invokes the callback once per candidate `GROUP BY` column set, before execution starts, to\n decide whether the scan can feed a partitioned aggregate directly instead of hashing."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5224,6 +5407,13 @@ pub type duckdb_v2_table_function_partitioning_callback_fn = ::std::option::Opti
 pub type duckdb_v2_table_function_claim_batch_callback_fn = ::std::option::Option<
     unsafe extern "C" fn(
         info: duckdb_v2_table_function_claim_batch_info_handle,
+        context: duckdb_v2_context_handle,
+        err: *mut duckdb_v2_error_info_handle,
+    ),
+>;
+pub type duckdb_v2_table_function_stats_callback_fn = ::std::option::Option<
+    unsafe extern "C" fn(
+        info: duckdb_v2_table_function_stats_info_handle,
         context: duckdb_v2_context_handle,
         err: *mut duckdb_v2_error_info_handle,
     ),
@@ -5344,6 +5534,14 @@ unsafe extern "C" {
     pub fn duckdb_v2_table_function_set_partitioning_callback(
         function: duckdb_v2_table_function_handle,
         callback: duckdb_v2_table_function_partitioning_callback_fn,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Sets the optional stats callback of the table function.\n\n The stats callback is invoked during query optimization once for each declared column the query reads. Through its\n `duckdb_v2_table_function_stats_info_handle` it narrows the statistics of that column, which the engine then uses to\n simplify the query. A function without a stats callback gives the engine no statistics for its columns.\n\n history:\n - stable: v2.0.0\n\n @param function The function to set the stats callback of.\n @param callback The stats callback to set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_table_function_set_stats_callback(
+        function: duckdb_v2_table_function_handle,
+        callback: duckdb_v2_table_function_stats_callback_fn,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
@@ -5738,6 +5936,38 @@ unsafe extern "C" {
     pub fn duckdb_v2_table_function_partitioning_set_partition_info(
         info: duckdb_v2_table_function_partitioning_info_handle,
         partition_info: DUCKDB_V2_TABLE_PARTITION_INFO,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the user data set via `duckdb_v2_table_function_set_user_data()`.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param data Receives the user data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_table_function_stats_get_user_data(
+        info: duckdb_v2_table_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the bind data set by the function's bind callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param data Receives the bind data pointer, or null if none was set.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_table_function_stats_get_bind_data(
+        info: duckdb_v2_table_function_stats_info_handle,
+        data: *mut *mut ::std::os::raw::c_void,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Returns which declared column the statistics describe.\n\n The result indexes the columns declared with `duckdb_v2_table_function_bind_add_result_column()`, in declaration\n order.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param column_index Receives the index of the declared column.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_table_function_stats_get_column_index(
+        info: duckdb_v2_table_function_stats_info_handle,
+        column_index: *mut idx_t,
+        err: *mut duckdb_v2_error_info_handle,
+    ) -> DUCKDB_V2_ERROR;
+}
+unsafe extern "C" {
+    #[doc = " Retrieves the statistics of the column, for the callback to narrow.\n\n The statistics start out unknown, with every kind of value possible. They describe every value the scan produces for\n the column. Borrowed; valid only for the duration of the callback.\n\n history:\n - stable: v2.0.0\n\n @param info The stats info handle.\n @param stats Receives the borrowed, writable statistics of the column.\n @param err Optional. On failure, receives an opaque info handle the caller must destroy via\n `duckdb_v2_error_info_destroy()`.\n @return DUCKDB_V2_ERROR"]
+    pub fn duckdb_v2_table_function_stats_get_result_stats(
+        info: duckdb_v2_table_function_stats_info_handle,
+        stats: *mut duckdb_v2_stats_handle,
         err: *mut duckdb_v2_error_info_handle,
     ) -> DUCKDB_V2_ERROR;
 }
