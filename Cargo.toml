@@ -43,6 +43,7 @@ hashlink = "0.10"
 libc = "0.2"
 num = { version = "0.4", default-features = false }
 num-integer = "0.1.46"
+parquet-variant = { version = "60", default-features = false }
 paste = "1.0.15"
 pkg-config = "0.3.24"
 polars = "0.49.1"

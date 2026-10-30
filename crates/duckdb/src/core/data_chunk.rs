@@ -44,6 +44,17 @@ impl DataChunkHandle {
         Self { ptr, owned: false }
     }
 
+    /// Take ownership of a `duckdb_data_chunk` that DuckDB allocated for us.
+    /// A null `ptr` yields a handle that destroys nothing.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be null or a valid `duckdb_data_chunk` not owned anywhere else.
+    #[cfg(feature = "appender-arrow")]
+    pub(crate) unsafe fn new_owned(ptr: duckdb_data_chunk) -> Self {
+        Self { ptr, owned: true }
+    }
+
     /// Create a new [DataChunkHandle] with the given [LogicalTypeHandle]s.
     pub fn new(logical_types: &[LogicalTypeHandle]) -> Self {
         let num_columns = logical_types.len();
