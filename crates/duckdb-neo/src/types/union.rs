@@ -264,7 +264,12 @@ unsafe impl WritableVectorElement for Union {
             }
         }
         // The member's own write sets its validity.
-        value.value.write(children.cached_mut::<Unknown>(member)?, index)
+        let written = value.value.write(children.cached_mut::<Unknown>(member)?, index);
+        if written.is_err() {
+            // The tag was written, so NULL the row to keep its children consistent.
+            vector.set_null_slow(index)?;
+        }
+        written
     }
 }
 
@@ -314,6 +319,33 @@ mod tests {
         assert_eq!(row.get::<i32>(0)?, None);
         assert_eq!(row.get::<String>(1)?, Some("duck"));
         assert!(vector_reader.get(1)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn failed_union_writes_leave_the_row_null() -> Result<()> {
+        use crate::types::BitValue;
+
+        let conn = Environment::new()?.open(StorageLocation::InMemory)?.connect()?;
+        let union_type = conn
+            .query("SELECT NULL::UNION(b BIT)", Parameters::None)?
+            .next_chunk()?
+            .unwrap()
+            .get_vector_at::<Union>(0)?
+            .logical_type()
+            .clone();
+        let mut chunk = DataChunk::create(&conn, &[union_type], true)?;
+        let mut vector = chunk.get_vector_at_mut::<Union>(0)?;
+        vector.set_size(1)?;
+        {
+            let mut writer = vector.writer()?;
+            writer.set(0, None)?;
+            let invalid = UnionWriter::set_value::<BitValue>(0, Some(&[]));
+            assert!(writer.set(0, Some(invalid)).is_err());
+        }
+        assert!(vector.reader()?.get(0)?.is_none());
+        let tags = vector.children().unwrap().get_vector_at::<u8>(0)?.reader()?;
+        assert!(tags.get(0)?.is_none());
         Ok(())
     }
 

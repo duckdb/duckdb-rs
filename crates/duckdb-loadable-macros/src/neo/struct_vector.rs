@@ -225,8 +225,17 @@ pub(crate) fn as_writable_vector_element(input: &syn::DeriveInput) -> syn::Resul
             ) -> ::duckdb_neo::Result<()> {
                 match value {
                     ::core::option::Option::Some(value) => {
-                        // SAFETY: validation checked every child, and the caller guarantees row bounds.
-                        #(unsafe { writer.write_child_ref_unchecked::<#types>(#indexes, index, #values)? };)*
+                        let mut written: ::duckdb_neo::Result<()> = ::core::result::Result::Ok(());
+                        #(if written.is_ok() {
+                            // SAFETY: validation checked every child, and the caller guarantees row bounds.
+                            written = unsafe { writer.write_child_ref_unchecked::<#types>(#indexes, index, #values) };
+                        })*
+                        if let ::core::result::Result::Err(error) = written {
+                            // Earlier fields were written, so NULL the row to keep its children consistent.
+                            // SAFETY: the caller guarantees row bounds.
+                            unsafe { Self::write_ref(writer, index, ::core::option::Option::None)? };
+                            return ::core::result::Result::Err(error);
+                        }
                     }
                     ::core::option::Option::None => {
                         // SAFETY: a NULL struct must also null each of its validated children.

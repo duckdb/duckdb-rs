@@ -150,18 +150,24 @@ unsafe fn write_array<T: VectorElement, V, const N: usize>(
     // SAFETY: the caller guarantees that the child was validated as T; preparing it sized it to N per row.
     let child = unsafe { vector.child_writer_unchecked::<T>(0)? };
     let offset = index * N;
-    match values {
-        Some(values) => {
-            for (element, value) in (offset..offset + N).zip(values) {
-                write(child, element, Some(value))?;
-            }
+    if let Some(values) = values {
+        let written = (offset..offset + N)
+            .zip(values)
+            .try_for_each(|(element, value)| write(child, element, Some(value)));
+        if written.is_ok() {
+            return Ok(());
         }
-        // DuckDB requires a NULL array row's elements to be NULL too.
-        None => {
-            for element in offset..offset + N {
-                write(child, element, None)?;
-            }
+        // Earlier elements were written, so NULL the row to keep its elements consistent.
+        for element in offset..offset + N {
+            write(child, element, None)?;
         }
+        // SAFETY: the caller guarantees an in-bounds row.
+        unsafe { vector.set_validity_unchecked(index, false) };
+        return written;
+    }
+    // DuckDB requires a NULL array row's elements to be NULL too.
+    for element in offset..offset + N {
+        write(child, element, None)?;
     }
     Ok(())
 }
