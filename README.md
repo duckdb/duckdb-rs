@@ -92,12 +92,13 @@ use duckdb_neo::{
 
 fn main() -> duckdb_neo::Result<()> {
     let environment = Environment::new()?;
-    let database = environment.open(StorageLocation::InMemory)?;
-    let connection = database.connect()?;
+    let instance = environment.open(StorageLocation::InMemory)?;
+    let connection = instance.connect()?;
 
     let mut result = connection.query("SELECT $1::INTEGER", Parameters::positional(&[&42]))?;
     let chunk = result.next_chunk()?.expect("query returned no rows");
-    let values = chunk.get_vector_at::<i32>(0)?;
+    let values = chunk.get_vector_at::<i32>(0)?.reader()?;
+
     assert_eq!(values.get(0)?, Some(&42));
     Ok(())
 }
@@ -321,7 +322,7 @@ You can adjust this behavior in a number of ways:
 
    On Windows the `windows-amd64` and `windows-arm64` archives contain `duckdb.dll` and its `duckdb.lib` import library; put both in `DUCKDB_LIB_DIR` and add that directory to `PATH`.
 
-4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently a staging build of a v2.0.0 preview commit, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `./upgrade.sh --sync` vendors that same commit into the bundled sources, so `bundled` and the download always agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
+4. When none of the `bundled` features is enabled and `DUCKDB_LIB_DIR` is not set, the build script downloads pre-built DuckDB binaries and links against the dynamic library in the archive, effectively automating the manual steps above. Which build it downloads is pinned in `crates/libduckdb-sys/.duckdb-release`: a `DUCKDB_RELEASE_URL` directory holding the `duckdb-shared-libs-<platform>.tar.gz` archives, currently the DuckDB v2.0.0 release, plus a `DUCKDB_RELEASE_VERSION` label and the `DUCKDB_RELEASE_COMMIT` those libraries were built from. `./upgrade.sh --sync` vendors that same commit into the bundled sources, so `bundled` and the download always agree. Without a pin file the build falls back to the GitHub release matching the DuckDB version encoded in the crate version.
 
    Set `DUCKDB_DOWNLOAD_LIB=0` to opt out and probe the system (vcpkg, pkg-config) instead, or `DUCKDB_DOWNLOAD_LIB=1` to force the download. Leave `DUCKDB_STATIC` unset: setting it requests a static `duckdb_static` library, which the downloaded archives do not contain. The archives are cached in `target/duckdb-download/<target>/<version>` and that directory is automatically added to the linker search path.
 
@@ -331,8 +332,6 @@ You can adjust this behavior in a number of ways:
    ```
 
    The download needs the `download-lib` feature, which pulls an HTTP client (`ureq`/`rustls`) into the build script. It is on by default; consumers building with `bundled` or a system DuckDB can drop it (and the HTTP client) with `default-features = false`, in which case the build probes the system unless `DUCKDB_DOWNLOAD_LIB=1` is set explicitly.
-
-   The pinned staging archives do not ship `duckdb_v2.h` yet, so `buildtime_bindgen` together with `capi-v2` needs `DUCKDB_INCLUDE_DIR` or a `bundled` build until the pin moves to a newer DuckDB build.
 
 5. Installing the DuckDB development packages will usually be all that is required, but
    the build helpers for [pkg-config](https://github.com/alexcrichton/pkg-config-rs)

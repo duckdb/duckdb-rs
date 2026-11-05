@@ -7,10 +7,12 @@ on:
       - "**/*.md"
       - "LICENSE"
   pull_request:
-    branches: [main]
+    branches: [main, "v*.*-*"]
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
+  # Release runs CI on the tagged commit before publishing.
+  workflow_call:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
