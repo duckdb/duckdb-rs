@@ -31,7 +31,7 @@ unsafe impl VectorElement for Variant {
     where
         Self: Sized + 'a,
     {
-        reader.vector.get_value_slow(logical).unwrap()
+        reader.vector().get_value_slow(logical).unwrap()
     }
 }
 

@@ -91,6 +91,8 @@ impl<'writer, T: VectorElement> VectorWriter<'writer, T> {
             return Err(not_flat());
         }
 
+        // Allocating the writable mask can replace the validity pointer of the cached view.
+        borrowed.view.take();
         let validity = check_api_call!(ffi::duckdb_v2_vector_flat_get_validity_mutable, borrowed.raw(), RET)?;
         let data = check_api_call!(ffi::duckdb_v2_vector_get_data_mutable, borrowed.raw(), RET)?;
 

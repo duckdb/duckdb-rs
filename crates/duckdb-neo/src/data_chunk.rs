@@ -149,7 +149,7 @@ impl VectorCollection {
     }
 
     fn wrap<T: VectorElement>(&self, index: usize, access: Access) -> Result<Vector<'static, T>> {
-        Vector::from_handle_in(&self.handles[index], access, &self.offsets)
+        Vector::from_handle(&self.handles[index], access, &self.offsets)
     }
 
     /// Restart every `LIST` and `MAP` offset in this tree, e.g. after the chunk was cleared.

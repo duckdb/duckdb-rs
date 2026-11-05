@@ -77,7 +77,7 @@ unsafe impl VectorElement for rust_decimal::Decimal {
         Self: 'a,
     {
         let DecimalSignature { width, scale } = vector
-            .vector
+            .vector()
             .decimal_signature()
             .expect("validated DECIMAL vector has a signature");
         let data = vector.as_ptr() as *const u8;

@@ -164,6 +164,8 @@ pub struct Vector<'a, T: VectorElement> {
     logical_type: LogicalType,
     kind: StorageKind,
     len: usize,
+    /// Storage pointers for readers, dropped by every operation that may replace them.
+    pub(crate) view: OnceCell<ffi::duckdb_v2_vector_view>,
     heap: Option<Arena>,
     /// Child vectors of nested types; `None` for vectors without children.
     children: Option<VectorCollection>,
@@ -178,12 +180,7 @@ pub struct Vector<'a, T: VectorElement> {
 
 impl<'a, T: VectorElement> Vector<'a, T> {
     /// The handle must remain valid for the lifetime of the owning chunk.
-    pub(crate) fn from_handle(handle: &ffi::duckdb_v2_vector_handle, access: Access) -> Result<Self> {
-        Self::from_handle_in(handle, access, &Rc::default())
-    }
-
-    /// Wrap a handle of the wrapper tree that owns `offsets`.
-    pub(crate) fn from_handle_in(
+    pub(crate) fn from_handle(
         handle: &ffi::duckdb_v2_vector_handle,
         access: Access,
         offsets: &Rc<ChildOffsets>,
@@ -219,6 +216,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             kind,
             len,
             access,
+            view: OnceCell::new(),
             heap: None,
             children,
             decimal: OnceCell::new(),
@@ -285,8 +283,9 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         self.access == Access::Writable
     }
 
-    /// Refresh the vector's view and mutable buffers after a state change, e.g. set_size.
+    /// Drop the cached view, arena and child wrappers after a state change, e.g. set_size.
     fn refresh_buffers(&mut self) -> Result<()> {
+        self.view.take();
         self.heap = None;
         if let Some(children) = &mut self.children {
             children.evict_all();
@@ -301,6 +300,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
             kind: self.kind,
             len: self.len,
             access: self.access,
+            view: self.view,
             heap: self.heap,
             children: self.children,
             decimal: self.decimal,
@@ -379,6 +379,18 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         }
         let signature = DecimalSignature::from_logical_type(&self.logical_type)?;
         Ok(*self.decimal.get_or_init(|| signature))
+    }
+
+    /// Return the storage pointers, fetched once per state; `OTHER` storage has none.
+    pub(crate) fn view(&self) -> Result<Option<ffi::duckdb_v2_vector_view>> {
+        if self.kind == StorageKind::Other {
+            return Ok(None);
+        }
+        if let Some(view) = self.view.get() {
+            return Ok(Some(*view));
+        }
+        let view = check_api_call!(ffi::duckdb_v2_vector_get_view, self.handle, RET)?;
+        Ok(Some(*self.view.get_or_init(|| view)))
     }
 
     /// Size the first child of a `LIST` or `MAP`, keeping appends at the current offset.
@@ -476,7 +488,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
 
         // The reference replaces the storage kind, size and child vectors, so rebuild from the handle.
         // A write or resize would change storage the source wrapper still reads, so never stay writable.
-        Vector::from_handle_in(&self.handle, Access::Exclusive, &self.offsets)
+        Vector::from_handle(&self.handle, Access::Exclusive, &self.offsets)
     }
 
     /// Return the vector's child vectors, or `None` if it has no children.
@@ -532,7 +544,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_flatten, self.handle)?;
 
         // Flattening replaces the buffer and child vectors, so rebuild from the handle.
-        *self = Self::from_handle_in(&self.handle, self.access, &self.offsets)?;
+        *self = Self::from_handle(&self.handle, self.access, &self.offsets)?;
         Ok(())
     }
 
@@ -581,7 +593,7 @@ impl<'a, T: VectorElement> Vector<'a, T> {
         check_api_call!(ffi::duckdb_v2_vector_constant_set_valid, self.handle, !value.is_null()?)?;
 
         // The constant brings its own buffer and child vectors, so rebuild from the handle.
-        let mut vector = Self::from_handle_in(&self.handle, Access::Exclusive, &self.offsets)?;
+        let mut vector = Self::from_handle(&self.handle, Access::Exclusive, &self.offsets)?;
         vector.len = count;
         Ok(vector)
     }
@@ -656,7 +668,7 @@ impl<T: VectorElement> Vector<'_, T> {
 }
 
 impl<T: VectorElement> Vector<'_, T> {
-    /// Prepare a storage-specific reader, caching descendant views once.
+    /// Prepare a storage-specific reader, along with readers for every descendant.
     ///
     /// Returns an error for [`StorageKind::Other`]; flatten the vector explicitly first.
     pub fn reader(&self) -> Result<VectorReader<'_, T>> {

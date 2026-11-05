@@ -1,8 +1,8 @@
-use std::{cell::OnceCell, ops::Range, rc::Rc};
+use std::{ops::Range, rc::Rc};
 
 use super::{StorageKind, Unknown, Vector, VectorElement, other_not_readable, out_of_bounds};
+use crate::Result;
 use crate::ffi;
-use crate::{Result, error::check_api_call, raw::RawExt};
 
 /// Maps logical row indices to physical data and validity positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +32,7 @@ impl Selection<'_> {
 /// Values preserve SQL NULLs and borrow from the vector, not the reader.
 #[repr(C)]
 pub struct VectorReader<'vec, T: VectorElement> {
-    pub(crate) vector: &'vec Vector<'vec, T>,
+    vector: &'vec Vector<'vec, T>,
     view: ffi::duckdb_v2_vector_view,
     storage: ReaderStorage,
     child_readers: Option<Rc<[VectorReader<'vec, super::Unknown>]>>,
@@ -54,13 +54,13 @@ impl<T: VectorElement> Clone for VectorReader<'_, T> {
         Self {
             vector: self.vector,
             view: self.view,
-            storage: self.storage.clone(),
+            storage: self.storage,
             child_readers: self.child_readers.clone(),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum ReaderStorage {
     Flat,
     Dictionary(DictionaryReader),
@@ -77,7 +77,7 @@ impl FlatReader {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct ConstantReader {
     is_null: bool,
 }
@@ -89,10 +89,8 @@ impl ConstantReader {
     }
 }
 
-#[derive(Debug, Clone)]
-struct DictionaryReader {
-    len: OnceCell<u32>,
-}
+#[derive(Debug, Clone, Copy)]
+struct DictionaryReader;
 
 impl DictionaryReader {
     #[inline]
@@ -120,30 +118,20 @@ impl ReaderStorage {
         match self {
             Self::Flat => view.count as usize,
             Self::Constant(_) => 1,
-            Self::Dictionary(dict) => *dict.len.get_or_init(|| {
-                unsafe { std::slice::from_raw_parts(view.sel, view.count as usize) }
-                    .iter()
-                    .max()
-                    .map_or(0, |v| *v + 1)
-            }) as usize,
+            Self::Dictionary(_) => unsafe { std::slice::from_raw_parts(view.sel, view.count as usize) }
+                .iter()
+                .max()
+                .map_or(0, |index| *index as usize + 1),
         }
     }
 }
 
 impl<'vec, T: VectorElement> VectorReader<'vec, T> {
-    fn acquire_view<U: VectorElement>(vector: &'vec Vector<'vec, U>) -> Result<Option<ffi::duckdb_v2_vector_view>> {
-        if vector.storage_kind() == StorageKind::Other {
-            return Ok(None);
-        }
-
-        check_api_call!(ffi::duckdb_v2_vector_get_view, vector.raw(), RET).map(Some)
-    }
-
     pub(super) fn new(vector: &'vec Vector<'vec, T>) -> Result<Self> {
-        let view = Self::acquire_view(vector)?.ok_or_else(|| other_not_readable())?;
+        let view = vector.view()?.ok_or_else(other_not_readable)?;
 
         vector.cache_children()?;
-        // SAFETY: The vector and all descendants have readable, cached views.
+        // SAFETY: The vector was validated as `T`, and its descendants were cached above.
         unsafe { Self::from_prepared(vector, view) }
     }
 
@@ -156,7 +144,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     ) -> Result<Self> {
         let storage = match vector.storage_kind() {
             StorageKind::Flat => ReaderStorage::Flat,
-            StorageKind::Dictionary => ReaderStorage::Dictionary(DictionaryReader { len: OnceCell::new() }),
+            StorageKind::Dictionary => ReaderStorage::Dictionary(DictionaryReader),
             StorageKind::Constant => ReaderStorage::Constant(ConstantReader {
                 is_null: !vector.is_empty() && !unsafe { FlatReader::is_valid_unchecked(view.validity, 0) },
             }),
@@ -167,7 +155,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
             let mut child_readers = Vec::with_capacity(children.col_count());
             for i in 0..children.col_count() {
                 let vec = children.cached_unchecked(i);
-                let view = Self::acquire_view(vec)?.ok_or(crate::vector::other_not_readable())?;
+                let view = vec.view()?.ok_or_else(other_not_readable)?;
 
                 child_readers.push(unsafe { VectorReader::from_prepared(vec, view)? });
             }
@@ -184,7 +172,8 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
         })
     }
 
-    pub(crate) fn vector(&self) -> &Vector<'vec, T> {
+    #[inline]
+    pub(crate) fn vector(&self) -> &'vec Vector<'vec, T> {
         self.vector
     }
 
@@ -218,7 +207,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
 
     /// Borrow the physical validity mask, or `None` if all slots are valid; map rows with [`Self::selection`].
     /// Bit `physical % 64` of word `physical / 64` marks a non-NULL slot.
-    pub fn validity(&self) -> Option<&[u64]> {
+    pub fn validity(&self) -> Option<&'vec [u64]> {
         if self.view.validity.is_null() {
             None
         } else {
@@ -229,7 +218,7 @@ impl<'vec, T: VectorElement> VectorReader<'vec, T> {
     }
 
     /// Return the logical-to-physical mapping without materializing a buffer.
-    pub fn selection<'a>(&'a self) -> Selection<'a> {
+    pub fn selection(&self) -> Selection<'vec> {
         match self.storage {
             ReaderStorage::Flat => Selection::Identity,
             ReaderStorage::Constant(_) => Selection::Constant,

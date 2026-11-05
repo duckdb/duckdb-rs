@@ -95,7 +95,10 @@ unsafe impl VectorElement for Union {
     where
         Self: Sized + 'a,
     {
-        let children = reader.vector.children().expect("validated nested vector has children");
+        let children = reader
+            .vector()
+            .children()
+            .expect("validated nested vector has children");
         // SAFETY: The parent reader prepared the tag, which validate checked as u8.
         let tag = unsafe { reader.child_reader::<u8>(0) };
         UnionRow {
